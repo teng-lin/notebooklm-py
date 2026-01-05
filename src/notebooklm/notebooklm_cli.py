@@ -1050,18 +1050,20 @@ def artifact_list(ctx, notebook_id, artifact_type):
 
 
 @artifact.command("get")
-@click.argument("notebook_id")
 @click.argument("artifact_id")
+@click.option("-n", "--notebook", "notebook_id", default=None,
+              help="Notebook ID (uses current if not set)")
 @click.pass_context
-def artifact_get(ctx, notebook_id, artifact_id):
+def artifact_get(ctx, artifact_id, notebook_id):
     """Get artifact details."""
     try:
+        nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
         async def _get():
             async with NotebookLMClient(auth) as client:
-                return await client.get_artifact(notebook_id, artifact_id)
+                return await client.get_artifact(nb_id, artifact_id)
 
         artifact = run_async(_get())
         if artifact:
