@@ -194,13 +194,14 @@ class TestNoteGroup:
         assert result.exit_code == 0
         assert "list" in result.output
         assert "create" in result.output
+        assert "rename" in result.output
         assert "delete" in result.output
 
     def test_note_create_command_exists(self, runner):
         result = runner.invoke(cli, ["note", "create", "--help"])
         assert result.exit_code == 0
         assert "--title" in result.output
-        assert "--content" in result.output
+        assert "[CONTENT]" in result.output  # Positional argument
 
 
 class TestNotebookGroup:

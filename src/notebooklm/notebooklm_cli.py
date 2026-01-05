@@ -2657,6 +2657,33 @@ def note():
     pass
 
 
+def _parse_note(n: list) -> tuple[str, str, str]:
+    """Parse note structure and return (note_id, title, content).
+
+    GET_NOTES structure: [note_id, [note_id, content, metadata, None, title]]
+    - n[0] = note ID
+    - n[1][1] = content (or n[1] if string - old format)
+    - n[1][4] = title
+    """
+    note_id = str(n[0]) if len(n) > 0 and n[0] else "-"
+    content = ""
+    title = "Untitled"
+
+    if len(n) > 1:
+        if isinstance(n[1], str):
+            # Old format: [note_id, content]
+            content = n[1]
+        elif isinstance(n[1], list):
+            # New format: [note_id, [note_id, content, metadata, None, title]]
+            inner = n[1]
+            if len(inner) > 1 and isinstance(inner[1], str):
+                content = inner[1]
+            if len(inner) > 4 and isinstance(inner[4], str):
+                title = inner[4]
+
+    return note_id, title, content
+
+
 @note.command("list")
 @click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.pass_context
@@ -2683,9 +2710,10 @@ def note_list(ctx, notebook_id):
         table.add_column("Preview", style="dim", max_width=50)
 
         for n in notes:
-            if isinstance(n, dict):
-                preview = n.get("content", "")[:50]
-                table.add_row(n.get("id", "-"), n.get("title", "Untitled"), preview + "..." if len(n.get("content", "")) > 50 else preview)
+            if isinstance(n, list) and len(n) > 0:
+                note_id, title, content = _parse_note(n)
+                preview = content[:50]
+                table.add_row(note_id, title, preview + "..." if len(content) > 50 else preview)
 
         console.print(table)
 
@@ -2694,12 +2722,19 @@ def note_list(ctx, notebook_id):
 
 
 @note.command("create")
+@click.argument("content", default="", required=False)
 @click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
-@click.option("--title", default="Untitled Note", help="Note title")
-@click.option("--content", default="", help="Note content")
+@click.option("-t", "--title", default="New Note", help="Note title")
 @click.pass_context
-def note_create(ctx, notebook_id, title, content):
-    """Create a new note."""
+def note_create(ctx, content, notebook_id, title):
+    """Create a new note.
+
+    \b
+    Examples:
+      notebooklm note create                        # Empty note with default title
+      notebooklm note create "My note content"     # Note with content
+      notebooklm note create "Content" -t "Title"  # Note with title and content
+    """
     try:
         nb_id = require_notebook(notebook_id)
         cookies, csrf, session_id = get_client(ctx)
@@ -2739,9 +2774,11 @@ def note_get(ctx, note_id, notebook_id):
         n = run_async(_get())
 
         if n:
-            if isinstance(n, dict):
-                console.print(f"[bold cyan]Title:[/bold cyan] {n.get('title', 'Untitled')}")
-                console.print(f"[bold cyan]Content:[/bold cyan]\n{n.get('content', '')}")
+            if isinstance(n, list) and len(n) > 0:
+                nid, title, content = _parse_note(n)
+                console.print(f"[bold cyan]ID:[/bold cyan] {nid}")
+                console.print(f"[bold cyan]Title:[/bold cyan] {title}")
+                console.print(f"[bold cyan]Content:[/bold cyan]\n{content}")
             else:
                 console.print(n)
         else:
@@ -2774,6 +2811,38 @@ def note_save(ctx, note_id, notebook_id, title, content):
 
         run_async(_save())
         console.print(f"[green]Note updated:[/green] {note_id}")
+
+    except Exception as e:
+        handle_error(e)
+
+
+@note.command("rename")
+@click.argument("note_id")
+@click.argument("new_title")
+@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
+@click.pass_context
+def note_rename(ctx, note_id, new_title, notebook_id):
+    """Rename a note."""
+    try:
+        nb_id = require_notebook(notebook_id)
+        cookies, csrf, session_id = get_client(ctx)
+        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+        async def _rename():
+            async with NotebookLMClient(auth) as client:
+                # Get current note to preserve content
+                note = await client.get_note(nb_id, note_id)
+                if not note:
+                    return None
+                # Extract current content using parser
+                _, _, content = _parse_note(note)
+                return await client.save_note_content(nb_id, note_id, content=content, title=new_title)
+
+        result = run_async(_rename())
+        if result is None:
+            console.print(f"[yellow]Note not found:[/yellow] {note_id}")
+        else:
+            console.print(f"[green]Note renamed:[/green] {new_title}")
 
     except Exception as e:
         handle_error(e)

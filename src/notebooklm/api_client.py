@@ -197,7 +197,7 @@ class NotebookLMClient:
 
     async def get_note(self, notebook_id: str, note_id: str) -> Optional[Any]:
         """Get a specific note by ID."""
-        all_notes = await self._fetch_all_note_items(notebook_id)
+        all_notes = await self._get_all_notes_and_mind_maps(notebook_id)
         for note in all_notes:
             if isinstance(note, list) and len(note) > 0 and note[0] == note_id:
                 return note
@@ -1912,7 +1912,8 @@ class NotebookLMClient:
             source_path=f"/notebook/{notebook_id}",
         )
 
-        if result and content:
+        # Always update title/content - Google ignores title param in CREATE_NOTE
+        if result:
             note_id = None
             if isinstance(result, list) and len(result) > 0:
                 if isinstance(result[0], list) and len(result[0]) > 0:
@@ -1953,7 +1954,11 @@ class NotebookLMClient:
         return []
 
     async def list_notes(self, notebook_id: str) -> list[Any]:
-        """List all text notes in the notebook (excludes mind maps)."""
+        """List all text notes in the notebook (excludes mind maps).
+
+        Note structure from GET_NOTES: [note_id, [note_id, content, metadata, None, title]]
+        Content is at item[1][1], or item[1] if it's a string (old format).
+        """
         all_items = await self._get_all_notes_and_mind_maps(notebook_id)
         text_notes = []
         for item in all_items:
@@ -1961,11 +1966,7 @@ class NotebookLMClient:
             if len(item) > 1:
                 if isinstance(item[1], str):
                     content = item[1]
-                elif (
-                    isinstance(item[1], list)
-                    and len(item[1]) > 1
-                    and isinstance(item[1][1], str)
-                ):
+                elif isinstance(item[1], list) and len(item[1]) > 1 and isinstance(item[1][1], str):
                     content = item[1][1]
 
             is_mind_map = content and (
@@ -1976,7 +1977,11 @@ class NotebookLMClient:
         return text_notes
 
     async def list_mind_maps(self, notebook_id: str) -> list[Any]:
-        """List all mind maps in a notebook."""
+        """List all mind maps in a notebook.
+
+        Note structure from GET_NOTES: [note_id, [note_id, content, metadata, None, title]]
+        Content is at item[1][1], or item[1] if it's a string (old format).
+        """
         all_items = await self._get_all_notes_and_mind_maps(notebook_id)
         mind_maps = []
         for item in all_items:
@@ -1984,11 +1989,7 @@ class NotebookLMClient:
             if len(item) > 1:
                 if isinstance(item[1], str):
                     content = item[1]
-                elif (
-                    isinstance(item[1], list)
-                    and len(item[1]) > 1
-                    and isinstance(item[1][1], str)
-                ):
+                elif isinstance(item[1], list) and len(item[1]) > 1 and isinstance(item[1][1], str):
                     content = item[1][1]
 
             if content and ('"children":' in content or '"nodes":' in content):
