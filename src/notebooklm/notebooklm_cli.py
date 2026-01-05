@@ -69,6 +69,47 @@ ARTIFACT_TYPE_DISPLAY = {
     9: "📋 Data Table",
 }
 
+
+def detect_source_type(src: list) -> str:
+    """Detect source type from API data structure.
+
+    Detection logic:
+    - Check src[2][7] for YouTube/URL indicators
+    - Check src[3][1] for type code
+    - Check file size indicators at src[2][1]
+    - Use title extension as fallback (.pdf, .txt, etc.)
+
+    Returns:
+        Display string with emoji (e.g., "🎥 YouTube")
+    """
+    # Check for URL at position [2][7] (YouTube/URL indicator)
+    if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 7:
+        url_field = src[2][7]
+        if url_field and isinstance(url_field, list) and len(url_field) > 0:
+            url = url_field[0]
+            if 'youtube.com' in url or 'youtu.be' in url:
+                return '🎥 YouTube'
+            return '🔗 Web URL'
+
+    # Check title for file extension
+    title = src[1] if len(src) > 1 else ''
+    if title:
+        if title.endswith('.pdf'):
+            return '📄 PDF'
+        elif title.endswith(('.txt', '.md', '.doc', '.docx')):
+            return '📝 Text File'
+        elif title.endswith(('.xls', '.xlsx', '.csv')):
+            return '📊 Spreadsheet'
+
+    # Check for file size indicator (uploaded files have src[2][1] as size)
+    if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 1:
+        if isinstance(src[2][1], int) and src[2][1] > 0:
+            return '📎 Upload'
+
+    # Default to pasted text
+    return '📝 Pasted Text'
+
+
 # Persistent browser profile directory
 BROWSER_PROFILE_DIR = Path.home() / ".notebooklm" / "browser_profile"
 # Context file for storing current notebook
@@ -712,27 +753,41 @@ def source_list(ctx, notebook_id):
         async def _list():
             async with NotebookLMClient(auth) as client:
                 notebook = await client.get_notebook(nb_id)
-                sources = []
                 if notebook and isinstance(notebook, list) and len(notebook) > 0:
                     nb_info = notebook[0]
                     if isinstance(nb_info, list) and len(nb_info) > 1:
                         sources_list = nb_info[1]
                         if isinstance(sources_list, list):
-                            for src in sources_list:
-                                if isinstance(src, list) and len(src) > 0:
-                                    src_id = src[0][0] if isinstance(src[0], list) else src[0]
-                                    src_title = src[1] if len(src) > 1 else "Untitled"
-                                    sources.append({"id": src_id, "title": src_title})
-                return sources
+                            return sources_list
+                return []
 
-        sources = run_async(_list())
+        sources_list = run_async(_list())
 
         table = Table(title=f"Sources in {nb_id}")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="green")
+        table.add_column("Type")
+        table.add_column("Created", style="dim")
 
-        for src in sources:
-            table.add_row(src["id"], src["title"])
+        for src in sources_list:
+            if isinstance(src, list) and len(src) > 0:
+                # Extract ID
+                src_id = src[0][0] if isinstance(src[0], list) else src[0]
+
+                # Extract title
+                title = src[1] if len(src) > 1 else "-"
+
+                # Detect type
+                type_display = detect_source_type(src)
+
+                # Extract timestamp from src[2][2] - [seconds, nanoseconds]
+                created = "-"
+                if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 2:
+                    timestamp_list = src[2][2]
+                    if isinstance(timestamp_list, list) and len(timestamp_list) > 0:
+                        created = datetime.fromtimestamp(timestamp_list[0]).strftime("%Y-%m-%d %H:%M")
+
+                table.add_row(str(src_id), title, type_display, created)
 
         console.print(table)
 
