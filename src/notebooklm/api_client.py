@@ -118,7 +118,7 @@ class NotebookLMClient:
         Returns:
             Artifact data.
         """
-        params = [artifact_id]
+        params = [artifact_id, notebook_id, [2]]
         return await self._rpc_call(
             RPCMethod.GET_ARTIFACT,
             params,
@@ -193,26 +193,6 @@ class NotebookLMClient:
         return [
             a for a in artifacts if isinstance(a, list) and len(a) > 2 and a[2] == 9
         ]
-
-    async def get_artifact(self, notebook_id: str, artifact_id: str) -> Any:
-        """Get a specific artifact by ID."""
-        params = [artifact_id, notebook_id, [2]]
-        result = await self._rpc_call(
-            RPCMethod.CREATE_VIDEO,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
-
-        if result and isinstance(result, list) and len(result) > 0:
-            artifact_data = result[0]
-            return {
-                "artifact_id": artifact_data[0],
-                "status": "in_progress" if artifact_data[4] == 1 else "completed",
-                "title": artifact_data[1] if len(artifact_data) > 1 else None,
-                "create_time": artifact_data[2] if len(artifact_data) > 2 else None,
-            }
-
-        return None
 
     async def get_note(self, notebook_id: str, note_id: str) -> Optional[Any]:
         """Get a specific note by ID."""
