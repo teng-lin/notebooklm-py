@@ -673,11 +673,19 @@ class NotebookLMClient:
         )
 
     def _extract_youtube_video_id(self, url: str) -> Optional[str]:
+        # Short URLs: youtu.be/VIDEO_ID
         match = re.match(r"https?://youtu\.be/([a-zA-Z0-9_-]+)", url)
         if match:
             return match.group(1)
+        # Standard watch URLs: youtube.com/watch?v=VIDEO_ID
         match = re.match(
             r"https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)", url
+        )
+        if match:
+            return match.group(1)
+        # Shorts URLs: youtube.com/shorts/VIDEO_ID
+        match = re.match(
+            r"https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]+)", url
         )
         if match:
             return match.group(1)
