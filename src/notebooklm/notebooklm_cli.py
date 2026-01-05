@@ -1472,7 +1472,7 @@ def generate():
 @click.option("--format", "audio_format", type=click.Choice(["deep-dive", "brief", "critique", "debate"]), default="deep-dive")
 @click.option("--length", "audio_length", type=click.Choice(["short", "default", "long"]), default="default")
 @click.option("--language", default="en")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_audio(ctx, description, notebook_id, audio_format, audio_length, language, wait):
     """Generate audio overview (podcast).
@@ -1533,7 +1533,7 @@ def generate_audio(ctx, description, notebook_id, audio_format, audio_length, la
 @click.option("--format", "video_format", type=click.Choice(["explainer", "brief"]), default="explainer")
 @click.option("--style", type=click.Choice(["auto", "classic", "whiteboard", "kawaii", "anime", "watercolor", "retro-print", "heritage", "paper-craft"]), default="auto")
 @click.option("--language", default="en")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_video(ctx, description, notebook_id, video_format, style, language, wait):
     """Generate video overview.
@@ -1593,7 +1593,7 @@ def generate_video(ctx, description, notebook_id, video_format, style, language,
 @click.option("--format", "deck_format", type=click.Choice(["detailed", "presenter"]), default="detailed")
 @click.option("--length", "deck_length", type=click.Choice(["default", "short"]), default="default")
 @click.option("--language", default="en")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_slide_deck(ctx, description, notebook_id, deck_format, deck_length, language, wait):
     """Generate slide deck.
@@ -1647,7 +1647,7 @@ def generate_slide_deck(ctx, description, notebook_id, deck_format, deck_length,
 @click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
 @click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait):
     """Generate quiz.
@@ -1702,7 +1702,7 @@ def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait):
 @click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
 @click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wait):
     """Generate flashcards.
@@ -1758,7 +1758,7 @@ def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wai
 @click.option("--orientation", type=click.Choice(["landscape", "portrait", "square"]), default="landscape")
 @click.option("--detail", type=click.Choice(["concise", "standard", "detailed"]), default="standard")
 @click.option("--language", default="en")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_infographic(ctx, description, notebook_id, orientation, detail, language, wait):
     """Generate infographic.
@@ -1812,7 +1812,7 @@ def generate_infographic(ctx, description, notebook_id, orientation, detail, lan
 @click.argument("description")
 @click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.option("--language", default="en")
-@click.option("--wait/--no-wait", default=True)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.pass_context
 def generate_data_table(ctx, description, notebook_id, language, wait):
     """Generate data table.
