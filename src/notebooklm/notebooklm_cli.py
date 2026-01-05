@@ -59,11 +59,11 @@ console = Console()
 # Artifact type display mapping
 ARTIFACT_TYPE_DISPLAY = {
     1: "🎵 Audio Overview",
-    2: "📄 Briefing Doc",
+    2: "📄 Report",
     3: "🎥 Video Overview",
     4: "📝 Quiz",
     5: "🧠 Mind Map",
-    6: "📊 Report",
+    # Note: Type 6 appears unused in current API
     7: "🖼️ Infographic",
     8: "🎞️ Slide Deck",
     9: "📋 Data Table",
@@ -915,7 +915,7 @@ def artifact():
               help="Notebook ID (uses current if not set)")
 @click.option("--type", "artifact_type",
               type=click.Choice(["all", "video", "slide-deck", "quiz", "flashcard",
-                                "infographic", "data-table", "mind-map", "briefing-doc"]),
+                                "infographic", "data-table", "mind-map", "report"]),
               default="all", help="Filter by type")
 @click.pass_context
 def artifact_list(ctx, notebook_id, artifact_type):
@@ -943,8 +943,8 @@ def artifact_list(ctx, notebook_id, artifact_type):
                     return await client.list_data_tables(nb_id), "data-table"
                 elif artifact_type == "mind-map":
                     return await client.list_mind_maps(nb_id), "mind-map"
-                elif artifact_type == "briefing-doc":
-                    return await client.list_briefing_docs(nb_id), "briefing-doc"
+                elif artifact_type == "report":
+                    return await client.list_reports(nb_id), "report"
                 return [], artifact_type
 
         artifacts, atype = run_async(_list())

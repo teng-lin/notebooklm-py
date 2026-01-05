@@ -139,8 +139,8 @@ class NotebookLMClient:
             a for a in artifacts if isinstance(a, list) and len(a) > 2 and a[2] == 8
         ]
 
-    async def list_briefing_docs(self, notebook_id: str) -> list[Any]:
-        """List all briefing docs and reports in the notebook."""
+    async def list_reports(self, notebook_id: str) -> list[Any]:
+        """List all reports in the notebook (Briefing Doc, Study Guide, Blog Post, etc.)."""
         artifacts = await self.list_artifacts(notebook_id)
         return [
             a for a in artifacts if isinstance(a, list) and len(a) > 2 and a[2] == 2

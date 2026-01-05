@@ -96,11 +96,11 @@ class StudioContentType(int, Enum):
     """
 
     AUDIO = 1
-    BRIEFING_DOC = 2
+    REPORT = 2  # Includes: Briefing Doc, Study Guide, Blog Post, White Paper, Research Proposal, etc.
     VIDEO = 3
     QUIZ = 4  # Also used for flashcards
     MIND_MAP = 5
-    REPORT = 6  # Blog Post, etc.
+    # Note: Type 6 appears unused in current API
     INFOGRAPHIC = 7
     SLIDE_DECK = 8
     DATA_TABLE = 9
