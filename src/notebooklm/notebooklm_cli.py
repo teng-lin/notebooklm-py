@@ -363,11 +363,13 @@ def list_notebooks_shortcut(ctx):
         table = Table(title="Notebooks")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="green")
+        table.add_column("Owner")
         table.add_column("Created", style="dim")
 
         for nb in notebooks:
             created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
-            table.add_row(nb.id, nb.title, created)
+            owner_status = "👤 Owner" if nb.is_owner else "👥 Shared"
+            table.add_row(nb.id, nb.title, owner_status, created)
 
         console.print(table)
 

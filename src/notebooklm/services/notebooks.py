@@ -16,6 +16,7 @@ class Notebook:
     title: str
     created_at: Optional[datetime] = None
     sources_count: int = 0
+    is_owner: bool = True
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> "Notebook":
@@ -32,7 +33,12 @@ class Notebook:
                 except (TypeError, ValueError):
                     pass
 
-        return cls(id=notebook_id, title=title, created_at=created_at)
+        # Extract ownership - data[5][1] = False means owner, True means shared
+        is_owner = True
+        if len(data) > 5 and isinstance(data[5], list) and len(data[5]) > 1:
+            is_owner = data[5][1] is False
+
+        return cls(id=notebook_id, title=title, created_at=created_at, is_owner=is_owner)
 
 
 class NotebookService:
