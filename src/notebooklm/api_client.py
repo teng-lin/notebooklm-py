@@ -1174,12 +1174,6 @@ class NotebookLMClient:
             notebook_id, ReportFormat.STUDY_GUIDE, source_ids, language
         )
 
-    async def generate_faq(
-        self, notebook_id: str, source_ids: Optional[list[str]] = None
-    ) -> Any:
-        """Generate FAQ from notebook content."""
-        return await self._act_on_sources(notebook_id, "faq", source_ids)
-
     async def generate_report(
         self,
         notebook_id: str,
@@ -1318,12 +1312,6 @@ class NotebookLMClient:
         return await self.generate_report(
             notebook_id, ReportFormat.BLOG_POST, source_ids, language
         )
-
-    async def generate_timeline(
-        self, notebook_id: str, source_ids: Optional[list[str]] = None
-    ) -> Any:
-        """Generate a timeline from notebook content."""
-        return await self._act_on_sources(notebook_id, "timeline", source_ids)
 
     async def generate_slide_deck(
         self,

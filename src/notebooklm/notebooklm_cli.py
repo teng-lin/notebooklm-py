@@ -1477,9 +1477,7 @@ def generate():
       infographic  Infographic
       data-table   Data table
       mind-map     Mind map
-      timeline     Timeline
       study-guide  Study guide (artifact)
-      faq          FAQ (immediate text)
       briefing-doc Briefing document (artifact)
       blog-post    Blog post (artifact)
     """
@@ -1910,33 +1908,6 @@ def generate_mind_map(ctx, notebook_id):
         handle_error(e)
 
 
-@generate.command("timeline")
-@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
-@click.pass_context
-def generate_timeline(ctx, notebook_id):
-    """Generate timeline."""
-    try:
-        nb_id = require_notebook(notebook_id)
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _generate():
-            async with NotebookLMClient(auth) as client:
-                return await client.generate_timeline(nb_id)
-
-        with console.status("Generating timeline..."):
-            result = run_async(_generate())
-
-        if result:
-            console.print("[green]Timeline generated:[/green]")
-            console.print(result)
-        else:
-            console.print("[yellow]No result[/yellow]")
-
-    except Exception as e:
-        handle_error(e)
-
-
 @generate.command("study-guide")
 @click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
@@ -1973,33 +1944,6 @@ def generate_study_guide(ctx, notebook_id, wait):
         else:
             artifact_id = status.get("artifact_id") if isinstance(status, dict) else None
             console.print(f"[yellow]Started:[/yellow] {artifact_id or status}")
-
-    except Exception as e:
-        handle_error(e)
-
-
-@generate.command("faq")
-@click.option("-n", "--notebook", "notebook_id", default=None, help="Notebook ID (uses current if not set)")
-@click.pass_context
-def generate_faq(ctx, notebook_id):
-    """Generate FAQ (returns text immediately)."""
-    try:
-        nb_id = require_notebook(notebook_id)
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-
-        async def _generate():
-            async with NotebookLMClient(auth) as client:
-                return await client.generate_faq(nb_id)
-
-        with console.status("Generating FAQ..."):
-            result = run_async(_generate())
-
-        if result:
-            console.print("[green]FAQ generated:[/green]")
-            console.print(result)
-        else:
-            console.print("[yellow]No result[/yellow]")
 
     except Exception as e:
         handle_error(e)
