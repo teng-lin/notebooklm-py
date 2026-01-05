@@ -1688,6 +1688,11 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
     """
     from .download_helpers import select_artifact, artifact_title_to_filename
     from pathlib import Path
+    from typing import Any
+
+    # Constants
+    AUDIO_EXTENSION = ".mp3"
+    DEFAULT_OUTPUT_DIR = "./audio"
 
     # Validate conflict flags
     if force and no_clobber:
@@ -1703,12 +1708,48 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
         console.print("[red]Cannot specify both --all and --artifact-id[/red]")
         raise SystemExit(1)
 
+    def _resolve_file_conflict(
+        file_path: Path,
+        force: bool,
+        no_clobber: bool
+    ) -> tuple[Path | None, dict | None]:
+        """
+        Resolve file conflicts for download.
+
+        Returns:
+            tuple: (resolved_path, error_dict)
+            - If file can be used/created: (Path, None)
+            - If should skip (no_clobber): (None, error_dict)
+        """
+        if not file_path.exists():
+            return file_path, None
+
+        if no_clobber:
+            return None, {
+                "status": "skipped",
+                "reason": "file exists",
+                "path": str(file_path)
+            }
+
+        if not force:
+            # Auto-rename with (2), (3), etc.
+            counter = 2
+            base = file_path.stem
+            ext = file_path.suffix
+            parent = file_path.parent
+
+            while file_path.exists():
+                file_path = parent / f"{base} ({counter}){ext}"
+                counter += 1
+
+        return file_path, None
+
     try:
         nb_id = require_notebook(notebook)
         cookies, csrf, session_id = get_client(ctx)
         auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
-        async def _download():
+        async def _download() -> dict[str, Any]:
             async with NotebookLMClient(auth) as client:
                 # Get all artifacts and filter for audio
                 all_artifacts = await client.list_artifacts(nb_id)
@@ -1731,7 +1772,7 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
                 # Handle --all flag
                 if download_all:
                     # Default directory for --all
-                    output_dir = Path(output_path) if output_path else Path("./audio")
+                    output_dir = Path(output_path) if output_path else Path(DEFAULT_OUTPUT_DIR)
 
                     if dry_run:
                         return {
@@ -1743,7 +1784,7 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
                                 {
                                     "id": a["id"],
                                     "title": a["title"],
-                                    "filename": artifact_title_to_filename(a["title"], ".mp3", set())
+                                    "filename": artifact_title_to_filename(a["title"], AUDIO_EXTENSION, set())
                                 }
                                 for a in audio_artifacts
                             ]
@@ -1754,34 +1795,34 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
 
                     results = []
                     existing_files = set()
+                    total = len(audio_artifacts)
 
-                    for artifact in audio_artifacts:
+                    for i, artifact in enumerate(audio_artifacts, 1):
+                        # Progress indicator (not in JSON mode)
+                        if not json_output:
+                            console.print(f"[dim]Downloading {i}/{total}:[/dim] {artifact['title']}")
+
                         # Generate filename
                         filename = artifact_title_to_filename(
-                            artifact["title"], ".mp3", existing_files
+                            artifact["title"], AUDIO_EXTENSION, existing_files
                         )
                         existing_files.add(filename)
                         file_path = output_dir / filename
 
-                        # Check if file exists
-                        if file_path.exists():
-                            if no_clobber:
-                                results.append({
-                                    "id": artifact["id"],
-                                    "title": artifact["title"],
-                                    "filename": filename,
-                                    "status": "skipped",
-                                    "reason": "file exists"
-                                })
-                                continue
-                            elif not force:
-                                # Auto-rename
-                                counter = 2
-                                base = file_path.stem
-                                while file_path.exists():
-                                    filename = f"{base} ({counter}).mp3"
-                                    file_path = output_dir / filename
-                                    counter += 1
+                        # Resolve file conflicts
+                        resolved_path, skip_info = _resolve_file_conflict(file_path, force, no_clobber)
+                        if skip_info:
+                            results.append({
+                                "id": artifact["id"],
+                                "title": artifact["title"],
+                                "filename": filename,
+                                **skip_info
+                            })
+                            continue
+
+                        # Update filename if path was auto-renamed
+                        file_path = resolved_path
+                        filename = file_path.name
 
                         # Download
                         try:
@@ -1824,7 +1865,7 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
                 # Determine output path
                 if not output_path:
                     # Default: ./[artifact-title].mp3
-                    default_filename = artifact_title_to_filename(selected["title"], ".mp3", set())
+                    default_filename = artifact_title_to_filename(selected["title"], AUDIO_EXTENSION, set())
                     final_output_path = Path.cwd() / default_filename
                 else:
                     final_output_path = Path(output_path)
@@ -1841,23 +1882,16 @@ def download_audio(ctx, output_path, notebook, latest, earliest, download_all, n
                         "output_path": str(final_output_path)
                     }
 
-                # Check if file exists
-                if final_output_path.exists():
-                    if no_clobber:
-                        return {
-                            "error": f"File exists: {final_output_path}",
-                            "artifact": selected,
-                            "suggestion": "Use --force to overwrite or choose a different path"
-                        }
-                    elif not force:
-                        # Auto-rename
-                        counter = 2
-                        base = final_output_path.stem
-                        ext = final_output_path.suffix
-                        parent = final_output_path.parent
-                        while final_output_path.exists():
-                            final_output_path = parent / f"{base} ({counter}){ext}"
-                            counter += 1
+                # Resolve file conflicts
+                resolved_path, skip_error = _resolve_file_conflict(final_output_path, force, no_clobber)
+                if skip_error:
+                    return {
+                        "error": f"File exists: {final_output_path}",
+                        "artifact": selected,
+                        "suggestion": "Use --force to overwrite or choose a different path"
+                    }
+
+                final_output_path = resolved_path
 
                 # Download
                 try:
