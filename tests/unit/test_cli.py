@@ -393,27 +393,27 @@ class TestContextCommands:
 
     def test_use_sets_context(self, runner, tmp_path):
         # Patch CONTEXT_FILE to use tmp_path
-        with patch("notebooklm.notebooklm_cli.CONTEXT_FILE", tmp_path / "context.json"):
+        with patch("notebooklm.cli.helpers.CONTEXT_FILE", tmp_path / "context.json"):
             result = runner.invoke(cli, ["use", "nb_test123"])
             assert result.exit_code == 0
             assert "nb_test123" in result.output
 
     def test_status_shows_no_context(self, runner, tmp_path):
         # Patch CONTEXT_FILE to use tmp_path (empty)
-        with patch("notebooklm.notebooklm_cli.CONTEXT_FILE", tmp_path / "context.json"):
+        with patch("notebooklm.cli.helpers.CONTEXT_FILE", tmp_path / "context.json"):
             result = runner.invoke(cli, ["status"])
             assert result.exit_code == 0
             assert "No notebook selected" in result.output
 
     def test_status_shows_context_after_use(self, runner, tmp_path):
-        with patch("notebooklm.notebooklm_cli.CONTEXT_FILE", tmp_path / "context.json"):
+        with patch("notebooklm.cli.helpers.CONTEXT_FILE", tmp_path / "context.json"):
             runner.invoke(cli, ["use", "nb_test456"])
             result = runner.invoke(cli, ["status"])
             assert result.exit_code == 0
             assert "nb_test456" in result.output
 
     def test_clear_removes_context(self, runner, tmp_path):
-        with patch("notebooklm.notebooklm_cli.CONTEXT_FILE", tmp_path / "context.json"):
+        with patch("notebooklm.cli.helpers.CONTEXT_FILE", tmp_path / "context.json"):
             runner.invoke(cli, ["use", "nb_test789"])
             result = runner.invoke(cli, ["clear"])
             assert result.exit_code == 0
@@ -1054,7 +1054,8 @@ class TestQueryCommand:
 
 class TestErrorHandling:
     def test_no_auth_error(self, runner):
-        with patch("notebooklm.notebooklm_cli.load_auth_from_storage") as mock:
+        # Patch where get_client() uses load_auth_from_storage (in cli.helpers)
+        with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock:
             mock.return_value = None
             result = runner.invoke(cli, ["list"])
             # Should fail when no auth

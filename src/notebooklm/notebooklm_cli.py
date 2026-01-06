@@ -23,13 +23,11 @@ LLM-friendly design:
   notebooklm ask "what are the key themes?"
 """
 
-import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 
 import click
-from rich.console import Console
 from rich.table import Table
 
 from . import __version__
@@ -59,238 +57,31 @@ from .types import (
     ReportFormat,
 )
 
-console = Console()
-
-# Artifact type display mapping
-ARTIFACT_TYPE_DISPLAY = {
-    1: "🎵 Audio Overview",
-    2: "📄 Report",
-    3: "🎥 Video Overview",
-    4: "📝 Quiz",
-    5: "🧠 Mind Map",
-    # Note: Type 6 appears unused in current API
-    7: "🖼️ Infographic",
-    8: "🎞️ Slide Deck",
-    9: "📋 Data Table",
-}
-
-# CLI artifact type to StudioContentType enum mapping
-ARTIFACT_TYPE_MAP = {
-    "video": 3,
-    "slide-deck": 8,
-    "quiz": 4,
-    "flashcard": 4,  # Same as quiz
-    "infographic": 7,
-    "data-table": 9,
-    "mind-map": 5,
-    "report": 2,
-}
-
-
-def get_artifact_type_display(
-    artifact_type: int, variant: int = None, report_subtype: str = None
-) -> str:
-    """Get display string for artifact type.
-
-    Args:
-        artifact_type: StudioContentType enum value
-        variant: Optional variant code (for type 4: 1=flashcards, 2=quiz)
-        report_subtype: Optional report subtype (for type 2: briefing_doc, study_guide, blog_post)
-
-    Returns:
-        Display string with emoji
-    """
-    # Handle quiz/flashcards distinction (both use type 4)
-    if artifact_type == 4 and variant is not None:
-        if variant == 1:
-            return "🃏 Flashcards"
-        elif variant == 2:
-            return "📝 Quiz"
-
-    # Handle report subtypes (type 2)
-    if artifact_type == 2 and report_subtype:
-        report_displays = {
-            "briefing_doc": "📋 Briefing Doc",
-            "study_guide": "📚 Study Guide",
-            "blog_post": "✍️ Blog Post",
-            "report": "📄 Report",
-        }
-        return report_displays.get(report_subtype, "📄 Report")
-
-    return ARTIFACT_TYPE_DISPLAY.get(artifact_type, f"Unknown ({artifact_type})")
-
-
-def detect_source_type(src: list) -> str:
-    """Detect source type from API data structure.
-
-    Detection logic:
-    - Check src[2][7] for YouTube/URL indicators
-    - Check src[3][1] for type code
-    - Check file size indicators at src[2][1]
-    - Use title extension as fallback (.pdf, .txt, etc.)
-
-    Returns:
-        Display string with emoji (e.g., "🎥 YouTube")
-    """
-    # Check for URL at position [2][7] (YouTube/URL indicator)
-    if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 7:
-        url_field = src[2][7]
-        if url_field and isinstance(url_field, list) and len(url_field) > 0:
-            url = url_field[0]
-            if "youtube.com" in url or "youtu.be" in url:
-                return "🎥 YouTube"
-            return "🔗 Web URL"
-
-    # Check title for file extension
-    title = src[1] if len(src) > 1 else ""
-    if title:
-        if title.endswith(".pdf"):
-            return "📄 PDF"
-        elif title.endswith((".txt", ".md", ".doc", ".docx")):
-            return "📝 Text File"
-        elif title.endswith((".xls", ".xlsx", ".csv")):
-            return "📊 Spreadsheet"
-
-    # Check for file size indicator (uploaded files have src[2][1] as size)
-    if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 1:
-        if isinstance(src[2][1], int) and src[2][1] > 0:
-            return "📎 Upload"
-
-    # Default to pasted text
-    return "📝 Pasted Text"
-
-
-def get_source_type_display(source_type: str) -> str:
-    """Get display string for source type.
-
-    Args:
-        source_type: Type code from Source object
-
-    Returns:
-        Display string with emoji
-    """
-    type_map = {
-        "youtube": "🎥 YouTube",
-        "url": "🔗 Web URL",
-        "pdf": "📄 PDF",
-        "text_file": "📝 Text File",
-        "spreadsheet": "📊 Spreadsheet",
-        "upload": "📎 Upload",
-        "text": "📝 Pasted Text",
-    }
-    return type_map.get(source_type, "📝 Text")
-
-
-# Persistent browser profile directory
-BROWSER_PROFILE_DIR = Path.home() / ".notebooklm" / "browser_profile"
-# Context file for storing current notebook
-CONTEXT_FILE = Path.home() / ".notebooklm" / "context.json"
-
-
-def get_current_notebook() -> str | None:
-    """Get the current notebook ID from context."""
-    if not CONTEXT_FILE.exists():
-        return None
-    try:
-        data = json.loads(CONTEXT_FILE.read_text())
-        return data.get("notebook_id")
-    except (json.JSONDecodeError, IOError):
-        return None
-
-
-def set_current_notebook(
-    notebook_id: str,
-    title: str | None = None,
-    is_owner: bool | None = None,
-    created_at: str | None = None,
-):
-    """Set the current notebook context."""
-    CONTEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = {"notebook_id": notebook_id}
-    if title:
-        data["title"] = title
-    if is_owner is not None:
-        data["is_owner"] = is_owner
-    if created_at:
-        data["created_at"] = created_at
-    CONTEXT_FILE.write_text(json.dumps(data, indent=2))
-
-
-def clear_context():
-    """Clear the current context."""
-    if CONTEXT_FILE.exists():
-        CONTEXT_FILE.unlink()
-
-
-def get_current_conversation() -> str | None:
-    """Get the current conversation ID from context."""
-    if not CONTEXT_FILE.exists():
-        return None
-    try:
-        data = json.loads(CONTEXT_FILE.read_text())
-        return data.get("conversation_id")
-    except (json.JSONDecodeError, IOError):
-        return None
-
-
-def set_current_conversation(conversation_id: str | None):
-    """Set or clear the current conversation ID in context."""
-    if not CONTEXT_FILE.exists():
-        return
-    try:
-        data = json.loads(CONTEXT_FILE.read_text())
-        if conversation_id:
-            data["conversation_id"] = conversation_id
-        elif "conversation_id" in data:
-            del data["conversation_id"]
-        CONTEXT_FILE.write_text(json.dumps(data, indent=2))
-    except (json.JSONDecodeError, IOError):
-        pass
-
-
-def require_notebook(notebook_id: str | None) -> str:
-    """Get notebook ID from argument or context, raise if neither."""
-    if notebook_id:
-        return notebook_id
-    current = get_current_notebook()
-    if current:
-        return current
-    console.print(
-        "[red]No notebook specified. Use 'notebooklm use <id>' to set context or provide notebook_id.[/red]"
-    )
-    raise SystemExit(1)
-
-
-def run_async(coro):
-    """Run async coroutine in sync context."""
-    return asyncio.run(coro)
-
-
-def get_client(ctx) -> tuple[dict, str, str]:
-    """Get auth components from context."""
-    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = run_async(fetch_tokens(cookies))
-    return cookies, csrf, session_id
-
-
-def handle_error(e: Exception):
-    """Handle and display errors consistently."""
-    console.print(f"[red]Error: {e}[/red]")
-    raise SystemExit(1)
-
-
-def json_output_response(data: dict) -> None:
-    """Print JSON response."""
-    console.print(json.dumps(data, indent=2, default=str))
-
-
-def json_error_response(code: str, message: str) -> None:
-    """Print JSON error and exit."""
-    console.print(
-        json.dumps({"error": True, "code": code, "message": message}, indent=2)
-    )
-    raise SystemExit(1)
+# Import helpers from cli package (these are re-exported for backward compatibility)
+from .cli.helpers import (
+    console,
+    run_async,
+    get_client,
+    get_auth_tokens,
+    CONTEXT_FILE,
+    BROWSER_PROFILE_DIR,
+    get_current_notebook,
+    set_current_notebook,
+    clear_context,
+    get_current_conversation,
+    set_current_conversation,
+    require_notebook,
+    handle_error,
+    handle_auth_error,
+    with_client,
+    json_output_response,
+    json_error_response,
+    ARTIFACT_TYPE_DISPLAY,
+    ARTIFACT_TYPE_MAP,
+    get_artifact_type_display,
+    detect_source_type,
+    get_source_type_display,
+)
 
 
 # =============================================================================
@@ -547,62 +338,46 @@ def clear_cmd():
 
 @cli.command("list")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-@click.pass_context
-def list_notebooks_shortcut(ctx, json_output):
+@with_client
+def list_notebooks_shortcut(ctx, json_output, client_auth):
     """List all notebooks (shortcut for 'notebook list')."""
-    try:
-        cookies, csrf, session_id = get_client(ctx)
-        auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            notebooks = await client.notebooks.list()
 
-        async def _list():
-            async with NotebookLMClient(auth) as client:
-                return await client.notebooks.list()
+            if json_output:
+                data = {
+                    "notebooks": [
+                        {
+                            "index": i,
+                            "id": nb.id,
+                            "title": nb.title,
+                            "is_owner": nb.is_owner,
+                            "created_at": nb.created_at.isoformat()
+                            if nb.created_at
+                            else None,
+                        }
+                        for i, nb in enumerate(notebooks, 1)
+                    ],
+                    "count": len(notebooks),
+                }
+                json_output_response(data)
+                return
 
-        notebooks = run_async(_list())
+            table = Table(title="Notebooks")
+            table.add_column("ID", style="cyan")
+            table.add_column("Title", style="green")
+            table.add_column("Owner")
+            table.add_column("Created", style="dim")
 
-        if json_output:
-            data = {
-                "notebooks": [
-                    {
-                        "index": i,
-                        "id": nb.id,
-                        "title": nb.title,
-                        "is_owner": nb.is_owner,
-                        "created_at": nb.created_at.isoformat()
-                        if nb.created_at
-                        else None,
-                    }
-                    for i, nb in enumerate(notebooks, 1)
-                ],
-                "count": len(notebooks),
-            }
-            json_output_response(data)
-            return
+            for nb in notebooks:
+                created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
+                owner_status = "👤 Owner" if nb.is_owner else "👥 Shared"
+                table.add_row(nb.id, nb.title, owner_status, created)
 
-        table = Table(title="Notebooks")
-        table.add_column("ID", style="cyan")
-        table.add_column("Title", style="green")
-        table.add_column("Owner")
-        table.add_column("Created", style="dim")
+            console.print(table)
 
-        for nb in notebooks:
-            created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
-            owner_status = "👤 Owner" if nb.is_owner else "👥 Shared"
-            table.add_row(nb.id, nb.title, owner_status, created)
-
-        console.print(table)
-
-    except FileNotFoundError:
-        if json_output:
-            json_error_response(
-                "AUTH_REQUIRED", "Auth not found. Run 'notebooklm login' first."
-            )
-        console.print("[red]Auth not found. Run 'notebooklm login' first.[/red]")
-        raise SystemExit(1)
-    except Exception as e:
-        if json_output:
-            json_error_response("ERROR", str(e))
-        handle_error(e)
+    return _run()
 
 
 @cli.command("create")
