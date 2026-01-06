@@ -212,3 +212,100 @@ async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
         session_id = extract_session_id_from_html(response.text, final_url)
 
         return csrf, session_id
+
+
+# Browser profile directory for persistent login
+BROWSER_PROFILE_DIR = Path.home() / ".notebooklm" / "browser_profile"
+
+
+async def download_with_browser(
+    url: str,
+    output_path: str,
+    timeout: float = 60.0,
+) -> str:
+    """Download a file using Playwright browser with Google authentication.
+
+    This uses the persistent browser profile to download files from Google's
+    content servers (lh3.googleusercontent.com, contribution.usercontent.google.com)
+    which require cross-domain authentication that httpx cannot provide.
+
+    Args:
+        url: The URL to download (must be a Google content URL)
+        output_path: Path to save the downloaded file
+        timeout: Download timeout in seconds
+
+    Returns:
+        The output path if successful
+
+    Raises:
+        ImportError: If Playwright is not installed
+        ValueError: If download fails or authentication is required
+        TimeoutError: If download times out
+    """
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise ImportError(
+            "Playwright is required for downloading media files.\n"
+            "Install with: pip install playwright && playwright install chromium"
+        )
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    async with async_playwright() as p:
+        # Use persistent context with saved profile for Google auth
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=str(BROWSER_PROFILE_DIR),
+            headless=True,
+            accept_downloads=True,
+        )
+
+        try:
+            page = await context.new_page()
+
+            # Set up download handling
+            download_path = None
+
+            async def handle_download(download):
+                nonlocal download_path
+                download_path = await download.path()
+
+            page.on("download", handle_download)
+
+            # Navigate to the URL - this triggers download for media files
+            response = await page.goto(url, timeout=timeout * 1000)
+
+            # Check if we got redirected to login
+            if response and "accounts.google.com" in page.url:
+                raise ValueError(
+                    "Authentication required. Run 'notebooklm login' to re-authenticate."
+                )
+
+            # For direct content (not download), save the response body
+            if download_path is None:
+                # Check content type
+                content_type = response.headers.get("content-type", "") if response else ""
+
+                if "text/html" in content_type:
+                    # This is likely a login page
+                    raise ValueError(
+                        "Download failed: received HTML instead of media file. "
+                        "Authentication may have expired. Run 'notebooklm login'."
+                    )
+
+                # Save the response body directly
+                content = await response.body() if response else b""
+                if not content:
+                    raise ValueError("Download failed: empty response")
+
+                output_file.write_bytes(content)
+            else:
+                # Move downloaded file to output path
+                import shutil
+                shutil.move(download_path, output_path)
+
+            return output_path
+
+        finally:
+            await context.close()

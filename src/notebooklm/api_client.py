@@ -5,7 +5,7 @@ import httpx
 from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode
 
-from .auth import AuthTokens
+from .auth import AuthTokens, download_with_browser
 from .rpc import (
     RPCMethod,
     StudioContentType,
@@ -203,6 +203,52 @@ class NotebookLMClient:
                 return note
         return None
 
+    def _needs_browser_download(self, url: str) -> bool:
+        """Check if URL requires browser-based download for authentication.
+
+        Google content URLs on these domains require cross-domain authentication
+        that httpx cannot provide.
+        """
+        browser_domains = [
+            "lh3.googleusercontent.com",
+            "contribution.usercontent.google.com",
+        ]
+        return any(domain in url for domain in browser_domains)
+
+    async def _download_url(self, url: str, output_path: str) -> str:
+        """Download a file from URL, using browser for Google content URLs.
+
+        Args:
+            url: The URL to download from.
+            output_path: Path to save the file.
+
+        Returns:
+            The output path if successful.
+
+        Raises:
+            ValueError: If download fails.
+        """
+        if self._needs_browser_download(url):
+            return await download_with_browser(url, output_path)
+
+        # Use httpx for non-Google URLs
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, follow_redirects=True)
+            response.raise_for_status()
+
+            # Check if we got HTML instead of expected content
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type:
+                raise ValueError(
+                    "Download failed: received HTML instead of media file. "
+                    "Authentication may have expired."
+                )
+
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+
+        return output_path
+
     async def download_audio(
         self, notebook_id: str, output_path: str, artifact_id: Optional[str] = None
     ) -> str:
@@ -216,8 +262,6 @@ class NotebookLMClient:
         Returns:
             The output path if successful.
         """
-        import httpx
-
         artifacts = await self.list_artifacts(notebook_id)
 
         # Filter for audio artifacts
@@ -264,14 +308,7 @@ class NotebookLMClient:
             if not url:
                 raise ValueError("Could not extract download URL.")
 
-            # Download
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, follow_redirects=True)
-                response.raise_for_status()
-                with open(output_path, "wb") as f:
-                    f.write(response.content)
-
-            return output_path
+            return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
             raise ValueError(f"Failed to parse audio artifact structure: {e}")
@@ -289,8 +326,6 @@ class NotebookLMClient:
         Returns:
             The output path if successful.
         """
-        import httpx
-
         videos = await self.list_video_overviews(notebook_id)
         # Filter for completed videos (Status 3)
         completed_videos = [v for v in videos if len(v) > 4 and v[4] == 3]
@@ -350,14 +385,7 @@ class NotebookLMClient:
             if not url:
                 raise ValueError("Could not extract download URL.")
 
-            # Download
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, follow_redirects=True)
-                response.raise_for_status()
-                with open(output_path, "wb") as f:
-                    f.write(response.content)
-
-            return output_path
+            return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
             raise ValueError(f"Failed to parse video artifact structure: {e}")
@@ -375,8 +403,6 @@ class NotebookLMClient:
         Returns:
             The output path if successful.
         """
-        import httpx
-
         infos = await self.list_infographics(notebook_id)
         # Filter for completed infographics (Status 3)
         completed_infos = [i for i in infos if len(i) > 4 and i[4] == 3]
@@ -426,14 +452,7 @@ class NotebookLMClient:
 
             url = metadata[2][0][1][0]  # ContentList[0] -> ImageInfo[0] -> URL
 
-            # Download
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, follow_redirects=True)
-                response.raise_for_status()
-                with open(output_path, "wb") as f:
-                    f.write(response.content)
-
-            return output_path
+            return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
             raise ValueError(f"Failed to parse infographic structure: {e}")
@@ -452,7 +471,6 @@ class NotebookLMClient:
             List of paths to downloaded images.
         """
         import os
-        import httpx
 
         slides = await self.list_slide_decks(notebook_id)
         # Filter for completed slide decks (Status 3)
@@ -497,26 +515,21 @@ class NotebookLMClient:
             if not isinstance(slides_list, list):
                 raise ValueError("Invalid slides list structure.")
 
-            async with httpx.AsyncClient() as client:
-                for i, slide in enumerate(slides_list):
-                    # slide structure: [["URL", W, H], "Desc", "Content"]
-                    if (
-                        isinstance(slide, list)
-                        and len(slide) > 0
-                        and isinstance(slide[0], list)
-                        and len(slide[0]) > 0
-                    ):
-                        url = slide[0][0]
-                        if isinstance(url, str) and url.startswith("http"):
-                            filename = f"slide_{i + 1:03d}.png"
-                            path = os.path.join(output_dir, filename)
+            for i, slide in enumerate(slides_list):
+                # slide structure: [["URL", W, H], "Desc", "Content"]
+                if (
+                    isinstance(slide, list)
+                    and len(slide) > 0
+                    and isinstance(slide[0], list)
+                    and len(slide[0]) > 0
+                ):
+                    url = slide[0][0]
+                    if isinstance(url, str) and url.startswith("http"):
+                        filename = f"slide_{i + 1:03d}.png"
+                        path = os.path.join(output_dir, filename)
 
-                            response = await client.get(url, follow_redirects=True)
-                            response.raise_for_status()
-                            with open(path, "wb") as f:
-                                f.write(response.content)
-
-                            downloaded_paths.append(path)
+                        await self._download_url(url, path)
+                        downloaded_paths.append(path)
 
             return downloaded_paths
 
