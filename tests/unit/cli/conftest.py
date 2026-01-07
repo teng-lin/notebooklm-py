@@ -70,13 +70,65 @@ def patch_client_for_module(module_path: str):
     return patch(f"notebooklm.cli.{module_path}.NotebookLMClient")
 
 
-def patch_main_cli_client():
-    """Create a context manager that patches NotebookLMClient in the main CLI module.
+class MultiMockProxy:
+    """Proxy that forwards attribute access to all underlying mocks.
 
-    Use this for testing notebook commands which are now top-level in notebooklm_cli.py.
+    When you set return_value on this proxy, it propagates to all mocks.
+    Other attribute access is delegated to the primary mock.
+    """
+    def __init__(self, mocks):
+        object.__setattr__(self, '_mocks', mocks)
+        object.__setattr__(self, '_primary', mocks[0])
+
+    def __getattr__(self, name):
+        return getattr(self._primary, name)
+
+    def __setattr__(self, name, value):
+        if name == 'return_value':
+            # Propagate return_value to all mocks
+            for m in self._mocks:
+                m.return_value = value
+        else:
+            setattr(self._primary, name, value)
+
+
+class MultiPatcher:
+    """Context manager that patches NotebookLMClient in multiple CLI modules.
+
+    After refactoring, commands are spread across multiple modules, so we need
+    to patch NotebookLMClient in all of them.
+    """
+    def __init__(self):
+        self.patches = [
+            patch("notebooklm.cli.notebook.NotebookLMClient"),
+            patch("notebooklm.cli.chat.NotebookLMClient"),
+            patch("notebooklm.cli.insights.NotebookLMClient"),
+            patch("notebooklm.cli.session.NotebookLMClient"),
+        ]
+        self.mocks = []
+
+    def __enter__(self):
+        # Start all patches and collect mocks
+        self.mocks = [p.__enter__() for p in self.patches]
+        # Return a proxy that propagates return_value to all mocks
+        return MultiMockProxy(self.mocks)
+
+    def __exit__(self, *args):
+        for p in reversed(self.patches):
+            p.__exit__(*args)
+
+
+def patch_main_cli_client():
+    """Create a context manager that patches NotebookLMClient in CLI command modules.
+
+    After refactoring, top-level commands are in separate modules:
+    - notebook.py: list, create, delete, rename, share, featured
+    - chat.py: ask, configure, history
+    - insights.py: summary, analytics, research
+    - session.py: use
 
     Returns:
-        A patch context manager for NotebookLMClient
+        A context manager that patches NotebookLMClient in all relevant modules
 
     Example:
         with patch_main_cli_client() as mock_cls:
@@ -84,7 +136,7 @@ def patch_main_cli_client():
             mock_cls.return_value = mock_client
             # ... run test
     """
-    return patch("notebooklm.notebooklm_cli.NotebookLMClient")
+    return MultiPatcher()
 
 
 @pytest.fixture

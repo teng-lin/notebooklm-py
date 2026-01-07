@@ -192,6 +192,54 @@ def require_notebook(notebook_id: str | None) -> str:
     raise SystemExit(1)
 
 
+async def resolve_notebook_id(client, partial_id: str) -> str:
+    """Resolve partial notebook ID to full ID.
+
+    Allows users to type partial IDs like 'abc' instead of full UUIDs.
+    Matches are case-insensitive prefix matches.
+
+    Args:
+        client: NotebookLMClient instance (inside async context)
+        partial_id: Full or partial notebook ID
+
+    Returns:
+        Full notebook ID
+
+    Raises:
+        click.ClickException: If no match or ambiguous match
+    """
+    import click
+
+    if not partial_id:
+        return partial_id
+
+    # Skip resolution for IDs that look complete (20+ chars)
+    if len(partial_id) >= 20:
+        return partial_id
+
+    notebooks = await client.notebooks.list()
+    matches = [nb for nb in notebooks
+               if nb.id.lower().startswith(partial_id.lower())]
+
+    if len(matches) == 1:
+        if matches[0].id != partial_id:
+            console.print(f"[dim]Matched: {matches[0].id[:12]}... ({matches[0].title})[/dim]")
+        return matches[0].id
+    elif len(matches) == 0:
+        raise click.ClickException(
+            f"No notebook found starting with '{partial_id}'. "
+            "Run 'notebooklm list' to see available notebooks."
+        )
+    else:
+        lines = [f"Ambiguous ID '{partial_id}' matches {len(matches)} notebooks:"]
+        for nb in matches[:5]:
+            lines.append(f"  {nb.id[:12]}... {nb.title}")
+        if len(matches) > 5:
+            lines.append(f"  ... and {len(matches) - 5} more")
+        lines.append("\nSpecify more characters to narrow down.")
+        raise click.ClickException("\n".join(lines))
+
+
 # =============================================================================
 # ERROR HANDLING
 # =============================================================================

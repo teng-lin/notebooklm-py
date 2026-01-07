@@ -137,6 +137,12 @@ class TestNotebookDelete:
     def test_notebook_delete(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution (returns the notebook to be deleted)
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_to_delete", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
@@ -154,13 +160,21 @@ class TestNotebookDelete:
 
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_to_delete", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.CONTEXT_FILE", context_file):
-                with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                    mock_fetch.return_value = ("csrf", "session")
-                    result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
+                with patch("notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"):
+                    with patch("notebooklm.cli.notebook.clear_context") as mock_clear:
+                        with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                            mock_fetch.return_value = ("csrf", "session")
+                            result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
 
             assert result.exit_code == 0
             assert "Cleared current notebook context" in result.output
@@ -168,6 +182,12 @@ class TestNotebookDelete:
     def test_notebook_delete_failure(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock list for partial ID resolution
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                ]
+            )
             mock_client.notebooks.delete = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 

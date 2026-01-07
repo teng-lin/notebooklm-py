@@ -8,18 +8,26 @@ Command groups are organized into separate modules:
 - generate.py: Content generation commands
 - download.py: Download commands
 - note.py: Note management commands
-
-Note: Notebook commands are now top-level in notebooklm_cli.py
+- session.py: Session and context commands (login, use, status, clear)
+- notebook.py: Notebook management commands (list, create, delete, rename, share, featured)
+- chat.py: Chat commands (ask, configure, history)
+- insights.py: Insights commands (summary, analytics, research)
 
 Re-exports from helpers for backward compatibility with tests.
 """
 
-# Command groups
+# Command groups (subcommand style)
 from .source import source
 from .artifact import artifact
 from .generate import generate
 from .download import download
 from .note import note
+
+# Register functions (top-level command style)
+from .session import register_session_commands
+from .notebook import register_notebook_commands
+from .chat import register_chat_commands
+from .insights import register_insights_commands
 
 from .helpers import (
     # Console
@@ -38,6 +46,7 @@ from .helpers import (
     get_current_conversation,
     set_current_conversation,
     require_notebook,
+    resolve_notebook_id,
     # Errors
     handle_error,
     handle_auth_error,
@@ -68,12 +77,17 @@ from .options import (
 )
 
 __all__ = [
-    # Command groups
+    # Command groups (subcommand style)
     "source",
     "artifact",
     "generate",
     "download",
     "note",
+    # Register functions (top-level command style)
+    "register_session_commands",
+    "register_notebook_commands",
+    "register_chat_commands",
+    "register_insights_commands",
     # Console
     "console",
     # Async
@@ -90,6 +104,7 @@ __all__ = [
     "get_current_conversation",
     "set_current_conversation",
     "require_notebook",
+    "resolve_notebook_id",
     # Errors
     "handle_error",
     "handle_auth_error",

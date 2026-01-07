@@ -381,3 +381,39 @@ def artifact_suggestions(ctx, notebook_id, source_ids, json_output, client_auth)
             )
 
     return _run()
+
+
+@artifact.command("share")
+@click.option(
+    "-n",
+    "--notebook",
+    "notebook_id",
+    default=None,
+    help="Notebook ID (uses current if not set)",
+)
+@click.option("--public/--private", default=False, help="Make audio public or private")
+@with_client
+def artifact_share(ctx, notebook_id, public, client_auth):
+    """Share or unshare audio overview.
+
+    Makes the audio overview publicly accessible or private.
+
+    \b
+    Examples:
+      notebooklm artifact share --public   # Make audio public
+      notebooklm artifact share --private  # Make audio private
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            result = await client.artifacts.share_audio(nb_id, public=public)
+
+            if result:
+                status = "public" if public else "private"
+                console.print(f"[green]Audio is now {status}[/green]")
+                console.print(result)
+            else:
+                console.print("[yellow]Share returned no result[/yellow]")
+
+    return _run()
