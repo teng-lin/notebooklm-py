@@ -45,6 +45,7 @@ from .helpers import (
     set_current_conversation,
     require_notebook,
     resolve_notebook_id,
+    resolve_source_id,
     # Errors
     handle_error,
     handle_auth_error,
@@ -102,6 +103,7 @@ __all__ = [
     "set_current_conversation",
     "require_notebook",
     "resolve_notebook_id",
+    "resolve_source_id",
     # Errors
     "handle_error",
     "handle_auth_error",

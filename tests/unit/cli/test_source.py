@@ -201,6 +201,12 @@ class TestSourceGet:
     def test_source_get(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list for resolve_source_id
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Test Source", source_type="url")
+                ]
+            )
             mock_client.sources.get = AsyncMock(
                 return_value=Source(
                     id="src_123",
@@ -223,6 +229,8 @@ class TestSourceGet:
     def test_source_get_not_found(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list to return empty (no match for resolve_source_id)
+            mock_client.sources.list = AsyncMock(return_value=[])
             mock_client.sources.get = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -230,8 +238,9 @@ class TestSourceGet:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["source", "get", "nonexistent", "-n", "nb_123"])
 
-            assert result.exit_code == 0
-            assert "Source not found" in result.output
+            # Now exits with error from resolve_source_id (no match)
+            assert result.exit_code == 1
+            assert "No source found" in result.output
 
 
 # =============================================================================
@@ -243,6 +252,12 @@ class TestSourceDelete:
     def test_source_delete(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list for resolve_source_id
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Test Source", source_type="url")
+                ]
+            )
             mock_client.sources.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
@@ -259,6 +274,12 @@ class TestSourceDelete:
     def test_source_delete_failure(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list for resolve_source_id
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Test Source", source_type="url")
+                ]
+            )
             mock_client.sources.delete = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
@@ -281,6 +302,12 @@ class TestSourceRename:
     def test_source_rename(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list for resolve_source_id
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Old Title", source_type="url")
+                ]
+            )
             mock_client.sources.rename = AsyncMock(
                 return_value=Source(id="src_123", title="New Title", source_type="url")
             )
@@ -306,6 +333,12 @@ class TestSourceRefresh:
     def test_source_refresh(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list for resolve_source_id
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Original Source", source_type="url")
+                ]
+            )
             mock_client.sources.refresh = AsyncMock(
                 return_value=Source(id="src_123", title="Refreshed Source", source_type="url")
             )
@@ -321,6 +354,12 @@ class TestSourceRefresh:
     def test_source_refresh_no_result(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock sources.list for resolve_source_id
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Original Source", source_type="url")
+                ]
+            )
             mock_client.sources.refresh = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 

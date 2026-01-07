@@ -20,6 +20,7 @@ from ..client import NotebookLMClient
 from .helpers import (
     console,
     require_notebook,
+    resolve_source_id,
     with_client,
     json_output_response,
     get_source_type_display,
@@ -211,12 +212,17 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
 )
 @with_client
 def source_get(ctx, source_id, notebook_id, client_auth):
-    """Get source details."""
+    """Get source details.
+
+    SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            src = await client.sources.get(nb_id, source_id)
+            # Resolve partial ID to full ID
+            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            src = await client.sources.get(nb_id, resolved_id)
             if src:
                 console.print(f"[bold cyan]Source:[/bold cyan] {src.id}")
                 console.print(f"[bold]Title:[/bold] {src.title}")
@@ -247,17 +253,23 @@ def source_get(ctx, source_id, notebook_id, client_auth):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @with_client
 def source_delete(ctx, source_id, notebook_id, yes, client_auth):
-    """Delete a source."""
-    if not yes and not click.confirm(f"Delete source {source_id}?"):
-        return
+    """Delete a source.
 
+    SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            success = await client.sources.delete(nb_id, source_id)
+            # Resolve partial ID to full ID
+            resolved_id = await resolve_source_id(client, nb_id, source_id)
+
+            if not yes and not click.confirm(f"Delete source {resolved_id}?"):
+                return
+
+            success = await client.sources.delete(nb_id, resolved_id)
             if success:
-                console.print(f"[green]Deleted source:[/green] {source_id}")
+                console.print(f"[green]Deleted source:[/green] {resolved_id}")
             else:
                 console.print("[yellow]Delete may have failed[/yellow]")
 
@@ -276,12 +288,17 @@ def source_delete(ctx, source_id, notebook_id, yes, client_auth):
 )
 @with_client
 def source_rename(ctx, source_id, new_title, notebook_id, client_auth):
-    """Rename a source."""
+    """Rename a source.
+
+    SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            src = await client.sources.rename(nb_id, source_id, new_title)
+            # Resolve partial ID to full ID
+            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            src = await client.sources.rename(nb_id, resolved_id, new_title)
             console.print(f"[green]Renamed source:[/green] {src.id}")
             console.print(f"[bold]New title:[/bold] {src.title}")
 
@@ -299,13 +316,18 @@ def source_rename(ctx, source_id, new_title, notebook_id, client_auth):
 )
 @with_client
 def source_refresh(ctx, source_id, notebook_id, client_auth):
-    """Refresh a URL/Drive source."""
+    """Refresh a URL/Drive source.
+
+    SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            # Resolve partial ID to full ID
+            resolved_id = await resolve_source_id(client, nb_id, source_id)
             with console.status("Refreshing source..."):
-                src = await client.sources.refresh(nb_id, source_id)
+                src = await client.sources.refresh(nb_id, resolved_id)
 
             if src:
                 console.print(f"[green]Source refreshed:[/green] {src.id}")
