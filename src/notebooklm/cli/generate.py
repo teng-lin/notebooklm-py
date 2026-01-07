@@ -12,6 +12,8 @@ Commands:
     report       Generate report
 """
 
+from typing import Any, Optional
+
 import click
 
 from ..client import NotebookLMClient
@@ -27,6 +29,7 @@ from ..types import (
     SlideDeckFormat,
     SlideDeckLength,
     ReportFormat,
+    GenerationStatus,
 )
 from .helpers import (
     console,
@@ -35,6 +38,121 @@ from .helpers import (
     json_output_response,
     json_error_response,
 )
+
+
+async def handle_generation_result(
+    client: NotebookLMClient,
+    notebook_id: str,
+    result: Any,
+    artifact_type: str,
+    wait: bool = False,
+    json_output: bool = False,
+    timeout: float = 300.0,
+) -> Optional[GenerationStatus]:
+    """Handle generation result with optional waiting and output formatting.
+
+    Consolidates common pattern across all generate commands:
+    - Check for None/failed result
+    - Optionally wait for completion
+    - Output status in JSON or console format
+
+    Args:
+        client: The NotebookLM client.
+        notebook_id: The notebook ID.
+        result: The generation result from artifacts API.
+        artifact_type: Display name for the artifact type (e.g., "audio", "video").
+        wait: Whether to wait for completion.
+        json_output: Whether to output as JSON.
+        timeout: Timeout for waiting (default: 300s).
+
+    Returns:
+        Final GenerationStatus, or None if generation failed.
+    """
+    # Handle failed generation
+    if not result:
+        if json_output:
+            json_error_response(
+                "GENERATION_FAILED",
+                f"{artifact_type.title()} generation failed",
+            )
+        else:
+            console.print(
+                f"[red]{artifact_type.title()} generation failed "
+                "(Google may be rate limiting)[/red]"
+            )
+        return None
+
+    # Extract task_id from various result formats
+    if isinstance(result, GenerationStatus):
+        task_id = result.task_id
+        status = result
+    elif isinstance(result, dict):
+        task_id = result.get("artifact_id") or result.get("task_id")
+        status = result
+    elif isinstance(result, list) and len(result) > 0:
+        task_id = result[0]
+        status = result
+    else:
+        task_id = None
+        status = result
+
+    # Wait for completion if requested
+    if wait and task_id:
+        if not json_output:
+            console.print(
+                f"[yellow]Generating {artifact_type}...[/yellow] Task: {task_id}"
+            )
+        status = await client.artifacts.wait_for_completion(
+            notebook_id, task_id, timeout=timeout
+        )
+
+    # Output status
+    _output_generation_status(status, artifact_type, json_output)
+
+    return status if isinstance(status, GenerationStatus) else None
+
+
+def _output_generation_status(
+    status: Any, artifact_type: str, json_output: bool
+) -> None:
+    """Output generation status in appropriate format."""
+    if json_output:
+        if hasattr(status, "is_complete") and status.is_complete:
+            json_output_response({
+                "artifact_id": getattr(status, "task_id", None),
+                "status": "completed",
+                "url": getattr(status, "url", None),
+            })
+        elif hasattr(status, "is_failed") and status.is_failed:
+            json_error_response(
+                "GENERATION_FAILED",
+                getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
+            )
+        else:
+            # Handle various result formats: GenerationStatus, dict, or list
+            artifact_id = (
+                getattr(status, "task_id", None)
+                or (status.get("artifact_id") if isinstance(status, dict) else None)
+                or (status[0] if isinstance(status, list) and len(status) > 0 else None)
+            )
+            json_output_response({"artifact_id": artifact_id, "status": "pending"})
+    else:
+        if hasattr(status, "is_complete") and status.is_complete:
+            url = getattr(status, "url", None)
+            if url:
+                console.print(f"[green]{artifact_type.title()} ready:[/green] {url}")
+            else:
+                console.print(f"[green]{artifact_type.title()} ready[/green]")
+        elif hasattr(status, "is_failed") and status.is_failed:
+            console.print(f"[red]Failed:[/red] {getattr(status, 'error', 'Unknown error')}")
+        else:
+            # Extract task_id for cleaner display
+            task_id = (
+                getattr(status, "task_id", None)
+                or (status.get("artifact_id") if isinstance(status, dict) else None)
+                or (status[0] if isinstance(status, list) and len(status) > 0 else None)
+            )
+            console.print(f"[yellow]Started:[/yellow] {task_id or status}")
 
 
 @click.group()
@@ -133,51 +251,9 @@ def generate_audio(
                 audio_format=format_map[audio_format],
                 audio_length=length_map[audio_length],
             )
-
-            if not result:
-                if json_output:
-                    json_error_response("GENERATION_FAILED", "Audio generation failed")
-                else:
-                    console.print("[red]Audio generation failed[/red]")
-                return
-
-            if wait:
-                if not json_output:
-                    console.print(
-                        f"[yellow]Generating audio...[/yellow] Task: {result.get('artifact_id')}"
-                    )
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, result["artifact_id"], poll_interval=10.0
-                )
-            else:
-                status = result
-
-            if json_output:
-                if hasattr(status, "is_complete") and status.is_complete:
-                    data = {
-                        "artifact_id": status.artifact_id
-                        if hasattr(status, "artifact_id")
-                        else None,
-                        "status": "completed",
-                        "url": status.url,
-                    }
-                    json_output_response(data)
-                elif hasattr(status, "is_failed") and status.is_failed:
-                    json_error_response(
-                        "GENERATION_FAILED", status.error or "Audio generation failed"
-                    )
-                else:
-                    artifact_id = (
-                        status.get("artifact_id") if isinstance(status, dict) else None
-                    )
-                    json_output_response({"artifact_id": artifact_id, "status": "pending"})
-            else:
-                if hasattr(status, "is_complete") and status.is_complete:
-                    console.print(f"[green]Audio ready:[/green] {status.url}")
-                elif hasattr(status, "is_failed") and status.is_failed:
-                    console.print(f"[red]Failed:[/red] {status.error}")
-                else:
-                    console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(
+                client, nb_id, result, "audio", wait, json_output
+            )
 
     return _run()
 
@@ -254,51 +330,9 @@ def generate_video(
                 video_format=format_map[video_format],
                 video_style=style_map[style],
             )
-
-            if not result:
-                if json_output:
-                    json_error_response("GENERATION_FAILED", "Video generation failed")
-                else:
-                    console.print("[red]Video generation failed[/red]")
-                return
-
-            if wait and result.get("artifact_id"):
-                if not json_output:
-                    console.print(
-                        f"[yellow]Generating video...[/yellow] Task: {result.get('artifact_id')}"
-                    )
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, result["artifact_id"], poll_interval=10.0, timeout=600.0
-                )
-            else:
-                status = result
-
-            if json_output:
-                if hasattr(status, "is_complete") and status.is_complete:
-                    data = {
-                        "artifact_id": status.artifact_id
-                        if hasattr(status, "artifact_id")
-                        else None,
-                        "status": "completed",
-                        "url": status.url,
-                    }
-                    json_output_response(data)
-                elif hasattr(status, "is_failed") and status.is_failed:
-                    json_error_response(
-                        "GENERATION_FAILED", status.error or "Video generation failed"
-                    )
-                else:
-                    artifact_id = (
-                        status.get("artifact_id") if isinstance(status, dict) else None
-                    )
-                    json_output_response({"artifact_id": artifact_id, "status": "pending"})
-            else:
-                if hasattr(status, "is_complete") and status.is_complete:
-                    console.print(f"[green]Video ready:[/green] {status.url}")
-                elif hasattr(status, "is_failed") and status.is_failed:
-                    console.print(f"[red]Failed:[/red] {status.error}")
-                else:
-                    console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(
+                client, nb_id, result, "video", wait, json_output, timeout=600.0
+            )
 
     return _run()
 
@@ -355,28 +389,12 @@ def generate_slide_deck(
                 nb_id,
                 language=language,
                 instructions=description or None,
-                slide_deck_format=format_map[deck_format],
-                slide_deck_length=length_map[deck_length],
+                slide_format=format_map[deck_format],
+                slide_length=length_map[deck_length],
             )
-
-            if not result:
-                console.print("[red]Slide deck generation failed[/red]")
-                return
-
-            if wait and result.get("artifact_id"):
-                console.print(
-                    f"[yellow]Generating slide deck...[/yellow] Task: {result.get('artifact_id')}"
-                )
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, result["artifact_id"], poll_interval=10.0
-                )
-            else:
-                status = result
-
-            if hasattr(status, "is_complete") and status.is_complete:
-                console.print(f"[green]Slide deck ready:[/green] {status.url}")
-            else:
-                console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(
+                client, nb_id, result, "slide deck", wait
+            )
 
     return _run()
 
@@ -428,30 +446,7 @@ def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait, cli
                 quantity=quantity_map[quantity],
                 difficulty=difficulty_map[difficulty],
             )
-
-            if not result:
-                console.print(
-                    "[red]Quiz generation failed (Google may be rate limiting)[/red]"
-                )
-                return
-
-            task_id = result.get("artifact_id") or (
-                result[0] if isinstance(result, list) else None
-            )
-            if wait and task_id:
-                console.print("[yellow]Generating quiz...[/yellow]")
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, task_id, poll_interval=5.0
-                )
-            else:
-                status = result
-
-            if hasattr(status, "is_complete") and status.is_complete:
-                console.print("[green]Quiz ready[/green]")
-            elif hasattr(status, "is_failed") and status.is_failed:
-                console.print(f"[red]Failed:[/red] {status.error}")
-            else:
-                console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(client, nb_id, result, "quiz", wait)
 
     return _run()
 
@@ -503,30 +498,7 @@ def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wai
                 quantity=quantity_map[quantity],
                 difficulty=difficulty_map[difficulty],
             )
-
-            if not result:
-                console.print(
-                    "[red]Flashcard generation failed (Google may be rate limiting)[/red]"
-                )
-                return
-
-            task_id = result.get("artifact_id") or (
-                result[0] if isinstance(result, list) else None
-            )
-            if wait and task_id:
-                console.print("[yellow]Generating flashcards...[/yellow]")
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, task_id, poll_interval=5.0
-                )
-            else:
-                status = result
-
-            if hasattr(status, "is_complete") and status.is_complete:
-                console.print("[green]Flashcards ready[/green]")
-            elif hasattr(status, "is_failed") and status.is_failed:
-                console.print(f"[red]Failed:[/red] {status.error}")
-            else:
-                console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(client, nb_id, result, "flashcards", wait)
 
     return _run()
 
@@ -586,30 +558,7 @@ def generate_infographic(
                 orientation=orientation_map[orientation],
                 detail_level=detail_map[detail],
             )
-
-            if not result:
-                console.print(
-                    "[red]Infographic generation failed (Google may be rate limiting)[/red]"
-                )
-                return
-
-            task_id = result.get("artifact_id") or (
-                result[0] if isinstance(result, list) else None
-            )
-            if wait and task_id:
-                console.print("[yellow]Generating infographic...[/yellow]")
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, task_id, poll_interval=5.0
-                )
-            else:
-                status = result
-
-            if hasattr(status, "is_complete") and status.is_complete:
-                console.print("[green]Infographic ready[/green]")
-            elif hasattr(status, "is_failed") and status.is_failed:
-                console.print(f"[red]Failed:[/red] {status.error}")
-            else:
-                console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(client, nb_id, result, "infographic", wait)
 
     return _run()
 
@@ -643,30 +592,7 @@ def generate_data_table(ctx, description, notebook_id, language, wait, client_au
             result = await client.artifacts.generate_data_table(
                 nb_id, language=language, instructions=description
             )
-
-            if not result:
-                console.print(
-                    "[red]Data table generation failed (Google may be rate limiting)[/red]"
-                )
-                return
-
-            task_id = result.get("artifact_id") or (
-                result[0] if isinstance(result, list) else None
-            )
-            if wait and task_id:
-                console.print("[yellow]Generating data table...[/yellow]")
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, task_id, poll_interval=5.0
-                )
-            else:
-                status = result
-
-            if hasattr(status, "is_complete") and status.is_complete:
-                console.print("[green]Data table ready[/green]")
-            elif hasattr(status, "is_failed") and status.is_failed:
-                console.print(f"[red]Failed:[/red] {status.error}")
-            else:
-                console.print(f"[yellow]Started:[/yellow] {status}")
+            await handle_generation_result(client, nb_id, result, "data table", wait)
 
     return _run()
 
@@ -772,30 +698,6 @@ def generate_report_cmd(ctx, description, report_format, notebook_id, wait, clie
                 report_format=report_format_enum,
                 custom_prompt=custom_prompt,
             )
-
-            if not result:
-                console.print(
-                    "[red]Report generation failed (Google may be rate limiting)[/red]"
-                )
-                return
-
-            task_id = result.get("artifact_id")
-            if wait and task_id:
-                console.print(f"[yellow]Generating {format_display}...[/yellow]")
-                status = await client.artifacts.wait_for_completion(
-                    nb_id, task_id, poll_interval=5.0
-                )
-            else:
-                status = result
-
-            if hasattr(status, "is_complete") and status.is_complete:
-                console.print(f"[green]{format_display.title()} ready[/green]")
-            elif hasattr(status, "is_failed") and status.is_failed:
-                console.print(f"[red]Failed:[/red] {status.error}")
-            else:
-                artifact_id = (
-                    status.get("artifact_id") if isinstance(status, dict) else None
-                )
-                console.print(f"[yellow]Started:[/yellow] {artifact_id or status}")
+            await handle_generation_result(client, nb_id, result, format_display, wait)
 
     return _run()

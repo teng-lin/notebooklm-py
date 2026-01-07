@@ -169,6 +169,24 @@ def set_current_conversation(conversation_id: str | None):
         pass
 
 
+def validate_id(entity_id: str, entity_name: str = "ID") -> str:
+    """Validate and normalize an entity ID.
+
+    Args:
+        entity_id: The ID to validate
+        entity_name: Name for error messages (e.g., "notebook", "source")
+
+    Returns:
+        Stripped ID
+
+    Raises:
+        click.ClickException: If ID is empty or whitespace-only
+    """
+    if not entity_id or not entity_id.strip():
+        raise click.ClickException(f"{entity_name} ID cannot be empty")
+    return entity_id.strip()
+
+
 def require_notebook(notebook_id: str | None) -> str:
     """Get notebook ID from argument or context, raise if neither.
 
@@ -176,16 +194,17 @@ def require_notebook(notebook_id: str | None) -> str:
         notebook_id: Optional notebook ID from command argument
 
     Returns:
-        Notebook ID (from argument or context)
+        Notebook ID (from argument or context), validated and stripped
 
     Raises:
         SystemExit: If no notebook ID available
+        click.ClickException: If notebook ID is empty/whitespace
     """
     if notebook_id:
-        return notebook_id
+        return validate_id(notebook_id, "Notebook")
     current = get_current_notebook()
     if current:
-        return current
+        return validate_id(current, "Notebook")
     console.print(
         "[red]No notebook specified. Use 'notebooklm use <id>' to set context or provide notebook_id.[/red]"
     )
@@ -213,10 +232,10 @@ async def _resolve_partial_id(
         Full ID of the matched item
 
     Raises:
-        click.ClickException: If no match or ambiguous match
+        click.ClickException: If ID is empty, no match, or ambiguous match
     """
-    if not partial_id:
-        return partial_id
+    # Validate and normalize the ID
+    partial_id = validate_id(partial_id, entity_name)
 
     # Skip resolution for IDs that look complete (20+ chars)
     if len(partial_id) >= 20:

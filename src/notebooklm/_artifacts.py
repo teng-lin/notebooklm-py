@@ -1126,16 +1126,22 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         task_id: str,
-        poll_interval: float = 2.0,
+        initial_interval: float = 2.0,
+        max_interval: float = 10.0,
         timeout: float = 300.0,
+        poll_interval: Optional[float] = None,  # Deprecated, use initial_interval
     ) -> GenerationStatus:
         """Wait for a generation task to complete.
+
+        Uses exponential backoff for polling to reduce API load.
 
         Args:
             notebook_id: The notebook ID.
             task_id: The task/artifact ID to wait for.
-            poll_interval: Seconds between status checks.
+            initial_interval: Initial seconds between status checks.
+            max_interval: Maximum seconds between status checks.
             timeout: Maximum seconds to wait.
+            poll_interval: Deprecated. Use initial_interval instead.
 
         Returns:
             Final GenerationStatus.
@@ -1143,7 +1149,18 @@ class ArtifactsAPI:
         Raises:
             TimeoutError: If task doesn't complete within timeout.
         """
+        # Backward compatibility: poll_interval overrides initial_interval
+        if poll_interval is not None:
+            import warnings
+            warnings.warn(
+                "poll_interval is deprecated, use initial_interval instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            initial_interval = poll_interval
+
         start_time = asyncio.get_running_loop().time()
+        current_interval = initial_interval
 
         while True:
             status = await self.poll_status(notebook_id, task_id)
@@ -1151,10 +1168,18 @@ class ArtifactsAPI:
             if status.is_complete or status.is_failed:
                 return status
 
-            if asyncio.get_running_loop().time() - start_time > timeout:
+            elapsed = asyncio.get_running_loop().time() - start_time
+            if elapsed > timeout:
                 raise TimeoutError(f"Task {task_id} timed out after {timeout}s")
 
-            await asyncio.sleep(poll_interval)
+            # Clamp sleep duration to respect timeout
+            remaining_time = timeout - elapsed
+            sleep_duration = min(current_interval, remaining_time)
+            if sleep_duration > 0:
+                await asyncio.sleep(sleep_duration)
+
+            # Exponential backoff: double the interval up to max_interval
+            current_interval = min(current_interval * 2, max_interval)
 
     # =========================================================================
     # Export Operations
