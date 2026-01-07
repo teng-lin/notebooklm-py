@@ -9,10 +9,15 @@ class RPCError(Exception):
     """Raised when RPC call returns an error."""
 
     def __init__(
-        self, message: str, rpc_id: Optional[str] = None, code: Optional[Any] = None
+        self,
+        message: str,
+        rpc_id: Optional[str] = None,
+        code: Optional[Any] = None,
+        found_ids: Optional[list[str]] = None,
     ):
         self.rpc_id = rpc_id
         self.code = code
+        self.found_ids = found_ids or []
         super().__init__(message)
 
 
@@ -95,6 +100,28 @@ def parse_chunked_response(response: str) -> list[Any]:
     return chunks
 
 
+def collect_rpc_ids(chunks: list[Any]) -> list[str]:
+    """Collect all RPC IDs found in response chunks.
+
+    Useful for debugging when expected RPC ID is not found.
+    """
+    found_ids = []
+    for chunk in chunks:
+        if not isinstance(chunk, list):
+            continue
+
+        items = chunk if (chunk and isinstance(chunk[0], list)) else [chunk]
+
+        for item in items:
+            if not isinstance(item, list) or len(item) < 2:
+                continue
+
+            if item[0] in ("wrb.fr", "er") and isinstance(item[1], str):
+                found_ids.append(item[1])
+
+    return found_ids
+
+
 def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
     """Extract result data for a specific RPC ID from chunks."""
     for chunk in chunks:
@@ -129,7 +156,9 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
     return None
 
 
-def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) -> Any:
+def decode_response(
+    raw_response: str, rpc_id: str, allow_null: bool = False, debug: bool = False
+) -> Any:
     """
     Complete decode pipeline: strip prefix -> parse chunks -> extract result.
 
@@ -137,6 +166,7 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
         raw_response: Raw response text from batchexecute
         rpc_id: RPC method ID to extract result for
         allow_null: If True, return None instead of raising error when result is null
+        debug: If True, print debug information about found RPC IDs
 
     Returns:
         Decoded result data
@@ -146,9 +176,26 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
     """
     cleaned = strip_anti_xssi(raw_response)
     chunks = parse_chunked_response(cleaned)
+
+    # Collect all RPC IDs for debugging
+    found_ids = collect_rpc_ids(chunks)
+
+    if debug:
+        print(f"DEBUG: Looking for RPC ID: {rpc_id}")
+        print(f"DEBUG: Found RPC IDs in response: {found_ids}")
+
     result = extract_rpc_result(chunks, rpc_id)
 
     if result is None and not allow_null:
+        if found_ids and rpc_id not in found_ids:
+            # Method ID likely changed - provide actionable error
+            raise RPCError(
+                f"No result found for RPC ID '{rpc_id}'. "
+                f"Response contains IDs: {found_ids}. "
+                f"The RPC method ID may have changed.",
+                rpc_id=rpc_id,
+                found_ids=found_ids,
+            )
         raise RPCError(f"No result found for RPC ID: {rpc_id}", rpc_id=rpc_id)
 
     return result

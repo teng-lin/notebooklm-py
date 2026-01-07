@@ -26,6 +26,7 @@ from .decoder import (
     strip_anti_xssi,
     parse_chunked_response,
     extract_rpc_result,
+    collect_rpc_ids,
     decode_response,
     RPCError,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "strip_anti_xssi",
     "parse_chunked_response",
     "extract_rpc_result",
+    "collect_rpc_ids",
     "decode_response",
     "RPCError",
 ]

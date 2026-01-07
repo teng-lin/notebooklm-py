@@ -1,9 +1,13 @@
 """Core infrastructure for NotebookLM API client."""
 
+import os
 import httpx
 from collections import OrderedDict
 from typing import Any, Optional
 from urllib.parse import urlencode
+
+# Enable RPC debug output via environment variable
+DEBUG_RPC = os.environ.get("NOTEBOOKLM_DEBUG_RPC", "").lower() in ("1", "true", "yes")
 
 from .auth import AuthTokens
 from .rpc import (
@@ -149,7 +153,9 @@ class ClientCore:
             ) from e
 
         try:
-            return decode_response(response.text, method.value, allow_null=allow_null)
+            return decode_response(
+                response.text, method.value, allow_null=allow_null, debug=DEBUG_RPC
+            )
         except RPCError:
             # Re-raise RPCError as-is (already has context from decoder)
             raise
