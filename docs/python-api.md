@@ -181,6 +181,12 @@ class NotebookLMClient:
 | `delete(notebook_id)` | `notebook_id: str` | `bool` | Delete a notebook |
 | `rename(notebook_id, new_title)` | `notebook_id: str, new_title: str` | `Notebook` | Rename a notebook |
 | `get_description(notebook_id)` | `notebook_id: str` | `NotebookDescription` | Get AI summary and topics |
+| `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
+| `share(notebook_id, settings=None)` | `notebook_id: str, settings: dict` | `Any` | Share notebook with settings |
+| `get_analytics(notebook_id)` | `notebook_id: str` | `Any` | Get notebook analytics/metadata |
+| `list_featured(page_size=10, page_token=None)` | `page_size: int, page_token: str` | `Any` | List featured/public notebooks |
+| `remove_from_recent(notebook_id)` | `notebook_id: str` | `None` | Remove from recently viewed |
+| `get_raw(notebook_id)` | `notebook_id: str` | `Any` | Get raw API response data |
 
 **Example:**
 ```python
@@ -193,12 +199,29 @@ for nb in notebooks:
 nb = await client.notebooks.create("Draft")
 nb = await client.notebooks.rename(nb.id, "Final Version")
 
-# Get AI-generated description
+# Get AI-generated description (parsed with suggested topics)
 desc = await client.notebooks.get_description(nb.id)
 print(desc.summary)
 for topic in desc.suggested_topics:
-    print(f"  - {topic.title}")
+    print(f"  - {topic.question}")
+
+# Get raw summary text (unparsed)
+summary = await client.notebooks.get_summary(nb.id)
+print(summary)
+
+# Share a notebook
+await client.notebooks.share(nb.id, settings={"public": True})
+
+# Get analytics for a notebook
+analytics = await client.notebooks.get_analytics(nb.id)
+
+# Browse featured/public notebooks
+featured = await client.notebooks.list_featured(page_size=20)
 ```
+
+**get_summary vs get_description:**
+- `get_summary()` returns the raw summary text string
+- `get_description()` returns a `NotebookDescription` object with the parsed summary and a list of `SuggestedTopic` objects for suggested questions
 
 ---
 
@@ -310,6 +333,46 @@ slide_paths = await client.artifacts.download_slide_deck(nb_id, "./slides/")
 - Raises `ValueError` if no completed artifact is found
 - `download_slide_deck` creates the output directory if it doesn't exist
 - Some URLs require browser-based download (handled automatically)
+
+#### Export Methods
+
+Export artifacts to Google Docs or Google Sheets.
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `export_report(notebook_id, artifact_id, title="Export", export_type=1)` | `str, str, str, int` | `Any` | Export report to Google Docs |
+| `export_data_table(notebook_id, artifact_id, title="Export")` | `str, str, str` | `Any` | Export data table to Google Sheets |
+| `export(notebook_id, artifact_id=None, content=None, title="Export", export_type=1)` | `str, str, str, str, int` | `Any` | Generic export to Docs/Sheets |
+
+**Export Types:**
+- `export_type=1`: Export to Google Docs
+- `export_type=2`: Export to Google Sheets
+
+```python
+# Export a report to Google Docs
+result = await client.artifacts.export_report(
+    nb_id,
+    artifact_id="report_123",
+    title="My Briefing Doc"
+)
+# result contains the Google Docs URL
+
+# Export a data table to Google Sheets
+result = await client.artifacts.export_data_table(
+    nb_id,
+    artifact_id="table_456",
+    title="Research Data"
+)
+# result contains the Google Sheets URL
+
+# Generic export (e.g., export any artifact to Docs)
+result = await client.artifacts.export(
+    nb_id,
+    artifact_id="artifact_789",
+    title="Exported Content",
+    export_type=1  # 1=Docs, 2=Sheets
+)
+```
 
 **Generation Methods:**
 
@@ -476,11 +539,43 @@ print(f"Imported {len(imported)} sources")
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
-| `list(notebook_id)` | `str` | `list[Note]` | List notes |
-| `create(notebook_id, content, title=None)` | `str, str, str` | `Note` | Create note |
-| `get(notebook_id, note_id)` | `str, str` | `Note` | Get note |
-| `update(notebook_id, note_id, content, title=None)` | `str, str, str, str` | `Note` | Update note |
+| `list(notebook_id)` | `str` | `list[Note]` | List text notes (excludes mind maps) |
+| `create(notebook_id, title="New Note", content="")` | `str, str, str` | `Note` | Create note |
+| `get(notebook_id, note_id)` | `str, str` | `Optional[Note]` | Get note by ID |
+| `update(notebook_id, note_id, content, title)` | `str, str, str, str` | `None` | Update note content and title |
 | `delete(notebook_id, note_id)` | `str, str` | `bool` | Delete note |
+| `list_mind_maps(notebook_id)` | `str` | `list[Any]` | List mind maps in the notebook |
+| `delete_mind_map(notebook_id, mind_map_id)` | `str, str` | `bool` | Delete a mind map |
+
+**Example:**
+```python
+# Create and manage notes
+note = await client.notes.create(nb_id, title="Meeting Notes", content="Discussion points...")
+notes = await client.notes.list(nb_id)
+
+# Update a note
+await client.notes.update(nb_id, note.id, "Updated content", "New Title")
+
+# Delete a note
+await client.notes.delete(nb_id, note.id)
+```
+
+**Mind Maps:**
+
+Mind maps are stored internally using the same structure as notes but contain JSON data with hierarchical node information. The `list()` method excludes mind maps automatically, while `list_mind_maps()` returns only mind maps.
+
+```python
+# List all mind maps in a notebook
+mind_maps = await client.notes.list_mind_maps(nb_id)
+for mm in mind_maps:
+    mm_id = mm[0]  # Mind map ID is at index 0
+    print(f"Mind map: {mm_id}")
+
+# Delete a mind map
+await client.notes.delete_mind_map(nb_id, mind_map_id)
+```
+
+**Note:** Mind maps are detected by checking if the content contains `'"children":' or `'"nodes":'` keys, which indicate JSON mind map data structure.
 
 ---
 
@@ -633,7 +728,18 @@ class ChatResponseLength(Enum):
     DEFAULT = 1
     LONGER = 4
     SHORTER = 5
+
+class ChatMode(Enum):
+    """Predefined chat modes for common use cases (service-level enum)."""
+    DEFAULT = "default"          # General purpose
+    LEARNING_GUIDE = "learning_guide"  # Educational focus
+    CONCISE = "concise"          # Brief responses
+    DETAILED = "detailed"        # Verbose responses
 ```
+
+**ChatGoal vs ChatMode:**
+- `ChatGoal` is an RPC-level enum used with `client.chat.configure()` for low-level API configuration
+- `ChatMode` is a service-level enum providing predefined configurations for common use cases
 
 ---
 
