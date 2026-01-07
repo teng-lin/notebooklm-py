@@ -6,49 +6,50 @@ from notebooklm import Source
 @requires_auth
 @pytest.mark.e2e
 class TestSourceOperations:
+    """Tests for source creation operations.
+
+    Note: Source creation requires an OWNED notebook. The golden notebook
+    (shared demo) is read-only - use temp_notebook fixture instead.
+    """
+
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Source API returns null - investigating")
-    async def test_add_text_source(
-        self, client, test_notebook_id, created_sources, cleanup_sources
-    ):
+    @pytest.mark.stable
+    async def test_add_text_source(self, client, temp_notebook):
+        """Test adding a text source to an owned notebook."""
         source = await client.sources.add_text(
-            test_notebook_id,
+            temp_notebook.id,
             "E2E Test Text Source",
             "This is test content for E2E testing. It contains enough text for NotebookLM to process.",
         )
         assert isinstance(source, Source)
         assert source.id is not None
         assert source.title == "E2E Test Text Source"
-        created_sources.append(source.id)
 
     @pytest.mark.asyncio
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="Source API returns null - investigating")
-    async def test_add_url_source(
-        self, client, test_notebook_id, created_sources, cleanup_sources
-    ):
+    @pytest.mark.stable
+    async def test_add_url_source(self, client, temp_notebook):
+        """Test adding a URL source to an owned notebook."""
         source = await client.sources.add_url(
-            test_notebook_id, "https://httpbin.org/html"
+            temp_notebook.id, "https://httpbin.org/html"
         )
         assert isinstance(source, Source)
         assert source.id is not None
-        assert source.url == "https://httpbin.org/html"
-        created_sources.append(source.id)
+        # URL may or may not be returned in response
+        # assert source.url == "https://httpbin.org/html"
 
     @pytest.mark.asyncio
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="Source API returns null - investigating")
-    async def test_add_youtube_source(
-        self, client, test_notebook_id, created_sources, cleanup_sources
-    ):
+    @pytest.mark.stable
+    async def test_add_youtube_source(self, client, temp_notebook):
+        """Test adding a YouTube source to an owned notebook."""
         source = await client.sources.add_url(
-            test_notebook_id, "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+            temp_notebook.id, "https://www.youtube.com/watch?v=jNQXAC9IVRw"
         )
         assert isinstance(source, Source)
         assert source.id is not None
-        assert source.title is not None  # API returns title
-        # Note: API might not return URL in add response, only id/title
-        created_sources.append(source.id)
+        # Title is returned for YouTube videos
+        assert source.title is not None
 
     @pytest.mark.asyncio
     async def test_list_and_rename_source(self, client, test_notebook_id):

@@ -1,6 +1,7 @@
 """E2E test fixtures and configuration."""
 
 import os
+import warnings
 import pytest
 import httpx
 from typing import AsyncGenerator
@@ -13,6 +14,17 @@ from notebooklm.auth import (
     AuthTokens,
 )
 from notebooklm import NotebookLMClient
+
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Delay constants for rate limiting and polling
+RATE_LIMIT_DELAY = 3.0  # Delay after tests to avoid rate limits
+SOURCE_PROCESSING_DELAY = 2.0  # Delay for source processing
+POLL_INTERVAL = 2.0  # Interval between poll attempts
+POLL_TIMEOUT = 60.0  # Max time to wait for operations
 
 
 def has_auth() -> bool:
@@ -29,12 +41,18 @@ requires_auth = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
-def auth_cookies():
+# =============================================================================
+# Auth Fixtures (session-scoped for efficiency)
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def auth_cookies() -> dict[str, str]:
+    """Load auth cookies from storage (session-scoped)."""
     return load_auth_from_storage()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 async def auth_tokens(auth_cookies) -> AuthTokens:
     cookie_header = "; ".join(f"{k}={v}" for k, v in auth_cookies.items())
     async with httpx.AsyncClient() as http:
@@ -73,14 +91,15 @@ def created_notebooks():
 
 @pytest.fixture
 async def cleanup_notebooks(created_notebooks, auth_tokens):
+    """Cleanup created notebooks after test."""
     yield
     if created_notebooks:
         async with NotebookLMClient(auth_tokens) as client:
             for nb_id in created_notebooks:
                 try:
                     await client.notebooks.delete(nb_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    warnings.warn(f"Failed to cleanup notebook {nb_id}: {e}")
 
 
 @pytest.fixture
@@ -91,14 +110,15 @@ def created_sources():
 
 @pytest.fixture
 async def cleanup_sources(created_sources, test_notebook_id, auth_tokens):
+    """Cleanup created sources after test."""
     yield
     if created_sources:
         async with NotebookLMClient(auth_tokens) as client:
             for src_id in created_sources:
                 try:
                     await client.sources.delete(test_notebook_id, src_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    warnings.warn(f"Failed to cleanup source {src_id}: {e}")
 
 
 @pytest.fixture
@@ -109,14 +129,15 @@ def created_artifacts():
 
 @pytest.fixture
 async def cleanup_artifacts(created_artifacts, test_notebook_id, auth_tokens):
+    """Cleanup created artifacts after test."""
     yield
     if created_artifacts:
         async with NotebookLMClient(auth_tokens) as client:
             for art_id in created_artifacts:
                 try:
                     await client.artifacts.delete(test_notebook_id, art_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    warnings.warn(f"Failed to cleanup artifact {art_id}: {e}")
 
 
 # =============================================================================
@@ -170,6 +191,7 @@ async def generation_notebook(auth_tokens) -> AsyncGenerator:
     Created once per test session with a source added.
     Cleaned up at session end.
     """
+    import asyncio
     from uuid import uuid4
 
     async with NotebookLMClient(auth_tokens) as client:
@@ -181,9 +203,73 @@ async def generation_notebook(auth_tokens) -> AsyncGenerator:
             "It contains enough text to generate various artifacts like "
             "audio overviews, quizzes, and summaries."
         )
+        await asyncio.sleep(SOURCE_PROCESSING_DELAY)
         yield notebook
         # Cleanup
         try:
             await client.notebooks.delete(notebook.id)
-        except Exception:
-            pass
+        except Exception as e:
+            warnings.warn(f"Failed to cleanup generation_notebook {notebook.id}: {e}")
+
+
+# =============================================================================
+# Test Infrastructure Fixtures (for tiered testing)
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+async def test_workspace(auth_tokens) -> AsyncGenerator:
+    """Session-scoped workspace notebook for all E2E tests.
+
+    Creates a single notebook at session start with test content.
+    All tests can share this workspace to avoid creating/deleting
+    notebooks repeatedly. Cleaned up at session end.
+
+    Note: Tests using this fixture MUST NOT modify the workspace state
+    (sources, settings) as it's shared across all tests.
+    """
+    import asyncio
+    from uuid import uuid4
+
+    async with NotebookLMClient(auth_tokens) as client:
+        notebook = await client.notebooks.create(f"E2E-Workspace-{uuid4().hex[:8]}")
+
+        # Add a text source so the notebook has content for operations
+        await client.sources.add_text(
+            notebook.id,
+            title="Test Content",
+            content=(
+                "This is comprehensive test content for E2E testing. "
+                "It covers various topics including artificial intelligence, "
+                "machine learning, data science, and software engineering. "
+                "The content is designed to be substantial enough for "
+                "generating artifacts like audio overviews, quizzes, "
+                "flashcards, reports, and other NotebookLM features."
+            ),
+        )
+
+        # Delay to ensure source is processed
+        await asyncio.sleep(SOURCE_PROCESSING_DELAY)
+
+        yield notebook
+
+        # Cleanup at session end
+        try:
+            await client.notebooks.delete(notebook.id)
+        except Exception as e:
+            warnings.warn(f"Failed to cleanup test_workspace {notebook.id}: {e}")
+
+
+@pytest.fixture
+async def rate_limit_aware() -> AsyncGenerator[None, None]:
+    """Add delay after test to avoid rate limiting.
+
+    Use this fixture in generation tests to add breathing room
+    between API calls. Yields before test, sleeps after.
+    """
+    import asyncio
+
+    yield  # Run the test
+
+    # Add delay after test to avoid rate limits
+    await asyncio.sleep(RATE_LIMIT_DELAY)
