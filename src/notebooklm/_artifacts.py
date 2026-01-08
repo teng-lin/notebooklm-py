@@ -950,17 +950,17 @@ class ArtifactsAPI:
             raise ValueError(f"Failed to parse infographic structure: {e}")
 
     async def download_slide_deck(
-        self, notebook_id: str, output_dir: str, artifact_id: Optional[str] = None
-    ) -> List[str]:
-        """Download a slide deck as images to a directory.
+        self, notebook_id: str, output_path: str, artifact_id: Optional[str] = None
+    ) -> str:
+        """Download a slide deck as a PDF file.
 
         Args:
             notebook_id: The notebook ID.
-            output_dir: Directory to save slide images (PNGs).
+            output_path: Path to save the PDF file.
             artifact_id: Specific artifact ID, or uses first completed slide deck.
 
         Returns:
-            List of paths to downloaded images.
+            The output path.
         """
         artifacts_data = await self._list_raw(notebook_id)
 
@@ -982,56 +982,24 @@ class ArtifactsAPI:
         if not slide_art:
             raise ValueError("No completed slide deck found.")
 
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        downloaded_paths = []
-
+        # Extract PDF URL from metadata at index 16, position 3
+        # Structure: artifact[16] = [config, title, slides_list, pdf_url]
         try:
-            metadata = None
-            for item in reversed(slide_art):
-                if (
-                    isinstance(item, list)
-                    and len(item) > 2
-                    and isinstance(item[0], list)
-                    and len(item[0]) > 1
-                    and isinstance(item[0][1], str)
-                    and isinstance(item[2], list)
-                    and len(item[2]) > 0
-                    and isinstance(item[2][0], list)
-                ):
-                    metadata = item
-                    break
+            if len(slide_art) <= 16:
+                raise ValueError("Invalid slide deck artifact structure.")
 
-            if not metadata:
-                raise ValueError("Could not find slides metadata.")
+            metadata = slide_art[16]
+            if not isinstance(metadata, list) or len(metadata) < 4:
+                raise ValueError("Invalid slide deck metadata structure.")
 
-            slides_list = metadata[2]
-            if not isinstance(slides_list, list):
-                raise ValueError("Invalid slides list structure.")
+            pdf_url = metadata[3]
+            if not isinstance(pdf_url, str) or not pdf_url.startswith("http"):
+                raise ValueError("Could not find PDF download URL.")
 
-            urls_and_paths = []
-            for i, slide in enumerate(slides_list):
-                if (
-                    isinstance(slide, list)
-                    and len(slide) > 0
-                    and isinstance(slide[0], list)
-                    and len(slide[0]) > 0
-                ):
-                    url = slide[0][0]
-                    if isinstance(url, str) and url.startswith("http"):
-                        filename = f"slide_{i + 1:03d}.png"
-                        path = os.path.join(output_dir, filename)
-                        urls_and_paths.append((url, path))
-
-            # Try authenticated httpx batch download first
-            if urls_and_paths:
-                downloaded_paths = await self._download_urls_batch(urls_and_paths)
+            return await self._download_url(pdf_url, output_path)
 
         except (IndexError, TypeError) as e:
             raise ValueError(f"Failed to parse slide deck structure: {e}")
-
-        return downloaded_paths
 
     # =========================================================================
     # Management Operations

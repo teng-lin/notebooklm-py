@@ -195,6 +195,38 @@ class TestDownloadSlideDeck:
     """Test download_slide_deck method."""
 
     @pytest.mark.asyncio
+    async def test_download_slide_deck_success(self, mock_artifacts_api):
+        """Test successful slide deck PDF download."""
+        api, mock_core = mock_artifacts_api
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "slides.pdf")
+
+            # Patch _list_raw to return slide deck artifact data
+            # Structure: artifact[16] = [config, title, slides_list, pdf_url]
+            with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+                # Create artifact with 17+ elements, type 8 (slide deck), status 3
+                artifact = ["slide_001", "Slide Deck Title", 8, None, 3]
+                # Pad to index 16
+                artifact.extend([None] * 11)
+                # Index 16: metadata with PDF URL at position 3
+                artifact.append([
+                    ["config"],
+                    "Slide Deck Title",
+                    [["slide1"], ["slide2"]],  # slides_list
+                    "https://contribution.usercontent.google.com/download?filename=test.pdf"
+                ])
+                mock_list.return_value = [artifact]
+
+                with patch.object(
+                    api, '_download_url',
+                    new_callable=AsyncMock, return_value=output_path
+                ):
+                    result = await api.download_slide_deck("nb_123", output_path)
+
+            assert result == output_path
+
+    @pytest.mark.asyncio
     async def test_download_slide_deck_no_slides_found(self, mock_artifacts_api):
         """Test error when no slide deck artifact exists."""
         api, mock_core = mock_artifacts_api
@@ -203,7 +235,7 @@ class TestDownloadSlideDeck:
             mock_list.return_value = []
 
             with pytest.raises(ValueError, match="No completed slide"):
-                await api.download_slide_deck("nb_123", "/tmp")
+                await api.download_slide_deck("nb_123", "/tmp/slides.pdf")
 
     @pytest.mark.asyncio
     async def test_download_slide_deck_specific_id_not_found(self, mock_artifacts_api):
@@ -211,12 +243,29 @@ class TestDownloadSlideDeck:
         api, mock_core = mock_artifacts_api
 
         with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = [
-                ["other_id", "Slides", 8, None, 3, None, None, None, None, []]
-            ]
+            # Need at least 17 elements for valid structure
+            artifact = ["other_id", "Slides", 8, None, 3]
+            artifact.extend([None] * 11)
+            artifact.append([["config"], "title", [], "http://example.com/test.pdf"])
+            mock_list.return_value = [artifact]
 
             with pytest.raises(ValueError, match="Slide deck slides_001 not found"):
-                await api.download_slide_deck("nb_123", "/tmp", artifact_id="slides_001")
+                await api.download_slide_deck("nb_123", "/tmp/slides.pdf", artifact_id="slides_001")
+
+    @pytest.mark.asyncio
+    async def test_download_slide_deck_invalid_metadata(self, mock_artifacts_api):
+        """Test error on invalid metadata structure."""
+        api, mock_core = mock_artifacts_api
+
+        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+            # Create artifact with invalid metadata (less than 4 elements)
+            artifact = ["slide_001", "Slides", 8, None, 3]
+            artifact.extend([None] * 11)
+            artifact.append(["only", "two"])  # Invalid: needs 4 elements
+            mock_list.return_value = [artifact]
+
+            with pytest.raises(ValueError, match="Invalid slide deck metadata"):
+                await api.download_slide_deck("nb_123", "/tmp/slides.pdf")
 
 
 class TestMindMapGeneration:

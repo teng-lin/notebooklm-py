@@ -3,7 +3,7 @@
 Commands:
     audio        Download audio file
     video        Download video file
-    slide-deck   Download slide deck images
+    slide-deck   Download slide deck PDF
     infographic  Download infographic image
 """
 
@@ -33,7 +33,7 @@ def download():
     Types:
       audio        Download audio file
       video        Download video file
-      slide-deck   Download slide deck images
+      slide-deck   Download slide deck PDF
       infographic  Download infographic image
     """
     pass
@@ -586,8 +586,8 @@ def download_video(
 @click.option("--artifact-id", help="Select by exact artifact ID")
 @click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
 @click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing directories")
-@click.option("--no-clobber", is_flag=True, help="Skip if directory exists")
+@click.option("--force", is_flag=True, help="Overwrite existing files")
+@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
 @click.pass_context
 def download_slide_deck(
     ctx,
@@ -603,18 +603,18 @@ def download_slide_deck(
     force,
     no_clobber,
 ):
-    """Download slide deck(s) to directories.
+    """Download slide deck(s) as PDF files.
 
     \b
     Examples:
-      # Download latest slide deck to default directory
+      # Download latest slide deck to default filename
       notebooklm download slide-deck
 
-      # Download to specific directory
-      notebooklm download slide-deck ./my-slides/
+      # Download to specific path
+      notebooklm download slide-deck my-slides.pdf
 
-      # Download all slide decks to parent directory
-      notebooklm download slide-deck --all ./slide-deck/
+      # Download all slide decks to directory
+      notebooklm download slide-deck --all ./slides/
 
       # Download specific artifact by name
       notebooklm download slide-deck --name "chapter 3"
@@ -628,8 +628,8 @@ def download_slide_deck(
                 ctx=ctx,
                 artifact_type_name="slide-deck",
                 artifact_type_id=8,
-                file_extension="",  # Empty string for directory type
-                default_output_dir="./slide-deck",
+                file_extension=".pdf",
+                default_output_dir="./slides",
                 output_path=output_path,
                 notebook=notebook,
                 latest=latest,

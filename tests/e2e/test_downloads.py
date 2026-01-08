@@ -7,6 +7,7 @@ from notebooklm import Artifact
 
 # Magic bytes for file type verification
 PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
+PDF_MAGIC = b'%PDF'
 MP4_FTYP = b'ftyp'  # At offset 4
 
 
@@ -14,6 +15,12 @@ def is_png(path: str) -> bool:
     """Check if file is a valid PNG by magic bytes."""
     with open(path, 'rb') as f:
         return f.read(8) == PNG_MAGIC
+
+
+def is_pdf(path: str) -> bool:
+    """Check if file is a valid PDF by magic bytes."""
+    with open(path, 'rb') as f:
+        return f.read(4) == PDF_MAGIC
 
 
 def is_mp4(path: str) -> bool:
@@ -95,16 +102,15 @@ class TestDownloadSlideDeck:
     @pytest.mark.asyncio
     @pytest.mark.readonly
     async def test_download_slide_deck(self, client, test_notebook_id):
-        """Downloads existing slide deck - read-only."""
+        """Downloads existing slide deck as PDF - read-only."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "slides.pdf")
             try:
-                result = await client.artifacts.download_slide_deck(test_notebook_id, tmpdir)
-                assert isinstance(result, list)
-                assert len(result) > 0
-                for slide_path in result:
-                    assert os.path.exists(slide_path)
-                    assert os.path.getsize(slide_path) > 0
-                    assert is_png(slide_path), f"Slide {slide_path} is not a valid PNG file"
+                result = await client.artifacts.download_slide_deck(test_notebook_id, output_path)
+                assert result == output_path
+                assert os.path.exists(output_path)
+                assert os.path.getsize(output_path) > 0
+                assert is_pdf(output_path), "Downloaded slide deck is not a valid PDF file"
             except ValueError as e:
                 if "No completed slide" in str(e):
                     pytest.skip("No completed slide deck artifact available")
