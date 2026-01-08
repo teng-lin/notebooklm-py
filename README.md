@@ -1,5 +1,9 @@
 # notebooklm-py
 
+<p align="center">
+  <img src="notebooklm-py.png" alt="notebooklm-py logo" width="128">
+</p>
+
 **Unofficial Python library, CLI, and agent skills for Google NotebookLM**
 
 Automate Google NotebookLM programmatically. Create notebooks, add sources, chat with your content, and generate podcasts, videos, quizzes, and more.
