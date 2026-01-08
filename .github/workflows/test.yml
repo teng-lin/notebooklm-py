@@ -6,11 +6,42 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  quality:
+    name: Code Quality
     runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[all]"
+
+    - name: Run linting
+      run: ruff check src/
+
+    - name: Run type checking
+      run: mypy src/notebooklm --ignore-missing-imports
+
+  test:
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    needs: quality
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
@@ -27,15 +58,23 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[all]"
 
-    - name: Install Playwright browsers and dependencies
+    - name: Get Playwright version
+      id: playwright-version
       run: |
-        playwright install chromium
-        playwright install-deps
+        echo "version=$(pip show playwright | grep Version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
-    - name: Run type checking
-      run: |
-        mypy src/notebooklm --ignore-missing-imports
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}
+
+    - name: Install Playwright browsers
+      run: playwright install chromium
+
+    - name: Install Playwright system dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: playwright install-deps
 
     - name: Run tests with coverage
-      run: |
-        pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=70
+      run: pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=70

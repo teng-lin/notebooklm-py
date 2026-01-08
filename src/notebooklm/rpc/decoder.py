@@ -77,7 +77,7 @@ def parse_chunked_response(response: str) -> list[Any]:
 
         # Try to parse as byte count
         try:
-            byte_count = int(line)
+            int(line)  # Validate it's a byte count (we don't need the value)
             i += 1
 
             # Next line should be JSON payload

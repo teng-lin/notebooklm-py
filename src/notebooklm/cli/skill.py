@@ -4,7 +4,6 @@ Commands for managing the Claude Code skill integration.
 """
 
 import re
-import shutil
 from pathlib import Path
 
 import click
@@ -128,7 +127,7 @@ def uninstall():
     except OSError:
         pass  # Directory not empty or other error
 
-    console.print(f"[green]Uninstalled[/green] NotebookLM skill")
+    console.print("[green]Uninstalled[/green] NotebookLM skill")
     console.print("Claude Code will no longer recognize NotebookLM commands.")
 
 

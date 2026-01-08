@@ -47,13 +47,6 @@ from .cli import (
 from .cli.grouped import SectionedGroup
 
 # Import helpers needed for backward compatibility with tests
-from .cli.helpers import (
-    console,
-    get_artifact_type_display,
-    detect_source_type,
-    ARTIFACT_TYPE_DISPLAY,
-    ARTIFACT_TYPE_MAP,
-)
 
 
 # =============================================================================

@@ -7,15 +7,12 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
 import asyncio
 import logging
-import os
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+import httpx
 
 from ._core import ClientCore
 from .auth import load_httpx_cookies
-import httpx
-
 from .rpc import (
     RPCMethod,
     RPCError,
@@ -34,6 +31,8 @@ from .rpc import (
     ReportFormat,
 )
 from .types import Artifact, GenerationStatus, ReportSuggestion
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ._notes import NotesAPI

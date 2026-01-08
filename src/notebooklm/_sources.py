@@ -3,24 +3,24 @@
 import asyncio
 import logging
 import re
-import httpx
 from datetime import datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any, Dict, List, Optional, Union
 
-from ._core import ClientCore
+import httpx
 
-logger = logging.getLogger(__name__)
+from ._core import ClientCore
 from .rpc import RPCMethod, UPLOAD_URL
 from .rpc.types import SourceStatus
 from .types import (
     Source,
-    SourceError,
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SourcesAPI:

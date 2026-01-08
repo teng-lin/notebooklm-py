@@ -24,7 +24,6 @@ from .helpers import (
     get_current_notebook,
     set_current_notebook,
     clear_context,
-    get_current_conversation,
     json_output_response,
     resolve_notebook_id,
 )

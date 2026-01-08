@@ -580,10 +580,10 @@ def source_stale(ctx, source_id, notebook_id, client_auth):
             is_fresh = await client.sources.check_freshness(nb_id, resolved_id)
 
             if is_fresh:
-                console.print(f"[green]✓ Source is fresh[/green]")
+                console.print("[green]✓ Source is fresh[/green]")
                 raise SystemExit(1)  # Not stale
             else:
-                console.print(f"[yellow]⚠ Source is stale[/yellow]")
+                console.print("[yellow]⚠ Source is stale[/yellow]")
                 console.print("[dim]Run 'source refresh' to update[/dim]")
                 raise SystemExit(0)  # Is stale
 

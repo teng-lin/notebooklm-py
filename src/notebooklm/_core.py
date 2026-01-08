@@ -2,20 +2,11 @@
 
 import logging
 import os
-import httpx
 from collections import OrderedDict
 from typing import Any, Optional
 from urllib.parse import urlencode
 
-# Enable RPC debug output via environment variable
-DEBUG_RPC = os.environ.get("NOTEBOOKLM_DEBUG_RPC", "").lower() in ("1", "true", "yes")
-
-# Configure logging for RPC debug mode
-if DEBUG_RPC:
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(levelname)s: %(message)s",
-    )
+import httpx
 
 from .auth import AuthTokens
 from .rpc import (
@@ -26,6 +17,16 @@ from .rpc import (
     build_request_body,
     decode_response,
 )
+
+# Enable RPC debug output via environment variable
+DEBUG_RPC = os.environ.get("NOTEBOOKLM_DEBUG_RPC", "").lower() in ("1", "true", "yes")
+
+# Configure logging for RPC debug mode
+if DEBUG_RPC:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(levelname)s: %(message)s",
+    )
 
 # Maximum number of conversations to cache (FIFO eviction)
 MAX_CONVERSATION_CACHE_SIZE = 100

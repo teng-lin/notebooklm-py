@@ -12,10 +12,10 @@ from typing import Any, Optional
 from urllib.parse import urlencode, quote
 
 from ._core import ClientCore
-
-logger = logging.getLogger(__name__)
 from .rpc import RPCMethod, QUERY_URL
 from .types import AskResult, ConversationTurn
+
+logger = logging.getLogger(__name__)
 
 
 class ChatAPI:

@@ -1,0 +1,62 @@
+name: Nightly E2E Tests
+
+on:
+  schedule:
+    # Run at 6 AM UTC daily (10 PM PST / 1 AM EST)
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    # Only run on main repo (not forks) due to secrets requirement
+    if: github.repository == 'teng-lin/notebooklm-py'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[all]"
+
+    - name: Get Playwright version
+      id: playwright-version
+      run: |
+        echo "version=$(pip show playwright | grep Version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-ubuntu-latest-${{ steps.playwright-version.outputs.version }}
+
+    - name: Install Playwright browsers and dependencies
+      run: |
+        playwright install chromium
+        playwright install-deps
+
+    - name: Set up authentication
+      env:
+        NOTEBOOKLM_STORAGE_STATE: ${{ secrets.NOTEBOOKLM_STORAGE_STATE }}
+      run: |
+        mkdir -p ~/.notebooklm
+        echo "$NOTEBOOKLM_STORAGE_STATE" > ~/.notebooklm/storage_state.json
+
+    - name: Run E2E tests
+      run: pytest tests/e2e -m e2e -v --tb=short
+
+    - name: Clean up authentication
+      if: always()
+      run: rm -rf ~/.notebooklm
