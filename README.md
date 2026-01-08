@@ -1,14 +1,19 @@
 # notebooklm-py
 
-**Unofficial Python client for Google NotebookLM**
+**Unofficial Python library, CLI, and agent skills for Google NotebookLM**
 
-Automate Google NotebookLM programmatically. Create notebooks, add sources, chat with your content, and generate podcasts, videos, quizzes, and more - all via CLI or Python API.
+Automate Google NotebookLM programmatically. Create notebooks, add sources, chat with your content, and generate podcasts, videos, quizzes, and more.
 
 [![PyPI version](https://badge.fury.io/py/notebooklm-py.svg)](https://badge.fury.io/py/notebooklm-py)
 [![Python Version](https://img.shields.io/pypi/pyversions/notebooklm-py.svg)](https://pypi.org/project/notebooklm-py/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **⚠️ Beta Software**: This library uses reverse-engineered Google APIs that can change without notice. See [Troubleshooting](docs/troubleshooting.md) if you encounter issues.
+> **⚠️ Unofficial API**: This library uses reverse-engineered Google APIs that can change without notice. Not affiliated with or endorsed by Google. See [Troubleshooting](docs/troubleshooting.md) if you encounter issues.
+
+**Three ways to use:**
+- **Python Library** - Async API for application integration
+- **CLI** - Command-line tool for scripts and automation
+- **Agent Skills** - Claude Code skill for natural language automation
 
 ## Installation
 
@@ -71,15 +76,29 @@ async def main():
 asyncio.run(main())
 ```
 
+### Agent Skills (Claude Code)
+
+```bash
+# Install the skill
+notebooklm skill install
+
+# Then use natural language in Claude Code:
+# "Create a podcast about quantum computing"
+# "Summarize these URLs into a notebook"
+# "/notebooklm generate video"
+```
+
 ## Features
 
-- **Notebooks**: Create, list, rename, delete, share
-- **Sources**: URLs, YouTube, files (PDF/TXT/MD/DOCX), Google Drive, text
-- **Chat**: Questions, conversation history, custom personas
-- **Generation**: Audio (podcasts), video, slides, quizzes, flashcards, reports, infographics, mind maps
-- **Research**: Web and Drive research agents
-- **Downloads**: Audio, video, slides, infographics
-- **Claude Code Integration**: Install as a skill for natural language automation
+| Category | Capabilities |
+|----------|--------------|
+| **Notebooks** | Create, list, rename, delete, share |
+| **Sources** | URLs, YouTube, files (PDF/TXT/MD/DOCX), Google Drive, pasted text |
+| **Chat** | Questions, conversation history, custom personas |
+| **Generation** | Audio podcasts, video, slides, quizzes, flashcards, reports, infographics, mind maps |
+| **Research** | Web and Drive research agents with auto-import |
+| **Downloads** | Audio, video, slides, infographics |
+| **Agent Skills** | Claude Code skill for LLM-driven automation |
 
 ## Documentation
 
@@ -99,7 +118,3 @@ asyncio.run(main())
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-*This is an unofficial library and is not affiliated with or endorsed by Google.*
