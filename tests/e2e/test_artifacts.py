@@ -153,39 +153,79 @@ class TestReportSuggestions:
 
 
 @requires_auth
-class TestArtifactPolling:
-    """Status polling tests."""
+class TestArtifactMutations:
+    """Tests that modify/delete artifacts.
+
+    Combines poll/rename/wait into one test to reuse a single flashcard artifact.
+    Delete test uses a separate quiz artifact to spread rate limits.
+    """
 
     @pytest.mark.asyncio
-    async def test_poll_studio_status(self, client, generation_notebook):
-        """Test polling artifact generation status.
+    async def test_poll_rename_wait(self, client, temp_notebook):
+        """Test poll_status, rename, and wait_for_completion on ONE artifact.
 
-        Uses flashcards as they are more reliable than quizzes which hit
-        rate limits more frequently.
+        Combines three operations into one test to minimize API calls:
+        1. Generate one flashcard artifact
+        2. Poll its status
+        3. Wait for completion
+        4. Rename it and rename back
+
+        Uses flashcards (more reliable than quiz for generation).
         """
-        result = await client.artifacts.generate_flashcards(generation_notebook.id)
+        # Generate ONE artifact for all operations
+        result = await client.artifacts.generate_flashcards(temp_notebook.id)
         assert_generation_started(result, "Flashcard")
+        notebook_id = temp_notebook.id
+        artifact_id = result.task_id
 
+        # 1. Test poll_status
         await asyncio.sleep(2)
-        status = await client.artifacts.poll_status(generation_notebook.id, result.task_id)
-        # poll_status returns a GenerationStatus object
+        status = await client.artifacts.poll_status(notebook_id, artifact_id)
         assert status is not None
         assert hasattr(status, "status")
 
+        # 2. Test wait_for_completion
+        final_status = await client.artifacts.wait_for_completion(
+            notebook_id,
+            artifact_id,
+            initial_interval=1.0,
+            max_interval=5.0,
+            timeout=60.0,
+        )
+        assert final_status is not None
+        assert final_status.is_complete or final_status.is_failed
 
-@requires_auth
-class TestArtifactMutations:
-    """Tests that create/modify/delete artifacts - use temp_notebook fixture."""
+        # 3. Test rename (only if artifact completed successfully)
+        if final_status.is_complete:
+            artifact = await client.artifacts.get(notebook_id, artifact_id)
+            if artifact:
+                original_title = artifact.title
+
+                # Rename to new title
+                new_title = "Renamed E2E Test"
+                await client.artifacts.rename(notebook_id, artifact_id, new_title)
+
+                # Verify rename
+                await asyncio.sleep(1)
+                renamed = await client.artifacts.get(notebook_id, artifact_id)
+                assert renamed is not None
+                assert renamed.title == new_title
+
+                # Restore original title
+                await client.artifacts.rename(notebook_id, artifact_id, original_title)
 
     @pytest.mark.asyncio
     async def test_delete_artifact(self, client, temp_notebook):
-        """Test deleting an artifact."""
-        # Create a flashcard artifact to delete (more reliable than quiz)
-        result = await client.artifacts.generate_flashcards(temp_notebook.id)
-        assert_generation_started(result, "Flashcard")
+        """Test deleting an artifact.
+
+        Uses quiz instead of flashcards to spread rate limits across different
+        artifact type quotas.
+        """
+        # Create a quiz artifact for deletion (different type than flashcards)
+        result = await client.artifacts.generate_quiz(temp_notebook.id)
+        assert_generation_started(result, "Quiz")
         artifact_id = result.task_id
 
-        # Wait briefly for creation
         await asyncio.sleep(2)
 
         # Delete it
@@ -196,56 +236,3 @@ class TestArtifactMutations:
         artifacts = await client.artifacts.list(temp_notebook.id)
         artifact_ids = [a.id for a in artifacts]
         assert artifact_id not in artifact_ids
-
-    @pytest.mark.asyncio
-    async def test_rename_artifact(self, client, temp_notebook):
-        """Test renaming an artifact."""
-        # Create a flashcard artifact to rename (more reliable than quiz)
-        result = await client.artifacts.generate_flashcards(temp_notebook.id)
-        assert_generation_started(result, "Flashcard")
-        artifact_id = result.task_id
-
-        # Wait for creation
-        await asyncio.sleep(3)
-
-        new_title = "Renamed Flashcard E2E"
-
-        # Rename it
-        await client.artifacts.rename(temp_notebook.id, artifact_id, new_title)
-
-        # Verify the rename with retry (API may take a moment to reflect changes)
-        renamed_artifact = None
-        for _ in range(3):
-            await asyncio.sleep(1)
-            artifacts = await client.artifacts.list(temp_notebook.id)
-            renamed_artifact = next((a for a in artifacts if a.id == artifact_id), None)
-            if renamed_artifact and renamed_artifact.title == new_title:
-                break
-
-        assert renamed_artifact is not None, f"Artifact {artifact_id} not found after rename"
-        assert (
-            renamed_artifact.title == new_title
-        ), f"Expected '{new_title}', got '{renamed_artifact.title}'"
-
-    @pytest.mark.asyncio
-    async def test_wait_for_completion(self, client, temp_notebook):
-        """Test waiting for artifact generation to complete.
-
-        Uses flashcards as they are more reliable than quizzes which
-        frequently hit rate limits.
-        """
-        result = await client.artifacts.generate_flashcards(temp_notebook.id)
-        assert_generation_started(result, "Flashcard")
-
-        # Wait for completion
-        final_status = await client.artifacts.wait_for_completion(
-            temp_notebook.id,
-            result.task_id,
-            initial_interval=2.0,
-            max_interval=10.0,
-            timeout=120.0,
-        )
-
-        # Should complete or fail (not timeout)
-        assert final_status is not None
-        assert final_status.is_complete or final_status.is_failed
