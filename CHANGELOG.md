@@ -5,10 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-No unreleased changes.
-
 ## [0.1.0] - 2026-01-08
 
 ### Added
@@ -51,12 +47,6 @@ No unreleased changes.
 - CLI module renamed from `cli.py` to `notebooklm_cli.py`
 - Removed orphaned `cli_query.py` file
 
-### API Changes
-- Renamed collection methods to use `list_*` pattern (e.g., `get_quizzes()` → `list_quizzes()`)
-- Split `get_notes()` into `list_notes()` and `list_mind_maps()`
-- Added `get_artifact(notebook_id, artifact_id)` for single-item retrieval
-- Old methods kept as deprecated wrappers with warnings
-
 ### ⚠️ Beta Release Notice
 
 This is the initial public release of `notebooklm-py`. While core functionality is tested and working, please note:
@@ -69,7 +59,6 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 
 - **RPC method IDs may change**: Google can update their internal APIs at any time, breaking this library. Check the [RPC Capture](docs/reference/internals/rpc-capture.md) for how to identify and update method IDs.
 - **Rate limiting**: Heavy usage may trigger Google's rate limits. Add delays between bulk operations.
-- **Quiz/flashcard generation**: May return `None` in some cases (requires further RPC investigation).
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 

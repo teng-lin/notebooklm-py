@@ -3,30 +3,48 @@
   <img src="notebooklm-py.png" alt="notebooklm-py logo" width="128">
 </p>
 
-# Unofficial Python library, CLI, and agent skills for NotebookLM
-
-Automate NotebookLM programmatically. Create notebooks, add sources, chat with your content, and generate podcasts, videos, quizzes, and more.
+**The missing API for Google NotebookLM.** Automate research workflows, generate podcasts from your documents, and integrate NotebookLM into AI agents—all from Python or the command line.
 
 [![PyPI version](https://badge.fury.io/py/notebooklm-py.svg)](https://badge.fury.io/py/notebooklm-py)
 [![Python Version](https://img.shields.io/pypi/pyversions/notebooklm-py.svg)](https://pypi.org/project/notebooklm-py/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/teng-lin/notebooklm-py/actions/workflows/test.yml/badge.svg)](https://github.com/teng-lin/notebooklm-py/actions/workflows/test.yml)
 
-> **⚠️ Beta Release - Use at Your Own Risk**
+> **⚠️ Unofficial Library - Use at Your Own Risk**
 >
-> This is an **unofficial library** using **undocumented Google APIs**. Please understand:
+> This library uses **undocumented Google APIs** that can change without notice.
 >
-> - **No affiliation with Google** - This project is not endorsed or supported by Google
-> - **APIs can break anytime** - Google can change internal APIs without notice, breaking this library
-> - **No stability guarantees** - RPC method IDs are obfuscated and subject to change
-> - **Rate limits apply** - Heavy usage may trigger Google's rate limiting
+> - **Not affiliated with Google** - This is a community project
+> - **APIs may break** - Google can change internal endpoints anytime
+> - **Rate limits apply** - Heavy usage may be throttled
 >
-> **Not recommended for production systems.** See [Troubleshooting](docs/troubleshooting.md) for handling API changes.
+> Best for prototypes, research, and personal projects. See [Troubleshooting](docs/troubleshooting.md) for debugging tips.
 
-**Three ways to use:**
-- **Python Library** - Async API for application integration
-- **CLI** - Command-line tool for scripts and automation
-- **Agent Skills** - Claude Code skill for natural language automation
+## What You Can Build
+
+🤖 **AI Agent Tools** - Integrate NotebookLM into Claude Code, or other LLM agents. Ships with [Claude Code skills](#agent-skills-claude-code) for natural language automation (`notebooklm skill install`), or build your own integrations with the async Python API.
+
+📚 **Research Automation** - Bulk-import sources (URLs, PDFs, YouTube, Google Drive), run web research queries, and extract insights programmatically. Build repeatable research pipelines.
+
+🎙️ **Content Generation** - Generate Audio Overviews (podcasts), videos, quizzes, flashcards, and study guides. Turn your sources into polished content with a single command.
+
+## Three Ways to Use
+
+| Method | Best For |
+|--------|----------|
+| **Python API** | Application integration, async workflows, custom pipelines |
+| **CLI** | Shell scripts, quick tasks, CI/CD automation |
+| **Agent Skills** | Claude Code, LLM agents, natural language automation |
+
+## Try It Now
+
+```bash
+pip install "notebooklm-py[browser]"
+notebooklm login                          # Browser auth (one-time)
+notebooklm create "Test" && notebooklm ask "Hello!"
+```
+
+See [Installation](#installation) for options or jump to [Quick Start](#quick-start).
 
 ## Installation
 
