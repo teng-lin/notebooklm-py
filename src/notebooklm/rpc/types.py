@@ -69,8 +69,6 @@ class RPCMethod(str, Enum):
 
     # Artifact management
     RENAME_ARTIFACT = "rc3d8d"
-    UPDATE_ARTIFACT = "DJezBc"
-    DELETE_ARTIFACT = "WxBZtb"
     EXPORT_ARTIFACT = "Krh3pd"
     LIST_ARTIFACTS_ALT = "LfTXoe"
 
@@ -85,11 +83,6 @@ class RPCMethod(str, Enum):
     LIST_FEATURED_PROJECTS = "nS9Qlc"
     REMOVE_RECENTLY_VIEWED = "fejl7e"
     PROJECT_ANALYTICS = "AUrzMb"
-
-    # Guidebooks
-    GET_GUIDEBOOKS = "YJBpHc"
-    UPDATE_GUIDEBOOK = "R6smae"
-    DELETE_GUIDEBOOK = "LJyzeb"
 
 
 class StudioContentType(int, Enum):

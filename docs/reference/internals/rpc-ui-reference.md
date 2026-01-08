@@ -1188,41 +1188,6 @@ await rpc_call(
 
 ---
 
-## RPC Methods (Unknown Purpose / Deprecated)
-
-These methods exist in `rpc/types.py` but could not be activated with any tested payload structure:
-
-| RPC ID | Method | Status | Notes |
-|--------|--------|--------|-------|
-| `DJezBc` | UPDATE_ARTIFACT | **All payloads return HTTP 400** | Tested with artifact IDs, note IDs, various nesting patterns |
-| `WxBZtb` | DELETE_ARTIFACT | **All payloads return HTTP 400** | Tested with artifact IDs, note IDs, various nesting patterns |
-| `YJBpHc` | GET_GUIDEBOOKS | Not tested | Purpose unclear |
-
-### Investigation Notes
-
-**DELETE_ARTIFACT (WxBZtb)** and **UPDATE_ARTIFACT (DJezBc)** were extensively tested with:
-- Artifact IDs from studio content (audio, reports, quizzes, etc.)
-- Note IDs from user-created notes
-- Mind map IDs
-- Various payload patterns:
-  - `[id]`, `[[id]]`, `[[[id]]]`
-  - `[[2], id]`, `[[2], id, notebook_id]`
-  - `[notebook_id, id]`, `[id, notebook_id]`
-  - RENAME_ARTIFACT-style patterns: `[[id, value], [[field]]]`
-  - Many other variations
-
-All tests returned HTTP 400 (Bad Request). These methods may be:
-- Deprecated and no longer functional
-- Reserved for internal Google use with undiscovered payload structures
-- Intended for entity types not yet identified
-
-**Working alternatives:**
-- For artifact deletion: Use `DELETE_STUDIO` (`V5N4be`) with `[[2], artifact_id]`
-- For artifact renaming: Use `RENAME_ARTIFACT` (`rc3d8d`) with `[[id, title], [["title"]]]`
-- For note deletion: Use `DELETE_NOTE` (`AH0mwd`) - but this only clears content, doesn't remove
-
----
-
 ## Operation Timing Categories
 
 ### Quick Operations
