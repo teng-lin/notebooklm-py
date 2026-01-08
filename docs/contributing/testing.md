@@ -348,6 +348,86 @@ NotebookLM has undocumented rate limits. Running many generation tests in sequen
 - **Skip variants:** `pytest tests/e2e -m "not variants"` (fewer generation calls)
 - **Wait between runs:** Rate limits reset after a few minutes
 
+---
+
+## Rate Limit Optimization
+
+### Understanding Rate Limits
+
+NotebookLM appears to have multiple rate limit mechanisms:
+
+| Limit Type | Scope | Notes |
+|------------|-------|-------|
+| **Per-type daily quota** | Per artifact type | e.g., limited audio generations per day |
+| **Burst rate limit** | Per time window | e.g., generations per 5 minutes |
+| **Account-wide** | All operations | Undocumented overall limits |
+
+**Key insight:** Rate limits primarily affect **artifact generation**, not notebook/source creation.
+
+### Current Optimizations
+
+The test suite is designed to minimize rate limit issues:
+
+1. **Spread across artifact types** - Default tests cover 9 different artifact types (audio, video, quiz, flashcards, infographic, slide_deck, data_table, mind_map, study_guide). This distributes load across per-type quotas.
+
+2. **Variants skipped by default** - Only ~10 generation tests run by default. The 20+ variant tests (testing parameter combinations) require `--include-variants`.
+
+3. **Graceful rate limit handling** - `assert_generation_started()` detects rate limiting and skips tests instead of failing.
+
+4. **Combined mutation tests** - `test_artifacts.py` combines poll/rename/wait operations into one test, and spreads across artifact types (flashcards for mutations, quiz for delete).
+
+### Default Generation Tests (10 calls)
+
+```
+audio_default, audio_brief  → 2 audio calls
+video_default               → 1 video call
+quiz_default                → 1 quiz call
+flashcards_default          → 1 flashcards call
+infographic_default         → 1 infographic call
+slide_deck_default          → 1 slide_deck call
+data_table_default          → 1 data_table call
+mind_map                    → 1 mind_map call (sync)
+study_guide                 → 1 study_guide call
+```
+
+This spread is optimal for per-type rate limits.
+
+### Why Not Session-Scoped Fixtures?
+
+We evaluated making `generation_notebook` session-scoped (one notebook shared across all generation tests) to reduce API calls.
+
+**Analysis:**
+
+| Factor | Assessment |
+|--------|------------|
+| API calls saved | ~18 (10 notebooks + 10 sources) |
+| Time saved | ~20-40 seconds (default run) |
+| Rate limit help | **None** - doesn't reduce generation calls |
+| Complexity added | Event loop management, cleanup handling |
+| Risk added | Test isolation, debugging difficulty |
+
+**Decision:** Deferred. The savings don't justify the complexity because:
+1. Notebook/source creation is not rate limited
+2. The rate-limited operations (generation) can't be reduced without losing coverage
+3. pytest-asyncio session-scoped async fixtures require careful event loop management
+4. Current function-scoped fixtures provide better test isolation
+
+### Future Considerations
+
+If rate limiting becomes more severe, consider:
+
+1. **Add delays between generation tests:**
+   ```python
+   @pytest.fixture(autouse=True)
+   async def rate_limit_delay():
+       yield
+       await asyncio.sleep(2)  # Delay after each test
+   ```
+
+2. **CI scheduling** - Spread test runs over time rather than running all at once.
+
+3. **Tiered test runs** - Run readonly tests in CI, full suite nightly.
+
 ## Troubleshooting
 
 ### Tests skip with "no auth stored"
