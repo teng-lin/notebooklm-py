@@ -27,8 +27,7 @@ from notebooklm import NotebookLMClient
 # Constants
 # =============================================================================
 
-# Delay constants for rate limiting and polling
-RATE_LIMIT_DELAY = 3.0  # Delay after tests to avoid rate limits
+# Delay constants for polling
 SOURCE_PROCESSING_DELAY = 2.0  # Delay for source processing
 POLL_INTERVAL = 2.0  # Interval between poll attempts
 POLL_TIMEOUT = 60.0  # Max time to wait for operations
@@ -98,24 +97,6 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "variants" in [m.name for m in item.iter_markers()]:
             item.add_marker(skip_variants)
-
-
-@pytest.hookimpl(tryfirst=True)
-def pytest_runtest_teardown(item):
-    """Add delay after slow tests to avoid rate limiting.
-
-    Only delays when there are more slow tests remaining in the session,
-    so single test runs don't waste time waiting.
-    """
-    import time
-
-    if "slow" in [m.name for m in item.iter_markers()]:
-        remaining_slow = [
-            i for i in item.session.items
-            if i != item and "slow" in [m.name for m in i.iter_markers()]
-        ]
-        if remaining_slow:
-            time.sleep(RATE_LIMIT_DELAY)
 
 
 # =============================================================================

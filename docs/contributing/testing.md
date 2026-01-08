@@ -80,12 +80,18 @@ If tests skip with "no auth stored" or fail with permission errors, your setup i
 
 ## ⚠️ Rate Limiting
 
-NotebookLM has undocumented API rate limits. Running many tests in sequence (especially generation tests) can trigger failures with "Expected non-empty task_id". This is **not a bug** - the API is rejecting requests.
+NotebookLM has undocumented API rate limits. Running many tests in sequence (especially generation tests) can trigger rate limiting.
+
+**How it works:**
+- Generation tests use `assert_generation_started()` helper
+- Rate-limited tests are **SKIPPED** (not failed) - you'll see `SKIPPED (Rate limited by API)`
+- The API returns `USER_DISPLAYABLE_ERROR` when rate limited, detected via `result.is_rate_limited`
 
 **Strategies:**
 - Run `readonly` tests for quick validation (minimal API calls)
 - Skip `variants` to reduce generation API calls
 - Wait a few minutes between full test runs for rate limits to reset
+- Check test output for skipped tests - many skips indicate you've hit rate limits
 
 ---
 
@@ -265,6 +271,16 @@ async def generation_notebook(client) -> Notebook:
 @requires_auth  # Skip test if no auth stored
 ```
 
+### Helpers
+
+```python
+from .conftest import assert_generation_started
+
+# Use in generation tests - skips on rate limiting instead of failing
+result = await client.artifacts.generate_audio(notebook_id)
+assert_generation_started(result, "Audio")  # Skips if rate limited
+```
+
 ## Environment Variables
 
 Set via `.env` file (recommended) or shell export:
@@ -297,16 +313,15 @@ Need network?
 Add generation tests to `tests/e2e/test_generation.py`:
 
 ```python
+from .conftest import requires_auth, assert_generation_started
+
 @requires_auth
 class TestNewArtifact:
     @pytest.mark.asyncio
     async def test_generate_new_artifact_default(self, client, generation_notebook):
         result = await client.artifacts.generate_new(generation_notebook.id)
-        # Verify the generation API call succeeded (doesn't wait for completion)
-        assert result is not None
-        assert result.task_id, "Expected non-empty task_id"
-        assert result.status in ("pending", "in_progress"), f"Unexpected status: {result.status}"
-        assert result.error is None, f"Generation failed: {result.error}"
+        # Use helper - skips test if rate limited, fails on other errors
+        assert_generation_started(result, "NewArtifact")
 
     @pytest.mark.asyncio
     @pytest.mark.variants
@@ -315,16 +330,20 @@ class TestNewArtifact:
             generation_notebook.id,
             option=SomeOption.VALUE,
         )
-        assert result is not None
-        assert result.task_id, "Expected non-empty task_id"
+        assert_generation_started(result, "NewArtifact")
 ```
 
 Note: Generation tests only need `client` and `generation_notebook`. Cleanup is automatic.
 
 ### Rate Limiting
 
-NotebookLM has undocumented rate limits. Running many generation tests in sequence can trigger "Expected non-empty task_id" failures. Strategies:
+NotebookLM has undocumented rate limits. Running many generation tests in sequence can trigger rate limiting:
 
+- Rate-limited tests are **skipped** (not failed) via `assert_generation_started()` helper
+- You'll see `SKIPPED (Rate limited by API)` in test output
+- Many skipped tests = you've hit rate limits, wait and retry
+
+**Strategies:**
 - **Run `readonly` tests first:** `pytest tests/e2e -m readonly` (minimal API calls)
 - **Skip variants:** `pytest tests/e2e -m "not variants"` (fewer generation calls)
 - **Wait between runs:** Rate limits reset after a few minutes
@@ -351,13 +370,16 @@ notebooklm list  # Should show your notebooks
   rm -rf ~/.notebooklm/browser_profile && notebooklm login
   ```
 
-### Rate limiting / "Expected non-empty task_id" failures
+### Rate limiting / Many tests skipped
 
-NotebookLM has undocumented rate limits. If you see multiple tests failing with "Expected non-empty task_id":
+NotebookLM has undocumented rate limits. If you see many tests `SKIPPED (Rate limited by API)`:
 
-1. **Skip variants:** Use `pytest tests/e2e -m "not variants"` (fewer API calls)
+1. **This is expected behavior** - tests skip instead of fail when rate limited
 2. **Wait and retry:** Rate limits reset after a few minutes
-3. **Run single tests:** `pytest tests/e2e/test_generation.py::TestAudioGeneration::test_generate_audio_default`
+3. **Reduce API calls:** Use `pytest tests/e2e -m "not variants"` (fewer generation calls)
+4. **Run single tests:** `pytest tests/e2e/test_generation.py::TestAudioGeneration::test_generate_audio_default`
+
+Note: The `assert_generation_started()` helper detects rate limiting via `USER_DISPLAYABLE_ERROR` from the API and skips the test gracefully.
 
 ### "CSRF token invalid" or 403 errors
 

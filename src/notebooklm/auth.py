@@ -34,7 +34,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
+import logging
 
+logger = logging.getLogger(__name__)
 
 # Minimum required cookies (must have at least SID for basic auth)
 MINIMUM_REQUIRED_COOKIES = {"SID"}
@@ -317,11 +319,13 @@ async def download_urls_with_browser(
 
             for url, output_path in urls_and_paths:
                 output_file = Path(output_path).resolve()
-                # Security: Validate path doesn't escape working directory
+                # Security: Validate path doesn't escape cwd via relative traversal (../).
+                # Absolute paths are allowed - users need to save to paths like ~/Downloads/.
+                # This protection catches relative path traversal bugs, not user-specified paths.
                 try:
                     output_file.relative_to(Path.cwd())
                 except ValueError:
-                    # Path is outside cwd - check if it's an absolute path the user specified
+                    # Path is outside cwd - allow if user specified an absolute path
                     if not Path(output_path).is_absolute():
                         raise ValueError(f"Path traversal detected: {output_path}")
                 output_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -348,8 +352,9 @@ async def download_urls_with_browser(
 
                 except ValueError:
                     raise
-                except Exception:
-                    # Skip failed downloads but continue with others
+                except Exception as e:
+                    # Log failed downloads but continue with others
+                    logger.warning("Download failed for %s: %s", url, e)
                     continue
 
         finally:
@@ -391,11 +396,13 @@ async def download_with_browser(
         )
 
     output_file = Path(output_path).resolve()
-    # Security: Validate path doesn't escape working directory
+    # Security: Validate path doesn't escape cwd via relative traversal (../).
+    # Absolute paths are allowed - users need to save to paths like ~/Downloads/.
+    # This protection catches relative path traversal bugs, not user-specified paths.
     try:
         output_file.relative_to(Path.cwd())
     except ValueError:
-        # Path is outside cwd - check if it's an absolute path the user specified
+        # Path is outside cwd - allow if user specified an absolute path
         if not Path(output_path).is_absolute():
             raise ValueError(f"Path traversal detected: {output_path}")
     output_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
