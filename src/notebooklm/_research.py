@@ -4,7 +4,7 @@ Provides operations for starting research sessions, polling for results,
 and importing discovered sources into notebooks.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ._core import ClientCore
 from .rpc import RPCMethod
@@ -44,7 +44,7 @@ class ResearchAPI:
         query: str,
         source: str = "web",
         mode: str = "fast",
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Start a research session.
 
         Args:
@@ -117,11 +117,7 @@ class ResearchAPI:
             return {"status": "no_research"}
 
         # Unwrap if needed
-        if (
-            isinstance(result[0], list)
-            and len(result[0]) > 0
-            and isinstance(result[0][0], list)
-        ):
+        if isinstance(result[0], list) and len(result[0]) > 0 and isinstance(result[0][0], list):
             result = result[0]
 
         # Find most recent task
@@ -145,13 +141,9 @@ class ResearchAPI:
 
             if isinstance(sources_and_summary, list) and len(sources_and_summary) >= 1:
                 sources_data = (
-                    sources_and_summary[0]
-                    if isinstance(sources_and_summary[0], list)
-                    else []
+                    sources_and_summary[0] if isinstance(sources_and_summary[0], list) else []
                 )
-                if len(sources_and_summary) >= 2 and isinstance(
-                    sources_and_summary[1], str
-                ):
+                if len(sources_and_summary) >= 2 and isinstance(sources_and_summary[1], str):
                     summary = sources_and_summary[1]
 
             parsed_sources = []
@@ -246,9 +238,7 @@ class ResearchAPI:
             for src_data in result:
                 if isinstance(src_data, list) and len(src_data) >= 2:
                     src_id = (
-                        src_data[0][0]
-                        if src_data[0] and isinstance(src_data[0], list)
-                        else None
+                        src_data[0][0] if src_data[0] and isinstance(src_data[0], list) else None
                     )
                     if src_id:
                         imported.append({"id": src_id, "title": src_data[1]})

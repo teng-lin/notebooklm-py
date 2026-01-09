@@ -17,9 +17,7 @@ class TestResearchAPI:
         build_rpc_response,
     ):
         """Test starting fast web research."""
-        response = build_rpc_response(
-            "Ljjv0c", ["task_123", "report_456"]
-        )
+        response = build_rpc_response("Ljjv0c", ["task_123", "report_456"])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -43,9 +41,7 @@ class TestResearchAPI:
         build_rpc_response,
     ):
         """Test starting fast drive research."""
-        response = build_rpc_response(
-            "Ljjv0c", ["task_789", None]
-        )
+        response = build_rpc_response("Ljjv0c", ["task_789", None])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -65,15 +61,11 @@ class TestResearchAPI:
         build_rpc_response,
     ):
         """Test starting deep web research."""
-        response = build_rpc_response(
-            "QA9ei", ["task_deep", "report_deep"]
-        )
+        response = build_rpc_response("QA9ei", ["task_deep", "report_deep"])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.research.start(
-                "nb_123", "AI ethics", source="web", mode="deep"
-            )
+            result = await client.research.start("nb_123", "AI ethics", source="web", mode="deep")
 
         assert result is not None
         assert result["mode"] == "deep"
@@ -90,9 +82,7 @@ class TestResearchAPI:
         """Test that deep research on drive raises ValueError."""
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(ValueError, match="Deep Research only supports Web"):
-                await client.research.start(
-                    "nb_123", "query", source="drive", mode="deep"
-                )
+                await client.research.start("nb_123", "query", source="drive", mode="deep")
 
     @pytest.mark.asyncio
     async def test_start_invalid_source_raises(
@@ -228,9 +218,7 @@ class TestResearchAPI:
                 {"url": "https://example.com/quantum", "title": "Quantum Computing Guide"},
                 {"url": "https://example.com/ai", "title": "AI Research Paper"},
             ]
-            result = await client.research.import_sources(
-                "nb_123", "task_123", sources_to_import
-            )
+            result = await client.research.import_sources("nb_123", "task_123", sources_to_import)
 
         assert len(result) == 2
         assert result[0]["id"] == "src_001"

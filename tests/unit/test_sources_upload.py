@@ -1,8 +1,8 @@
 """Unit tests for SourcesAPI file upload pipeline and YouTube detection."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch, mock_open
-from pathlib import Path
 
 from notebooklm._sources import SourcesAPI
 
@@ -223,7 +223,9 @@ class TestStartResumableUpload:
             assert body["SOURCE_ID"] == "src_abc"
 
     @pytest.mark.asyncio
-    async def test_start_resumable_upload_raises_on_missing_url_header(self, sources_api, mock_core):
+    async def test_start_resumable_upload_raises_on_missing_url_header(
+        self, sources_api, mock_core
+    ):
         """Test that missing upload URL header raises ValueError."""
         mock_response = MagicMock()
         mock_response.headers = {}  # No x-goog-upload-url
@@ -286,7 +288,9 @@ class TestUploadFileStreaming:
             mock_client.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_upload_file_streaming_includes_correct_headers(self, sources_api, mock_core, tmp_path):
+    async def test_upload_file_streaming_includes_correct_headers(
+        self, sources_api, mock_core, tmp_path
+    ):
         """Test that streaming upload includes correct headers."""
         test_file = tmp_path / "test.txt"
         test_file.write_bytes(b"content")
@@ -325,9 +329,7 @@ class TestUploadFileStreaming:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            await sources_api._upload_file_streaming(
-                "https://upload.example.com", test_file
-            )
+            await sources_api._upload_file_streaming("https://upload.example.com", test_file)
 
             call_kwargs = mock_client.post.call_args[1]
             # Content should be a generator, not bytes
@@ -337,7 +339,9 @@ class TestUploadFileStreaming:
             assert b"".join(chunks) == test_content
 
     @pytest.mark.asyncio
-    async def test_upload_file_streaming_raises_on_http_error(self, sources_api, mock_core, tmp_path):
+    async def test_upload_file_streaming_raises_on_http_error(
+        self, sources_api, mock_core, tmp_path
+    ):
         """Test that HTTP error raises exception."""
         import httpx
 
@@ -354,9 +358,7 @@ class TestUploadFileStreaming:
             mock_client_cls.return_value = mock_client
 
             with pytest.raises(httpx.HTTPStatusError):
-                await sources_api._upload_file_streaming(
-                    "https://upload.example.com", test_file
-                )
+                await sources_api._upload_file_streaming("https://upload.example.com", test_file)
 
 
 # =============================================================================

@@ -1,11 +1,11 @@
 """Unit tests for artifact download methods."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-import tempfile
 import os
+import tempfile
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from notebooklm import NotebookLMClient
+import pytest
+
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.auth import AuthTokens
 
@@ -42,26 +42,34 @@ class TestDownloadAudio:
         """Test successful audio download."""
         api, mock_core = mock_artifacts_api
         # Mock artifact list response - type 1 (audio), status 3 (completed)
-        mock_core.rpc_call.return_value = [[
+        mock_core.rpc_call.return_value = [
             [
-                "audio_001",  # id
-                "Audio Title",  # title
-                1,  # type (audio)
-                None,  # ?
-                3,  # status (completed)
-                None,  # ?
-                [None, None, None, None, None, [  # metadata[6][5] = media list
-                    ["https://example.com/audio.mp4", None, "audio/mp4"]
-                ]],
+                [
+                    "audio_001",  # id
+                    "Audio Title",  # title
+                    1,  # type (audio)
+                    None,  # ?
+                    3,  # status (completed)
+                    None,  # ?
+                    [
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        [  # metadata[6][5] = media list
+                            ["https://example.com/audio.mp4", None, "audio/mp4"]
+                        ],
+                    ],
+                ]
             ]
-        ]]
+        ]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "audio.mp4")
 
             with patch.object(
-                api, '_download_url',
-                new_callable=AsyncMock, return_value=output_path
+                api, "_download_url", new_callable=AsyncMock, return_value=output_path
             ):
                 result = await api.download_audio("nb_123", output_path)
 
@@ -80,22 +88,20 @@ class TestDownloadAudio:
     async def test_download_audio_specific_id_not_found(self, mock_artifacts_api):
         """Test error when specific audio ID not found."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [[
-            ["other_id", "Audio", 1, None, 3, None, [None] * 6]
-        ]]
+        mock_core.rpc_call.return_value = [[["other_id", "Audio", 1, None, 3, None, [None] * 6]]]
 
         with pytest.raises(ValueError, match="Audio artifact audio_001 not found"):
-            await api.download_audio(
-                "nb_123", "/tmp/audio.mp4", artifact_id="audio_001"
-            )
+            await api.download_audio("nb_123", "/tmp/audio.mp4", artifact_id="audio_001")
 
     @pytest.mark.asyncio
     async def test_download_audio_invalid_metadata(self, mock_artifacts_api):
         """Test error on invalid metadata structure."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.return_value = [[
-            ["audio_001", "Audio", 1, None, 3, None, "not_a_list"]  # metadata should be list
-        ]]
+        mock_core.rpc_call.return_value = [
+            [
+                ["audio_001", "Audio", 1, None, 3, None, "not_a_list"]  # metadata should be list
+            ]
+        ]
 
         with pytest.raises(ValueError, match="Invalid audio metadata|Failed to parse"):
             await api.download_audio("nb_123", "/tmp/audio.mp4")
@@ -113,16 +119,24 @@ class TestDownloadVideo:
             output_path = os.path.join(tmpdir, "video.mp4")
 
             # Patch _list_raw to return video artifact data
-            with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Type 3 (video), status 3 (completed), metadata at index 8
-                mock_list.return_value = [[
-                    "video_001", "Video Title", 3, None, 3, None, None, None,
-                    [[["https://example.com/video.mp4", 4, "video/mp4"]]]
-                ]]
+                mock_list.return_value = [
+                    [
+                        "video_001",
+                        "Video Title",
+                        3,
+                        None,
+                        3,
+                        None,
+                        None,
+                        None,
+                        [[["https://example.com/video.mp4", 4, "video/mp4"]]],
+                    ]
+                ]
 
                 with patch.object(
-                    api, '_download_url',
-                    new_callable=AsyncMock, return_value=output_path
+                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
                 ):
                     result = await api.download_video("nb_123", output_path)
 
@@ -133,7 +147,7 @@ class TestDownloadVideo:
         """Test error when no video artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ValueError, match="No completed video"):
@@ -144,15 +158,11 @@ class TestDownloadVideo:
         """Test error when specific video ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
-            mock_list.return_value = [
-                ["other_id", "Video", 3, None, 3, None, None, None, []]
-            ]
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = [["other_id", "Video", 3, None, 3, None, None, None, []]]
 
             with pytest.raises(ValueError, match="Video artifact video_001 not found"):
-                await api.download_video(
-                    "nb_123", "/tmp/video.mp4", artifact_id="video_001"
-                )
+                await api.download_video("nb_123", "/tmp/video.mp4", artifact_id="video_001")
 
 
 class TestDownloadInfographic:
@@ -167,17 +177,25 @@ class TestDownloadInfographic:
             output_path = os.path.join(tmpdir, "infographic.png")
 
             # Patch _list_raw to return infographic data
-            with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Type 7 (infographic), status 3, metadata with nested URL structure
-                mock_list.return_value = [[
-                    "infographic_001", "Infographic Title", 7, None, 3,
-                    None, None, None, None,
-                    [[], [], [[None, ["https://example.com/infographic.png"]]]]
-                ]]
+                mock_list.return_value = [
+                    [
+                        "infographic_001",
+                        "Infographic Title",
+                        7,
+                        None,
+                        3,
+                        None,
+                        None,
+                        None,
+                        None,
+                        [[], [], [[None, ["https://example.com/infographic.png"]]]],
+                    ]
+                ]
 
                 with patch.object(
-                    api, '_download_url',
-                    new_callable=AsyncMock, return_value=output_path
+                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
                 ):
                     result = await api.download_infographic("nb_123", output_path)
 
@@ -188,7 +206,7 @@ class TestDownloadInfographic:
         """Test error when no infographic artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ValueError, match="No completed infographic"):
@@ -208,23 +226,24 @@ class TestDownloadSlideDeck:
 
             # Patch _list_raw to return slide deck artifact data
             # Structure: artifact[16] = [config, title, slides_list, pdf_url]
-            with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
                 # Create artifact with 17+ elements, type 8 (slide deck), status 3
                 artifact = ["slide_001", "Slide Deck Title", 8, None, 3]
                 # Pad to index 16
                 artifact.extend([None] * 11)
                 # Index 16: metadata with PDF URL at position 3
-                artifact.append([
-                    ["config"],
-                    "Slide Deck Title",
-                    [["slide1"], ["slide2"]],  # slides_list
-                    "https://contribution.usercontent.google.com/download?filename=test.pdf"
-                ])
+                artifact.append(
+                    [
+                        ["config"],
+                        "Slide Deck Title",
+                        [["slide1"], ["slide2"]],  # slides_list
+                        "https://contribution.usercontent.google.com/download?filename=test.pdf",
+                    ]
+                )
                 mock_list.return_value = [artifact]
 
                 with patch.object(
-                    api, '_download_url',
-                    new_callable=AsyncMock, return_value=output_path
+                    api, "_download_url", new_callable=AsyncMock, return_value=output_path
                 ):
                     result = await api.download_slide_deck("nb_123", output_path)
 
@@ -235,7 +254,7 @@ class TestDownloadSlideDeck:
         """Test error when no slide deck artifact exists."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
             with pytest.raises(ValueError, match="No completed slide"):
@@ -246,7 +265,7 @@ class TestDownloadSlideDeck:
         """Test error when specific slide deck ID not found."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             # Need at least 17 elements for valid structure
             artifact = ["other_id", "Slides", 8, None, 3]
             artifact.extend([None] * 11)
@@ -261,7 +280,7 @@ class TestDownloadSlideDeck:
         """Test error on invalid metadata structure."""
         api, mock_core = mock_artifacts_api
 
-        with patch.object(api, '_list_raw', new_callable=AsyncMock) as mock_list:
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             # Create artifact with invalid metadata (less than 4 elements)
             artifact = ["slide_001", "Slides", 8, None, 3]
             artifact.extend([None] * 11)
@@ -284,11 +303,13 @@ class TestMindMapGeneration:
             # _get_source_ids response
             [None, None, None, None, None, [[["src_001"]]]],
             # generate_mind_map response
-            [[
-                '{"nodes": [{"id": "1", "text": "Root"}]}',  # JSON string
-                None,
-                ["note_123"],  # note info (not used anymore, note is created explicitly)
-            ]],
+            [
+                [
+                    '{"nodes": [{"id": "1", "text": "Root"}]}',  # JSON string
+                    None,
+                    ["note_123"],  # note info (not used anymore, note is created explicitly)
+                ]
+            ],
         ]
 
         result = await api.generate_mind_map("nb_123")
@@ -304,11 +325,13 @@ class TestMindMapGeneration:
         api, mock_core = mock_artifacts_api
         mock_core.rpc_call.side_effect = [
             [None, None, None, None, None, [[["src_001"]]]],
-            [[
-                {"nodes": [{"id": "1"}]},  # Already a dict
-                None,
-                ["note_456"],  # note info (not used anymore)
-            ]],
+            [
+                [
+                    {"nodes": [{"id": "1"}]},  # Already a dict
+                    None,
+                    ["note_456"],  # note info (not used anymore)
+                ]
+            ],
         ]
 
         result = await api.generate_mind_map("nb_123")
@@ -359,12 +382,10 @@ class TestDownloadUrl:
 
             # Mock load_httpx_cookies to avoid requiring real auth files
             mock_cookies = MagicMock()
-            with patch.object(real_httpx, 'AsyncClient', return_value=mock_client), \
-                 patch('notebooklm._artifacts.load_httpx_cookies', return_value=mock_cookies):
-                result = await api._download_url(
-                    "https://other.example.com/file.mp4", output_path
-                )
+            with (
+                patch.object(real_httpx, "AsyncClient", return_value=mock_client),
+                patch("notebooklm._artifacts.load_httpx_cookies", return_value=mock_cookies),
+            ):
+                result = await api._download_url("https://other.example.com/file.mp4", output_path)
 
             assert result == output_path
-
-

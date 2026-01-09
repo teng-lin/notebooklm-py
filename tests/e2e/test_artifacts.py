@@ -8,9 +8,12 @@ Generation tests are in test_generation.py. This file contains:
 """
 
 import asyncio
+
 import pytest
-from .conftest import requires_auth, assert_generation_started
+
 from notebooklm import Artifact, ReportSuggestion
+
+from .conftest import assert_generation_started, requires_auth
 
 
 @requires_auth

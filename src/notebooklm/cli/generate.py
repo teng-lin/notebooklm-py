@@ -12,7 +12,7 @@ Commands:
     report       Generate report
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import click
 
@@ -20,23 +20,23 @@ from ..client import NotebookLMClient
 from ..types import (
     AudioFormat,
     AudioLength,
-    VideoFormat,
-    VideoStyle,
-    QuizQuantity,
-    QuizDifficulty,
-    InfographicOrientation,
+    GenerationStatus,
     InfographicDetail,
+    InfographicOrientation,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
-    ReportFormat,
-    GenerationStatus,
+    VideoFormat,
+    VideoStyle,
 )
 from .helpers import (
     console,
+    json_error_response,
+    json_output_response,
     require_notebook,
     with_client,
-    json_output_response,
-    json_error_response,
 )
 
 
@@ -48,7 +48,7 @@ async def handle_generation_result(
     wait: bool = False,
     json_output: bool = False,
     timeout: float = 300.0,
-) -> Optional[GenerationStatus]:
+) -> GenerationStatus | None:
     """Handle generation result with optional waiting and output formatting.
 
     Consolidates common pattern across all generate commands:
@@ -98,12 +98,8 @@ async def handle_generation_result(
     # Wait for completion if requested
     if wait and task_id:
         if not json_output:
-            console.print(
-                f"[yellow]Generating {artifact_type}...[/yellow] Task: {task_id}"
-            )
-        status = await client.artifacts.wait_for_completion(
-            notebook_id, task_id, timeout=timeout
-        )
+            console.print(f"[yellow]Generating {artifact_type}...[/yellow] Task: {task_id}")
+        status = await client.artifacts.wait_for_completion(notebook_id, task_id, timeout=timeout)
 
     # Output status
     _output_generation_status(status, artifact_type, json_output)
@@ -111,17 +107,17 @@ async def handle_generation_result(
     return status if isinstance(status, GenerationStatus) else None
 
 
-def _output_generation_status(
-    status: Any, artifact_type: str, json_output: bool
-) -> None:
+def _output_generation_status(status: Any, artifact_type: str, json_output: bool) -> None:
     """Output generation status in appropriate format."""
     if json_output:
         if hasattr(status, "is_complete") and status.is_complete:
-            json_output_response({
-                "artifact_id": getattr(status, "task_id", None),
-                "status": "completed",
-                "url": getattr(status, "url", None),
-            })
+            json_output_response(
+                {
+                    "artifact_id": getattr(status, "task_id", None),
+                    "status": "completed",
+                    "url": getattr(status, "url", None),
+                }
+            )
         elif hasattr(status, "is_failed") and status.is_failed:
             json_error_response(
                 "GENERATION_FAILED",
@@ -205,9 +201,7 @@ def generate():
     default="default",
 )
 @click.option("--language", default="en")
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def generate_audio(
@@ -250,9 +244,7 @@ def generate_audio(
                 audio_format=format_map[audio_format],
                 audio_length=length_map[audio_length],
             )
-            await handle_generation_result(
-                client, nb_id, result, "audio", wait, json_output
-            )
+            await handle_generation_result(client, nb_id, result, "audio", wait, json_output)
 
     return _run()
 
@@ -290,9 +282,7 @@ def generate_audio(
     default="auto",
 )
 @click.option("--language", default="en")
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def generate_video(
@@ -358,9 +348,7 @@ def generate_video(
     default="default",
 )
 @click.option("--language", default="en")
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_slide_deck(
     ctx, description, notebook_id, deck_format, deck_length, language, wait, client_auth
@@ -391,9 +379,7 @@ def generate_slide_deck(
                 slide_format=format_map[deck_format],
                 slide_length=length_map[deck_length],
             )
-            await handle_generation_result(
-                client, nb_id, result, "slide deck", wait
-            )
+            await handle_generation_result(client, nb_id, result, "slide deck", wait)
 
     return _run()
 
@@ -407,15 +393,9 @@ def generate_slide_deck(
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option(
-    "--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard"
-)
-@click.option(
-    "--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium"
-)
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
+@click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait, client_auth):
     """Generate quiz.
@@ -459,15 +439,9 @@ def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait, cli
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option(
-    "--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard"
-)
-@click.option(
-    "--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium"
-)
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
+@click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wait, client_auth):
     """Generate flashcards.
@@ -522,9 +496,7 @@ def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wai
     default="standard",
 )
 @click.option("--language", default="en")
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_infographic(
     ctx, description, notebook_id, orientation, detail, language, wait, client_auth
@@ -572,9 +544,7 @@ def generate_infographic(
     help="Notebook ID (uses current if not set)",
 )
 @click.option("--language", default="en")
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_data_table(ctx, description, notebook_id, language, wait, client_auth):
     """Generate data table.
@@ -621,9 +591,7 @@ def generate_mind_map(ctx, notebook_id, client_auth):
                     mind_map = result.get("mind_map", {})
                     if isinstance(mind_map, dict):
                         console.print(f"  Root: {mind_map.get('name', '-')}")
-                        console.print(
-                            f"  Children: {len(mind_map.get('children', []))} nodes"
-                        )
+                        console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
                 else:
                     console.print(result)
             else:
@@ -648,9 +616,7 @@ def generate_mind_map(ctx, notebook_id, client_auth):
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option(
-    "--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)"
-)
+@click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_report_cmd(ctx, description, report_format, notebook_id, wait, client_auth):
     """Generate a report (briefing doc, study guide, blog post, or custom).

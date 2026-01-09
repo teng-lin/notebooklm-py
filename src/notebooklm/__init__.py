@@ -16,51 +16,51 @@ Note:
 __version__ = "0.1.1"
 
 # Public API: Authentication
-from .auth import AuthTokens, DEFAULT_STORAGE_PATH
+from .auth import DEFAULT_STORAGE_PATH, AuthTokens
 
 # Public API: Client
 from .client import NotebookLMClient
 
-# Public API: Types and dataclasses
-from .types import (
-    Notebook,
-    NotebookDescription,
-    SuggestedTopic,
-    Source,
-    Artifact,
-    GenerationStatus,
-    ReportSuggestion,
-    Note,
-    ConversationTurn,
-    AskResult,
-    ChatMode,
-    # Exceptions
-    SourceError,
-    SourceProcessingError,
-    SourceTimeoutError,
-    SourceNotFoundError,
-    # Enums for configuration
-    StudioContentType,
-    AudioFormat,
-    AudioLength,
-    VideoFormat,
-    VideoStyle,
-    QuizQuantity,
-    QuizDifficulty,
-    InfographicOrientation,
-    InfographicDetail,
-    SlideDeckFormat,
-    SlideDeckLength,
-    ReportFormat,
-    ChatGoal,
-    ChatResponseLength,
-    DriveMimeType,
-    ExportType,
-    SourceStatus,
-)
-
 # Public API: RPC errors (needed for exception handling)
 from .rpc import RPCError
+
+# Public API: Types and dataclasses
+from .types import (
+    Artifact,
+    AskResult,
+    AudioFormat,
+    AudioLength,
+    ChatGoal,
+    ChatMode,
+    ChatResponseLength,
+    ConversationTurn,
+    DriveMimeType,
+    ExportType,
+    GenerationStatus,
+    InfographicDetail,
+    InfographicOrientation,
+    Note,
+    Notebook,
+    NotebookDescription,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    ReportSuggestion,
+    SlideDeckFormat,
+    SlideDeckLength,
+    Source,
+    # Exceptions
+    SourceError,
+    SourceNotFoundError,
+    SourceProcessingError,
+    SourceStatus,
+    SourceTimeoutError,
+    # Enums for configuration
+    StudioContentType,
+    SuggestedTopic,
+    VideoFormat,
+    VideoStyle,
+)
 
 __all__ = [
     "__version__",

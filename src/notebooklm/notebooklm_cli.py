@@ -32,17 +32,17 @@ from .auth import DEFAULT_STORAGE_PATH
 
 # Import command groups from cli package
 from .cli import (
-    source,
     artifact,
-    generate,
     download,
+    generate,
     note,
-    skill,
-    research,
+    register_chat_commands,
+    register_notebook_commands,
     # Register functions for top-level commands
     register_session_commands,
-    register_notebook_commands,
-    register_chat_commands,
+    research,
+    skill,
+    source,
 )
 from .cli.grouped import SectionedGroup
 

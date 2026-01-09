@@ -5,8 +5,10 @@ polling for results, and importing discovered sources.
 """
 
 import asyncio
+
 import pytest
-from .conftest import requires_auth, POLL_INTERVAL, POLL_TIMEOUT
+
+from .conftest import POLL_INTERVAL, POLL_TIMEOUT, requires_auth
 
 
 @requires_auth

@@ -13,9 +13,9 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from .helpers import (
     console,
+    json_output_response,
     require_notebook,
     with_client,
-    json_output_response,
 )
 
 
@@ -102,9 +102,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
                 if summary:
                     console.print(f"\n[bold]Summary:[/bold]\n{summary[:500]}")
 
-                console.print(
-                    "\n[dim]Use 'research wait --import-all' to import sources[/dim]"
-                )
+                console.print("\n[dim]Use 'research wait --import-all' to import sources[/dim]")
             else:
                 console.print(f"[yellow]Status: {status_val}[/yellow]")
 
@@ -134,9 +132,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
 @click.option("--import-all", is_flag=True, help="Import all found sources when done")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
-def research_wait(
-    ctx, notebook_id, timeout, interval, import_all, json_output, client_auth
-):
+def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, client_auth):
     """Wait for research to complete.
 
     Blocks until research is completed or timeout is reached.
@@ -195,9 +191,7 @@ def research_wait(
                     "sources": sources,
                 }
                 if import_all and sources and task_id:
-                    imported = await client.research.import_sources(
-                        nb_id, task_id, sources
-                    )
+                    imported = await client.research.import_sources(nb_id, task_id, sources)
                     result["imported"] = len(imported)
                     result["imported_sources"] = imported
                 json_output_response(result)
@@ -207,9 +201,7 @@ def research_wait(
 
                 if import_all and sources and task_id:
                     with console.status("Importing sources..."):
-                        imported = await client.research.import_sources(
-                            nb_id, task_id, sources
-                        )
+                        imported = await client.research.import_sources(nb_id, task_id, sources)
                     console.print(f"[green]Imported {len(imported)} sources[/green]")
 
     return _run()

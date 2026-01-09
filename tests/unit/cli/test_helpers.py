@@ -1,38 +1,36 @@
 """Tests for CLI helper functions."""
 
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from io import StringIO
-from unittest.mock import patch, MagicMock, AsyncMock
 
 from notebooklm.cli.helpers import (
+    ARTIFACT_TYPE_MAP,
+    clear_context,
+    detect_source_type,
     # Type display helpers
     get_artifact_type_display,
-    get_source_type_display,
-    detect_source_type,
-    ARTIFACT_TYPE_DISPLAY,
-    ARTIFACT_TYPE_MAP,
-    # Output helpers
-    json_output_response,
-    json_error_response,
-    # Context helpers
-    get_current_notebook,
-    set_current_notebook,
-    clear_context,
-    get_current_conversation,
-    set_current_conversation,
-    require_notebook,
-    # Error handling
-    handle_error,
-    handle_auth_error,
+    get_auth_tokens,
     # Auth helpers
     get_client,
-    get_auth_tokens,
+    get_current_conversation,
+    # Context helpers
+    get_current_notebook,
+    get_source_type_display,
+    handle_auth_error,
+    # Error handling
+    handle_error,
+    json_error_response,
+    # Output helpers
+    json_output_response,
+    require_notebook,
     run_async,
+    set_current_conversation,
+    set_current_notebook,
     # Decorator
     with_client,
 )
-
 
 # =============================================================================
 # ARTIFACT TYPE DISPLAY TESTS
@@ -92,15 +90,27 @@ class TestGetArtifactTypeDisplay:
 
 class TestDetectSourceType:
     def test_youtube_url(self):
-        src = ["id", "Video Title", [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]]]
+        src = [
+            "id",
+            "Video Title",
+            [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]],
+        ]
         assert detect_source_type(src) == "🎥 YouTube"
 
     def test_youtu_be_url(self):
-        src = ["id", "Video Title", [None, None, None, None, None, None, None, ["https://youtu.be/abc"]]]
+        src = [
+            "id",
+            "Video Title",
+            [None, None, None, None, None, None, None, ["https://youtu.be/abc"]],
+        ]
         assert detect_source_type(src) == "🎥 YouTube"
 
     def test_web_url(self):
-        src = ["id", "Web Page", [None, None, None, None, None, None, None, ["https://example.com/article"]]]
+        src = [
+            "id",
+            "Web Page",
+            [None, None, None, None, None, None, None, ["https://example.com/article"]],
+        ]
         assert detect_source_type(src) == "🔗 Web URL"
 
     def test_pdf_file(self):
@@ -256,7 +266,9 @@ class TestJsonErrorResponse:
 
 class TestContextManagement:
     def test_get_current_notebook_no_file(self, tmp_path):
-        with patch("notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "nonexistent.json"):
+        with patch(
+            "notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "nonexistent.json"
+        ):
             result = get_current_notebook()
             assert result is None
 
@@ -271,10 +283,7 @@ class TestContextManagement:
         context_file = tmp_path / "context.json"
         with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
             set_current_notebook(
-                "nb_test123",
-                title="Test Notebook",
-                is_owner=True,
-                created_at="2024-01-01T00:00:00"
+                "nb_test123", title="Test Notebook", is_owner=True, created_at="2024-01-01T00:00:00"
             )
             data = json.loads(context_file.read_text())
             assert data["notebook_id"] == "nb_test123"
@@ -296,7 +305,9 @@ class TestContextManagement:
             clear_context()  # Should not raise
 
     def test_get_current_conversation_no_file(self, tmp_path):
-        with patch("notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "nonexistent.json"):
+        with patch(
+            "notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "nonexistent.json"
+        ):
             result = get_current_conversation()
             assert result is None
 
@@ -327,7 +338,9 @@ class TestContextManagement:
 
 class TestRequireNotebook:
     def test_returns_provided_notebook_id(self, tmp_path):
-        with patch("notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "context.json"):
+        with patch(
+            "notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "context.json"
+        ):
             result = require_notebook("nb_provided")
             assert result == "nb_provided"
 
@@ -339,7 +352,9 @@ class TestRequireNotebook:
             assert result == "nb_context"
 
     def test_raises_system_exit_when_no_notebook(self, tmp_path):
-        with patch("notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "nonexistent.json"):
+        with patch(
+            "notebooklm.cli.helpers.get_context_path", return_value=tmp_path / "nonexistent.json"
+        ):
             with patch("notebooklm.cli.helpers.console") as mock_console:
                 with pytest.raises(SystemExit) as exc_info:
                     require_notebook(None)
@@ -395,14 +410,15 @@ class TestHandleAuthError:
 class TestWithClientDecorator:
     def test_decorator_passes_auth_to_function(self):
         """Test that @with_client properly injects client_auth"""
-        from click.testing import CliRunner
         import click
+        from click.testing import CliRunner
 
         @click.command()
         @with_client
         def test_cmd(ctx, client_auth):
             async def _run():
                 click.echo(f"Got auth: {client_auth is not None}")
+
             return _run()
 
         runner = CliRunner()
@@ -417,14 +433,15 @@ class TestWithClientDecorator:
 
     def test_decorator_handles_no_auth(self):
         """Test that @with_client handles missing auth gracefully"""
-        from click.testing import CliRunner
         import click
+        from click.testing import CliRunner
 
         @click.command()
         @with_client
         def test_cmd(ctx, client_auth):
             async def _run():
                 pass
+
             return _run()
 
         runner = CliRunner()
@@ -437,14 +454,15 @@ class TestWithClientDecorator:
 
     def test_decorator_handles_exception_non_json(self):
         """Test error handling in non-JSON mode"""
-        from click.testing import CliRunner
         import click
+        from click.testing import CliRunner
 
         @click.command()
         @with_client
         def test_cmd(ctx, client_auth):
             async def _run():
                 raise ValueError("Test error")
+
             return _run()
 
         runner = CliRunner()
@@ -459,8 +477,8 @@ class TestWithClientDecorator:
 
     def test_decorator_handles_exception_json_mode(self):
         """Test error handling in JSON mode"""
-        from click.testing import CliRunner
         import click
+        from click.testing import CliRunner
 
         @click.command()
         @click.option("--json", "json_output", is_flag=True)
@@ -468,6 +486,7 @@ class TestWithClientDecorator:
         def test_cmd(ctx, json_output, client_auth):
             async def _run():
                 raise ValueError("Test error")
+
             return _run()
 
         runner = CliRunner()

@@ -1,6 +1,6 @@
 """Notebook operations API."""
 
-from typing import Any, Optional
+from typing import Any
 
 from ._core import ClientCore
 from .rpc import RPCMethod
@@ -169,10 +169,12 @@ class NotebooksAPI:
                 topics_list = result[1][0] if isinstance(result[1][0], list) else []
                 for topic in topics_list:
                     if isinstance(topic, list) and len(topic) >= 2:
-                        suggested_topics.append(SuggestedTopic(
-                            question=topic[0] if isinstance(topic[0], str) else "",
-                            prompt=topic[1] if isinstance(topic[1], str) else "",
-                        ))
+                        suggested_topics.append(
+                            SuggestedTopic(
+                                question=topic[0] if isinstance(topic[0], str) else "",
+                                prompt=topic[1] if isinstance(topic[1], str) else "",
+                            )
+                        )
 
         return NotebookDescription(summary=summary, suggested_topics=suggested_topics)
 
@@ -209,7 +211,7 @@ class NotebooksAPI:
         )
 
     async def share(
-        self, notebook_id: str, public: bool = True, artifact_id: Optional[str] = None
+        self, notebook_id: str, public: bool = True, artifact_id: str | None = None
     ) -> dict:
         """Toggle notebook sharing.
 
@@ -252,9 +254,7 @@ class NotebooksAPI:
             "artifact_id": artifact_id,
         }
 
-    def get_share_url(
-        self, notebook_id: str, artifact_id: Optional[str] = None
-    ) -> str:
+    def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
         """Get share URL for a notebook or artifact.
 
         This does NOT toggle sharing - it just returns the URL format.

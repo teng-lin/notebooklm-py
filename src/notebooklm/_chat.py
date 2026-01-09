@@ -8,11 +8,11 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Optional
-from urllib.parse import urlencode, quote
+from typing import Any
+from urllib.parse import quote, urlencode
 
 from ._core import ClientCore
-from .rpc import RPCMethod, QUERY_URL
+from .rpc import QUERY_URL, RPCMethod
 from .types import AskResult, ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -50,8 +50,8 @@ class ChatAPI:
         self,
         notebook_id: str,
         question: str,
-        source_ids: Optional[list[str]] = None,
-        conversation_id: Optional[str] = None,
+        source_ids: list[str] | None = None,
+        conversation_id: str | None = None,
     ) -> AskResult:
         """Ask the notebook a question.
 
@@ -114,9 +114,7 @@ class ChatAPI:
 
         self._core._reqid_counter += 100000
         url_params = {
-            "bl": os.environ.get(
-                "NOTEBOOKLM_BL", "boq_labs-tailwind-frontend_20251221.14_p0"
-            ),
+            "bl": os.environ.get("NOTEBOOKLM_BL", "boq_labs-tailwind-frontend_20251221.14_p0"),
             "hl": "en",
             "_reqid": str(self._core._reqid_counter),
             "rt": "c",
@@ -136,9 +134,7 @@ class ChatAPI:
         if answer_text:
             turns = self._core.get_cached_conversation(conversation_id)
             turn_number = len(turns) + 1
-            self._core.cache_conversation_turn(
-                conversation_id, question, answer_text, turn_number
-            )
+            self._core.cache_conversation_turn(conversation_id, question, answer_text, turn_number)
         else:
             turns = self._core.get_cached_conversation(conversation_id)
             turn_number = len(turns)
@@ -187,7 +183,7 @@ class ChatAPI:
             for turn in cached
         ]
 
-    def clear_cache(self, conversation_id: Optional[str] = None) -> bool:
+    def clear_cache(self, conversation_id: str | None = None) -> bool:
         """Clear conversation cache.
 
         Args:
@@ -201,9 +197,9 @@ class ChatAPI:
     async def configure(
         self,
         notebook_id: str,
-        goal: Optional[Any] = None,
-        response_length: Optional[Any] = None,
-        custom_prompt: Optional[str] = None,
+        goal: Any | None = None,
+        response_length: Any | None = None,
+        custom_prompt: str | None = None,
     ) -> None:
         """Configure chat persona and response settings for a notebook.
 
@@ -298,7 +294,7 @@ class ChatAPI:
 
         return source_ids
 
-    def _build_conversation_history(self, conversation_id: str) -> Optional[list]:
+    def _build_conversation_history(self, conversation_id: str) -> list | None:
         """Build conversation history for follow-up requests."""
         turns = self._core.get_cached_conversation(conversation_id)
         if not turns:
@@ -347,7 +343,7 @@ class ChatAPI:
             )
         return longest_answer
 
-    def _extract_answer_from_chunk(self, json_str: str) -> tuple[Optional[str], bool]:
+    def _extract_answer_from_chunk(self, json_str: str) -> tuple[str | None, bool]:
         """Extract answer text from a response chunk."""
         try:
             data = json.loads(json_str)

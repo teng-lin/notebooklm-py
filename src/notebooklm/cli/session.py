@@ -17,20 +17,20 @@ from rich.table import Table
 from ..auth import AuthTokens
 from ..client import NotebookLMClient
 from ..paths import (
-    get_storage_path,
-    get_context_path,
     get_browser_profile_dir,
+    get_context_path,
     get_path_info,
+    get_storage_path,
 )
 from .helpers import (
+    clear_context,
     console,
-    run_async,
     get_client,
     get_current_notebook,
-    set_current_notebook,
-    clear_context,
     json_output_response,
     resolve_notebook_id,
+    run_async,
+    set_current_notebook,
 )
 
 
@@ -216,7 +216,9 @@ def register_session_commands(cli):
 
             # Show if NOTEBOOKLM_AUTH_JSON is set
             if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
-                console.print("[yellow]Note: NOTEBOOKLM_AUTH_JSON is set (inline auth active)[/yellow]\n")
+                console.print(
+                    "[yellow]Note: NOTEBOOKLM_AUTH_JSON is set (inline auth active)[/yellow]\n"
+                )
 
             console.print(table)
             return
@@ -254,11 +256,9 @@ def register_session_commands(cli):
                 if conversation_id:
                     table.add_row("Conversation", conversation_id)
                 else:
-                    table.add_row(
-                        "Conversation", "[dim]None (will auto-select on next ask)[/dim]"
-                    )
+                    table.add_row("Conversation", "[dim]None (will auto-select on next ask)[/dim]")
                 console.print(table)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 if json_output:
                     json_data = {
                         "has_context": True,

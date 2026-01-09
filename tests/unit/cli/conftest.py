@@ -1,8 +1,9 @@
 """Shared fixtures for CLI unit tests."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from click.testing import CliRunner
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 @pytest.fixture
@@ -72,6 +73,24 @@ def create_mock_client():
     return mock_client
 
 
+def get_cli_module(module_path: str):
+    """Get the actual CLI module by path, bypassing shadowed names.
+
+    In cli/__init__.py, module names are shadowed by click groups with the same name
+    (e.g., `from .source import source`). This function uses importlib to get the
+    actual module for Python 3.10 compatibility.
+
+    Args:
+        module_path: The module name within notebooklm.cli (e.g., "source", "skill")
+
+    Returns:
+        The actual module object
+    """
+    import importlib
+
+    return importlib.import_module(f"notebooklm.cli.{module_path}")
+
+
 def patch_client_for_module(module_path: str):
     """Create a context manager that patches NotebookLMClient in the given module.
 
@@ -86,8 +105,16 @@ def patch_client_for_module(module_path: str):
             mock_client = create_mock_client()
             mock_cls.return_value = mock_client
             # ... run test
+
+    Note:
+        Uses importlib to get the actual module, not the click group that shadows
+        the module name in cli/__init__.py. This is required for Python 3.10
+        compatibility where mock.patch's string path resolution gets the wrong object.
     """
-    return patch(f"notebooklm.cli.{module_path}.NotebookLMClient")
+    import importlib
+
+    module = importlib.import_module(f"notebooklm.cli.{module_path}")
+    return patch.object(module, "NotebookLMClient")
 
 
 class MultiMockProxy:
@@ -96,15 +123,16 @@ class MultiMockProxy:
     When you set return_value on this proxy, it propagates to all mocks.
     Other attribute access is delegated to the primary mock.
     """
+
     def __init__(self, mocks):
-        object.__setattr__(self, '_mocks', mocks)
-        object.__setattr__(self, '_primary', mocks[0])
+        object.__setattr__(self, "_mocks", mocks)
+        object.__setattr__(self, "_primary", mocks[0])
 
     def __getattr__(self, name):
         return getattr(self._primary, name)
 
     def __setattr__(self, name, value):
-        if name == 'return_value':
+        if name == "return_value":
             # Propagate return_value to all mocks
             for m in self._mocks:
                 m.return_value = value
@@ -118,6 +146,7 @@ class MultiPatcher:
     After refactoring, commands are spread across multiple modules, so we need
     to patch NotebookLMClient in all of them.
     """
+
     def __init__(self):
         self.patches = [
             patch("notebooklm.cli.notebook.NotebookLMClient"),

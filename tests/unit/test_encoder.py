@@ -1,10 +1,8 @@
 """Unit tests for RPC request encoder."""
 
-import pytest
 import json
-from urllib.parse import unquote
 
-from notebooklm.rpc.encoder import encode_rpc_request, build_request_body, build_url_params
+from notebooklm.rpc.encoder import build_request_body, build_url_params, encode_rpc_request
 from notebooklm.rpc.types import RPCMethod
 
 
@@ -134,28 +132,21 @@ class TestBuildUrlParams:
 
     def test_with_source_path(self):
         """Test URL params with custom source path."""
-        result = build_url_params(
-            RPCMethod.GET_NOTEBOOK,
-            source_path="/notebook/abc123"
-        )
+        result = build_url_params(RPCMethod.GET_NOTEBOOK, source_path="/notebook/abc123")
 
         assert result["rpcids"] == RPCMethod.GET_NOTEBOOK.value
         assert result["source-path"] == "/notebook/abc123"
 
     def test_with_session_id(self):
         """Test URL params with session ID."""
-        result = build_url_params(
-            RPCMethod.LIST_NOTEBOOKS,
-            session_id="session_12345"
-        )
+        result = build_url_params(RPCMethod.LIST_NOTEBOOKS, session_id="session_12345")
 
         assert result["f.sid"] == "session_12345"
 
     def test_with_build_label(self):
         """Test URL params with build label."""
         result = build_url_params(
-            RPCMethod.LIST_NOTEBOOKS,
-            bl="boq_labs-tailwind-frontend_20250101"
+            RPCMethod.LIST_NOTEBOOKS, bl="boq_labs-tailwind-frontend_20250101"
         )
 
         assert result["bl"] == "boq_labs-tailwind-frontend_20250101"
@@ -166,7 +157,7 @@ class TestBuildUrlParams:
             RPCMethod.CREATE_NOTEBOOK,
             source_path="/notebook/xyz789",
             session_id="sess_abc",
-            bl="build_label_123"
+            bl="build_label_123",
         )
 
         assert result["rpcids"] == RPCMethod.CREATE_NOTEBOOK.value

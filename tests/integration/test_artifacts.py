@@ -4,7 +4,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm.rpc import AudioFormat, AudioLength, VideoFormat, VideoStyle, RPCError, RPCMethod
+from notebooklm.rpc import AudioFormat, AudioLength, RPCError, RPCMethod, VideoFormat, VideoStyle
 
 
 class TestStudioContent:
@@ -529,7 +529,15 @@ class TestArtifactsAPI:
             RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Quiz", 4, None, 3, None, [None, None, None, None, None, None, 2]],
-                ["art_002", "Flashcards", 4, None, 3, None, [None, None, None, None, None, None, 1]],
+                [
+                    "art_002",
+                    "Flashcards",
+                    4,
+                    None,
+                    3,
+                    None,
+                    [None, None, None, None, None, None, 1],
+                ],
             ],
         )
         httpx_mock.add_response(content=response.encode())
@@ -569,7 +577,15 @@ class TestArtifactsAPI:
             RPCMethod.LIST_ARTIFACTS,
             [
                 ["art_001", "Quiz", 4, None, 3, None, [None, None, None, None, None, None, 2]],
-                ["art_002", "Flashcards", 4, None, 3, None, [None, None, None, None, None, None, 1]],
+                [
+                    "art_002",
+                    "Flashcards",
+                    4,
+                    None,
+                    3,
+                    None,
+                    [None, None, None, None, None, None, 1],
+                ],
             ],
         )
         httpx_mock.add_response(content=response.encode())

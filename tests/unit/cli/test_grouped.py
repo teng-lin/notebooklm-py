@@ -88,9 +88,15 @@ class TestSectionedHelp:
         # (it may still appear if Click adds it, but our sections should dominate)
         lines = result.output.split("\n")
         # Count section headers
-        section_count = sum(1 for line in lines if line.strip().endswith(":") and
-                           any(s in line for s in ["Session", "Notebooks", "Chat",
-                                                    "Command Groups", "Artifact Actions"]))
+        section_count = sum(
+            1
+            for line in lines
+            if line.strip().endswith(":")
+            and any(
+                s in line
+                for s in ["Session", "Notebooks", "Chat", "Command Groups", "Artifact Actions"]
+            )
+        )
         assert section_count >= 4  # At least 4 of our sections should appear (no Insights anymore)
 
 

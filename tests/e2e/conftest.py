@@ -2,27 +2,28 @@
 
 import os
 import warnings
-import pytest
-import httpx
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import AsyncGenerator
+
+import httpx
+import pytest
 
 # Load .env file if python-dotenv is available
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed, rely on shell environment
 
+from notebooklm import NotebookLMClient
 from notebooklm.auth import (
-    load_auth_from_storage,
+    AuthTokens,
     extract_csrf_from_html,
     extract_session_id_from_html,
-    AuthTokens,
+    load_auth_from_storage,
 )
 from notebooklm.paths import get_home_dir
-from notebooklm import NotebookLMClient
-
 
 # =============================================================================
 # Constants
@@ -187,8 +188,6 @@ async def cleanup_notebooks(created_notebooks, auth_tokens):
                     warnings.warn(f"Failed to cleanup notebook {nb_id}: {e}")
 
 
-
-
 # =============================================================================
 # Notebook Fixtures
 # =============================================================================
@@ -203,6 +202,7 @@ async def temp_notebook(client, created_notebooks, cleanup_notebooks):
     """
     import asyncio
     from uuid import uuid4
+
     notebook = await client.notebooks.create(f"Test-{uuid4().hex[:8]}")
     created_notebooks.append(notebook.id)
 
@@ -332,7 +332,7 @@ async def _cleanup_generation_notebook(client: NotebookLMClient, notebook_id: st
         notes = await client.notes.list(notebook_id)
         for note in notes:
             # Skip if no id or if it's a pinned system note
-            if note.id and not getattr(note, 'pinned', False):
+            if note.id and not getattr(note, "pinned", False):
                 try:
                     await client.notes.delete(notebook_id, note.id)
                 except Exception:
@@ -432,5 +432,3 @@ async def generation_notebook_id(client):
             await client.notebooks.delete(notebook_id)
         except Exception as e:
             warnings.warn(f"Failed to delete generation notebook {notebook_id}: {e}")
-
-

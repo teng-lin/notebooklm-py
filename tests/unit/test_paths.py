@@ -1,16 +1,15 @@
 """Tests for path resolution module."""
 
 import os
-import pytest
 from pathlib import Path
 from unittest.mock import patch
 
 from notebooklm.paths import (
-    get_home_dir,
-    get_storage_path,
-    get_context_path,
     get_browser_profile_dir,
+    get_context_path,
+    get_home_dir,
     get_path_info,
+    get_storage_path,
 )
 
 

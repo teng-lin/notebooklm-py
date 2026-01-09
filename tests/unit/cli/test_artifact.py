@@ -1,14 +1,14 @@
 """Tests for artifact CLI commands."""
 
 import json
-import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import Artifact, ReportSuggestion
+from notebooklm.types import Artifact
 
 from .conftest import create_mock_client, patch_client_for_module
 
@@ -84,9 +84,7 @@ class TestArtifactList:
                 ]
             )
             mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
-            mock_client.notebooks.get = AsyncMock(
-                return_value=MagicMock(title="Test Notebook")
-            )
+            mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test Notebook"))
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
@@ -120,7 +118,7 @@ class TestArtifactGet:
                     title="Test Artifact",
                     artifact_type=4,
                     status=3,
-                    created_at=datetime(2024, 1, 1)
+                    created_at=datetime(2024, 1, 1),
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -161,9 +159,7 @@ class TestArtifactRename:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Old Title", artifact_type=4, status=3)
-                ]
+                return_value=[Artifact(id="art_123", title="Old Title", artifact_type=4, status=3)]
             )
             mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
             mock_client.artifacts.rename = AsyncMock(
@@ -185,9 +181,7 @@ class TestArtifactRename:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution (include the mind map)
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="mm_123", title="Old Title", artifact_type=5, status=3)
-                ]
+                return_value=[Artifact(id="mm_123", title="Old Title", artifact_type=5, status=3)]
             )
             mock_client.notes.list_mind_maps = AsyncMock(
                 return_value=[
@@ -227,9 +221,7 @@ class TestArtifactDelete:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["artifact", "delete", "art_123", "-n", "nb_123", "-y"]
-                )
+                result = runner.invoke(cli, ["artifact", "delete", "art_123", "-n", "nb_123", "-y"])
 
             assert result.exit_code == 0
             assert "Deleted artifact" in result.output
@@ -253,9 +245,7 @@ class TestArtifactDelete:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["artifact", "delete", "mm_456", "-n", "nb_123", "-y"]
-                )
+                result = runner.invoke(cli, ["artifact", "delete", "mm_456", "-n", "nb_123", "-y"])
 
             assert result.exit_code == 0
             assert "Cleared mind map" in result.output
@@ -273,9 +263,7 @@ class TestArtifactExport:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Doc", artifact_type=2, status=3)
-                ]
+                return_value=[Artifact(id="art_123", title="Doc", artifact_type=2, status=3)]
             )
             mock_client.artifacts.export = AsyncMock(
                 return_value={"url": "https://docs.google.com/document/d/123"}
@@ -294,6 +282,7 @@ class TestArtifactExport:
             mock_client.artifacts.export.assert_called_once()
             call_args = mock_client.artifacts.export.call_args
             from notebooklm.rpc import ExportType
+
             # call_args[0] = (notebook_id, artifact_id, content, title, export_type)
             assert call_args[0][2] is None, "content should be None (backend retrieves it)"
             assert call_args[0][4] == ExportType.DOCS, "export_type should be ExportType.DOCS"
@@ -303,9 +292,7 @@ class TestArtifactExport:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Table", artifact_type=9, status=3)
-                ]
+                return_value=[Artifact(id="art_123", title="Table", artifact_type=9, status=3)]
             )
             mock_client.artifacts.export = AsyncMock(
                 return_value={"url": "https://sheets.google.com/spreadsheets/d/123"}
@@ -315,7 +302,18 @@ class TestArtifactExport:
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["artifact", "export", "art_123", "--title", "My Sheet", "--type", "sheets", "-n", "nb_123"]
+                    cli,
+                    [
+                        "artifact",
+                        "export",
+                        "art_123",
+                        "--title",
+                        "My Sheet",
+                        "--type",
+                        "sheets",
+                        "-n",
+                        "nb_123",
+                    ],
                 )
 
             assert result.exit_code == 0
@@ -324,6 +322,7 @@ class TestArtifactExport:
             mock_client.artifacts.export.assert_called_once()
             call_args = mock_client.artifacts.export.call_args
             from notebooklm.rpc import ExportType
+
             # call_args[0] = (notebook_id, artifact_id, content, title, export_type)
             assert call_args[0][2] is None, "content should be None (backend retrieves it)"
             assert call_args[0][4] == ExportType.SHEETS, "export_type should be ExportType.SHEETS"
@@ -333,9 +332,7 @@ class TestArtifactExport:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Doc", artifact_type=2, status=3)
-                ]
+                return_value=[Artifact(id="art_123", title="Doc", artifact_type=2, status=3)]
             )
             mock_client.artifacts.export = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -384,24 +381,18 @@ class TestArtifactWait:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Test", artifact_type=1, status=3)
-                ]
+                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=3)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 return_value=MagicMock(
-                    status="completed",
-                    url="https://example.com/audio.mp3",
-                    error=None
+                    status="completed", url="https://example.com/audio.mp3", error=None
                 )
             )
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["artifact", "wait", "art_123", "-n", "nb_123"]
-                )
+                result = runner.invoke(cli, ["artifact", "wait", "art_123", "-n", "nb_123"])
 
             assert result.exit_code == 0
             assert "Artifact completed" in result.output
@@ -411,24 +402,18 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Test", artifact_type=1, status=1)
-                ]
+                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 return_value=MagicMock(
-                    status="failed",
-                    url=None,
-                    error="Generation failed due to content policy"
+                    status="failed", url=None, error="Generation failed due to content policy"
                 )
             )
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["artifact", "wait", "art_123", "-n", "nb_123"]
-                )
+                result = runner.invoke(cli, ["artifact", "wait", "art_123", "-n", "nb_123"])
 
             assert result.exit_code == 1
             assert "Generation failed" in result.output
@@ -438,9 +423,7 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Test", artifact_type=1, status=1)
-                ]
+                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 side_effect=TimeoutError("Timed out")
@@ -461,15 +444,11 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Test", artifact_type=1, status=3)
-                ]
+                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=3)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 return_value=MagicMock(
-                    status="completed",
-                    url="https://example.com/audio.mp3",
-                    error=None
+                    status="completed", url="https://example.com/audio.mp3", error=None
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -490,9 +469,7 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[
-                    Artifact(id="art_123", title="Test", artifact_type=1, status=1)
-                ]
+                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 side_effect=TimeoutError("Timed out")

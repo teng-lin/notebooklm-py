@@ -1,10 +1,10 @@
 """Unit tests for NotesAPI private helpers and edge cases."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
 
 from notebooklm._notes import NotesAPI
-from notebooklm.types import Note
 
 
 @pytest.fixture

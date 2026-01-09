@@ -1,15 +1,16 @@
 """Unit tests for RPC response decoder."""
 
-import pytest
 import json
 
+import pytest
+
 from notebooklm.rpc.decoder import (
-    strip_anti_xssi,
-    parse_chunked_response,
-    extract_rpc_result,
+    RPCError,
     collect_rpc_ids,
     decode_response,
-    RPCError,
+    extract_rpc_result,
+    parse_chunked_response,
+    strip_anti_xssi,
 )
 from notebooklm.rpc.types import RPCMethod
 
@@ -192,9 +193,7 @@ class TestExtractRPCResult:
     def test_user_displayable_error_sets_code(self):
         """Test UserDisplayableError sets code to USER_DISPLAYABLE_ERROR."""
         error_info = [8, None, [["UserDisplayableError", []]]]
-        chunks = [
-            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, error_info]
-        ]
+        chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, error_info]]
 
         with pytest.raises(RPCError) as exc_info:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
@@ -203,18 +202,14 @@ class TestExtractRPCResult:
 
     def test_null_result_without_error_info_returns_none(self):
         """Test null result without UserDisplayableError returns None normally."""
-        chunks = [
-            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]
-        ]
+        chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, None]]
 
         result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result is None
 
     def test_null_result_with_non_error_info_returns_none(self):
         """Test null result with non-error data at index 5 returns None."""
-        chunks = [
-            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, [1, 2, 3]]
-        ]
+        chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, [1, 2, 3]]]
 
         result = extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
         assert result is None
@@ -229,9 +224,7 @@ class TestExtractRPCResult:
             "type": "type.googleapis.com/google.internal.labs.tailwind.orchestration.v1.UserDisplayableError",
             "details": {"code": 1},
         }
-        chunks = [
-            ["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, error_info]
-        ]
+        chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, error_info]]
 
         with pytest.raises(RPCError, match="rate limiting"):
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
@@ -267,9 +260,7 @@ class TestDecodeResponse:
 
     def test_decode_complex_nested_data(self):
         """Test decoding complex nested data structures."""
-        data = {
-            "notebooks": [{"id": "nb1", "title": "Test", "sources": [{"id": "s1"}]}]
-        }
+        data = {"notebooks": [{"id": "nb1", "title": "Test", "sources": [{"id": "s1"}]}]}
         inner = json.dumps(data)
         chunk = json.dumps(["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner, None, None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"

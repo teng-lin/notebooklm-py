@@ -1,10 +1,10 @@
 """Tests for resolve_notebook_id and resolve_source_id partial ID matching."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
+import pytest
 
 from notebooklm.cli.helpers import resolve_notebook_id, resolve_source_id
 from notebooklm.types import Notebook, Source
@@ -22,9 +22,24 @@ def mock_client():
 def sample_notebooks():
     """Sample notebooks for testing."""
     return [
-        Notebook(id="abc123def456ghi789", title="First Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
-        Notebook(id="xyz789uvw456rst123", title="Second Notebook", created_at=datetime(2024, 1, 2), is_owner=False),
-        Notebook(id="abc999zzz888yyy777", title="Third Notebook", created_at=datetime(2024, 1, 3), is_owner=True),
+        Notebook(
+            id="abc123def456ghi789",
+            title="First Notebook",
+            created_at=datetime(2024, 1, 1),
+            is_owner=True,
+        ),
+        Notebook(
+            id="xyz789uvw456rst123",
+            title="Second Notebook",
+            created_at=datetime(2024, 1, 2),
+            is_owner=False,
+        ),
+        Notebook(
+            id="abc999zzz888yyy777",
+            title="Third Notebook",
+            created_at=datetime(2024, 1, 3),
+            is_owner=True,
+        ),
     ]
 
 
@@ -127,9 +142,16 @@ class TestResolveNotebookId:
         mock_client.notebooks.list = AsyncMock(return_value=sample_notebooks)
 
         # Create a notebook with a short ID that we'll match exactly
-        mock_client.notebooks.list = AsyncMock(return_value=[
-            Notebook(id="shortid", title="Short ID Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
-        ])
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[
+                Notebook(
+                    id="shortid",
+                    title="Short ID Notebook",
+                    created_at=datetime(2024, 1, 1),
+                    is_owner=True,
+                ),
+            ]
+        )
 
         with patch("notebooklm.cli.helpers.console") as mock_console:
             result = await resolve_notebook_id(mock_client, "shortid")
@@ -146,7 +168,12 @@ class TestResolveNotebookIdAmbiguityDisplay:
     async def test_shows_up_to_five_matches(self, mock_client):
         """Ambiguous error shows up to 5 matching notebooks."""
         notebooks = [
-            Notebook(id=f"abc{i}00000000000000", title=f"Notebook {i}", created_at=datetime(2024, 1, i + 1), is_owner=True)
+            Notebook(
+                id=f"abc{i}00000000000000",
+                title=f"Notebook {i}",
+                created_at=datetime(2024, 1, i + 1),
+                is_owner=True,
+            )
             for i in range(7)
         ]
         mock_client.notebooks.list = AsyncMock(return_value=notebooks)
@@ -219,7 +246,9 @@ class TestResolveSourceId:
         mock_console.print.assert_called()
 
     @pytest.mark.asyncio
-    async def test_ambiguous_prefix_raises_exception(self, mock_client_with_sources, sample_sources):
+    async def test_ambiguous_prefix_raises_exception(
+        self, mock_client_with_sources, sample_sources
+    ):
         """Ambiguous prefix (matches multiple) raises ClickException."""
         mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
 
@@ -318,7 +347,9 @@ class TestResolveSourceIdAmbiguityDisplay:
         assert "... and 2 more" in error_msg
 
     @pytest.mark.asyncio
-    async def test_shows_source_titles_in_ambiguous_error(self, mock_client_with_sources, sample_sources):
+    async def test_shows_source_titles_in_ambiguous_error(
+        self, mock_client_with_sources, sample_sources
+    ):
         """Ambiguous error includes source titles."""
         mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
 

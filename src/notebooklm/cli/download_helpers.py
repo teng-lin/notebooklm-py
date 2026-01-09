@@ -1,7 +1,7 @@
 """Helper functions for download commands."""
 
 import re
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 # Reserve space for " (999)" suffix when handling duplicate filenames
 DUPLICATE_SUFFIX_RESERVE = 7
@@ -19,8 +19,8 @@ def select_artifact(
     artifacts: list[ArtifactDict],
     latest: bool = True,
     earliest: bool = False,
-    name: Optional[str] = None,
-    artifact_id: Optional[str] = None,
+    name: str | None = None,
+    artifact_id: str | None = None,
 ) -> tuple[ArtifactDict, str]:
     """
     Select an artifact from a list based on criteria.
@@ -106,10 +106,10 @@ def artifact_title_to_filename(
     """
     # Sanitize: replace invalid chars with underscore
     # Invalid chars: / \ : * ? " < > |
-    sanitized = re.sub(r'[/\\:*?"<>|]', '_', title)
+    sanitized = re.sub(r'[/\\:*?"<>|]', "_", title)
 
     # Remove leading/trailing whitespace and dots
-    sanitized = sanitized.strip('. ')
+    sanitized = sanitized.strip(". ")
 
     # Fallback for empty titles
     if not sanitized:
@@ -120,7 +120,7 @@ def artifact_title_to_filename(
 
     # Truncate if too long
     if len(sanitized) > effective_max:
-        sanitized = sanitized[:effective_max].rstrip('. ')
+        sanitized = sanitized[:effective_max].rstrip(". ")
 
     # Build initial filename
     base = sanitized

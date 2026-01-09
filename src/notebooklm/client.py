@@ -20,16 +20,15 @@ Example:
 """
 
 from pathlib import Path
-from typing import Optional
 
-from .auth import AuthTokens
-from ._core import ClientCore, DEFAULT_TIMEOUT
-from ._notebooks import NotebooksAPI
-from ._sources import SourcesAPI
 from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
-from ._research import ResearchAPI
+from ._core import DEFAULT_TIMEOUT, ClientCore
+from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
+from ._research import ResearchAPI
+from ._sources import SourcesAPI
+from .auth import AuthTokens
 
 
 class NotebookLMClient:
@@ -102,7 +101,7 @@ class NotebookLMClient:
 
     @classmethod
     async def from_storage(
-        cls, path: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT
+        cls, path: str | None = None, timeout: float = DEFAULT_TIMEOUT
     ) -> "NotebookLMClient":
         """Create a client from Playwright storage state file.
 
@@ -146,9 +145,7 @@ class NotebookLMClient:
         # Check for redirect to login page
         final_url = str(response.url)
         if "accounts.google.com" in final_url:
-            raise ValueError(
-                "Authentication expired. Run 'notebooklm login' to re-authenticate."
-            )
+            raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
 
         # Extract SNlM0e (CSRF token) - REQUIRED
         csrf_match = re.search(r'"SNlM0e":"([^"]+)"', response.text)

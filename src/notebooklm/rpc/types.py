@@ -2,7 +2,6 @@
 
 from enum import Enum
 
-
 # NotebookLM API endpoints
 BATCHEXECUTE_URL = "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
 QUERY_URL = "https://notebooklm.google.com/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
@@ -93,7 +92,9 @@ class StudioContentType(int, Enum):
     """
 
     AUDIO = 1
-    REPORT = 2  # Includes: Briefing Doc, Study Guide, Blog Post, White Paper, Research Proposal, etc.
+    REPORT = (
+        2  # Includes: Briefing Doc, Study Guide, Blog Post, White Paper, Research Proposal, etc.
+    )
     VIDEO = 3
     QUIZ = 4  # Also used for flashcards
     QUIZ_FLASHCARD = 4  # Alias for backward compatibility

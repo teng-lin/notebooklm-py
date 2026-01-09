@@ -1,11 +1,10 @@
 """Tests for source CLI commands."""
 
 import json
-import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
@@ -60,12 +59,15 @@ class TestSourceList:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
-                    Source(id="src_1", title="Test Source", source_type="url", url="https://example.com"),
+                    Source(
+                        id="src_1",
+                        title="Test Source",
+                        source_type="url",
+                        url="https://example.com",
+                    ),
                 ]
             )
-            mock_client.notebooks.get = AsyncMock(
-                return_value=MagicMock(title="Test Notebook")
-            )
+            mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test Notebook"))
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
@@ -89,7 +91,9 @@ class TestSourceAdd:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
-                return_value=Source(id="src_new", title="Example", url="https://example.com", source_type="url")
+                return_value=Source(
+                    id="src_new", title="Example", url="https://example.com", source_type="url"
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -105,7 +109,12 @@ class TestSourceAdd:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
-                return_value=Source(id="src_yt", title="YouTube Video", url="https://youtube.com/watch?v=abc", source_type="youtube")
+                return_value=Source(
+                    id="src_yt",
+                    title="YouTube Video",
+                    url="https://youtube.com/watch?v=abc",
+                    source_type="youtube",
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -147,7 +156,17 @@ class TestSourceAdd:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
-                    ["source", "add", "My notes", "--type", "text", "--title", "Custom Title", "-n", "nb_123"],
+                    [
+                        "source",
+                        "add",
+                        "My notes",
+                        "--type",
+                        "text",
+                        "--title",
+                        "Custom Title",
+                        "-n",
+                        "nb_123",
+                    ],
                 )
 
             assert result.exit_code == 0
@@ -177,7 +196,9 @@ class TestSourceAdd:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
-                return_value=Source(id="src_new", title="Example", url="https://example.com", source_type="url")
+                return_value=Source(
+                    id="src_new", title="Example", url="https://example.com", source_type="url"
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -203,9 +224,7 @@ class TestSourceGet:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.get = AsyncMock(
                 return_value=Source(
@@ -213,7 +232,7 @@ class TestSourceGet:
                     title="Test Source",
                     source_type="url",
                     url="https://example.com",
-                    created_at=datetime(2024, 1, 1)
+                    created_at=datetime(2024, 1, 1),
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -254,18 +273,14 @@ class TestSourceDelete:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "delete", "src_123", "-n", "nb_123", "-y"]
-                )
+                result = runner.invoke(cli, ["source", "delete", "src_123", "-n", "nb_123", "-y"])
 
             assert result.exit_code == 0
             assert "Deleted source" in result.output
@@ -276,18 +291,14 @@ class TestSourceDelete:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.delete = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["source", "delete", "src_123", "-n", "nb_123", "-y"]
-                )
+                result = runner.invoke(cli, ["source", "delete", "src_123", "-n", "nb_123", "-y"])
 
             assert result.exit_code == 0
             assert "Delete may have failed" in result.output
@@ -304,9 +315,7 @@ class TestSourceRename:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Old Title", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Old Title", source_type="url")]
             )
             mock_client.sources.rename = AsyncMock(
                 return_value=Source(id="src_123", title="New Title", source_type="url")
@@ -335,9 +344,7 @@ class TestSourceRefresh:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Original Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Original Source", source_type="url")]
             )
             mock_client.sources.refresh = AsyncMock(
                 return_value=Source(id="src_123", title="Refreshed Source", source_type="url")
@@ -356,9 +363,7 @@ class TestSourceRefresh:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Original Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Original Source", source_type="url")]
             )
             mock_client.sources.refresh = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -405,7 +410,17 @@ class TestSourceAddDrive:
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["source", "add-drive", "file_id", "PDF Title", "--mime-type", "pdf", "-n", "nb_123"]
+                    cli,
+                    [
+                        "source",
+                        "add-drive",
+                        "file_id",
+                        "PDF Title",
+                        "--mime-type",
+                        "pdf",
+                        "-n",
+                        "nb_123",
+                    ],
                 )
 
             assert result.exit_code == 0
@@ -426,14 +441,12 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={
                     "summary": "This is a **test** summary about AI.",
-                    "keywords": ["AI", "machine learning", "data science"]
+                    "keywords": ["AI", "machine learning", "data science"],
                 }
             )
             mock_client_cls.return_value = mock_client
@@ -452,13 +465,9 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
-            mock_client.sources.get_guide = AsyncMock(
-                return_value={"summary": "", "keywords": []}
-            )
+            mock_client.sources.get_guide = AsyncMock(return_value={"summary": "", "keywords": []})
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
@@ -472,21 +481,18 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.get_guide = AsyncMock(
-                return_value={
-                    "summary": "Test summary",
-                    "keywords": ["keyword1", "keyword2"]
-                }
+                return_value={"summary": "Test summary", "keywords": ["keyword1", "keyword2"]}
             )
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "guide", "src_123", "-n", "nb_123", "--json"])
+                result = runner.invoke(
+                    cli, ["source", "guide", "src_123", "-n", "nb_123", "--json"]
+                )
 
             assert result.exit_code == 0
             data = json.loads(result.output)
@@ -499,9 +505,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={"summary": "Summary without keywords", "keywords": []}
@@ -522,9 +526,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={"summary": "", "keywords": ["AI", "ML", "Data"]}
@@ -552,9 +554,7 @@ class TestSourceStale:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.check_freshness = AsyncMock(return_value=False)  # Not fresh = stale
             mock_client_cls.return_value = mock_client
@@ -572,9 +572,7 @@ class TestSourceStale:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[
-                    Source(id="src_123", title="Test Source", source_type="url")
-                ]
+                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
             )
             mock_client.sources.check_freshness = AsyncMock(return_value=True)  # Fresh
             mock_client_cls.return_value = mock_client

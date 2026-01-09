@@ -6,30 +6,31 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 """
 
 import asyncio
+import builtins
 import logging
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from ._core import ClientCore
 from .auth import load_httpx_cookies
 from .rpc import (
-    RPCMethod,
-    RPCError,
-    StudioContentType,
     ArtifactStatus,
     AudioFormat,
     AudioLength,
-    VideoFormat,
-    VideoStyle,
-    QuizQuantity,
-    QuizDifficulty,
-    InfographicOrientation,
+    ExportType,
     InfographicDetail,
+    InfographicOrientation,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    RPCError,
+    RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
-    ReportFormat,
-    ExportType,
+    StudioContentType,
+    VideoFormat,
+    VideoStyle,
 )
 from .types import Artifact, GenerationStatus, ReportSuggestion
 
@@ -73,9 +74,7 @@ class ArtifactsAPI:
     # List/Get Operations
     # =========================================================================
 
-    async def list(
-        self, notebook_id: str, artifact_type: Optional[int] = None
-    ) -> List[Artifact]:
+    async def list(self, notebook_id: str, artifact_type: int | None = None) -> list[Artifact]:
         """List all artifacts in a notebook, including mind maps.
 
         This returns all AI-generated content: Audio Overviews, Video Overviews,
@@ -93,7 +92,7 @@ class ArtifactsAPI:
         Returns:
             List of Artifact objects.
         """
-        artifacts: List[Artifact] = []
+        artifacts: list[Artifact] = []
 
         # Fetch studio artifacts (audio, video, reports, etc.)
         params = [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
@@ -121,7 +120,10 @@ class ArtifactsAPI:
                 for mm_data in mind_maps:
                     mind_map_artifact = Artifact.from_mind_map(mm_data)
                     if mind_map_artifact is not None:  # None means deleted (status=2)
-                        if artifact_type is None or mind_map_artifact.artifact_type == artifact_type:
+                        if (
+                            artifact_type is None
+                            or mind_map_artifact.artifact_type == artifact_type
+                        ):
                             artifacts.append(mind_map_artifact)
             except (RPCError, httpx.HTTPError) as e:
                 # Network/API errors - log and continue with studio artifacts
@@ -131,7 +133,7 @@ class ArtifactsAPI:
 
         return artifacts
 
-    async def get(self, notebook_id: str, artifact_id: str) -> Optional[Artifact]:
+    async def get(self, notebook_id: str, artifact_id: str) -> Artifact | None:
         """Get a specific artifact by ID.
 
         Args:
@@ -147,37 +149,37 @@ class ArtifactsAPI:
                 return artifact
         return None
 
-    async def list_audio(self, notebook_id: str) -> List[Artifact]:
+    async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
         return await self.list(notebook_id, StudioContentType.AUDIO.value)
 
-    async def list_video(self, notebook_id: str) -> List[Artifact]:
+    async def list_video(self, notebook_id: str) -> builtins.list[Artifact]:
         """List video overview artifacts."""
         return await self.list(notebook_id, StudioContentType.VIDEO.value)
 
-    async def list_reports(self, notebook_id: str) -> List[Artifact]:
+    async def list_reports(self, notebook_id: str) -> builtins.list[Artifact]:
         """List report artifacts (Briefing Doc, Study Guide, Blog Post)."""
         return await self.list(notebook_id, StudioContentType.REPORT.value)
 
-    async def list_quizzes(self, notebook_id: str) -> List[Artifact]:
+    async def list_quizzes(self, notebook_id: str) -> builtins.list[Artifact]:
         """List quiz artifacts (type 4 with variant 2)."""
         all_type4 = await self.list(notebook_id, StudioContentType.QUIZ_FLASHCARD.value)
         return [a for a in all_type4 if a.is_quiz]
 
-    async def list_flashcards(self, notebook_id: str) -> List[Artifact]:
+    async def list_flashcards(self, notebook_id: str) -> builtins.list[Artifact]:
         """List flashcard artifacts (type 4 with variant 1)."""
         all_type4 = await self.list(notebook_id, StudioContentType.QUIZ_FLASHCARD.value)
         return [a for a in all_type4 if a.is_flashcards]
 
-    async def list_infographics(self, notebook_id: str) -> List[Artifact]:
+    async def list_infographics(self, notebook_id: str) -> builtins.list[Artifact]:
         """List infographic artifacts."""
         return await self.list(notebook_id, StudioContentType.INFOGRAPHIC.value)
 
-    async def list_slide_decks(self, notebook_id: str) -> List[Artifact]:
+    async def list_slide_decks(self, notebook_id: str) -> builtins.list[Artifact]:
         """List slide deck artifacts."""
         return await self.list(notebook_id, StudioContentType.SLIDE_DECK.value)
 
-    async def list_data_tables(self, notebook_id: str) -> List[Artifact]:
+    async def list_data_tables(self, notebook_id: str) -> builtins.list[Artifact]:
         """List data table artifacts."""
         return await self.list(notebook_id, StudioContentType.DATA_TABLE.value)
 
@@ -188,11 +190,11 @@ class ArtifactsAPI:
     async def generate_audio(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
-        instructions: Optional[str] = None,
-        audio_format: Optional[AudioFormat] = None,
-        audio_length: Optional[AudioLength] = None,
+        instructions: str | None = None,
+        audio_format: AudioFormat | None = None,
+        audio_length: AudioLength | None = None,
     ) -> GenerationStatus:
         """Generate an Audio Overview (podcast).
 
@@ -245,11 +247,11 @@ class ArtifactsAPI:
     async def generate_video(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
-        instructions: Optional[str] = None,
-        video_format: Optional[VideoFormat] = None,
-        video_style: Optional[VideoStyle] = None,
+        instructions: str | None = None,
+        video_format: VideoFormat | None = None,
+        video_style: VideoStyle | None = None,
     ) -> GenerationStatus:
         """Generate a Video Overview.
 
@@ -305,9 +307,9 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
-        custom_prompt: Optional[str] = None,
+        custom_prompt: str | None = None,
     ) -> GenerationStatus:
         """Generate a report artifact.
 
@@ -395,7 +397,7 @@ class ArtifactsAPI:
     async def generate_study_guide(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
     ) -> GenerationStatus:
         """Generate a study guide report.
@@ -420,10 +422,10 @@ class ArtifactsAPI:
     async def generate_quiz(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
-        instructions: Optional[str] = None,
-        quantity: Optional[QuizQuantity] = None,
-        difficulty: Optional[QuizDifficulty] = None,
+        source_ids: builtins.list[str] | None = None,
+        instructions: str | None = None,
+        quantity: QuizQuantity | None = None,
+        difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
         """Generate a quiz.
 
@@ -477,10 +479,10 @@ class ArtifactsAPI:
     async def generate_flashcards(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
-        instructions: Optional[str] = None,
-        quantity: Optional[QuizQuantity] = None,
-        difficulty: Optional[QuizDifficulty] = None,
+        source_ids: builtins.list[str] | None = None,
+        instructions: str | None = None,
+        quantity: QuizQuantity | None = None,
+        difficulty: QuizDifficulty | None = None,
     ) -> GenerationStatus:
         """Generate flashcards.
 
@@ -533,11 +535,11 @@ class ArtifactsAPI:
     async def generate_infographic(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
-        instructions: Optional[str] = None,
-        orientation: Optional[InfographicOrientation] = None,
-        detail_level: Optional[InfographicDetail] = None,
+        instructions: str | None = None,
+        orientation: InfographicOrientation | None = None,
+        detail_level: InfographicDetail | None = None,
     ) -> GenerationStatus:
         """Generate an infographic.
 
@@ -585,11 +587,11 @@ class ArtifactsAPI:
     async def generate_slide_deck(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
-        instructions: Optional[str] = None,
-        slide_format: Optional[SlideDeckFormat] = None,
-        slide_length: Optional[SlideDeckLength] = None,
+        instructions: str | None = None,
+        slide_format: SlideDeckFormat | None = None,
+        slide_length: SlideDeckLength | None = None,
     ) -> GenerationStatus:
         """Generate a slide deck.
 
@@ -639,9 +641,9 @@ class ArtifactsAPI:
     async def generate_data_table(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
         language: str = "en",
-        instructions: Optional[str] = None,
+        instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a data table.
 
@@ -689,7 +691,7 @@ class ArtifactsAPI:
     async def generate_mind_map(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
+        source_ids: builtins.list[str] | None = None,
     ) -> dict[str, Any]:
         """Generate an interactive mind map.
 
@@ -766,7 +768,7 @@ class ArtifactsAPI:
     # =========================================================================
 
     async def download_audio(
-        self, notebook_id: str, output_path: str, artifact_id: Optional[str] = None
+        self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download an Audio Overview to a file.
 
@@ -782,8 +784,10 @@ class ArtifactsAPI:
 
         # Filter for completed audio artifacts
         audio_candidates = [
-            a for a in artifacts_data
-            if isinstance(a, list) and len(a) > 4
+            a
+            for a in artifacts_data
+            if isinstance(a, list)
+            and len(a) > 4
             and a[2] == StudioContentType.AUDIO
             and a[4] == ArtifactStatus.COMPLETED
         ]
@@ -826,7 +830,7 @@ class ArtifactsAPI:
             raise ValueError(f"Failed to parse audio artifact structure: {e}")
 
     async def download_video(
-        self, notebook_id: str, output_path: str, artifact_id: Optional[str] = None
+        self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download a Video Overview to a file.
 
@@ -842,8 +846,10 @@ class ArtifactsAPI:
 
         # Filter for completed video artifacts
         video_candidates = [
-            a for a in artifacts_data
-            if isinstance(a, list) and len(a) > 4
+            a
+            for a in artifacts_data
+            if isinstance(a, list)
+            and len(a) > 4
             and a[2] == StudioContentType.VIDEO
             and a[4] == ArtifactStatus.COMPLETED
         ]
@@ -902,7 +908,7 @@ class ArtifactsAPI:
             raise ValueError(f"Failed to parse video artifact structure: {e}")
 
     async def download_infographic(
-        self, notebook_id: str, output_path: str, artifact_id: Optional[str] = None
+        self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download an Infographic to a file.
 
@@ -918,8 +924,10 @@ class ArtifactsAPI:
 
         # Filter for completed infographic artifacts
         info_candidates = [
-            a for a in artifacts_data
-            if isinstance(a, list) and len(a) > 4
+            a
+            for a in artifacts_data
+            if isinstance(a, list)
+            and len(a) > 4
             and a[2] == StudioContentType.INFOGRAPHIC
             and a[4] == ArtifactStatus.COMPLETED
         ]
@@ -962,7 +970,7 @@ class ArtifactsAPI:
             raise ValueError(f"Failed to parse infographic structure: {e}")
 
     async def download_slide_deck(
-        self, notebook_id: str, output_path: str, artifact_id: Optional[str] = None
+        self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download a slide deck as a PDF file.
 
@@ -978,8 +986,10 @@ class ArtifactsAPI:
 
         # Filter for completed slide deck artifacts
         slide_candidates = [
-            a for a in artifacts_data
-            if isinstance(a, list) and len(a) > 4
+            a
+            for a in artifacts_data
+            if isinstance(a, list)
+            and len(a) > 4
             and a[2] == StudioContentType.SLIDE_DECK
             and a[4] == ArtifactStatus.COMPLETED
         ]
@@ -1036,9 +1046,7 @@ class ArtifactsAPI:
         )
         return True
 
-    async def rename(
-        self, notebook_id: str, artifact_id: str, new_title: str
-    ) -> None:
+    async def rename(self, notebook_id: str, artifact_id: str, new_title: str) -> None:
         """Rename an artifact.
 
         Args:
@@ -1095,7 +1103,7 @@ class ArtifactsAPI:
         initial_interval: float = 2.0,
         max_interval: float = 10.0,
         timeout: float = 300.0,
-        poll_interval: Optional[float] = None,  # Deprecated, use initial_interval
+        poll_interval: float | None = None,  # Deprecated, use initial_interval
     ) -> GenerationStatus:
         """Wait for a generation task to complete.
 
@@ -1118,6 +1126,7 @@ class ArtifactsAPI:
         # Backward compatibility: poll_interval overrides initial_interval
         if poll_interval is not None:
             import warnings
+
             warnings.warn(
                 "poll_interval is deprecated, use initial_interval instead",
                 DeprecationWarning,
@@ -1204,8 +1213,8 @@ class ArtifactsAPI:
     async def export(
         self,
         notebook_id: str,
-        artifact_id: Optional[str] = None,
-        content: Optional[str] = None,
+        artifact_id: str | None = None,
+        content: str | None = None,
         title: str = "Export",
         export_type: ExportType = ExportType.DOCS,
     ) -> Any:
@@ -1238,8 +1247,8 @@ class ArtifactsAPI:
     async def suggest_reports(
         self,
         notebook_id: str,
-        source_ids: Optional[List[str]] = None,
-    ) -> List[ReportSuggestion]:
+        source_ids: builtins.list[str] | None = None,
+    ) -> builtins.list[ReportSuggestion]:
         """Get AI-suggested report formats for a notebook.
 
         Args:
@@ -1276,12 +1285,14 @@ class ArtifactsAPI:
         if result and isinstance(result, list):
             for item in result:
                 if isinstance(item, list) and len(item) >= 5:
-                    suggestions.append(ReportSuggestion(
-                        title=item[0] if isinstance(item[0], str) else "",
-                        description=item[1] if isinstance(item[1], str) else "",
-                        prompt=item[4] if len(item) > 4 and isinstance(item[4], str) else "",
-                        audience_level=item[5] if len(item) > 5 else 2,
-                    ))
+                    suggestions.append(
+                        ReportSuggestion(
+                            title=item[0] if isinstance(item[0], str) else "",
+                            description=item[1] if isinstance(item[1], str) else "",
+                            prompt=item[4] if len(item) > 4 and isinstance(item[4], str) else "",
+                            audience_level=item[5] if len(item) > 5 else 2,
+                        )
+                    )
 
         return suggestions
 
@@ -1289,7 +1300,9 @@ class ArtifactsAPI:
     # Private Helpers
     # =========================================================================
 
-    async def _call_generate(self, notebook_id: str, params: List[Any]) -> GenerationStatus:
+    async def _call_generate(
+        self, notebook_id: str, params: builtins.list[Any]
+    ) -> GenerationStatus:
         """Make a generation RPC call with error handling.
 
         Wraps the RPC call to handle UserDisplayableError (rate limiting/quota)
@@ -1320,7 +1333,7 @@ class ArtifactsAPI:
                 )
             raise
 
-    async def _list_raw(self, notebook_id: str) -> List[Any]:
+    async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw artifact list data."""
         params = [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
         result = await self._core.rpc_call(
@@ -1333,7 +1346,7 @@ class ArtifactsAPI:
             return result[0] if isinstance(result[0], list) else result
         return []
 
-    async def _get_source_ids(self, notebook_id: str) -> List[str]:
+    async def _get_source_ids(self, notebook_id: str) -> builtins.list[str]:
         """Extract source IDs from notebook data."""
         params = [notebook_id, None, [2], None, 0]
         notebook_data = await self._core.rpc_call(
@@ -1364,8 +1377,8 @@ class ArtifactsAPI:
         return source_ids
 
     async def _download_urls_batch(
-        self, urls_and_paths: List[Tuple[str, str]]
-    ) -> List[str]:
+        self, urls_and_paths: builtins.list[tuple[str, str]]
+    ) -> builtins.list[str]:
         """Download multiple files using httpx with proper cookie handling.
 
         Args:
@@ -1376,7 +1389,7 @@ class ArtifactsAPI:
         """
         from pathlib import Path
 
-        downloaded: List[str] = []
+        downloaded: list[str] = []
 
         # Load cookies with domain info for cross-domain redirect handling
         cookies = load_httpx_cookies()
@@ -1450,11 +1463,27 @@ class ArtifactsAPI:
         """Parse generation API result into GenerationStatus."""
         if result and isinstance(result, list) and len(result) > 0:
             artifact_data = result[0]
-            artifact_id = artifact_data[0] if isinstance(artifact_data, list) and len(artifact_data) > 0 else None
-            status_code = artifact_data[4] if isinstance(artifact_data, list) and len(artifact_data) > 4 else None
+            artifact_id = (
+                artifact_data[0]
+                if isinstance(artifact_data, list) and len(artifact_data) > 0
+                else None
+            )
+            status_code = (
+                artifact_data[4]
+                if isinstance(artifact_data, list) and len(artifact_data) > 4
+                else None
+            )
 
             if artifact_id:
-                status = "in_progress" if status_code == 1 else "completed" if status_code == 3 else "pending"
+                status = (
+                    "in_progress"
+                    if status_code == 1
+                    else "completed"
+                    if status_code == 3
+                    else "pending"
+                )
                 return GenerationStatus(task_id=artifact_id, status=status)
 
-        return GenerationStatus(task_id="", status="failed", error="Generation failed - no artifact_id returned")
+        return GenerationStatus(
+            task_id="", status="failed", error="Generation failed - no artifact_id returned"
+        )

@@ -12,19 +12,21 @@ Notebook lifecycle:
 """
 
 import pytest
-from .conftest import requires_auth, assert_generation_started
+
 from notebooklm import (
     AudioFormat,
     AudioLength,
-    VideoFormat,
-    VideoStyle,
-    QuizQuantity,
-    QuizDifficulty,
-    InfographicOrientation,
     InfographicDetail,
+    InfographicOrientation,
+    QuizDifficulty,
+    QuizQuantity,
     SlideDeckFormat,
     SlideDeckLength,
+    VideoFormat,
+    VideoStyle,
 )
+
+from .conftest import assert_generation_started, requires_auth
 
 
 @requires_auth
@@ -32,17 +34,13 @@ class TestAudioGeneration:
     """Audio generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_audio_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_default(self, client, generation_notebook_id):
         """Test audio generation with true defaults."""
         result = await client.artifacts.generate_audio(generation_notebook_id)
         assert_generation_started(result)
 
     @pytest.mark.asyncio
-    async def test_generate_audio_brief(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_brief(self, client, generation_notebook_id):
         """Test audio generation with non-default format to verify param encoding."""
         result = await client.artifacts.generate_audio(
             generation_notebook_id,
@@ -52,9 +50,7 @@ class TestAudioGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_audio_deep_dive_long(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_deep_dive_long(self, client, generation_notebook_id):
         result = await client.artifacts.generate_audio(
             generation_notebook_id,
             audio_format=AudioFormat.DEEP_DIVE,
@@ -64,9 +60,7 @@ class TestAudioGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_audio_brief_short(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_brief_short(self, client, generation_notebook_id):
         result = await client.artifacts.generate_audio(
             generation_notebook_id,
             audio_format=AudioFormat.BRIEF,
@@ -76,9 +70,7 @@ class TestAudioGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_audio_critique(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_critique(self, client, generation_notebook_id):
         result = await client.artifacts.generate_audio(
             generation_notebook_id,
             audio_format=AudioFormat.CRITIQUE,
@@ -87,9 +79,7 @@ class TestAudioGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_audio_debate(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_debate(self, client, generation_notebook_id):
         result = await client.artifacts.generate_audio(
             generation_notebook_id,
             audio_format=AudioFormat.DEBATE,
@@ -98,9 +88,7 @@ class TestAudioGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_audio_with_language(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_audio_with_language(self, client, generation_notebook_id):
         result = await client.artifacts.generate_audio(
             generation_notebook_id,
             language="en",
@@ -113,9 +101,7 @@ class TestVideoGeneration:
     """Video generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_video_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_default(self, client, generation_notebook_id):
         """Test video generation with non-default style to verify param encoding."""
         result = await client.artifacts.generate_video(
             generation_notebook_id,
@@ -125,9 +111,7 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_video_explainer_anime(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_explainer_anime(self, client, generation_notebook_id):
         result = await client.artifacts.generate_video(
             generation_notebook_id,
             video_format=VideoFormat.EXPLAINER,
@@ -137,9 +121,7 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_video_brief_whiteboard(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_brief_whiteboard(self, client, generation_notebook_id):
         result = await client.artifacts.generate_video(
             generation_notebook_id,
             video_format=VideoFormat.BRIEF,
@@ -149,9 +131,7 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_video_with_instructions(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_with_instructions(self, client, generation_notebook_id):
         result = await client.artifacts.generate_video(
             generation_notebook_id,
             video_format=VideoFormat.EXPLAINER,
@@ -162,9 +142,7 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_video_kawaii_style(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_kawaii_style(self, client, generation_notebook_id):
         result = await client.artifacts.generate_video(
             generation_notebook_id,
             video_style=VideoStyle.KAWAII,
@@ -173,9 +151,7 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_video_watercolor_style(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_watercolor_style(self, client, generation_notebook_id):
         result = await client.artifacts.generate_video(
             generation_notebook_id,
             video_style=VideoStyle.WATERCOLOR,
@@ -184,9 +160,7 @@ class TestVideoGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_video_auto_style(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_video_auto_style(self, client, generation_notebook_id):
         result = await client.artifacts.generate_video(
             generation_notebook_id,
             video_style=VideoStyle.AUTO_SELECT,
@@ -199,9 +173,7 @@ class TestQuizGeneration:
     """Quiz generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_quiz_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_quiz_default(self, client, generation_notebook_id):
         """Test quiz generation with non-default difficulty to verify param encoding."""
         result = await client.artifacts.generate_quiz(
             generation_notebook_id,
@@ -211,9 +183,7 @@ class TestQuizGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_quiz_with_options(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_quiz_with_options(self, client, generation_notebook_id):
         result = await client.artifacts.generate_quiz(
             generation_notebook_id,
             quantity=QuizQuantity.MORE,
@@ -224,9 +194,7 @@ class TestQuizGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_quiz_fewer_easy(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_quiz_fewer_easy(self, client, generation_notebook_id):
         result = await client.artifacts.generate_quiz(
             generation_notebook_id,
             quantity=QuizQuantity.FEWER,
@@ -240,9 +208,7 @@ class TestFlashcardsGeneration:
     """Flashcards generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_flashcards_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_flashcards_default(self, client, generation_notebook_id):
         """Test flashcards generation with non-default quantity to verify param encoding."""
         result = await client.artifacts.generate_flashcards(
             generation_notebook_id,
@@ -252,9 +218,7 @@ class TestFlashcardsGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_flashcards_with_options(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_flashcards_with_options(self, client, generation_notebook_id):
         result = await client.artifacts.generate_flashcards(
             generation_notebook_id,
             quantity=QuizQuantity.STANDARD,
@@ -269,9 +233,7 @@ class TestInfographicGeneration:
     """Infographic generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_infographic_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_infographic_default(self, client, generation_notebook_id):
         """Test infographic generation with non-default orientation to verify param encoding."""
         result = await client.artifacts.generate_infographic(
             generation_notebook_id,
@@ -281,9 +243,7 @@ class TestInfographicGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_infographic_portrait_detailed(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_infographic_portrait_detailed(self, client, generation_notebook_id):
         result = await client.artifacts.generate_infographic(
             generation_notebook_id,
             orientation=InfographicOrientation.PORTRAIT,
@@ -294,9 +254,7 @@ class TestInfographicGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_infographic_square_concise(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_infographic_square_concise(self, client, generation_notebook_id):
         result = await client.artifacts.generate_infographic(
             generation_notebook_id,
             orientation=InfographicOrientation.SQUARE,
@@ -306,9 +264,7 @@ class TestInfographicGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_infographic_landscape(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_infographic_landscape(self, client, generation_notebook_id):
         result = await client.artifacts.generate_infographic(
             generation_notebook_id,
             orientation=InfographicOrientation.LANDSCAPE,
@@ -321,9 +277,7 @@ class TestSlideDeckGeneration:
     """Slide deck generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_slide_deck_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_slide_deck_default(self, client, generation_notebook_id):
         """Test slide deck generation with non-default format to verify param encoding."""
         result = await client.artifacts.generate_slide_deck(
             generation_notebook_id,
@@ -333,9 +287,7 @@ class TestSlideDeckGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_slide_deck_detailed(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_slide_deck_detailed(self, client, generation_notebook_id):
         result = await client.artifacts.generate_slide_deck(
             generation_notebook_id,
             slide_format=SlideDeckFormat.DETAILED_DECK,
@@ -346,9 +298,7 @@ class TestSlideDeckGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_slide_deck_presenter_short(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_slide_deck_presenter_short(self, client, generation_notebook_id):
         result = await client.artifacts.generate_slide_deck(
             generation_notebook_id,
             slide_format=SlideDeckFormat.PRESENTER_SLIDES,
@@ -362,9 +312,7 @@ class TestDataTableGeneration:
     """Data table generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_data_table_default(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_data_table_default(self, client, generation_notebook_id):
         """Test data table generation with instructions to verify param encoding."""
         result = await client.artifacts.generate_data_table(
             generation_notebook_id,
@@ -374,9 +322,7 @@ class TestDataTableGeneration:
 
     @pytest.mark.asyncio
     @pytest.mark.variants
-    async def test_generate_data_table_with_instructions(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_data_table_with_instructions(self, client, generation_notebook_id):
         result = await client.artifacts.generate_data_table(
             generation_notebook_id,
             instructions="Create a comparison table of key concepts",
@@ -408,9 +354,7 @@ class TestStudyGuideGeneration:
     """Study guide generation tests."""
 
     @pytest.mark.asyncio
-    async def test_generate_study_guide(
-        self, client, generation_notebook_id
-    ):
+    async def test_generate_study_guide(self, client, generation_notebook_id):
         """Test study guide generation."""
         result = await client.artifacts.generate_study_guide(generation_notebook_id)
         assert_generation_started(result)

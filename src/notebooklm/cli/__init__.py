@@ -16,67 +16,65 @@ Re-exports from helpers for backward compatibility with tests.
 """
 
 # Command groups (subcommand style)
-from .source import source
 from .artifact import artifact
-from .generate import generate
+from .chat import register_chat_commands
 from .download import download
+from .generate import generate
+from .helpers import (
+    # Display
+    ARTIFACT_TYPE_DISPLAY,
+    ARTIFACT_TYPE_MAP,
+    BROWSER_PROFILE_DIR,
+    # Context
+    CONTEXT_FILE,
+    clear_context,
+    # Console
+    console,
+    detect_source_type,
+    get_artifact_type_display,
+    get_auth_tokens,
+    # Auth
+    get_client,
+    get_current_conversation,
+    get_current_notebook,
+    get_source_type_display,
+    handle_auth_error,
+    # Errors
+    handle_error,
+    json_error_response,
+    # Output
+    json_output_response,
+    require_notebook,
+    resolve_artifact_id,
+    resolve_notebook_id,
+    resolve_source_id,
+    # Async
+    run_async,
+    set_current_conversation,
+    set_current_notebook,
+    # Decorators
+    with_client,
+)
 from .note import note
-from .skill import skill
+from .notebook import register_notebook_commands
+from .options import (
+    artifact_option,
+    generate_options,
+    json_option,
+    # Individual option decorators
+    notebook_option,
+    output_option,
+    source_option,
+    # Composite decorators
+    standard_options,
+    wait_option,
+)
 from .research import research
 
 # Register functions (top-level command style)
 from .session import register_session_commands
-from .notebook import register_notebook_commands
-from .chat import register_chat_commands
-
-from .helpers import (
-    # Console
-    console,
-    # Async
-    run_async,
-    # Auth
-    get_client,
-    get_auth_tokens,
-    # Context
-    CONTEXT_FILE,
-    BROWSER_PROFILE_DIR,
-    get_current_notebook,
-    set_current_notebook,
-    clear_context,
-    get_current_conversation,
-    set_current_conversation,
-    require_notebook,
-    resolve_notebook_id,
-    resolve_source_id,
-    resolve_artifact_id,
-    # Errors
-    handle_error,
-    handle_auth_error,
-    # Decorators
-    with_client,
-    # Output
-    json_output_response,
-    json_error_response,
-    # Display
-    ARTIFACT_TYPE_DISPLAY,
-    ARTIFACT_TYPE_MAP,
-    get_artifact_type_display,
-    detect_source_type,
-    get_source_type_display,
-)
-
-from .options import (
-    # Individual option decorators
-    notebook_option,
-    json_option,
-    wait_option,
-    source_option,
-    artifact_option,
-    output_option,
-    # Composite decorators
-    standard_options,
-    generate_options,
-)
+from .skill import skill
+from .source import source
 
 __all__ = [
     # Command groups (subcommand style)

@@ -1,7 +1,9 @@
 import os
 import tempfile
-import pytest
 from pathlib import Path
+
+import pytest
+
 from .conftest import requires_auth
 
 

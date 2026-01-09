@@ -1,15 +1,16 @@
 """Unit tests for new API coverage features."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc.types import (
-    RPCMethod,
     ChatGoal,
     ChatResponseLength,
     DriveMimeType,
+    RPCMethod,
 )
 
 

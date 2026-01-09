@@ -1,7 +1,8 @@
 """Unit tests for YouTube URL extraction."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from notebooklm import NotebookLMClient
 

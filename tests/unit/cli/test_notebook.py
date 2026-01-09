@@ -1,17 +1,17 @@
 """Tests for notebook CLI commands (now top-level commands)."""
 
 import json
-import pytest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import Notebook, NotebookDescription, SuggestedTopic, AskResult
+from notebooklm.types import AskResult, Notebook
 
-from .conftest import create_mock_client, patch_main_cli_client, patch_client_for_module
+from .conftest import create_mock_client, patch_client_for_module, patch_main_cli_client
 
 
 @pytest.fixture
@@ -56,8 +56,18 @@ class TestNotebookList:
             mock_client = create_mock_client()
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_1", title="First Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
-                    Notebook(id="nb_2", title="Second Notebook", created_at=datetime(2024, 1, 2), is_owner=False),
+                    Notebook(
+                        id="nb_1",
+                        title="First Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
+                    Notebook(
+                        id="nb_2",
+                        title="Second Notebook",
+                        created_at=datetime(2024, 1, 2),
+                        is_owner=False,
+                    ),
                 ]
             )
             mock_client_cls.return_value = mock_client
@@ -75,7 +85,12 @@ class TestNotebookList:
             mock_client = create_mock_client()
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_1", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_1",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client_cls.return_value = mock_client
@@ -101,7 +116,9 @@ class TestNotebookCreate:
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notebooks.create = AsyncMock(
-                return_value=Notebook(id="new_nb_id", title="Test Notebook", created_at=datetime(2024, 1, 1))
+                return_value=Notebook(
+                    id="new_nb_id", title="Test Notebook", created_at=datetime(2024, 1, 1)
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -116,7 +133,9 @@ class TestNotebookCreate:
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notebooks.create = AsyncMock(
-                return_value=Notebook(id="new_nb_id", title="Test Notebook", created_at=datetime(2024, 1, 1))
+                return_value=Notebook(
+                    id="new_nb_id", title="Test Notebook", created_at=datetime(2024, 1, 1)
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -141,7 +160,12 @@ class TestNotebookDelete:
             # Mock list for partial ID resolution (returns the notebook to be deleted)
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_to_delete", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_to_delete",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.delete = AsyncMock(return_value=True)
@@ -164,16 +188,25 @@ class TestNotebookDelete:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_to_delete", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_to_delete",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
-                with patch("notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"):
+                with patch(
+                    "notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"
+                ):
                     with patch("notebooklm.cli.notebook.clear_context") as mock_clear:
-                        with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                        with patch(
+                            "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
+                        ) as mock_fetch:
                             mock_fetch.return_value = ("csrf", "session")
                             result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
 
@@ -186,7 +219,12 @@ class TestNotebookDelete:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.delete = AsyncMock(return_value=False)
@@ -212,7 +250,12 @@ class TestNotebookRename:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.rename = AsyncMock(return_value=None)
@@ -239,7 +282,12 @@ class TestNotebookShare:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.share = AsyncMock(
@@ -266,7 +314,12 @@ class TestNotebookShare:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.share = AsyncMock(
@@ -299,7 +352,12 @@ class TestNotebookSummary:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_desc = MagicMock()
@@ -322,7 +380,12 @@ class TestNotebookSummary:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_desc = MagicMock()
@@ -347,7 +410,12 @@ class TestNotebookSummary:
             # Mock list for partial ID resolution
             mock_client.notebooks.list = AsyncMock(
                 return_value=[
-                    Notebook(id="nb_123", title="Test Notebook", created_at=datetime(2024, 1, 1), is_owner=True),
+                    Notebook(
+                        id="nb_123",
+                        title="Test Notebook",
+                        created_at=datetime(2024, 1, 1),
+                        is_owner=True,
+                    ),
                 ]
             )
             mock_client.notebooks.get_description = AsyncMock(return_value=None)
@@ -370,9 +438,7 @@ class TestNotebookHistory:
     def test_notebook_history(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.chat.get_history = AsyncMock(
-                return_value=[[["conv_1"], ["conv_2"]]]
-            )
+            mock_client.chat.get_history = AsyncMock(return_value=[[["conv_1"], ["conv_2"]]])
             mock_client_cls.return_value = mock_client
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
@@ -429,8 +495,13 @@ class TestNotebookAsk:
             mock_client.chat.get_history = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.get_context_path", return_value=Path("/nonexistent/context.json")):
-                with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.cli.helpers.get_context_path",
+                return_value=Path("/nonexistent/context.json"),
+            ):
+                with patch(
+                    "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
+                ) as mock_fetch:
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(cli, ["ask", "-n", "nb_123", "What is this?"])
 
@@ -455,7 +526,9 @@ class TestNotebookAsk:
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "Fresh question"])
 
             assert result.exit_code == 0
-            assert "Starting new conversation" in result.output or "New conversation" in result.output
+            assert (
+                "Starting new conversation" in result.output or "New conversation" in result.output
+            )
 
     def test_notebook_ask_continue_conversation(self, runner, mock_auth):
         with patch_main_cli_client() as mock_client_cls:
@@ -492,7 +565,9 @@ class TestNotebookConfigure:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["configure", "-n", "nb_123", "--mode", "learning-guide"])
+                result = runner.invoke(
+                    cli, ["configure", "-n", "nb_123", "--mode", "learning-guide"]
+                )
 
             assert result.exit_code == 0
             assert "Chat mode set to: learning-guide" in result.output
@@ -505,7 +580,9 @@ class TestNotebookConfigure:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["configure", "-n", "nb_123", "--persona", "Act as a tutor"])
+                result = runner.invoke(
+                    cli, ["configure", "-n", "nb_123", "--persona", "Act as a tutor"]
+                )
 
             assert result.exit_code == 0
             assert "Chat configured" in result.output
@@ -519,7 +596,9 @@ class TestNotebookConfigure:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["configure", "-n", "nb_123", "--response-length", "longer"])
+                result = runner.invoke(
+                    cli, ["configure", "-n", "nb_123", "--response-length", "longer"]
+                )
 
             assert result.exit_code == 0
             assert "response length: longer" in result.output
@@ -542,7 +621,9 @@ class TestSourceAddResearch:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "add-research", "AI research", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["source", "add-research", "AI research", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 0
             assert "Found 1 sources" in result.output
@@ -555,7 +636,9 @@ class TestSourceAddResearch:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "add-research", "AI research", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["source", "add-research", "AI research", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 1
             assert "Research failed to start" in result.output
@@ -572,7 +655,9 @@ class TestSourceAddResearch:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["source", "add-research", "AI research", "-n", "nb_123", "--import-all"])
+                result = runner.invoke(
+                    cli, ["source", "add-research", "AI research", "-n", "nb_123", "--import-all"]
+                )
 
             assert result.exit_code == 0
             assert "Imported 1 sources" in result.output
@@ -619,5 +704,7 @@ class TestNotebookCommandsExist:
         assert "ask" in result.output
         # Verify there's no "notebook" command in the Commands section
         # (it should only appear as part of "NotebookLM" in the description)
-        commands_section = result.output.split("Commands:")[1] if "Commands:" in result.output else ""
+        commands_section = (
+            result.output.split("Commands:")[1] if "Commands:" in result.output else ""
+        )
         assert "  notebook " not in commands_section.lower()

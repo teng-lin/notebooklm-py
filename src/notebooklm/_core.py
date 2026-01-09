@@ -3,19 +3,19 @@
 import logging
 import os
 from collections import OrderedDict
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 
 from .auth import AuthTokens
 from .rpc import (
-    RPCMethod,
-    RPCError,
     BATCHEXECUTE_URL,
-    encode_rpc_request,
+    RPCError,
+    RPCMethod,
     build_request_body,
     decode_response,
+    encode_rpc_request,
 )
 
 # Enable RPC debug output via environment variable
@@ -57,7 +57,7 @@ class ClientCore:
         """
         self.auth = auth
         self._timeout = timeout
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self._http_client: httpx.AsyncClient | None = None
         # Request ID counter for chat API (must be unique per request)
         self._reqid_counter: int = 100000
         # OrderedDict for FIFO eviction when cache exceeds MAX_CONVERSATION_CACHE_SIZE
@@ -216,11 +216,13 @@ class ClientCore:
                 self._conversation_cache.popitem(last=False)
             self._conversation_cache[conversation_id] = []
 
-        self._conversation_cache[conversation_id].append({
-            "query": query,
-            "answer": answer,
-            "turn_number": turn_number,
-        })
+        self._conversation_cache[conversation_id].append(
+            {
+                "query": query,
+                "answer": answer,
+                "turn_number": turn_number,
+            }
+        )
 
     def get_cached_conversation(self, conversation_id: str) -> list[dict[str, Any]]:
         """Get cached conversation turns.
@@ -233,7 +235,7 @@ class ClientCore:
         """
         return self._conversation_cache.get(conversation_id, [])
 
-    def clear_conversation_cache(self, conversation_id: Optional[str] = None) -> bool:
+    def clear_conversation_cache(self, conversation_id: str | None = None) -> bool:
         """Clear conversation cache.
 
         Args:

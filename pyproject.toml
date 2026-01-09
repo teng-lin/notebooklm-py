@@ -89,3 +89,31 @@ exclude = ["tests/"]
 module = "notebooklm.cli.*"
 warn_return_any = false
 strict_optional = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function call in default argument (Click uses this)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["notebooklm"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

@@ -13,16 +13,16 @@ from typing import Any
 
 import click
 
-from ..auth import AuthTokens, load_auth_from_storage, fetch_tokens
+from ..auth import AuthTokens, fetch_tokens, load_auth_from_storage
 from ..client import NotebookLMClient
 from ..types import Artifact
+from .download_helpers import ArtifactDict, artifact_title_to_filename, select_artifact
 from .helpers import (
     console,
-    run_async,
-    require_notebook,
     handle_error,
+    require_notebook,
+    run_async,
 )
-from .download_helpers import select_artifact, artifact_title_to_filename, ArtifactDict
 
 
 @click.group()
@@ -166,9 +166,7 @@ async def _download_artifacts_generic(
 
             # Handle --all flag
             if download_all:
-                output_dir = (
-                    Path(output_path) if output_path else Path(default_output_dir)
-                )
+                output_dir = Path(output_path) if output_path else Path(default_output_dir)
 
                 if dry_run:
                     return {
@@ -199,9 +197,7 @@ async def _download_artifacts_generic(
                 for i, artifact in enumerate(type_artifacts, 1):
                     # Progress indicator
                     if not json_output:
-                        console.print(
-                            f"[dim]Downloading {i}/{total}:[/dim] {artifact['title']}"
-                        )
+                        console.print(f"[dim]Downloading {i}/{total}:[/dim] {artifact['title']}")
 
                     # Generate safe name
                     item_name = artifact_title_to_filename(
@@ -220,7 +216,10 @@ async def _download_artifacts_generic(
                                 "id": artifact["id"],
                                 "title": artifact["title"],
                                 "filename": item_name,
-                                **(skip_info or {"status": "skipped", "reason": "conflict resolution failed"}),
+                                **(
+                                    skip_info
+                                    or {"status": "skipped", "reason": "conflict resolution failed"}
+                                ),
                             }
                         )
                         continue
@@ -232,9 +231,7 @@ async def _download_artifacts_generic(
                     # Download
                     try:
                         # Download using dispatch
-                        await download_fn(
-                            nb_id, str(item_path), artifact_id=str(artifact["id"])
-                        )
+                        await download_fn(nb_id, str(item_path), artifact_id=str(artifact["id"]))
 
                         results.append(
                             {

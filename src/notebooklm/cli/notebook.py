@@ -14,13 +14,13 @@ from rich.table import Table
 
 from ..client import NotebookLMClient
 from .helpers import (
-    console,
-    require_notebook,
-    with_client,
-    json_output_response,
-    get_current_notebook,
     clear_context,
+    console,
+    get_current_notebook,
+    json_output_response,
+    require_notebook,
     resolve_notebook_id,
+    with_client,
 )
 
 
@@ -32,6 +32,7 @@ def register_notebook_commands(cli):
     @with_client
     def list_cmd(ctx, json_output, client_auth):
         """List all notebooks."""
+
         async def _run():
             async with NotebookLMClient(client_auth) as client:
                 notebooks = await client.notebooks.list()
@@ -44,9 +45,7 @@ def register_notebook_commands(cli):
                                 "id": nb.id,
                                 "title": nb.title,
                                 "is_owner": nb.is_owner,
-                                "created_at": nb.created_at.isoformat()
-                                if nb.created_at
-                                else None,
+                                "created_at": nb.created_at.isoformat() if nb.created_at else None,
                             }
                             for i, nb in enumerate(notebooks, 1)
                         ],
@@ -76,6 +75,7 @@ def register_notebook_commands(cli):
     @with_client
     def create_cmd(ctx, title, json_output, client_auth):
         """Create a new notebook."""
+
         async def _run():
             async with NotebookLMClient(client_auth) as client:
                 nb = await client.notebooks.create(title)
@@ -85,9 +85,7 @@ def register_notebook_commands(cli):
                         "notebook": {
                             "id": nb.id,
                             "title": nb.title,
-                            "created_at": nb.created_at.isoformat()
-                            if nb.created_at
-                            else None,
+                            "created_at": nb.created_at.isoformat() if nb.created_at else None,
                         }
                     }
                     json_output_response(data)

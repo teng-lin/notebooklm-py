@@ -1,36 +1,36 @@
 """RPC protocol implementation for NotebookLM batchexecute API."""
 
+from .decoder import (
+    RPCError,
+    collect_rpc_ids,
+    decode_response,
+    extract_rpc_result,
+    parse_chunked_response,
+    strip_anti_xssi,
+)
+from .encoder import build_request_body, encode_rpc_request
 from .types import (
-    RPCMethod,
     BATCHEXECUTE_URL,
     QUERY_URL,
     UPLOAD_URL,
-    StudioContentType,
     ArtifactStatus,
     AudioFormat,
     AudioLength,
-    VideoFormat,
-    VideoStyle,
-    QuizQuantity,
-    QuizDifficulty,
-    InfographicOrientation,
-    InfographicDetail,
-    SlideDeckFormat,
-    SlideDeckLength,
-    ReportFormat,
     ChatGoal,
     ChatResponseLength,
     DriveMimeType,
     ExportType,
-)
-from .encoder import encode_rpc_request, build_request_body
-from .decoder import (
-    strip_anti_xssi,
-    parse_chunked_response,
-    extract_rpc_result,
-    collect_rpc_ids,
-    decode_response,
-    RPCError,
+    InfographicDetail,
+    InfographicOrientation,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    RPCMethod,
+    SlideDeckFormat,
+    SlideDeckLength,
+    StudioContentType,
+    VideoFormat,
+    VideoStyle,
 )
 
 __all__ = [

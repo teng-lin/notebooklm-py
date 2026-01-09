@@ -1,9 +1,9 @@
 """Tests for generate CLI commands."""
 
 import json
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
@@ -60,7 +60,9 @@ class TestGenerateAudio:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "audio", "--format", "debate", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["generate", "audio", "--format", "debate", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 0
             mock_client.artifacts.generate_audio.assert_called()
@@ -75,7 +77,9 @@ class TestGenerateAudio:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "audio", "--length", "long", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["generate", "audio", "--length", "long", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 0
 
@@ -160,7 +164,9 @@ class TestGenerateVideo:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "video", "--style", "kawaii", "-n", "nb_123"])
+                result = runner.invoke(
+                    cli, ["generate", "video", "--style", "kawaii", "-n", "nb_123"]
+                )
 
             assert result.exit_code == 0
 
@@ -196,7 +202,17 @@ class TestGenerateQuiz:
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["generate", "quiz", "--quantity", "more", "--difficulty", "hard", "-n", "nb_123"]
+                    cli,
+                    [
+                        "generate",
+                        "quiz",
+                        "--quantity",
+                        "more",
+                        "--difficulty",
+                        "hard",
+                        "-n",
+                        "nb_123",
+                    ],
                 )
 
             assert result.exit_code == 0
@@ -254,7 +270,17 @@ class TestGenerateSlideDeck:
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["generate", "slide-deck", "--format", "presenter", "--length", "short", "-n", "nb_123"]
+                    cli,
+                    [
+                        "generate",
+                        "slide-deck",
+                        "--format",
+                        "presenter",
+                        "--length",
+                        "short",
+                        "-n",
+                        "nb_123",
+                    ],
                 )
 
             assert result.exit_code == 0
@@ -291,7 +317,17 @@ class TestGenerateInfographic:
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
-                    cli, ["generate", "infographic", "--orientation", "portrait", "--detail", "detailed", "-n", "nb_123"]
+                    cli,
+                    [
+                        "generate",
+                        "infographic",
+                        "--orientation",
+                        "portrait",
+                        "--detail",
+                        "detailed",
+                        "-n",
+                        "nb_123",
+                    ],
                 )
 
             assert result.exit_code == 0

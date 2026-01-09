@@ -5,8 +5,8 @@ to avoid asyncio event loop conflicts with pytest-asyncio.
 """
 
 import pytest
-from pathlib import Path
-from notebooklm.cli.download_helpers import select_artifact, artifact_title_to_filename
+
+from notebooklm.cli.download_helpers import artifact_title_to_filename, select_artifact
 
 
 class TestArtifactSelection:
@@ -19,7 +19,7 @@ class TestArtifactSelection:
             {"id": "a2", "title": "Meeting Notes", "created_at": 2000},
             {"id": "a3", "title": "Debate Round 3", "created_at": 3000},  # Latest "debate"
             {"id": "a4", "title": "Debate Round 2", "created_at": 2500},
-            {"id": "a5", "title": "Overview", "created_at": 4000},         # Latest overall
+            {"id": "a5", "title": "Overview", "created_at": 4000},  # Latest overall
         ]
 
         selected, reason = select_artifact(artifacts, latest=True, name="debate")
@@ -32,9 +32,9 @@ class TestArtifactSelection:
     def test_filter_then_select_earliest(self):
         """Should apply name filter BEFORE selecting earliest."""
         artifacts = [
-            {"id": "a1", "title": "Introduction", "created_at": 1000},     # Earliest overall
+            {"id": "a1", "title": "Introduction", "created_at": 1000},  # Earliest overall
             {"id": "a2", "title": "Chapter 2", "created_at": 3000},
-            {"id": "a3", "title": "Chapter 1", "created_at": 2000},        # Earliest "chapter"
+            {"id": "a3", "title": "Chapter 1", "created_at": 2000},  # Earliest "chapter"
             {"id": "a4", "title": "Chapter 3", "created_at": 4000},
             {"id": "a5", "title": "Conclusion", "created_at": 5000},
         ]
@@ -175,7 +175,7 @@ class TestFilenameGeneration:
         assert "/" not in filename
         assert ":" not in filename
         assert '"' not in filename
-        assert filename == 'Audio_ Part 1 _ _Main_.mp3'
+        assert filename == "Audio_ Part 1 _ _Main_.mp3"
 
     def test_handle_duplicates(self):
         """Should add (2), (3) suffixes for duplicates."""

@@ -1,7 +1,7 @@
 """Encode RPC requests for NotebookLM batchexecute API."""
 
 import json
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import quote
 
 from .types import RPCMethod
@@ -33,8 +33,8 @@ def encode_rpc_request(method: RPCMethod, params: list[Any]) -> list:
 
 def build_request_body(
     rpc_request: list,
-    csrf_token: Optional[str] = None,
-    session_id: Optional[str] = None,
+    csrf_token: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     """
     Build form-encoded request body for batchexecute.
@@ -67,8 +67,8 @@ def build_request_body(
 def build_url_params(
     rpc_method: RPCMethod,
     source_path: str = "/",
-    session_id: Optional[str] = None,
-    bl: Optional[str] = None,
+    session_id: str | None = None,
+    bl: str | None = None,
 ) -> dict[str, str]:
     """
     Build URL query parameters for batchexecute request.

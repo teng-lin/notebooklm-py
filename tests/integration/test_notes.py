@@ -68,7 +68,10 @@ class TestNotesAPI:
             [
                 [
                     ["note_001", ["note_001", "Regular note content", None, None, "Regular Note"]],
-                    ["mm_001", ["mm_001", '{"title":"Mind Map","children":[]}', None, None, "Mind Map"]],
+                    [
+                        "mm_001",
+                        ["mm_001", '{"title":"Mind Map","children":[]}', None, None, "Mind Map"],
+                    ],
                 ]
             ],
         )
@@ -204,7 +207,10 @@ class TestNotesAPI:
             [
                 [
                     ["note_001", ["note_001", "Regular note", None, None, "Note"]],
-                    ["mm_001", ["mm_001", '{"title":"Mind Map 1","children":[]}', None, None, "MM1"]],
+                    [
+                        "mm_001",
+                        ["mm_001", '{"title":"Mind Map 1","children":[]}', None, None, "MM1"],
+                    ],
                     ["mm_002", ["mm_002", '{"nodes":[{"id":"1"}]}', None, None, "MM2"]],
                 ]
             ],

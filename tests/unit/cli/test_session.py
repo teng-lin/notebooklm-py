@@ -1,10 +1,10 @@
 """Tests for session CLI commands (login, use, status, clear)."""
 
 import json
-import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
@@ -101,9 +101,7 @@ class TestUseCommand:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch(
-                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -131,9 +129,7 @@ class TestUseCommand:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch(
-                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -174,9 +170,7 @@ class TestUseCommand:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch(
-                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -319,14 +313,10 @@ class TestSessionEdgeCases:
         """Test 'use' command handles API errors gracefully."""
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
-            mock_client.notebooks.get = AsyncMock(
-                side_effect=Exception("API Error: Rate limited")
-            )
+            mock_client.notebooks.get = AsyncMock(side_effect=Exception("API Error: Rate limited"))
             mock_client_cls.return_value = mock_client
 
-            with patch(
-                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported

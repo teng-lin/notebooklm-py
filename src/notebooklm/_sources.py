@@ -1,17 +1,18 @@
 """Source operations API."""
 
 import asyncio
+import builtins
 import logging
 import re
 from datetime import datetime
 from pathlib import Path
 from time import monotonic
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import httpx
 
 from ._core import ClientCore
-from .rpc import RPCMethod, UPLOAD_URL
+from .rpc import UPLOAD_URL, RPCMethod
 from .rpc.types import SourceStatus
 from .types import (
     Source,
@@ -91,22 +92,27 @@ class SourcesAPI:
                     if isinstance(url_list, list) and len(url_list) > 0:
                         url = url_list[0]
                         # Detect YouTube vs other URLs
-                        if 'youtube.com' in url or 'youtu.be' in url:
+                        if "youtube.com" in url or "youtu.be" in url:
                             source_type = "youtube"
                         else:
                             source_type = "url"
 
                 # Extract file info if no URL
                 if not url and title:
-                    if title.endswith('.pdf'):
+                    if title.endswith(".pdf"):
                         source_type = "pdf"
-                    elif title.endswith(('.txt', '.md', '.doc', '.docx')):
+                    elif title.endswith((".txt", ".md", ".doc", ".docx")):
                         source_type = "text_file"
-                    elif title.endswith(('.xls', '.xlsx', '.csv')):
+                    elif title.endswith((".xls", ".xlsx", ".csv")):
                         source_type = "spreadsheet"
 
                 # Check for file upload indicator
-                if source_type == "text" and len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 1:
+                if (
+                    source_type == "text"
+                    and len(src) > 2
+                    and isinstance(src[2], list)
+                    and len(src[2]) > 1
+                ):
                     if isinstance(src[2][1], int) and src[2][1] > 0:
                         source_type = "upload"
 
@@ -132,18 +138,20 @@ class SourcesAPI:
                     ):
                         status = status_code
 
-                sources.append(Source(
-                    id=str(src_id),
-                    title=title,
-                    url=url,
-                    source_type=source_type,
-                    created_at=created_at,
-                    status=status,
-                ))
+                sources.append(
+                    Source(
+                        id=str(src_id),
+                        title=title,
+                        url=url,
+                        source_type=source_type,
+                        created_at=created_at,
+                        status=status,
+                    )
+                )
 
         return sources
 
-    async def get(self, notebook_id: str, source_id: str) -> Optional[Source]:
+    async def get(self, notebook_id: str, source_id: str) -> Source | None:
         """Get details of a specific source.
 
         Args:
@@ -200,7 +208,7 @@ class SourcesAPI:
         """
         start = monotonic()
         interval = initial_interval
-        last_status: Optional[int] = None
+        last_status: int | None = None
 
         while True:
             # Check timeout before each poll
@@ -233,10 +241,10 @@ class SourcesAPI:
     async def wait_for_sources(
         self,
         notebook_id: str,
-        source_ids: List[str],
+        source_ids: builtins.list[str],
         timeout: float = 120.0,
         **kwargs: Any,
-    ) -> List[Source]:
+    ) -> builtins.list[Source]:
         """Wait for multiple sources to become ready in parallel.
 
         Args:
@@ -263,8 +271,7 @@ class SourcesAPI:
             )
         """
         tasks = [
-            self.wait_until_ready(notebook_id, sid, timeout=timeout, **kwargs)
-            for sid in source_ids
+            self.wait_until_ready(notebook_id, sid, timeout=timeout, **kwargs) for sid in source_ids
         ]
         return list(await asyncio.gather(*tasks))
 
@@ -353,8 +360,8 @@ class SourcesAPI:
     async def add_file(
         self,
         notebook_id: str,
-        file_path: Union[str, Path],
-        mime_type: Optional[str] = None,
+        file_path: str | Path,
+        mime_type: str | None = None,
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
@@ -397,9 +404,7 @@ class SourcesAPI:
         source_id = await self._register_file_source(notebook_id, filename)
 
         # Step 2: Start resumable upload with the SOURCE_ID from step 1
-        upload_url = await self._start_resumable_upload(
-            notebook_id, filename, file_size, source_id
-        )
+        upload_url = await self._start_resumable_upload(notebook_id, filename, file_size, source_id)
 
         # Step 3: Stream upload file content (memory-efficient)
         await self._upload_file_streaming(upload_url, file_path)
@@ -452,7 +457,15 @@ class SourcesAPI:
         # Drive source structure: [[file_id, mime_type, 1, title], null x9, 1]
         source_data = [
             [file_id, mime_type, 1, title],
-            None, None, None, None, None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             1,
         ]
         params = [
@@ -552,7 +565,7 @@ class SourcesAPI:
         # False means stale, True means fresh
         return result is True
 
-    async def get_guide(self, notebook_id: str, source_id: str) -> Dict[str, Any]:
+    async def get_guide(self, notebook_id: str, source_id: str) -> dict[str, Any]:
         """Get AI-generated summary and keywords for a specific source.
 
         This is the "Source Guide" feature shown when clicking on a source
@@ -596,22 +609,18 @@ class SourcesAPI:
     # Private helper methods
     # =========================================================================
 
-    def _extract_youtube_video_id(self, url: str) -> Optional[str]:
+    def _extract_youtube_video_id(self, url: str) -> str | None:
         """Extract YouTube video ID from various URL formats."""
         # Short URLs: youtu.be/VIDEO_ID
         match = re.match(r"https?://youtu\.be/([a-zA-Z0-9_-]+)", url)
         if match:
             return match.group(1)
         # Standard watch URLs: youtube.com/watch?v=VIDEO_ID
-        match = re.match(
-            r"https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)", url
-        )
+        match = re.match(r"https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)", url)
         if match:
             return match.group(1)
         # Shorts URLs: youtube.com/shorts/VIDEO_ID
-        match = re.match(
-            r"https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]+)", url
-        )
+        match = re.match(r"https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]+)", url)
         if match:
             return match.group(1)
         return None
@@ -666,6 +675,7 @@ class SourcesAPI:
         # Parse SOURCE_ID from response - handle various nesting formats
         # API returns different structures: [[[[id]]]], [[[id]]], [[id]], etc.
         if result and isinstance(result, list):
+
             def extract_id(data):
                 """Recursively extract first string from nested lists."""
                 if isinstance(data, str):
@@ -704,11 +714,13 @@ class SourcesAPI:
             "x-goog-upload-protocol": "resumable",
         }
 
-        body = json.dumps({
-            "PROJECT_ID": notebook_id,
-            "SOURCE_NAME": filename,
-            "SOURCE_ID": source_id,
-        })
+        body = json.dumps(
+            {
+                "PROJECT_ID": notebook_id,
+                "SOURCE_NAME": filename,
+                "SOURCE_ID": source_id,
+            }
+        )
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, headers=headers, content=body)

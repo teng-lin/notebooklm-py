@@ -1,14 +1,12 @@
 """Tests for NotebookLMClient class."""
 
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from pytest_httpx import HTTPXMock
 
-from notebooklm.client import NotebookLMClient
 from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 
 
 @pytest.fixture
@@ -172,7 +170,7 @@ class TestRefreshAuth:
         client = NotebookLMClient(mock_auth)
 
         # Mock the homepage response with new tokens
-        html = '''
+        html = """
         <html>
         <script>
             window.WIZ_global_data = {
@@ -181,7 +179,7 @@ class TestRefreshAuth:
             };
         </script>
         </html>
-        '''
+        """
         httpx_mock.add_response(
             url="https://notebooklm.google.com/",
             content=html.encode(),
@@ -208,7 +206,7 @@ class TestRefreshAuth:
         # The refresh_auth checks if "accounts.google.com" is in the final URL
         # We can't easily mock a real redirect with httpx, so we test the URL check
         # by providing a response that doesn't contain the expected tokens
-        html = '<html><body>Please sign in</body></html>'  # No tokens
+        html = "<html><body>Please sign in</body></html>"  # No tokens
         httpx_mock.add_response(
             url="https://notebooklm.google.com/",
             content=html.encode(),

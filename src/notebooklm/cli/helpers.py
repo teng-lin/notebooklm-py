@@ -18,10 +18,10 @@ from rich.console import Console
 
 from ..auth import (
     AuthTokens,
-    load_auth_from_storage,
     fetch_tokens,
+    load_auth_from_storage,
 )
-from ..paths import get_context_path, get_browser_profile_dir
+from ..paths import get_browser_profile_dir, get_context_path
 
 console = Console()
 
@@ -116,7 +116,7 @@ def get_current_notebook() -> str | None:
     try:
         data = json.loads(context_file.read_text())
         return data.get("notebook_id")
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return None
 
 
@@ -154,7 +154,7 @@ def get_current_conversation() -> str | None:
     try:
         data = json.loads(context_file.read_text())
         return data.get("conversation_id")
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return None
 
 
@@ -170,7 +170,7 @@ def set_current_conversation(conversation_id: str | None):
         elif "conversation_id" in data:
             del data["conversation_id"]
         context_file.write_text(json.dumps(data, indent=2))
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         pass
 
 
@@ -247,8 +247,7 @@ async def _resolve_partial_id(
         return partial_id
 
     items = await list_fn()
-    matches = [item for item in items
-               if item.id.lower().startswith(partial_id.lower())]
+    matches = [item for item in items if item.id.lower().startswith(partial_id.lower())]
 
     if len(matches) == 1:
         if matches[0].id != partial_id:
@@ -315,13 +314,9 @@ def handle_error(e: Exception):
 def handle_auth_error(json_output: bool = False):
     """Handle authentication errors."""
     if json_output:
-        json_error_response(
-            "AUTH_REQUIRED", "Auth not found. Run 'notebooklm login' first."
-        )
+        json_error_response("AUTH_REQUIRED", "Auth not found. Run 'notebooklm login' first.")
     else:
-        console.print(
-            "[red]Not logged in. Run 'notebooklm login' first.[/red]"
-        )
+        console.print("[red]Not logged in. Run 'notebooklm login' first.[/red]")
         raise SystemExit(1)
 
 
@@ -358,6 +353,7 @@ def with_client(f):
     Returns:
         Decorated function with Click pass_context
     """
+
     @wraps(f)
     @click.pass_context
     def wrapper(ctx, *args, **kwargs):
@@ -374,6 +370,7 @@ def with_client(f):
                 json_error_response("ERROR", str(e))
             else:
                 handle_error(e)
+
     return wrapper
 
 
@@ -389,9 +386,7 @@ def json_output_response(data: dict) -> None:
 
 def json_error_response(code: str, message: str) -> None:
     """Print JSON error and exit."""
-    console.print(
-        json.dumps({"error": True, "code": code, "message": message}, indent=2)
-    )
+    console.print(json.dumps({"error": True, "code": code, "message": message}, indent=2))
     raise SystemExit(1)
 
 

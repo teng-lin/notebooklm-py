@@ -68,7 +68,7 @@ def note_list(ctx, notebook_id, client_auth):
                     table.add_row(
                         n.id,
                         n.title or "Untitled",
-                        preview + "..." if len(n.content or "") > 50 else preview
+                        preview + "..." if len(n.content or "") > 50 else preview,
                     )
 
             console.print(table)

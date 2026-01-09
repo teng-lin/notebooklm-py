@@ -13,10 +13,10 @@ from ..client import NotebookLMClient
 from ..types import ChatMode
 from .helpers import (
     console,
-    require_notebook,
-    with_client,
     get_current_conversation,
+    require_notebook,
     set_current_conversation,
+    with_client,
 )
 
 
@@ -32,12 +32,8 @@ def register_chat_commands(cli):
         default=None,
         help="Notebook ID (uses current if not set)",
     )
-    @click.option(
-        "--conversation-id", "-c", default=None, help="Continue a specific conversation"
-    )
-    @click.option(
-        "--new", "new_conversation", is_flag=True, help="Start a new conversation"
-    )
+    @click.option("--conversation-id", "-c", default=None, help="Continue a specific conversation")
+    @click.option("--new", "new_conversation", is_flag=True, help="Start a new conversation")
     @with_client
     def ask_cmd(ctx, question, notebook_id, conversation_id, new_conversation, client_auth):
         """Ask a notebook a question.
@@ -68,9 +64,7 @@ def register_chat_commands(cli):
                             if history and history[0]:
                                 last_conv = history[0][-1]
                                 effective_conv_id = (
-                                    last_conv[0]
-                                    if isinstance(last_conv, list)
-                                    else str(last_conv)
+                                    last_conv[0] if isinstance(last_conv, list) else str(last_conv)
                                 )
                                 console.print(
                                     f"[dim]Continuing conversation {effective_conv_id[:8]}...[/dim]"
@@ -78,9 +72,7 @@ def register_chat_commands(cli):
                         except Exception:
                             pass
 
-                result = await client.chat.ask(
-                    nb_id, question, conversation_id=effective_conv_id
-                )
+                result = await client.chat.ask(nb_id, question, conversation_id=effective_conv_id)
 
                 if result.conversation_id:
                     set_current_conversation(result.conversation_id)
@@ -111,9 +103,7 @@ def register_chat_commands(cli):
         default=None,
         help="Predefined chat mode",
     )
-    @click.option(
-        "--persona", default=None, help="Custom persona prompt (up to 10,000 chars)"
-    )
+    @click.option("--persona", default=None, help="Custom persona prompt (up to 10,000 chars)")
     @click.option(
         "--response-length",
         type=click.Choice(["default", "longer", "shorter"]),
@@ -206,6 +196,7 @@ def register_chat_commands(cli):
           notebooklm history -n nb123     # Show history for specific notebook
           notebooklm history --clear      # Clear local cache
         """
+
         async def _run():
             async with NotebookLMClient(client_auth) as client:
                 if clear_cache:
@@ -228,9 +219,7 @@ def register_chat_commands(cli):
                             table.add_column("#", style="dim")
                             table.add_column("Conversation ID", style="cyan")
                             for i, conv in enumerate(conversations, 1):
-                                conv_id = (
-                                    conv[0] if isinstance(conv, list) and conv else str(conv)
-                                )
+                                conv_id = conv[0] if isinstance(conv, list) and conv else str(conv)
                                 table.add_row(str(i), conv_id)
                             console.print(table)
                             console.print(

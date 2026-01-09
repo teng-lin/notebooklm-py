@@ -1,8 +1,10 @@
 """Tests for research functionality."""
 
-import pytest
 import json
 import re
+
+import pytest
+
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -55,9 +57,7 @@ class TestResearch:
         ]
 
         response_json = json.dumps([[["task_123", task_info]]])
-        chunk = json.dumps(
-            ["wrb.fr", RPCMethod.POLL_RESEARCH.value, response_json, None, None]
-        )
+        chunk = json.dumps(["wrb.fr", RPCMethod.POLL_RESEARCH.value, response_json, None, None])
         response_body = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
         httpx_mock.add_response(content=response_body.encode(), method="POST")
@@ -73,9 +73,7 @@ class TestResearch:
     @pytest.mark.asyncio
     async def test_import_research(self, auth_tokens, httpx_mock):
         response_json = json.dumps([[[["src_new"], "Imported Title"]]])
-        chunk = json.dumps(
-            ["wrb.fr", RPCMethod.IMPORT_RESEARCH.value, response_json, None, None]
-        )
+        chunk = json.dumps(["wrb.fr", RPCMethod.IMPORT_RESEARCH.value, response_json, None, None])
         response_body = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
         httpx_mock.add_response(content=response_body.encode(), method="POST")

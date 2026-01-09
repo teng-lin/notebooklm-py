@@ -1,8 +1,8 @@
 """Tests for note CLI commands."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
@@ -267,9 +267,7 @@ class TestNoteDelete:
 
             with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(
-                    cli, ["note", "delete", "note_123", "-n", "nb_123", "-y"]
-                )
+                result = runner.invoke(cli, ["note", "delete", "note_123", "-n", "nb_123", "-y"])
 
             assert result.exit_code == 0
             assert "Deleted note" in result.output

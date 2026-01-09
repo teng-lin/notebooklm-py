@@ -1,7 +1,10 @@
 import asyncio
+
 import pytest
+
+from notebooklm import Source, SourceStatus
+
 from .conftest import requires_auth
-from notebooklm import Source, SourceStatus, SourceTimeoutError
 
 
 @requires_auth
@@ -27,9 +30,7 @@ class TestSourceOperations:
     @pytest.mark.asyncio
     async def test_add_url_source(self, client, temp_notebook):
         """Test adding a URL source to an owned notebook."""
-        source = await client.sources.add_url(
-            temp_notebook.id, "https://httpbin.org/html"
-        )
+        source = await client.sources.add_url(temp_notebook.id, "https://httpbin.org/html")
         assert isinstance(source, Source)
         assert source.id is not None
         # URL may or may not be returned in response
@@ -59,9 +60,7 @@ class TestSourceOperations:
         assert isinstance(source, Source)
 
         # Rename
-        renamed = await client.sources.rename(
-            temp_notebook.id, source.id, "Renamed Test Source"
-        )
+        renamed = await client.sources.rename(temp_notebook.id, source.id, "Renamed Test Source")
         assert isinstance(renamed, Source)
         assert renamed.title == "Renamed Test Source"
         # No need to restore - temp_notebook is deleted after test
@@ -135,9 +134,7 @@ class TestSourceMutations:
     async def test_refresh_source(self, client, temp_notebook):
         """Test refreshing a URL source."""
         # Add a URL source
-        source = await client.sources.add_url(
-            temp_notebook.id, "https://httpbin.org/html"
-        )
+        source = await client.sources.add_url(temp_notebook.id, "https://httpbin.org/html")
         assert source.id is not None
 
         # Refresh it
@@ -151,9 +148,7 @@ class TestSourceMutations:
     async def test_check_freshness(self, client, temp_notebook):
         """Test checking source freshness."""
         # Add a URL source
-        source = await client.sources.add_url(
-            temp_notebook.id, "https://httpbin.org/html"
-        )
+        source = await client.sources.add_url(temp_notebook.id, "https://httpbin.org/html")
         assert source.id is not None
 
         await asyncio.sleep(2)  # Wait for processing

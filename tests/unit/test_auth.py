@@ -1,8 +1,9 @@
 """Tests for authentication module."""
 
-import pytest
 import json
 from pathlib import Path
+
+import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm.auth import (
@@ -10,9 +11,9 @@ from notebooklm.auth import (
     extract_cookies_from_storage,
     extract_csrf_from_html,
     extract_session_id_from_html,
+    fetch_tokens,
     load_auth_from_storage,
     load_httpx_cookies,
-    fetch_tokens,
 )
 
 
@@ -254,7 +255,9 @@ class TestLoadAuthFromEnvVar:
 
         # Set NOTEBOOKLM_HOME to tmp_path and create a file there
         monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
-        file_storage = {"cookies": [{"name": "SID", "value": "from_home_file", "domain": ".google.com"}]}
+        file_storage = {
+            "cookies": [{"name": "SID", "value": "from_home_file", "domain": ".google.com"}]
+        }
         storage_file = tmp_path / "storage_state.json"
         storage_file.write_text(json.dumps(file_storage))
 
@@ -266,28 +269,36 @@ class TestLoadAuthFromEnvVar:
         """Test that empty string NOTEBOOKLM_AUTH_JSON raises ValueError."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "")
 
-        with pytest.raises(ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"):
+        with pytest.raises(
+            ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"
+        ):
             load_auth_from_storage()
 
     def test_env_var_whitespace_only_raises_value_error(self, monkeypatch):
         """Test that whitespace-only NOTEBOOKLM_AUTH_JSON raises ValueError."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "   \n\t  ")
 
-        with pytest.raises(ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"):
+        with pytest.raises(
+            ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"
+        ):
             load_auth_from_storage()
 
     def test_env_var_missing_cookies_key_raises_value_error(self, monkeypatch):
         """Test that NOTEBOOKLM_AUTH_JSON without 'cookies' key raises ValueError."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"origins": []}')
 
-        with pytest.raises(ValueError, match="must contain valid Playwright storage state with a 'cookies' key"):
+        with pytest.raises(
+            ValueError, match="must contain valid Playwright storage state with a 'cookies' key"
+        ):
             load_auth_from_storage()
 
     def test_env_var_non_dict_raises_value_error(self, monkeypatch):
         """Test that non-dict NOTEBOOKLM_AUTH_JSON raises ValueError."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '["not", "a", "dict"]')
 
-        with pytest.raises(ValueError, match="must contain valid Playwright storage state with a 'cookies' key"):
+        with pytest.raises(
+            ValueError, match="must contain valid Playwright storage state with a 'cookies' key"
+        ):
             load_auth_from_storage()
 
 
@@ -327,7 +338,9 @@ class TestLoadHttpxCookiesWithEnvVar:
         """Test that empty string NOTEBOOKLM_AUTH_JSON raises ValueError."""
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "")
 
-        with pytest.raises(ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"):
+        with pytest.raises(
+            ValueError, match="NOTEBOOKLM_AUTH_JSON environment variable is set but empty"
+        ):
             load_httpx_cookies()
 
     def test_env_var_missing_required_cookies_raises(self, monkeypatch):
@@ -640,7 +653,6 @@ class TestDefaultStoragePath:
     def test_default_storage_path_is_correct(self):
         """Test DEFAULT_STORAGE_PATH constant is defined correctly."""
         from notebooklm.auth import DEFAULT_STORAGE_PATH
-        from pathlib import Path
 
         assert DEFAULT_STORAGE_PATH is not None
         assert isinstance(DEFAULT_STORAGE_PATH, Path)

@@ -53,9 +53,7 @@ class TestAddSource:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            source = await client.sources.add_text(
-                "nb_123", "My Document", "This is the content"
-            )
+            source = await client.sources.add_text("nb_123", "My Document", "This is the content")
 
         assert isinstance(source, Source)
         assert source.id == "source_id"
@@ -148,9 +146,37 @@ class TestSourcesAPI:
                 [
                     "Test Notebook",
                     [
-                        [["src_001"], "My Article", [None, 11, [1704067200, 0], None, 5, None, None, ["https://example.com"]], [None, 2]],
+                        [
+                            ["src_001"],
+                            "My Article",
+                            [
+                                None,
+                                11,
+                                [1704067200, 0],
+                                None,
+                                5,
+                                None,
+                                None,
+                                ["https://example.com"],
+                            ],
+                            [None, 2],
+                        ],
                         [["src_002"], "My Text", [None, 0, [1704153600, 0]], [None, 2]],
-                        [["src_003"], "YouTube Video", [None, 11, [1704240000, 0], None, 5, None, None, ["https://youtube.com/watch?v=abc"]], [None, 2]],
+                        [
+                            ["src_003"],
+                            "YouTube Video",
+                            [
+                                None,
+                                11,
+                                [1704240000, 0],
+                                None,
+                                5,
+                                None,
+                                None,
+                                ["https://youtube.com/watch?v=abc"],
+                            ],
+                            [None, 2],
+                        ],
                     ],
                     "nb_123",
                     "📘",
@@ -180,7 +206,16 @@ class TestSourcesAPI:
         """Test listing sources from empty notebook."""
         response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
-            [["Empty Notebook", [], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
+            [
+                [
+                    "Empty Notebook",
+                    [],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -199,7 +234,16 @@ class TestSourcesAPI:
         """Test getting a non-existent source."""
         response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
-            [["Notebook", [[["src_001"], "Source 1", [None, 0], [None, 2]]], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
+            [
+                [
+                    "Notebook",
+                    [[["src_001"], "Source 1", [None, 0], [None, 2]]],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
         )
         httpx_mock.add_response(content=response.encode())
 
@@ -367,11 +411,7 @@ class TestAddFileSource:
         # Step 1: Mock RPC registration response (o4cbdc)
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
-            [
-                [
-                    [["file_source_123"], "test_document.txt", [None, None, None, None, 0]]
-                ]
-            ],
+            [[[["file_source_123"], "test_document.txt", [None, None, None, None, 0]]]],
         )
         httpx_mock.add_response(
             url=re.compile(r".*batchexecute.*"),
@@ -504,6 +544,7 @@ class TestAddFileSource:
 
         # Verify body contains metadata
         import json
+
         body = json.loads(start_request.content.decode())
         assert body["PROJECT_ID"] == "nb_123"
         assert body["SOURCE_NAME"] == "document.txt"

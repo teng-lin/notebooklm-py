@@ -5,7 +5,8 @@ user-created notes in notebooks. Notes are distinct from artifacts -
 they are user-created content, not AI-generated.
 """
 
-from typing import Any, List, Optional
+import builtins
+from typing import Any
 
 from ._core import ClientCore
 from .rpc import RPCMethod
@@ -37,7 +38,7 @@ class NotesAPI:
         """
         self._core = core
 
-    async def list(self, notebook_id: str) -> List[Note]:
+    async def list(self, notebook_id: str) -> list[Note]:
         """List all text notes in the notebook.
 
         This excludes:
@@ -59,15 +60,13 @@ class NotesAPI:
                 continue
 
             content = self._extract_content(item)
-            is_mind_map = content and (
-                '"children":' in content or '"nodes":' in content
-            )
+            is_mind_map = content and ('"children":' in content or '"nodes":' in content)
             if not is_mind_map:
                 notes.append(self._parse_note(item, notebook_id))
 
         return notes
 
-    async def get(self, notebook_id: str, note_id: str) -> Optional[Note]:
+    async def get(self, notebook_id: str, note_id: str) -> Note | None:
         """Get a specific note by ID.
 
         Args:
@@ -173,7 +172,7 @@ class NotesAPI:
         )
         return True
 
-    async def list_mind_maps(self, notebook_id: str) -> List[Any]:
+    async def list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """List all mind maps in the notebook.
 
         Mind maps are stored in the same internal structure as notes but
@@ -227,7 +226,7 @@ class NotesAPI:
     # Private Helpers
     # =========================================================================
 
-    async def _get_all_notes_and_mind_maps(self, notebook_id: str) -> List[Any]:
+    async def _get_all_notes_and_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """Fetch all notes and mind maps from the API."""
         params = [notebook_id]
         result = await self._core.rpc_call(
@@ -236,25 +235,16 @@ class NotesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if (
-            result
-            and isinstance(result, list)
-            and len(result) > 0
-            and isinstance(result[0], list)
-        ):
+        if result and isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
             notes_list = result[0]
             valid_notes = []
             for item in notes_list:
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and isinstance(item[0], str)
-                ):
+                if isinstance(item, list) and len(item) > 0 and isinstance(item[0], str):
                     valid_notes.append(item)
             return valid_notes
         return []
 
-    def _is_deleted(self, item: List[Any]) -> bool:
+    def _is_deleted(self, item: builtins.list[Any]) -> bool:
         """Check if a note/mind map item is deleted (status=2).
 
         Deleted items have structure: ['id', None, 2]
@@ -270,7 +260,7 @@ class NotesAPI:
             return False
         return item[1] is None and item[2] == 2
 
-    def _extract_content(self, item: List[Any]) -> Optional[str]:
+    def _extract_content(self, item: builtins.list[Any]) -> str | None:
         """Extract content string from note/mind map item."""
         if len(item) <= 1:
             return None
@@ -281,7 +271,7 @@ class NotesAPI:
             return item[1][1]
         return None
 
-    def _parse_note(self, item: List[Any], notebook_id: str) -> Note:
+    def _parse_note(self, item: builtins.list[Any], notebook_id: str) -> Note:
         """Parse a raw note item into a Note object."""
         note_id = item[0] if len(item) > 0 else ""
 

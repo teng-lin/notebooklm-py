@@ -1,7 +1,6 @@
 """Shared fixtures for integration tests."""
 
 import json
-from typing import Union
 
 import pytest
 
@@ -34,7 +33,7 @@ def build_rpc_response():
         data: The response data to encode.
     """
 
-    def _build(rpc_id: Union[RPCMethod, str], data) -> str:
+    def _build(rpc_id: RPCMethod | str, data) -> str:
         # Convert RPCMethod to string value if needed
         rpc_id_str = rpc_id.value if isinstance(rpc_id, RPCMethod) else rpc_id
         inner = json.dumps(data)

@@ -1,19 +1,24 @@
 """Tests for download CLI commands."""
 
-import pytest
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Artifact
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client, get_cli_module, patch_client_for_module
+
+# Get the actual download module (not the click group that shadows it)
+download_module = get_cli_module("download")
 
 
-def make_artifact(id: str, title: str, artifact_type: int, status: int = 3, created_at: datetime = None) -> Artifact:
+def make_artifact(
+    id: str, title: str, artifact_type: int, status: int = 3, created_at: datetime = None
+) -> Artifact:
     """Create an Artifact for testing."""
     return Artifact(
         id=id,
@@ -65,8 +70,10 @@ class TestDownloadAudio:
             mock_client.artifacts.download_audio = mock_download_audio
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -84,13 +91,13 @@ class TestDownloadAudio:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
-                    result = runner.invoke(
-                        cli, ["download", "audio", "--dry-run", "-n", "nb_123"]
-                    )
+                    result = runner.invoke(cli, ["download", "audio", "--dry-run", "-n", "nb_123"])
 
             assert result.exit_code == 0
             assert "DRY RUN" in result.output
@@ -101,8 +108,10 @@ class TestDownloadAudio:
             mock_client.artifacts.list = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(cli, ["download", "audio", "-n", "nb_123"])
@@ -133,8 +142,10 @@ class TestDownloadVideo:
             mock_client.artifacts.download_video = mock_download_video
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -168,8 +179,10 @@ class TestDownloadInfographic:
             mock_client.artifacts.download_infographic = mock_download_infographic
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -204,8 +217,10 @@ class TestDownloadSlideDeck:
             mock_client.artifacts.download_slide_deck = mock_download_slide_deck
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -235,15 +250,21 @@ class TestDownloadFlags:
             # Set up artifacts namespace (pre-created by create_mock_client)
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    make_artifact("audio_old", "Old Audio", 1, created_at=datetime.fromtimestamp(1000000000)),
-                    make_artifact("audio_new", "New Audio", 1, created_at=datetime.fromtimestamp(2000000000)),
+                    make_artifact(
+                        "audio_old", "Old Audio", 1, created_at=datetime.fromtimestamp(1000000000)
+                    ),
+                    make_artifact(
+                        "audio_new", "New Audio", 1, created_at=datetime.fromtimestamp(2000000000)
+                    ),
                 ]
             )
             mock_client.artifacts.download_audio = mock_download_audio
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -266,15 +287,21 @@ class TestDownloadFlags:
             # Set up artifacts namespace (pre-created by create_mock_client)
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    make_artifact("audio_old", "Old Audio", 1, created_at=datetime.fromtimestamp(1000000000)),
-                    make_artifact("audio_new", "New Audio", 1, created_at=datetime.fromtimestamp(2000000000)),
+                    make_artifact(
+                        "audio_old", "Old Audio", 1, created_at=datetime.fromtimestamp(1000000000)
+                    ),
+                    make_artifact(
+                        "audio_new", "New Audio", 1, created_at=datetime.fromtimestamp(2000000000)
+                    ),
                 ]
             )
             mock_client.artifacts.download_audio = mock_download_audio
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -302,8 +329,10 @@ class TestDownloadFlags:
             mock_client.artifacts.download_audio = mock_download_audio
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(
@@ -326,8 +355,10 @@ class TestDownloadFlags:
 
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.download.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                with patch("notebooklm.cli.download.load_auth_from_storage") as mock_load:
+            with patch.object(
+                download_module, "fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                with patch.object(download_module, "load_auth_from_storage") as mock_load:
                     mock_load.return_value = {"SID": "test"}
                     mock_fetch.return_value = ("csrf", "session")
                     result = runner.invoke(

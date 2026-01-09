@@ -19,13 +19,13 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from ..rpc import ExportType
 from .helpers import (
+    ARTIFACT_TYPE_MAP,
     console,
+    get_artifact_type_display,
+    json_output_response,
     require_notebook,
     resolve_artifact_id,
     with_client,
-    json_output_response,
-    get_artifact_type_display,
-    ARTIFACT_TYPE_MAP,
 )
 
 
@@ -83,9 +83,7 @@ def artifact():
 def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
     """List artifacts in a notebook."""
     nb_id = require_notebook(notebook_id)
-    type_filter = (
-        None if artifact_type == "all" else ARTIFACT_TYPE_MAP.get(artifact_type)
-    )
+    type_filter = None if artifact_type == "all" else ARTIFACT_TYPE_MAP.get(artifact_type)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
@@ -97,6 +95,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                 nb = await client.notebooks.get(nb_id)
 
             if json_output:
+
                 def _get_status_str(art):
                     if art.is_completed:
                         return "completed"
@@ -118,9 +117,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                             "type_id": art.artifact_type,
                             "status": _get_status_str(art),
                             "status_id": art.status,
-                            "created_at": art.created_at.isoformat()
-                            if art.created_at
-                            else None,
+                            "created_at": art.created_at.isoformat() if art.created_at else None,
                         }
                         for i, art in enumerate(artifacts, 1)
                     ],
@@ -144,9 +141,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                 type_display = get_artifact_type_display(
                     art.artifact_type, art.variant, art.report_subtype
                 )
-                created = (
-                    art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
-                )
+                created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
                 status = (
                     "completed"
                     if art.is_completed
@@ -290,9 +285,7 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
 @click.option("--title", required=True, help="Title for exported document")
-@click.option(
-    "--type", "export_type", type=click.Choice(["docs", "sheets"]), default="docs"
-)
+@click.option("--type", "export_type", type=click.Choice(["docs", "sheets"]), default="docs")
 @with_client
 def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_auth):
     """Export artifact to Google Docs/Sheets.
@@ -384,7 +377,8 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
 
             try:
                 status = await client.artifacts.wait_for_completion(
-                    nb_id, resolved_id,
+                    nb_id,
+                    resolved_id,
                     poll_interval=float(interval),
                     timeout=float(timeout),
                 )
@@ -410,11 +404,13 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
 
             except TimeoutError:
                 if json_output:
-                    json_output_response({
-                        "artifact_id": resolved_id,
-                        "status": "timeout",
-                        "error": f"Timed out after {timeout} seconds",
-                    })
+                    json_output_response(
+                        {
+                            "artifact_id": resolved_id,
+                            "status": "timeout",
+                            "error": f"Timed out after {timeout} seconds",
+                        }
+                    )
                 else:
                     console.print(f"[red]✗ Timeout after {timeout}s[/red]")
                 raise SystemExit(1)
@@ -463,10 +459,6 @@ def artifact_suggestions(ctx, notebook_id, source_ids, json_output, client_auth)
                 table.add_row(str(i), suggestion.title, suggestion.description)
 
             console.print(table)
-            console.print(
-                '\n[dim]Use the prompt with: notebooklm generate report "<prompt>"[/dim]'
-            )
+            console.print('\n[dim]Use the prompt with: notebooklm generate report "<prompt>"[/dim]')
 
     return _run()
-
-

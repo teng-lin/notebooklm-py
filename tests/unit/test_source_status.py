@@ -1,18 +1,19 @@
 """Unit tests for source status and polling functionality."""
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from notebooklm._sources import SourcesAPI
 from notebooklm.types import (
     Source,
-    SourceStatus,
     SourceError,
-    SourceProcessingError,
-    SourceTimeoutError,
     SourceNotFoundError,
+    SourceProcessingError,
+    SourceStatus,
+    SourceTimeoutError,
 )
-from notebooklm._sources import SourcesAPI
 
 
 class TestSourceStatus:
@@ -27,7 +28,7 @@ class TestSourceStatus:
     def test_status_is_int_enum(self):
         """Test that SourceStatus values can be compared with ints."""
         assert SourceStatus.READY == 2
-        assert 2 == SourceStatus.READY
+        assert SourceStatus.READY == 2
 
 
 class TestSourceStatusProperties:
@@ -235,9 +236,7 @@ class TestWaitForSources:
             raise SourceNotFoundError(source_id)
 
         with patch.object(sources_api, "wait_until_ready", side_effect=mock_wait):
-            results = await sources_api.wait_for_sources(
-                "nb_1", ["src_1", "src_2"], timeout=10.0
-            )
+            results = await sources_api.wait_for_sources("nb_1", ["src_1", "src_2"], timeout=10.0)
 
             assert len(results) == 2
             assert all(s.is_ready for s in results)
@@ -253,6 +252,4 @@ class TestWaitForSources:
 
         with patch.object(sources_api, "wait_until_ready", side_effect=mock_wait):
             with pytest.raises(SourceProcessingError):
-                await sources_api.wait_for_sources(
-                    "nb_1", ["src_1", "src_2"], timeout=10.0
-                )
+                await sources_api.wait_for_sources("nb_1", ["src_1", "src_2"], timeout=10.0)

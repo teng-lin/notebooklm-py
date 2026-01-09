@@ -1,10 +1,10 @@
 """Tests for conversation functionality."""
 
-import pytest
-from unittest.mock import AsyncMock, patch
 import json
 
-from notebooklm import NotebookLMClient, AskResult
+import pytest
+
+from notebooklm import AskResult, NotebookLMClient
 from notebooklm.auth import AuthTokens
 
 

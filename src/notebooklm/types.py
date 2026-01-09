@@ -14,23 +14,23 @@ from typing import Any, Optional
 
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
-    StudioContentType,
     AudioFormat,
     AudioLength,
-    VideoFormat,
-    VideoStyle,
-    QuizQuantity,
-    QuizDifficulty,
-    InfographicOrientation,
-    InfographicDetail,
-    SlideDeckFormat,
-    SlideDeckLength,
-    ReportFormat,
     ChatGoal,
     ChatResponseLength,
     DriveMimeType,
     ExportType,
+    InfographicDetail,
+    InfographicOrientation,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    SlideDeckFormat,
+    SlideDeckLength,
     SourceStatus,
+    StudioContentType,
+    VideoFormat,
+    VideoStyle,
 )
 
 __all__ = [
@@ -99,7 +99,7 @@ class Notebook:
 
     id: str
     title: str
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     sources_count: int = 0
     is_owner: bool = True
 
@@ -197,7 +197,7 @@ class SourceTimeoutError(SourceError):
         last_status: The last observed status before timeout.
     """
 
-    def __init__(self, source_id: str, timeout: float, last_status: Optional[int] = None):
+    def __init__(self, source_id: str, timeout: float, last_status: int | None = None):
         self.source_id = source_id
         self.timeout = timeout
         self.last_status = last_status
@@ -231,10 +231,10 @@ class Source:
     """
 
     id: str
-    title: Optional[str] = None
-    url: Optional[str] = None
+    title: str | None = None
+    url: str | None = None
     source_type: str = "text"
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     status: int = SourceStatus.READY  # Default to READY (2)
 
     @property
@@ -253,9 +253,7 @@ class Source:
         return self.status == SourceStatus.ERROR
 
     @classmethod
-    def from_api_response(
-        cls, data: list[Any], notebook_id: Optional[str] = None
-    ) -> "Source":
+    def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> "Source":
         """Parse source data from various API response formats.
 
         The API returns different structures for different operations:
@@ -294,12 +292,7 @@ class Source:
                         if len(entry[2]) > 7 and isinstance(entry[2][7], list):
                             url = entry[2][7][0] if entry[2][7] else None
 
-                    return cls(
-                        id=str(source_id),
-                        title=title,
-                        url=url,
-                        source_type="text"
-                    )
+                    return cls(id=str(source_id), title=title, url=url, source_type="text")
 
                 # Deeply nested: continue with URL extraction
                 url = None
@@ -309,14 +302,14 @@ class Source:
                         if isinstance(url_list, list) and len(url_list) > 0:
                             url = url_list[0]
                     if not url and len(entry[2]) > 0:
-                        if isinstance(entry[2][0], str) and entry[2][0].startswith('http'):
+                        if isinstance(entry[2][0], str) and entry[2][0].startswith("http"):
                             url = entry[2][0]
 
                 # Determine source type
                 source_type = "text"
                 if url:
                     source_type = "youtube" if "youtube.com" in url or "youtu.be" in url else "url"
-                elif title and (title.endswith('.pdf') or title.endswith('.txt')):
+                elif title and (title.endswith(".pdf") or title.endswith(".txt")):
                     source_type = "text_file"
 
                 return cls(
@@ -350,9 +343,9 @@ class Artifact:
     title: str
     artifact_type: int  # StudioContentType enum value
     status: int  # 1=processing, 3=completed
-    created_at: Optional[datetime] = None
-    url: Optional[str] = None
-    variant: Optional[int] = None  # For type 4: 1=flashcards, 2=quiz
+    created_at: datetime | None = None
+    url: str | None = None
+    variant: int | None = None  # For type 4: 1=flashcards, 2=quiz
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> "Artifact":
@@ -469,7 +462,7 @@ class Artifact:
         return self.artifact_type == 4 and self.variant == 1
 
     @property
-    def report_subtype(self) -> Optional[str]:
+    def report_subtype(self) -> str | None:
         """Get the report subtype for type 2 artifacts.
 
         Returns:
@@ -493,10 +486,10 @@ class GenerationStatus:
 
     task_id: str
     status: str  # "pending", "in_progress", "completed", "failed"
-    url: Optional[str] = None
-    error: Optional[str] = None
-    error_code: Optional[str] = None  # e.g., "USER_DISPLAYABLE_ERROR" for rate limits
-    metadata: Optional[dict[str, Any]] = None
+    url: str | None = None
+    error: str | None = None
+    error_code: str | None = None  # e.g., "USER_DISPLAYABLE_ERROR" for rate limits
+    metadata: dict[str, Any] | None = None
 
     @property
     def is_complete(self) -> bool:
@@ -578,7 +571,7 @@ class Note:
     notebook_id: str
     title: str
     content: str
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str) -> "Note":

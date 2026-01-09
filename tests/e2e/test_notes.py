@@ -1,6 +1,7 @@
 """E2E tests for NotesAPI."""
 
 import pytest
+
 from .conftest import requires_auth
 
 

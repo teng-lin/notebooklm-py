@@ -17,3 +17,4 @@ captured_rpcs/
 .worktrees/
 .worktree/
 .sisyphus/
+.claude/

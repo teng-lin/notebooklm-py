@@ -1,31 +1,31 @@
 import os
 import tempfile
-import pytest
-from .conftest import requires_auth
-from notebooklm import Artifact
 
+import pytest
+
+from .conftest import requires_auth
 
 # Magic bytes for file type verification
-PNG_MAGIC = b'\x89PNG\r\n\x1a\n'
-PDF_MAGIC = b'%PDF'
-MP4_FTYP = b'ftyp'  # At offset 4
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+PDF_MAGIC = b"%PDF"
+MP4_FTYP = b"ftyp"  # At offset 4
 
 
 def is_png(path: str) -> bool:
     """Check if file is a valid PNG by magic bytes."""
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         return f.read(8) == PNG_MAGIC
 
 
 def is_pdf(path: str) -> bool:
     """Check if file is a valid PDF by magic bytes."""
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         return f.read(4) == PDF_MAGIC
 
 
 def is_mp4(path: str) -> bool:
     """Check if file is a valid MP4 by magic bytes."""
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         header = f.read(12)
         # MP4 has 'ftyp' at offset 4
         return len(header) >= 8 and header[4:8] == MP4_FTYP
@@ -106,7 +106,9 @@ class TestDownloadSlideDeck:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "slides.pdf")
             try:
-                result = await client.artifacts.download_slide_deck(read_only_notebook_id, output_path)
+                result = await client.artifacts.download_slide_deck(
+                    read_only_notebook_id, output_path
+                )
                 assert result == output_path
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0

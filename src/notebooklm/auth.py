@@ -32,7 +32,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -78,7 +78,7 @@ class AuthTokens:
         return "; ".join(f"{k}={v}" for k, v in self.cookies.items())
 
     @classmethod
-    async def from_storage(cls, path: Optional[Path] = None) -> "AuthTokens":
+    async def from_storage(cls, path: Path | None = None) -> "AuthTokens":
         """Create AuthTokens from Playwright storage state file.
 
         This is the recommended way to create AuthTokens for programmatic use.
@@ -134,8 +134,7 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
     missing = MINIMUM_REQUIRED_COOKIES - set(cookies.keys())
     if missing:
         raise ValueError(
-            f"Missing required cookies: {missing}\n"
-            f"Run 'notebooklm login' to authenticate."
+            f"Missing required cookies: {missing}\nRun 'notebooklm login' to authenticate."
         )
 
     return cookies
@@ -164,8 +163,7 @@ def extract_csrf_from_html(html: str, final_url: str = "") -> str:
         # Check if we were redirected to login page
         if "accounts.google.com" in final_url or "accounts.google.com" in html:
             raise ValueError(
-                "Authentication expired or invalid. "
-                "Run 'notebooklm login' to re-authenticate."
+                "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
             )
         raise ValueError(
             f"CSRF token not found in HTML. Final URL: {final_url}\n"
@@ -196,8 +194,7 @@ def extract_session_id_from_html(html: str, final_url: str = "") -> str:
     if not match:
         if "accounts.google.com" in final_url or "accounts.google.com" in html:
             raise ValueError(
-                "Authentication expired or invalid. "
-                "Run 'notebooklm login' to re-authenticate."
+                "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
             )
         raise ValueError(
             f"Session ID not found in HTML. Final URL: {final_url}\n"
@@ -206,7 +203,7 @@ def extract_session_id_from_html(html: str, final_url: str = "") -> str:
     return match.group(1)
 
 
-def _load_storage_state(path: Optional[Path] = None) -> dict[str, Any]:
+def _load_storage_state(path: Path | None = None) -> dict[str, Any]:
     """Load Playwright storage state from file or environment variable.
 
     This is a shared helper used by load_auth_from_storage() and load_httpx_cookies()
@@ -231,8 +228,7 @@ def _load_storage_state(path: Optional[Path] = None) -> dict[str, Any]:
     if path:
         if not path.exists():
             raise FileNotFoundError(
-                f"Storage file not found: {path}\n"
-                f"Run 'notebooklm login' to authenticate first."
+                f"Storage file not found: {path}\nRun 'notebooklm login' to authenticate first."
             )
         return json.loads(path.read_text())
 
@@ -257,7 +253,7 @@ def _load_storage_state(path: Optional[Path] = None) -> dict[str, Any]:
             raise ValueError(
                 "NOTEBOOKLM_AUTH_JSON must contain valid Playwright storage state "
                 "with a 'cookies' key.\n"
-                "Expected format: {\"cookies\": [{\"name\": \"SID\", \"value\": \"...\", ...}]}"
+                'Expected format: {"cookies": [{"name": "SID", "value": "...", ...}]}'
             )
         return storage_state
 
@@ -266,14 +262,13 @@ def _load_storage_state(path: Optional[Path] = None) -> dict[str, Any]:
 
     if not storage_path.exists():
         raise FileNotFoundError(
-            f"Storage file not found: {storage_path}\n"
-            f"Run 'notebooklm login' to authenticate first."
+            f"Storage file not found: {storage_path}\nRun 'notebooklm login' to authenticate first."
         )
 
     return json.loads(storage_path.read_text())
 
 
-def load_auth_from_storage(path: Optional[Path] = None) -> dict[str, str]:
+def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
     """Load Google cookies from storage.
 
     Loads authentication cookies with the following precedence:
@@ -336,7 +331,7 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     return False
 
 
-def load_httpx_cookies(path: Optional[Path] = None) -> "httpx.Cookies":
+def load_httpx_cookies(path: Path | None = None) -> "httpx.Cookies":
     """Load cookies as an httpx.Cookies object for authenticated downloads.
 
     Unlike load_auth_from_storage() which returns a simple dict, this function

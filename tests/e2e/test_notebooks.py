@@ -1,6 +1,8 @@
 import pytest
+
+from notebooklm import ChatGoal, ChatMode, Notebook, NotebookDescription
+
 from .conftest import requires_auth
-from notebooklm import Notebook, NotebookDescription, ChatMode, ChatGoal
 
 
 @requires_auth

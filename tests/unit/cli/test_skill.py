@@ -1,10 +1,16 @@
 """Tests for skill CLI commands."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
+
+from .conftest import get_cli_module
+
+# Get the actual skill module (not the click group that shadows it)
+skill_module = get_cli_module("skill")
 
 
 @pytest.fixture
@@ -20,10 +26,13 @@ class TestSkillInstall:
         skill_dest = tmp_path / "skills" / "notebooklm" / "SKILL.md"
         mock_source_content = "---\nname: notebooklm\n---\n# Test"
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest), \
-             patch("notebooklm.cli.skill.SKILL_DEST_DIR", skill_dest.parent), \
-             patch("notebooklm.cli.skill.get_skill_source_content", return_value=mock_source_content):
-
+        with (
+            patch.object(skill_module, "SKILL_DEST", skill_dest),
+            patch.object(skill_module, "SKILL_DEST_DIR", skill_dest.parent),
+            patch.object(
+                skill_module, "get_skill_source_content", return_value=mock_source_content
+            ),
+        ):
             result = runner.invoke(cli, ["skill", "install"])
 
             assert result.exit_code == 0
@@ -34,9 +43,11 @@ class TestSkillInstall:
         """Test error when source file doesn't exist."""
         skill_dest = tmp_path / "skills" / "notebooklm" / "SKILL.md"
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest), \
-             patch("notebooklm.cli.skill.SKILL_DEST_DIR", skill_dest.parent), \
-             patch("notebooklm.cli.skill.get_skill_source_content", return_value=None):
+        with (
+            patch.object(skill_module, "SKILL_DEST", skill_dest),
+            patch.object(skill_module, "SKILL_DEST_DIR", skill_dest.parent),
+            patch.object(skill_module, "get_skill_source_content", return_value=None),
+        ):
             result = runner.invoke(cli, ["skill", "install"])
 
         assert result.exit_code == 1
@@ -50,7 +61,7 @@ class TestSkillStatus:
         """Test status when skill is not installed."""
         skill_dest = tmp_path / "skills" / "notebooklm" / "SKILL.md"
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest):
+        with patch.object(skill_module, "SKILL_DEST", skill_dest):
             result = runner.invoke(cli, ["skill", "status"])
 
         assert result.exit_code == 0
@@ -62,7 +73,7 @@ class TestSkillStatus:
         skill_dest.parent.mkdir(parents=True)
         skill_dest.write_text("<!-- notebooklm-py v0.1.0 -->\n# Test")
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest):
+        with patch.object(skill_module, "SKILL_DEST", skill_dest):
             result = runner.invoke(cli, ["skill", "status"])
 
         assert result.exit_code == 0
@@ -78,8 +89,10 @@ class TestSkillUninstall:
         skill_dest.parent.mkdir(parents=True)
         skill_dest.write_text("# Test")
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest), \
-             patch("notebooklm.cli.skill.SKILL_DEST_DIR", skill_dest.parent):
+        with (
+            patch.object(skill_module, "SKILL_DEST", skill_dest),
+            patch.object(skill_module, "SKILL_DEST_DIR", skill_dest.parent),
+        ):
             result = runner.invoke(cli, ["skill", "uninstall"])
 
         assert result.exit_code == 0
@@ -89,7 +102,7 @@ class TestSkillUninstall:
         """Test uninstall when skill doesn't exist."""
         skill_dest = tmp_path / "skills" / "notebooklm" / "SKILL.md"
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest):
+        with patch.object(skill_module, "SKILL_DEST", skill_dest):
             result = runner.invoke(cli, ["skill", "uninstall"])
 
         assert result.exit_code == 0
@@ -105,7 +118,7 @@ class TestSkillShow:
         skill_dest.parent.mkdir(parents=True)
         skill_dest.write_text("# NotebookLM Skill\nTest content")
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest):
+        with patch.object(skill_module, "SKILL_DEST", skill_dest):
             result = runner.invoke(cli, ["skill", "show"])
 
         assert result.exit_code == 0
@@ -115,7 +128,7 @@ class TestSkillShow:
         """Test show when skill doesn't exist."""
         skill_dest = tmp_path / "skills" / "notebooklm" / "SKILL.md"
 
-        with patch("notebooklm.cli.skill.SKILL_DEST", skill_dest):
+        with patch.object(skill_module, "SKILL_DEST", skill_dest):
             result = runner.invoke(cli, ["skill", "show"])
 
         assert result.exit_code == 0

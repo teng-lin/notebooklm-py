@@ -3,7 +3,7 @@
 import pytest
 from pytest_httpx import HTTPXMock
 
-from notebooklm import NotebookLMClient, Notebook
+from notebooklm import Notebook, NotebookLMClient
 from notebooklm.rpc import RPCMethod
 
 
@@ -199,9 +199,7 @@ class TestSummary:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        response = build_rpc_response(
-            RPCMethod.SUMMARIZE, ["Summary of the notebook content..."]
-        )
+        response = build_rpc_response(RPCMethod.SUMMARIZE, ["Summary of the notebook content..."])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -257,7 +255,16 @@ class TestRenameNotebook:
         # Get notebook response after rename
         get_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
-            [["Renamed", [], "nb_123", "📘", None, [None, None, None, None, None, [1704067200, 0]]]],
+            [
+                [
+                    "Renamed",
+                    [],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
         )
         httpx_mock.add_response(content=get_response.encode())
 
@@ -364,10 +371,12 @@ class TestNotebooksAPIAdditional:
             RPCMethod.SUMMARIZE,
             [
                 ["This notebook covers AI research."],
-                [[
-                    ["What are the main findings?", "Explain the key findings"],
-                    ["How was the study conducted?", "Describe methodology"],
-                ]],
+                [
+                    [
+                        ["What are the main findings?", "Explain the key findings"],
+                        ["How was the study conducted?", "Describe methodology"],
+                    ]
+                ],
             ],
         )
         httpx_mock.add_response(content=response.encode())
@@ -464,11 +473,13 @@ class TestNotebookEdgeCases:
             RPCMethod.SUMMARIZE,
             [
                 ["Summary"],
-                [[
-                    ["Valid question", "Valid prompt"],
-                    ["Only question"],  # Missing prompt
-                    "not a list",  # Not a list
-                ]],
+                [
+                    [
+                        ["Valid question", "Valid prompt"],
+                        ["Only question"],  # Missing prompt
+                        "not a list",  # Not a list
+                    ]
+                ],
             ],
         )
         httpx_mock.add_response(content=response.encode())

@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +14,9 @@ class RPCError(Exception):
     def __init__(
         self,
         message: str,
-        rpc_id: Optional[str] = None,
-        code: Optional[Any] = None,
-        found_ids: Optional[list[str]] = None,
+        rpc_id: str | None = None,
+        code: Any | None = None,
+        found_ids: list[str] | None = None,
     ):
         self.rpc_id = rpc_id
         self.code = code

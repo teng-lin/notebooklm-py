@@ -1,20 +1,18 @@
 """Unit tests for types module dataclasses and parsing."""
 
 import pytest
-from datetime import datetime
 
 from notebooklm.types import (
-    Notebook,
-    NotebookDescription,
-    SuggestedTopic,
-    Source,
     Artifact,
-    GenerationStatus,
-    ReportSuggestion,
-    Note,
-    ConversationTurn,
     AskResult,
     ChatMode,
+    ConversationTurn,
+    GenerationStatus,
+    Note,
+    Notebook,
+    NotebookDescription,
+    ReportSuggestion,
+    Source,
 )
 
 
@@ -110,7 +108,13 @@ class TestSource:
 
     def test_from_api_response_nested_format(self):
         """Test parsing medium nested format."""
-        data = [[["src_456"], "Nested Source", [None, None, None, None, None, None, None, ["https://example.com"]]]]
+        data = [
+            [
+                ["src_456"],
+                "Nested Source",
+                [None, None, None, None, None, None, None, ["https://example.com"]],
+            ]
+        ]
         source = Source.from_api_response(data)
 
         assert source.id == "src_456"
@@ -119,7 +123,15 @@ class TestSource:
 
     def test_from_api_response_deeply_nested(self):
         """Test parsing deeply nested format."""
-        data = [[[["src_789"], "Deep Source", [None, None, None, None, None, None, None, ["https://deep.example.com"]]]]]
+        data = [
+            [
+                [
+                    ["src_789"],
+                    "Deep Source",
+                    [None, None, None, None, None, None, None, ["https://deep.example.com"]],
+                ]
+            ]
+        ]
         source = Source.from_api_response(data)
 
         assert source.id == "src_789"
@@ -128,14 +140,30 @@ class TestSource:
 
     def test_from_api_response_youtube_url(self):
         """Test that YouTube URLs are detected."""
-        data = [[[["src_yt"], "YouTube Video", [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]]]]]
+        data = [
+            [
+                [
+                    ["src_yt"],
+                    "YouTube Video",
+                    [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]],
+                ]
+            ]
+        ]
         source = Source.from_api_response(data)
 
         assert source.source_type == "youtube"
 
     def test_from_api_response_youtu_be_short_url(self):
         """Test that youtu.be short URLs are detected."""
-        data = [[[["src_yt2"], "Short Video", [None, None, None, None, None, None, None, ["https://youtu.be/abc"]]]]]
+        data = [
+            [
+                [
+                    ["src_yt2"],
+                    "Short Video",
+                    [None, None, None, None, None, None, None, ["https://youtu.be/abc"]],
+                ]
+            ]
+        ]
         source = Source.from_api_response(data)
 
         assert source.source_type == "youtube"
@@ -165,7 +193,24 @@ class TestArtifact:
     def test_from_api_response_with_timestamp(self):
         """Test parsing artifact with timestamp."""
         ts = 1704067200
-        data = ["art_123", "Audio", 1, None, 3, None, None, None, None, None, None, None, None, None, None, [ts]]
+        data = [
+            "art_123",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            [ts],
+        ]
         artifact = Artifact.from_api_response(data)
 
         assert artifact.created_at is not None

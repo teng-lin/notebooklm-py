@@ -29,7 +29,10 @@ jobs:
         pip install -e ".[all]"
 
     - name: Run linting
-      run: ruff check src/
+      run: ruff check src/ tests/
+
+    - name: Check formatting
+      run: ruff format --check src/ tests/
 
     - name: Run type checking
       run: mypy src/notebooklm --ignore-missing-imports

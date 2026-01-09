@@ -22,11 +22,11 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from .helpers import (
     console,
+    get_source_type_display,
+    json_output_response,
     require_notebook,
     resolve_source_id,
     with_client,
-    json_output_response,
-    get_source_type_display,
 )
 
 
@@ -85,9 +85,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                             "title": src.title,
                             "type": src.source_type,
                             "url": src.url,
-                            "created_at": src.created_at.isoformat()
-                            if src.created_at
-                            else None,
+                            "created_at": src.created_at.isoformat() if src.created_at else None,
                         }
                         for i, src in enumerate(sources, 1)
                     ],
@@ -104,9 +102,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
 
             for src in sources:
                 type_display = get_source_type_display(src.source_type)
-                created = (
-                    src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
-                )
+                created = src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
                 table.add_row(src.id, src.title or "-", type_display, created)
 
             console.print(table)
@@ -186,9 +182,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            if detected_type == "url":
-                src = await client.sources.add_url(nb_id, content)
-            elif detected_type == "youtube":
+            if detected_type == "url" or detected_type == "youtube":
                 src = await client.sources.add_url(nb_id, content)
             elif detected_type == "text":
                 text_content = file_content if file_content is not None else content
@@ -242,9 +236,7 @@ def source_get(ctx, source_id, notebook_id, client_auth):
             if src:
                 console.print(f"[bold cyan]Source:[/bold cyan] {src.id}")
                 console.print(f"[bold]Title:[/bold] {src.title}")
-                console.print(
-                    f"[bold]Type:[/bold] {get_source_type_display(src.source_type)}"
-                )
+                console.print(f"[bold]Type:[/bold] {get_source_type_display(src.source_type)}")
                 if src.url:
                     console.print(f"[bold]URL:[/bold] {src.url}")
                 if src.created_at:
@@ -443,9 +435,7 @@ def source_add_research(
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            console.print(
-                f"[yellow]Starting {mode} research on {search_source}...[/yellow]"
-            )
+            console.print(f"[yellow]Starting {mode} research on {search_source}...[/yellow]")
             result = await client.research.start(nb_id, query, search_source, mode)
             if not result:
                 console.print("[red]Research failed to start[/red]")
@@ -479,9 +469,7 @@ def source_add_research(
                 console.print(f"\n[green]Found {len(sources)} sources[/green]")
 
                 if import_all and sources and task_id:
-                    imported = await client.research.import_sources(
-                        nb_id, task_id, sources
-                    )
+                    imported = await client.research.import_sources(nb_id, task_id, sources)
                     console.print(f"[green]Imported {len(imported)} sources[/green]")
             else:
                 console.print(f"[yellow]Status: {status.get('status', 'unknown')}[/yellow]")
@@ -634,7 +622,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
       notebooklm source add https://example.com
       # Subagent runs: notebooklm source wait <source_id>
     """
-    from ..types import SourceProcessingError, SourceTimeoutError, SourceNotFoundError
+    from ..types import SourceNotFoundError, SourceProcessingError, SourceTimeoutError
 
     nb_id = require_notebook(notebook_id)
 

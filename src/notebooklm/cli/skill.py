@@ -6,19 +6,17 @@ Commands for managing the Claude Code skill integration.
 import re
 from importlib import resources
 from pathlib import Path
-from typing import Optional
 
 import click
 
 from .helpers import console
-
 
 # Skill paths
 SKILL_DEST_DIR = Path.home() / ".claude" / "skills" / "notebooklm"
 SKILL_DEST = SKILL_DEST_DIR / "SKILL.md"
 
 
-def get_skill_source_content() -> Optional[str]:
+def get_skill_source_content() -> str | None:
     """Read the skill source file from package data."""
     try:
         # Python 3.9+ way to read package data (use / operator for path traversal)
@@ -31,6 +29,7 @@ def get_package_version() -> str:
     """Get the current package version."""
     try:
         from .. import __version__
+
         return __version__
     except ImportError:
         return "unknown"
@@ -44,7 +43,7 @@ def get_skill_version(skill_path: Path) -> str | None:
     with open(skill_path) as f:
         content = f.read(500)  # Read first 500 chars
 
-    match = re.search(r'notebooklm-py v([\d.]+)', content)
+    match = re.search(r"notebooklm-py v([\d.]+)", content)
     return match.group(1) if match else None
 
 
@@ -116,7 +115,9 @@ def status():
 
     if skill_version and skill_version != cli_version:
         console.print("")
-        console.print("[yellow]Version mismatch![/yellow] Run [cyan]notebooklm skill install[/cyan] to update.")
+        console.print(
+            "[yellow]Version mismatch![/yellow] Run [cyan]notebooklm skill install[/cyan] to update."
+        )
 
 
 @skill.command()

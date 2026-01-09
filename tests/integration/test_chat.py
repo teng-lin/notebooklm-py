@@ -4,8 +4,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
-from notebooklm.rpc import RPCMethod
-from notebooklm.rpc import ChatGoal, ChatResponseLength
+from notebooklm.rpc import ChatGoal, ChatResponseLength, RPCMethod
 from notebooklm.types import ChatMode
 
 
