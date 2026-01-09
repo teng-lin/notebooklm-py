@@ -369,7 +369,17 @@ All commands use consistent exit codes:
 2. Retry after 5-10 minutes
 3. Use the NotebookLM web UI as fallback
 
-**Generation time:** Audio takes 2-5 minutes, video takes longer. Do not wait - use fire-and-forget pattern.
+**Processing times vary significantly.** Use the subagent pattern for long operations:
+
+| Operation | Typical time | Suggested timeout |
+|-----------|--------------|-------------------|
+| Source processing | 30s - 10 min | 600s |
+| Research (fast) | 30s - 2 min | 180s |
+| Research (deep) | 15 - 30+ min | 1800s |
+| Audio generation | 10 - 20 min | 1200s |
+| Video generation | 15 - 45 min | 2700s |
+
+**Polling intervals:** When checking status manually, poll every 15-30 seconds to avoid excessive API calls.
 
 ## Troubleshooting
 
