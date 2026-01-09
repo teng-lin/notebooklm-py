@@ -304,12 +304,11 @@ def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_au
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
-            art = await client.artifacts.get(nb_id, resolved_id)
-            content = str(art) if art else ""
             # Convert export_type string to ExportType enum
             export_type_enum = ExportType.SHEETS if export_type == "sheets" else ExportType.DOCS
+            # Pass None for content - backend retrieves content from artifact_id
             result = await client.artifacts.export(
-                nb_id, resolved_id, content, title, export_type_enum
+                nb_id, resolved_id, None, title, export_type_enum
             )
             if result:
                 console.print(f"[green]Exported to Google {export_type.title()}[/green]")

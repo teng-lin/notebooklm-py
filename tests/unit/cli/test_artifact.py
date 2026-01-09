@@ -277,9 +277,6 @@ class TestArtifactExport:
                     Artifact(id="art_123", title="Doc", artifact_type=2, status=3)
                 ]
             )
-            mock_client.artifacts.get = AsyncMock(
-                return_value=Artifact(id="art_123", title="Doc", artifact_type=2, status=3)
-            )
             mock_client.artifacts.export = AsyncMock(
                 return_value={"url": "https://docs.google.com/document/d/123"}
             )
@@ -293,10 +290,12 @@ class TestArtifactExport:
 
             assert result.exit_code == 0
             assert "Exported to Google Docs" in result.output
-            # Verify export_type is passed as ExportType.DOCS
+            # Verify export was called with correct arguments
             mock_client.artifacts.export.assert_called_once()
             call_args = mock_client.artifacts.export.call_args
             from notebooklm.rpc import ExportType
+            # call_args[0] = (notebook_id, artifact_id, content, title, export_type)
+            assert call_args[0][2] is None, "content should be None (backend retrieves it)"
             assert call_args[0][4] == ExportType.DOCS, "export_type should be ExportType.DOCS"
 
     def test_artifact_export_sheets(self, runner, mock_auth):
@@ -307,9 +306,6 @@ class TestArtifactExport:
                 return_value=[
                     Artifact(id="art_123", title="Table", artifact_type=9, status=3)
                 ]
-            )
-            mock_client.artifacts.get = AsyncMock(
-                return_value=Artifact(id="art_123", title="Table", artifact_type=9, status=3)
             )
             mock_client.artifacts.export = AsyncMock(
                 return_value={"url": "https://sheets.google.com/spreadsheets/d/123"}
@@ -324,10 +320,12 @@ class TestArtifactExport:
 
             assert result.exit_code == 0
             assert "Exported to Google Sheets" in result.output
-            # Verify export_type is passed as ExportType.SHEETS
+            # Verify export was called with correct arguments
             mock_client.artifacts.export.assert_called_once()
             call_args = mock_client.artifacts.export.call_args
             from notebooklm.rpc import ExportType
+            # call_args[0] = (notebook_id, artifact_id, content, title, export_type)
+            assert call_args[0][2] is None, "content should be None (backend retrieves it)"
             assert call_args[0][4] == ExportType.SHEETS, "export_type should be ExportType.SHEETS"
 
     def test_artifact_export_failure(self, runner, mock_auth):
@@ -338,9 +336,6 @@ class TestArtifactExport:
                 return_value=[
                     Artifact(id="art_123", title="Doc", artifact_type=2, status=3)
                 ]
-            )
-            mock_client.artifacts.get = AsyncMock(
-                return_value=Artifact(id="art_123", title="Doc", artifact_type=2, status=3)
             )
             mock_client.artifacts.export = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
