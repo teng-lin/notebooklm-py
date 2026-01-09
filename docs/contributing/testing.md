@@ -471,8 +471,8 @@ cat ~/.notebooklm/storage_state.json
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Add **two** repository secrets:
 
-   **Secret 1: Storage State**
-   - **Name:** `NOTEBOOKLM_STORAGE_STATE`
+   **Secret 1: Auth JSON**
+   - **Name:** `NOTEBOOKLM_AUTH_JSON`
    - **Value:** Paste the entire JSON content from step 1
 
    **Secret 2: Read-Only Notebook ID**

@@ -253,7 +253,7 @@ jobs:
 
       - name: List notebooks
         env:
-          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_STORAGE_STATE }}
+          NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         run: notebooklm list
 ```
 
@@ -266,7 +266,7 @@ jobs:
 
 1. Run `notebooklm login` locally
 2. Copy the contents of `~/.notebooklm/storage_state.json`
-3. Add as a GitHub repository secret named `NOTEBOOKLM_STORAGE_STATE`
+3. Add as a GitHub repository secret named `NOTEBOOKLM_AUTH_JSON`
 
 ### Alternative: File-Based Auth
 
@@ -276,7 +276,7 @@ If you prefer file-based authentication:
 - name: Setup NotebookLM auth
   run: |
     mkdir -p ~/.notebooklm
-    echo "${{ secrets.NOTEBOOKLM_STORAGE_STATE }}" > ~/.notebooklm/storage_state.json
+    echo "${{ secrets.NOTEBOOKLM_AUTH_JSON }}" > ~/.notebooklm/storage_state.json
     chmod 600 ~/.notebooklm/storage_state.json
 
 - name: List notebooks

@@ -311,7 +311,7 @@ async with httpx.AsyncClient() as client:
 **Solution:**
 - Ensure the GitHub secret is properly configured
 - Check the secret isn't empty or whitespace-only
-- Verify the workflow syntax: `${{ secrets.NOTEBOOKLM_STORAGE_STATE }}`
+- Verify the workflow syntax: `${{ secrets.NOTEBOOKLM_AUTH_JSON }}`
 
 ### "must contain valid Playwright storage state with a 'cookies' key"
 
