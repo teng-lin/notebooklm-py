@@ -97,6 +97,73 @@ NotebookLM has undocumented API rate limits. Running many tests in sequence (esp
 
 ---
 
+## VCR Testing (Recorded HTTP Cassettes)
+
+VCR.py records HTTP interactions to YAML "cassettes" for deterministic replay. This helps with:
+
+- **Rate limit protection**: Record once, replay infinitely without hitting API
+- **Offline testing**: Run tests without network access
+- **Faster tests**: Replay is instant, no network latency
+- **Regression testing**: Detect API changes by comparing against recorded responses
+
+### How It Works
+
+1. **Recording mode**: Real HTTP requests are made and responses saved to cassettes
+2. **Replay mode** (default): Requests are intercepted and recorded responses returned
+
+### Recording Cassettes
+
+Cassettes are **not committed** to the repository (gitignored). Each developer records their own:
+
+```bash
+# Set notebook IDs (same as e2e tests)
+export NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID="your-id"
+export NOTEBOOKLM_GENERATION_NOTEBOOK_ID="your-id"
+
+# Record cassettes
+NOTEBOOKLM_VCR_RECORD=1 pytest tests/integration/test_vcr_*.py -v
+```
+
+Cassettes are saved to `tests/cassettes/` (gitignored).
+
+### Running VCR Tests
+
+```bash
+# With cassettes - tests run using recorded responses
+pytest tests/integration/test_vcr_*.py
+
+# Without cassettes - tests skip gracefully
+pytest  # VCR tests skipped, other tests pass
+```
+
+### Security
+
+All sensitive data is automatically scrubbed before recording:
+
+| Data Type | Example | Scrubbed To |
+|-----------|---------|-------------|
+| Session cookies | `SID=abc123` | `SID=SCRUBBED` |
+| CSRF tokens | `SNlM0e: "token"` | `SNlM0e: "SCRUBBED_CSRF"` |
+| User emails | `user@gmail.com` | `SCRUBBED_EMAIL@example.com` |
+| User IDs | `105603816177942538178` | `SCRUBBED_USER_ID` |
+| API keys | `AIzaSy...` | `SCRUBBED_API_KEY` |
+
+**Never commit cassettes** - they may contain data specific to your account.
+
+### Backing Up Cassettes
+
+To preserve your recorded cassettes:
+
+```bash
+# Backup
+cp -r tests/cassettes ~/.notebooklm-py/vcr-cassettes/
+
+# Restore
+cp ~/.notebooklm-py/vcr-cassettes/*.yaml tests/cassettes/
+```
+
+---
+
 ## Quick Reference
 
 ```bash
@@ -114,15 +181,18 @@ pytest tests/e2e --include-variants # ALL tests including parameter variants
 
 ```
 tests/
-├── conftest.py              # RPC response builders
+├── conftest.py              # RPC response builders, VCR marker
+├── vcr_config.py            # VCR.py configuration and scrubbing
+├── cassettes/               # Recorded HTTP responses (gitignored)
 ├── unit/                    # No network, fast
 │   ├── cli/                 # CLI command tests
 │   ├── test_decoder.py
 │   ├── test_encoder.py
 │   └── ...
-├── integration/             # Mocked HTTP
-│   ├── conftest.py          # Mock auth tokens
-│   └── test_*.py
+├── integration/             # Mocked HTTP + VCR tests
+│   ├── conftest.py          # Mock auth tokens, VCR skip logic
+│   ├── test_vcr_*.py        # VCR recorded tests (skip if no cassettes)
+│   └── test_*.py            # pytest-httpx mocked tests
 └── e2e/                     # Real API
     ├── conftest.py          # Auth, fixtures, cleanup
     ├── test_generation.py   # All artifact generation tests
