@@ -43,6 +43,7 @@ dev = [
     "python-dotenv>=1.0.0",
     "mypy>=1.0.0",
     "ruff>=0.4.0",
+    "vcrpy>=6.0.0",
 ]
 all = ["notebooklm-py[browser,dev]"]
 
@@ -87,6 +88,7 @@ addopts = "--ignore=tests/e2e"
 markers = [
     "variants: parameter variant tests (skip to save quota)",
     "readonly: read-only tests against user's test notebook",
+    "vcr: tests using VCR.py recorded cassettes (run with NOTEBOOKLM_VCR_RECORD=1 to record)",
 ]
 
 [tool.coverage.run]

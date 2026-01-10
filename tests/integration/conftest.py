@@ -1,11 +1,36 @@
 """Shared fixtures for integration tests."""
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
+
+# =============================================================================
+# VCR Cassette Availability Check
+# =============================================================================
+
+CASSETTES_DIR = Path(__file__).parent.parent / "cassettes"
+
+# Check if cassettes are available (more than just example files)
+_real_cassettes = (
+    [f for f in CASSETTES_DIR.glob("*.yaml") if not f.name.startswith("example_")]
+    if CASSETTES_DIR.exists()
+    else []
+)
+
+# Skip VCR tests if no real cassettes exist (unless in record mode)
+_vcr_record_mode = os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+_cassettes_available = bool(_real_cassettes) or _vcr_record_mode
+
+# Marker for skipping VCR tests when cassettes are not available
+skip_no_cassettes = pytest.mark.skipif(
+    not _cassettes_available,
+    reason="VCR cassettes not available. Set NOTEBOOKLM_VCR_RECORD=1 to record.",
+)
 
 
 @pytest.fixture

@@ -7,6 +7,14 @@ import pytest
 from notebooklm.rpc import RPCMethod
 
 
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line(
+        "markers",
+        "vcr: marks tests that use VCR cassettes (may be skipped if cassettes unavailable)",
+    )
+
+
 @pytest.fixture
 def sample_storage_state():
     """Sample Playwright storage state with valid cookies."""

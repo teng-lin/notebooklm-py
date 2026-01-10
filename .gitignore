@@ -18,3 +18,8 @@ captured_rpcs/
 .worktree/
 .sisyphus/
 .claude/
+
+# VCR cassettes (contain recorded API responses)
+# Cassettes are recorded locally and may contain sensitive data before scrubbing
+# Only commit cassettes that have been verified to be properly scrubbed
+tests/cassettes/
