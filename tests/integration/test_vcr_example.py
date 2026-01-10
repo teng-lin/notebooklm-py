@@ -15,6 +15,8 @@ Usage:
 
 Note: Cassettes are gitignored by default. To share recorded cassettes,
 verify they're properly scrubbed and commit them explicitly.
+
+Note: These tests are automatically skipped if cassettes are not available.
 """
 
 import sys
@@ -24,7 +26,12 @@ import pytest
 
 # Add tests directory to path for vcr_config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
+from conftest import skip_no_cassettes
 from vcr_config import notebooklm_vcr
+
+# Skip all tests in this module if cassettes are not available
+pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 
 class TestVCRBasics:
