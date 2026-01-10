@@ -1,0 +1,106 @@
+name: Verify Generated Artifacts
+
+on:
+  schedule:
+    # Run at 8 AM UTC daily (2 hours after nightly e2e tests)
+    - cron: '0 8 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  verify:
+    name: Verify Artifacts
+    runs-on: ubuntu-latest
+    if: github.repository == 'teng-lin/notebooklm-py'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e "."
+
+    - name: Verify artifacts exist
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+      run: |
+        python -c "
+        import asyncio
+        import os
+        import sys
+        from notebooklm import NotebookLMClient
+
+        async def verify():
+            async with await NotebookLMClient.from_storage() as client:
+                nb_id = os.environ['NOTEBOOKLM_GENERATION_NOTEBOOK_ID']
+                print(f'Checking notebook: {nb_id}')
+
+                # List artifacts
+                artifacts = await client.artifacts.list(nb_id)
+                print(f'\nTotal artifacts: {len(artifacts)}')
+
+                # Group by type and status
+                by_type = {}
+                for a in artifacts:
+                    key = a.artifact_type or 'unknown'
+                    if key not in by_type:
+                        by_type[key] = []
+                    by_type[key].append(a)
+
+                print('\nArtifacts by type:')
+                for t, items in sorted(by_type.items()):
+                    print(f'  {t}: {len(items)}')
+                    for a in items:
+                        status = a.status or 'unknown'
+                        print(f'    - {a.title} ({status})')
+
+                # Check expected types from generation tests
+                expected = {'audio', 'video', 'quiz', 'flashcards', 'infographic',
+                           'slide_deck', 'data_table', 'mind_map', 'study_guide'}
+                found = set(by_type.keys())
+                missing = expected - found
+
+                print(f'\nExpected types: {len(expected)}')
+                print(f'Found types: {len(found)}')
+
+                if missing:
+                    print(f'\nWARNING: Missing artifact types: {missing}')
+                    # Don't fail - some may still be processing or rate-limited
+
+                # Check for completed artifacts
+                completed = sum(1 for a in artifacts if a.status == 'completed')
+                processing = sum(1 for a in artifacts if a.status == 'processing')
+                failed = sum(1 for a in artifacts if a.status == 'failed')
+
+                print(f'\nStatus summary:')
+                print(f'  Completed: {completed}')
+                print(f'  Processing: {processing}')
+                print(f'  Failed: {failed}')
+
+                # List notes
+                notes = await client.notes.list(nb_id)
+                print(f'\nTotal notes: {len(notes)}')
+                for n in notes[:10]:  # Show first 10
+                    print(f'  - {n.title or \"(untitled)\"}')
+                if len(notes) > 10:
+                    print(f'  ... and {len(notes) - 10} more')
+
+                # Fail if too many failures or no artifacts at all
+                if len(artifacts) == 0:
+                    print('\nERROR: No artifacts found!')
+                    sys.exit(1)
+                if failed > len(artifacts) // 2:
+                    print(f'\nERROR: Too many failed artifacts ({failed}/{len(artifacts)})')
+                    sys.exit(1)
+
+                print('\nVerification complete!')
+
+        asyncio.run(verify())
+        "
