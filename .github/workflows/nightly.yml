@@ -47,6 +47,16 @@ jobs:
         playwright install chromium
         playwright install-deps
 
+    - name: Debug - Print notebook IDs
+      env:
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+      run: |
+        echo "READ_ONLY_NOTEBOOK_ID: $NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"
+        echo "GENERATION_NOTEBOOK_ID: $NOTEBOOKLM_GENERATION_NOTEBOOK_ID"
+        echo "READ_ONLY length: ${#NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID}"
+        echo "GENERATION length: ${#NOTEBOOKLM_GENERATION_NOTEBOOK_ID}"
+
     - name: Run E2E tests
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
