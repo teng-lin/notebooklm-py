@@ -3,9 +3,9 @@
 from notebooklm.rpc.types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
+    ArtifactStatus,
     RPCMethod,
     StudioContentType,
-    ArtifactStatus,
     artifact_status_to_str,
 )
 
