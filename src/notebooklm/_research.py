@@ -4,10 +4,13 @@ Provides operations for starting research sessions, polling for results,
 and importing discovered sources into notebooks.
 """
 
+import logging
 from typing import Any
 
 from ._core import ClientCore
 from .rpc import RPCMethod
+
+logger = logging.getLogger(__name__)
 
 
 class ResearchAPI:
@@ -197,15 +200,19 @@ class ResearchAPI:
         if not sources:
             return []
 
-        source_array = []
-        for src in sources:
-            url = src.get("url", "")
-            title = src.get("title", "Untitled")
+        # Filter out sources without URLs - these cause the entire batch to fail
+        valid_sources = [s for s in sources if s.get("url")]
+        skipped_count = len(sources) - len(valid_sources)
+        if skipped_count > 0:
+            logger.warning("Skipping %d source(s) without URLs (cannot be imported)", skipped_count)
+        if not valid_sources:
+            return []
 
-            source_data = [
+        source_array = [
+            [
                 None,
                 None,
-                [url, title],
+                [src["url"], src.get("title", "Untitled")],
                 None,
                 None,
                 None,
@@ -215,7 +222,8 @@ class ResearchAPI:
                 None,
                 2,
             ]
-            source_array.append(source_data)
+            for src in valid_sources
+        ]
 
         params = [None, [1], task_id, notebook_id, source_array]
 

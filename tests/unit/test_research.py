@@ -176,18 +176,20 @@ class TestResearch:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_import_sources_missing_url(self, auth_tokens, httpx_mock, build_rpc_response):
-        """Test import_sources handles sources without URL."""
-        response_body = build_rpc_response(RPCMethod.IMPORT_RESEARCH, [[[["src_new"], "Imported"]]])
-        httpx_mock.add_response(content=response_body.encode(), method="POST")
+    async def test_import_sources_missing_url(self, auth_tokens):
+        """Test import_sources filters out sources without URL.
 
+        Sources without URLs cause the entire batch to fail, so they are
+        filtered out before making the RPC call.
+        """
         async with NotebookLMClient(auth_tokens) as client:
-            sources = [{"title": "Title Only"}]
+            sources = [{"title": "Title Only"}]  # No URL
             result = await client.research.import_sources(
                 notebook_id="nb_123", task_id="task_123", sources=sources
             )
 
-        assert len(result) == 1
+        # Sources without URLs are filtered out, no RPC call made
+        assert result == []
 
     @pytest.mark.asyncio
     async def test_import_sources_empty_response(self, auth_tokens, httpx_mock, build_rpc_response):
@@ -281,13 +283,14 @@ class TestResearch:
     ):
         """Test deep research workflow: poll() sources work with import_sources().
 
-        Deep research sources have title only (no URL).
+        Deep research sources typically have URLs. Sources without URLs are
+        filtered out before import (they cause batch failures).
         """
-        # Deep research format: [None, title, None, type]
+        # Deep research format: [url, title, description, type]
         poll_sources = [
-            [None, "Deep Finding: AI Ethics", None, 2],
-            [None, "Deep Finding: ML Trends", None, 2],
-            [None, "Deep Finding: Neural Networks", None, 2],
+            ["https://example.com/ai-ethics", "Deep Finding: AI Ethics", "Description", 2],
+            ["https://example.com/ml-trends", "Deep Finding: ML Trends", "Description", 2],
+            [None, "Synthetic Summary", "No URL", 2],  # This will be filtered out
         ]
         task_info = [None, ["deep AI research", 1], 1, [poll_sources, "Summary"], 2]
 
@@ -329,12 +332,14 @@ class TestResearch:
             sources = poll_result["sources"]
             assert len(sources) == 3
 
-            for src in sources:
-                assert "title" in src
-                assert src["url"] == ""  # Deep research has no URLs
+            # Sources with URLs can be imported; sources without URLs are filtered
+            sources_with_urls = [s for s in sources if s.get("url")]
+            assert len(sources_with_urls) == 2
 
             imported = await client.research.import_sources(
-                notebook_id="nb_123", task_id=task_id, sources=sources[:2]
+                notebook_id="nb_123",
+                task_id=task_id,
+                sources=sources,  # Pass all, filtering happens internally
             )
 
             assert len(imported) == 2
