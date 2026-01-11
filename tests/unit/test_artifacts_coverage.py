@@ -109,21 +109,12 @@ class TestDownloadUrlsBatch:
         success_response.headers = {"content-type": "video/mp4"}
         success_response.raise_for_status = MagicMock()
 
-        call_count = 0
-
-        async def mock_get(url):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return success_response
-            raise httpx.HTTPError("Network error")
-
         with (
             patch("notebooklm._artifacts.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
-            mock_client.get = mock_get
+            mock_client.get.side_effect = [success_response, httpx.HTTPError("Network error")]
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -234,22 +225,10 @@ class TestWaitForCompletion:
 
         # First poll returns None, triggering fallback path
         # Then complete on second poll
-        call_count = 0
-
-        async def mock_rpc_call(method, *args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                # First call is poll_status, return None
-                return None
-            elif call_count == 2:
-                # Second call is _list_raw fallback
-                return [[["task_123", "Title", 1, None, 3]]]  # status 3 = completed
-            else:
-                # Shouldn't reach here
-                return ["task_123", "completed", None, None]
-
-        mock_core.rpc_call.side_effect = mock_rpc_call
+        mock_core.rpc_call.side_effect = [
+            None,  # First call (poll_status) returns None, triggering fallback
+            [[["task_123", "Title", 1, None, 3]]],  # Second call (_list_raw) succeeds
+        ]
 
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await api.wait_for_completion("nb_123", "task_123", timeout=60.0)
@@ -283,6 +262,7 @@ class TestParseGenerationResult:
 
         assert result.status == "failed"
         assert result.task_id == ""
+        assert "no artifact_id" in result.error.lower()
 
     def test_parse_valid_in_progress(self, mock_artifacts_api):
         """Test parsing valid in_progress status (code 1)."""
