@@ -148,7 +148,7 @@ notebooklm skill install
 |----------|--------|-------|
 | **macOS** | ✅ Tested | Primary development platform |
 | **Linux** | ✅ Tested | Fully supported |
-| **Windows** | ⚠️ Untested | May work, but not tested in CI |
+| **Windows** | ✅ Tested | Tested in CI |
 
 ## License
 
