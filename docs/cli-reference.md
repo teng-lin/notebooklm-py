@@ -87,19 +87,21 @@ See [Configuration](configuration.md) for details on environment variables and C
 
 ### Generate Commands (`notebooklm generate <type>`)
 
-All generate commands support `--source/-s` to select specific sources (repeatable).
+All generate commands support:
+- `--source/-s` to select specific sources (repeatable)
+- `--json` for machine-readable output (returns `task_id` and `status`)
 
 | Command | Options | Example |
 |---------|---------|---------|
-| `audio [description]` | `--format`, `--length`, `--source`, `--wait` | `generate audio "Focus on history"` |
-| `video [description]` | `--style`, `--format`, `--source`, `--wait` | `generate video "Explainer for kids"` |
-| `slide-deck [description]` | `--format`, `--length`, `--source`, `--wait` | `generate slide-deck` |
-| `quiz [description]` | `--difficulty`, `--quantity`, `--source`, `--wait` | `generate quiz --difficulty hard` |
-| `flashcards [description]` | `--difficulty`, `--quantity`, `--source`, `--wait` | `generate flashcards` |
-| `infographic [description]` | `--orientation`, `--detail`, `--source`, `--wait` | `generate infographic` |
-| `data-table [description]` | `--source`, `--wait` | `generate data-table` |
-| `mind-map` | `--source` *(sync, no wait needed)* | `generate mind-map` |
-| `report [description]` | `--type`, `--source`, `--wait` | `generate report --type study-guide` |
+| `audio [description]` | `--format`, `--length`, `--source`, `--wait`, `--json` | `generate audio "Focus on history"` |
+| `video [description]` | `--style`, `--format`, `--source`, `--wait`, `--json` | `generate video "Explainer for kids"` |
+| `slide-deck [description]` | `--format`, `--length`, `--source`, `--wait`, `--json` | `generate slide-deck` |
+| `quiz [description]` | `--difficulty`, `--quantity`, `--source`, `--wait`, `--json` | `generate quiz --difficulty hard` |
+| `flashcards [description]` | `--difficulty`, `--quantity`, `--source`, `--wait`, `--json` | `generate flashcards` |
+| `infographic [description]` | `--orientation`, `--detail`, `--source`, `--wait`, `--json` | `generate infographic` |
+| `data-table [description]` | `--source`, `--wait`, `--json` | `generate data-table` |
+| `mind-map` | `--source`, `--json` *(sync, no wait needed)* | `generate mind-map` |
+| `report [description]` | `--type`, `--source`, `--wait`, `--json` | `generate report --type study-guide` |
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 
@@ -310,6 +312,7 @@ notebooklm generate audio [description] [OPTIONS]
 - `--language LANG` - Language code (default: en)
 - `-s, --source ID` - Use specific source(s) (repeatable, uses all if not specified)
 - `--wait` - Wait for generation to complete
+- `--json` - Output as JSON (returns `task_id` and `status`)
 
 **Examples:**
 ```bash
@@ -324,6 +327,10 @@ notebooklm generate audio "Focus on key points" --wait
 
 # Generate using only specific sources
 notebooklm generate audio -s src_abc -s src_def
+
+# JSON output for scripting/automation
+notebooklm generate audio --json
+# Output: {"task_id": "abc123...", "status": "pending"}
 ```
 
 ### Generate: `video`
@@ -340,6 +347,7 @@ notebooklm generate video [description] [OPTIONS]
 - `--language LANG` - Language code
 - `-s, --source ID` - Use specific source(s) (repeatable, uses all if not specified)
 - `--wait` - Wait for generation to complete
+- `--json` - Output as JSON (returns `task_id` and `status`)
 
 **Examples:**
 ```bash
@@ -351,6 +359,9 @@ notebooklm generate video --style classic --wait
 
 # Generate from specific sources only
 notebooklm generate video -s src_123 -s src_456
+
+# JSON output for scripting/automation
+notebooklm generate video --json
 ```
 
 ### Generate: `report`

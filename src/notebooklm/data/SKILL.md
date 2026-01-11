@@ -103,6 +103,7 @@ Before starting workflows, verify the CLI is ready:
 | Chat (new conversation) | `notebooklm ask "question" --new` |
 | Chat (specific sources) | `notebooklm ask "question" -s src_id1 -s src_id2` |
 | Generate podcast | `notebooklm generate audio "instructions"` |
+| Generate podcast (JSON) | `notebooklm generate audio --json` |
 | Generate podcast (specific sources) | `notebooklm generate audio -s src_id1 -s src_id2` |
 | Generate video | `notebooklm generate video "instructions"` |
 | Generate quiz | `notebooklm generate quiz` |
@@ -135,14 +136,16 @@ $ notebooklm source add "https://example.com" --json
 **Generate artifact:**
 ```
 $ notebooklm generate audio "Focus on key points" --json
-{"artifact_id": "xyz789...", "status": "PENDING", "type": "AUDIO_OVERVIEW"}
+{"task_id": "xyz789...", "status": "pending"}
 ```
 
-**Extract IDs:** Parse the `id`, `source_id`, or `artifact_id` field from JSON output.
+**Extract IDs:** Parse the `id`, `source_id`, or `task_id` field from JSON output.
 
 ## Generation Types
 
-All generate commands support `-s, --source` to use specific source(s) instead of all sources.
+All generate commands support:
+- `-s, --source` to use specific source(s) instead of all sources
+- `--json` for machine-readable output (returns `task_id` and `status`)
 
 | Type | Command | Downloadable |
 |------|---------|--------------|
