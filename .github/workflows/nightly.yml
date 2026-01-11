@@ -42,7 +42,7 @@ jobs:
         echo "version=$(pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cache/ms-playwright
