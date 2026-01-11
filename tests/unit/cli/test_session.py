@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -310,6 +311,65 @@ class TestClearCommand:
 # =============================================================================
 
 
+class TestStatusPaths:
+    """Tests for status --paths flag."""
+
+    def test_status_paths_flag_shows_table(self, runner, mock_context_file):
+        """Test status --paths shows configuration paths table."""
+        with patch("notebooklm.cli.session.get_path_info") as mock_path_info:
+            mock_path_info.return_value = {
+                "home_dir": "/home/test/.notebooklm",
+                "home_source": "default",
+                "storage_path": "/home/test/.notebooklm/storage_state.json",
+                "context_path": "/home/test/.notebooklm/context.json",
+                "browser_profile_dir": "/home/test/.notebooklm/browser_profile",
+            }
+
+            result = runner.invoke(cli, ["status", "--paths"])
+
+        assert result.exit_code == 0
+        assert "Configuration Paths" in result.output
+        assert "/home/test/.notebooklm" in result.output
+        assert "storage_state.json" in result.output
+
+    def test_status_paths_json_output(self, runner, mock_context_file):
+        """Test status --paths --json outputs path info as JSON."""
+        with patch("notebooklm.cli.session.get_path_info") as mock_path_info:
+            mock_path_info.return_value = {
+                "home_dir": "/custom/path/.notebooklm",
+                "home_source": "NOTEBOOKLM_HOME",
+                "storage_path": "/custom/path/.notebooklm/storage_state.json",
+                "context_path": "/custom/path/.notebooklm/context.json",
+                "browser_profile_dir": "/custom/path/.notebooklm/browser_profile",
+            }
+
+            result = runner.invoke(cli, ["status", "--paths", "--json"])
+
+        assert result.exit_code == 0
+        output_data = json.loads(result.output)
+        assert "paths" in output_data
+        assert output_data["paths"]["home_dir"] == "/custom/path/.notebooklm"
+        assert output_data["paths"]["home_source"] == "NOTEBOOKLM_HOME"
+
+    def test_status_paths_shows_auth_json_note(self, runner, mock_context_file, monkeypatch):
+        """Test status --paths shows note when NOTEBOOKLM_AUTH_JSON is set."""
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies":[]}')
+
+        with patch("notebooklm.cli.session.get_path_info") as mock_path_info:
+            mock_path_info.return_value = {
+                "home_dir": "/home/test/.notebooklm",
+                "home_source": "default",
+                "storage_path": "/home/test/.notebooklm/storage_state.json",
+                "context_path": "/home/test/.notebooklm/context.json",
+                "browser_profile_dir": "/home/test/.notebooklm/browser_profile",
+            }
+
+            result = runner.invoke(cli, ["status", "--paths"])
+
+        assert result.exit_code == 0
+        assert "NOTEBOOKLM_AUTH_JSON is set" in result.output
+
+
 class TestSessionEdgeCases:
     def test_use_handles_api_error_gracefully(self, runner, mock_auth, mock_context_file):
         """Test 'use' command handles API errors gracefully."""
@@ -348,3 +408,43 @@ class TestSessionEdgeCases:
 
         assert result.exit_code == 0
         assert "Shared" in result.output or "nb_shared" in result.output
+
+    def test_use_click_exception_propagates(self, runner, mock_auth, mock_context_file):
+        """Test 'use' command re-raises ClickException from resolve_notebook_id."""
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+
+                # Patch resolve_notebook_id to raise ClickException (e.g., ambiguous ID)
+                with patch(
+                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                ) as mock_resolve:
+                    mock_resolve.side_effect = click.ClickException("Multiple notebooks match 'nb'")
+
+                    result = runner.invoke(cli, ["use", "nb"])
+
+        # ClickException should propagate (exit code 1)
+        assert result.exit_code == 1
+        assert "Multiple notebooks match" in result.output
+
+    def test_status_corrupted_json_with_json_flag(self, runner, mock_context_file):
+        """Test status --json handles corrupted context file gracefully."""
+        # Write invalid JSON but with notebook_id in helpers
+        mock_context_file.write_text("{ invalid json }")
+
+        # Mock get_current_notebook to return an ID (simulating partial read)
+        with patch("notebooklm.cli.session.get_current_notebook") as mock_get_nb:
+            mock_get_nb.return_value = "nb_corrupted"
+
+            result = runner.invoke(cli, ["status", "--json"])
+
+        assert result.exit_code == 0
+        output_data = json.loads(result.output)
+        assert output_data["has_context"] is True
+        assert output_data["notebook"]["id"] == "nb_corrupted"
+        # Title and is_owner should be None due to JSONDecodeError
+        assert output_data["notebook"]["title"] is None
+        assert output_data["notebook"]["is_owner"] is None
