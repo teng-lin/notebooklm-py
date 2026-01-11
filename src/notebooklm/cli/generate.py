@@ -155,8 +155,8 @@ def _output_generation_status(status: Any, artifact_type: str, json_output: bool
         elif is_failed:
             console.print(f"[red]Failed:[/red] {getattr(status, 'error', 'Unknown error')}")
         else:
-            artifact_id = _extract_task_id(status)
-            console.print(f"[yellow]Started:[/yellow] {artifact_id or status}")
+            task_id = _extract_task_id(status)
+            console.print(f"[yellow]Started:[/yellow] {task_id or status}")
 
 
 @click.group()
