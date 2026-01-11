@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -410,8 +411,6 @@ class TestSessionEdgeCases:
 
     def test_use_click_exception_propagates(self, runner, mock_auth, mock_context_file):
         """Test 'use' command re-raises ClickException from resolve_notebook_id."""
-        import click
-
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
