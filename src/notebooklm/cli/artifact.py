@@ -95,14 +95,6 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                 nb = await client.notebooks.get(nb_id)
 
             if json_output:
-
-                def _get_status_str(art):
-                    if art.is_completed:
-                        return "completed"
-                    elif art.is_processing:
-                        return "processing"
-                    return str(art.status)
-
                 data = {
                     "notebook_id": nb_id,
                     "notebook_title": nb.title if nb else None,
@@ -115,7 +107,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                                 art.artifact_type, art.variant, art.report_subtype
                             ).split(" ", 1)[-1],
                             "type_id": art.artifact_type,
-                            "status": _get_status_str(art),
+                            "status": art.status_str,
                             "status_id": art.status,
                             "created_at": art.created_at.isoformat() if art.created_at else None,
                         }
@@ -142,14 +134,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                     art.artifact_type, art.variant, art.report_subtype
                 )
                 created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
-                status = (
-                    "completed"
-                    if art.is_completed
-                    else "processing"
-                    if art.is_processing
-                    else str(art.status)
-                )
-                table.add_row(art.id, art.title, type_display, created, status)
+                table.add_row(art.id, art.title, type_display, created, art.status_str)
 
             console.print(table)
 
@@ -183,9 +168,7 @@ def artifact_get(ctx, artifact_id, notebook_id, client_auth):
                 console.print(
                     f"[bold]Type:[/bold] {get_artifact_type_display(art.artifact_type, art.variant, art.report_subtype)}"
                 )
-                console.print(
-                    f"[bold]Status:[/bold] {'completed' if art.is_completed else 'processing' if art.is_processing else str(art.status)}"
-                )
+                console.print(f"[bold]Status:[/bold] {art.status_str}")
                 if art.created_at:
                     console.print(
                         f"[bold]Created:[/bold] {art.created_at.strftime('%Y-%m-%d %H:%M')}"

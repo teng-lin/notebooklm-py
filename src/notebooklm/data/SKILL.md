@@ -130,7 +130,7 @@ $ notebooklm create "Research" --json
 **Add source:**
 ```
 $ notebooklm source add "https://example.com" --json
-{"source_id": "def456...", "title": "Example", "status": "PROCESSING"}
+{"source_id": "def456...", "title": "Example", "status": "processing"}
 ```
 
 **Generate artifact:**
@@ -309,17 +309,17 @@ notebooklm artifact list --json
 
 `notebooklm source list --json`:
 ```json
-{"sources": [{"id": "...", "title": "...", "status": "READY|PROCESSING|FAILED"}]}
+{"sources": [{"id": "...", "title": "...", "status": "ready|processing|error"}]}
 ```
 
 `notebooklm artifact list --json`:
 ```json
-{"artifacts": [{"id": "...", "title": "...", "type": "AUDIO_OVERVIEW", "status": "COMPLETED|PENDING|FAILED"}]}
+{"artifacts": [{"id": "...", "title": "...", "type": "Audio Overview", "status": "in_progress|pending|completed|unknown"}]}
 ```
 
 **Status values:**
-- Sources: `PROCESSING` → `READY` (or `FAILED`)
-- Artifacts: `PENDING` → `COMPLETED` (or `FAILED`)
+- Sources: `processing` → `ready` (or `error`)
+- Artifacts: `pending` or `in_progress` → `completed` (or `unknown`)
 
 ## Error Handling
 

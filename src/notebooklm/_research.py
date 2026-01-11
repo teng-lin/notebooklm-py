@@ -169,6 +169,9 @@ class ResearchAPI:
                 if title or url:
                     parsed_sources.append({"url": url, "title": title})
 
+            # NOTE: Research status codes differ from artifact status codes
+            # Research: 1=in_progress, 2=completed
+            # Artifacts: 1=in_progress, 2=pending, 3=completed
             status = "completed" if status_code == 2 else "in_progress"
 
             return {
