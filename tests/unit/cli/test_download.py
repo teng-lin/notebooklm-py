@@ -48,19 +48,15 @@ def mock_auth():
 
 
 @pytest.fixture
-def mock_download_tokens():
-    """Mock fetch_tokens and load_auth_from_storage at the download module level.
+def mock_fetch_tokens():
+    """Mock fetch_tokens for CLI commands.
 
-    This fixture patches both functions where they're imported in download.py,
-    reducing boilerplate in tests that need authentication mocking.
+    Uses the same pattern as conftest.py - patches at helpers module level
+    since download commands call get_client() which calls fetch_tokens in helpers.
     """
-    with (
-        patch.object(download_module, "fetch_tokens", new_callable=AsyncMock) as mock_fetch,
-        patch.object(download_module, "load_auth_from_storage") as mock_load,
-    ):
-        mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
-        mock_fetch.return_value = ("csrf", "session")
-        yield {"fetch_tokens": mock_fetch, "load_auth": mock_load}
+    with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock:
+        mock.return_value = ("csrf_token", "session_id")
+        yield mock
 
 
 # =============================================================================
@@ -408,7 +404,7 @@ class TestDownloadCommandsExist:
 class TestDownloadFlagConflicts:
     """Test that conflicting flag combinations raise appropriate errors."""
 
-    def test_force_and_no_clobber_conflict(self, runner, mock_auth, mock_download_tokens):
+    def test_force_and_no_clobber_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """Test --force and --no-clobber cannot be used together."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -424,7 +420,7 @@ class TestDownloadFlagConflicts:
         assert result.exit_code != 0
         assert "Cannot specify both --force and --no-clobber" in result.output
 
-    def test_latest_and_earliest_conflict(self, runner, mock_auth, mock_download_tokens):
+    def test_latest_and_earliest_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """Test --latest and --earliest cannot be used together."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -440,7 +436,7 @@ class TestDownloadFlagConflicts:
         assert result.exit_code != 0
         assert "Cannot specify both --latest and --earliest" in result.output
 
-    def test_all_and_artifact_id_conflict(self, runner, mock_auth, mock_download_tokens):
+    def test_all_and_artifact_id_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """Test --all and --artifact-id cannot be used together."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -466,7 +462,7 @@ class TestDownloadFlagConflicts:
 class TestDownloadAutoRename:
     """Test auto-rename functionality when file exists and --force not specified."""
 
-    def test_auto_renames_on_conflict(self, runner, mock_auth, mock_download_tokens, tmp_path):
+    def test_auto_renames_on_conflict(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """When file exists without --force or --no-clobber, should auto-rename."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -503,7 +499,7 @@ class TestDownloadAutoRename:
 class TestDownloadAll:
     """Test --all flag for batch downloading."""
 
-    def test_download_all_basic(self, runner, mock_auth, mock_download_tokens, tmp_path):
+    def test_download_all_basic(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test basic --all download to a directory."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -533,7 +529,7 @@ class TestDownloadAll:
         downloaded_files = list(output_dir.glob("*.mp3"))
         assert len(downloaded_files) == 2
 
-    def test_download_all_dry_run(self, runner, mock_auth, mock_download_tokens, tmp_path):
+    def test_download_all_dry_run(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test --all --dry-run shows preview without downloading."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -559,7 +555,7 @@ class TestDownloadAll:
         # Directory should NOT be created
         assert not output_dir.exists()
 
-    def test_download_all_with_failures(self, runner, mock_auth, mock_download_tokens, tmp_path):
+    def test_download_all_with_failures(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test --all continues on individual artifact failures."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -596,7 +592,7 @@ class TestDownloadAll:
         # Output should mention failure
         assert "failed" in result.output.lower() or "1" in result.output
 
-    def test_download_all_with_no_clobber(self, runner, mock_auth, mock_download_tokens, tmp_path):
+    def test_download_all_with_no_clobber(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test --all --no-clobber skips existing files."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -639,7 +635,7 @@ class TestDownloadAll:
 class TestDownloadErrorHandling:
     """Test error handling during downloads."""
 
-    def test_download_single_failure(self, runner, mock_auth, mock_download_tokens, tmp_path):
+    def test_download_single_failure(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """When download fails, should return error gracefully."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
@@ -660,7 +656,7 @@ class TestDownloadErrorHandling:
         assert result.exit_code != 0
         assert "Connection refused" in result.output or "error" in result.output.lower()
 
-    def test_download_name_not_found(self, runner, mock_auth, mock_download_tokens):
+    def test_download_name_not_found(self, runner, mock_auth, mock_fetch_tokens):
         """When --name matches no artifacts, should show helpful error."""
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
