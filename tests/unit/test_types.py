@@ -250,6 +250,28 @@ class TestArtifact:
         assert processing.is_processing is True
         assert completed.is_processing is False
 
+    def test_is_pending_property(self):
+        """Test is_pending property for status=2 (transitional state)."""
+        pending = Artifact.from_api_response(["id", "title", 1, None, 2])
+        processing = Artifact.from_api_response(["id", "title", 1, None, 1])
+        completed = Artifact.from_api_response(["id", "title", 1, None, 3])
+
+        assert pending.is_pending is True
+        assert processing.is_pending is False
+        assert completed.is_pending is False
+
+    def test_status_str_property(self):
+        """Test status_str property returns correct human-readable strings."""
+        processing = Artifact.from_api_response(["id", "title", 1, None, 1])
+        pending = Artifact.from_api_response(["id", "title", 1, None, 2])
+        completed = Artifact.from_api_response(["id", "title", 1, None, 3])
+        unknown = Artifact.from_api_response(["id", "title", 1, None, 99])
+
+        assert processing.status_str == "in_progress"
+        assert pending.status_str == "pending"
+        assert completed.status_str == "completed"
+        assert unknown.status_str == "unknown"
+
     def test_report_subtype_briefing_doc(self):
         """Test report_subtype for briefing doc."""
         artifact = Artifact.from_api_response(["id", "Briefing Doc: Topic", 2, None, 3])

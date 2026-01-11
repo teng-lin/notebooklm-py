@@ -5,6 +5,8 @@ from notebooklm.rpc.types import (
     QUERY_URL,
     RPCMethod,
     StudioContentType,
+    ArtifactStatus,
+    artifact_status_to_str,
 )
 
 
@@ -86,3 +88,29 @@ class TestStudioContentType:
     def test_studio_type_is_int(self):
         """Test StudioContentType values are integers."""
         assert isinstance(StudioContentType.AUDIO.value, int)
+
+
+class TestArtifactStatusToStr:
+    """Tests for artifact_status_to_str helper function."""
+
+    def test_processing_status(self):
+        """Test status code 1 (PROCESSING) returns 'in_progress'."""
+        assert artifact_status_to_str(ArtifactStatus.PROCESSING) == "in_progress"
+        assert artifact_status_to_str(1) == "in_progress"
+
+    def test_pending_status(self):
+        """Test status code 2 (PENDING) returns 'pending'."""
+        assert artifact_status_to_str(ArtifactStatus.PENDING) == "pending"
+        assert artifact_status_to_str(2) == "pending"
+
+    def test_completed_status(self):
+        """Test status code 3 (COMPLETED) returns 'completed'."""
+        assert artifact_status_to_str(ArtifactStatus.COMPLETED) == "completed"
+        assert artifact_status_to_str(3) == "completed"
+
+    def test_unknown_status_codes(self):
+        """Test unknown status codes return 'unknown'."""
+        assert artifact_status_to_str(0) == "unknown"
+        assert artifact_status_to_str(4) == "unknown"
+        assert artifact_status_to_str(99) == "unknown"
+        assert artifact_status_to_str(-1) == "unknown"
