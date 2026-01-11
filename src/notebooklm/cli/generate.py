@@ -108,55 +108,55 @@ async def handle_generation_result(
     return status if isinstance(status, GenerationStatus) else None
 
 
+def _extract_task_id(status: Any) -> str | None:
+    """Extract task ID from various status formats.
+
+    Handles GenerationStatus objects, dicts with task_id/artifact_id keys,
+    and lists where the first element is an ID string.
+    """
+    if hasattr(status, "task_id"):
+        return status.task_id
+    if isinstance(status, dict):
+        return status.get("task_id") or status.get("artifact_id")
+    if isinstance(status, list) and len(status) > 0 and isinstance(status[0], str):
+        return status[0]
+    return None
+
+
 def _output_generation_status(status: Any, artifact_type: str, json_output: bool) -> None:
     """Output generation status in appropriate format."""
+    is_complete = hasattr(status, "is_complete") and status.is_complete
+    is_failed = hasattr(status, "is_failed") and status.is_failed
+
     if json_output:
-        if hasattr(status, "is_complete") and status.is_complete:
+        if is_complete:
             json_output_response(
                 {
-                    "artifact_id": getattr(status, "task_id", None),
+                    "task_id": getattr(status, "task_id", None),
                     "status": "completed",
                     "url": getattr(status, "url", None),
                 }
             )
-        elif hasattr(status, "is_failed") and status.is_failed:
+        elif is_failed:
             json_error_response(
                 "GENERATION_FAILED",
                 getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
             )
         else:
-            # Handle various result formats: GenerationStatus, dict, or list
-            artifact_id = (
-                getattr(status, "task_id", None)
-                or (status.get("artifact_id") if isinstance(status, dict) else None)
-                or (
-                    status[0]
-                    if isinstance(status, list) and len(status) > 0 and isinstance(status[0], str)
-                    else None
-                )
-            )
-            json_output_response({"artifact_id": artifact_id, "status": "pending"})
+            task_id = _extract_task_id(status)
+            json_output_response({"task_id": task_id, "status": "pending"})
     else:
-        if hasattr(status, "is_complete") and status.is_complete:
+        if is_complete:
             url = getattr(status, "url", None)
             if url:
                 console.print(f"[green]{artifact_type.title()} ready:[/green] {url}")
             else:
                 console.print(f"[green]{artifact_type.title()} ready[/green]")
-        elif hasattr(status, "is_failed") and status.is_failed:
+        elif is_failed:
             console.print(f"[red]Failed:[/red] {getattr(status, 'error', 'Unknown error')}")
         else:
-            # Extract task_id for cleaner display
-            task_id = (
-                getattr(status, "task_id", None)
-                or (status.get("artifact_id") if isinstance(status, dict) else None)
-                or (
-                    status[0]
-                    if isinstance(status, list) and len(status) > 0 and isinstance(status[0], str)
-                    else None
-                )
-            )
-            console.print(f"[yellow]Started:[/yellow] {task_id or status}")
+            artifact_id = _extract_task_id(status)
+            console.print(f"[yellow]Started:[/yellow] {artifact_id or status}")
 
 
 @click.group()
@@ -227,6 +227,9 @@ def generate_audio(
     client_auth,
 ):
     """Generate audio overview (podcast).
+
+    \b
+    Use --json for machine-readable output.
 
     \b
     Example:
@@ -315,6 +318,9 @@ def generate_video(
     """Generate video overview.
 
     \b
+    Use --json for machine-readable output.
+
+    \b
     Example:
       notebooklm generate video "a funny explainer for kids age 5"
       notebooklm generate video "professional presentation" --style classic
@@ -393,6 +399,9 @@ def generate_slide_deck(
     """Generate slide deck.
 
     \b
+    Use --json for machine-readable output.
+
+    \b
     Example:
       notebooklm generate slide-deck "include speaker notes"
       notebooklm generate slide-deck "executive summary" --format presenter --length short
@@ -442,6 +451,9 @@ def generate_quiz(
     ctx, description, notebook_id, quantity, difficulty, source_ids, wait, json_output, client_auth
 ):
     """Generate quiz.
+
+    \b
+    Use --json for machine-readable output.
 
     \b
     Example:
@@ -494,6 +506,9 @@ def generate_flashcards(
     ctx, description, notebook_id, quantity, difficulty, source_ids, wait, json_output, client_auth
 ):
     """Generate flashcards.
+
+    \b
+    Use --json for machine-readable output.
 
     \b
     Example:
@@ -566,6 +581,9 @@ def generate_infographic(
     """Generate infographic.
 
     \b
+    Use --json for machine-readable output.
+
+    \b
     Example:
       notebooklm generate infographic "include statistics and key findings"
       notebooklm generate infographic --orientation portrait --detail detailed
@@ -618,6 +636,9 @@ def generate_data_table(
     """Generate data table.
 
     \b
+    Use --json for machine-readable output.
+
+    \b
     Example:
       notebooklm generate data-table "comparison of key concepts"
       notebooklm generate data-table -s src_001 "timeline of events"
@@ -647,7 +668,11 @@ def generate_data_table(
 @json_option
 @with_client
 def generate_mind_map(ctx, notebook_id, source_ids, json_output, client_auth):
-    """Generate mind map."""
+    """Generate mind map.
+
+    \b
+    Use --json for machine-readable output.
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
@@ -714,6 +739,9 @@ def generate_report_cmd(
     ctx, description, report_format, notebook_id, source_ids, wait, json_output, client_auth
 ):
     """Generate a report (briefing doc, study guide, blog post, or custom).
+
+    \b
+    Use --json for machine-readable output.
 
     \b
     Examples:

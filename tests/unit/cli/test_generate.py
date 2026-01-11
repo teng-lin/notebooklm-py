@@ -423,7 +423,7 @@ class TestGenerateJsonOutput:
     """Parametrized tests for --json output across all generate commands."""
 
     @pytest.mark.parametrize(
-        "cmd,method,artifact_id",
+        "cmd,method,task_id",
         [
             ("audio", "generate_audio", "audio_123"),
             ("video", "generate_video", "video_123"),
@@ -434,14 +434,14 @@ class TestGenerateJsonOutput:
             ("report", "generate_report", "report_123"),
         ],
     )
-    def test_generate_json_output(self, runner, mock_auth, cmd, method, artifact_id):
+    def test_generate_json_output(self, runner, mock_auth, cmd, method, task_id):
         """Test --json flag produces valid JSON output for standard generate commands."""
         with patch_client_for_module("generate") as mock_client_cls:
             mock_client = create_mock_client()
             setattr(
                 mock_client.artifacts,
                 method,
-                AsyncMock(return_value={"artifact_id": artifact_id, "status": "processing"}),
+                AsyncMock(return_value={"task_id": task_id, "status": "processing"}),
             )
             mock_client_cls.return_value = mock_client
 
@@ -451,14 +451,14 @@ class TestGenerateJsonOutput:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
-            assert data["artifact_id"] == artifact_id
+            assert data["task_id"] == task_id
 
     def test_generate_data_table_json_output(self, runner, mock_auth):
         """Test --json for data-table (requires description argument)."""
         with patch_client_for_module("generate") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_data_table = AsyncMock(
-                return_value={"artifact_id": "table_123", "status": "processing"}
+                return_value={"task_id": "table_123", "status": "processing"}
             )
             mock_client_cls.return_value = mock_client
 
@@ -470,7 +470,7 @@ class TestGenerateJsonOutput:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
-            assert data["artifact_id"] == "table_123"
+            assert data["task_id"] == "table_123"
 
     def test_generate_mind_map_json_output(self, runner, mock_auth):
         """Test --json for mind-map (different return structure)."""
