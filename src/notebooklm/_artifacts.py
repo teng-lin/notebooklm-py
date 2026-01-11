@@ -1430,7 +1430,12 @@ class ArtifactsAPI:
             return output_path
 
     def _parse_generation_result(self, result: Any) -> GenerationStatus:
-        """Parse generation API result into GenerationStatus."""
+        """Parse generation API result into GenerationStatus.
+
+        The API returns a single ID that serves as both the task_id (for polling
+        during generation) and the artifact_id (once complete). This ID is at
+        position [0][0] in the response and becomes Artifact.id in the list.
+        """
         if result and isinstance(result, list) and len(result) > 0:
             artifact_data = result[0]
             artifact_id = (

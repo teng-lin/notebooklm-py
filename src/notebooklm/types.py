@@ -482,9 +482,15 @@ class Artifact:
 
 @dataclass
 class GenerationStatus:
-    """Status of an artifact generation task."""
+    """Status of an artifact generation task.
 
-    task_id: str
+    Note: task_id and artifact_id are the same identifier. The API returns a single
+    ID when generation starts, which is used both for polling the task status during
+    generation and as the artifact's ID once complete. We use 'task_id' here to
+    emphasize its role in tracking the generation task.
+    """
+
+    task_id: str  # Same as artifact_id - used for polling and becomes Artifact.id
     status: str  # "pending", "in_progress", "completed", "failed"
     url: str | None = None
     error: str | None = None
