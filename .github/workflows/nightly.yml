@@ -67,9 +67,17 @@ jobs:
         echo "READ_ONLY length: ${#NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID}"
         echo "GENERATION length: ${#NOTEBOOKLM_GENERATION_NOTEBOOK_ID}"
 
-    - name: Run E2E tests (read-only)
+    - name: Run E2E tests
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
-      run: pytest tests/e2e -m "readonly and not variants" -s -v --tb=short
+      shell: bash
+      run: |
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          # Linux: run all E2E tests except variants
+          pytest tests/e2e -m "not variants" -s -v --tb=short
+        else
+          # Windows: run only read-only tests (safer, avoids write operations)
+          pytest tests/e2e -m "readonly and not variants" -s -v --tb=short
+        fi
