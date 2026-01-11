@@ -93,7 +93,7 @@ async def handle_generation_result(
         task_id = result.get("artifact_id") or result.get("task_id")
         status = result
     elif isinstance(result, list) and len(result) > 0:
-        task_id = result[0]
+        task_id = result[0] if isinstance(result[0], str) else None
         status = result
 
     # Wait for completion if requested
@@ -129,7 +129,11 @@ def _output_generation_status(status: Any, artifact_type: str, json_output: bool
             artifact_id = (
                 getattr(status, "task_id", None)
                 or (status.get("artifact_id") if isinstance(status, dict) else None)
-                or (status[0] if isinstance(status, list) and len(status) > 0 else None)
+                or (
+                    status[0]
+                    if isinstance(status, list) and len(status) > 0 and isinstance(status[0], str)
+                    else None
+                )
             )
             json_output_response({"artifact_id": artifact_id, "status": "pending"})
     else:
@@ -146,7 +150,11 @@ def _output_generation_status(status: Any, artifact_type: str, json_output: bool
             task_id = (
                 getattr(status, "task_id", None)
                 or (status.get("artifact_id") if isinstance(status, dict) else None)
-                or (status[0] if isinstance(status, list) and len(status) > 0 else None)
+                or (
+                    status[0]
+                    if isinstance(status, list) and len(status) > 0 and isinstance(status[0], str)
+                    else None
+                )
             )
             console.print(f"[yellow]Started:[/yellow] {task_id or status}")
 
@@ -645,32 +653,41 @@ def generate_mind_map(ctx, notebook_id, source_ids, json_output, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            if not json_output:
+
+            # Show status spinner only for console output
+            if json_output:
+                result = await client.artifacts.generate_mind_map(nb_id, source_ids=sources)
+            else:
                 with console.status("Generating mind map..."):
                     result = await client.artifacts.generate_mind_map(nb_id, source_ids=sources)
-            else:
-                result = await client.artifacts.generate_mind_map(nb_id, source_ids=sources)
 
-            if result:
-                if json_output:
-                    json_output_response(result)
-                else:
-                    console.print("[green]Mind map generated:[/green]")
-                    if isinstance(result, dict):
-                        console.print(f"  Note ID: {result.get('note_id', '-')}")
-                        mind_map = result.get("mind_map", {})
-                        if isinstance(mind_map, dict):
-                            console.print(f"  Root: {mind_map.get('name', '-')}")
-                            console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
-                    else:
-                        console.print(result)
-            else:
-                if json_output:
-                    json_error_response("GENERATION_FAILED", "Mind map generation failed")
-                else:
-                    console.print("[yellow]No result[/yellow]")
+            _output_mind_map_result(result, json_output)
 
     return _run()
+
+
+def _output_mind_map_result(result: Any, json_output: bool) -> None:
+    """Output mind map result in appropriate format."""
+    if not result:
+        if json_output:
+            json_error_response("GENERATION_FAILED", "Mind map generation failed")
+        else:
+            console.print("[yellow]No result[/yellow]")
+        return
+
+    if json_output:
+        json_output_response(result)
+        return
+
+    console.print("[green]Mind map generated:[/green]")
+    if isinstance(result, dict):
+        console.print(f"  Note ID: {result.get('note_id', '-')}")
+        mind_map = result.get("mind_map", {})
+        if isinstance(mind_map, dict):
+            console.print(f"  Root: {mind_map.get('name', '-')}")
+            console.print(f"  Children: {len(mind_map.get('children', []))} nodes")
+    else:
+        console.print(result)
 
 
 @generate.command("report")

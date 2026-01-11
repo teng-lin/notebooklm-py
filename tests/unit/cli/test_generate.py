@@ -117,22 +117,6 @@ class TestGenerateAudio:
             assert result.exit_code == 0
             assert "Audio generation failed" in result.output
 
-    def test_generate_audio_json_output(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
-            mock_client = create_mock_client()
-            mock_client.artifacts.generate_audio = AsyncMock(
-                return_value={"artifact_id": "audio_123", "status": "processing"}
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["generate", "audio", "--json", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["artifact_id"] == "audio_123"
-
 
 # =============================================================================
 # GENERATE VIDEO TESTS
@@ -428,6 +412,83 @@ class TestGenerateReport:
                 )
 
             assert result.exit_code == 0
+
+
+# =============================================================================
+# JSON OUTPUT TESTS (PARAMETRIZED)
+# =============================================================================
+
+
+class TestGenerateJsonOutput:
+    """Parametrized tests for --json output across all generate commands."""
+
+    @pytest.mark.parametrize(
+        "cmd,method,artifact_id",
+        [
+            ("audio", "generate_audio", "audio_123"),
+            ("video", "generate_video", "video_123"),
+            ("quiz", "generate_quiz", "quiz_123"),
+            ("flashcards", "generate_flashcards", "flash_123"),
+            ("slide-deck", "generate_slide_deck", "slides_123"),
+            ("infographic", "generate_infographic", "info_123"),
+            ("report", "generate_report", "report_123"),
+        ],
+    )
+    def test_generate_json_output(self, runner, mock_auth, cmd, method, artifact_id):
+        """Test --json flag produces valid JSON output for standard generate commands."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            setattr(
+                mock_client.artifacts,
+                method,
+                AsyncMock(return_value={"artifact_id": artifact_id, "status": "processing"}),
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", cmd, "--json", "-n", "nb_123"])
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["artifact_id"] == artifact_id
+
+    def test_generate_data_table_json_output(self, runner, mock_auth):
+        """Test --json for data-table (requires description argument)."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_data_table = AsyncMock(
+                return_value={"artifact_id": "table_123", "status": "processing"}
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["generate", "data-table", "Compare concepts", "--json", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["artifact_id"] == "table_123"
+
+    def test_generate_mind_map_json_output(self, runner, mock_auth):
+        """Test --json for mind-map (different return structure)."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_mind_map = AsyncMock(
+                return_value={"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "mind-map", "--json", "-n", "nb_123"])
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert "mind_map" in data
+            assert data["note_id"] == "n1"
 
 
 # =============================================================================
