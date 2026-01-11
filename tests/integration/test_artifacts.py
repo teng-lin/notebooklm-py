@@ -40,7 +40,7 @@ class TestStudioContent:
 
         assert result is not None
         assert result.task_id == "artifact_123"
-        assert result.status in ("pending", "in_progress", "processing")
+        assert result.status in ("pending", "in_progress")
 
         request = httpx_mock.get_requests()[-1]
         assert RPCMethod.CREATE_VIDEO.value in str(request.url)

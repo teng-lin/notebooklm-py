@@ -31,6 +31,7 @@ from .rpc import (
     StudioContentType,
     VideoFormat,
     VideoStyle,
+    artifact_status_to_str,
 )
 from .types import Artifact, GenerationStatus, ReportSuggestion
 
@@ -1086,7 +1087,7 @@ class ArtifactsAPI:
             for art in artifacts_data:
                 if len(art) > 0 and art[0] == task_id:
                     status_code = art[4] if len(art) > 4 else 0
-                    status = "in_progress" if status_code == 1 else "completed"
+                    status = artifact_status_to_str(status_code)
                     return GenerationStatus(task_id=task_id, status=status)
             return GenerationStatus(task_id=task_id, status="pending")
 
@@ -1451,11 +1452,7 @@ class ArtifactsAPI:
 
             if artifact_id:
                 status = (
-                    "in_progress"
-                    if status_code == 1
-                    else "completed"
-                    if status_code == 3
-                    else "pending"
+                    artifact_status_to_str(status_code) if status_code is not None else "pending"
                 )
                 return GenerationStatus(task_id=artifact_id, status=status)
 

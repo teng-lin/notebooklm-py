@@ -116,6 +116,29 @@ class ArtifactStatus(int, Enum):
     COMPLETED = 3  # Artifact is ready for use/download
 
 
+_ARTIFACT_STATUS_MAP: dict[int, str] = {
+    ArtifactStatus.PROCESSING: "in_progress",
+    ArtifactStatus.PENDING: "pending",
+    ArtifactStatus.COMPLETED: "completed",
+}
+
+
+def artifact_status_to_str(status_code: int) -> str:
+    """Convert artifact status code to human-readable string.
+
+    This is the single source of truth for status code to string mapping.
+    Use this helper instead of inline conditionals to ensure consistency.
+
+    Args:
+        status_code: Numeric status from API response (artifact_data[4]).
+
+    Returns:
+        String status: "in_progress", "pending", "completed", or "unknown".
+        Returns "unknown" for unrecognized codes (future-proofing).
+    """
+    return _ARTIFACT_STATUS_MAP.get(status_code, "unknown")
+
+
 class AudioFormat(int, Enum):
     """Audio overview format options."""
 

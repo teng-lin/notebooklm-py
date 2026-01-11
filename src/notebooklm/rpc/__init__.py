@@ -31,6 +31,7 @@ from .types import (
     StudioContentType,
     VideoFormat,
     VideoStyle,
+    artifact_status_to_str,
 )
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "UPLOAD_URL",
     "StudioContentType",
     "ArtifactStatus",
+    "artifact_status_to_str",
     "AudioFormat",
     "AudioLength",
     "VideoFormat",

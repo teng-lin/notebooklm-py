@@ -284,13 +284,13 @@ class TestParseGenerationResult:
         assert result.status == "completed"
 
     def test_parse_unknown_status_code(self, mock_artifacts_api):
-        """Test parsing unknown status code returns pending."""
+        """Test parsing unknown status code returns unknown."""
         api, _ = mock_artifacts_api
 
         result = api._parse_generation_result([["artifact_003", "Title", 1, None, 99]])
 
         assert result.task_id == "artifact_003"
-        assert result.status == "pending"  # Unknown codes default to pending
+        assert result.status == "unknown"  # Unknown codes return "unknown"
 
 
 # =============================================================================

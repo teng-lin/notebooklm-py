@@ -31,6 +31,7 @@ from .rpc.types import (
     StudioContentType,
     VideoFormat,
     VideoStyle,
+    artifact_status_to_str,
 )
 
 __all__ = [
@@ -443,13 +444,27 @@ class Artifact:
 
     @property
     def is_completed(self) -> bool:
-        """Check if artifact generation is complete."""
+        """Check if artifact generation is complete (status=3)."""
         return self.status == 3
 
     @property
     def is_processing(self) -> bool:
-        """Check if artifact is still processing."""
+        """Check if artifact is being generated (status=1)."""
         return self.status == 1
+
+    @property
+    def is_pending(self) -> bool:
+        """Check if artifact is queued/transitional (status=2)."""
+        return self.status == 2
+
+    @property
+    def status_str(self) -> str:
+        """Get human-readable status string.
+
+        Returns:
+            "in_progress", "pending", "completed", or "unknown".
+        """
+        return artifact_status_to_str(self.status)
 
     @property
     def is_quiz(self) -> bool:
