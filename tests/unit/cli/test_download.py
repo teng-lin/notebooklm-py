@@ -49,14 +49,18 @@ def mock_auth():
 
 @pytest.fixture
 def mock_fetch_tokens():
-    """Mock fetch_tokens for CLI commands.
+    """Mock fetch_tokens and load_auth_from_storage at download module level.
 
-    Uses the same pattern as conftest.py - patches at helpers module level
-    since download commands call get_client() which calls fetch_tokens in helpers.
+    Download.py imports these functions directly, so we must patch at the module
+    level where they're imported (not at helpers where they're defined).
     """
-    with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock:
-        mock.return_value = ("csrf_token", "session_id")
-        yield mock
+    with (
+        patch.object(download_module, "fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+        patch.object(download_module, "load_auth_from_storage") as mock_load,
+    ):
+        mock_load.return_value = {"SID": "test", "HSID": "test", "SSID": "test"}
+        mock_fetch.return_value = ("csrf", "session")
+        yield mock_fetch
 
 
 # =============================================================================
