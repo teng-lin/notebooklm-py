@@ -76,6 +76,16 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                 nb = await client.notebooks.get(nb_id)
 
             if json_output:
+
+                def _get_status_str(src):
+                    if src.is_ready:
+                        return "ready"
+                    elif src.is_processing:
+                        return "processing"
+                    elif src.is_error:
+                        return "error"
+                    return str(src.status)
+
                 data = {
                     "notebook_id": nb_id,
                     "notebook_title": nb.title if nb else None,
@@ -86,6 +96,8 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                             "title": src.title,
                             "type": src.source_type,
                             "url": src.url,
+                            "status": _get_status_str(src),
+                            "status_id": src.status,
                             "created_at": src.created_at.isoformat() if src.created_at else None,
                         }
                         for i, src in enumerate(sources, 1)
@@ -100,11 +112,21 @@ def source_list(ctx, notebook_id, json_output, client_auth):
             table.add_column("Title", style="green")
             table.add_column("Type")
             table.add_column("Created", style="dim")
+            table.add_column("Status", style="yellow")
 
             for src in sources:
                 type_display = get_source_type_display(src.source_type)
                 created = src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
-                table.add_row(src.id, src.title or "-", type_display, created)
+                status = (
+                    "ready"
+                    if src.is_ready
+                    else "processing"
+                    if src.is_processing
+                    else "error"
+                    if src.is_error
+                    else str(src.status)
+                )
+                table.add_row(src.id, src.title or "-", type_display, created, status)
 
             console.print(table)
 
