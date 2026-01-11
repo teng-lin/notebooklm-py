@@ -34,8 +34,17 @@ def register_chat_commands(cli):
     )
     @click.option("--conversation-id", "-c", default=None, help="Continue a specific conversation")
     @click.option("--new", "new_conversation", is_flag=True, help="Start a new conversation")
+    @click.option(
+        "--source",
+        "-s",
+        "source_ids",
+        multiple=True,
+        help="Limit to specific source IDs (can be repeated)",
+    )
     @with_client
-    def ask_cmd(ctx, question, notebook_id, conversation_id, new_conversation, client_auth):
+    def ask_cmd(
+        ctx, question, notebook_id, conversation_id, new_conversation, source_ids, client_auth
+    ):
         """Ask a notebook a question.
 
         By default, continues the last conversation. Use --new to start fresh.
@@ -45,6 +54,7 @@ def register_chat_commands(cli):
           notebooklm ask "what are the main themes?"
           notebooklm ask --new "start fresh question"
           notebooklm ask -c <id> "continue this one"
+          notebooklm ask -s src_001 -s src_002 "question about specific sources"
         """
         nb_id = require_notebook(notebook_id)
 
@@ -72,7 +82,11 @@ def register_chat_commands(cli):
                         except Exception:
                             pass
 
-                result = await client.chat.ask(nb_id, question, conversation_id=effective_conv_id)
+                # Convert source_ids tuple to list, or None if empty
+                sources = list(source_ids) if source_ids else None
+                result = await client.chat.ask(
+                    nb_id, question, source_ids=sources, conversation_id=effective_conv_id
+                )
 
                 if result.conversation_id:
                     set_current_conversation(result.conversation_id)

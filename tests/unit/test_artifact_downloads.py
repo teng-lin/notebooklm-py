@@ -24,6 +24,7 @@ def mock_artifacts_api():
     """Create an ArtifactsAPI with mocked core and notes API."""
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
+    mock_core.get_source_ids = AsyncMock(return_value=[])
     mock_notes = MagicMock()
     mock_notes.list_mind_maps = AsyncMock(return_value=[])
     # Mock create to return a Note-like object with an id
@@ -298,18 +299,15 @@ class TestMindMapGeneration:
     async def test_generate_mind_map_with_json_string(self, mock_artifacts_api):
         """Test parsing mind map response with JSON string."""
         api, mock_core = mock_artifacts_api
-        # First call is _get_source_ids, second is the actual mind map generation
-        mock_core.rpc_call.side_effect = [
-            # _get_source_ids response
-            [None, None, None, None, None, [[["src_001"]]]],
-            # generate_mind_map response
+        # Mock get_source_ids for source ID fetching
+        mock_core.get_source_ids.return_value = ["src_001"]
+        # Mock the actual mind map generation RPC call
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    '{"nodes": [{"id": "1", "text": "Root"}]}',  # JSON string
-                    None,
-                    ["note_123"],  # note info (not used anymore, note is created explicitly)
-                ]
-            ],
+                '{"nodes": [{"id": "1", "text": "Root"}]}',  # JSON string
+                None,
+                ["note_123"],  # note info (not used anymore, note is created explicitly)
+            ]
         ]
 
         result = await api.generate_mind_map("nb_123")
@@ -323,15 +321,15 @@ class TestMindMapGeneration:
     async def test_generate_mind_map_with_dict(self, mock_artifacts_api):
         """Test parsing mind map response with dict."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.side_effect = [
-            [None, None, None, None, None, [[["src_001"]]]],
+        # Mock get_source_ids for source ID fetching
+        mock_core.get_source_ids.return_value = ["src_001"]
+        # Mock the actual mind map generation RPC call
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    {"nodes": [{"id": "1"}]},  # Already a dict
-                    None,
-                    ["note_456"],  # note info (not used anymore)
-                ]
-            ],
+                {"nodes": [{"id": "1"}]},  # Already a dict
+                None,
+                ["note_456"],  # note info (not used anymore)
+            ]
         ]
 
         result = await api.generate_mind_map("nb_123")
@@ -345,10 +343,10 @@ class TestMindMapGeneration:
     async def test_generate_mind_map_empty_result(self, mock_artifacts_api):
         """Test mind map with empty/null result."""
         api, mock_core = mock_artifacts_api
-        mock_core.rpc_call.side_effect = [
-            [None, None, None, None, None, [[["src_001"]]]],
-            None,  # Empty response
-        ]
+        # Mock get_source_ids for source ID fetching
+        mock_core.get_source_ids.return_value = ["src_001"]
+        # Mock the actual mind map generation with empty response
+        mock_core.rpc_call.return_value = None
 
         result = await api.generate_mind_map("nb_123")
 

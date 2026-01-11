@@ -101,7 +101,9 @@ Before starting workflows, verify the CLI is ready:
 | Wait for research | `notebooklm research wait --import-all` |
 | Chat | `notebooklm ask "question"` |
 | Chat (new conversation) | `notebooklm ask "question" --new` |
+| Chat (specific sources) | `notebooklm ask "question" -s src_id1 -s src_id2` |
 | Generate podcast | `notebooklm generate audio "instructions"` |
+| Generate podcast (specific sources) | `notebooklm generate audio -s src_id1 -s src_id2` |
 | Generate video | `notebooklm generate video "instructions"` |
 | Generate quiz | `notebooklm generate quiz` |
 | Check artifact status | `notebooklm artifact list` |
@@ -139,6 +141,8 @@ $ notebooklm generate audio "Focus on key points" --json
 **Extract IDs:** Parse the `id`, `source_id`, or `artifact_id` field from JSON output.
 
 ## Generation Types
+
+All generate commands support `-s, --source` to use specific source(s) instead of all sources.
 
 | Type | Command | Downloadable |
 |------|---------|--------------|

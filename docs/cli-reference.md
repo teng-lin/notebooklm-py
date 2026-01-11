@@ -60,6 +60,7 @@ See [Configuration](configuration.md) for details on environment variables and C
 | Command | Description | Example |
 |---------|-------------|---------|
 | `ask <question>` | Ask a question | `notebooklm ask "What is this about?"` |
+| `ask -s <id>` | Ask using specific sources | `notebooklm ask "Summarize" -s src1 -s src2` |
 | `configure` | Set persona/mode | `notebooklm configure --mode learning-guide` |
 | `history` | View/clear history | `notebooklm history --clear` |
 
@@ -86,17 +87,19 @@ See [Configuration](configuration.md) for details on environment variables and C
 
 ### Generate Commands (`notebooklm generate <type>`)
 
+All generate commands support `--source/-s` to select specific sources (repeatable).
+
 | Command | Options | Example |
 |---------|---------|---------|
-| `audio [description]` | `--format`, `--length`, `--wait` | `generate audio "Focus on history"` |
-| `video [description]` | `--style`, `--format`, `--wait` | `generate video "Explainer for kids"` |
-| `slide-deck [description]` | `--format`, `--length`, `--wait` | `generate slide-deck` |
-| `quiz [description]` | `--difficulty`, `--quantity`, `--wait` | `generate quiz --difficulty hard` |
-| `flashcards [description]` | `--difficulty`, `--quantity`, `--wait` | `generate flashcards` |
-| `infographic [description]` | `--orientation`, `--detail`, `--wait` | `generate infographic` |
-| `data-table [description]` | `--wait` | `generate data-table` |
-| `mind-map` | *(sync, no wait needed)* | `generate mind-map` |
-| `report [description]` | `--type`, `--wait` | `generate report --type study-guide` |
+| `audio [description]` | `--format`, `--length`, `--source`, `--wait` | `generate audio "Focus on history"` |
+| `video [description]` | `--style`, `--format`, `--source`, `--wait` | `generate video "Explainer for kids"` |
+| `slide-deck [description]` | `--format`, `--length`, `--source`, `--wait` | `generate slide-deck` |
+| `quiz [description]` | `--difficulty`, `--quantity`, `--source`, `--wait` | `generate quiz --difficulty hard` |
+| `flashcards [description]` | `--difficulty`, `--quantity`, `--source`, `--wait` | `generate flashcards` |
+| `infographic [description]` | `--orientation`, `--detail`, `--source`, `--wait` | `generate infographic` |
+| `data-table [description]` | `--source`, `--wait` | `generate data-table` |
+| `mind-map` | `--source` *(sync, no wait needed)* | `generate mind-map` |
+| `report [description]` | `--type`, `--source`, `--wait` | `generate report --type study-guide` |
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 
@@ -305,6 +308,7 @@ notebooklm generate audio [description] [OPTIONS]
 - `--format [deep-dive|brief|critique|debate]` - Podcast format (default: deep-dive)
 - `--length [short|default|long]` - Duration (default: default)
 - `--language LANG` - Language code (default: en)
+- `-s, --source ID` - Use specific source(s) (repeatable, uses all if not specified)
 - `--wait` - Wait for generation to complete
 
 **Examples:**
@@ -317,6 +321,9 @@ notebooklm generate audio "Compare the two main viewpoints" --format debate
 
 # Generate and wait for completion
 notebooklm generate audio "Focus on key points" --wait
+
+# Generate using only specific sources
+notebooklm generate audio -s src_abc -s src_def
 ```
 
 ### Generate: `video`
@@ -331,6 +338,7 @@ notebooklm generate video [description] [OPTIONS]
 - `--format [explainer|brief]` - Video format
 - `--style [auto|classic|whiteboard|kawaii|anime|watercolor|retro|heritage|paper-craft]` - Visual style
 - `--language LANG` - Language code
+- `-s, --source ID` - Use specific source(s) (repeatable, uses all if not specified)
 - `--wait` - Wait for generation to complete
 
 **Examples:**
@@ -340,6 +348,9 @@ notebooklm generate video "Explain for 5 year olds" --style kawaii
 
 # Professional style
 notebooklm generate video --style classic --wait
+
+# Generate from specific sources only
+notebooklm generate video -s src_123 -s src_456
 ```
 
 ### Generate: `report`
@@ -352,11 +363,15 @@ notebooklm generate report [description] [OPTIONS]
 
 **Options:**
 - `--type [briefing-doc|study-guide|blog-post|custom]` - Report type
+- `-s, --source ID` - Use specific source(s) (repeatable, uses all if not specified)
 
 **Examples:**
 ```bash
 notebooklm generate report --type study-guide
 notebooklm generate report "Executive summary for stakeholders" --type briefing-doc
+
+# Generate report from specific sources
+notebooklm generate report --type study-guide -s src_001 -s src_002
 ```
 
 ### Download: `audio`, `video`, `slide-deck`, `infographic`

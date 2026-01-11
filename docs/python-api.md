@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-01-08
+**Last Updated:** 2026-01-10
 
 Complete reference for the `notebooklm` Python library.
 
@@ -428,11 +428,28 @@ else:
 | `configure(notebook_id, ...)` | `str, ...` | `bool` | Set chat persona |
 | `get_history(notebook_id)` | `str` | `list[ConversationTurn]` | Get conversation |
 
+**ask() Parameters:**
+```python
+async def ask(
+    notebook_id: str,
+    question: str,
+    source_ids: list[str] | None = None,  # Limit to specific sources (None = all)
+    conversation_id: str | None = None,   # Continue existing conversation
+) -> AskResult
+```
+
 **Example:**
 ```python
-# Ask questions
+# Ask questions (uses all sources)
 result = await client.chat.ask(nb_id, "What are the main themes?")
 print(result.answer)
+
+# Ask using only specific sources
+result = await client.chat.ask(
+    nb_id,
+    "Summarize the key points",
+    source_ids=["src_001", "src_002"]
+)
 
 # Continue conversation
 result = await client.chat.ask(

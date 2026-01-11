@@ -86,6 +86,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--ignore=tests/e2e"
 markers = [
+    "e2e: end-to-end tests requiring authentication (run with pytest tests/e2e -m e2e)",
     "variants: parameter variant tests (skip to save quota)",
     "readonly: read-only tests against user's test notebook",
     "vcr: tests using VCR.py recorded cassettes (run with NOTEBOOKLM_VCR_RECORD=1 to record)",

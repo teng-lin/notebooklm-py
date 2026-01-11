@@ -439,3 +439,200 @@ async def generation_notebook_id(client):
             await client.notebooks.delete(notebook_id)
         except Exception as e:
             warnings.warn(f"Failed to delete generation notebook {notebook_id}: {e}", stacklevel=2)
+
+
+# =============================================================================
+# Multi-Source Notebook Fixtures
+# =============================================================================
+
+# File to store auto-created multi-source notebook ID
+MULTI_SOURCE_NOTEBOOK_ID_FILE = "multi_source_notebook_id"
+
+# Module-level state to ensure cleanup only runs once per session
+_multi_source_cleanup_done = False
+
+
+def _get_multi_source_notebook_id_path() -> Path:
+    """Get the path to the multi-source notebook ID file."""
+    return get_home_dir() / MULTI_SOURCE_NOTEBOOK_ID_FILE
+
+
+def _load_stored_multi_source_notebook_id() -> str | None:
+    """Load multi-source notebook ID from stored file."""
+    path = _get_multi_source_notebook_id_path()
+    if path.exists():
+        try:
+            return path.read_text().strip()
+        except Exception:
+            return None
+    return None
+
+
+def _save_multi_source_notebook_id(notebook_id: str) -> None:
+    """Save multi-source notebook ID to file for future runs."""
+    path = _get_multi_source_notebook_id_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(notebook_id)
+
+
+def _delete_stored_multi_source_notebook_id() -> None:
+    """Delete the stored multi-source notebook ID file."""
+    path = _get_multi_source_notebook_id_path()
+    if path.exists():
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+
+async def _create_multi_source_notebook(client: NotebookLMClient) -> str:
+    """Create a notebook with multiple sources for testing source selection.
+
+    Returns the notebook ID.
+    """
+    import asyncio
+    from uuid import uuid4
+
+    notebook = await client.notebooks.create(f"E2E-MultiSource-{uuid4().hex[:8]}")
+
+    # Add 3 distinct text sources with different content
+    sources_content = [
+        (
+            "Python Programming",
+            (
+                "# Python Programming Fundamentals\n\n"
+                "Python is a high-level, interpreted programming language known for "
+                "its clear syntax and readability. Created by Guido van Rossum in 1991.\n\n"
+                "## Key Features\n"
+                "- Dynamic typing\n"
+                "- Automatic memory management\n"
+                "- Extensive standard library\n"
+                "- Multi-paradigm support\n\n"
+                "## Data Types\n"
+                "- int, float, complex for numbers\n"
+                "- str for text\n"
+                "- list, tuple, set, dict for collections\n"
+            ),
+        ),
+        (
+            "Machine Learning Basics",
+            (
+                "# Machine Learning Overview\n\n"
+                "Machine learning enables computers to learn from data without "
+                "explicit programming. It's a subset of artificial intelligence.\n\n"
+                "## Types of ML\n"
+                "- Supervised Learning: Uses labeled data\n"
+                "- Unsupervised Learning: Finds patterns in unlabeled data\n"
+                "- Reinforcement Learning: Learns through rewards\n\n"
+                "## Common Algorithms\n"
+                "- Linear Regression\n"
+                "- Decision Trees\n"
+                "- Neural Networks\n"
+                "- K-Means Clustering\n"
+            ),
+        ),
+        (
+            "Web Development",
+            (
+                "# Web Development Essentials\n\n"
+                "Web development involves creating websites and web applications.\n\n"
+                "## Frontend Technologies\n"
+                "- HTML: Structure\n"
+                "- CSS: Styling\n"
+                "- JavaScript: Interactivity\n\n"
+                "## Backend Technologies\n"
+                "- Node.js, Python, Ruby, Go\n"
+                "- Databases: PostgreSQL, MongoDB\n"
+                "- APIs: REST, GraphQL\n\n"
+                "## Modern Frameworks\n"
+                "- React, Vue, Angular for frontend\n"
+                "- Django, FastAPI, Express for backend\n"
+            ),
+        ),
+    ]
+
+    for title, content in sources_content:
+        await client.sources.add_text(notebook.id, title=title, content=content)
+
+    # Delay to ensure all sources are processed
+    await asyncio.sleep(SOURCE_PROCESSING_DELAY * 2)
+
+    return notebook.id
+
+
+async def _cleanup_multi_source_notebook(client: NotebookLMClient, notebook_id: str) -> None:
+    """Clean up existing artifacts from multi-source notebook.
+
+    This runs BEFORE tests to ensure a clean starting state.
+    Sources are NOT cleaned (tests need them).
+    """
+    try:
+        artifacts = await client.artifacts.list(notebook_id)
+        for artifact in artifacts:
+            try:
+                await client.artifacts.delete(notebook_id, artifact.id)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+@pytest.fixture
+async def multi_source_notebook_id(client):
+    """Get or create a notebook with multiple sources for source selection tests.
+
+    This fixture uses a hybrid approach similar to generation_notebook_id:
+    1. Check NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID env var
+    2. If not set, check for stored ID
+    3. If not found, auto-create a notebook with 3 sources
+
+    All IDs are verified to exist before use.
+    Artifacts are cleaned before tests. Sources are preserved.
+    """
+    auto_created = False
+    source = None
+
+    # Priority 1: Environment variable
+    notebook_id = os.environ.get("NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID")
+    if notebook_id:
+        source = "env var"
+
+    # Priority 2: Stored ID file
+    if not notebook_id:
+        notebook_id = _load_stored_multi_source_notebook_id()
+        if notebook_id:
+            source = "stored file"
+
+    # Verify notebook exists
+    if notebook_id:
+        if not await _verify_notebook_exists(client, notebook_id):
+            warnings.warn(
+                f"Multi-source notebook {notebook_id} from {source} no longer exists, "
+                "creating new one",
+                stacklevel=2,
+            )
+            notebook_id = None
+
+    # Priority 3: Auto-create
+    if not notebook_id:
+        notebook_id = await _create_multi_source_notebook(client)
+        _save_multi_source_notebook_id(notebook_id)
+        auto_created = True
+
+    # Clean up artifacts before tests (only once per session)
+    global _multi_source_cleanup_done
+    if not _multi_source_cleanup_done:
+        await _cleanup_multi_source_notebook(client, notebook_id)
+        _multi_source_cleanup_done = True
+
+    yield notebook_id
+
+    # Cleanup: In CI, delete auto-created notebooks
+    if auto_created and _is_ci_environment():
+        _delete_stored_multi_source_notebook_id()
+        try:
+            await client.notebooks.delete(notebook_id)
+        except Exception as e:
+            warnings.warn(
+                f"Failed to delete multi-source notebook {notebook_id}: {e}", stacklevel=2
+            )

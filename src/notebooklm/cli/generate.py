@@ -201,6 +201,7 @@ def generate():
     default="default",
 )
 @click.option("--language", default="en")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
@@ -211,6 +212,7 @@ def generate_audio(
     audio_format,
     audio_length,
     language,
+    source_ids,
     wait,
     json_output,
     client_auth,
@@ -221,6 +223,7 @@ def generate_audio(
     Example:
       notebooklm generate audio "deep dive focusing on key themes"
       notebooklm generate audio "make it funny and casual" --format debate
+      notebooklm generate audio -s src_001 -s src_002 "from specific sources"
     """
     nb_id = require_notebook(notebook_id)
     format_map = {
@@ -237,8 +240,10 @@ def generate_audio(
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_audio(
                 nb_id,
+                source_ids=sources,
                 language=language,
                 instructions=description or None,
                 audio_format=format_map[audio_format],
@@ -282,11 +287,21 @@ def generate_audio(
     default="auto",
 )
 @click.option("--language", default="en")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def generate_video(
-    ctx, description, notebook_id, video_format, style, language, wait, json_output, client_auth
+    ctx,
+    description,
+    notebook_id,
+    video_format,
+    style,
+    language,
+    source_ids,
+    wait,
+    json_output,
+    client_auth,
 ):
     """Generate video overview.
 
@@ -294,7 +309,7 @@ def generate_video(
     Example:
       notebooklm generate video "a funny explainer for kids age 5"
       notebooklm generate video "professional presentation" --style classic
-      notebooklm generate video --style kawaii
+      notebooklm generate video -s src_001 "from specific source"
     """
     nb_id = require_notebook(notebook_id)
     format_map = {"explainer": VideoFormat.EXPLAINER, "brief": VideoFormat.BRIEF}
@@ -312,8 +327,10 @@ def generate_video(
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_video(
                 nb_id,
+                source_ids=sources,
                 language=language,
                 instructions=description or None,
                 video_format=format_map[video_format],
@@ -348,10 +365,11 @@ def generate_video(
     default="default",
 )
 @click.option("--language", default="en")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_slide_deck(
-    ctx, description, notebook_id, deck_format, deck_length, language, wait, client_auth
+    ctx, description, notebook_id, deck_format, deck_length, language, source_ids, wait, client_auth
 ):
     """Generate slide deck.
 
@@ -372,8 +390,10 @@ def generate_slide_deck(
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_slide_deck(
                 nb_id,
+                source_ids=sources,
                 language=language,
                 instructions=description or None,
                 slide_format=format_map[deck_format],
@@ -395,9 +415,12 @@ def generate_slide_deck(
 )
 @click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
 @click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
-def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait, client_auth):
+def generate_quiz(
+    ctx, description, notebook_id, quantity, difficulty, source_ids, wait, client_auth
+):
     """Generate quiz.
 
     \b
@@ -419,8 +442,10 @@ def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait, cli
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_quiz(
                 nb_id,
+                source_ids=sources,
                 instructions=description or None,
                 quantity=quantity_map[quantity],
                 difficulty=difficulty_map[difficulty],
@@ -441,9 +466,12 @@ def generate_quiz(ctx, description, notebook_id, quantity, difficulty, wait, cli
 )
 @click.option("--quantity", type=click.Choice(["fewer", "standard", "more"]), default="standard")
 @click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
-def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wait, client_auth):
+def generate_flashcards(
+    ctx, description, notebook_id, quantity, difficulty, source_ids, wait, client_auth
+):
     """Generate flashcards.
 
     \b
@@ -465,8 +493,10 @@ def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wai
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_flashcards(
                 nb_id,
+                source_ids=sources,
                 instructions=description or None,
                 quantity=quantity_map[quantity],
                 difficulty=difficulty_map[difficulty],
@@ -496,10 +526,11 @@ def generate_flashcards(ctx, description, notebook_id, quantity, difficulty, wai
     default="standard",
 )
 @click.option("--language", default="en")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
 def generate_infographic(
-    ctx, description, notebook_id, orientation, detail, language, wait, client_auth
+    ctx, description, notebook_id, orientation, detail, language, source_ids, wait, client_auth
 ):
     """Generate infographic.
 
@@ -522,8 +553,10 @@ def generate_infographic(
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_infographic(
                 nb_id,
+                source_ids=sources,
                 language=language,
                 instructions=description or None,
                 orientation=orientation_map[orientation],
@@ -544,22 +577,24 @@ def generate_infographic(
     help="Notebook ID (uses current if not set)",
 )
 @click.option("--language", default="en")
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
-def generate_data_table(ctx, description, notebook_id, language, wait, client_auth):
+def generate_data_table(ctx, description, notebook_id, language, source_ids, wait, client_auth):
     """Generate data table.
 
     \b
     Example:
       notebooklm generate data-table "comparison of key concepts"
-      notebooklm generate data-table "timeline of events"
+      notebooklm generate data-table -s src_001 "timeline of events"
     """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_data_table(
-                nb_id, language=language, instructions=description
+                nb_id, source_ids=sources, language=language, instructions=description
             )
             await handle_generation_result(client, nb_id, result, "data table", wait)
 
@@ -574,15 +609,17 @@ def generate_data_table(ctx, description, notebook_id, language, wait, client_au
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @with_client
-def generate_mind_map(ctx, notebook_id, client_auth):
+def generate_mind_map(ctx, notebook_id, source_ids, client_auth):
     """Generate mind map."""
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             with console.status("Generating mind map..."):
-                result = await client.artifacts.generate_mind_map(nb_id)
+                result = await client.artifacts.generate_mind_map(nb_id, source_ids=sources)
 
             if result:
                 console.print("[green]Mind map generated:[/green]")
@@ -616,18 +653,20 @@ def generate_mind_map(ctx, notebook_id, client_auth):
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @with_client
-def generate_report_cmd(ctx, description, report_format, notebook_id, wait, client_auth):
+def generate_report_cmd(
+    ctx, description, report_format, notebook_id, source_ids, wait, client_auth
+):
     """Generate a report (briefing doc, study guide, blog post, or custom).
 
     \b
     Examples:
       notebooklm generate report                              # briefing-doc (default)
       notebooklm generate report --format study-guide         # study guide
-      notebooklm generate report --format blog-post           # blog post
+      notebooklm generate report -s src_001 -s src_002        # from specific sources
       notebooklm generate report "Create a white paper..."    # custom report
-      notebooklm generate report --format blog-post "Focus on key insights"
     """
     nb_id = require_notebook(notebook_id)
 
@@ -658,8 +697,10 @@ def generate_report_cmd(ctx, description, report_format, notebook_id, wait, clie
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_report(
                 nb_id,
+                source_ids=sources,
                 report_format=report_format_enum,
                 custom_prompt=custom_prompt,
             )
