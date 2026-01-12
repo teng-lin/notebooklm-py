@@ -657,8 +657,8 @@ class TestRpcCallAutoRetry:
         assert "Refresh failed" in str(exc_info.value.__cause__)
 
     @pytest.mark.asyncio
-    async def test_concurrent_refresh_uses_lock(self):
-        """Concurrent auth errors should serialize through refresh lock."""
+    async def test_concurrent_refresh_uses_shared_task(self):
+        """Concurrent auth errors should share a single refresh task."""
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -701,6 +701,8 @@ class TestRpcCallAutoRetry:
                 return_exceptions=True,
             )
 
-        # Due to lock, refresh should only be called once effectively
-        # (second caller waits and uses refreshed token)
-        assert refresh_count[0] >= 1, "Refresh should be called at least once"
+        # With shared task pattern, refresh should be called exactly once
+        # (second caller waits on the same task instead of starting a new refresh)
+        assert refresh_count[0] == 1, (
+            f"Refresh should be called exactly once, got {refresh_count[0]}"
+        )

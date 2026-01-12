@@ -4,8 +4,8 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import httpx
@@ -98,6 +98,7 @@ class ClientCore:
         self._refresh_callback = refresh_callback
         self._refresh_retry_delay = refresh_retry_delay
         self._refresh_lock: asyncio.Lock | None = asyncio.Lock() if refresh_callback else None
+        self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
         # Request ID counter for chat API (must be unique per request)
         self._reqid_counter: int = 100000
@@ -269,7 +270,9 @@ class ClientCore:
     ) -> Any | None:
         """Attempt to refresh auth tokens and retry the RPC call.
 
-        Uses a lock to prevent concurrent refresh attempts.
+        Uses a shared task pattern to ensure only one refresh operation runs
+        at a time. Concurrent callers wait on the same task, preventing
+        redundant refresh calls under high concurrency.
 
         Args:
             method: The RPC method to retry.
@@ -292,16 +295,30 @@ class ClientCore:
         # This function is only called when _refresh_callback is set
         assert self._refresh_callback is not None
 
-        # Use lock to serialize refresh attempts
+        # Use lock to coordinate refresh task creation
         # Note: refresh_callback is expected to update auth headers internally
         # Lock is always created when callback is set (see __init__)
         assert self._refresh_lock is not None
+
+        # Determine which task to await (existing or new)
         async with self._refresh_lock:
-            try:
-                await self._refresh_callback()
-            except Exception as refresh_error:
-                logger.warning("Token refresh failed: %s", refresh_error)
-                raise original_error from refresh_error
+            if self._refresh_task is not None and not self._refresh_task.done():
+                # Another refresh is in progress, wait on it
+                refresh_task = self._refresh_task
+                logger.debug("Waiting on existing refresh task for RPC %s", method.name)
+            else:
+                # Start a new refresh task
+                # Cast needed: Awaitable → Coroutine for create_task (async funcs return coroutines)
+                coro = cast(Coroutine[Any, Any, AuthTokens], self._refresh_callback())
+                self._refresh_task = asyncio.create_task(coro)
+                refresh_task = self._refresh_task
+
+        # Await refresh outside the lock so other callers can join
+        try:
+            await refresh_task
+        except Exception as refresh_error:
+            logger.warning("Token refresh failed: %s", refresh_error)
+            raise original_error from refresh_error
 
         # Brief delay before retry to avoid hammering the API
         if self._refresh_retry_delay > 0:
