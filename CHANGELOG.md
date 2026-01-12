@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Source fulltext extraction** - Retrieve the complete indexed text content of any source
+  - New `client.sources.get_fulltext(notebook_id, source_id)` Python API
+  - New `source fulltext <source_id>` CLI command with `--json` and `-o` output options
+  - Returns `SourceFulltext` dataclass with content, title, URL, and character count
+- **Chat citation references** - Get detailed source references for chat answers
+  - `AskResult.references` field contains list of `ChatReference` objects
+  - Each reference includes `source_id`, `cited_text`, `start_char`, `end_char`, `chunk_id`
+  - Use `notebooklm ask "question" --json` to see references in CLI output
+- **Source status helper** - New `source_status_to_str()` function for consistent status display
+
+### Changed
+- **Pre-commit checks** - Added mypy type checking to required pre-commit workflow
+
 ## [0.1.4] - 2026-01-11
 
 ### Added
