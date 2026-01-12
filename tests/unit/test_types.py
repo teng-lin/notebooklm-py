@@ -598,3 +598,112 @@ class TestSourceFulltext:
         assert fulltext.source_type is None
         assert fulltext.url is None
         assert fulltext.char_count == 0
+
+    def test_find_citation_context_single_match(self):
+        """Test finding a single citation in content."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="Before text. The citation text appears here. After text.",
+        )
+
+        matches = fulltext.find_citation_context("The citation text", context_chars=10)
+
+        assert len(matches) == 1
+        context, pos = matches[0]
+        assert pos == 13  # Position of "The citation text"
+        assert "The citation text" in context
+
+    def test_find_citation_context_multiple_matches(self):
+        """Test finding multiple non-overlapping matches."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="First keyword here. Some other text. Second keyword here.",
+        )
+
+        matches = fulltext.find_citation_context("keyword", context_chars=5)
+
+        assert len(matches) == 2
+        assert matches[0][1] == 6  # Position of first "keyword"
+        assert matches[1][1] == 44  # Position of second "keyword"
+
+    def test_find_citation_context_no_match(self):
+        """Test when citation is not found."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="Some content that doesn't contain the search term.",
+        )
+
+        matches = fulltext.find_citation_context("nonexistent")
+
+        assert matches == []
+
+    def test_find_citation_context_empty_cited_text(self):
+        """Test with empty cited_text."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="Some content here.",
+        )
+
+        assert fulltext.find_citation_context("") == []
+        assert fulltext.find_citation_context(None) == []  # type: ignore
+
+    def test_find_citation_context_empty_content(self):
+        """Test with empty content."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="",
+        )
+
+        matches = fulltext.find_citation_context("search term")
+
+        assert matches == []
+
+    def test_find_citation_context_long_citation_truncated(self):
+        """Test that citations >40 chars are truncated for search."""
+        long_citation = "A" * 50  # 50 chars, should be truncated to 40
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="Prefix " + "A" * 40 + "B" * 10 + " Suffix",  # Only first 40 As match
+        )
+
+        matches = fulltext.find_citation_context(long_citation, context_chars=5)
+
+        assert len(matches) == 1
+        context, pos = matches[0]
+        assert pos == 7  # Position after "Prefix "
+        # Context should use search_text length (40), not cited_text length (50)
+        assert len(context) <= 5 + 40 + 5  # context_chars + search_text + context_chars
+
+    def test_find_citation_context_at_start(self):
+        """Test citation at the very start of content."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="Citation at start. Rest of content.",
+        )
+
+        matches = fulltext.find_citation_context("Citation at start", context_chars=50)
+
+        assert len(matches) == 1
+        context, pos = matches[0]
+        assert pos == 0
+
+    def test_find_citation_context_at_end(self):
+        """Test citation at the very end of content."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Test",
+            content="Beginning content. Citation at end",
+        )
+
+        matches = fulltext.find_citation_context("Citation at end", context_chars=50)
+
+        assert len(matches) == 1
+        context, pos = matches[0]
+        assert pos == 19
