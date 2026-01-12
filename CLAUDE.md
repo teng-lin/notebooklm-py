@@ -45,13 +45,16 @@ ruff format src/ tests/
 # Check for linting issues
 ruff check src/ tests/
 
+# Type checking with mypy
+mypy src/notebooklm --ignore-missing-imports
+
 # Run tests
 pytest
 ```
 
 Or use this one-liner:
 ```bash
-ruff format src/ tests/ && ruff check src/ tests/ && pytest
+ruff format src/ tests/ && ruff check src/ tests/ && mypy src/notebooklm --ignore-missing-imports && pytest
 ```
 
 ## Architecture
