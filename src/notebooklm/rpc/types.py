@@ -297,8 +297,8 @@ class SourceStatus(int, Enum):
     ERROR = 3  # Source processing failed
 
 
-# Source status code to string mapping
-_SOURCE_STATUS_MAP = {
+# Source status code to string mapping (uses int keys for mypy compatibility)
+_SOURCE_STATUS_MAP: dict[int, str] = {
     SourceStatus.PROCESSING: "processing",
     SourceStatus.READY: "ready",
     SourceStatus.ERROR: "error",
