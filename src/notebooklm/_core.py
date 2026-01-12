@@ -1,8 +1,10 @@
 """Core infrastructure for NotebookLM API client."""
 
+import asyncio
 import logging
 import time
 from collections import OrderedDict
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlencode
 
@@ -75,15 +77,27 @@ class ClientCore:
     ArtifactsAPI, etc.) and should not be used directly.
     """
 
-    def __init__(self, auth: AuthTokens, timeout: float = DEFAULT_TIMEOUT):
+    def __init__(
+        self,
+        auth: AuthTokens,
+        timeout: float = DEFAULT_TIMEOUT,
+        refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
+        refresh_retry_delay: float = 0.2,
+    ):
         """Initialize the core client.
 
         Args:
             auth: Authentication tokens from browser login.
             timeout: HTTP request timeout in seconds. Defaults to 30 seconds.
+            refresh_callback: Optional async callback to refresh auth tokens on failure.
+                If provided, rpc_call will automatically retry once after refreshing.
+            refresh_retry_delay: Delay in seconds before retrying after refresh.
         """
         self.auth = auth
         self._timeout = timeout
+        self._refresh_callback = refresh_callback
+        self._refresh_retry_delay = refresh_retry_delay
+        self._refresh_lock: asyncio.Lock | None = asyncio.Lock() if refresh_callback else None
         self._http_client: httpx.AsyncClient | None = None
         # Request ID counter for chat API (must be unique per request)
         self._reqid_counter: int = 100000

@@ -389,3 +389,75 @@ class TestIsAuthError:
 
         error = ValueError("Something else")
         assert is_auth_error(error) is False
+
+
+# =============================================================================
+# REFRESH CALLBACK TESTS
+# =============================================================================
+
+
+class TestClientCoreRefreshCallback:
+    def test_refresh_callback_stored(self):
+        """ClientCore should store refresh callback."""
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        async def mock_refresh():
+            pass
+
+        core = ClientCore(auth, refresh_callback=mock_refresh)
+        assert core._refresh_callback is mock_refresh
+
+    def test_refresh_callback_defaults_to_none(self):
+        """ClientCore should default refresh_callback to None."""
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        core = ClientCore(auth)
+        assert core._refresh_callback is None
+
+    def test_refresh_lock_created_when_callback_provided(self):
+        """ClientCore should create refresh lock when callback provided."""
+        import asyncio
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        async def mock_refresh():
+            pass
+
+        core = ClientCore(auth, refresh_callback=mock_refresh)
+        assert core._refresh_lock is not None
+        assert isinstance(core._refresh_lock, asyncio.Lock)
+
+    def test_no_refresh_lock_when_no_callback(self):
+        """ClientCore should NOT create refresh lock when no callback."""
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        core = ClientCore(auth)
+        assert core._refresh_lock is None
