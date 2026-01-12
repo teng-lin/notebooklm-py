@@ -1,6 +1,7 @@
 """RPC protocol implementation for NotebookLM batchexecute API."""
 
 from .decoder import (
+    AuthError,
     RPCError,
     collect_rpc_ids,
     decode_response,
@@ -65,4 +66,5 @@ __all__ = [
     "collect_rpc_ids",
     "decode_response",
     "RPCError",
+    "AuthError",
 ]

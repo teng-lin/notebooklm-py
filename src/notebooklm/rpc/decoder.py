@@ -24,6 +24,16 @@ class RPCError(Exception):
         super().__init__(message)
 
 
+class AuthError(RPCError):
+    """Raised when RPC call fails due to authentication issues.
+
+    This is a subclass of RPCError for backwards compatibility.
+    Catching RPCError will also catch AuthError.
+    """
+
+    pass
+
+
 def strip_anti_xssi(response: str) -> str:
     """
     Remove anti-XSSI prefix from response.

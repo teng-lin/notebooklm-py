@@ -400,3 +400,21 @@ class TestRPCError:
         error = RPCError("message", found_ids=None)
 
         assert error.found_ids == []
+
+
+class TestAuthError:
+    def test_auth_error_is_rpc_error_subclass(self):
+        """AuthError should be a subclass of RPCError for backwards compatibility."""
+        from notebooklm.rpc import AuthError, RPCError
+
+        error = AuthError("Authentication expired")
+        assert isinstance(error, RPCError)
+        assert isinstance(error, AuthError)
+
+    def test_auth_error_message(self):
+        """AuthError should preserve message and attributes."""
+        from notebooklm.rpc import AuthError
+
+        error = AuthError("Token expired", rpc_id="abc123")
+        assert str(error) == "Token expired"
+        assert error.rpc_id == "abc123"
