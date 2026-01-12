@@ -122,15 +122,24 @@ except RPCError as e:
     # - Invalid parameters
 ```
 
-### Refreshing Authentication
+### Authentication & Token Refresh
 
-Sessions can expire. Refresh without re-logging in:
+**Automatic Refresh:** The client automatically refreshes CSRF tokens when authentication errors are detected. This happens transparently during any API call - you don't need to handle it manually.
+
+When an RPC call fails with an auth error (HTTP 401/403 or auth-related message):
+1. The client fetches fresh tokens from the NotebookLM homepage
+2. Waits briefly to avoid rate limiting
+3. Retries the failed request automatically
+
+**Manual Refresh:** For proactive refresh (e.g., before a long-running operation):
 
 ```python
 async with await NotebookLMClient.from_storage() as client:
-    # Refresh CSRF token and session ID
+    # Manually refresh CSRF token and session ID
     await client.refresh_auth()
 ```
+
+**Note:** If your session cookies have fully expired (not just CSRF tokens), you'll need to re-run `notebooklm login`.
 
 ---
 
