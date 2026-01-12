@@ -389,9 +389,9 @@ class SourceFulltext:
         pos = 0
         while (idx := self.content.find(search_text, pos)) != -1:
             start = max(0, idx - context_chars)
-            end = min(len(self.content), idx + len(cited_text) + context_chars)
+            end = min(len(self.content), idx + len(search_text) + context_chars)
             matches.append((self.content[start:end], idx))
-            pos = idx + 1
+            pos = idx + len(search_text)  # Skip past match to avoid overlaps
 
         return matches
 
