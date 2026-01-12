@@ -200,10 +200,11 @@ Authentication sessions are tied to Google's cookie expiration:
 
 ### Refreshing Sessions
 
-If your session expires:
+**Automatic Refresh:** CSRF tokens and session IDs are automatically refreshed when authentication errors are detected. This handles most "session expired" errors transparently.
+
+**Manual Re-authentication:** If your session cookies have fully expired (automatic refresh won't help), re-authenticate:
 
 ```bash
-# Re-authenticate
 notebooklm login
 ```
 
@@ -285,9 +286,9 @@ If you prefer file-based authentication:
 
 ### Session Expiration
 
-Authentication sessions expire. For long-running CI pipelines:
-- Refresh the secret periodically (every 1-2 weeks)
-- Monitor for auth failures and alert
+CSRF tokens are automatically refreshed during API calls. However, the underlying session cookies still expire. For long-running CI pipelines:
+- Update the `NOTEBOOKLM_AUTH_JSON` secret every 1-2 weeks
+- Monitor for persistent auth failures (these indicate cookie expiration)
 
 ## Debugging
 
