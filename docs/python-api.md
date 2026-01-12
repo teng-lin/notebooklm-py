@@ -654,24 +654,18 @@ class ChatReference:
 
 **Important:** The `cited_text` field often contains only a snippet or section header, not the full quoted passage. The `start_char`/`end_char` positions reference NotebookLM's internal chunked index, which does not directly correspond to positions in the raw fulltext returned by `get_fulltext()`.
 
-To retrieve full context around a citation, search for `cited_text` within the source fulltext:
+Use `SourceFulltext.find_citation_context()` to locate citations in the fulltext:
 
 ```python
-# Get the source fulltext
 fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
+matches = fulltext.find_citation_context(ref.cited_text)  # Returns list[(context, position)]
 
-# Find the citation in the fulltext (handle short/missing cited_text)
-search_text = ref.cited_text[:min(40, len(ref.cited_text or ""))]
-pos = fulltext.content.find(search_text) if search_text else -1
-
-if pos >= 0:
-    # Extract ~100 chars before and after the citation
-    start = max(0, pos - 100)
-    end = pos + len(ref.cited_text) + 100
-    context = fulltext.content[start:end]
+if matches:
+    context, pos = matches[0]  # First match
+    if len(matches) > 1:
+        print(f"Warning: {len(matches)} matches found, using first")
 else:
-    # Citation not found - may occur if source was modified or text was normalized
-    context = None
+    context = None  # Not found - may occur if source was modified
 ```
 
 **Tip:** Cache `fulltext` when processing multiple citations from the same source to avoid repeated API calls.
@@ -687,6 +681,13 @@ class SourceFulltext:
     source_type: int | None            # Source type code
     url: str | None                    # Original URL (if applicable)
     char_count: int                    # Character count
+
+    def find_citation_context(
+        self,
+        cited_text: str,
+        context_chars: int = 200,
+    ) -> list[tuple[str, int]]:
+        """Search for citation text, return list of (context, position) tuples."""
 ```
 
 ---

@@ -355,6 +355,46 @@ class SourceFulltext:
     url: str | None = None
     char_count: int = 0
 
+    def find_citation_context(
+        self,
+        cited_text: str,
+        context_chars: int = 200,
+    ) -> list[tuple[str, int]]:
+        """Search for citation text and return matching contexts.
+
+        Best-effort heuristic using substring search. May fail or return
+        incorrect matches when:
+        - cited_text appears multiple times (all occurrences returned)
+        - NotebookLM truncated the citation during chunking
+        - Formatting differs between citation and indexed content
+
+        Note: ChatReference.start_char/end_char reference NotebookLM's internal
+        chunked index, NOT positions in this fulltext. Use this method instead.
+
+        Args:
+            cited_text: Text to search for (from ChatReference.cited_text).
+            context_chars: Surrounding context to include (default 200).
+
+        Returns:
+            List of (context, position) tuples for each match found.
+            Empty list if no matches. Position is start of match in content.
+        """
+        if not cited_text or not self.content:
+            return []
+
+        # Use prefix for search (citations are often truncated)
+        search_text = cited_text[: min(40, len(cited_text))]
+
+        matches = []
+        pos = 0
+        while (idx := self.content.find(search_text, pos)) != -1:
+            start = max(0, idx - context_chars)
+            end = min(len(self.content), idx + len(cited_text) + context_chars)
+            matches.append((self.content[start:end], idx))
+            pos = idx + 1
+
+        return matches
+
 
 # =============================================================================
 # Artifact Types
