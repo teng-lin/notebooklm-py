@@ -32,6 +32,7 @@ from .rpc.types import (
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
+    source_status_to_str,
 )
 
 __all__ = [
@@ -72,6 +73,9 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
+    # Helper functions
+    "artifact_status_to_str",
+    "source_status_to_str",
 ]
 
 

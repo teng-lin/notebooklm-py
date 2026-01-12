@@ -96,9 +96,6 @@ class ChatAPI:
             assert conversation_id is not None  # Type narrowing for mypy
             conversation_history = self._build_conversation_history(conversation_id)
 
-        # At this point, conversation_id is guaranteed to be str
-        assert conversation_id is not None
-
         sources_array = [[[sid]] for sid in source_ids] if source_ids else []
 
         params = [

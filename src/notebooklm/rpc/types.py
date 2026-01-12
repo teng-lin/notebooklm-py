@@ -295,3 +295,27 @@ class SourceStatus(int, Enum):
     PROCESSING = 1  # Source is being processed (indexing content)
     READY = 2  # Source is ready for use
     ERROR = 3  # Source processing failed
+
+
+# Source status code to string mapping
+_SOURCE_STATUS_MAP = {
+    SourceStatus.PROCESSING: "processing",
+    SourceStatus.READY: "ready",
+    SourceStatus.ERROR: "error",
+}
+
+
+def source_status_to_str(status_code: int | SourceStatus) -> str:
+    """Convert source status code to human-readable string.
+
+    This is the single source of truth for source status code to string mapping.
+    Use this helper instead of inline conditionals to ensure consistency.
+
+    Args:
+        status_code: Status code as int or SourceStatus enum.
+
+    Returns:
+        String status: "processing", "ready", "error", or "unknown".
+        Returns "unknown" for unrecognized codes (future-proofing).
+    """
+    return _SOURCE_STATUS_MAP.get(status_code, "unknown")

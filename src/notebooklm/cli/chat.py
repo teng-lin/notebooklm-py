@@ -76,7 +76,6 @@ def register_chat_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 effective_conv_id = None
                 if new_conversation:
-                    effective_conv_id = None
                     if not json_output:
                         console.print("[dim]Starting new conversation...[/dim]")
                 elif conversation_id:
