@@ -1,12 +1,17 @@
 """Tests for NotebookLMClient class."""
 
+import asyncio
 import json
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+from notebooklm._core import ClientCore, is_auth_error
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.rpc import AuthError, RPCError, RPCMethod
 
 
 @pytest.fixture
@@ -312,9 +317,6 @@ class TestSubClientAPIs:
 class TestIsAuthError:
     def test_http_401_is_auth_error(self):
         """HTTP 401 should be detected as auth error."""
-        import httpx
-
-        from notebooklm._core import is_auth_error
 
         request = httpx.Request("POST", "https://example.com")
         response = httpx.Response(401, request=request)
@@ -323,9 +325,6 @@ class TestIsAuthError:
 
     def test_http_403_is_auth_error(self):
         """HTTP 403 should be detected as auth error."""
-        import httpx
-
-        from notebooklm._core import is_auth_error
 
         request = httpx.Request("POST", "https://example.com")
         response = httpx.Response(403, request=request)
@@ -334,9 +333,6 @@ class TestIsAuthError:
 
     def test_http_500_is_not_auth_error(self):
         """HTTP 500 should NOT be detected as auth error."""
-        import httpx
-
-        from notebooklm._core import is_auth_error
 
         request = httpx.Request("POST", "https://example.com")
         response = httpx.Response(500, request=request)
@@ -345,47 +341,36 @@ class TestIsAuthError:
 
     def test_rpc_error_with_auth_message_is_auth_error(self):
         """RPCError with 'Authentication' in message should be auth error."""
-        from notebooklm._core import is_auth_error
-        from notebooklm.rpc import RPCError
 
         error = RPCError("Authentication expired")
         assert is_auth_error(error) is True
 
     def test_rpc_error_with_expired_message_is_auth_error(self):
         """RPCError with 'expired' in message should be auth error."""
-        from notebooklm._core import is_auth_error
-        from notebooklm.rpc import RPCError
 
         error = RPCError("Session expired, please re-login")
         assert is_auth_error(error) is True
 
     def test_rpc_error_with_unauthorized_message_is_auth_error(self):
         """RPCError with 'Unauthorized' in message should be auth error."""
-        from notebooklm._core import is_auth_error
-        from notebooklm.rpc import RPCError
 
         error = RPCError("Unauthorized access")
         assert is_auth_error(error) is True
 
     def test_rpc_error_generic_is_not_auth_error(self):
         """Generic RPCError should NOT be auth error."""
-        from notebooklm._core import is_auth_error
-        from notebooklm.rpc import RPCError
 
         error = RPCError("Rate limit exceeded")
         assert is_auth_error(error) is False
 
     def test_auth_error_is_auth_error(self):
         """AuthError should always be detected as auth error."""
-        from notebooklm._core import is_auth_error
-        from notebooklm.rpc import AuthError
 
         error = AuthError("Any message")
         assert is_auth_error(error) is True
 
     def test_value_error_is_not_auth_error(self):
         """Other exceptions should NOT be auth error."""
-        from notebooklm._core import is_auth_error
 
         error = ValueError("Something else")
         assert is_auth_error(error) is False
@@ -399,8 +384,6 @@ class TestIsAuthError:
 class TestClientCoreRefreshCallback:
     def test_refresh_callback_stored(self):
         """ClientCore should store refresh callback."""
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
 
         auth = AuthTokens(
             cookies={"SID": "test"},
@@ -416,8 +399,6 @@ class TestClientCoreRefreshCallback:
 
     def test_refresh_callback_defaults_to_none(self):
         """ClientCore should default refresh_callback to None."""
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
 
         auth = AuthTokens(
             cookies={"SID": "test"},
@@ -430,11 +411,6 @@ class TestClientCoreRefreshCallback:
 
     def test_refresh_lock_created_when_callback_provided(self):
         """ClientCore should create refresh lock when callback provided."""
-        import asyncio
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -450,8 +426,6 @@ class TestClientCoreRefreshCallback:
 
     def test_no_refresh_lock_when_no_callback(self):
         """ClientCore should NOT create refresh lock when no callback."""
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
 
         auth = AuthTokens(
             cookies={"SID": "test"},
@@ -472,14 +446,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_retries_on_http_401_error(self):
         """rpc_call should retry once after HTTP 401 if callback provided."""
-        from unittest.mock import MagicMock, patch
-
-        import httpx
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -523,12 +489,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_retries_on_rpc_auth_error(self):
         """rpc_call should retry once after RPC auth error if callback provided."""
-        from unittest.mock import MagicMock, patch
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCError, RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -573,14 +533,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_no_retry_without_callback(self):
         """rpc_call should NOT retry if no refresh_callback provided."""
-        from unittest.mock import MagicMock
-
-        import httpx
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCError, RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -608,14 +560,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_no_infinite_retry(self):
         """rpc_call should only retry once, not infinitely."""
-        from unittest.mock import MagicMock
-
-        import httpx
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCError, RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -652,14 +596,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_no_retry_on_non_auth_error(self):
         """rpc_call should NOT retry on non-auth errors (HTTP 500)."""
-        from unittest.mock import MagicMock
-
-        import httpx
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCError, RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -694,14 +630,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_refresh_failure_raises_original_error(self):
         """If refresh fails, should raise original error with chained exception."""
-        from unittest.mock import MagicMock
-
-        import httpx
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",
@@ -731,15 +659,6 @@ class TestRpcCallAutoRetry:
     @pytest.mark.asyncio
     async def test_concurrent_refresh_uses_lock(self):
         """Concurrent auth errors should serialize through refresh lock."""
-        import asyncio
-        from unittest.mock import MagicMock, patch
-
-        import httpx
-
-        from notebooklm._core import ClientCore
-        from notebooklm.auth import AuthTokens
-        from notebooklm.rpc import RPCMethod
-
         auth = AuthTokens(
             cookies={"SID": "test"},
             csrf_token="csrf",

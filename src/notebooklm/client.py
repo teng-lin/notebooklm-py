@@ -20,6 +20,7 @@ Example:
 """
 
 import logging
+import re
 from pathlib import Path
 
 from ._artifacts import ArtifactsAPI
@@ -143,8 +144,6 @@ class NotebookLMClient:
         Raises:
             ValueError: If token extraction fails (page structure may have changed).
         """
-        import re
-
         http_client = self._core.get_http_client()
         response = await http_client.get("https://notebooklm.google.com/")
         response.raise_for_status()

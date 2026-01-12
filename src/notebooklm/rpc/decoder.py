@@ -31,8 +31,6 @@ class AuthError(RPCError):
     Catching RPCError will also catch AuthError.
     """
 
-    pass
-
 
 def strip_anti_xssi(response: str) -> str:
     """
