@@ -302,3 +302,90 @@ class TestSubClientAPIs:
         client = NotebookLMClient(mock_auth)
         assert hasattr(client, "notes")
         assert client.notes is not None
+
+
+# =============================================================================
+# AUTH ERROR DETECTION TESTS
+# =============================================================================
+
+
+class TestIsAuthError:
+    def test_http_401_is_auth_error(self):
+        """HTTP 401 should be detected as auth error."""
+        import httpx
+
+        from notebooklm._core import is_auth_error
+
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(401, request=request)
+        error = httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+        assert is_auth_error(error) is True
+
+    def test_http_403_is_auth_error(self):
+        """HTTP 403 should be detected as auth error."""
+        import httpx
+
+        from notebooklm._core import is_auth_error
+
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(403, request=request)
+        error = httpx.HTTPStatusError("Forbidden", request=request, response=response)
+        assert is_auth_error(error) is True
+
+    def test_http_500_is_not_auth_error(self):
+        """HTTP 500 should NOT be detected as auth error."""
+        import httpx
+
+        from notebooklm._core import is_auth_error
+
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(500, request=request)
+        error = httpx.HTTPStatusError("Server Error", request=request, response=response)
+        assert is_auth_error(error) is False
+
+    def test_rpc_error_with_auth_message_is_auth_error(self):
+        """RPCError with 'Authentication' in message should be auth error."""
+        from notebooklm._core import is_auth_error
+        from notebooklm.rpc import RPCError
+
+        error = RPCError("Authentication expired")
+        assert is_auth_error(error) is True
+
+    def test_rpc_error_with_expired_message_is_auth_error(self):
+        """RPCError with 'expired' in message should be auth error."""
+        from notebooklm._core import is_auth_error
+        from notebooklm.rpc import RPCError
+
+        error = RPCError("Session expired, please re-login")
+        assert is_auth_error(error) is True
+
+    def test_rpc_error_with_unauthorized_message_is_auth_error(self):
+        """RPCError with 'Unauthorized' in message should be auth error."""
+        from notebooklm._core import is_auth_error
+        from notebooklm.rpc import RPCError
+
+        error = RPCError("Unauthorized access")
+        assert is_auth_error(error) is True
+
+    def test_rpc_error_generic_is_not_auth_error(self):
+        """Generic RPCError should NOT be auth error."""
+        from notebooklm._core import is_auth_error
+        from notebooklm.rpc import RPCError
+
+        error = RPCError("Rate limit exceeded")
+        assert is_auth_error(error) is False
+
+    def test_auth_error_is_auth_error(self):
+        """AuthError should always be detected as auth error."""
+        from notebooklm._core import is_auth_error
+        from notebooklm.rpc import AuthError
+
+        error = AuthError("Any message")
+        assert is_auth_error(error) is True
+
+    def test_value_error_is_not_auth_error(self):
+        """Other exceptions should NOT be auth error."""
+        from notebooklm._core import is_auth_error
+
+        error = ValueError("Something else")
+        assert is_auth_error(error) is False

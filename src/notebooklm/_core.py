@@ -11,6 +11,7 @@ import httpx
 from .auth import AuthTokens
 from .rpc import (
     BATCHEXECUTE_URL,
+    AuthError,
     RPCError,
     RPCMethod,
     build_request_body,
@@ -25,6 +26,40 @@ MAX_CONVERSATION_CACHE_SIZE = 100
 
 # Default HTTP timeout in seconds
 DEFAULT_TIMEOUT = 30.0
+
+# Auth error detection patterns (case-insensitive)
+AUTH_ERROR_PATTERNS = (
+    "authentication",
+    "expired",
+    "unauthorized",
+    "login",
+    "re-authenticate",
+)
+
+
+def is_auth_error(error: Exception) -> bool:
+    """Check if an exception indicates an authentication failure.
+
+    Args:
+        error: The exception to check.
+
+    Returns:
+        True if the error is likely due to authentication issues.
+    """
+    # AuthError is always an auth error
+    if isinstance(error, AuthError):
+        return True
+
+    # HTTP 401/403 are auth errors
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code in (401, 403)
+
+    # RPCError with auth-related message
+    if isinstance(error, RPCError):
+        message = str(error).lower()
+        return any(pattern in message for pattern in AUTH_ERROR_PATTERNS)
+
+    return False
 
 
 class ClientCore:
