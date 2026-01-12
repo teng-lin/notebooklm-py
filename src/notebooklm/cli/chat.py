@@ -108,22 +108,11 @@ def register_chat_commands(cli):
                     set_current_conversation(result.conversation_id)
 
                 if json_output:
-                    data = {
-                        "answer": result.answer,
-                        "conversation_id": result.conversation_id,
-                        "turn_number": result.turn_number,
-                        "is_follow_up": result.is_follow_up,
-                        "references": [
-                            {
-                                "source_id": ref.source_id,
-                                "citation_number": ref.citation_number,
-                                "cited_text": ref.cited_text,
-                                "start_char": ref.start_char,
-                                "end_char": ref.end_char,
-                            }
-                            for ref in result.references
-                        ],
-                    }
+                    from dataclasses import asdict
+
+                    data = asdict(result)
+                    # Exclude raw_response from CLI output for brevity
+                    del data["raw_response"]
                     json_output_response(data)
                     return
 

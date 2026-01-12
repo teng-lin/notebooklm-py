@@ -539,15 +539,9 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
                 fulltext = await client.sources.get_fulltext(nb_id, resolved_id)
 
             if json_output:
-                data = {
-                    "source_id": fulltext.source_id,
-                    "title": fulltext.title,
-                    "char_count": fulltext.char_count,
-                    "source_type": fulltext.source_type,
-                    "url": fulltext.url,
-                    "content": fulltext.content,
-                }
-                json_output_response(data)
+                from dataclasses import asdict
+
+                json_output_response(asdict(fulltext))
                 return
 
             if output:

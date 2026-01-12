@@ -374,7 +374,14 @@ class ChatAPI:
         lines = response_text.strip().split("\n")
         longest_answer = ""
         all_references: list[ChatReference] = []
-        seen_source_ids: set[str] = set()
+
+        def process_chunk(json_str: str) -> None:
+            """Process a JSON chunk, updating longest_answer and all_references."""
+            nonlocal longest_answer
+            text, is_answer, refs = self._extract_answer_and_refs_from_chunk(json_str)
+            if text and is_answer and len(text) > len(longest_answer):
+                longest_answer = text
+            all_references.extend(refs)
 
         i = 0
         while i < len(lines):
@@ -387,23 +394,10 @@ class ChatAPI:
                 int(line)
                 i += 1
                 if i < len(lines):
-                    json_str = lines[i]
-                    text, is_answer, refs = self._extract_answer_and_refs_from_chunk(json_str)
-                    if text and is_answer and len(text) > len(longest_answer):
-                        longest_answer = text
-                    for ref in refs:
-                        if ref.source_id not in seen_source_ids:
-                            seen_source_ids.add(ref.source_id)
-                            all_references.append(ref)
+                    process_chunk(lines[i])
                 i += 1
             except ValueError:
-                text, is_answer, refs = self._extract_answer_and_refs_from_chunk(line)
-                if text and is_answer and len(text) > len(longest_answer):
-                    longest_answer = text
-                for ref in refs:
-                    if ref.source_id not in seen_source_ids:
-                        seen_source_ids.add(ref.source_id)
-                        all_references.append(ref)
+                process_chunk(line)
                 i += 1
 
         if not longest_answer:
@@ -632,7 +626,7 @@ class ChatAPI:
                         if isinstance(item, str) and item.strip():
                             texts.append(item.strip())
 
-    def _extract_uuid_from_nested(self, data: Any) -> str | None:
+    def _extract_uuid_from_nested(self, data: Any, max_depth: int = 10) -> str | None:
         """Recursively extract a UUID from nested list structures.
 
         The API returns source IDs in deeply nested list structures that can vary.
@@ -640,10 +634,15 @@ class ChatAPI:
 
         Args:
             data: Nested list data to search.
+            max_depth: Maximum recursion depth to prevent stack overflow.
 
         Returns:
             UUID string if found, None otherwise.
         """
+        if max_depth <= 0:
+            logger.warning("Max recursion depth reached in UUID extraction")
+            return None
+
         if data is None:
             return None
 
@@ -652,7 +651,7 @@ class ChatAPI:
 
         if isinstance(data, list):
             for item in data:
-                result = self._extract_uuid_from_nested(item)
+                result = self._extract_uuid_from_nested(item, max_depth - 1)
                 if result is not None:
                     return result
 
