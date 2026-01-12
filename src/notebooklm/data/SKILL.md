@@ -154,6 +154,14 @@ $ notebooklm source fulltext <source_id> --json
 {"source_id": "...", "title": "...", "char_count": 12345, "content": "Full indexed text..."}
 ```
 
+**Understanding citations:** The `cited_text` in references is often a snippet or section header, not the full quoted passage. The `start_char`/`end_char` positions reference NotebookLM's internal chunked index, not the raw fulltext. To get full context around a citation, search for the `cited_text` within the source fulltext:
+```python
+# Get fulltext, then find citation context
+fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
+pos = fulltext.content.find(ref.cited_text[:40])
+context = fulltext.content[max(0, pos-100):pos+len(ref.cited_text)+100]
+```
+
 **Extract IDs:** Parse the `id`, `source_id`, or `task_id` field from JSON output.
 
 ## Generation Types

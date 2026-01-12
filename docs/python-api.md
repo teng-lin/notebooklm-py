@@ -652,6 +652,21 @@ class ChatReference:
     chunk_id: str | None               # Internal chunk ID (for debugging)
 ```
 
+**Important:** The `cited_text` field often contains only a snippet or section header, not the full quoted passage. The `start_char`/`end_char` positions reference NotebookLM's internal chunked index, which does not directly correspond to positions in the raw fulltext returned by `get_fulltext()`.
+
+To retrieve full context around a citation, search for `cited_text` within the source fulltext:
+
+```python
+# Get the source fulltext
+fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
+
+# Find the citation in the fulltext
+pos = fulltext.content.find(ref.cited_text[:40])  # Search by prefix
+if pos >= 0:
+    # Extract context around the citation
+    context = fulltext.content[max(0, pos-100):pos+len(ref.cited_text)+100]
+```
+
 ### SourceFulltext
 
 ```python
