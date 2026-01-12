@@ -6,6 +6,7 @@ from notebooklm.types import (
     Artifact,
     AskResult,
     ChatMode,
+    ChatReference,
     ConversationTurn,
     GenerationStatus,
     Note,
@@ -13,6 +14,7 @@ from notebooklm.types import (
     NotebookDescription,
     ReportSuggestion,
     Source,
+    SourceFulltext,
 )
 
 
@@ -509,3 +511,90 @@ class TestAskResult:
         assert result.turn_number == 1
         assert result.is_follow_up is False
         assert result.raw_response == "Full raw response"
+
+    def test_creation_with_references(self):
+        """Test AskResult creation with references."""
+        refs = [
+            ChatReference(source_id="src-1", citation_number=1),
+            ChatReference(source_id="src-2", citation_number=2),
+        ]
+        result = AskResult(
+            answer="Based on [1] and [2]...",
+            conversation_id="conv_123",
+            turn_number=1,
+            is_follow_up=False,
+            references=refs,
+        )
+
+        assert len(result.references) == 2
+        assert result.references[0].source_id == "src-1"
+        assert result.references[1].citation_number == 2
+
+    def test_default_references_empty(self):
+        """Test that references defaults to empty list."""
+        result = AskResult(
+            answer="Answer",
+            conversation_id="conv_123",
+            turn_number=1,
+            is_follow_up=False,
+        )
+
+        assert result.references == []
+
+
+class TestChatReference:
+    def test_creation_minimal(self):
+        """Test ChatReference with just source_id."""
+        ref = ChatReference(source_id="abc123-def456-789")
+
+        assert ref.source_id == "abc123-def456-789"
+        assert ref.citation_number is None
+        assert ref.start_char is None
+        assert ref.end_char is None
+
+    def test_creation_full(self):
+        """Test ChatReference with all fields."""
+        ref = ChatReference(
+            source_id="abc123-def456-789",
+            citation_number=1,
+            start_char=100,
+            end_char=200,
+        )
+
+        assert ref.source_id == "abc123-def456-789"
+        assert ref.citation_number == 1
+        assert ref.start_char == 100
+        assert ref.end_char == 200
+
+
+class TestSourceFulltext:
+    def test_creation(self):
+        """Test SourceFulltext creation."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="My Source",
+            content="This is the full content of the source.",
+            source_type=5,  # web_page
+            url="https://example.com",
+            char_count=40,
+        )
+
+        assert fulltext.source_id == "src-123"
+        assert fulltext.title == "My Source"
+        assert fulltext.content == "This is the full content of the source."
+        assert fulltext.source_type == 5
+        assert fulltext.url == "https://example.com"
+        assert fulltext.char_count == 40
+
+    def test_creation_minimal(self):
+        """Test SourceFulltext with minimal fields."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Title",
+            content="Content",
+        )
+
+        assert fulltext.source_id == "src-123"
+        assert fulltext.source_type is None
+        assert fulltext.url is None
+        assert fulltext.char_count == 0

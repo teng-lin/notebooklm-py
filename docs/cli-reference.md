@@ -61,6 +61,7 @@ See [Configuration](configuration.md) for details on environment variables and C
 |---------|-------------|---------|
 | `ask <question>` | Ask a question | `notebooklm ask "What is this about?"` |
 | `ask -s <id>` | Ask using specific sources | `notebooklm ask "Summarize" -s src1 -s src2` |
+| `ask --json` | Get answer with source references | `notebooklm ask "Explain X" --json` |
 | `configure` | Set persona/mode | `notebooklm configure --mode learning-guide` |
 | `history` | View/clear history | `notebooklm history --clear` |
 
@@ -73,6 +74,8 @@ See [Configuration](configuration.md) for details on environment variables and C
 | `add-drive <id> <title>` | Drive file ID | - | `source add-drive abc123 "Doc"` |
 | `add-research <query>` | Search query | `--mode [fast|deep]`, `--from [web|drive]`, `--import-all`, `--no-wait` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | - | `source get src123` |
+| `fulltext <id>` | Source ID | `--json`, `-o FILE` | `source fulltext src123 -o content.txt` |
+| `guide <id>` | Source ID | `--json` | `source guide src123` |
 | `rename <id> <title>` | Source ID, new title | - | `source rename src123 "New Name"` |
 | `refresh <id>` | Source ID | - | `source refresh src123` |
 | `delete <id>` | Source ID | - | `source delete src123` |

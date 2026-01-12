@@ -16,6 +16,7 @@ from .rpc import UPLOAD_URL, RPCMethod
 from .rpc.types import SourceStatus
 from .types import (
     Source,
+    SourceFulltext,
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
@@ -605,9 +606,111 @@ class SourcesAPI:
 
         return {"summary": summary, "keywords": keywords}
 
+    async def get_fulltext(self, notebook_id: str, source_id: str) -> SourceFulltext:
+        """Get the full indexed text content of a source.
+
+        Returns the raw text content that was extracted and indexed from the source,
+        along with metadata. This is what NotebookLM uses for chat and artifact generation.
+
+        Args:
+            notebook_id: The notebook ID.
+            source_id: The source ID to get fulltext for.
+
+        Returns:
+            SourceFulltext object with content, title, source_type, url, and char_count.
+
+        Raises:
+            SourceNotFoundError: If the source is not found or returns no data.
+
+        Note:
+            Source type codes: 1=google_docs, 2=google_other, 3=pdf, 4=pasted_text,
+            5=web_page, 8=generated_text, 9=youtube
+        """
+        # GET_SOURCE RPC with params: [[source_id], [2], [2]]
+        params = [[source_id], [2], [2]]
+        result = await self._core.rpc_call(
+            RPCMethod.GET_SOURCE,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+
+        # Validate response - raise if source not found
+        if not result or not isinstance(result, list):
+            raise SourceNotFoundError(f"Source {source_id} not found in notebook {notebook_id}")
+
+        # Parse response structure
+        title = ""
+        source_type = None
+        url = None
+        content = ""
+
+        if result and isinstance(result, list):
+            # Title at result[0][1]
+            if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 1:
+                title = result[0][1] if isinstance(result[0][1], str) else ""
+
+                # Source type at result[0][2][4]
+                if len(result[0]) > 2 and isinstance(result[0][2], list):
+                    if len(result[0][2]) > 4:
+                        source_type = result[0][2][4]
+
+                    # URL at result[0][2][7][0]
+                    if len(result[0][2]) > 7 and isinstance(result[0][2][7], list):
+                        if len(result[0][2][7]) > 0:
+                            url = result[0][2][7][0]
+
+            # Content blocks at result[3][0]
+            # Each block may be nested arrays with text strings
+            if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
+                content_blocks = result[3][0]
+                if isinstance(content_blocks, list):
+                    texts = self._extract_all_text(content_blocks)
+                    content = "\n".join(texts)
+
+        # Log warning if content is empty but source exists
+        if not content:
+            logger.warning(
+                "Source %s returned empty content (type=%s, title=%s)",
+                source_id,
+                source_type,
+                title,
+            )
+
+        return SourceFulltext(
+            source_id=source_id,
+            title=title,
+            content=content,
+            source_type=source_type,
+            url=url,
+            char_count=len(content),
+        )
+
     # =========================================================================
     # Private helper methods
     # =========================================================================
+
+    def _extract_all_text(self, data: builtins.list, max_depth: int = 100) -> builtins.list[str]:
+        """Recursively extract all text strings from nested arrays.
+
+        Args:
+            data: Nested list structure to extract text from.
+            max_depth: Maximum recursion depth to prevent stack overflow.
+
+        Returns:
+            List of extracted text strings.
+        """
+        if max_depth <= 0:
+            logger.warning("Max recursion depth reached in text extraction")
+            return []
+
+        texts: builtins.list[str] = []
+        for item in data:
+            if isinstance(item, str) and len(item) > 0:
+                texts.append(item)
+            elif isinstance(item, builtins.list):
+                texts.extend(self._extract_all_text(item, max_depth - 1))
+        return texts
 
     def _extract_youtube_video_id(self, url: str) -> str | None:
         """Extract YouTube video ID from various URL formats."""

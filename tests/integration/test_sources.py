@@ -583,3 +583,99 @@ class TestAddFileSource:
         # Verify the actual content was sent
         assert upload_request.content == binary_content
         assert upload_request.headers["x-goog-upload-offset"] == "0"
+
+
+class TestGetFulltext:
+    """Tests for sources.get_fulltext() method."""
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_basic(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test getting fulltext content of a source."""
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [
+                [
+                    "source_123",
+                    "My Article",
+                    [None, None, None, None, 5, None, None, ["https://example.com"]],
+                ],
+                None,
+                None,
+                [
+                    [
+                        [0, 100, "This is the first paragraph of the article."],
+                        [100, 200, "This is the second paragraph."],
+                    ]
+                ],
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            fulltext = await client.sources.get_fulltext("nb_123", "source_123")
+
+        from notebooklm import SourceFulltext
+
+        assert isinstance(fulltext, SourceFulltext)
+        assert fulltext.source_id == "source_123"
+        assert fulltext.title == "My Article"
+        assert fulltext.source_type == 5  # web_page
+        assert fulltext.url == "https://example.com"
+        assert "first paragraph" in fulltext.content
+        assert "second paragraph" in fulltext.content
+        assert fulltext.char_count > 0
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_request_format(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test that get_fulltext sends correct RPC request."""
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [["src_456", "Title", []], None, None, [[["Content here"]]]],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            await client.sources.get_fulltext("nb_123", "src_456")
+
+        request = httpx_mock.get_request()
+        # Verify RPC method in URL
+        assert RPCMethod.GET_SOURCE in str(request.url)
+        # Verify source_path includes notebook_id
+        assert "source-path=%2Fnotebook%2Fnb_123" in str(request.url)
+        # Verify params format: [[source_id], [2], [2]]
+        body = urllib.parse.unquote(request.content.decode())
+        assert "src_456" in body
+        # Check for the [2], [2] structure
+        assert "[2]" in body
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_empty_content(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test get_fulltext with empty content."""
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [["src_empty", "Empty Source", []], None, None, None],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            fulltext = await client.sources.get_fulltext("nb_123", "src_empty")
+
+        assert fulltext.source_id == "src_empty"
+        assert fulltext.title == "Empty Source"
+        assert fulltext.content == ""
+        assert fulltext.char_count == 0

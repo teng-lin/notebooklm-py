@@ -40,11 +40,13 @@ __all__ = [
     "NotebookDescription",
     "SuggestedTopic",
     "Source",
+    "SourceFulltext",
     "Artifact",
     "GenerationStatus",
     "ReportSuggestion",
     "Note",
     "ConversationTurn",
+    "ChatReference",
     "AskResult",
     "ChatMode",
     # Exceptions
@@ -324,6 +326,30 @@ class Source:
         source_id = data[0] if len(data) > 0 else ""
         title = data[1] if len(data) > 1 else None
         return cls(id=str(source_id), title=title, source_type="text")
+
+
+@dataclass
+class SourceFulltext:
+    """Full text content of a source as indexed by NotebookLM.
+
+    This is the raw text content that was extracted/indexed from the source,
+    along with metadata. Returned by `client.sources.get_fulltext()`.
+
+    Attributes:
+        source_id: The source UUID.
+        title: Source title.
+        content: Full indexed text content.
+        source_type: Type code (1=google_docs, 3=pdf, 4=pasted_text, 5=web_page, 9=youtube).
+        url: Original URL for web/YouTube sources.
+        char_count: Number of characters in the content.
+    """
+
+    source_id: str
+    title: str
+    content: str
+    source_type: int | None = None
+    url: str | None = None
+    char_count: int = 0
 
 
 # =============================================================================
@@ -640,11 +666,46 @@ class ConversationTurn:
 
 
 @dataclass
+class ChatReference:
+    """A reference/citation in a chat response.
+
+    References link parts of the answer to specific sources.
+    When you click a reference in the NotebookLM UI, it shows
+    the relevant passage from the source.
+
+    Attributes:
+        source_id: The source UUID this reference points to.
+        citation_number: The citation number shown in the answer (e.g., [1], [2]).
+        cited_text: The actual text passage from the source being cited.
+        start_char: Start character position in the source content (if available).
+        end_char: End character position in the source content (if available).
+        chunk_id: Internal chunk ID (for debugging, not user-facing).
+    """
+
+    source_id: str
+    citation_number: int | None = None
+    cited_text: str | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+    chunk_id: str | None = None
+
+
+@dataclass
 class AskResult:
-    """Result of asking the notebook a question."""
+    """Result of asking the notebook a question.
+
+    Attributes:
+        answer: The AI-generated answer text.
+        conversation_id: UUID for this conversation (used for follow-ups).
+        turn_number: The turn number in the conversation.
+        is_follow_up: Whether this was a follow-up question.
+        references: List of source references cited in the answer.
+        raw_response: First 1000 chars of raw API response (for debugging).
+    """
 
     answer: str
     conversation_id: str
     turn_number: int
     is_follow_up: bool
+    references: list["ChatReference"] = field(default_factory=list)
     raw_response: str = ""

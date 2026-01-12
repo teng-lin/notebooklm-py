@@ -209,6 +209,8 @@ await client.notebooks.share(nb.id, settings={"public": True})
 |--------|------------|---------|-------------|
 | `list(notebook_id)` | `notebook_id: str` | `list[Source]` | List sources |
 | `get(notebook_id, source_id)` | `str, str` | `Source` | Get source details |
+| `get_fulltext(notebook_id, source_id)` | `str, str` | `SourceFulltext` | Get full indexed text content |
+| `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
 | `add_url(notebook_id, url)` | `str, str` | `Source` | Add URL source |
 | `add_youtube(notebook_id, url)` | `str, str` | `Source` | Add YouTube video |
 | `add_text(notebook_id, title, content)` | `str, str, str` | `Source` | Add text content |
@@ -233,6 +235,15 @@ for src in sources:
 
 await client.sources.rename(nb_id, src.id, "Better Title")
 await client.sources.refresh(nb_id, src.id)  # Re-fetch URL content
+
+# Get full indexed content (what NotebookLM uses for answers)
+fulltext = await client.sources.get_fulltext(nb_id, src.id)
+print(f"Content ({fulltext.char_count} chars): {fulltext.content[:500]}...")
+
+# Get AI-generated summary and keywords
+guide = await client.sources.get_guide(nb_id, src.id)
+print(f"Summary: {guide['summary']}")
+print(f"Keywords: {guide['keywords']}")
 ```
 
 ---
@@ -444,6 +455,10 @@ async def ask(
 result = await client.chat.ask(nb_id, "What are the main themes?")
 print(result.answer)
 
+# Access source references (cited in answer as [1], [2], etc.)
+for ref in result.references:
+    print(f"Citation {ref.citation_number}: Source {ref.source_id}")
+
 # Ask using only specific sources
 result = await client.chat.ask(
     nb_id,
@@ -620,9 +635,34 @@ class Artifact:
 ```python
 @dataclass
 class AskResult:
-    answer: str
-    conversation_id: str
-    sources_used: list[str]
+    answer: str                        # The answer text with inline citations [1], [2], etc.
+    conversation_id: str               # ID for follow-up questions
+    turn_number: int                   # Turn number in conversation
+    is_follow_up: bool                 # Whether this was a follow-up question
+    references: list[ChatReference]    # Source references cited in the answer
+    raw_response: str                  # First 1000 chars of raw API response
+
+@dataclass
+class ChatReference:
+    source_id: str                     # UUID of the source
+    citation_number: int | None        # Citation number in answer (1, 2, etc.)
+    cited_text: str | None             # Actual text passage being cited
+    start_char: int | None             # Start position in source content
+    end_char: int | None               # End position in source content
+    chunk_id: str | None               # Internal chunk ID (for debugging)
+```
+
+### SourceFulltext
+
+```python
+@dataclass
+class SourceFulltext:
+    source_id: str                     # UUID of the source
+    title: str                         # Source title
+    content: str                       # Full indexed text content
+    source_type: int | None            # Source type code
+    url: str | None                    # Original URL (if applicable)
+    char_count: int                    # Character count
 ```
 
 ---

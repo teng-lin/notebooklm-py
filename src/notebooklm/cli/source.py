@@ -4,6 +4,7 @@ Commands:
     list         List sources in a notebook
     add          Add a source (url, text, file, youtube)
     get          Get source details
+    fulltext     Get full indexed text content of a source
     guide        Get AI-generated source summary and keywords
     stale        Check if a URL/Drive source needs refresh
     delete       Delete a source
@@ -40,6 +41,7 @@ def source():
       list         List sources in a notebook
       add          Add a source (url, text, file, youtube)
       get          Get source details
+      fulltext     Get full indexed text content
       guide        Get AI-generated source summary and keywords
       stale        Check if source needs refresh
       delete       Delete a source
@@ -497,6 +499,77 @@ def source_add_research(
                     console.print(f"[green]Imported {len(imported)} sources[/green]")
             else:
                 console.print(f"[yellow]Status: {status.get('status', 'unknown')}[/yellow]")
+
+    return _run()
+
+
+@source.command("fulltext")
+@click.argument("source_id")
+@click.option(
+    "-n",
+    "--notebook",
+    "notebook_id",
+    default=None,
+    help="Notebook ID (uses current if not set)",
+)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("--output", "-o", type=click.Path(), help="Write content to file")
+@with_client
+def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_auth):
+    """Get full indexed text content of a source.
+
+    Retrieves the complete text content as indexed by NotebookLM. This is the
+    actual text that NotebookLM uses when answering questions about this source.
+
+    SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+
+    \b
+    Examples:
+      source fulltext abc123                    # Show fulltext in terminal
+      source fulltext abc123 --json             # Output as JSON
+      source fulltext abc123 -o content.txt     # Save to file
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            resolved_id = await resolve_source_id(client, nb_id, source_id)
+
+            with console.status("Fetching fulltext content..."):
+                fulltext = await client.sources.get_fulltext(nb_id, resolved_id)
+
+            if json_output:
+                data = {
+                    "source_id": fulltext.source_id,
+                    "title": fulltext.title,
+                    "char_count": fulltext.char_count,
+                    "source_type": fulltext.source_type,
+                    "url": fulltext.url,
+                    "content": fulltext.content,
+                }
+                json_output_response(data)
+                return
+
+            if output:
+                Path(output).write_text(fulltext.content, encoding="utf-8")
+                console.print(f"[green]Saved {fulltext.char_count} chars to {output}[/green]")
+                return
+
+            console.print(f"[bold cyan]Source:[/bold cyan] {fulltext.source_id}")
+            console.print(f"[bold]Title:[/bold] {fulltext.title}")
+            console.print(f"[bold]Characters:[/bold] {fulltext.char_count:,}")
+            if fulltext.url:
+                console.print(f"[bold]URL:[/bold] {fulltext.url}")
+            console.print()
+            console.print("[bold cyan]Content:[/bold cyan]")
+            # Show first 2000 chars with truncation notice
+            if len(fulltext.content) > 2000:
+                console.print(fulltext.content[:2000])
+                console.print(
+                    f"\n[dim]... ({fulltext.char_count - 2000:,} more chars, use -o to save full content)[/dim]"
+                )
+            else:
+                console.print(fulltext.content)
 
     return _run()
 
