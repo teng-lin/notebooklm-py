@@ -199,9 +199,7 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
     return None
 
 
-def decode_response(
-    raw_response: str, rpc_id: str, allow_null: bool = False, debug: bool = False
-) -> Any:
+def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) -> Any:
     """
     Complete decode pipeline: strip prefix -> parse chunks -> extract result.
 
@@ -209,7 +207,6 @@ def decode_response(
         raw_response: Raw response text from batchexecute
         rpc_id: RPC method ID to extract result for
         allow_null: If True, return None instead of raising error when result is null
-        debug: If True, print debug information about found RPC IDs
 
     Returns:
         Decoded result data
@@ -223,9 +220,8 @@ def decode_response(
     # Collect all RPC IDs for debugging
     found_ids = collect_rpc_ids(chunks)
 
-    if debug:
-        logger.debug(f"Looking for RPC ID: {rpc_id}")
-        logger.debug(f"Found RPC IDs in response: {found_ids}")
+    logger.debug("Looking for RPC ID: %s", rpc_id)
+    logger.debug("Found RPC IDs in response: %s", found_ids)
 
     try:
         result = extract_rpc_result(chunks, rpc_id)

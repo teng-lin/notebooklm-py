@@ -19,6 +19,7 @@ Example:
         result = await client.chat.ask(notebook_id, "What is this about?")
 """
 
+import logging
 from pathlib import Path
 
 from ._artifacts import ArtifactsAPI
@@ -29,6 +30,8 @@ from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._sources import SourcesAPI
 from .auth import AuthTokens
+
+logger = logging.getLogger(__name__)
 
 
 class NotebookLMClient:
@@ -87,11 +90,13 @@ class NotebookLMClient:
 
     async def __aenter__(self) -> "NotebookLMClient":
         """Open the client connection."""
+        logger.debug("Opening NotebookLM client")
         await self._core.open()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Close the client connection."""
+        logger.debug("Closing NotebookLM client")
         await self._core.close()
 
     @property

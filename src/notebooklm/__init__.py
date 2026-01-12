@@ -13,6 +13,11 @@ Note:
     See docs/troubleshooting.md for guidance on handling API changes.
 """
 
+# Configure logging (must run before other imports that create loggers)
+from ._logging import configure_logging
+
+configure_logging()
+
 __version__ = "0.1.3"
 
 # Public API: Authentication

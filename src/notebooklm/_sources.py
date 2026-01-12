@@ -304,6 +304,7 @@ class SourcesAPI:
             # ... add more sources ...
             await client.sources.wait_for_sources(nb_id, [s.id for s in sources])
         """
+        logger.info("Adding URL source to notebook %s: %s", notebook_id, url[:80])
         video_id = self._extract_youtube_video_id(url)
         if video_id:
             result = await self._add_youtube_source(notebook_id, url)
@@ -338,6 +339,7 @@ class SourcesAPI:
         Returns:
             The created Source object. If wait=False, status may be PROCESSING.
         """
+        logger.info("Adding text source to notebook %s: %s", notebook_id, title)
         params = [
             [[None, [title, content], None, None, None, None, None, None]],
             notebook_id,
@@ -388,6 +390,7 @@ class SourcesAPI:
             - Markdown: text/markdown
             - Word: application/vnd.openxmlformats-officedocument.wordprocessingml.document
         """
+        logger.info("Adding file source to notebook %s: %s", notebook_id, file_path)
         file_path = Path(file_path).resolve()
 
         if not file_path.exists():
@@ -454,6 +457,7 @@ class SourcesAPI:
                 wait=True,  # Wait for processing
             )
         """
+        logger.info("Adding Drive source to notebook %s: %s", notebook_id, title)
         # Drive source structure: [[file_id, mime_type, 1, title], null x9, 1]
         source_data = [
             [file_id, mime_type, 1, title],
@@ -497,6 +501,7 @@ class SourcesAPI:
         Returns:
             True if deletion succeeded.
         """
+        logger.info("Deleting source %s from notebook %s", source_id, notebook_id)
         params = [[[source_id]]]
         await self._core.rpc_call(
             RPCMethod.DELETE_SOURCE,
@@ -517,6 +522,7 @@ class SourcesAPI:
         Returns:
             Updated Source object.
         """
+        logger.info("Renaming source %s to: %s", source_id, new_title)
         params = [None, [source_id], [[[new_title]]]]
         result = await self._core.rpc_call(
             RPCMethod.UPDATE_SOURCE,

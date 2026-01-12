@@ -28,6 +28,7 @@ Security Notes:
 """
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -37,6 +38,8 @@ from typing import Any
 import httpx
 
 from .paths import get_storage_path
+
+logger = logging.getLogger(__name__)
 
 # Minimum required cookies (must have at least SID for basic auth)
 MINIMUM_REQUIRED_COOKIES = {"SID"}
@@ -391,6 +394,7 @@ async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
         httpx.HTTPError: If request fails
         ValueError: If tokens cannot be extracted from response
     """
+    logger.debug("Fetching CSRF and session tokens from NotebookLM")
     cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
 
     async with httpx.AsyncClient() as client:
@@ -415,4 +419,5 @@ async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
         csrf = extract_csrf_from_html(response.text, final_url)
         session_id = extract_session_id_from_html(response.text, final_url)
 
+        logger.debug("Authentication tokens obtained successfully")
         return csrf, session_id
