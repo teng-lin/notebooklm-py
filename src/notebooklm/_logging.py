@@ -13,9 +13,9 @@ def configure_logging() -> None:
 
     Safe to call multiple times (idempotent - won't add duplicate handlers).
     """
-    # Check if already configured
+    # Check if already configured (including parent handlers)
     logger = logging.getLogger("notebooklm")
-    if logger.handlers:
+    if logger.hasHandlers():
         return  # Already configured
 
     # Determine log level
