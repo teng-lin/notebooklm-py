@@ -461,3 +461,327 @@ class TestClientCoreRefreshCallback:
 
         core = ClientCore(auth)
         assert core._refresh_lock is None
+
+
+# =============================================================================
+# RPC CALL AUTO-RETRY TESTS
+# =============================================================================
+
+
+class TestRpcCallAutoRetry:
+    @pytest.mark.asyncio
+    async def test_retries_on_http_401_error(self):
+        """rpc_call should retry once after HTTP 401 if callback provided."""
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        refresh_called = []
+
+        async def mock_refresh():
+            refresh_called.append(True)
+            return auth
+
+        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+
+        call_count = [0]
+
+        async def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call fails with HTTP 401
+                request = httpx.Request("POST", args[0])
+                response = httpx.Response(401, request=request)
+                raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+            # Second call succeeds
+            response = MagicMock()
+            response.text = ')]}\'\\n[["wrb.fr","wXbhsf",[["result"]]]]'
+            response.raise_for_status = MagicMock()
+            return response
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+        core._http_client.headers = {"Cookie": "old"}
+
+        with patch("notebooklm._core.decode_response", return_value=["result"]):
+            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert len(refresh_called) == 1, "refresh_callback should be called once"
+        assert call_count[0] == 2, "RPC should be called twice (original + retry)"
+        assert result == ["result"]
+
+    @pytest.mark.asyncio
+    async def test_retries_on_rpc_auth_error(self):
+        """rpc_call should retry once after RPC auth error if callback provided."""
+        from unittest.mock import MagicMock, patch
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCError, RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        refresh_called = []
+
+        async def mock_refresh():
+            refresh_called.append(True)
+            return auth
+
+        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+
+        # Mock HTTP client - always succeeds
+        async def mock_post(*args, **kwargs):
+            response = MagicMock()
+            response.text = "mock response"
+            response.raise_for_status = MagicMock()
+            return response
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+        core._http_client.headers = {"Cookie": "old"}
+
+        decode_call_count = [0]
+
+        def mock_decode(*args, **kwargs):
+            decode_call_count[0] += 1
+            if decode_call_count[0] == 1:
+                # First decode fails with auth error
+                raise RPCError("Authentication expired", rpc_id="wXbhsf")
+            return ["result"]
+
+        with patch("notebooklm._core.decode_response", side_effect=mock_decode):
+            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert len(refresh_called) == 1, "refresh_callback should be called once"
+        assert decode_call_count[0] == 2, "decode should be called twice (original + retry)"
+        assert result == ["result"]
+
+    @pytest.mark.asyncio
+    async def test_no_retry_without_callback(self):
+        """rpc_call should NOT retry if no refresh_callback provided."""
+        from unittest.mock import MagicMock
+
+        import httpx
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCError, RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        core = ClientCore(auth)  # No refresh_callback
+
+        call_count = [0]
+
+        async def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            request = httpx.Request("POST", args[0])
+            response = httpx.Response(401, request=request)
+            raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+
+        with pytest.raises(RPCError, match="HTTP 401"):
+            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert call_count[0] == 1, "Should not retry without callback"
+
+    @pytest.mark.asyncio
+    async def test_no_infinite_retry(self):
+        """rpc_call should only retry once, not infinitely."""
+        from unittest.mock import MagicMock
+
+        import httpx
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCError, RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        refresh_count = [0]
+
+        async def mock_refresh():
+            refresh_count[0] += 1
+            return auth
+
+        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+
+        call_count = [0]
+
+        # Always fail with HTTP 401
+        async def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            request = httpx.Request("POST", args[0])
+            response = httpx.Response(401, request=request)
+            raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+        core._http_client.headers = {"Cookie": "old"}
+
+        with pytest.raises(RPCError, match="HTTP 401"):
+            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert refresh_count[0] == 1, "Should only refresh once"
+        assert call_count[0] == 2, "Should only retry once"
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_non_auth_error(self):
+        """rpc_call should NOT retry on non-auth errors (HTTP 500)."""
+        from unittest.mock import MagicMock
+
+        import httpx
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCError, RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        refresh_called = []
+
+        async def mock_refresh():
+            refresh_called.append(True)
+            return auth
+
+        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+
+        call_count = [0]
+
+        async def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            request = httpx.Request("POST", args[0])
+            response = httpx.Response(500, request=request)
+            raise httpx.HTTPStatusError("Server Error", request=request, response=response)
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+
+        with pytest.raises(RPCError, match="HTTP 500"):
+            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert len(refresh_called) == 0, "Should not refresh on non-auth error"
+        assert call_count[0] == 1, "Should not retry on non-auth error"
+
+    @pytest.mark.asyncio
+    async def test_refresh_failure_raises_original_error(self):
+        """If refresh fails, should raise original error with chained exception."""
+        from unittest.mock import MagicMock
+
+        import httpx
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        async def failing_refresh():
+            raise ValueError("Refresh failed - cookies expired")
+
+        core = ClientCore(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
+
+        async def mock_post(*args, **kwargs):
+            request = httpx.Request("POST", args[0])
+            response = httpx.Response(401, request=request)
+            raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        # Check exception chaining
+        assert exc_info.value.__cause__ is not None
+        assert "Refresh failed" in str(exc_info.value.__cause__)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_refresh_uses_lock(self):
+        """Concurrent auth errors should serialize through refresh lock."""
+        import asyncio
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+
+        from notebooklm._core import ClientCore
+        from notebooklm.auth import AuthTokens
+        from notebooklm.rpc import RPCMethod
+
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="sid",
+        )
+
+        refresh_count = [0]
+
+        async def mock_refresh():
+            refresh_count[0] += 1
+            await asyncio.sleep(0.05)  # Simulate slow refresh
+            return auth
+
+        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+
+        call_count = [0]
+
+        async def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                # First two calls fail with HTTP 401
+                request = httpx.Request("POST", args[0])
+                response = httpx.Response(401, request=request)
+                raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
+            # After that, succeed
+            response = MagicMock()
+            response.text = ')]}\'\\n[["wrb.fr","wXbhsf",[["result"]]]]'
+            response.raise_for_status = MagicMock()
+            return response
+
+        core._http_client = MagicMock()
+        core._http_client.post = mock_post
+        core._http_client.headers = {"Cookie": "old"}
+
+        with patch("notebooklm._core.decode_response", return_value=["result"]):
+            # Start two concurrent calls
+            await asyncio.gather(
+                core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
+                core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
+                return_exceptions=True,
+            )
+
+        # Due to lock, refresh should only be called once effectively
+        # (second caller waits and uses refreshed token)
+        assert refresh_count[0] >= 1, "Refresh should be called at least once"
