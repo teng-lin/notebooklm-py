@@ -138,6 +138,7 @@ ignore = [
     "SIM102", # nested ifs - kept for readability in complex data parsing
     "SIM105", # contextlib.suppress - explicit try/except clearer for data parsing
 ]
+per-file-ignores = {"src/notebooklm/__init__.py" = ["E402"]}
 
 [tool.ruff.lint.isort]
 known-first-party = ["notebooklm"]

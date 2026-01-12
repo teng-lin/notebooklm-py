@@ -1,10 +1,13 @@
 """Notebook operations API."""
 
+import logging
 from typing import Any
 
 from ._core import ClientCore
 from .rpc import RPCMethod
 from .types import Notebook, NotebookDescription, SuggestedTopic
+
+logger = logging.getLogger(__name__)
 
 
 class NotebooksAPI:
@@ -34,6 +37,7 @@ class NotebooksAPI:
         Returns:
             List of Notebook objects.
         """
+        logger.debug("Listing notebooks")
         params = [None, 1, None, [2]]
         result = await self._core.rpc_call(RPCMethod.LIST_NOTEBOOKS, params)
 
@@ -51,9 +55,12 @@ class NotebooksAPI:
         Returns:
             The created Notebook object.
         """
+        logger.info("Creating notebook: %s", title)
         params = [title, None, None, [2], [1]]
         result = await self._core.rpc_call(RPCMethod.CREATE_NOTEBOOK, params)
-        return Notebook.from_api_response(result)
+        notebook = Notebook.from_api_response(result)
+        logger.debug("Created notebook: %s", notebook.id)
+        return notebook
 
     async def get(self, notebook_id: str) -> Notebook:
         """Get notebook details.
@@ -83,6 +90,7 @@ class NotebooksAPI:
         Returns:
             True if deletion succeeded.
         """
+        logger.info("Deleting notebook: %s", notebook_id)
         params = [[notebook_id], [2]]
         await self._core.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
         return True
@@ -97,6 +105,7 @@ class NotebooksAPI:
         Returns:
             The renamed Notebook object (fetched after rename).
         """
+        logger.info("Renaming notebook %s to: %s", notebook_id, new_title)
         # Payload format discovered via browser traffic capture:
         # [notebook_id, [[null, null, null, [null, new_title]]]]
         params = [notebook_id, [[None, None, None, [None, new_title]]]]

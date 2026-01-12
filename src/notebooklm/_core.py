@@ -1,7 +1,7 @@
 """Core infrastructure for NotebookLM API client."""
 
 import logging
-import os
+import time
 from collections import OrderedDict
 from typing import Any
 from urllib.parse import urlencode
@@ -18,15 +18,7 @@ from .rpc import (
     encode_rpc_request,
 )
 
-# Enable RPC debug output via environment variable
-DEBUG_RPC = os.environ.get("NOTEBOOKLM_DEBUG_RPC", "").lower() in ("1", "true", "yes")
-
-# Configure logging for RPC debug mode
-if DEBUG_RPC:
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(levelname)s: %(message)s",
-    )
+logger = logging.getLogger(__name__)
 
 # Maximum number of conversations to cache (FIFO eviction)
 MAX_CONVERSATION_CACHE_SIZE = 100
@@ -148,6 +140,9 @@ class ClientCore:
         if not self._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
+        start = time.perf_counter()
+        logger.debug("RPC %s starting", method.name)
+
         url = self._build_url(method, source_path)
         rpc_request = encode_rpc_request(method, params)
         body = build_request_body(rpc_request, self.auth.csrf_token)
@@ -156,24 +151,37 @@ class ClientCore:
             response = await self._http_client.post(url, content=body)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
+            elapsed = time.perf_counter() - start
+            logger.error(
+                "RPC %s failed after %.3fs: HTTP %s",
+                method.name,
+                elapsed,
+                e.response.status_code,
+            )
             raise RPCError(
                 f"HTTP {e.response.status_code} calling {method.name}: {e.response.reason_phrase}",
                 rpc_id=method.value,
             ) from e
         except httpx.RequestError as e:
+            elapsed = time.perf_counter() - start
+            logger.error("RPC %s failed after %.3fs: %s", method.name, elapsed, e)
             raise RPCError(
                 f"Request failed calling {method.name}: {e}",
                 rpc_id=method.value,
             ) from e
 
         try:
-            return decode_response(
-                response.text, method.value, allow_null=allow_null, debug=DEBUG_RPC
-            )
+            result = decode_response(response.text, method.value, allow_null=allow_null)
+            elapsed = time.perf_counter() - start
+            logger.debug("RPC %s completed in %.3fs", method.name, elapsed)
+            return result
         except RPCError:
-            # Re-raise RPCError as-is (already has context from decoder)
+            elapsed = time.perf_counter() - start
+            logger.error("RPC %s failed after %.3fs", method.name, elapsed)
             raise
         except Exception as e:
+            elapsed = time.perf_counter() - start
+            logger.error("RPC %s failed after %.3fs: %s", method.name, elapsed, e)
             raise RPCError(
                 f"Failed to decode response for {method.name}: {e}",
                 rpc_id=method.value,

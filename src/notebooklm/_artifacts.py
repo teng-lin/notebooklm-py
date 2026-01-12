@@ -130,7 +130,7 @@ class ArtifactsAPI:
                 # Network/API errors - log and continue with studio artifacts
                 # This ensures users can see their audio/video/reports even if
                 # the mind maps endpoint is temporarily unavailable
-                logger.warning(f"Failed to fetch mind maps: {e}")
+                logger.warning("Failed to fetch mind maps: %s", e)
 
         return artifacts
 

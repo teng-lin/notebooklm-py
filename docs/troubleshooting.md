@@ -251,6 +251,48 @@ playwright install chromium
 
 ## Debugging Tips
 
+### Logging Configuration
+
+`notebooklm-py` provides structured logging to help debug issues.
+
+**Environment Variables:**
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `NOTEBOOKLM_LOG_LEVEL` | `WARNING` | Set to `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+| `NOTEBOOKLM_DEBUG_RPC` | (unset) | Legacy: Set to `1` to enable `DEBUG` level |
+
+**When to use each level:**
+
+```bash
+# WARNING (default): Only show warnings and errors
+notebooklm list
+
+# INFO: Show major operations (good for scripts/automation)
+NOTEBOOKLM_LOG_LEVEL=INFO notebooklm source add https://example.com
+# Output:
+#   14:23:45 INFO [notebooklm._sources] Adding URL source: https://example.com
+
+# DEBUG: Show all RPC calls with timing (for troubleshooting API issues)
+NOTEBOOKLM_LOG_LEVEL=DEBUG notebooklm list
+# Output:
+#   14:23:45 DEBUG [notebooklm._core] RPC LIST_NOTEBOOKS starting
+#   14:23:46 DEBUG [notebooklm._core] RPC LIST_NOTEBOOKS completed in 0.842s
+```
+
+**Programmatic use:**
+
+```python
+import logging
+import os
+
+# Set before importing notebooklm
+os.environ["NOTEBOOKLM_LOG_LEVEL"] = "DEBUG"
+
+from notebooklm import NotebookLMClient
+# Now all notebooklm operations will log at DEBUG level
+```
+
 ### Enable Verbose Output
 
 Check what's happening under the hood:

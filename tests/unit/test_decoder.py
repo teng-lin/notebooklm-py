@@ -269,16 +269,16 @@ class TestDecodeResponse:
 
         assert result["notebooks"][0]["id"] == "nb1"
 
-    def test_decode_with_debug_logs(self, caplog):
-        """Test decode with debug=True logs RPC IDs."""
+    def test_decode_logs_rpc_ids_at_debug_level(self, caplog):
+        """Test decode always logs RPC IDs at DEBUG level."""
         import logging
 
         inner_data = json.dumps([["data"]])
         chunk = json.dumps(["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, inner_data, None, None])
         raw_response = f")]}}'\n{len(chunk)}\n{chunk}\n"
 
-        with caplog.at_level(logging.DEBUG):
-            result = decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value, debug=True)
+        with caplog.at_level(logging.DEBUG, logger="notebooklm.rpc.decoder"):
+            result = decode_response(raw_response, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert result == [["data"]]
         assert "Looking for RPC ID: wXbhsf" in caplog.text
