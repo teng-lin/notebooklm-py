@@ -72,7 +72,9 @@ class NotebookLMClient:
             auth: Authentication tokens from browser login.
             timeout: HTTP request timeout in seconds. Defaults to 30 seconds.
         """
-        self._core = ClientCore(auth, timeout=timeout)
+        # Pass refresh_auth as callback for automatic retry on auth failures
+        # Note: refresh_auth calls update_auth_headers internally
+        self._core = ClientCore(auth, timeout=timeout, refresh_callback=self.refresh_auth)
 
         # Initialize sub-client APIs
         # Note: notes must be initialized before artifacts (artifacts uses notes API)

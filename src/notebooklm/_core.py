@@ -293,11 +293,11 @@ class ClientCore:
         assert self._refresh_callback is not None
 
         # Use lock to serialize refresh attempts
+        # Note: refresh_callback is expected to update auth headers internally
         if self._refresh_lock:
             async with self._refresh_lock:
                 try:
                     await self._refresh_callback()
-                    self.update_auth_headers()
                 except Exception as refresh_error:
                     logger.warning(
                         "Token refresh failed: %s",
@@ -308,7 +308,6 @@ class ClientCore:
             # No lock (shouldn't happen if callback is set, but be safe)
             try:
                 await self._refresh_callback()
-                self.update_auth_headers()
             except Exception as refresh_error:
                 logger.warning("Token refresh failed: %s", refresh_error)
                 raise original_error from refresh_error

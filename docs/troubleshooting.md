@@ -11,11 +11,24 @@ Common issues, known limitations, and workarounds for `notebooklm-py`.
 
 See [Authentication Lifecycle](#authentication-lifecycle) for background on token types.
 
+#### Automatic Token Refresh
+
+The client **automatically refreshes** CSRF tokens when authentication errors are detected. This happens transparently:
+
+- When an RPC call fails with an auth error, the client:
+  1. Fetches fresh CSRF token and session ID from the NotebookLM homepage
+  2. Waits briefly to avoid rate limiting
+  3. Retries the failed request once
+- Concurrent requests share a single refresh task to prevent token thrashing
+- If refresh fails, the original error is raised with the refresh failure as cause
+
+This means most "CSRF token expired" errors resolve automatically.
+
 #### "Unauthorized" or redirect to login page
 
 **Cause:** Session cookies expired (happens every few weeks).
 
-**Note:** The library automatically retries once after refreshing CSRF tokens. If you still see this error, the underlying session cookies have expired.
+**Note:** Automatic token refresh handles CSRF/session ID expiration. This error only occurs when the underlying cookies (set during `notebooklm login`) have fully expired.
 
 **Solution:**
 ```bash
@@ -26,7 +39,7 @@ notebooklm login
 
 **Cause:** CSRF token expired or couldn't be extracted.
 
-**Note:** CSRF tokens are automatically refreshed on auth errors. You should rarely see this error in normal usage.
+**Note:** This error should rarely occur now due to automatic retry. If you see it, it likely means the automatic refresh also failed.
 
 **Solution (if auto-refresh fails):**
 ```python
