@@ -660,12 +660,21 @@ To retrieve full context around a citation, search for `cited_text` within the s
 # Get the source fulltext
 fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
 
-# Find the citation in the fulltext
-pos = fulltext.content.find(ref.cited_text[:40])  # Search by prefix
+# Find the citation in the fulltext (handle short/missing cited_text)
+search_text = ref.cited_text[:min(40, len(ref.cited_text or ""))]
+pos = fulltext.content.find(search_text) if search_text else -1
+
 if pos >= 0:
-    # Extract context around the citation
-    context = fulltext.content[max(0, pos-100):pos+len(ref.cited_text)+100]
+    # Extract ~100 chars before and after the citation
+    start = max(0, pos - 100)
+    end = pos + len(ref.cited_text) + 100
+    context = fulltext.content[start:end]
+else:
+    # Citation not found - may occur if source was modified or text was normalized
+    context = None
 ```
+
+**Tip:** Cache `fulltext` when processing multiple citations from the same source to avoid repeated API calls.
 
 ### SourceFulltext
 

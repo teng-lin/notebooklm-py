@@ -158,8 +158,10 @@ $ notebooklm source fulltext <source_id> --json
 ```python
 # Get fulltext, then find citation context
 fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
-pos = fulltext.content.find(ref.cited_text[:40])
-context = fulltext.content[max(0, pos-100):pos+len(ref.cited_text)+100]
+search_text = ref.cited_text[:min(40, len(ref.cited_text or ""))]
+pos = fulltext.content.find(search_text) if search_text else -1
+if pos >= 0:
+    context = fulltext.content[max(0, pos - 100):pos + len(ref.cited_text) + 100]
 ```
 
 **Extract IDs:** Parse the `id`, `source_id`, or `task_id` field from JSON output.
