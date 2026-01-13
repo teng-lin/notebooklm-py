@@ -4,6 +4,7 @@ These helpers use proper URL parsing to avoid substring matching vulnerabilities
 flagged by CodeQL (py/incomplete-url-substring-sanitization).
 """
 
+import re
 from urllib.parse import urlparse
 
 
@@ -24,7 +25,7 @@ def is_youtube_url(url: str) -> bool:
         return (
             hostname == "youtube.com" or hostname.endswith(".youtube.com") or hostname == "youtu.be"
         )
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         return False
 
 
@@ -43,7 +44,7 @@ def is_google_auth_redirect(url: str) -> bool:
     try:
         hostname = (urlparse(url).hostname or "").lower()
         return hostname == "accounts.google.com" or hostname.endswith(".accounts.google.com")
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         return False
 
 
@@ -59,8 +60,6 @@ def contains_google_auth_redirect(text: str) -> bool:
     Returns:
         True if any URL in the text points to Google accounts
     """
-    import re
-
     # Find URLs in the text (href="...", src="...", or standalone https://...)
     url_pattern = r'https?://[^\s"\'<>]+'
     urls = re.findall(url_pattern, text)
