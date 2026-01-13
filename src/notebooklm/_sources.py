@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from ._core import ClientCore
+from ._url_utils import is_youtube_url
 from .rpc import UPLOAD_URL, RPCMethod
 from .rpc.types import SourceStatus
 from .types import (
@@ -93,10 +94,7 @@ class SourcesAPI:
                     if isinstance(url_list, list) and len(url_list) > 0:
                         url = url_list[0]
                         # Detect YouTube vs other URLs
-                        if "youtube.com" in url or "youtu.be" in url:
-                            source_type = "youtube"
-                        else:
-                            source_type = "url"
+                        source_type = "youtube" if is_youtube_url(url) else "url"
 
                 # Extract file info if no URL
                 if not url and title:

@@ -30,6 +30,7 @@ from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._sources import SourcesAPI
+from ._url_utils import is_google_auth_redirect
 from .auth import AuthTokens
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class NotebookLMClient:
 
         # Check for redirect to login page
         final_url = str(response.url)
-        if "accounts.google.com" in final_url:
+        if is_google_auth_redirect(final_url):
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
 
         # Extract SNlM0e (CSRF token) - REQUIRED

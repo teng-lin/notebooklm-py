@@ -17,6 +17,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from .._url_utils import is_youtube_url
 from ..auth import (
     AuthTokens,
     fetch_tokens,
@@ -469,9 +470,7 @@ def detect_source_type(src: list) -> str:
         url_field = src[2][7]
         if url_field and isinstance(url_field, list) and len(url_field) > 0:
             url = url_field[0]
-            if "youtube.com" in url or "youtu.be" in url:
-                return "🎥 YouTube"
-            return "🔗 Web URL"
+            return "🎥 YouTube" if is_youtube_url(url) else "🔗 Web URL"
 
     # Check title for file extension
     title = src[1] if len(src) > 1 else ""

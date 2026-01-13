@@ -20,6 +20,7 @@ from pathlib import Path
 import click
 from rich.table import Table
 
+from .._url_utils import is_youtube_url
 from ..client import NotebookLMClient
 from ..types import source_status_to_str
 from .helpers import (
@@ -165,10 +166,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
 
     if detected_type is None:
         if content.startswith(("http://", "https://")):
-            if "youtube.com" in content or "youtu.be" in content:
-                detected_type = "youtube"
-            else:
-                detected_type = "url"
+            detected_type = "youtube" if is_youtube_url(content) else "url"
         elif Path(content).exists():
             file_path = Path(content).resolve()  # Resolve symlinks
             # Security: Ensure it's a regular file (not a symlink to sensitive file)

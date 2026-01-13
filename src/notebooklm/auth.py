@@ -37,6 +37,7 @@ from typing import Any
 
 import httpx
 
+from ._url_utils import contains_google_auth_redirect, is_google_auth_redirect
 from .paths import get_storage_path
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ def extract_csrf_from_html(html: str, final_url: str = "") -> str:
     match = re.search(r'"SNlM0e"\s*:\s*"([^"]+)"', html)
     if not match:
         # Check if we were redirected to login page
-        if "accounts.google.com" in final_url or "accounts.google.com" in html:
+        if is_google_auth_redirect(final_url) or contains_google_auth_redirect(html):
             raise ValueError(
                 "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
             )
@@ -195,7 +196,7 @@ def extract_session_id_from_html(html: str, final_url: str = "") -> str:
     # Match "FdrFJe": "<session_id>" or "FdrFJe":"<session_id>" pattern
     match = re.search(r'"FdrFJe"\s*:\s*"([^"]+)"', html)
     if not match:
-        if "accounts.google.com" in final_url or "accounts.google.com" in html:
+        if is_google_auth_redirect(final_url) or contains_google_auth_redirect(html):
             raise ValueError(
                 "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
             )
@@ -409,7 +410,7 @@ async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
         final_url = str(response.url)
 
         # Check if we were redirected to login
-        if "accounts.google.com" in final_url:
+        if is_google_auth_redirect(final_url):
             raise ValueError(
                 "Authentication expired or invalid. "
                 "Redirected to: " + final_url + "\n"
