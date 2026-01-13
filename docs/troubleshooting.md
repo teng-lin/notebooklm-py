@@ -1,7 +1,7 @@
 # Troubleshooting
 
 **Status:** Active
-**Last Updated:** 2026-01-08
+**Last Updated:** 2026-01-12
 
 Common issues, known limitations, and workarounds for `notebooklm-py`.
 
@@ -9,9 +9,13 @@ Common issues, known limitations, and workarounds for `notebooklm-py`.
 
 ### Authentication Errors
 
+See [Authentication Lifecycle](#authentication-lifecycle) for background on token types.
+
 #### "Unauthorized" or redirect to login page
 
-**Cause:** Session expired or cookies invalid.
+**Cause:** Session cookies expired (happens every few weeks).
+
+**Note:** The library automatically retries once after refreshing CSRF tokens. If you still see this error, the underlying session cookies have expired.
 
 **Solution:**
 ```bash
@@ -22,12 +26,14 @@ notebooklm login
 
 **Cause:** CSRF token expired or couldn't be extracted.
 
-**Solution:**
+**Note:** CSRF tokens are automatically refreshed on auth errors. You should rarely see this error in normal usage.
+
+**Solution (if auto-refresh fails):**
 ```python
-# In Python
+# In Python - manual refresh
 await client.refresh_auth()
 ```
-Or re-run `notebooklm login`.
+Or re-run `notebooklm login` if session cookies are also expired.
 
 #### Browser opens but login fails
 
@@ -166,11 +172,33 @@ Some features have daily/hourly quotas:
 - **Video Overviews:** More restricted than audio
 - **Deep Research:** Consumes significant backend resources
 
-### Session Expiration
+### Authentication Lifecycle
 
-Sessions expire based on Google's internal policies:
-- Typically last days to weeks
-- Security events can trigger earlier expiration
+notebooklm-py uses two types of tokens with different lifetimes:
+
+| Token Type | Lifetime | Auto-Refresh? | When Expired |
+|------------|----------|---------------|--------------|
+| **CSRF Token** (SNlM0e) | Hours | ✅ Yes | Automatic retry via `refresh_callback` |
+| **Session Cookies** (SID, HSID, etc.) | Weeks | ❌ No | Run `notebooklm login` |
+
+**CSRF tokens** expire frequently (hours) but are automatically refreshed when auth errors are detected. This is transparent to users—the library retries failed requests after refreshing.
+
+**Session cookies** are the underlying Google login and last weeks. When these expire, you must re-authenticate:
+
+```bash
+notebooklm login
+```
+
+The browser profile at `$NOTEBOOKLM_HOME/browser_profile/` (default: `~/.notebooklm/browser_profile/`) remembers your Google login, so re-authentication is typically just pressing ENTER (no password re-entry needed).
+
+**For CI/CD and automation:**
+- Use `NOTEBOOKLM_AUTH_JSON` environment variable
+- Update the secret every 1-2 weeks when sessions expire
+- CSRF auto-refresh handles day-to-day expiration
+
+**Session expiration triggers:**
+- Time-based expiration (weeks)
+- Security events (password change, suspicious activity)
 - Heavy API usage may trigger earlier expiration
 
 ### Non-Functional RPC Methods
