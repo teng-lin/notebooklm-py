@@ -738,3 +738,90 @@ class TestSourceFulltext:
         assert len(matches) == 1
         context, pos = matches[0]
         assert pos == 19
+
+    def test_is_likely_misindexed_youtube_as_web_page(self):
+        """Test detection when YouTube source is indexed as web page."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="About\nPress\nCopyright",  # YouTube footer
+            source_type=5,  # WEB_PAGE instead of YOUTUBE
+            url="https://www.youtube.com/watch?v=abc123",
+            char_count=22,
+        )
+
+        assert fulltext.is_likely_misindexed() is True
+        reason = fulltext.get_misindex_reason()
+        assert reason is not None
+        assert "web page" in reason.lower()
+
+    def test_is_likely_misindexed_youtube_low_char_count(self):
+        """Test detection when YouTube source has too few characters."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="Very short content",
+            source_type=9,  # Correct YOUTUBE type
+            url="https://www.youtube.com/watch?v=abc123",
+            char_count=18,
+        )
+
+        assert fulltext.is_likely_misindexed() is True
+        reason = fulltext.get_misindex_reason()
+        assert reason is not None
+        assert "characters" in reason.lower()
+
+    def test_is_likely_misindexed_youtube_normal(self):
+        """Test that properly indexed YouTube sources pass check."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="A" * 1000,  # Plenty of content
+            source_type=9,  # YOUTUBE
+            url="https://www.youtube.com/watch?v=abc123",
+            char_count=1000,
+        )
+
+        assert fulltext.is_likely_misindexed() is False
+        assert fulltext.get_misindex_reason() is None
+
+    def test_is_likely_misindexed_non_youtube_url(self):
+        """Test that non-YouTube sources are not flagged."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Web Page",
+            content="Short content",
+            source_type=5,  # WEB_PAGE
+            url="https://example.com/article",
+            char_count=13,
+        )
+
+        # Non-YouTube sources should not be flagged even with low char count
+        assert fulltext.is_likely_misindexed() is False
+        assert fulltext.get_misindex_reason() is None
+
+    def test_is_likely_misindexed_no_url(self):
+        """Test that sources without URL are not flagged."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="Pasted Text",
+            content="Some content",
+            source_type=4,  # PASTED_TEXT
+            char_count=12,
+        )
+
+        assert fulltext.is_likely_misindexed() is False
+        assert fulltext.get_misindex_reason() is None
+
+    def test_is_likely_misindexed_youtu_be_short_url(self):
+        """Test detection with youtu.be short URL format."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="About\nPress",
+            source_type=5,  # WEB_PAGE instead of YOUTUBE
+            url="https://youtu.be/abc123",
+            char_count=11,
+        )
+
+        assert fulltext.is_likely_misindexed() is True

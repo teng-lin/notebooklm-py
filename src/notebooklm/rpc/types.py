@@ -320,3 +320,30 @@ def source_status_to_str(status_code: int | SourceStatus) -> str:
         Returns "unknown" for unrecognized codes (future-proofing).
     """
     return _SOURCE_STATUS_MAP.get(status_code, "unknown")
+
+
+class SourceContentType(int, Enum):
+    """Content type codes for indexed sources.
+
+    These codes indicate how NotebookLM indexed the source content.
+    Found in GET_SOURCE response at result[0][2][4].
+
+    If a YouTube URL has type WEB_PAGE (5) instead of YOUTUBE (9),
+    it means the source was incorrectly indexed and should be re-added.
+    """
+
+    GOOGLE_DOCS = 1  # Google Docs document
+    GOOGLE_OTHER = 2  # Other Google apps (Slides, Sheets)
+    PDF = 3  # PDF document
+    PASTED_TEXT = 4  # Text pasted by user
+    WEB_PAGE = 5  # Web page scraped
+    # 6 appears unused
+    # 7 appears unused
+    GENERATED_TEXT = 8  # AI-generated content
+    YOUTUBE = 9  # YouTube video transcript
+
+
+# Minimum expected character count for YouTube transcripts
+# A properly indexed YouTube video typically has thousands of characters
+# The footer-only bug produces around 100-200 chars
+YOUTUBE_MIN_EXPECTED_CHARS = 500

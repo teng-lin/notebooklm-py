@@ -49,6 +49,7 @@ def source():
       delete       Delete a source
       rename       Rename a source
       refresh      Refresh a URL/Drive source
+      reindex      Delete and re-add to fix indexing issues
 
     \b
     Partial ID Support:
@@ -519,15 +520,29 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
             with console.status("Fetching fulltext content..."):
                 fulltext = await client.sources.get_fulltext(nb_id, resolved_id)
 
+            # Check for misindexed source
+            is_misindexed = fulltext.is_likely_misindexed()
+            misindex_reason = fulltext.get_misindex_reason()
+
             if json_output:
                 from dataclasses import asdict
 
-                json_output_response(asdict(fulltext))
+                data = asdict(fulltext)
+                if is_misindexed:
+                    data["warning"] = "likely_misindexed"
+                    data["warning_reason"] = misindex_reason
+                json_output_response(data)
                 return
 
             if output:
                 Path(output).write_text(fulltext.content, encoding="utf-8")
                 console.print(f"[green]Saved {fulltext.char_count} chars to {output}[/green]")
+                if is_misindexed:
+                    console.print()
+                    console.print(f"[yellow]⚠ Warning:[/yellow] {misindex_reason}")
+                    console.print(
+                        f"[dim]Consider running: notebooklm source reindex {resolved_id}[/dim]"
+                    )
                 return
 
             console.print(f"[bold cyan]Source:[/bold cyan] {fulltext.source_id}")
@@ -535,6 +550,13 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
             console.print(f"[bold]Characters:[/bold] {fulltext.char_count:,}")
             if fulltext.url:
                 console.print(f"[bold]URL:[/bold] {fulltext.url}")
+
+            # Show warning for misindexed sources
+            if is_misindexed:
+                console.print()
+                console.print(f"[yellow]⚠ Warning:[/yellow] {misindex_reason}")
+                console.print(f"[dim]Fix with: notebooklm source reindex {resolved_id}[/dim]")
+
             console.print()
             console.print("[bold cyan]Content:[/bold cyan]")
             # Show first 2000 chars with truncation notice
@@ -764,5 +786,122 @@ def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
                     console.print(f"[yellow]⚠ Timeout waiting for source:[/yellow] {e.source_id}")
                     console.print(f"[dim]Last status: {e.last_status}[/dim]")
                 raise SystemExit(2) from None
+
+    return _run()
+
+
+@source.command("reindex")
+@click.argument("source_id")
+@click.option(
+    "-n",
+    "--notebook",
+    "notebook_id",
+    default=None,
+    help="Notebook ID (uses current if not set)",
+)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@click.option(
+    "--timeout",
+    default=120,
+    type=int,
+    help="Maximum seconds to wait for reindexing (default: 120)",
+)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@with_client
+def source_reindex(ctx, source_id, notebook_id, yes, timeout, json_output, client_auth):
+    """Delete and re-add a source to fix indexing issues.
+
+    This is useful when a YouTube source was incorrectly indexed (showing
+    only footer text instead of the actual transcript). The reindex operation
+    deletes the source and re-adds it from the original URL.
+
+    SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+
+    \b
+    Note: Only URL-based sources (web pages, YouTube) can be reindexed.
+    The new source will have a different ID.
+
+    \b
+    Examples:
+      source reindex abc123                    # Reindex a source
+      source reindex abc123 -y                 # Skip confirmation
+      source reindex abc123 --timeout 300      # Wait up to 5 minutes
+      source reindex abc123 --json             # Output result as JSON
+
+    \b
+    Common use case - fix misindexed YouTube:
+      # Check if source is misindexed
+      notebooklm source fulltext abc123 --json | jq '.char_count'
+      # If char_count is very low (< 500), reindex it
+      notebooklm source reindex abc123
+    """
+    nb_id = require_notebook(notebook_id)
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            resolved_id = await resolve_source_id(client, nb_id, source_id)
+
+            # Get source info before reindex
+            source = await client.sources.get(nb_id, resolved_id)
+            if not source:
+                if json_output:
+                    json_output_response({"error": f"Source not found: {resolved_id}"})
+                else:
+                    console.print(f"[red]Source not found:[/red] {resolved_id}")
+                raise SystemExit(1)
+
+            if not source.url:
+                if json_output:
+                    json_output_response(
+                        {
+                            "error": "Source has no URL and cannot be reindexed",
+                            "source_id": resolved_id,
+                        }
+                    )
+                else:
+                    console.print("[red]Error:[/red] Source has no URL and cannot be reindexed")
+                    console.print(
+                        "[dim]Only URL-based sources (web pages, YouTube) can be reindexed[/dim]"
+                    )
+                raise SystemExit(1)
+
+            if not json_output:
+                console.print(f"[bold]Source:[/bold] {resolved_id}")
+                console.print(f"[bold]Title:[/bold] {source.title}")
+                console.print(f"[bold]URL:[/bold] {source.url}")
+                console.print()
+
+            if not yes and not json_output:
+                if not click.confirm(
+                    "This will delete and re-add the source. "
+                    "The new source will have a different ID. Continue?"
+                ):
+                    console.print("[yellow]Cancelled[/yellow]")
+                    return
+
+            if not json_output:
+                console.print("[dim]Reindexing source...[/dim]")
+
+            new_source = await client.sources.reindex(
+                nb_id,
+                resolved_id,
+                wait=True,
+                wait_timeout=float(timeout),
+            )
+
+            if json_output:
+                data = {
+                    "old_source_id": resolved_id,
+                    "new_source_id": new_source.id,
+                    "title": new_source.title,
+                    "url": source.url,
+                    "status": "reindexed",
+                }
+                json_output_response(data)
+            else:
+                console.print("[green]✓ Source reindexed successfully[/green]")
+                console.print(f"[bold]Old ID:[/bold] {resolved_id}")
+                console.print(f"[bold]New ID:[/bold] {new_source.id}")
+                console.print(f"[bold]Title:[/bold] {new_source.title}")
 
     return _run()

@@ -16,6 +16,7 @@ from ._url_utils import is_youtube_url
 
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
+    YOUTUBE_MIN_EXPECTED_CHARS,
     AudioFormat,
     AudioLength,
     ChatGoal,
@@ -29,6 +30,7 @@ from .rpc.types import (
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
+    SourceContentType,
     SourceStatus,
     StudioContentType,
     VideoFormat,
@@ -75,6 +77,9 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
+    "SourceContentType",
+    # Constants
+    "YOUTUBE_MIN_EXPECTED_CHARS",
     # Helper functions
     "artifact_status_to_str",
     "source_status_to_str",
@@ -396,6 +401,60 @@ class SourceFulltext:
             pos = idx + len(search_text)  # Skip past match to avoid overlaps
 
         return matches
+
+    def is_likely_misindexed(self) -> bool:
+        """Check if this source appears to have been incorrectly indexed.
+
+        Detects common indexing issues:
+        - YouTube sources indexed as web pages (type 5 instead of 9)
+        - YouTube sources with suspiciously low character count
+
+        This can happen when NotebookLM fails to extract the video transcript
+        and instead scrapes the YouTube page (getting only footer text).
+
+        Returns:
+            True if source shows signs of incorrect indexing.
+
+        Example:
+            fulltext = await client.sources.get_fulltext(nb_id, source_id)
+            if fulltext.is_likely_misindexed():
+                print("Consider deleting and re-adding this source")
+        """
+        # Check if URL is YouTube
+        if not self.url or not is_youtube_url(self.url):
+            return False
+
+        # YouTube source should have type 9 (YOUTUBE), not 5 (WEB_PAGE)
+        if self.source_type == SourceContentType.WEB_PAGE:
+            return True
+
+        # Even with correct type, very low char count suggests issues
+        return self.char_count < YOUTUBE_MIN_EXPECTED_CHARS
+
+    def get_misindex_reason(self) -> str | None:
+        """Get a human-readable explanation of why this source may be misindexed.
+
+        Returns:
+            Explanation string if misindexed, None if source appears normal.
+        """
+        if not self.url or not is_youtube_url(self.url):
+            return None
+
+        if self.source_type == SourceContentType.WEB_PAGE:
+            return (
+                f"YouTube video was indexed as web page (type {self.source_type}) "
+                f"instead of transcript (type {SourceContentType.YOUTUBE}). "
+                "Content may only contain YouTube footer text."
+            )
+
+        if self.char_count < YOUTUBE_MIN_EXPECTED_CHARS:
+            return (
+                f"YouTube source has only {self.char_count} characters, "
+                f"expected at least {YOUTUBE_MIN_EXPECTED_CHARS}. "
+                "Transcript may not have been extracted properly."
+            )
+
+        return None
 
 
 # =============================================================================

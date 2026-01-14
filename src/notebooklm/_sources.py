@@ -550,6 +550,67 @@ class SourcesAPI:
         )
         return True
 
+    async def reindex(
+        self,
+        notebook_id: str,
+        source_id: str,
+        wait: bool = True,
+        wait_timeout: float = 120.0,
+    ) -> Source:
+        """Delete and re-add a source to fix indexing issues.
+
+        This is useful when a YouTube source was incorrectly indexed as a web
+        page (getting only footer text instead of the actual transcript).
+        The reindex operation deletes the source and re-adds it from the
+        original URL, forcing NotebookLM to re-process it.
+
+        Args:
+            notebook_id: The notebook ID.
+            source_id: The source ID to reindex.
+            wait: If True, wait for new source to be ready before returning.
+            wait_timeout: Maximum seconds to wait if wait=True (default: 120).
+
+        Returns:
+            The new Source object (with new ID).
+
+        Raises:
+            SourceNotFoundError: If the source doesn't exist.
+            ValueError: If the source has no URL (can't be reindexed).
+
+        Example:
+            fulltext = await client.sources.get_fulltext(nb_id, source_id)
+            if fulltext.is_likely_misindexed():
+                new_source = await client.sources.reindex(nb_id, source_id)
+                print(f"Reindexed: old={source_id} -> new={new_source.id}")
+        """
+        # Get current source to find URL
+        source = await self.get(notebook_id, source_id)
+        if not source:
+            raise SourceNotFoundError(source_id)
+
+        if not source.url:
+            raise ValueError(
+                f"Source {source_id} has no URL and cannot be reindexed. "
+                "Only URL-based sources (web pages, YouTube) can be reindexed."
+            )
+
+        original_url = source.url
+        logger.info("Reindexing source %s from URL: %s", source_id, original_url)
+
+        # Delete the old source
+        await self.delete(notebook_id, source_id)
+
+        # Re-add from URL (this will properly detect YouTube vs regular URL)
+        new_source = await self.add_url(
+            notebook_id,
+            original_url,
+            wait=wait,
+            wait_timeout=wait_timeout,
+        )
+
+        logger.info("Reindex complete: %s -> %s", source_id, new_source.id)
+        return new_source
+
     async def check_freshness(self, notebook_id: str, source_id: str) -> bool:
         """Check if a source needs to be refreshed.
 

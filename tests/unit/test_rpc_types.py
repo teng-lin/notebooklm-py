@@ -3,8 +3,10 @@
 from notebooklm.rpc.types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
+    YOUTUBE_MIN_EXPECTED_CHARS,
     ArtifactStatus,
     RPCMethod,
+    SourceContentType,
     StudioContentType,
     artifact_status_to_str,
 )
@@ -114,3 +116,42 @@ class TestArtifactStatusToStr:
         assert artifact_status_to_str(4) == "unknown"
         assert artifact_status_to_str(99) == "unknown"
         assert artifact_status_to_str(-1) == "unknown"
+
+
+class TestSourceContentType:
+    """Tests for SourceContentType enum."""
+
+    def test_google_docs_type(self):
+        """Test GOOGLE_DOCS content type code."""
+        assert SourceContentType.GOOGLE_DOCS == 1
+
+    def test_web_page_type(self):
+        """Test WEB_PAGE content type code."""
+        assert SourceContentType.WEB_PAGE == 5
+
+    def test_youtube_type(self):
+        """Test YOUTUBE content type code."""
+        assert SourceContentType.YOUTUBE == 9
+
+    def test_pasted_text_type(self):
+        """Test PASTED_TEXT content type code."""
+        assert SourceContentType.PASTED_TEXT == 4
+
+    def test_pdf_type(self):
+        """Test PDF content type code."""
+        assert SourceContentType.PDF == 3
+
+    def test_source_content_type_is_int(self):
+        """Test SourceContentType values are integers."""
+        assert isinstance(SourceContentType.YOUTUBE.value, int)
+
+
+class TestYouTubeConstants:
+    """Tests for YouTube-related constants."""
+
+    def test_youtube_min_expected_chars(self):
+        """Test YOUTUBE_MIN_EXPECTED_CHARS is a reasonable threshold."""
+        # Should be high enough to catch footer-only content (~100-200 chars)
+        # but low enough to allow short videos
+        assert YOUTUBE_MIN_EXPECTED_CHARS >= 200
+        assert YOUTUBE_MIN_EXPECTED_CHARS <= 1000
