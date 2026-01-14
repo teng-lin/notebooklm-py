@@ -114,6 +114,9 @@ Before starting workflows, verify the CLI is ready:
 | Wait for completion | `notebooklm artifact wait <artifact_id>` |
 | Download audio | `notebooklm download audio ./output.mp3` |
 | Download video | `notebooklm download video ./output.mp4` |
+| Download report | `notebooklm download report ./report.md` |
+| Download mind map | `notebooklm download mind-map ./map.json` |
+| Download data table | `notebooklm download data-table ./data.csv` |
 | Delete notebook | `notebooklm notebook delete <id>` |
 
 **Parallel safety:** Use explicit notebook IDs in parallel workflows. Commands supporting `-n` shorthand: `artifact wait`, `source wait`, `research wait/status`, `download *`. Download commands also support `-a/--artifact`. Other commands use `--notebook`. For chat, use `--new` to start fresh conversations (avoids conversation ID conflicts).
@@ -176,11 +179,11 @@ All generate commands support:
 | Video | `generate video` | Yes (.mp4) |
 | Slides | `generate slide-deck` | Yes (.pdf) |
 | Infographic | `generate infographic` | Yes (.png) |
+| Report | `generate report` | Yes (.md) |
+| Mind Map | `generate mind-map` | Yes (.json) |
+| Data Table | `generate data-table` | Yes (.csv) |
 | Quiz | `generate quiz` | No (view in UI) |
 | Flashcards | `generate flashcards` | No (view in UI) |
-| Mind Map | `generate mind-map` | No (view in UI) |
-| Data Table | `generate data-table` | No (export to Sheets) |
-| Report | `generate report` | No (export to Docs) |
 
 ## Common Workflows
 
