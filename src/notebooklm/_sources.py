@@ -813,7 +813,7 @@ class SourcesAPI:
             """Extract video ID from path-based URL format like /shorts/ID."""
             if not path.startswith(prefix):
                 return None
-            video_id = path[len(prefix) :].split("/")[0]
+            video_id = path[len(prefix) :].split("/")[0].strip()
             return video_id if is_valid_video_id(video_id) else None
 
         try:
@@ -833,7 +833,7 @@ class SourcesAPI:
             # youtu.be short URLs: youtu.be/VIDEO_ID
             if hostname == "youtu.be":
                 if path and len(path) > 1:
-                    video_id = path[1:].split("/")[0]
+                    video_id = path[1:].split("/")[0].strip()
                     return video_id if is_valid_video_id(video_id) else None
                 return None
 
@@ -842,7 +842,7 @@ class SourcesAPI:
                 query_params = parse_qs(parsed.query)
                 video_ids = query_params.get("v", [])
                 if video_ids:
-                    video_id = video_ids[0]
+                    video_id = video_ids[0].strip()
                     return video_id if is_valid_video_id(video_id) else None
                 return None
 
