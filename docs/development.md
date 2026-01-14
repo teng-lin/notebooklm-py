@@ -250,6 +250,7 @@ See [stability.md](stability.md) for full versioning policy.
 |----------|---------|---------|
 | `test.yml` | Push/PR | Unit tests, linting, type checking |
 | `nightly.yml` | Daily 6 AM UTC | E2E tests with real API |
+| `rpc-health.yml` | Daily 7 AM UTC | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) |
 | `publish.yml` | Tag push | Publish to PyPI |
 
 ### Setting Up Nightly E2E Tests

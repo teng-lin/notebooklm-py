@@ -104,10 +104,34 @@ None at this time.
 
 When Google changes their internal APIs:
 
-1. **Detection**: We monitor for RPC failures and user reports
+1. **Detection**: Automated RPC health check runs nightly (see below)
 2. **Investigation**: Identify changed method IDs using browser devtools
 3. **Fix**: Update `rpc/types.py` with new method IDs
 4. **Release**: Push patch release as soon as possible
+
+### Automated RPC Health Check
+
+A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods for ID changes.
+
+**What it verifies:**
+- The RPC method ID we send matches the ID returned in the response envelope
+- Example: `LIST_NOTEBOOKS` sends `wXbhsf` → response must contain `wXbhsf`
+
+**What it does NOT verify:**
+- Response data correctness (E2E tests cover this)
+- Response schema validation (too fragile across 35+ methods)
+- Business logic (out of scope for monitoring)
+
+**Why this design:**
+- Google's breaking change pattern is silent ID changes, not schema changes
+- Error responses still contain the method ID, so we detect mismatches even on API errors
+- A mismatch means `rpc/types.py` needs updating, triggering a patch release
+
+**On mismatch detection:**
+- GitHub Issue auto-created with `bug`, `rpc-breakage`, and `automated` labels
+- Report shows expected vs actual IDs and which `RPCMethod` entries need updating
+
+**Manual trigger:** `gh workflow run rpc-health.yml`
 
 ### How to Report API Breakage
 
