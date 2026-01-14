@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-01-08
+**Last Updated:** 2026-01-14
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -130,6 +130,9 @@ A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods for ID c
 **On mismatch detection:**
 - GitHub Issue auto-created with `bug`, `rpc-breakage`, and `automated` labels
 - Report shows expected vs actual IDs and which `RPCMethod` entries need updating
+
+**Configuration:**
+- `NOTEBOOKLM_RPC_DELAY`: Delay between RPC calls in seconds (default: 1.0)
 
 **Manual trigger:** `gh workflow run rpc-health.yml`
 
