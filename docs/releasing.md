@@ -17,9 +17,9 @@ Checklist for releasing a new version of `notebooklm-py`.
 - [ ] Check CLI reference matches `notebooklm --help` output
 - [ ] Verify Python API docs match public exports in `__init__.py`
 - [ ] Update `Last Updated` dates in modified docs
-- [ ] Test example scripts in `docs/examples/` still work:
+- [ ] Verify example scripts have valid syntax:
   ```bash
-  python docs/examples/quickstart.py --help
+  python -m py_compile docs/examples/*.py
   ```
 
 ### Version Bump
@@ -152,6 +152,8 @@ Checklist for releasing a new version of `notebooklm-py`.
 
 ### CI fails after push
 
+> **Warning:** Only do this immediately after your own push, before anyone else pulls.
+
 ```bash
 # Fix locally, then amend
 git add -A
@@ -161,11 +163,13 @@ git push --force origin main
 
 ### Need to abort after commit
 
+> **Warning:** Force pushing rewrites history. Only do this if you haven't shared the commit.
+
 ```bash
-# Undo release commit
+# Undo release commit (local only)
 git reset --hard HEAD~1
 
-# If already pushed
+# If already pushed (use with caution)
 git push --force origin main
 ```
 
