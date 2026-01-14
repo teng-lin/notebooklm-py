@@ -12,6 +12,7 @@ Environment variables:
     NOTEBOOKLM_AUTH_JSON - Playwright storage state JSON (required)
     NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID - Notebook ID for read operations
     NOTEBOOKLM_GENERATION_NOTEBOOK_ID - Notebook ID for write operations
+    NOTEBOOKLM_RPC_DELAY - Delay between RPC calls in seconds (default: 1.0)
 
 Usage:
     python scripts/check_rpc_health.py
@@ -66,7 +67,8 @@ class CheckResult:
 
 
 # Delay between RPC calls to avoid rate limiting (seconds)
-CALL_DELAY = 0.5
+# Can be overridden via NOTEBOOKLM_RPC_DELAY env var
+CALL_DELAY = float(os.environ.get("NOTEBOOKLM_RPC_DELAY", "1.0"))
 
 # Status display icons
 STATUS_ICONS = {
