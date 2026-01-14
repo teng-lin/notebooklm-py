@@ -1,3 +1,5 @@
+import csv
+import json
 import os
 import tempfile
 
@@ -148,8 +150,6 @@ def is_valid_markdown(path: str) -> bool:
 
 def is_valid_json(path: str) -> bool:
     """Check if file is valid JSON."""
-    import json
-
     try:
         with open(path, encoding="utf-8") as f:
             json.load(f)
@@ -160,14 +160,12 @@ def is_valid_json(path: str) -> bool:
 
 def is_valid_csv(path: str) -> bool:
     """Check if file is valid CSV with headers."""
-    import csv
-
     try:
         with open(path, encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             rows = list(reader)
             return len(rows) > 0 and len(rows[0]) > 0
-    except Exception:
+    except (csv.Error, OSError, UnicodeDecodeError):
         return False
 
 
@@ -209,8 +207,6 @@ class TestDownloadMindMap:
                 assert is_valid_json(output_path), "Downloaded mind map is not valid JSON"
 
                 # Verify structure
-                import json
-
                 with open(output_path, encoding="utf-8") as f:
                     data = json.load(f)
                 assert "name" in data, "Mind map JSON should have 'name' field"

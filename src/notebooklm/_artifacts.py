@@ -1591,6 +1591,13 @@ class ArtifactsAPI:
         if not candidates:
             raise ValueError(f"No completed {type_name_lower} found.")
 
+        # Sort by creation timestamp (descending) to get the latest.
+        # Timestamp is at index 15, position 0.
+        candidates.sort(
+            key=lambda a: a[15][0] if len(a) > 15 and isinstance(a[15], list) and a[15] else 0,
+            reverse=True,
+        )
+
         return candidates[0]
 
     async def _download_urls_batch(

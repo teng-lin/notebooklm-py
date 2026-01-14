@@ -1,5 +1,8 @@
 """Integration tests for ArtifactsAPI."""
 
+import csv
+import json
+
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -900,8 +903,6 @@ class TestDownloadMindMap:
 
         assert result == str(output_path)
         assert output_path.exists()
-        import json
-
         data = json.loads(output_path.read_text())
         assert data["name"] == "Root"
 
@@ -968,8 +969,6 @@ class TestDownloadDataTable:
 
         assert result == str(output_path)
         assert output_path.exists()
-        import csv
-
         with open(output_path, encoding="utf-8-sig") as f:
             rows = list(csv.reader(f))
         assert rows[0] == ["Col1", "Col2"]
