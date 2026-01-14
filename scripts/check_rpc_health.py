@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -109,13 +110,13 @@ def load_cookies_from_env() -> dict[str, str]:
     """Load cookies from NOTEBOOKLM_AUTH_JSON environment variable."""
     auth_json = os.environ.get("NOTEBOOKLM_AUTH_JSON")
     if not auth_json:
-        print("ERROR: NOTEBOOKLM_AUTH_JSON environment variable not set")
+        print("ERROR: NOTEBOOKLM_AUTH_JSON environment variable not set", file=sys.stderr)
         sys.exit(1)
 
     try:
         storage_state = json.loads(auth_json)
     except json.JSONDecodeError as e:
-        print(f"ERROR: Invalid JSON in NOTEBOOKLM_AUTH_JSON: {e}")
+        print(f"ERROR: Invalid JSON in NOTEBOOKLM_AUTH_JSON: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Extract cookies
@@ -124,8 +125,6 @@ def load_cookies_from_env() -> dict[str, str]:
 
 async def fetch_tokens(client: httpx.AsyncClient, cookies: dict[str, str]) -> AuthTokens:
     """Fetch CSRF token and session ID from NotebookLM homepage."""
-    import re
-
     cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
     response = await client.get(
         "https://notebooklm.google.com/",
@@ -137,7 +136,7 @@ async def fetch_tokens(client: httpx.AsyncClient, cookies: dict[str, str]) -> Au
     # Extract CSRF token (SNlM0e)
     csrf_match = re.search(r'"SNlM0e"\s*:\s*"([^"]+)"', html)
     if not csrf_match:
-        print("ERROR: Could not extract CSRF token. Auth may be expired.")
+        print("ERROR: Could not extract CSRF token. Auth may be expired.", file=sys.stderr)
         sys.exit(1)
     csrf_token = csrf_match.group(1)
 
@@ -187,7 +186,7 @@ async def make_rpc_call(
         chunks = parse_chunked_response(cleaned)
         found_ids = collect_rpc_ids(chunks)
         return found_ids, None
-    except Exception as e:
+    except (json.JSONDecodeError, ValueError, IndexError, TypeError) as e:
         return [], f"Parse error: {e}"
 
 
@@ -361,7 +360,7 @@ async def run_health_check() -> list[CheckResult]:
     notebook_id = read_only_id or generation_id
 
     if not notebook_id:
-        print("WARNING: No notebook ID provided. Some methods will be skipped.")
+        print("WARNING: No notebook ID provided. Some methods will be skipped.", file=sys.stderr)
 
     results: list[CheckResult] = []
 
