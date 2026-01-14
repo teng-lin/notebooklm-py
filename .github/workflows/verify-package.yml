@@ -11,49 +11,10 @@ on:
         options:
           - testpypi
           - pypi
-      upload_first:
-        description: 'Upload to TestPyPI before verifying (only for testpypi source)'
-        required: false
-        default: true
-        type: boolean
 
 jobs:
-  upload:
-    name: Upload to TestPyPI
-    if: inputs.source == 'testpypi' && inputs.upload_first
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-    - uses: actions/checkout@v6
-
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v6
-      with:
-        python-version: "3.12"
-
-    - name: Install build tools
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
-
-    - name: Build package
-      run: python -m build
-
-    - name: Upload to TestPyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        repository-url: https://test.pypi.org/legacy/
-
-    - name: Wait for TestPyPI to index
-      run: sleep 60
-
   verify:
     name: Verify from ${{ inputs.source }}
-    needs: [upload]
-    if: always() && (needs.upload.result == 'success' || needs.upload.result == 'skipped')
     runs-on: ubuntu-latest
 
     steps:

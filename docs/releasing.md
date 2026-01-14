@@ -96,16 +96,26 @@ Checklist for releasing a new version of `notebooklm-py`.
 
 ## Package Verification
 
-### TestPyPI
+### Publish to TestPyPI
+
+- [ ] Go to **Actions** → **Publish to TestPyPI**
+- [ ] Click **Run workflow**
+- [ ] Wait for upload to complete
+- [ ] Verify package appears: https://test.pypi.org/project/notebooklm-py/
+
+> **Note:** TestPyPI does not allow re-uploading the same version. If you need to fix issues after publishing, bump the patch version and start over.
+
+### Verify TestPyPI Package
 
 - [ ] Go to **Actions** → **Verify Package**
-- [ ] Click **Run workflow** with:
-  - **source**: `testpypi`
-  - **upload_first**: `true`
-- [ ] Wait for workflow to complete:
-  - Uploads to TestPyPI
-  - Installs in fresh environment
-  - Runs unit, integration, and E2E tests
+- [ ] Click **Run workflow** with **source**: `testpypi`
+- [ ] Wait for all tests to pass (unit, integration, E2E)
+- [ ] If verification fails:
+  1. Fix issues locally
+  2. Bump patch version in `pyproject.toml`
+  3. Update `CHANGELOG.md` with fix
+  4. Amend or create new commit
+  5. Push and re-run **Publish to TestPyPI**
 
 ---
 
