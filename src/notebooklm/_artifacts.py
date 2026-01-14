@@ -1148,9 +1148,12 @@ class ArtifactsAPI:
         else:  # json (preserves API structure: answerOptions, rationale, isCorrect, hint)
             content = json.dumps({"title": title, "questions": questions}, indent=2)
 
-        # Write file
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        # Write file asynchronously to avoid blocking the event loop
+        def _write_file():
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write_file)
 
         return output_path
 
@@ -1210,8 +1213,12 @@ class ArtifactsAPI:
             normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
             content = json.dumps({"title": title, "cards": normalized}, indent=2)
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        # Write file asynchronously to avoid blocking the event loop
+        def _write_file():
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write_file)
 
         return output_path
 

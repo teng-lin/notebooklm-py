@@ -781,6 +781,7 @@ def download_flashcards_cmd(ctx, output_path, notebook, output_format, artifact_
     Examples:
       notebooklm download flashcards cards.json
       notebooklm download flashcards --format markdown cards.md
+      notebooklm download flashcards --format html cards.html
     """
     try:
         nb_id = require_notebook(notebook)
