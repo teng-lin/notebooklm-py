@@ -679,3 +679,170 @@ class TestGetFulltext:
         assert fulltext.title == "Empty Source"
         assert fulltext.content == ""
         assert fulltext.char_count == 0
+
+
+class TestReindexSource:
+    """Tests for SourcesAPI.reindex() method."""
+
+    @pytest.mark.asyncio
+    async def test_reindex_success(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test successful reindex: get source, add new, delete old."""
+        # Mock GET_NOTEBOOK to return source with URL
+        get_notebook_response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "nb_123",
+                    [
+                        [
+                            ["old_source_id"],
+                            "YouTube Video",
+                            [None, 11, None, None, 9, None, 1, ["https://youtube.com/watch?v=abc"]],
+                            [None, 2],
+                        ]
+                    ],
+                ]
+            ],
+        )
+
+        # Mock ADD_SOURCE for the new source
+        add_source_response = build_rpc_response(
+            RPCMethod.ADD_SOURCE,
+            [
+                [
+                    [
+                        ["new_source_id"],
+                        "YouTube Video",
+                        [None, 11, None, None, 9, None, 1, ["https://youtube.com/watch?v=abc"]],
+                        [None, 2],
+                    ]
+                ]
+            ],
+        )
+
+        # Mock DELETE_SOURCE for removing old source
+        delete_response = build_rpc_response(RPCMethod.DELETE_SOURCE, [True])
+
+        httpx_mock.add_response(content=get_notebook_response.encode())
+        httpx_mock.add_response(content=add_source_response.encode())
+        httpx_mock.add_response(content=delete_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            new_source = await client.sources.reindex("nb_123", "old_source_id", wait=False)
+
+        assert new_source.id == "new_source_id"
+        assert new_source.url == "https://youtube.com/watch?v=abc"
+
+    @pytest.mark.asyncio
+    async def test_reindex_source_not_found(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test reindex raises SourceNotFoundError when source doesn't exist."""
+        from notebooklm.types import SourceNotFoundError
+
+        # Mock GET_NOTEBOOK to return empty source list
+        get_notebook_response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [[["nb_123", []]]],
+        )
+        httpx_mock.add_response(content=get_notebook_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(SourceNotFoundError):
+                await client.sources.reindex("nb_123", "nonexistent_id")
+
+    @pytest.mark.asyncio
+    async def test_reindex_source_no_url(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test reindex raises ValueError when source has no URL."""
+        # Mock GET_NOTEBOOK to return source without URL (e.g., pasted text)
+        get_notebook_response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "nb_123",
+                    [
+                        [
+                            ["text_source_id"],
+                            "Pasted Text",
+                            [None, 11, None, None, 4],  # No URL field
+                            [None, 2],
+                        ]
+                    ],
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=get_notebook_response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValueError, match="no URL"):
+                await client.sources.reindex("nb_123", "text_source_id")
+
+    @pytest.mark.asyncio
+    async def test_reindex_delete_failure_logged(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        caplog,
+    ):
+        """Test that delete failure is logged but doesn't fail the reindex."""
+        import logging
+
+        # Mock GET_NOTEBOOK to return source with URL
+        get_notebook_response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "nb_123",
+                    [
+                        [
+                            ["old_source_id"],
+                            "YouTube Video",
+                            [None, 11, None, None, 9, None, 1, ["https://youtube.com/watch?v=abc"]],
+                            [None, 2],
+                        ]
+                    ],
+                ]
+            ],
+        )
+
+        # Mock ADD_SOURCE for the new source
+        add_source_response = build_rpc_response(
+            RPCMethod.ADD_SOURCE,
+            [
+                [
+                    [
+                        ["new_source_id"],
+                        "YouTube Video",
+                        [None, 11, None, None, 9, None, 1, ["https://youtube.com/watch?v=abc"]],
+                        [None, 2],
+                    ]
+                ]
+            ],
+        )
+
+        httpx_mock.add_response(content=get_notebook_response.encode())
+        httpx_mock.add_response(content=add_source_response.encode())
+        # Mock DELETE_SOURCE to fail with network error
+        httpx_mock.add_exception(Exception("Network error"))
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+            async with NotebookLMClient(auth_tokens) as client:
+                # Should succeed despite delete failure
+                new_source = await client.sources.reindex("nb_123", "old_source_id", wait=False)
+
+        assert new_source.id == "new_source_id"
+        assert "failed to delete old source" in caplog.text.lower()

@@ -623,3 +623,189 @@ class TestSourceCommandsExist:
         assert result.exit_code == 0
         assert "SOURCE_ID" in result.output
         assert "exit code" in result.output.lower()
+
+    def test_source_reindex_command_exists(self, runner):
+        result = runner.invoke(cli, ["source", "reindex", "--help"])
+        assert result.exit_code == 0
+        assert "SOURCE_ID" in result.output
+        assert "--yes" in result.output or "-y" in result.output
+
+
+# =============================================================================
+# SOURCE REINDEX TESTS
+# =============================================================================
+
+
+class TestSourceReindex:
+    def test_source_reindex_with_yes_flag(self, runner, mock_auth):
+        """Test reindex with -y flag (skip confirmation)."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(
+                        id="src_123",
+                        title="YouTube Video",
+                        source_type="youtube",
+                        url="https://youtube.com/watch?v=abc123",
+                    )
+                ]
+            )
+            mock_client.sources.get = AsyncMock(
+                return_value=Source(
+                    id="src_123",
+                    title="YouTube Video",
+                    source_type="youtube",
+                    url="https://youtube.com/watch?v=abc123",
+                )
+            )
+            mock_client.sources.reindex = AsyncMock(
+                return_value=Source(
+                    id="src_new",
+                    title="YouTube Video",
+                    source_type="youtube",
+                    url="https://youtube.com/watch?v=abc123",
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["source", "reindex", "src_123", "-n", "nb_123", "-y"])
+
+            assert result.exit_code == 0
+            assert "reindexed" in result.output.lower()
+            mock_client.sources.reindex.assert_called_once_with(
+                "nb_123",
+                "src_123",
+                wait=True,
+                wait_timeout=120.0,
+            )
+
+    def test_source_reindex_json_output(self, runner, mock_auth):
+        """Test reindex with JSON output."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(
+                        id="src_123",
+                        title="YouTube Video",
+                        source_type="youtube",
+                        url="https://youtube.com/watch?v=abc123",
+                    )
+                ]
+            )
+            mock_client.sources.get = AsyncMock(
+                return_value=Source(
+                    id="src_123",
+                    title="YouTube Video",
+                    source_type="youtube",
+                    url="https://youtube.com/watch?v=abc123",
+                )
+            )
+            mock_client.sources.reindex = AsyncMock(
+                return_value=Source(
+                    id="src_new",
+                    title="YouTube Video",
+                    source_type="youtube",
+                    url="https://youtube.com/watch?v=abc123",
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["source", "reindex", "src_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["old_source_id"] == "src_123"
+            assert data["new_source_id"] == "src_new"
+            assert data["status"] == "reindexed"
+
+    def test_source_reindex_source_not_found(self, runner, mock_auth):
+        """Test reindex when source is not found."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(
+                        id="src_123",
+                        title="Test Source",
+                        source_type="url",
+                        url="https://example.com",
+                    )
+                ]
+            )
+            mock_client.sources.get = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["source", "reindex", "src_123", "-n", "nb_123", "-y"])
+
+            assert result.exit_code == 1
+            assert "not found" in result.output.lower()
+
+    def test_source_reindex_no_url(self, runner, mock_auth):
+        """Test reindex fails for sources without URL (e.g., text sources)."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(
+                        id="src_123",
+                        title="Text Source",
+                        source_type="text",
+                        url=None,  # No URL
+                    )
+                ]
+            )
+            mock_client.sources.get = AsyncMock(
+                return_value=Source(
+                    id="src_123",
+                    title="Text Source",
+                    source_type="text",
+                    url=None,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["source", "reindex", "src_123", "-n", "nb_123", "-y"])
+
+            assert result.exit_code == 1
+            assert (
+                "no url" in result.output.lower() or "cannot be reindexed" in result.output.lower()
+            )
+
+    def test_source_reindex_no_url_json_output(self, runner, mock_auth):
+        """Test reindex JSON output when source has no URL."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="src_123", title="Text Source", source_type="text", url=None)
+                ]
+            )
+            mock_client.sources.get = AsyncMock(
+                return_value=Source(id="src_123", title="Text Source", source_type="text", url=None)
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["source", "reindex", "src_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert "error" in data
+            assert (
+                "no url" in data["error"].lower() or "cannot be reindexed" in data["error"].lower()
+            )

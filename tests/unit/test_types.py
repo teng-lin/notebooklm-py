@@ -825,3 +825,52 @@ class TestSourceFulltext:
         )
 
         assert fulltext.is_likely_misindexed() is True
+
+    def test_is_likely_misindexed_unknown_source_type_not_flagged(self):
+        """Test that YouTube with unknown source_type is not flagged by char count alone.
+
+        When source_type is None (unknown), we can't determine if misindexed
+        based on character count. Only WEB_PAGE type (5) should be flagged.
+        """
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="Short",  # Very low char count
+            source_type=None,  # Unknown type from API
+            url="https://www.youtube.com/watch?v=abc123",
+            char_count=5,
+        )
+
+        # Should NOT be flagged - we don't know the source type
+        assert fulltext.is_likely_misindexed() is False
+        assert fulltext.get_misindex_reason() is None
+
+    def test_is_likely_misindexed_boundary_at_threshold(self):
+        """Test boundary: exactly at YOUTUBE_MIN_EXPECTED_CHARS (500) is NOT flagged."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="A" * 500,
+            source_type=9,  # YOUTUBE
+            url="https://www.youtube.com/watch?v=abc123",
+            char_count=500,
+        )
+
+        assert fulltext.is_likely_misindexed() is False
+        assert fulltext.get_misindex_reason() is None
+
+    def test_is_likely_misindexed_boundary_below_threshold(self):
+        """Test boundary: one below YOUTUBE_MIN_EXPECTED_CHARS (499) IS flagged."""
+        fulltext = SourceFulltext(
+            source_id="src-123",
+            title="YouTube Video",
+            content="A" * 499,
+            source_type=9,  # YOUTUBE
+            url="https://www.youtube.com/watch?v=abc123",
+            char_count=499,
+        )
+
+        assert fulltext.is_likely_misindexed() is True
+        reason = fulltext.get_misindex_reason()
+        assert reason is not None
+        assert "499" in reason

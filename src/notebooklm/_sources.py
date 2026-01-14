@@ -608,7 +608,17 @@ class SourcesAPI:
         )
 
         # Now safe to delete the old source
-        await self.delete(notebook_id, source_id)
+        try:
+            await self.delete(notebook_id, source_id)
+        except Exception as e:
+            # Log warning but don't fail - user has their new source
+            # They may need to manually delete the old one
+            logger.warning(
+                "Reindex created new source %s but failed to delete old source %s: %s",
+                new_source.id,
+                source_id,
+                e,
+            )
 
         logger.info("Reindex complete: %s -> %s", source_id, new_source.id)
         return new_source
@@ -794,47 +804,57 @@ class SourcesAPI:
         Returns:
             Video ID string if found, None otherwise.
         """
+
+        def is_valid_video_id(video_id: str) -> bool:
+            """Validate YouTube video ID format (alphanumeric, hyphens, underscores)."""
+            return bool(video_id and re.match(r"^[a-zA-Z0-9_-]+$", video_id))
+
+        def extract_path_video_id(path: str, prefix: str) -> str | None:
+            """Extract video ID from path-based URL format like /shorts/ID."""
+            if not path.startswith(prefix):
+                return None
+            video_id = path[len(prefix) :].split("/")[0]
+            return video_id if is_valid_video_id(video_id) else None
+
         try:
             parsed = urlparse(url)
             hostname = (parsed.hostname or "").lower()
             path = parsed.path
 
             # Not a YouTube URL
-            if not (
+            is_youtube = (
                 hostname == "youtube.com"
                 or hostname.endswith(".youtube.com")
                 or hostname == "youtu.be"
-            ):
+            )
+            if not is_youtube:
                 return None
 
             # youtu.be short URLs: youtu.be/VIDEO_ID
             if hostname == "youtu.be":
                 if path and len(path) > 1:
-                    # Extract video ID from path, handling trailing slashes or query strings
                     video_id = path[1:].split("/")[0]
-                    if re.match(r"^[a-zA-Z0-9_-]+$", video_id):
-                        return video_id
+                    return video_id if is_valid_video_id(video_id) else None
                 return None
 
             # youtube.com/watch?v=VIDEO_ID - query param can be in any position
             if path == "/watch" or path.startswith("/watch?"):
                 query_params = parse_qs(parsed.query)
-                if "v" in query_params and query_params["v"]:
-                    video_id = query_params["v"][0]
-                    if re.match(r"^[a-zA-Z0-9_-]+$", video_id):
-                        return video_id
+                video_ids = query_params.get("v", [])
+                if video_ids:
+                    video_id = video_ids[0]
+                    return video_id if is_valid_video_id(video_id) else None
                 return None
 
             # Path-based formats: /shorts/ID, /embed/ID, /live/ID, /v/ID
             for prefix in ["/shorts/", "/embed/", "/live/", "/v/"]:
-                if path.startswith(prefix):
-                    rest = path[len(prefix) :]
-                    video_id = rest.split("/")[0]
-                    if re.match(r"^[a-zA-Z0-9_-]+$", video_id):
-                        return video_id
+                extracted_id = extract_path_video_id(path, prefix)
+                if extracted_id:
+                    return extracted_id
 
             return None
-        except (AttributeError, TypeError, ValueError):
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.debug("Failed to parse YouTube URL '%s': %s", url[:100], e)
             return None
 
     async def _add_youtube_source(self, notebook_id: str, url: str) -> Any:

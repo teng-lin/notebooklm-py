@@ -402,6 +402,10 @@ class SourceFulltext:
 
         return matches
 
+    def _is_youtube_source(self) -> bool:
+        """Check if this source is from a YouTube URL."""
+        return bool(self.url and is_youtube_url(self.url))
+
     def is_likely_misindexed(self) -> bool:
         """Check if this source appears to have been incorrectly indexed.
 
@@ -420,16 +424,19 @@ class SourceFulltext:
             if fulltext.is_likely_misindexed():
                 print("Consider deleting and re-adding this source")
         """
-        # Check if URL is YouTube
-        if not self.url or not is_youtube_url(self.url):
+        if not self._is_youtube_source():
             return False
 
         # YouTube source should have type 9 (YOUTUBE), not 5 (WEB_PAGE)
         if self.source_type == SourceContentType.WEB_PAGE:
             return True
 
-        # Even with correct type, very low char count suggests issues
-        return self.char_count < YOUTUBE_MIN_EXPECTED_CHARS
+        # Only check char count if source_type is confirmed as YOUTUBE
+        # Don't flag unknown types (None) based solely on character count
+        if self.source_type == SourceContentType.YOUTUBE:
+            return self.char_count < YOUTUBE_MIN_EXPECTED_CHARS
+
+        return False
 
     def get_misindex_reason(self) -> str | None:
         """Get a human-readable explanation of why this source may be misindexed.
@@ -437,7 +444,7 @@ class SourceFulltext:
         Returns:
             Explanation string if misindexed, None if source appears normal.
         """
-        if not self.url or not is_youtube_url(self.url):
+        if not self._is_youtube_source():
             return None
 
         if self.source_type == SourceContentType.WEB_PAGE:
@@ -447,7 +454,11 @@ class SourceFulltext:
                 "Content may only contain YouTube footer text."
             )
 
-        if self.char_count < YOUTUBE_MIN_EXPECTED_CHARS:
+        # Only check char count if source_type is confirmed as YOUTUBE
+        if (
+            self.source_type == SourceContentType.YOUTUBE
+            and self.char_count < YOUTUBE_MIN_EXPECTED_CHARS
+        ):
             return (
                 f"YouTube source has only {self.char_count} characters, "
                 f"expected at least {YOUTUBE_MIN_EXPECTED_CHARS}. "
