@@ -53,6 +53,92 @@ ALLOWED_COOKIE_DOMAINS = {
     ".googleusercontent.com",
 }
 
+# Regional Google ccTLDs where Google may set auth cookies
+# Users in these regions may have SID cookies on regional domains instead of .google.com
+# Format: suffix after ".google." (e.g., "com.sg" for ".google.com.sg")
+#
+# Categories:
+# - com.XX: Country-code second-level domains (Singapore, Australia, Brazil, etc.)
+# - co.XX: Country domains using .co (UK, Japan, India, Korea, etc.)
+# - XX: Single ccTLD countries (Germany, France, Italy, etc.)
+GOOGLE_REGIONAL_CCTLDS = frozenset(
+    {
+        # .google.com.XX pattern (country-code second-level domains)
+        "com.sg",  # Singapore
+        "com.au",  # Australia
+        "com.br",  # Brazil
+        "com.mx",  # Mexico
+        "com.ar",  # Argentina
+        "com.hk",  # Hong Kong
+        "com.tw",  # Taiwan
+        "com.my",  # Malaysia
+        "com.ph",  # Philippines
+        "com.vn",  # Vietnam
+        "com.pk",  # Pakistan
+        "com.bd",  # Bangladesh
+        "com.ng",  # Nigeria
+        "com.eg",  # Egypt
+        "com.tr",  # Turkey
+        "com.ua",  # Ukraine
+        "com.co",  # Colombia
+        "com.pe",  # Peru
+        "com.sa",  # Saudi Arabia
+        "com.ae",  # UAE
+        # .google.co.XX pattern (countries using .co second-level)
+        "co.uk",  # United Kingdom
+        "co.jp",  # Japan
+        "co.in",  # India
+        "co.kr",  # South Korea
+        "co.za",  # South Africa
+        "co.nz",  # New Zealand
+        "co.id",  # Indonesia
+        "co.th",  # Thailand
+        "co.il",  # Israel
+        "co.ve",  # Venezuela
+        "co.cr",  # Costa Rica
+        "co.ke",  # Kenya
+        "co.ug",  # Uganda
+        "co.tz",  # Tanzania
+        "co.ma",  # Morocco
+        "co.ao",  # Angola
+        "co.mz",  # Mozambique
+        "co.zw",  # Zimbabwe
+        "co.bw",  # Botswana
+        # .google.XX pattern (single ccTLD countries)
+        "de",  # Germany
+        "fr",  # France
+        "it",  # Italy
+        "es",  # Spain
+        "nl",  # Netherlands
+        "pl",  # Poland
+        "ru",  # Russia
+        "ca",  # Canada
+        "be",  # Belgium
+        "at",  # Austria
+        "ch",  # Switzerland
+        "se",  # Sweden
+        "no",  # Norway
+        "dk",  # Denmark
+        "fi",  # Finland
+        "pt",  # Portugal
+        "gr",  # Greece
+        "cz",  # Czech Republic
+        "ro",  # Romania
+        "hu",  # Hungary
+        "ie",  # Ireland
+        "sk",  # Slovakia
+        "bg",  # Bulgaria
+        "hr",  # Croatia
+        "si",  # Slovenia
+        "lt",  # Lithuania
+        "lv",  # Latvia
+        "ee",  # Estonia
+        "lu",  # Luxembourg
+        "cl",  # Chile
+        "cat",  # Catalonia (special case - 3 letter)
+    }
+)
+
 # Default path for Playwright storage state
 # Note: Use get_storage_path() for dynamic resolution with NOTEBOOKLM_HOME support
 DEFAULT_STORAGE_PATH = get_storage_path()
@@ -110,12 +196,69 @@ class AuthTokens:
         return cls(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
 
 
+def _is_google_domain(domain: str) -> bool:
+    """Check if a cookie domain is a valid Google domain.
+
+    Uses a whitelist approach to validate Google domains including:
+    - Base domain: .google.com
+    - Regional .google.com.XX: .google.com.sg, .google.com.au, etc.
+    - Regional .google.co.XX: .google.co.uk, .google.co.jp, etc.
+    - Regional .google.XX: .google.de, .google.fr, etc.
+
+    This function is used by both auth cookie extraction and download cookie
+    validation to ensure consistent domain handling across the codebase.
+
+    Args:
+        domain: Cookie domain to check (e.g., '.google.com', '.google.com.sg')
+
+    Returns:
+        True if domain is a valid Google domain.
+
+    Note:
+        Uses an explicit whitelist (GOOGLE_REGIONAL_CCTLDS) rather than regex
+        to prevent false positives from invalid or malicious domains.
+    """
+    # Base Google domain
+    if domain == ".google.com":
+        return True
+
+    # Check regional Google domains using whitelist
+    if domain.startswith(".google."):
+        suffix = domain[8:]  # Remove ".google." prefix
+        return suffix in GOOGLE_REGIONAL_CCTLDS
+
+    return False
+
+
+def _is_allowed_auth_domain(domain: str) -> bool:
+    """Check if a cookie domain is allowed for auth cookie extraction.
+
+    Includes exact matches against ALLOWED_COOKIE_DOMAINS plus regional
+    Google domains (e.g., .google.com.sg, .google.co.uk, .google.de) where
+    SID cookies may be set for users in those regions.
+
+    Args:
+        domain: Cookie domain to check (e.g., '.google.com', '.google.com.sg')
+
+    Returns:
+        True if domain is allowed for auth cookies.
+    """
+    # Exact match against primary allowlist (includes notebooklm.google.com, etc.)
+    if domain in ALLOWED_COOKIE_DOMAINS:
+        return True
+
+    # Check if it's a valid Google domain (base or regional)
+    return _is_google_domain(domain)
+
+
 def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str]:
     """Extract Google cookies from Playwright storage state for NotebookLM auth.
 
     Filters cookies to include those from .google.com, notebooklm.google.com,
-    and .googleusercontent.com domains. The googleusercontent.com cookies are
-    needed for authenticated media downloads.
+    .googleusercontent.com domains, and regional Google domains
+    (e.g., .google.com.sg, .google.com.au). The regional domains are needed
+    because Google sets SID cookies on country-specific domains for users
+    in those regions.
 
     Args:
         storage_state: Parsed JSON from Playwright's storage state file.
@@ -130,7 +273,7 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
 
     for cookie in storage_state.get("cookies", []):
         domain = cookie.get("domain", "")
-        if domain in ALLOWED_COOKIE_DOMAINS:
+        if _is_allowed_auth_domain(domain):
             name = cookie.get("name")
             if name:
                 cookies[name] = cookie.get("value", "")
@@ -305,10 +448,11 @@ def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
 def _is_allowed_cookie_domain(domain: str) -> bool:
     """Check if a cookie domain is allowed for downloads.
 
-    Uses suffix matching with leading dots to ensure proper subdomain validation.
-    The leading dot in suffixes (e.g., '.google.com') provides the boundary check:
-    - 'lh3.google.com' ends with '.google.com' → True (valid subdomain)
-    - 'evil-google.com' does NOT end with '.google.com' → False (not a subdomain)
+    Uses a combination of:
+    1. Exact matches against ALLOWED_COOKIE_DOMAINS
+    2. Valid Google domains (including regional like .google.com.sg, .google.co.uk)
+    3. Suffix matching for Google subdomains (lh3.google.com, etc.)
+    4. Suffix matching for googleusercontent.com domains
 
     Args:
         domain: Cookie domain to check (e.g., '.google.com', 'lh3.google.com')
@@ -320,15 +464,23 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     if domain in ALLOWED_COOKIE_DOMAINS:
         return True
 
+    # Check if it's a valid Google domain (base or regional)
+    # This handles .google.com, .google.com.sg, .google.co.uk, .google.de, etc.
+    if _is_google_domain(domain):
+        return True
+
     # Suffixes for allowed download domains (leading dot provides boundary check)
+    # - Subdomains of .google.com (e.g., lh3.google.com, accounts.google.com)
+    # - googleusercontent.com domains for media downloads
     allowed_suffixes = (
         ".google.com",
         ".googleusercontent.com",
         ".usercontent.google.com",
     )
 
-    # Check if domain matches or is a subdomain of allowed suffixes
-    return any(domain == suffix or domain.endswith(suffix) for suffix in allowed_suffixes)
+    # Check if domain is a subdomain of allowed suffixes
+    # The leading dot ensures 'evil-google.com' does NOT match
+    return any(domain.endswith(suffix) for suffix in allowed_suffixes)
 
 
 def load_httpx_cookies(path: Path | None = None) -> "httpx.Cookies":

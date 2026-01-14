@@ -680,3 +680,381 @@ class TestAllowedCookieDomains:
 
         assert ".google.com" in ALLOWED_COOKIE_DOMAINS
         assert "notebooklm.google.com" in ALLOWED_COOKIE_DOMAINS
+
+
+# =============================================================================
+# REGIONAL GOOGLE DOMAIN TESTS (Issue #20 fix)
+# =============================================================================
+
+
+class TestIsGoogleDomain:
+    """Test the unified _is_google_domain function (whitelist approach)."""
+
+    @pytest.mark.parametrize(
+        "domain,expected",
+        [
+            # Base Google domain
+            (".google.com", True),
+            # .google.com.XX pattern (country-code second-level domains)
+            (".google.com.sg", True),  # Singapore
+            (".google.com.au", True),  # Australia
+            (".google.com.br", True),  # Brazil
+            (".google.com.hk", True),  # Hong Kong
+            (".google.com.tw", True),  # Taiwan
+            (".google.com.mx", True),  # Mexico
+            (".google.com.ar", True),  # Argentina
+            (".google.com.tr", True),  # Turkey
+            (".google.com.ua", True),  # Ukraine
+            # .google.co.XX pattern (countries using .co)
+            (".google.co.uk", True),  # United Kingdom
+            (".google.co.jp", True),  # Japan
+            (".google.co.in", True),  # India
+            (".google.co.kr", True),  # South Korea
+            (".google.co.za", True),  # South Africa
+            (".google.co.nz", True),  # New Zealand
+            (".google.co.id", True),  # Indonesia
+            (".google.co.th", True),  # Thailand
+            # .google.XX pattern (single ccTLD)
+            (".google.de", True),  # Germany
+            (".google.fr", True),  # France
+            (".google.it", True),  # Italy
+            (".google.es", True),  # Spain
+            (".google.nl", True),  # Netherlands
+            (".google.pl", True),  # Poland
+            (".google.ru", True),  # Russia
+            (".google.ca", True),  # Canada
+            (".google.cat", True),  # Catalonia (3-letter special case)
+            # Invalid domains that should be rejected
+            (".google.zz", False),  # Invalid ccTLD
+            (".google.xyz", False),  # Not in whitelist
+            (".google.com.fake", False),  # Not in whitelist
+            (".notgoogle.com", False),
+            (".evil-google.com", False),
+            ("google.com", False),  # Missing leading dot
+            ("google.com.sg", False),  # Missing leading dot
+            (".youtube.com", False),
+            (".google.", False),  # Incomplete
+            ("", False),  # Empty
+        ],
+    )
+    def test_is_google_domain(self, domain, expected):
+        """Test _is_google_domain with various domain patterns."""
+        from notebooklm.auth import _is_google_domain
+
+        assert _is_google_domain(domain) is expected
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            # Case sensitivity - cookie domains per RFC should be lowercase
+            ".GOOGLE.COM",
+            ".Google.Com",
+            ".google.COM.SG",
+            ".GOOGLE.CO.UK",
+            ".GOOGLE.DE",
+        ],
+    )
+    def test_rejects_uppercase_domains(self, domain):
+        """Test that uppercase domains are rejected (case-sensitive matching).
+
+        Per RFC 6265, cookie domains SHOULD be lowercase. Playwright and browsers
+        normalize domains to lowercase, so we don't need case-insensitive matching.
+        """
+        from notebooklm.auth import _is_google_domain
+
+        assert _is_google_domain(domain) is False
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            " .google.com",  # Leading space
+            ".google.com ",  # Trailing space
+            "\t.google.com",  # Tab
+            ".google.com\n",  # Newline
+        ],
+    )
+    def test_rejects_domains_with_whitespace(self, domain):
+        """Test that domains with whitespace are rejected."""
+        from notebooklm.auth import _is_google_domain
+
+        assert _is_google_domain(domain) is False
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            ".google..com",  # Double dot
+            "..google.com",  # Leading double dot
+            ".google.com.",  # Trailing dot
+        ],
+    )
+    def test_rejects_malformed_domains(self, domain):
+        """Test that malformed domains with extra dots are rejected."""
+        from notebooklm.auth import _is_google_domain
+
+        assert _is_google_domain(domain) is False
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            # Subdomains are not matched by _is_google_domain
+            "accounts.google.com",
+            "lh3.google.com",
+            "accounts.google.de",  # Subdomain of regional
+            "lh3.google.co.uk",  # Subdomain of regional
+            ".accounts.google.de",  # With leading dot
+        ],
+    )
+    def test_rejects_subdomains(self, domain):
+        """Test that subdomains are rejected by _is_google_domain.
+
+        _is_google_domain only matches domain-level cookies (with leading dot).
+        Subdomain matching is handled by _is_allowed_cookie_domain's suffix matching.
+        """
+        from notebooklm.auth import _is_google_domain
+
+        assert _is_google_domain(domain) is False
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            ".google.com.sg.fake",  # Extra suffix
+            ".fake.google.com.sg",  # Prefix on regional
+            ".google.com.sgx",  # Extended TLD
+            ".google.co.ukx",  # Extended co.XX
+            ".google.dex",  # Extended ccTLD
+        ],
+    )
+    def test_rejects_suffix_exploits(self, domain):
+        """Test that attempts to exploit suffix matching are rejected."""
+        from notebooklm.auth import _is_google_domain
+
+        assert _is_google_domain(domain) is False
+
+
+class TestIsAllowedAuthDomain:
+    """Test auth cookie domain validation including regional Google domains."""
+
+    def test_accepts_primary_google_domains(self):
+        """Test accepts domains in ALLOWED_COOKIE_DOMAINS."""
+        from notebooklm.auth import _is_allowed_auth_domain
+
+        assert _is_allowed_auth_domain(".google.com") is True
+        assert _is_allowed_auth_domain("notebooklm.google.com") is True
+        assert _is_allowed_auth_domain(".googleusercontent.com") is True
+
+    def test_accepts_all_regional_patterns(self):
+        """Test accepts all three regional Google domain patterns (Issue #20)."""
+        from notebooklm.auth import _is_allowed_auth_domain
+
+        # .google.com.XX pattern
+        assert _is_allowed_auth_domain(".google.com.sg") is True  # Singapore
+        assert _is_allowed_auth_domain(".google.com.au") is True  # Australia
+
+        # .google.co.XX pattern
+        assert _is_allowed_auth_domain(".google.co.uk") is True  # UK
+        assert _is_allowed_auth_domain(".google.co.jp") is True  # Japan
+
+        # .google.XX pattern
+        assert _is_allowed_auth_domain(".google.de") is True  # Germany
+        assert _is_allowed_auth_domain(".google.fr") is True  # France
+
+    def test_rejects_unrelated_domains(self):
+        """Test rejects non-Google domains."""
+        from notebooklm.auth import _is_allowed_auth_domain
+
+        assert _is_allowed_auth_domain(".youtube.com") is False
+        assert _is_allowed_auth_domain("evil.com") is False
+        assert _is_allowed_auth_domain(".evil-google.com") is False
+
+    def test_rejects_malicious_google_lookalikes(self):
+        """Test rejects domains that look like Google but aren't."""
+        from notebooklm.auth import _is_allowed_auth_domain
+
+        assert _is_allowed_auth_domain("google.com.evil.sg") is False
+        assert _is_allowed_auth_domain(".not-google.com.sg") is False
+        assert _is_allowed_auth_domain(".google.zz") is False  # Invalid ccTLD
+
+    def test_requires_leading_dot_for_regional(self):
+        """Test regional domains must have leading dot."""
+        from notebooklm.auth import _is_allowed_auth_domain
+
+        assert _is_allowed_auth_domain("google.com.sg") is False
+        assert _is_allowed_auth_domain("google.co.uk") is False
+        assert _is_allowed_auth_domain("google.de") is False
+
+
+class TestIsAllowedCookieDomainRegional:
+    """Test _is_allowed_cookie_domain with regional Google domains."""
+
+    def test_accepts_regional_google_domains_for_downloads(self):
+        """Test that download cookie validation accepts regional domains."""
+        from notebooklm.auth import _is_allowed_cookie_domain
+
+        # .google.com.XX pattern
+        assert _is_allowed_cookie_domain(".google.com.sg") is True
+        assert _is_allowed_cookie_domain(".google.com.au") is True
+
+        # .google.co.XX pattern
+        assert _is_allowed_cookie_domain(".google.co.uk") is True
+        assert _is_allowed_cookie_domain(".google.co.jp") is True
+
+        # .google.XX pattern
+        assert _is_allowed_cookie_domain(".google.de") is True
+        assert _is_allowed_cookie_domain(".google.fr") is True
+
+    def test_still_accepts_subdomains(self):
+        """Test that subdomain suffix matching still works."""
+        from notebooklm.auth import _is_allowed_cookie_domain
+
+        assert _is_allowed_cookie_domain("lh3.google.com") is True
+        assert _is_allowed_cookie_domain("accounts.google.com") is True
+        assert _is_allowed_cookie_domain("lh3.googleusercontent.com") is True
+
+    def test_rejects_invalid_domains(self):
+        """Test rejects invalid domains."""
+        from notebooklm.auth import _is_allowed_cookie_domain
+
+        assert _is_allowed_cookie_domain(".google.zz") is False
+        assert _is_allowed_cookie_domain("evil-google.com") is False
+        assert _is_allowed_cookie_domain(".youtube.com") is False
+
+
+class TestExtractCookiesRegionalDomains:
+    """Test cookie extraction from regional Google domains (Issue #20)."""
+
+    def test_extracts_sid_from_regional_domain(self):
+        """Test extracts SID cookie from regional Google domain like .google.com.sg."""
+        storage_state = {
+            "cookies": [
+                # SID on regional domain (the bug scenario from Issue #20)
+                {"name": "SID", "value": "sid_from_singapore", "domain": ".google.com.sg"},
+                {"name": "OSID", "value": "osid_value", "domain": "notebooklm.google.com"},
+            ]
+        }
+
+        cookies = extract_cookies_from_storage(storage_state)
+
+        assert cookies["SID"] == "sid_from_singapore"
+        assert cookies["OSID"] == "osid_value"
+
+    def test_extracts_sid_from_all_regional_patterns(self):
+        """Test extracts SID from all three regional domain patterns."""
+        # Test .google.com.XX
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_sg", "domain": ".google.com.sg"},
+            ]
+        }
+        cookies = extract_cookies_from_storage(storage_state)
+        assert cookies["SID"] == "sid_sg"
+
+        # Test .google.co.XX
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_uk", "domain": ".google.co.uk"},
+            ]
+        }
+        cookies = extract_cookies_from_storage(storage_state)
+        assert cookies["SID"] == "sid_uk"
+
+        # Test .google.XX
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_de", "domain": ".google.de"},
+            ]
+        }
+        cookies = extract_cookies_from_storage(storage_state)
+        assert cookies["SID"] == "sid_de"
+
+    def test_extracts_multiple_regional_cookies(self):
+        """Test extracts cookies from multiple regional domains."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_au", "domain": ".google.com.au"},
+                {"name": "HSID", "value": "hsid_jp", "domain": ".google.co.jp"},
+                {"name": "SSID", "value": "ssid_de", "domain": ".google.de"},
+            ]
+        }
+
+        cookies = extract_cookies_from_storage(storage_state)
+
+        assert cookies["SID"] == "sid_au"
+        assert cookies["HSID"] == "hsid_jp"
+        assert cookies["SSID"] == "ssid_de"
+
+    def test_prefers_primary_domain_over_regional(self):
+        """Test that if same cookie exists on both domains, both are captured."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_global", "domain": ".google.com"},
+                {"name": "SID", "value": "sid_regional", "domain": ".google.com.sg"},
+            ]
+        }
+
+        cookies = extract_cookies_from_storage(storage_state)
+
+        # Both are processed; last one wins (dict behavior)
+        assert cookies["SID"] in ["sid_global", "sid_regional"]
+
+    def test_rejects_youtube_sid_but_accepts_regional_sid(self):
+        """Test rejects SID from youtube but accepts from regional Google domain."""
+        storage_state = {
+            "cookies": [
+                # YouTube SID should be rejected (not a Google auth domain)
+                {"name": "SID", "value": "youtube_sid", "domain": ".youtube.com"},
+            ]
+        }
+
+        # Should fail because no valid SID from allowed domain
+        with pytest.raises(ValueError, match="Missing required cookies"):
+            extract_cookies_from_storage(storage_state)
+
+        # But if we add a regional Google SID, it should work
+        storage_state["cookies"].append(
+            {"name": "SID", "value": "regional_sid", "domain": ".google.com.sg"}
+        )
+        cookies = extract_cookies_from_storage(storage_state)
+        assert cookies["SID"] == "regional_sid"
+
+
+class TestLoadHttpxCookiesRegional:
+    """Test load_httpx_cookies with regional Google domains."""
+
+    def test_loads_cookies_from_regional_domain(self):
+        """Test loading httpx cookies from regional Google domain."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_from_uk", "domain": ".google.co.uk"},
+                {"name": "HSID", "value": "hsid_val", "domain": ".google.co.uk"},
+            ]
+        }
+
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(storage_state, f)
+            temp_path = Path(f.name)
+
+        try:
+            cookies = load_httpx_cookies(path=temp_path)
+            assert cookies.get("SID", domain=".google.co.uk") == "sid_from_uk"
+        finally:
+            temp_path.unlink()
+
+    def test_loads_cookies_from_all_regional_patterns(self, tmp_path):
+        """Test loading httpx cookies from all regional patterns."""
+        import json
+
+        # Test with .google.de (single ccTLD)
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_de", "domain": ".google.de"},
+            ]
+        }
+        storage_file = tmp_path / "storage.json"
+        storage_file.write_text(json.dumps(storage_state))
+
+        cookies = load_httpx_cookies(path=storage_file)
+        assert cookies.get("SID", domain=".google.de") == "sid_de"
