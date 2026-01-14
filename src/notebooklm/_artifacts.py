@@ -37,6 +37,16 @@ from .types import Artifact, GenerationStatus, ReportSuggestion
 
 logger = logging.getLogger(__name__)
 
+# Media artifact types that require URL availability before reporting completion
+_MEDIA_ARTIFACT_TYPES = frozenset(
+    {
+        StudioContentType.AUDIO.value,
+        StudioContentType.VIDEO.value,
+        StudioContentType.INFOGRAPHIC.value,
+        StudioContentType.SLIDE_DECK.value,
+    }
+)
+
 if TYPE_CHECKING:
     from ._notes import NotesAPI
 
@@ -1590,13 +1600,7 @@ class ArtifactsAPI:
             # Defensive: if structure is unexpected, be conservative for media types
             # Media types need URLs, so return False to continue polling
             # Non-media types only need status code, so return True
-            media_types = {
-                StudioContentType.AUDIO.value,
-                StudioContentType.VIDEO.value,
-                StudioContentType.INFOGRAPHIC.value,
-                StudioContentType.SLIDE_DECK.value,
-            }
-            is_media = artifact_type in media_types
+            is_media = artifact_type in _MEDIA_ARTIFACT_TYPES
             logger.debug(
                 "Unexpected artifact structure for type %s (media=%s): %s",
                 artifact_type,
