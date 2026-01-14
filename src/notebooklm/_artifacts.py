@@ -1215,6 +1215,9 @@ class ArtifactsAPI:
         if not completed:
             raise ValueError(f"No completed {type_label} found.")
 
+        # Sort by creation date to ensure we get the latest by default
+        completed.sort(key=lambda a: a.created_at.timestamp() if a.created_at else 0, reverse=True)
+
         # Select artifact
         if artifact_id:
             artifact = next((a for a in completed if a.id == artifact_id), None)

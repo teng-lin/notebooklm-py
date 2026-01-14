@@ -354,6 +354,88 @@ class TestArtifactsDownloadAPI:
                     pytest.skip("No completed data table artifact available")
                 raise
 
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_quiz.yaml")
+    async def test_download_quiz(self, tmp_path):
+        """Download a quiz as JSON."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "quiz.json"
+            try:
+                path = await client.artifacts.download_quiz(READONLY_NOTEBOOK_ID, str(output_path))
+                assert os.path.exists(path)
+                data = json.loads(output_path.read_text(encoding="utf-8"))
+                assert "title" in data
+                assert "questions" in data
+            except ValueError as e:
+                if "No completed quiz" in str(e):
+                    pytest.skip("No completed quiz artifact available")
+                raise
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_quiz_markdown.yaml")
+    async def test_download_quiz_markdown(self, tmp_path):
+        """Download a quiz as markdown."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "quiz.md"
+            try:
+                path = await client.artifacts.download_quiz(
+                    READONLY_NOTEBOOK_ID, str(output_path), output_format="markdown"
+                )
+                assert os.path.exists(path)
+                content = output_path.read_text(encoding="utf-8")
+                assert "# " in content  # Should have a heading
+                assert "Question" in content or "##" in content
+            except ValueError as e:
+                if "No completed quiz" in str(e):
+                    pytest.skip("No completed quiz artifact available")
+                raise
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_flashcards.yaml")
+    async def test_download_flashcards(self, tmp_path):
+        """Download flashcards as JSON."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "flashcards.json"
+            try:
+                path = await client.artifacts.download_flashcards(
+                    READONLY_NOTEBOOK_ID, str(output_path)
+                )
+                assert os.path.exists(path)
+                data = json.loads(output_path.read_text(encoding="utf-8"))
+                assert "title" in data
+                assert "cards" in data
+                # Verify normalized format (front/back, not f/b)
+                if data["cards"]:
+                    assert "front" in data["cards"][0]
+                    assert "back" in data["cards"][0]
+            except ValueError as e:
+                if "No completed flashcard" in str(e):
+                    pytest.skip("No completed flashcard artifact available")
+                raise
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_flashcards_markdown.yaml")
+    async def test_download_flashcards_markdown(self, tmp_path):
+        """Download flashcards as markdown."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "flashcards.md"
+            try:
+                path = await client.artifacts.download_flashcards(
+                    READONLY_NOTEBOOK_ID, str(output_path), output_format="markdown"
+                )
+                assert os.path.exists(path)
+                content = output_path.read_text(encoding="utf-8")
+                assert "# " in content  # Should have a heading
+                assert "**Q:**" in content or "Card" in content
+            except ValueError as e:
+                if "No completed flashcard" in str(e):
+                    pytest.skip("No completed flashcard artifact available")
+                raise
+
 
 # =============================================================================
 # Artifacts API - Generation Operations (use mutable notebook)
