@@ -273,7 +273,10 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         if _is_allowed_auth_domain(domain):
             name = cookie.get("name")
             if name:
-                cookies[name] = cookie.get("value", "")
+                # Prioritize .google.com cookies over regional domains (e.g., .google.de)
+                # to prevent wrong cookie values when the same name exists in multiple domains
+                if name not in cookies or domain == ".google.com":
+                    cookies[name] = cookie.get("value", "")
 
     missing = MINIMUM_REQUIRED_COOKIES - set(cookies.keys())
     if missing:
