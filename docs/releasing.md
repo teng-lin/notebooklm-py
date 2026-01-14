@@ -1,0 +1,192 @@
+# Release Checklist
+
+**Status:** Active
+**Last Updated:** 2026-01-14
+
+Checklist for releasing a new version of `notebooklm-py`.
+
+> **For Claude Code:** When asked to prepare a release, follow this checklist step by step. Complete each checkbox before moving to the next. Ask the user to confirm before pushing or tagging.
+
+---
+
+## Pre-Release
+
+### Documentation
+
+- [ ] Verify README.md reflects current features
+- [ ] Check CLI reference matches `notebooklm --help` output
+- [ ] Verify Python API docs match public exports in `__init__.py`
+- [ ] Update `Last Updated` dates in modified docs
+- [ ] Test example scripts in `docs/examples/` still work:
+  ```bash
+  python docs/examples/basic-usage.py --help
+  ```
+
+### Version Bump
+
+- [ ] Determine version bump type:
+  - **PATCH** (0.1.0 → 0.1.1): Bug fixes, RPC method ID updates
+  - **MINOR** (0.1.0 → 0.2.0): New features (backward compatible)
+  - **MAJOR** (0.1.0 → 1.0.0): Breaking API changes
+- [ ] Update version in `pyproject.toml`:
+  ```toml
+  version = "X.Y.Z"
+  ```
+
+### Changelog
+
+- [ ] Get commits since last release:
+  ```bash
+  git log $(git describe --tags --abbrev=0)..HEAD --oneline
+  ```
+- [ ] Generate changelog entries in Keep a Changelog format:
+  - **Added** - New features
+  - **Fixed** - Bug fixes
+  - **Changed** - Changes in existing functionality
+  - **Deprecated** - Soon-to-be removed features
+  - **Removed** - Removed features
+  - **Security** - Security fixes
+- [ ] Add entries under `## [Unreleased]` in `CHANGELOG.md`
+- [ ] Move `[Unreleased]` content to new version section:
+  ```markdown
+  ## [Unreleased]
+
+  ## [X.Y.Z] - YYYY-MM-DD
+  ```
+- [ ] Update comparison links at bottom of `CHANGELOG.md`:
+  ```markdown
+  [Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/vX.Y.Z...HEAD
+  [X.Y.Z]: https://github.com/teng-lin/notebooklm-py/compare/vPREV...vX.Y.Z
+  ```
+
+### Commit
+
+- [ ] Verify changes:
+  ```bash
+  git diff
+  ```
+- [ ] Commit:
+  ```bash
+  git add pyproject.toml CHANGELOG.md
+  git commit -m "chore: release vX.Y.Z"
+  ```
+
+---
+
+## CI Verification
+
+### Push to Main
+
+- [ ] Push to main:
+  ```bash
+  git push origin main
+  ```
+- [ ] Wait for **test.yml** to pass:
+  - Linting and formatting
+  - Type checking
+  - Unit and integration tests (Python 3.10-3.14, all platforms)
+
+### E2E Tests on Main
+
+- [ ] Go to **Actions** → **Nightly E2E**
+- [ ] Click **Run workflow**, select `main` branch
+- [ ] Wait for E2E tests to pass
+
+---
+
+## Package Verification
+
+### TestPyPI
+
+- [ ] Go to **Actions** → **Verify Package**
+- [ ] Click **Run workflow** with:
+  - **source**: `testpypi`
+  - **upload_first**: `true`
+- [ ] Wait for workflow to complete:
+  - Uploads to TestPyPI
+  - Installs in fresh environment
+  - Runs unit, integration, and E2E tests
+
+---
+
+## Release
+
+### Tag and Publish
+
+- [ ] Create tag:
+  ```bash
+  git tag vX.Y.Z
+  ```
+- [ ] Push tag:
+  ```bash
+  git push origin vX.Y.Z
+  ```
+- [ ] Wait for **publish.yml** to complete
+- [ ] Verify on PyPI: https://pypi.org/project/notebooklm-py/
+
+### PyPI Verification
+
+- [ ] Go to **Actions** → **Verify Package**
+- [ ] Click **Run workflow** with:
+  - **source**: `pypi`
+- [ ] Wait for all tests to pass
+
+### GitHub Release (Optional)
+
+- [ ] Go to **Releases** → **Draft a new release**
+- [ ] Select tag `vX.Y.Z`
+- [ ] Title: `vX.Y.Z`
+- [ ] Copy release notes from `CHANGELOG.md`
+- [ ] Publish release
+
+---
+
+## Troubleshooting
+
+### CI fails after push
+
+```bash
+# Fix locally, then amend
+git add -A
+git commit --amend --no-edit
+git push --force origin main
+```
+
+### Need to abort after commit
+
+```bash
+# Undo release commit
+git reset --hard HEAD~1
+
+# If already pushed
+git push --force origin main
+```
+
+### Tag already exists
+
+```bash
+# Delete local tag
+git tag -d vX.Y.Z
+
+# Delete remote tag (if pushed)
+git push origin :refs/tags/vX.Y.Z
+```
+
+### TestPyPI upload fails
+
+- Check if version already exists on TestPyPI
+- TestPyPI doesn't allow re-uploading same version
+- Bump to next patch version if needed
+
+---
+
+## Version Numbering
+
+| Change Type | Bump | Example |
+|-------------|------|---------|
+| RPC method ID fixes | PATCH | 0.1.0 → 0.1.1 |
+| Bug fixes | PATCH | 0.1.1 → 0.1.2 |
+| New features | MINOR | 0.1.2 → 0.2.0 |
+| Breaking changes | MAJOR | 0.2.0 → 1.0.0 |
+
+See [stability.md](stability.md) for full versioning policy.

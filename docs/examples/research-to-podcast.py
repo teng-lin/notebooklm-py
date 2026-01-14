@@ -17,6 +17,7 @@ Usage:
 
 import asyncio
 import sys
+
 from notebooklm import NotebookLMClient
 
 
@@ -41,7 +42,7 @@ async def main(topic: str):
         for i in range(max_polls):
             status = await client.research.poll(nb.id)
             state = status.get("status", "unknown")
-            print(f"  Poll {i+1}/{max_polls}: {state}")
+            print(f"  Poll {i + 1}/{max_polls}: {state}")
 
             if state == "completed":
                 sources = status.get("sources", [])
@@ -62,20 +63,15 @@ async def main(topic: str):
         # 5. Generate podcast
         print("Generating podcast...")
         gen_status = await client.artifacts.generate_audio(
-            nb.id,
-            instructions=f"Create an engaging overview of {topic}"
+            nb.id, instructions=f"Create an engaging overview of {topic}"
         )
 
         print("Waiting for audio generation...")
-        final = await client.artifacts.wait_for_completion(
-            nb.id,
-            gen_status.task_id,
-            timeout=600
-        )
+        final = await client.artifacts.wait_for_completion(nb.id, gen_status.task_id, timeout=600)
 
         if final.is_complete:
             print(f"\n  Success! Audio URL: {final.url}")
-            print(f"\n  Use 'notebooklm download audio' to save the file")
+            print("\n  Use 'notebooklm download audio' to save the file")
         else:
             print(f"\n  Generation ended with status: {final.status}")
 

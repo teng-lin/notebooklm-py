@@ -16,6 +16,7 @@ Prerequisites:
 
 import asyncio
 import json
+
 from notebooklm import NotebookLMClient, ReportFormat
 
 
@@ -23,7 +24,6 @@ async def main():
     """Demonstrate notes and mind map functionality."""
 
     async with await NotebookLMClient.from_storage() as client:
-
         # Create a notebook for our examples
         print("Creating notebook...")
         notebook = await client.notebooks.create("Study Notes Demo")
@@ -51,10 +51,10 @@ async def main():
             notebook.id,
             title="Key Concepts",
             content="# Data Structures Overview\n\n"
-                    "- Arrays: Sequential memory storage\n"
-                    "- Linked Lists: Node-based storage\n"
-                    "- Trees: Hierarchical organization\n"
-                    "- Hash Tables: Key-value mapping",
+            "- Arrays: Sequential memory storage\n"
+            "- Linked Lists: Node-based storage\n"
+            "- Trees: Hierarchical organization\n"
+            "- Hash Tables: Key-value mapping",
         )
         print(f"Created note: {note1.title} (ID: {note1.id})")
 
@@ -63,8 +63,8 @@ async def main():
             notebook.id,
             title="Study Questions",
             content="1. What is time complexity?\n"
-                    "2. When to use arrays vs linked lists?\n"
-                    "3. How do hash collisions work?",
+            "2. When to use arrays vs linked lists?\n"
+            "3. How do hash collisions work?",
         )
         print(f"Created note: {note2.title} (ID: {note2.id})")
 
@@ -79,12 +79,12 @@ async def main():
             notebook.id,
             note1.id,
             content="# Data Structures Overview (Updated)\n\n"
-                    "## Linear Structures\n"
-                    "- Arrays: O(1) access, O(n) insertion\n"
-                    "- Linked Lists: O(n) access, O(1) insertion\n\n"
-                    "## Non-Linear Structures\n"
-                    "- Trees: Hierarchical, O(log n) search\n"
-                    "- Graphs: Network relationships",
+            "## Linear Structures\n"
+            "- Arrays: O(1) access, O(n) insertion\n"
+            "- Linked Lists: O(n) access, O(1) insertion\n\n"
+            "## Non-Linear Structures\n"
+            "- Trees: Hierarchical, O(log n) search\n"
+            "- Graphs: Network relationships",
             title="Key Concepts (Revised)",
         )
         print(f"Updated note: {note1.id}")
@@ -199,7 +199,7 @@ async def main():
 
         print("\n--- Generating Quiz ---")
 
-        from notebooklm import QuizQuantity, QuizDifficulty
+        from notebooklm import QuizDifficulty, QuizQuantity
 
         quiz_gen = await client.artifacts.generate_quiz(
             notebook.id,
@@ -243,6 +243,7 @@ async def main():
 
         # Categorize by type
         from notebooklm.rpc import StudioContentType
+
         type_counts = {}
         for art in all_artifacts:
             type_name = StudioContentType(art.artifact_type).name

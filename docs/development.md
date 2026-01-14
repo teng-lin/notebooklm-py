@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-01-13
+**Last Updated:** 2026-01-14
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -47,12 +47,12 @@ src/notebooklm/
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         CLI Layer                           │
-│   cli/session.py, cli/notebook.py, cli/generate.py, etc.   │
+│   cli/session.py, cli/notebook.py, cli/generate.py, etc.    │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
 │                      Client Layer                           │
-│  NotebookLMClient → NotebooksAPI, SourcesAPI, ArtifactsAPI │
+│  NotebookLMClient → NotebooksAPI, SourcesAPI, ArtifactsAPI  │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -187,58 +187,22 @@ Need network?
 
 ## Releasing
 
-### Pre-release Checklist
+See **[releasing.md](releasing.md)** for the complete release checklist.
 
-- [ ] All tests pass: `pytest`
-- [ ] E2E readonly tests pass: `pytest tests/e2e -m readonly`
-- [ ] No uncommitted changes: `git status`
-- [ ] On `main` branch with latest changes
-- [ ] Version updated in `src/notebooklm/__init__.py`
-- [ ] CHANGELOG.md updated
+### Quick Reference
 
-### Release Steps
+1. Validate documentation is up to date
+2. Update version in `pyproject.toml`
+3. Generate changelog entries and update `CHANGELOG.md`
+4. Commit and push to main
+5. Wait for CI + trigger E2E on main
+6. Verify on TestPyPI (verify-package workflow)
+7. Tag and push → publishes to PyPI
+8. Verify on PyPI (verify-package workflow)
 
-1. **Update version** in `src/notebooklm/__init__.py`:
-   ```python
-   __version__ = "X.Y.Z"
-   ```
+### Version Source of Truth
 
-2. **Update CHANGELOG.md** with release notes
-
-3. **Commit and push:**
-   ```bash
-   git add -A
-   git commit -m "chore: release vX.Y.Z"
-   git push
-   ```
-
-4. **Test on TestPyPI:**
-   ```bash
-   python -m build
-   twine upload --repository testpypi dist/*
-   pip install --index-url https://test.pypi.org/simple/ \
-       --extra-index-url https://pypi.org/simple notebooklm-py
-   notebooklm --version
-   ```
-
-5. **Create release tag:**
-   ```bash
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-
-   This triggers GitHub Actions to publish to PyPI automatically.
-
-### Versioning Policy
-
-| Change Type | Bump | Example |
-|-------------|------|---------|
-| RPC method ID fixes | PATCH | 0.1.0 → 0.1.1 |
-| Bug fixes | PATCH | 0.1.1 → 0.1.2 |
-| New features (backward compatible) | MINOR | 0.1.2 → 0.2.0 |
-| Breaking API changes | MAJOR | 0.2.0 → 1.0.0 |
-
-See [stability.md](stability.md) for full versioning policy.
+Version is defined in `pyproject.toml`. The `__version__` in `__init__.py` is dynamically read using `importlib.metadata`.
 
 ---
 
@@ -250,6 +214,7 @@ See [stability.md](stability.md) for full versioning policy.
 |----------|---------|---------|
 | `test.yml` | Push/PR | Unit tests, linting, type checking |
 | `nightly.yml` | Daily 6 AM UTC | E2E tests with real API |
+| `verify-package.yml` | Manual dispatch | Verify TestPyPI or PyPI install + E2E |
 | `publish.yml` | Tag push | Publish to PyPI |
 
 ### Setting Up Nightly E2E Tests

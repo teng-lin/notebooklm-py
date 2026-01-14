@@ -12,14 +12,14 @@ Prerequisites:
 """
 
 import asyncio
-from notebooklm import NotebookLMClient, ChatMode, ChatGoal, ChatResponseLength
+
+from notebooklm import ChatGoal, ChatMode, ChatResponseLength, NotebookLMClient
 
 
 async def main():
     """Demonstrate chat and conversation features."""
 
     async with await NotebookLMClient.from_storage() as client:
-
         # Create a notebook with some content
         print("Setting up notebook with sources...")
         notebook = await client.notebooks.create("Python Learning")
@@ -47,7 +47,7 @@ async def main():
             "What are the main features of Python?",
         )
 
-        print(f"Question: What are the main features of Python?")
+        print("Question: What are the main features of Python?")
         print(f"Answer: {result.answer[:500]}...")
         print(f"Conversation ID: {result.conversation_id}")
         print(f"Turn number: {result.turn_number}")
@@ -66,7 +66,7 @@ async def main():
             conversation_id=result.conversation_id,  # Continue the conversation
         )
 
-        print(f"Follow-up: How does it compare to other programming languages?")
+        print("Follow-up: How does it compare to other programming languages?")
         print(f"Answer: {followup.answer[:500]}...")
         print(f"Is follow-up: {followup.is_follow_up}")
         print(f"Turn number: {followup.turn_number}")
@@ -78,7 +78,7 @@ async def main():
             conversation_id=result.conversation_id,
         )
 
-        print(f"\nFollow-up 2: What about for data science specifically?")
+        print("\nFollow-up 2: What about for data science specifically?")
         print(f"Answer: {followup2.answer[:400]}...")
 
         # =====================================================================
@@ -143,8 +143,8 @@ async def main():
             goal=ChatGoal.CUSTOM,
             response_length=ChatResponseLength.DEFAULT,
             custom_prompt="You are an experienced Python developer. "
-                          "Explain concepts with practical code examples. "
-                          "Focus on best practices and real-world usage.",
+            "Explain concepts with practical code examples. "
+            "Focus on best practices and real-world usage.",
         )
 
         custom_result = await client.chat.ask(

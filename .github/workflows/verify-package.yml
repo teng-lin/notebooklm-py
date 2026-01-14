@@ -1,0 +1,142 @@
+name: Verify Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Package source'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+          - testpypi
+          - pypi
+      upload_first:
+        description: 'Upload to TestPyPI before verifying (only for testpypi source)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  upload:
+    name: Upload to TestPyPI
+    if: inputs.source == 'testpypi' && inputs.upload_first
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install build
+
+    - name: Build package
+      run: python -m build
+
+    - name: Upload to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+
+    - name: Wait for TestPyPI to index
+      run: sleep 60
+
+  verify:
+    name: Verify from ${{ inputs.source }}
+    needs: [upload]
+    if: always() && (needs.upload.result == 'success' || needs.upload.result == 'skipped')
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Get version from pyproject.toml
+      id: version
+      run: |
+        VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Create verification venv
+      run: python -m venv verify-venv
+
+    - name: Install from TestPyPI
+      if: inputs.source == 'testpypi'
+      run: |
+        source verify-venv/bin/activate
+        pip install --index-url https://test.pypi.org/simple/ \
+          --extra-index-url https://pypi.org/simple/ \
+          notebooklm-py==${{ steps.version.outputs.version }}
+
+    - name: Install from PyPI
+      if: inputs.source == 'pypi'
+      run: |
+        source verify-venv/bin/activate
+        pip install notebooklm-py==${{ steps.version.outputs.version }}
+
+    - name: Verify version
+      run: |
+        source verify-venv/bin/activate
+        INSTALLED=$(python -c "from notebooklm import __version__; print(__version__)")
+        EXPECTED="${{ steps.version.outputs.version }}"
+        if [ "$INSTALLED" != "$EXPECTED" ]; then
+          echo "Version mismatch: installed=$INSTALLED expected=$EXPECTED"
+          exit 1
+        fi
+        echo "Version verified: $INSTALLED"
+
+    - name: Verify CLI
+      run: |
+        source verify-venv/bin/activate
+        notebooklm --version
+        notebooklm --help
+
+    - name: Verify imports
+      run: |
+        source verify-venv/bin/activate
+        python -c "from notebooklm import NotebookLMClient, Notebook, Source, Artifact"
+        echo "Core imports verified"
+
+    - name: Install test dependencies
+      run: |
+        source verify-venv/bin/activate
+        pip install pytest pytest-asyncio pytest-httpx pytest-cov pytest-rerunfailures python-dotenv vcrpy
+
+    - name: Install Playwright
+      run: |
+        source verify-venv/bin/activate
+        pip install playwright
+        playwright install chromium
+        playwright install-deps
+
+    - name: Run unit tests
+      run: |
+        source verify-venv/bin/activate
+        pytest tests/unit -v
+
+    - name: Run integration tests
+      run: |
+        source verify-venv/bin/activate
+        pytest tests/integration -v
+
+    - name: Run E2E tests
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      run: |
+        source verify-venv/bin/activate
+        pytest tests/e2e -m "not variants" --reruns 2 -v

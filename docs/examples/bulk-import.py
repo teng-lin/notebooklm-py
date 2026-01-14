@@ -16,9 +16,8 @@ Usage:
 """
 
 import asyncio
-from pathlib import Path
-from notebooklm import NotebookLMClient
 
+from notebooklm import NotebookLMClient
 
 # Example sources to import
 SOURCES = {
@@ -80,9 +79,7 @@ async def main():
         print("\nImporting text content...")
         for item in SOURCES["text"]:
             try:
-                source = await client.sources.add_text(
-                    nb.id, item["title"], item["content"]
-                )
+                source = await client.sources.add_text(nb.id, item["title"], item["content"])
                 results["success"].append(f"Text: {source.title}")
                 print(f"  + {source.title}")
             except Exception as e:
@@ -91,7 +88,7 @@ async def main():
 
         # 5. Report results
         print("\n" + "=" * 40)
-        print(f"Import complete!")
+        print("Import complete!")
         print(f"  Successful: {len(results['success'])}")
         print(f"  Failed: {len(results['failed'])}")
 
