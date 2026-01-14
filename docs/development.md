@@ -160,7 +160,7 @@ NotebookLM has undocumented rate limits. Generation tests may be skipped when ra
 Record HTTP interactions for offline/deterministic replay:
 
 ```bash
-# Record cassettes (not committed to repo)
+# Record new cassettes (committed to repo with sensitive data scrubbed)
 NOTEBOOKLM_VCR_RECORD=1 pytest tests/integration/test_vcr_*.py -v
 
 # Run with recorded responses
