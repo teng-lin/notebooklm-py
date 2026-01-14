@@ -67,3 +67,62 @@ class TestYouTubeVideoIdExtraction:
 
         url = "https://youtu.be/abc-123_XYZ"
         assert client.sources._extract_youtube_video_id(url) == "abc-123_XYZ"
+
+    def test_query_param_order_independence(self, client):
+        """Test that v= parameter is found regardless of position in query string.
+
+        This was a bug where ?si=...&v=... failed because the regex expected
+        v= to be the first query parameter.
+        """
+        # v= is second param (common when copied from YouTube share)
+        url = "https://www.youtube.com/watch?si=abc123&v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+        # Multiple params with v= in middle
+        url = "https://www.youtube.com/watch?list=PLabc&v=dQw4w9WgXcQ&t=123"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_mobile_subdomain(self, client):
+        """Test m.youtube.com mobile URLs."""
+        url = "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_music_subdomain(self, client):
+        """Test music.youtube.com URLs."""
+        url = "https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_embed_url(self, client):
+        """Test YouTube embed URLs."""
+        url = "https://www.youtube.com/embed/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_live_url(self, client):
+        """Test YouTube live stream URLs."""
+        url = "https://www.youtube.com/live/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_legacy_v_url(self, client):
+        """Test legacy /v/ format URLs."""
+        url = "https://www.youtube.com/v/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_trailing_whitespace(self, client):
+        """Test URLs with trailing whitespace are handled correctly.
+
+        This was a bug where trailing whitespace in the video ID caused
+        validation to fail.
+        """
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ  "
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+        url = "  https://youtu.be/dQw4w9WgXcQ  "
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_youtu_be_with_params(self, client):
+        """Test youtu.be short URLs with query parameters."""
+        url = "https://youtu.be/dQw4w9WgXcQ?t=120"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+        url = "https://youtu.be/dQw4w9WgXcQ?si=abc123"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"

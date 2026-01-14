@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -308,6 +309,14 @@ class SourcesAPI:
         if video_id:
             result = await self._add_youtube_source(notebook_id, url)
         else:
+            # Warn if URL looks like YouTube but we couldn't extract video ID
+            if is_youtube_url(url):
+                logger.warning(
+                    "URL appears to be YouTube but no video ID found: %s. "
+                    "Adding as web page - content may be incomplete. "
+                    "If this is a video URL, please report this as a bug.",
+                    url[:100],
+                )
             result = await self._add_url_source(notebook_id, url)
         if result is None:
             raise ValueError(f"Failed to add URL source: API returned no data for {url}")
@@ -717,20 +726,94 @@ class SourcesAPI:
         return texts
 
     def _extract_youtube_video_id(self, url: str) -> str | None:
-        """Extract YouTube video ID from various URL formats."""
-        # Short URLs: youtu.be/VIDEO_ID
-        match = re.match(r"https?://youtu\.be/([a-zA-Z0-9_-]+)", url)
-        if match:
-            return match.group(1)
-        # Standard watch URLs: youtube.com/watch?v=VIDEO_ID
-        match = re.match(r"https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)", url)
-        if match:
-            return match.group(1)
-        # Shorts URLs: youtube.com/shorts/VIDEO_ID
-        match = re.match(r"https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]+)", url)
-        if match:
-            return match.group(1)
-        return None
+        """Extract YouTube video ID from various URL formats.
+
+        Handles all common YouTube URL formats:
+        - Standard: youtube.com/watch?v=VIDEO_ID (any query param order)
+        - Short: youtu.be/VIDEO_ID
+        - Shorts: youtube.com/shorts/VIDEO_ID
+        - Embed: youtube.com/embed/VIDEO_ID
+        - Live: youtube.com/live/VIDEO_ID
+        - Legacy: youtube.com/v/VIDEO_ID
+        - Mobile: m.youtube.com/watch?v=VIDEO_ID
+        - Music: music.youtube.com/watch?v=VIDEO_ID
+
+        Args:
+            url: The URL to parse.
+
+        Returns:
+            The video ID if found and valid, None otherwise.
+        """
+        try:
+            parsed = urlparse(url.strip())
+            hostname = (parsed.hostname or "").lower()
+
+            # Check if this is a YouTube domain
+            youtube_domains = {
+                "youtube.com",
+                "www.youtube.com",
+                "m.youtube.com",
+                "music.youtube.com",
+                "youtu.be",
+            }
+
+            if hostname not in youtube_domains:
+                return None
+
+            video_id: str | None = None
+
+            # youtu.be short URLs: youtu.be/VIDEO_ID
+            if hostname == "youtu.be":
+                path = parsed.path.lstrip("/")
+                if path:
+                    # Take only the first path segment (before any /)
+                    video_id = path.split("/")[0].strip()
+            else:
+                # youtube.com URLs
+                path = parsed.path.lower()
+
+                # Path-based video IDs: /shorts/, /embed/, /live/, /v/
+                path_patterns = ["/shorts/", "/embed/", "/live/", "/v/"]
+                for pattern in path_patterns:
+                    if pattern in path:
+                        # Extract video ID after the pattern
+                        idx = parsed.path.find(pattern.rstrip("/").lstrip("/"))
+                        if idx != -1:
+                            remainder = parsed.path[idx + len(pattern) - 1 :].lstrip("/")
+                            if remainder:
+                                video_id = remainder.split("/")[0].strip()
+                                break
+
+                # Query param: ?v=VIDEO_ID (for /watch URLs)
+                if not video_id and parsed.query:
+                    query_params = parse_qs(parsed.query)
+                    v_param = query_params.get("v", [])
+                    if v_param and v_param[0]:
+                        video_id = v_param[0].strip()
+
+            # Validate video ID format
+            if video_id and self._is_valid_video_id(video_id):
+                return video_id
+
+            return None
+
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.debug("Failed to parse YouTube URL '%s': %s", url[:100], e)
+            return None
+
+    def _is_valid_video_id(self, video_id: str) -> bool:
+        """Validate YouTube video ID format.
+
+        YouTube video IDs contain only alphanumeric characters, hyphens,
+        and underscores. They are typically 11 characters but can vary.
+
+        Args:
+            video_id: The video ID to validate.
+
+        Returns:
+            True if the video ID format is valid, False otherwise.
+        """
+        return bool(video_id and re.match(r"^[a-zA-Z0-9_-]+$", video_id))
 
     async def _add_youtube_source(self, notebook_id: str, url: str) -> Any:
         """Add a YouTube video as a source."""
