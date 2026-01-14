@@ -163,8 +163,13 @@ class TestResearchPoll:
 
 
 @requires_auth
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 class TestResearchImport:
-    """Test importing research sources."""
+    """Test importing research sources.
+
+    Note: Marked as flaky because Google's IMPORT_RESEARCH API can
+    occasionally take longer than the default 30s timeout to respond.
+    """
 
     @pytest.mark.asyncio
     async def test_import_empty_sources(self, client, temp_notebook):
