@@ -760,38 +760,8 @@ class SourcesAPI:
             if hostname not in youtube_domains:
                 return None
 
-            video_id: str | None = None
+            video_id = self._extract_video_id_from_parsed_url(parsed, hostname)
 
-            # youtu.be short URLs: youtu.be/VIDEO_ID
-            if hostname == "youtu.be":
-                path = parsed.path.lstrip("/")
-                if path:
-                    # Take only the first path segment (before any /)
-                    video_id = path.split("/")[0].strip()
-            else:
-                # youtube.com URLs
-                path = parsed.path.lower()
-
-                # Path-based video IDs: /shorts/, /embed/, /live/, /v/
-                path_patterns = ["/shorts/", "/embed/", "/live/", "/v/"]
-                for pattern in path_patterns:
-                    if pattern in path:
-                        # Extract video ID after the pattern
-                        idx = parsed.path.find(pattern.rstrip("/").lstrip("/"))
-                        if idx != -1:
-                            remainder = parsed.path[idx + len(pattern) - 1 :].lstrip("/")
-                            if remainder:
-                                video_id = remainder.split("/")[0].strip()
-                                break
-
-                # Query param: ?v=VIDEO_ID (for /watch URLs)
-                if not video_id and parsed.query:
-                    query_params = parse_qs(parsed.query)
-                    v_param = query_params.get("v", [])
-                    if v_param and v_param[0]:
-                        video_id = v_param[0].strip()
-
-            # Validate video ID format
             if video_id and self._is_valid_video_id(video_id):
                 return video_id
 
@@ -800,6 +770,39 @@ class SourcesAPI:
         except (AttributeError, TypeError, ValueError) as e:
             logger.debug("Failed to parse YouTube URL '%s': %s", url[:100], e)
             return None
+
+    def _extract_video_id_from_parsed_url(self, parsed: Any, hostname: str) -> str | None:
+        """Extract video ID from a parsed YouTube URL.
+
+        Args:
+            parsed: ParseResult from urlparse.
+            hostname: Lowercase hostname.
+
+        Returns:
+            The raw video ID (not yet validated), or None.
+        """
+        # youtu.be short URLs: youtu.be/VIDEO_ID
+        if hostname == "youtu.be":
+            path = parsed.path.lstrip("/")
+            if path:
+                return path.split("/")[0].strip()
+            return None
+
+        # youtube.com path-based formats: /shorts/ID, /embed/ID, /live/ID, /v/ID
+        path_prefixes = ("shorts", "embed", "live", "v")
+        path_segments = parsed.path.lstrip("/").split("/")
+
+        if len(path_segments) >= 2 and path_segments[0].lower() in path_prefixes:
+            return path_segments[1].strip()
+
+        # Query param: ?v=VIDEO_ID (for /watch URLs)
+        if parsed.query:
+            query_params = parse_qs(parsed.query)
+            v_param = query_params.get("v", [])
+            if v_param and v_param[0]:
+                return v_param[0].strip()
+
+        return None
 
     def _is_valid_video_id(self, video_id: str) -> bool:
         """Validate YouTube video ID format.

@@ -126,3 +126,22 @@ class TestYouTubeVideoIdExtraction:
 
         url = "https://youtu.be/dQw4w9WgXcQ?si=abc123"
         assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_shorts_with_query_params(self, client):
+        """Test shorts URLs with query parameters (like tracking params)."""
+        url = "https://www.youtube.com/shorts/NZdU4m72QeI?feature=share"
+        assert client.sources._extract_youtube_video_id(url) == "NZdU4m72QeI"
+
+    def test_unsupported_subdomains_return_none(self, client):
+        """Test that unsupported YouTube subdomains return None.
+
+        Only www, m, and music subdomains are supported for video extraction.
+        Other subdomains (gaming, studio, tv) fall back to web page indexing.
+        """
+        # gaming.youtube.com - not in supported domain list
+        url = "https://gaming.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+        # studio.youtube.com - not in supported domain list
+        url = "https://studio.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) is None
