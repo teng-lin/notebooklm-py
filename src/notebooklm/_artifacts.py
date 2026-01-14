@@ -82,14 +82,18 @@ def _format_flashcards_markdown(title: str, cards: list[dict]) -> str:
     for i, card in enumerate(cards, 1):
         front = card.get("f", "")
         back = card.get("b", "")
-        lines.append(f"## Card {i}")
-        lines.append("")
-        lines.append(f"**Q:** {front}")
-        lines.append("")
-        lines.append(f"**A:** {back}")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
+        lines.extend(
+            [
+                f"## Card {i}",
+                "",
+                f"**Q:** {front}",
+                "",
+                f"**A:** {back}",
+                "",
+                "---",
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -1091,6 +1095,93 @@ class ArtifactsAPI:
                 return data[9][0]  # HTML content
         return None
 
+    async def _download_interactive_artifact(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None,
+        output_format: str,
+        artifact_type: str,
+    ) -> str:
+        """Download quiz or flashcard artifact.
+
+        Args:
+            notebook_id: Notebook ID.
+            output_path: Output file path.
+            artifact_id: Specific artifact ID (optional).
+            output_format: Output format - json, markdown, or html.
+            artifact_type: Either "quiz" or "flashcards".
+
+        Returns:
+            Path to downloaded file.
+
+        Raises:
+            ValueError: If no completed artifact found.
+        """
+        # Fetch artifacts based on type
+        if artifact_type == "quiz":
+            artifacts = await self.list_quizzes(notebook_id)
+            type_label = "quiz"
+            default_title = "Untitled Quiz"
+        else:
+            artifacts = await self.list_flashcards(notebook_id)
+            type_label = "flashcard deck"
+            default_title = "Untitled Flashcards"
+
+        completed = [a for a in artifacts if a.is_completed]
+        if not completed:
+            raise ValueError(f"No completed {type_label} found.")
+
+        # Select artifact
+        if artifact_id:
+            artifact = next((a for a in completed if a.id == artifact_id), None)
+            if not artifact:
+                raise ValueError(f"{artifact_type.capitalize()} artifact {artifact_id} not found.")
+        else:
+            artifact = completed[0]
+
+        # Fetch and parse HTML content
+        html_content = await self._get_artifact_content(notebook_id, artifact.id)
+        if not html_content:
+            raise ValueError(f"Failed to fetch {type_label} content.")
+
+        try:
+            app_data = _extract_app_data(html_content)
+        except (ValueError, json.JSONDecodeError) as e:
+            raise ValueError(f"Failed to parse {type_label} content: {e}") from e
+
+        # Format output based on type and format
+        title = artifact.title or default_title
+        if output_format == "html":
+            content = html_content
+        elif artifact_type == "quiz":
+            questions = app_data.get("quiz", [])
+            if output_format == "markdown":
+                content = _format_quiz_markdown(title, questions)
+            else:
+                content = json.dumps({"title": title, "questions": questions}, indent=2)
+        else:
+            cards = app_data.get("flashcards", [])
+            if output_format == "markdown":
+                content = _format_flashcards_markdown(title, cards)
+            else:
+                normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
+                content = json.dumps({"title": title, "cards": normalized}, indent=2)
+
+        # Create parent directories if needed (consistent with other download methods)
+        from pathlib import Path
+
+        output_file = Path(output_path)
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write file asynchronously to avoid blocking the event loop
+        def _write_file() -> None:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write_file)
+        return output_path
+
     async def download_quiz(
         self,
         notebook_id: str,
@@ -1101,61 +1192,20 @@ class ArtifactsAPI:
         """Download quiz questions.
 
         Args:
-            notebook_id: Notebook ID
-            output_path: Output file path
-            artifact_id: Specific quiz artifact ID (optional)
-            output_format: Output format - json, markdown, or html
+            notebook_id: Notebook ID.
+            output_path: Output file path.
+            artifact_id: Specific quiz artifact ID (optional).
+            output_format: Output format - json, markdown, or html.
 
         Returns:
-            Path to downloaded file
+            Path to downloaded file.
 
         Raises:
-            ValueError: If no completed quiz artifact found
+            ValueError: If no completed quiz artifact found.
         """
-        # Get quiz artifacts using existing method (filters type=4, variant=2)
-        quizzes = await self.list_quizzes(notebook_id)
-        completed = [q for q in quizzes if q.is_completed]
-
-        if not completed:
-            raise ValueError("No completed quiz found.")
-
-        # Select artifact
-        if artifact_id:
-            quiz = next((q for q in completed if q.id == artifact_id), None)
-            if not quiz:
-                raise ValueError(f"Quiz artifact {artifact_id} not found.")
-        else:
-            quiz = completed[0]
-
-        # Fetch HTML content
-        html_content = await self._get_artifact_content(notebook_id, quiz.id)
-        if not html_content:
-            raise ValueError("Failed to fetch quiz content.")
-
-        # Extract JSON data
-        try:
-            app_data = _extract_app_data(html_content)
-            questions = app_data.get("quiz", [])
-        except (ValueError, json.JSONDecodeError) as e:
-            raise ValueError(f"Failed to parse quiz content: {e}") from e
-
-        # Format output (with title fallback for None)
-        title = quiz.title or "Untitled Quiz"
-        if output_format == "html":
-            content = html_content
-        elif output_format == "markdown":
-            content = _format_quiz_markdown(title, questions)
-        else:  # json (preserves API structure: answerOptions, rationale, isCorrect, hint)
-            content = json.dumps({"title": title, "questions": questions}, indent=2)
-
-        # Write file asynchronously to avoid blocking the event loop
-        def _write_file():
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-        await asyncio.to_thread(_write_file)
-
-        return output_path
+        return await self._download_interactive_artifact(
+            notebook_id, output_path, artifact_id, output_format, "quiz"
+        )
 
     async def download_flashcards(
         self,
@@ -1167,60 +1217,20 @@ class ArtifactsAPI:
         """Download flashcard deck.
 
         Args:
-            notebook_id: Notebook ID
-            output_path: Output file path
-            artifact_id: Specific flashcard artifact ID (optional)
-            output_format: Output format - json, markdown, or html
+            notebook_id: Notebook ID.
+            output_path: Output file path.
+            artifact_id: Specific flashcard artifact ID (optional).
+            output_format: Output format - json, markdown, or html.
 
         Returns:
-            Path to downloaded file
+            Path to downloaded file.
 
         Raises:
-            ValueError: If no completed flashcard artifact found
+            ValueError: If no completed flashcard artifact found.
         """
-        # Get flashcard artifacts (filters type=4, variant=1)
-        flashcards = await self.list_flashcards(notebook_id)
-        completed = [f for f in flashcards if f.is_completed]
-
-        if not completed:
-            raise ValueError("No completed flashcard deck found.")
-
-        if artifact_id:
-            deck = next((f for f in completed if f.id == artifact_id), None)
-            if not deck:
-                raise ValueError(f"Flashcard artifact {artifact_id} not found.")
-        else:
-            deck = completed[0]
-
-        html_content = await self._get_artifact_content(notebook_id, deck.id)
-        if not html_content:
-            raise ValueError("Failed to fetch flashcard content.")
-
-        try:
-            app_data = _extract_app_data(html_content)
-            cards = app_data.get("flashcards", [])
-        except (ValueError, json.JSONDecodeError) as e:
-            raise ValueError(f"Failed to parse flashcard content: {e}") from e
-
-        # Format output (with title fallback and safe card access)
-        title = deck.title or "Untitled Flashcards"
-        if output_format == "html":
-            content = html_content
-        elif output_format == "markdown":
-            content = _format_flashcards_markdown(title, cards)
-        else:  # json
-            # Normalize keys: f->front, b->back (with safe access for malformed cards)
-            normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
-            content = json.dumps({"title": title, "cards": normalized}, indent=2)
-
-        # Write file asynchronously to avoid blocking the event loop
-        def _write_file():
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-        await asyncio.to_thread(_write_file)
-
-        return output_path
+        return await self._download_interactive_artifact(
+            notebook_id, output_path, artifact_id, output_format, "flashcards"
+        )
 
     # =========================================================================
     # Management Operations
