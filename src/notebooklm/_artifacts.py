@@ -11,6 +11,7 @@ import html
 import json
 import logging
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -1116,18 +1117,26 @@ class ArtifactsAPI:
             Path to downloaded file.
 
         Raises:
-            ValueError: If no completed artifact found.
+            ValueError: If no completed artifact found or invalid output_format.
         """
-        # Fetch artifacts based on type
-        if artifact_type == "quiz":
-            artifacts = await self.list_quizzes(notebook_id)
-            type_label = "quiz"
-            default_title = "Untitled Quiz"
-        else:
-            artifacts = await self.list_flashcards(notebook_id)
-            type_label = "flashcard deck"
-            default_title = "Untitled Flashcards"
+        # Validate output format
+        valid_formats = ("json", "markdown", "html")
+        if output_format not in valid_formats:
+            raise ValueError(
+                f"Invalid output_format: {output_format!r}. Use one of: {', '.join(valid_formats)}"
+            )
 
+        # Type-specific configuration
+        is_quiz = artifact_type == "quiz"
+        type_label = "quiz" if is_quiz else "flashcard deck"
+        default_title = "Untitled Quiz" if is_quiz else "Untitled Flashcards"
+
+        # Fetch and filter artifacts
+        artifacts = (
+            await self.list_quizzes(notebook_id)
+            if is_quiz
+            else await self.list_flashcards(notebook_id)
+        )
         completed = [a for a in artifacts if a.is_completed]
         if not completed:
             raise ValueError(f"No completed {type_label} found.")
@@ -1150,37 +1159,57 @@ class ArtifactsAPI:
         except (ValueError, json.JSONDecodeError) as e:
             raise ValueError(f"Failed to parse {type_label} content: {e}") from e
 
-        # Format output based on type and format
+        # Format output
         title = artifact.title or default_title
-        if output_format == "html":
-            content = html_content
-        elif artifact_type == "quiz":
-            questions = app_data.get("quiz", [])
-            if output_format == "markdown":
-                content = _format_quiz_markdown(title, questions)
-            else:
-                content = json.dumps({"title": title, "questions": questions}, indent=2)
-        else:
-            cards = app_data.get("flashcards", [])
-            if output_format == "markdown":
-                content = _format_flashcards_markdown(title, cards)
-            else:
-                normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
-                content = json.dumps({"title": title, "cards": normalized}, indent=2)
+        content = self._format_interactive_content(
+            app_data, title, output_format, html_content, is_quiz
+        )
 
-        # Create parent directories if needed (consistent with other download methods)
-        from pathlib import Path
-
+        # Create parent directories and write file
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write file asynchronously to avoid blocking the event loop
         def _write_file() -> None:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
         await asyncio.to_thread(_write_file)
         return output_path
+
+    def _format_interactive_content(
+        self,
+        app_data: dict,
+        title: str,
+        output_format: str,
+        html_content: str,
+        is_quiz: bool,
+    ) -> str:
+        """Format quiz or flashcard content for output.
+
+        Args:
+            app_data: Parsed data from HTML.
+            title: Artifact title.
+            output_format: Output format - json, markdown, or html.
+            html_content: Original HTML content.
+            is_quiz: True for quiz, False for flashcards.
+
+        Returns:
+            Formatted content string.
+        """
+        if output_format == "html":
+            return html_content
+
+        if is_quiz:
+            questions = app_data.get("quiz", [])
+            if output_format == "markdown":
+                return _format_quiz_markdown(title, questions)
+            return json.dumps({"title": title, "questions": questions}, indent=2)
+
+        cards = app_data.get("flashcards", [])
+        if output_format == "markdown":
+            return _format_flashcards_markdown(title, cards)
+        normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
+        return json.dumps({"title": title, "cards": normalized}, indent=2)
 
     async def download_quiz(
         self,
@@ -1566,8 +1595,6 @@ class ArtifactsAPI:
         Returns:
             List of successfully downloaded output paths.
         """
-        from pathlib import Path
-
         downloaded: list[str] = []
 
         # Load cookies with domain info for cross-domain redirect handling
@@ -1611,8 +1638,6 @@ class ArtifactsAPI:
         Raises:
             ValueError: If download fails or authentication expired.
         """
-        from pathlib import Path
-
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 

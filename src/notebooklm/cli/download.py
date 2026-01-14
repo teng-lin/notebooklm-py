@@ -11,7 +11,7 @@ Commands:
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import click
 
@@ -25,6 +25,23 @@ from .helpers import (
     require_notebook,
     run_async,
 )
+
+
+class ArtifactConfig(TypedDict):
+    """Configuration for an artifact type."""
+
+    type_id: int
+    extension: str
+    default_dir: str
+
+
+# Artifact type configurations for download commands
+ARTIFACT_CONFIGS: dict[str, ArtifactConfig] = {
+    "audio": {"type_id": 1, "extension": ".mp3", "default_dir": "./audio"},
+    "video": {"type_id": 3, "extension": ".mp4", "default_dir": "./video"},
+    "slide-deck": {"type_id": 8, "extension": ".pdf", "default_dir": "./slides"},
+    "infographic": {"type_id": 7, "extension": ".png", "default_dir": "./infographic"},
+}
 
 
 @click.group()
@@ -404,20 +421,7 @@ def _display_download_result(result: dict, artifact_type: str):
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--no-clobber", is_flag=True, help="Skip if file exists")
 @click.pass_context
-def download_audio(
-    ctx,
-    output_path,
-    notebook,
-    latest,
-    earliest,
-    download_all,
-    name,
-    artifact_id,
-    json_output,
-    dry_run,
-    force,
-    no_clobber,
-):
+def download_audio(ctx, **kwargs):
     """Download audio overview(s) to file.
 
     \b
@@ -437,40 +441,7 @@ def download_audio(
       # Preview without downloading
       notebooklm download audio --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="audio",
-                artifact_type_id=1,
-                file_extension=".mp3",
-                default_output_dir="./audio",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        if "error" in result:
-            _display_download_result(result, "audio")
-            raise SystemExit(1)
-
-        _display_download_result(result, "audio")
-
-    except Exception as e:
-        handle_error(e)
+    _run_artifact_download(ctx, "audio", **kwargs)
 
 
 @download.command("video")
@@ -486,20 +457,7 @@ def download_audio(
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--no-clobber", is_flag=True, help="Skip if file exists")
 @click.pass_context
-def download_video(
-    ctx,
-    output_path,
-    notebook,
-    latest,
-    earliest,
-    download_all,
-    name,
-    artifact_id,
-    json_output,
-    dry_run,
-    force,
-    no_clobber,
-):
+def download_video(ctx, **kwargs):
     """Download video overview(s) to file.
 
     \b
@@ -519,40 +477,7 @@ def download_video(
       # Preview without downloading
       notebooklm download video --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="video",
-                artifact_type_id=3,
-                file_extension=".mp4",
-                default_output_dir="./video",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        if "error" in result:
-            _display_download_result(result, "video")
-            raise SystemExit(1)
-
-        _display_download_result(result, "video")
-
-    except Exception as e:
-        handle_error(e)
+    _run_artifact_download(ctx, "video", **kwargs)
 
 
 @download.command("slide-deck")
@@ -568,20 +493,7 @@ def download_video(
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--no-clobber", is_flag=True, help="Skip if file exists")
 @click.pass_context
-def download_slide_deck(
-    ctx,
-    output_path,
-    notebook,
-    latest,
-    earliest,
-    download_all,
-    name,
-    artifact_id,
-    json_output,
-    dry_run,
-    force,
-    no_clobber,
-):
+def download_slide_deck(ctx, **kwargs):
     """Download slide deck(s) as PDF files.
 
     \b
@@ -601,40 +513,7 @@ def download_slide_deck(
       # Preview without downloading
       notebooklm download slide-deck --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="slide-deck",
-                artifact_type_id=8,
-                file_extension=".pdf",
-                default_output_dir="./slides",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        if "error" in result:
-            _display_download_result(result, "slide-deck")
-            raise SystemExit(1)
-
-        _display_download_result(result, "slide-deck")
-
-    except Exception as e:
-        handle_error(e)
+    _run_artifact_download(ctx, "slide-deck", **kwargs)
 
 
 @download.command("infographic")
@@ -650,20 +529,7 @@ def download_slide_deck(
 @click.option("--force", is_flag=True, help="Overwrite existing files")
 @click.option("--no-clobber", is_flag=True, help="Skip if file exists")
 @click.pass_context
-def download_infographic(
-    ctx,
-    output_path,
-    notebook,
-    latest,
-    earliest,
-    download_all,
-    name,
-    artifact_id,
-    json_output,
-    dry_run,
-    force,
-    no_clobber,
-):
+def download_infographic(ctx, **kwargs):
     """Download infographic(s) to file.
 
     \b
@@ -683,25 +549,29 @@ def download_infographic(
       # Preview without downloading
       notebooklm download infographic --all --dry-run
     """
+    _run_artifact_download(ctx, "infographic", **kwargs)
+
+
+FORMAT_EXTENSIONS = {"json": ".json", "markdown": ".md", "html": ".html"}
+
+
+def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
+    """Execute download for a specific artifact type.
+
+    Handles the common pattern across all artifact download commands.
+    """
+    config = ARTIFACT_CONFIGS[artifact_type]
+    json_output = kwargs.get("json_output", False)
+
     try:
         result = run_async(
             _download_artifacts_generic(
                 ctx=ctx,
-                artifact_type_name="infographic",
-                artifact_type_id=7,
-                file_extension=".png",
-                default_output_dir="./infographic",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
+                artifact_type_name=artifact_type,
+                artifact_type_id=config["type_id"],
+                file_extension=config["extension"],
+                default_output_dir=config["default_dir"],
+                **kwargs,
             )
         )
 
@@ -709,14 +579,53 @@ def download_infographic(
             console.print(json.dumps(result, indent=2))
             return
 
+        _display_download_result(result, artifact_type)
         if "error" in result:
-            _display_download_result(result, "infographic")
             raise SystemExit(1)
-
-        _display_download_result(result, "infographic")
 
     except Exception as e:
         handle_error(e)
+
+
+async def _download_interactive(
+    ctx,
+    artifact_type: str,
+    output_path: str | None,
+    notebook: str | None,
+    output_format: str,
+    artifact_id: str | None,
+) -> str:
+    """Download quiz or flashcard artifact.
+
+    Args:
+        ctx: Click context.
+        artifact_type: Either "quiz" or "flashcards".
+        output_path: User-specified output path.
+        notebook: Notebook ID.
+        output_format: Output format - json, markdown, or html.
+        artifact_id: Specific artifact ID.
+
+    Returns:
+        Path to downloaded file.
+    """
+    nb_id = require_notebook(notebook)
+    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    cookies = load_auth_from_storage(storage_path)
+
+    csrf, session_id = await fetch_tokens(cookies)
+    auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+
+    async with NotebookLMClient(auth) as client:
+        ext = FORMAT_EXTENSIONS[output_format]
+        path = output_path or f"{artifact_type}{ext}"
+
+        if artifact_type == "quiz":
+            return await client.artifacts.download_quiz(
+                nb_id, path, artifact_id=artifact_id, output_format=output_format
+            )
+        return await client.artifacts.download_flashcards(
+            nb_id, path, artifact_id=artifact_id, output_format=output_format
+        )
 
 
 @download.command("quiz")
@@ -741,22 +650,9 @@ def download_quiz_cmd(ctx, output_path, notebook, output_format, artifact_id):
       notebooklm download quiz --format html quiz.html
     """
     try:
-        nb_id = require_notebook(notebook)
-        storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-        cookies = load_auth_from_storage(storage_path)
-
-        async def _download():
-            csrf, session_id = await fetch_tokens(cookies)
-            auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-            async with NotebookLMClient(auth) as client:
-                # Default filename based on format
-                ext = {"json": ".json", "markdown": ".md", "html": ".html"}[output_format]
-                path = output_path or f"quiz{ext}"
-                return await client.artifacts.download_quiz(
-                    nb_id, path, artifact_id=artifact_id, output_format=output_format
-                )
-
-        result = run_async(_download())
+        result = run_async(
+            _download_interactive(ctx, "quiz", output_path, notebook, output_format, artifact_id)
+        )
         console.print(f"[green]Downloaded quiz to:[/green] {result}")
     except Exception as e:
         handle_error(e)
@@ -784,21 +680,11 @@ def download_flashcards_cmd(ctx, output_path, notebook, output_format, artifact_
       notebooklm download flashcards --format html cards.html
     """
     try:
-        nb_id = require_notebook(notebook)
-        storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-        cookies = load_auth_from_storage(storage_path)
-
-        async def _download():
-            csrf, session_id = await fetch_tokens(cookies)
-            auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
-            async with NotebookLMClient(auth) as client:
-                ext = {"json": ".json", "markdown": ".md", "html": ".html"}[output_format]
-                path = output_path or f"flashcards{ext}"
-                return await client.artifacts.download_flashcards(
-                    nb_id, path, artifact_id=artifact_id, output_format=output_format
-                )
-
-        result = run_async(_download())
+        result = run_async(
+            _download_interactive(
+                ctx, "flashcards", output_path, notebook, output_format, artifact_id
+            )
+        )
         console.print(f"[green]Downloaded flashcards to:[/green] {result}")
     except Exception as e:
         handle_error(e)
