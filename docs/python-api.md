@@ -305,6 +305,8 @@ print(f"Keywords: {guide['keywords']}")
 | `download_video(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download video to file (MP4) |
 | `download_infographic(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download infographic to file (PNG) |
 | `download_slide_deck(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download slide deck as PDF |
+| `download_quiz(notebook_id, output_path, artifact_id=None, output_format="json")` | `str, str, str, str` | `str` | Download quiz (json/markdown/html) |
+| `download_flashcards(notebook_id, output_path, artifact_id=None, output_format="json")` | `str, str, str, str` | `str` | Download flashcards (json/markdown/html) |
 
 **Download Methods:**
 
@@ -324,12 +326,25 @@ path = await client.artifacts.download_infographic(nb_id, "infographic.png")
 # Download slide deck as PDF
 path = await client.artifacts.download_slide_deck(nb_id, "./slides.pdf")
 # Returns: "./slides.pdf"
+
+# Download quiz as JSON (default)
+path = await client.artifacts.download_quiz(nb_id, "quiz.json")
+
+# Download quiz as markdown with answers marked
+path = await client.artifacts.download_quiz(nb_id, "quiz.md", output_format="markdown")
+
+# Download flashcards as JSON (normalizes f/b to front/back)
+path = await client.artifacts.download_flashcards(nb_id, "cards.json")
+
+# Download flashcards as markdown
+path = await client.artifacts.download_flashcards(nb_id, "cards.md", output_format="markdown")
 ```
 
 **Notes:**
 - If `artifact_id` is not specified, downloads the first completed artifact of that type
 - Raises `ValueError` if no completed artifact is found
 - Some URLs require browser-based download (handled automatically)
+- Quiz/flashcard formats: `json` (structured), `markdown` (readable), `html` (raw)
 
 #### Export Methods
 

@@ -127,6 +127,8 @@ All generate commands support:
 | `video [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download video --latest` |
 | `slide-deck [path]` | Output directory | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download slide-deck ./slides/` |
 | `infographic [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download infographic ./info.png` |
+| `quiz [path]` | Output path | `-a/--artifact`, `--format` (json/markdown/html) | `download quiz --format markdown quiz.md` |
+| `flashcards [path]` | Output path | `-a/--artifact`, `--format` (json/markdown/html) | `download flashcards cards.json` |
 
 ### Note Commands (`notebooklm note <cmd>`)
 
@@ -420,6 +422,42 @@ notebooklm download slide-deck --name "Final Presentation"
 
 # Preview a batch download
 notebooklm download audio --all --dry-run
+```
+
+### Download: `quiz`, `flashcards`
+
+Download quiz questions or flashcard decks in various formats.
+
+```bash
+notebooklm download quiz [OUTPUT_PATH] [OPTIONS]
+notebooklm download flashcards [OUTPUT_PATH] [OPTIONS]
+```
+
+**Options:**
+- `--format FORMAT` - Output format: `json` (default), `markdown`, or `html`
+- `-a, --artifact ID` - Select specific artifact by ID
+
+**Output Formats:**
+- **JSON** - Structured data preserving full API fields (answerOptions, rationale, isCorrect, hint)
+- **Markdown** - Human-readable format with checkboxes for correct answers
+- **HTML** - Raw HTML as returned from NotebookLM
+
+**Examples:**
+```bash
+# Download quiz as JSON
+notebooklm download quiz quiz.json
+
+# Download quiz as markdown
+notebooklm download quiz --format markdown quiz.md
+
+# Download flashcards as JSON (normalizes f/b keys to front/back)
+notebooklm download flashcards cards.json
+
+# Download flashcards as markdown
+notebooklm download flashcards --format markdown cards.md
+
+# Download flashcards as raw HTML
+notebooklm download flashcards --format html cards.html
 ```
 
 ---
