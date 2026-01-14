@@ -18,15 +18,13 @@ from ._logging import configure_logging
 
 configure_logging()
 
-# Version is sourced from pyproject.toml via importlib.metadata
-# This ensures a single source of truth for the version number
-try:
-    from importlib.metadata import PackageNotFoundError, version
+# Version sourced from pyproject.toml via importlib.metadata
+from importlib.metadata import PackageNotFoundError, version
 
+try:
     __version__ = version("notebooklm-py")
 except PackageNotFoundError:
-    # Fallback for development when package isn't installed
-    __version__ = "0.0.0.dev"
+    __version__ = "0.0.0.dev"  # Fallback for editable installs
 
 # Public API: Authentication
 from .auth import DEFAULT_STORAGE_PATH, AuthTokens

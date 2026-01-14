@@ -29,7 +29,7 @@ jobs:
     - name: Get version from pyproject.toml
       id: version
       run: |
-        VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+        VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Create verification venv
@@ -37,6 +37,7 @@ jobs:
 
     - name: Install from TestPyPI
       if: inputs.source == 'testpypi'
+      shell: bash
       run: |
         source verify-venv/bin/activate
         pip install --index-url https://test.pypi.org/simple/ \
@@ -45,11 +46,13 @@ jobs:
 
     - name: Install from PyPI
       if: inputs.source == 'pypi'
+      shell: bash
       run: |
         source verify-venv/bin/activate
         pip install notebooklm-py==${{ steps.version.outputs.version }}
 
     - name: Verify version
+      shell: bash
       run: |
         source verify-venv/bin/activate
         INSTALLED=$(python -c "from notebooklm import __version__; print(__version__)")
@@ -61,40 +64,42 @@ jobs:
         echo "Version verified: $INSTALLED"
 
     - name: Verify CLI
+      shell: bash
       run: |
         source verify-venv/bin/activate
         notebooklm --version
         notebooklm --help
 
     - name: Verify imports
+      shell: bash
       run: |
         source verify-venv/bin/activate
         python -c "from notebooklm import NotebookLMClient, Notebook, Source, Artifact"
         echo "Core imports verified"
 
     - name: Install test dependencies
+      shell: bash
       run: |
         source verify-venv/bin/activate
-        pip install pytest pytest-asyncio pytest-httpx pytest-cov pytest-rerunfailures python-dotenv vcrpy
-
-    - name: Install Playwright
-      run: |
-        source verify-venv/bin/activate
-        pip install playwright
+        pip install pytest pytest-asyncio pytest-httpx pytest-cov pytest-rerunfailures python-dotenv vcrpy playwright
         playwright install chromium
         playwright install-deps
 
     - name: Run unit tests
+      shell: bash
       run: |
         source verify-venv/bin/activate
         pytest tests/unit -v
 
     - name: Run integration tests
+      shell: bash
       run: |
         source verify-venv/bin/activate
         pytest tests/integration -v
 
     - name: Run E2E tests
+      if: github.repository == 'teng-lin/notebooklm-py'
+      shell: bash
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}

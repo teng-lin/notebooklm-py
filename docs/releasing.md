@@ -19,15 +19,12 @@ Checklist for releasing a new version of `notebooklm-py`.
 - [ ] Update `Last Updated` dates in modified docs
 - [ ] Test example scripts in `docs/examples/` still work:
   ```bash
-  python docs/examples/basic-usage.py --help
+  python docs/examples/quickstart.py --help
   ```
 
 ### Version Bump
 
-- [ ] Determine version bump type:
-  - **PATCH** (0.1.0 → 0.1.1): Bug fixes, RPC method ID updates
-  - **MINOR** (0.1.0 → 0.2.0): New features (backward compatible)
-  - **MAJOR** (0.1.0 → 1.0.0): Breaking API changes
+- [ ] Determine version bump type (see [Version Numbering](#version-numbering) for details)
 - [ ] Update version in `pyproject.toml`:
   ```toml
   version = "X.Y.Z"

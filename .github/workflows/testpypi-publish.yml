@@ -22,7 +22,7 @@ jobs:
     - name: Get version from pyproject.toml
       id: version
       run: |
-        VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+        VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Publishing version: $VERSION"
 
@@ -47,4 +47,4 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Package:** https://test.pypi.org/project/notebooklm-py/${{ steps.version.outputs.version }}/" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Run **Verify Package** workflow to test the published package." >> $GITHUB_STEP_SUMMARY
+        echo "**Next Step:** Run the **Verify Package** workflow with source=testpypi" >> $GITHUB_STEP_SUMMARY
