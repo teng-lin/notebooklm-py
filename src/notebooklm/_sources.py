@@ -597,16 +597,17 @@ class SourcesAPI:
         original_url = source.url
         logger.info("Reindexing source %s from URL: %s", source_id, original_url)
 
-        # Delete the old source
-        await self.delete(notebook_id, source_id)
-
-        # Re-add from URL (this will properly detect YouTube vs regular URL)
+        # Add new source FIRST to prevent data loss if add fails
+        # Only delete old source after new one is successfully added
         new_source = await self.add_url(
             notebook_id,
             original_url,
             wait=wait,
             wait_timeout=wait_timeout,
         )
+
+        # Now safe to delete the old source
+        await self.delete(notebook_id, source_id)
 
         logger.info("Reindex complete: %s -> %s", source_id, new_source.id)
         return new_source
