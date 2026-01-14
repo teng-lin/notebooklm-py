@@ -127,8 +127,8 @@ All generate commands support:
 | `video [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download video --latest` |
 | `slide-deck [path]` | Output directory | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download slide-deck ./slides/` |
 | `infographic [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download infographic ./info.png` |
-| `quiz [path]` | Output path | `-a/--artifact`, `--format` (json/markdown/html) | `download quiz --format markdown quiz.md` |
-| `flashcards [path]` | Output path | `-a/--artifact`, `--format` (json/markdown/html) | `download flashcards cards.json` |
+| `quiz [path]` | Output path | `-n/--notebook`, `-a/--artifact`, `--format` (json/markdown/html) | `download quiz --format markdown quiz.md` |
+| `flashcards [path]` | Output path | `-n/--notebook`, `-a/--artifact`, `--format` (json/markdown/html) | `download flashcards cards.json` |
 
 ### Note Commands (`notebooklm note <cmd>`)
 
@@ -434,6 +434,7 @@ notebooklm download flashcards [OUTPUT_PATH] [OPTIONS]
 ```
 
 **Options:**
+- `-n, --notebook ID` - Notebook ID (uses current context if not set)
 - `--format FORMAT` - Output format: `json` (default), `markdown`, or `html`
 - `-a, --artifact ID` - Select specific artifact by ID
 
