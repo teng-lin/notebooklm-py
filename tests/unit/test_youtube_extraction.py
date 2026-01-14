@@ -67,3 +67,168 @@ class TestYouTubeVideoIdExtraction:
 
         url = "https://youtu.be/abc-123_XYZ"
         assert client.sources._extract_youtube_video_id(url) == "abc-123_XYZ"
+
+
+class TestYouTubeVideoIdQueryParamOrder:
+    """Test that video ID extraction works regardless of query param order.
+
+    YouTube URLs can have query params in any order (e.g., ?si=...&v=... or ?list=...&v=...).
+    The old regex-based implementation only worked when v= was the first param.
+    """
+
+    @pytest.fixture
+    def client(self):
+        """Create a client instance for testing the extraction method."""
+        mock_auth = MagicMock()
+        mock_auth.cookies = {}
+        mock_auth.csrf_token = "test"
+        mock_auth.session_id = "test"
+        return NotebookLMClient(mock_auth)
+
+    def test_watch_url_with_timestamp(self, client):
+        """Test watch URL with timestamp param after video ID."""
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_watch_url_with_si_param_first(self, client):
+        """Test watch URL with si= (share tracking) before v=.
+
+        This is YouTube's new share format and was a common cause of misindexing.
+        """
+        url = "https://www.youtube.com/watch?si=ABC123&v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_watch_url_with_list_param_first(self, client):
+        """Test watch URL with list= (playlist) before v=."""
+        url = "https://www.youtube.com/watch?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf&v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_watch_url_with_feature_param_first(self, client):
+        """Test watch URL with feature=share before v=."""
+        url = "https://www.youtube.com/watch?feature=share&v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_watch_url_with_multiple_params(self, client):
+        """Test watch URL with multiple params in various orders."""
+        url = "https://www.youtube.com/watch?list=PL123&v=dQw4w9WgXcQ&t=30&si=ABC"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+
+class TestYouTubeVideoIdSubdomains:
+    """Test that video ID extraction works with YouTube subdomains.
+
+    YouTube has multiple subdomains: m.youtube.com (mobile), music.youtube.com, etc.
+    """
+
+    @pytest.fixture
+    def client(self):
+        """Create a client instance for testing the extraction method."""
+        mock_auth = MagicMock()
+        mock_auth.cookies = {}
+        mock_auth.csrf_token = "test"
+        mock_auth.session_id = "test"
+        return NotebookLMClient(mock_auth)
+
+    def test_mobile_youtube(self, client):
+        """Test m.youtube.com URLs (mobile)."""
+        url = "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_youtube_music(self, client):
+        """Test music.youtube.com URLs."""
+        url = "https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_mobile_youtube_with_params(self, client):
+        """Test mobile YouTube URL with additional params."""
+        url = "https://m.youtube.com/watch?si=ABC&v=dQw4w9WgXcQ&t=60"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+
+class TestYouTubeVideoIdPathFormats:
+    """Test that video ID extraction works with different YouTube path formats.
+
+    YouTube uses several path formats: /embed/, /live/, /v/ (legacy).
+    """
+
+    @pytest.fixture
+    def client(self):
+        """Create a client instance for testing the extraction method."""
+        mock_auth = MagicMock()
+        mock_auth.cookies = {}
+        mock_auth.csrf_token = "test"
+        mock_auth.session_id = "test"
+        return NotebookLMClient(mock_auth)
+
+    def test_embed_url(self, client):
+        """Test embed URLs (/embed/VIDEO_ID)."""
+        url = "https://www.youtube.com/embed/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_live_url(self, client):
+        """Test live URLs (/live/VIDEO_ID)."""
+        url = "https://www.youtube.com/live/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_legacy_v_url(self, client):
+        """Test legacy /v/ URLs."""
+        url = "https://www.youtube.com/v/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_embed_with_subdomain(self, client):
+        """Test embed URL with subdomain."""
+        url = "https://m.youtube.com/embed/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_shorts_with_query_params(self, client):
+        """Test shorts URL with query params."""
+        url = "https://www.youtube.com/shorts/NZdU4m72QeI?feature=share"
+        assert client.sources._extract_youtube_video_id(url) == "NZdU4m72QeI"
+
+
+class TestYouTubeVideoIdEdgeCases:
+    """Test edge cases and invalid URLs."""
+
+    @pytest.fixture
+    def client(self):
+        """Create a client instance for testing the extraction method."""
+        mock_auth = MagicMock()
+        mock_auth.cookies = {}
+        mock_auth.csrf_token = "test"
+        mock_auth.session_id = "test"
+        return NotebookLMClient(mock_auth)
+
+    def test_empty_youtu_be_path(self, client):
+        """Test youtu.be with no video ID."""
+        url = "https://youtu.be/"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+    def test_watch_without_v_param(self, client):
+        """Test /watch URL without v= param."""
+        url = "https://www.youtube.com/watch"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+    def test_watch_with_only_list_param(self, client):
+        """Test /watch URL with only list= (no v=)."""
+        url = "https://www.youtube.com/watch?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+    def test_non_youtube_domain(self, client):
+        """Test non-YouTube domain with similar path."""
+        url = "https://example.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+    def test_fake_youtube_subdomain(self, client):
+        """Test fake domain that looks like YouTube subdomain."""
+        url = "https://not-youtube.com/watch?v=dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+    def test_channel_url_returns_none(self, client):
+        """Test channel URLs don't return a video ID."""
+        url = "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw"
+        assert client.sources._extract_youtube_video_id(url) is None
+
+    def test_playlist_url_returns_none(self, client):
+        """Test playlist URLs (without v=) don't return a video ID."""
+        url = "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"
+        assert client.sources._extract_youtube_video_id(url) is None

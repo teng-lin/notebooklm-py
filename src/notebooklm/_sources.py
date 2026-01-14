@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -779,20 +780,62 @@ class SourcesAPI:
         return texts
 
     def _extract_youtube_video_id(self, url: str) -> str | None:
-        """Extract YouTube video ID from various URL formats."""
-        # Short URLs: youtu.be/VIDEO_ID
-        match = re.match(r"https?://youtu\.be/([a-zA-Z0-9_-]+)", url)
-        if match:
-            return match.group(1)
-        # Standard watch URLs: youtube.com/watch?v=VIDEO_ID
-        match = re.match(r"https?://(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]+)", url)
-        if match:
-            return match.group(1)
-        # Shorts URLs: youtube.com/shorts/VIDEO_ID
-        match = re.match(r"https?://(?:www\.)?youtube\.com/shorts/([a-zA-Z0-9_-]+)", url)
-        if match:
-            return match.group(1)
-        return None
+        """Extract YouTube video ID from various URL formats.
+
+        Handles all common YouTube URL formats:
+        - youtu.be/VIDEO_ID (short URLs)
+        - youtube.com/watch?v=VIDEO_ID (with any query param order)
+        - youtube.com/shorts/VIDEO_ID
+        - youtube.com/embed/VIDEO_ID
+        - youtube.com/live/VIDEO_ID
+        - youtube.com/v/VIDEO_ID (legacy)
+        - m.youtube.com, music.youtube.com (subdomains)
+
+        Returns:
+            Video ID string if found, None otherwise.
+        """
+        try:
+            parsed = urlparse(url)
+            hostname = (parsed.hostname or "").lower()
+            path = parsed.path
+
+            # Not a YouTube URL
+            if not (
+                hostname == "youtube.com"
+                or hostname.endswith(".youtube.com")
+                or hostname == "youtu.be"
+            ):
+                return None
+
+            # youtu.be short URLs: youtu.be/VIDEO_ID
+            if hostname == "youtu.be":
+                if path and len(path) > 1:
+                    # Extract video ID from path, handling trailing slashes or query strings
+                    video_id = path[1:].split("/")[0]
+                    if re.match(r"^[a-zA-Z0-9_-]+$", video_id):
+                        return video_id
+                return None
+
+            # youtube.com/watch?v=VIDEO_ID - query param can be in any position
+            if path == "/watch" or path.startswith("/watch?"):
+                query_params = parse_qs(parsed.query)
+                if "v" in query_params and query_params["v"]:
+                    video_id = query_params["v"][0]
+                    if re.match(r"^[a-zA-Z0-9_-]+$", video_id):
+                        return video_id
+                return None
+
+            # Path-based formats: /shorts/ID, /embed/ID, /live/ID, /v/ID
+            for prefix in ["/shorts/", "/embed/", "/live/", "/v/"]:
+                if path.startswith(prefix):
+                    rest = path[len(prefix) :]
+                    video_id = rest.split("/")[0]
+                    if re.match(r"^[a-zA-Z0-9_-]+$", video_id):
+                        return video_id
+
+            return None
+        except (AttributeError, TypeError, ValueError):
+            return None
 
     async def _add_youtube_source(self, notebook_id: str, url: str) -> Any:
         """Add a YouTube video as a source."""
