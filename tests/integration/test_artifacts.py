@@ -1,5 +1,8 @@
 """Integration tests for ArtifactsAPI."""
 
+import csv
+import json
+
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -805,3 +808,183 @@ class TestArtifactErrorPaths:
             artifacts = await client.artifacts.list("nb_123")
 
         assert artifacts == []
+
+
+class TestDownloadReport:
+    """Integration tests for download_report method."""
+
+    @pytest.mark.asyncio
+    async def test_download_report_success(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        tmp_path,
+    ):
+        """Test successful report download."""
+        # Mock _list_raw response - type 2 (report), status 3 (completed)
+        # Data needs to be [[artifact1], [artifact2], ...] because _list_raw does result[0]
+        response = build_rpc_response(
+            RPCMethod.LIST_ARTIFACTS,
+            [
+                [
+                    [
+                        "report_001",
+                        "Study Guide",
+                        2,  # type (report)
+                        None,
+                        3,  # status (completed)
+                        None,
+                        None,
+                        ["# Test Report\n\nThis is markdown content."],  # content at index 7
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        output_path = tmp_path / "report.md"
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.artifacts.download_report("nb_123", str(output_path))
+
+        assert result == str(output_path)
+        assert output_path.exists()
+        content = output_path.read_text()
+        assert "# Test Report" in content
+
+    @pytest.mark.asyncio
+    async def test_download_report_not_found(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test error when no report exists."""
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValueError, match="No completed report"):
+                await client.artifacts.download_report("nb_123", "/tmp/report.md")
+
+
+class TestDownloadMindMap:
+    """Integration tests for download_mind_map method."""
+
+    @pytest.mark.asyncio
+    async def test_download_mind_map_success(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        tmp_path,
+    ):
+        """Test successful mind map download."""
+        # Mock notes API response for mind maps
+        response = build_rpc_response(
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
+            [
+                [
+                    [
+                        "mindmap_001",
+                        [None, '{"name": "Root", "children": []}'],
+                        None,
+                        None,
+                        "Mind Map Title",
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        output_path = tmp_path / "mindmap.json"
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.artifacts.download_mind_map("nb_123", str(output_path))
+
+        assert result == str(output_path)
+        assert output_path.exists()
+        data = json.loads(output_path.read_text())
+        assert data["name"] == "Root"
+
+    @pytest.mark.asyncio
+    async def test_download_mind_map_not_found(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test error when no mind map exists."""
+        response = build_rpc_response(RPCMethod.GET_NOTES_AND_MIND_MAPS, [[]])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValueError, match="No mind maps found"):
+                await client.artifacts.download_mind_map("nb_123", "/tmp/mindmap.json")
+
+
+class TestDownloadDataTable:
+    """Integration tests for download_data_table method."""
+
+    @pytest.mark.asyncio
+    async def test_download_data_table_success(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        tmp_path,
+    ):
+        """Test successful data table download."""
+        # Build complex nested structure for data table
+        rows_data = [
+            [
+                0,
+                20,
+                [
+                    [0, 5, [[0, 5, [[0, 5, [["Col1"]]]]]]],
+                    [5, 10, [[5, 10, [[5, 10, [["Col2"]]]]]]],
+                ],
+            ],
+            [
+                20,
+                40,
+                [
+                    [20, 25, [[20, 25, [[20, 25, [["A"]]]]]]],
+                    [25, 30, [[25, 30, [[25, 30, [["B"]]]]]]],
+                ],
+            ],
+        ]
+        data_table_structure = [[[[[0, 100, None, None, [6, 7, rows_data]]]]]]
+
+        artifact = ["table_001", "Data Table", 9, None, 3]
+        artifact.extend([None] * 13)  # Pad to index 18
+        artifact.append(data_table_structure)
+
+        # Data needs to be [[artifact1]] because _list_raw does result[0]
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[artifact]])
+        httpx_mock.add_response(content=response.encode())
+
+        output_path = tmp_path / "data.csv"
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.artifacts.download_data_table("nb_123", str(output_path))
+
+        assert result == str(output_path)
+        assert output_path.exists()
+        with open(output_path, encoding="utf-8-sig") as f:
+            rows = list(csv.reader(f))
+        assert rows[0] == ["Col1", "Col2"]
+        assert rows[1] == ["A", "B"]
+
+    @pytest.mark.asyncio
+    async def test_download_data_table_not_found(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test error when no data table exists."""
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValueError, match="No completed data table"):
+                await client.artifacts.download_data_table("nb_123", "/tmp/data.csv")

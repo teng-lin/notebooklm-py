@@ -7,6 +7,7 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
 import asyncio
 import builtins
+import csv
 import html
 import json
 import logging
@@ -96,6 +97,79 @@ def _format_flashcards_markdown(title: str, cards: list[dict]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _extract_cell_text(cell: Any) -> str:
+    """Recursively extract text from a nested cell structure.
+
+    Data table cells have deeply nested arrays with position markers (integers)
+    and text content (strings). This function traverses the structure and
+    concatenates all text fragments found.
+    """
+    if isinstance(cell, str):
+        return cell
+    if isinstance(cell, int):
+        return ""
+    if isinstance(cell, list):
+        return "".join(text for item in cell if (text := _extract_cell_text(item)))
+    return ""
+
+
+def _parse_data_table(raw_data: list) -> tuple[list[str], list[list[str]]]:
+    """Parse rich-text data table into headers and rows.
+
+    Data tables from NotebookLM have a complex nested structure with position
+    markers. This function navigates to the rows array and extracts text from
+    each cell.
+
+    Structure: raw_data[0][0][0][0][4][2] contains the rows array where:
+    - [0][0][0][0] navigates through wrapper layers
+    - [4] contains the table content section [type, flags, rows_array]
+    - [2] is the actual rows array
+
+    Each row has format: [start_pos, end_pos, [cell_array]]
+    Each cell is deeply nested: [pos, pos, [[pos, pos, [[pos, pos, [["text"]]]]]]]
+
+    Returns:
+        Tuple of (headers, rows) where headers is a list of column names
+        and rows is a list of row data (each row is a list of cell strings).
+
+    Raises:
+        ValueError: If the data structure cannot be parsed or is empty.
+    """
+    try:
+        # Navigate through nested wrappers to reach the rows array
+        rows_array = raw_data[0][0][0][0][4][2]
+        if not rows_array:
+            raise ValueError("Empty data table.")
+
+        headers: list[str] = []
+        rows: list[list[str]] = []
+
+        for i, row_section in enumerate(rows_array):
+            # Each row_section is [start_pos, end_pos, cell_array]
+            if not isinstance(row_section, list) or len(row_section) < 3:
+                continue
+
+            cell_array = row_section[2]
+            if not isinstance(cell_array, list):
+                continue
+
+            row_values = [_extract_cell_text(cell) for cell in cell_array]
+
+            if i == 0:
+                headers = row_values
+            else:
+                rows.append(row_values)
+
+        # Validate we extracted usable data
+        if not headers:
+            raise ValueError("Failed to extract headers from data table.")
+
+        return headers, rows
+
+    except (IndexError, TypeError, KeyError) as e:
+        raise ValueError(f"Failed to parse data table structure: {e}") from e
 
 
 class ArtifactsAPI:
@@ -1211,6 +1285,144 @@ class ArtifactsAPI:
         normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
         return json.dumps({"title": title, "cards": normalized}, indent=2)
 
+    async def download_report(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+    ) -> str:
+        """Download a report artifact as markdown.
+
+        Args:
+            notebook_id: The notebook ID.
+            output_path: Path to save the markdown file.
+            artifact_id: Specific artifact ID, or uses first completed report.
+
+        Returns:
+            The output path where the file was saved.
+        """
+        artifacts_data = await self._list_raw(notebook_id)
+
+        report_candidates = [
+            a
+            for a in artifacts_data
+            if isinstance(a, list)
+            and len(a) > 7
+            and a[2] == StudioContentType.REPORT
+            and a[4] == ArtifactStatus.COMPLETED
+        ]
+
+        report_art = self._select_artifact(report_candidates, artifact_id, "Report", "report")
+
+        try:
+            content_wrapper = report_art[7]
+            markdown_content = (
+                content_wrapper[0]
+                if isinstance(content_wrapper, list) and content_wrapper
+                else content_wrapper
+            )
+
+            if not isinstance(markdown_content, str):
+                raise ValueError("Invalid report content structure.")
+
+            output = Path(output_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(markdown_content, encoding="utf-8")
+            return str(output)
+
+        except (IndexError, TypeError) as e:
+            raise ValueError(f"Failed to parse report structure: {e}") from e
+
+    async def download_mind_map(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+    ) -> str:
+        """Download a mind map as JSON.
+
+        Mind maps are stored in the notes system, not the regular artifacts list.
+
+        Args:
+            notebook_id: The notebook ID.
+            output_path: Path to save the JSON file.
+            artifact_id: Specific mind map ID (note ID), or uses first available.
+
+        Returns:
+            The output path where the file was saved.
+        """
+        mind_maps = await self._notes.list_mind_maps(notebook_id)
+        if not mind_maps:
+            raise ValueError("No mind maps found.")
+
+        if artifact_id:
+            mind_map = next((mm for mm in mind_maps if mm[0] == artifact_id), None)
+            if not mind_map:
+                raise ValueError(f"Mind map {artifact_id} not found.")
+        else:
+            mind_map = mind_maps[0]
+
+        try:
+            json_string = mind_map[1][1]
+            if not isinstance(json_string, str):
+                raise ValueError("Invalid mind map content structure.")
+
+            json_data = json.loads(json_string)
+
+            output = Path(output_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps(json_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            return str(output)
+
+        except (IndexError, TypeError, json.JSONDecodeError) as e:
+            raise ValueError(f"Failed to parse mind map structure: {e}") from e
+
+    async def download_data_table(
+        self,
+        notebook_id: str,
+        output_path: str,
+        artifact_id: str | None = None,
+    ) -> str:
+        """Download a data table as CSV.
+
+        Args:
+            notebook_id: The notebook ID.
+            output_path: Path to save the CSV file.
+            artifact_id: Specific artifact ID, or uses first completed data table.
+
+        Returns:
+            The output path where the file was saved.
+        """
+        artifacts_data = await self._list_raw(notebook_id)
+
+        table_candidates = [
+            a
+            for a in artifacts_data
+            if isinstance(a, list)
+            and len(a) > 18
+            and a[2] == StudioContentType.DATA_TABLE
+            and a[4] == ArtifactStatus.COMPLETED
+        ]
+
+        table_art = self._select_artifact(table_candidates, artifact_id, "Data table", "data table")
+
+        try:
+            raw_data = table_art[18]
+            headers, rows = _parse_data_table(raw_data)
+
+            output = Path(output_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+            with output.open("w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+                writer.writerows(rows)
+
+            return str(output)
+
+        except (IndexError, TypeError, ValueError) as e:
+            raise ValueError(f"Failed to parse data table structure: {e}") from e
+
     async def download_quiz(
         self,
         notebook_id: str,
@@ -1583,6 +1795,45 @@ class ArtifactsAPI:
         if result and isinstance(result, list) and len(result) > 0:
             return result[0] if isinstance(result[0], list) else result
         return []
+
+    def _select_artifact(
+        self,
+        candidates: builtins.list[Any],
+        artifact_id: str | None,
+        type_name: str,
+        type_name_lower: str,
+    ) -> Any:
+        """Select an artifact from candidates by ID or return first available.
+
+        Args:
+            candidates: List of candidate artifacts.
+            artifact_id: Specific artifact ID to select, or None for first.
+            type_name: Display name for error messages (e.g., "Report").
+            type_name_lower: Lowercase name for error messages (e.g., "report").
+
+        Returns:
+            Selected artifact data.
+
+        Raises:
+            ValueError: If artifact not found or no candidates available.
+        """
+        if artifact_id:
+            artifact = next((a for a in candidates if a[0] == artifact_id), None)
+            if not artifact:
+                raise ValueError(f"{type_name} {artifact_id} not found or not ready.")
+            return artifact
+
+        if not candidates:
+            raise ValueError(f"No completed {type_name_lower} found.")
+
+        # Sort by creation timestamp (descending) to get the latest.
+        # Timestamp is at index 15, position 0.
+        candidates.sort(
+            key=lambda a: a[15][0] if len(a) > 15 and isinstance(a[15], list) and a[15] else 0,
+            reverse=True,
+        )
+
+        return candidates[0]
 
     async def _download_urls_batch(
         self, urls_and_paths: builtins.list[tuple[str, str]]

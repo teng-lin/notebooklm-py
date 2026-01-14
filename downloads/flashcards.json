@@ -1,0 +1,185 @@
+{
+  "title": "Agent Flashcards",
+  "cards": [
+    {
+      "front": "What is the core philosophy of the 'learn-claude-code' project?",
+      "back": "Modern AI agents work because the model is trained to be an agent; our job is to give it tools and stay out of the way."
+    },
+    {
+      "front": "What is the fundamental loop that every coding agent, like Claude Code, is based on?",
+      "back": "A loop where the model calls tools until it's done, and the results of those tools are appended to the message history for the next iteration."
+    },
+    {
+      "front": "According to the 'learn-claude-code' philosophy, the model is _____% of the agent, and the code is _____% of the agent.",
+      "back": "80, 20"
+    },
+    {
+      "front": "What is the core insight of the v0 `v0_bash_agent.py`?",
+      "back": "Bash is all you need; a single `bash` tool is sufficient to provide full agent capability, including reading, writing, and executing."
+    },
+    {
+      "front": "In `v0_bash_agent.py`, how is the concept of a subagent implemented without a dedicated 'Task' tool?",
+      "back": "By recursively calling itself via a bash command (e.g., `python v0_bash_agent.py \"subtask\"`), which spawns an isolated process with a fresh context."
+    },
+    {
+      "front": "What core insight does `v1_basic_agent.py` demonstrate?",
+      "back": "The concept of 'Model as Agent,' where the model is the primary decision-maker, and the code just provides tools and runs the execution loop."
+    },
+    {
+      "front": "What are the four essential tools introduced in `v1_basic_agent.py` that cover 90% of coding use cases?",
+      "back": "`bash`, `read_file`, `write_file`, and `edit_file`."
+    },
+    {
+      "front": "In an agent system, what is the purpose of the `read_file` tool?",
+      "back": "To read the contents of an existing file, allowing the agent to understand code."
+    },
+    {
+      "front": "Which tool in `v1_basic_agent.py` is used for surgical changes to existing code by replacing exact text?",
+      "back": "The `edit_file` tool."
+    },
+    {
+      "front": "What problem in multi-step tasks does `v2_todo_agent.py` aim to solve?",
+      "back": "Context Fade, where the model loses focus or forgets steps in a complex plan because the plan is not explicitly tracked."
+    },
+    {
+      "front": "What new tool is introduced in `v2_todo_agent.py` to enable structured planning?",
+      "back": "The `TodoWrite` tool, which allows the agent to maintain and update a visible task list."
+    },
+    {
+      "front": "What is the key design insight behind the constraints (e.g., max 20 items, one `in_progress` task) in the `TodoManager`?",
+      "back": "Structure constrains AND enables; the constraints force focus and make complex task completion possible by providing scaffolding."
+    },
+    {
+      "front": "In the `TodoManager`, what is the purpose of the `activeForm` field for a task item?",
+      "back": "It provides a present-tense description of the action being performed for the task currently marked as `in_progress`."
+    },
+    {
+      "front": "What problem arises when a single agent performs large exploration tasks before acting, as addressed in v3?",
+      "back": "Context Pollution, where the agent's history fills with exploration details, leaving little room for the primary task."
+    },
+    {
+      "front": "How does the v3 subagent mechanism solve the problem of context pollution?",
+      "back": "It spawns child agents with isolated contexts for subtasks, so the main agent only receives a clean summary as a result."
+    },
+    {
+      "front": "What is the name of the tool introduced in v3 to spawn child agents?",
+      "back": "The `Task` tool."
+    },
+    {
+      "front": "In the v3 subagent design, what is the purpose of the `AGENT_TYPES` registry?",
+      "back": "To define different types of agents (e.g., 'explore', 'code', 'plan') with specific capabilities, prompts, and tool access."
+    },
+    {
+      "front": "What is the key to context isolation when a subagent is executed in v3?",
+      "back": "The subagent is started with a fresh, empty message history (`sub_messages = []`), so it does not inherit the parent's context."
+    },
+    {
+      "front": "In the v3 `AGENT_TYPES` registry, what is the key difference in tool permissions for an 'explore' agent versus a 'code' agent?",
+      "back": "The 'explore' agent has read-only tools (like `bash` and `read_file`), while the 'code' agent has access to all tools, including those that write files."
+    },
+    {
+      "front": "What is the core insight of the v4 skills mechanism?",
+      "back": "Skills are knowledge packages, not tools; they teach the agent HOW to do something, rather than just giving it a new capability."
+    },
+    {
+      "front": "In v4, a Tool is what the model _____, while a Skill is how the model _____ to do something.",
+      "back": "CAN do, KNOWS"
+    },
+    {
+      "front": "What is the paradigm shift that skills embody, moving away from traditional AI development?",
+      "back": "Knowledge Externalization, where knowledge is stored in editable documents (`SKILL.md`) instead of being locked inside model parameters."
+    },
+    {
+      "front": "What is the main advantage of Knowledge Externalization over traditional model fine-tuning?",
+      "back": "Anyone can teach the model a new skill by editing a text file, without needing ML expertise, training data, or GPU clusters."
+    },
+    {
+      "front": "What is the standard file format for defining a skill in the v4 agent?",
+      "back": "A `SKILL.md` file containing YAML frontmatter for metadata and a Markdown body for instructions."
+    },
+    {
+      "front": "What are the two required metadata fields in a `SKILL.md` file's YAML frontmatter?",
+      "back": "`name` and `description`."
+    },
+    {
+      "front": "What is the concept of 'Progressive Disclosure' in the v4 skills mechanism?",
+      "back": "Loading knowledge in layers: first, lightweight metadata is always available, and second, the detailed skill body is loaded only when triggered."
+    },
+    {
+      "front": "What is the name of the tool introduced in v4 that allows the model to load domain expertise on-demand?",
+      "back": "The `Skill` tool."
+    },
+    {
+      "front": "What is the critical implementation detail for how skill content is injected into the conversation to preserve the prompt cache?",
+      "back": "The skill content is returned as a `tool_result` (part of a user message), not injected into the system prompt."
+    },
+    {
+      "front": "Why is it a bad practice to inject dynamic information into the system prompt on each turn of an agent loop?",
+      "back": "It invalidates the KV Cache, as the entire message prefix changes, leading to re-computation and drastically increased costs (20-50x)."
+    },
+    {
+      "front": "What is the KV Cache in the context of LLMs?",
+      "back": "A mechanism that stores the computed key-value states of previous tokens in a sequence so they don't need to be re-calculated for subsequent tokens."
+    },
+    {
+      "front": "A cache hit for an LLM API call requires that the new request has an _____ with the previous request.",
+      "back": "exact prefix match"
+    },
+    {
+      "front": "Which of these is a cache-breaking anti-pattern in agent development: append-only messages or message compression?",
+      "back": "Message compression, as it modifies past history and invalidates the cache from the point of replacement."
+    },
+    {
+      "front": "To optimize for cost and performance with LLM APIs, you should treat the conversation history as an _____, not an editable document.",
+      "back": "append-only log"
+    },
+    {
+      "front": "In the `learn-claude-code` project, how does using Skills represent a shift from 'training AI' to 'educating AI'?",
+      "back": "It turns implicit knowledge that required training into explicit, human-readable documents that can be written, version-controlled, and shared."
+    },
+    {
+      "front": "In v3, the pattern `Main Agent -> Subagent A -> Subagent B` is described as a strategy of _____.",
+      "back": "Divide and conquer"
+    },
+    {
+      "front": "What is the purpose of the `safe_path` function in the provided agent code?",
+      "back": "It's a security measure to ensure the file path provided by the model stays within the project's working directory."
+    },
+    {
+      "front": "In the v1 agent's `run_bash` function, what is one reason a command might be blocked?",
+      "back": "It is considered dangerous, containing patterns like `rm -rf /` or `sudo`."
+    },
+    {
+      "front": "What does the v3 `get_tools_for_agent` function do?",
+      "back": "It filters the list of available tools based on the specified `agent_type` to enforce capability restrictions."
+    },
+    {
+      "front": "Why do subagents in the v3 demo not get access to the `Task` tool?",
+      "back": "To prevent the possibility of infinite recursion (a subagent spawning another subagent)."
+    },
+    {
+      "front": "In v4, what information does the `SkillLoader` class initially load from all `SKILL.md` files at startup?",
+      "back": "Only the metadata (name and description) from the YAML frontmatter, to keep the initial context lean."
+    },
+    {
+      "front": "How does the v4 agent provide the model with hints about a skill's available resources, such as scripts or reference documents?",
+      "back": "When a skill's content is loaded, it includes a list of files found in optional subdirectories like `scripts/` and `references/`."
+    },
+    {
+      "front": "What is the primary difference between the `write_file` and `edit_file` tools?",
+      "back": "`write_file` creates or completely overwrites a file, while `edit_file` performs a surgical replacement of specific text within an existing file."
+    },
+    {
+      "front": "The core agent loop `while True: response = model(messages, tools) ...` demonstrates that the _____ controls the loop.",
+      "back": "model"
+    },
+    {
+      "front": "In v3, what is the role of a 'plan' agent type?",
+      "back": "To analyze a codebase and produce a numbered implementation plan without modifying any files."
+    },
+    {
+      "front": "The v4 `SkillLoader`'s `parse_skill_md` function uses a regular expression to separate the _____ from the Markdown body.",
+      "back": "YAML frontmatter"
+    }
+  ]
+}

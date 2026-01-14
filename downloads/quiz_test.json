@@ -1,0 +1,265 @@
+{
+  "title": "Agent Quiz",
+  "questions": [
+    {
+      "question": "What is the core philosophy of the `learn-claude-code` project, as stated in its documentation?",
+      "answerOptions": [
+        {
+          "text": "The agent's performance is primarily determined by clever engineering and complex code loops.",
+          "rationale": "The project's philosophy suggests that the code itself is only 20% of the solution, with the model's inherent capabilities being the most significant factor.",
+          "isCorrect": false
+        },
+        {
+          "text": "The model itself is the agent, and the surrounding code's main job is to provide it with tools and manage the execution loop.",
+          "rationale": "This aligns with the project's \"Model as Agent\" philosophy, emphasizing that the model's training to act as an agent is the key, not intricate code.",
+          "isCorrect": true
+        },
+        {
+          "text": "The number and variety of tools available to the agent are the most critical factors for its success.",
+          "rationale": "While tools are necessary, the core philosophy emphasizes the model's role as the decision-maker, not just the quantity of tools it can access.",
+          "isCorrect": false
+        },
+        {
+          "text": "Effective AI agents must rely solely on their internal, pre-trained knowledge without using external tools.",
+          "rationale": "The entire project is built around the concept of an agent that repeatedly interacts with its environment using tools.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "Consider the stated ratio of importance between the model and the code in the project's philosophy."
+    },
+    {
+      "question": "In the `v0_bash_agent.py` implementation, how is the concept of a subagent achieved?",
+      "answerOptions": [
+        {
+          "text": "By using a dedicated `Task` tool that spawns a child agent from a registry.",
+          "rationale": "The `Task` tool and an agent registry are features introduced in the more advanced `v3` version, not the minimalist `v0`.",
+          "isCorrect": false
+        },
+        {
+          "text": "By recursively executing the script as a new, isolated process via a `bash` command.",
+          "rationale": "This method leverages process isolation at the operating system level to create a subagent with a fresh context, which is the key insight of the `v0` agent.",
+          "isCorrect": true
+        },
+        {
+          "text": "By creating a new thread within the parent process to handle the sub-task.",
+          "rationale": "While a valid programming technique, the `v0` agent uses process spawning, not multithreading, to ensure complete context isolation.",
+          "isCorrect": false
+        },
+        {
+          "text": "By instantiating a new agent class within the code that maintains a separate history list.",
+          "rationale": "The `v0` implementation is much simpler and relies on an external shell command rather than internal class structures for sub-tasking.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "Think about how this minimalist agent uses its single tool to delegate work."
+    },
+    {
+      "question": "What primary problem is the `TodoWrite` tool in `v2_todo_agent.py` designed to solve for the agent?",
+      "answerOptions": [
+        {
+          "text": "The agent polluting its context window with excessive file content during exploration.",
+          "rationale": "This issue, known as 'context pollution', is the primary problem addressed by the subagent mechanism in `v3`.",
+          "isCorrect": false
+        },
+        {
+          "text": "The agent's inability to write new files or modify existing ones.",
+          "rationale": "File writing and editing capabilities are fundamental tools provided in the `v1` basic agent.",
+          "isCorrect": false
+        },
+        {
+          "text": "The model losing focus or forgetting the overall plan during complex, multi-step tasks.",
+          "rationale": "The `TodoWrite` tool makes the agent's plan explicit and persistent, addressing 'context fade' and helping it track progress.",
+          "isCorrect": true
+        },
+        {
+          "text": "The agent not knowing which type of specialized subagent to use for a task.",
+          "rationale": "The concept of specialized subagents is introduced in `v3`, whereas the `TodoWrite` tool is about managing a single agent's workflow.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "This tool helps make the agent's internal thought process visible and persistent."
+    },
+    {
+      "question": "According to the v3 documentation, what is the main advantage of using subagents?",
+      "answerOptions": [
+        {
+          "text": "It allows the agent to learn new domain-specific expertise from `SKILL.md` files.",
+          "rationale": "Loading expertise from external files is the key feature of the `v4` skills mechanism.",
+          "isCorrect": false
+        },
+        {
+          "text": "It provides a mechanism for structured planning and tracking task completion.",
+          "rationale": "Structured planning through a visible list is the core concept introduced with the `TodoManager` in `v2`.",
+          "isCorrect": false
+        },
+        {
+          "text": "It enables the agent to run multiple `bash` commands in parallel for faster execution.",
+          "rationale": "While parallelism is mentioned as a possibility, the primary benefit highlighted is the management of the agent's focus.",
+          "isCorrect": false
+        },
+        {
+          "text": "It isolates the context of a sub-task, preventing the main agent's history from becoming polluted.",
+          "rationale": "This is the central purpose of subagents in `v3`: to handle tasks like codebase exploration in a separate context so the main agent remains focused.",
+          "isCorrect": true
+        }
+      ],
+      "hint": "Consider the problem that arises when an agent reads many large files to prepare for a small change."
+    },
+    {
+      "question": "The v4 documentation draws a clear distinction between 'Tools' and 'Skills'. What is this distinction?",
+      "answerOptions": [
+        {
+          "text": "Tools define what an agent *can do* (its capabilities), while Skills define *how* an agent knows to perform a task (its expertise).",
+          "rationale": "This correctly captures the essence of the distinction: Tools are about action/capability, whereas Skills are about knowledge/expertise.",
+          "isCorrect": true
+        },
+        {
+          "text": "Tools are built-in functionalities, while Skills are third-party plugins that must be downloaded.",
+          "rationale": "The documentation describes skills as locally stored, human-editable files, not necessarily as plugins from a marketplace.",
+          "isCorrect": false
+        },
+        {
+          "text": "Tools are used for general-purpose tasks like reading files, while Skills are only for code generation.",
+          "rationale": "Skills provide domain expertise for a wide range of tasks, such as PDF processing or code review, not just code generation.",
+          "isCorrect": false
+        },
+        {
+          "text": "Tools are implemented in Python code, whereas Skills are implemented using shell scripts.",
+          "rationale": "Skills are primarily human-readable Markdown documents that provide instructions; they are not themselves executable scripts.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "Think about the difference between having a hammer and knowing how to build a house."
+    },
+    {
+      "question": "What is the key benefit of the \"Knowledge Externalization\" paradigm introduced in v4?",
+      "answerOptions": [
+        {
+          "text": "It allows the agent's knowledge to be version-controlled, audited, and edited in plain text by anyone, without requiring model training.",
+          "rationale": "This concept democratizes the process of 'teaching' an agent, moving from expensive, expertise-heavy model training to simple document editing.",
+          "isCorrect": true
+        },
+        {
+          "text": "It forces the agent to write all its internal thoughts to an external log file for easier debugging.",
+          "rationale": "While logging is a development practice, Knowledge Externalization is about how the agent acquires and uses expertise, not how it logs its actions.",
+          "isCorrect": false
+        },
+        {
+          "text": "It caches the model's large parameter weights in the local file system to speed up agent initialization.",
+          "rationale": "This describes a form of model caching, which is a different concept from externalizing domain knowledge into editable documents.",
+          "isCorrect": false
+        },
+        {
+          "text": "It requires the agent to use external web APIs for all information, preventing it from using outdated internal knowledge.",
+          "rationale": "Knowledge Externalization refers to loading structured expertise from local `SKILL.md` files, not necessarily relying on web APIs.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "This paradigm shift makes customizing an agent's expertise as easy as editing a text document."
+    },
+    {
+      "question": "To maintain cost-efficiency by preserving the KV Cache, how does the `v4_skills_agent.py` inject skill content into the conversation?",
+      "answerOptions": [
+        {
+          "text": "By dynamically updating the system prompt with the new skill information before each model call.",
+          "rationale": "The documentation explicitly identifies this as a costly anti-pattern because modifying the system prompt invalidates the entire cache.",
+          "isCorrect": false
+        },
+        {
+          "text": "By appending the skill content as a `tool_result` message, which doesn't alter the preceding message history.",
+          "rationale": "This append-only method ensures the prefix of the conversation remains unchanged, allowing the provider to reuse the cached computations.",
+          "isCorrect": true
+        },
+        {
+          "text": "By performing a lightweight fine-tuning operation on the model in real-time.",
+          "rationale": "Real-time fine-tuning is computationally expensive and is the 'traditional' approach that the skills mechanism is designed to avoid.",
+          "isCorrect": false
+        },
+        {
+          "text": "By storing the skill content in a separate memory buffer that is not part of the model's main context.",
+          "rationale": "For the model to use the knowledge, it must be part of its context; the key is *how* it's added to that context.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "The correct method avoids changing the beginning or middle of the conversation history."
+    },
+    {
+      "question": "Which of these is NOT one of the four essential tools introduced in the `v1_basic_agent.py` to cover most coding use cases?",
+      "answerOptions": [
+        {
+          "text": "`bash`",
+          "rationale": "`bash` is included as the gateway tool for running any command-line operation.",
+          "isCorrect": false
+        },
+        {
+          "text": "`read_file`",
+          "rationale": "`read_file` is included as an essential tool for understanding existing code.",
+          "isCorrect": false
+        },
+        {
+          "text": "`TodoWrite`",
+          "rationale": "`TodoWrite` is the specialized tool for structured planning introduced in the `v2` agent.",
+          "isCorrect": true
+        },
+        {
+          "text": "`edit_file`",
+          "rationale": "`edit_file` is included for making surgical changes to existing files.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "The first version of the agent focused on core capabilities for interacting with the file system and shell, not on complex planning."
+    },
+    {
+      "question": "What is the fundamental logic of the \"core agent loop\" described throughout the project?",
+      "answerOptions": [
+        {
+          "text": "The agent first creates a complete, unchangeable plan and then executes each step in sequence.",
+          "rationale": "The agent loop is iterative and reactive; the result of one tool call informs the model's decision for the next one.",
+          "isCorrect": false
+        },
+        {
+          "text": "The model makes a tool call, the tool's result is added to the history, and this cycle repeats until the model stops calling tools.",
+          "rationale": "This accurately describes the iterative process where the model is the decision-maker, acting in a loop until the task is complete.",
+          "isCorrect": true
+        },
+        {
+          "text": "The user provides a precise sequence of tools for the agent to execute.",
+          "rationale": "In this agent model, the user provides a high-level goal, and the AI model itself decides which tools to use and in what order.",
+          "isCorrect": false
+        },
+        {
+          "text": "The agent's code analyzes the prompt and selects a single, optimal tool to resolve the entire request.",
+          "rationale": "The power of the agent comes from its ability to use multiple tools sequentially over several turns, not from picking just one.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "It is a repetitive cycle of thinking, acting, and observing the results."
+    },
+    {
+      "question": "In the `v3` subagent mechanism, what is the purpose of the `AGENT_TYPES` registry?",
+      "answerOptions": [
+        {
+          "text": "To define different subagent archetypes with specific roles, prompts, and restricted toolsets.",
+          "rationale": "This registry allows the main agent to spawn specialized subagents, such as a read-only 'explore' agent or a full-powered 'code' agent.",
+          "isCorrect": true
+        },
+        {
+          "text": "To list all the available skills and their descriptions for the `v4` agent.",
+          "rationale": "The listing of skills is handled by the `SkillLoader` class, which is a concept from `v4`, not `v3`.",
+          "isCorrect": false
+        },
+        {
+          "text": "To keep a real-time log of all active subagent processes and their current status.",
+          "rationale": "The registry is a static configuration defining agent types, not a dynamic process manager that tracks running instances.",
+          "isCorrect": false
+        },
+        {
+          "text": "To provide the input schema and validation rules for the `TodoWrite` tool.",
+          "rationale": "A tool's input schema is defined within the tool's own JSON definition, not in the agent type registry.",
+          "isCorrect": false
+        }
+      ],
+      "hint": "This configuration allows the main agent to choose the right kind of 'specialist' for a sub-task."
+    }
+  ]
+}
