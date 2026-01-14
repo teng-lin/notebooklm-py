@@ -13,8 +13,11 @@ recorded responses regardless of notebook ID.
 Note: These tests are automatically skipped if cassettes are not available.
 """
 
+import csv
+import json
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -36,6 +39,19 @@ MUTABLE_NOTEBOOK_ID = os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID", "")
 
 
 # =============================================================================
+# Helper for reducing boilerplate
+# =============================================================================
+
+
+@asynccontextmanager
+async def vcr_client():
+    """Context manager for creating authenticated VCR client."""
+    auth = await get_vcr_auth()
+    async with NotebookLMClient(auth) as client:
+        yield client
+
+
+# =============================================================================
 # Notebooks API
 # =============================================================================
 
@@ -48,8 +64,7 @@ class TestNotebooksAPI:
     @notebooklm_vcr.use_cassette("notebooks_list.yaml")
     async def test_list(self):
         """List all notebooks."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             notebooks = await client.notebooks.list()
         assert isinstance(notebooks, list)
 
@@ -58,11 +73,9 @@ class TestNotebooksAPI:
     @notebooklm_vcr.use_cassette("notebooks_get.yaml")
     async def test_get(self):
         """Get a specific notebook."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             notebook = await client.notebooks.get(READONLY_NOTEBOOK_ID)
         assert notebook is not None
-        # Only check ID match when recording (env var set)
         if READONLY_NOTEBOOK_ID:
             assert notebook.id == READONLY_NOTEBOOK_ID
 
@@ -71,8 +84,7 @@ class TestNotebooksAPI:
     @notebooklm_vcr.use_cassette("notebooks_get_summary.yaml")
     async def test_get_summary(self):
         """Get notebook summary."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             summary = await client.notebooks.get_summary(READONLY_NOTEBOOK_ID)
         assert summary is not None
 
@@ -81,8 +93,7 @@ class TestNotebooksAPI:
     @notebooklm_vcr.use_cassette("notebooks_get_description.yaml")
     async def test_get_description(self):
         """Get notebook description."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             description = await client.notebooks.get_description(READONLY_NOTEBOOK_ID)
         assert description is not None
 
@@ -91,8 +102,7 @@ class TestNotebooksAPI:
     @notebooklm_vcr.use_cassette("notebooks_get_raw.yaml")
     async def test_get_raw(self):
         """Get raw notebook data."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             raw = await client.notebooks.get_raw(READONLY_NOTEBOOK_ID)
         assert raw is not None
 
@@ -101,16 +111,10 @@ class TestNotebooksAPI:
     @notebooklm_vcr.use_cassette("notebooks_rename.yaml")
     async def test_rename(self):
         """Rename a notebook (then rename back)."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            # Get current name
+        async with vcr_client() as client:
             notebook = await client.notebooks.get(MUTABLE_NOTEBOOK_ID)
             original_name = notebook.title
-
-            # Rename
             await client.notebooks.rename(MUTABLE_NOTEBOOK_ID, "VCR Test Renamed")
-
-            # Rename back
             await client.notebooks.rename(MUTABLE_NOTEBOOK_ID, original_name)
 
 
@@ -127,8 +131,7 @@ class TestSourcesAPI:
     @notebooklm_vcr.use_cassette("sources_list.yaml")
     async def test_list(self):
         """List sources in a notebook."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             sources = await client.sources.list(READONLY_NOTEBOOK_ID)
         assert isinstance(sources, list)
 
@@ -137,37 +140,33 @@ class TestSourcesAPI:
     @notebooklm_vcr.use_cassette("sources_get_guide.yaml")
     async def test_get_guide(self):
         """Get source guide for a specific source."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             sources = await client.sources.list(READONLY_NOTEBOOK_ID)
             if not sources:
-                pytest.skip("No sources available in notebook for testing")
+                pytest.skip("No sources available")
             guide = await client.sources.get_guide(READONLY_NOTEBOOK_ID, sources[0].id)
-            assert guide is not None
+        assert guide is not None
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("sources_get_fulltext.yaml")
     async def test_get_fulltext(self):
         """Get source fulltext content."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             sources = await client.sources.list(READONLY_NOTEBOOK_ID)
             if not sources:
-                pytest.skip("No sources available in notebook for testing")
+                pytest.skip("No sources available")
             fulltext = await client.sources.get_fulltext(READONLY_NOTEBOOK_ID, sources[0].id)
-            assert fulltext is not None
-            assert fulltext.source_id == sources[0].id
-            assert fulltext.content is not None
-            assert len(fulltext.content) > 0
+        assert fulltext is not None
+        assert fulltext.source_id == sources[0].id
+        assert len(fulltext.content) > 0
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("sources_add_text.yaml")
     async def test_add_text(self):
         """Add a text source."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             source = await client.sources.add_text(
                 MUTABLE_NOTEBOOK_ID,
                 title="VCR Test Source",
@@ -181,8 +180,7 @@ class TestSourcesAPI:
     @notebooklm_vcr.use_cassette("sources_add_url.yaml")
     async def test_add_url(self):
         """Add a URL source."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             source = await client.sources.add_url(
                 MUTABLE_NOTEBOOK_ID,
                 url="https://en.wikipedia.org/wiki/Artificial_intelligence",
@@ -203,8 +201,7 @@ class TestNotesAPI:
     @notebooklm_vcr.use_cassette("notes_list.yaml")
     async def test_list(self):
         """List notes in a notebook."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             notes = await client.notes.list(READONLY_NOTEBOOK_ID)
         assert isinstance(notes, list)
 
@@ -213,8 +210,7 @@ class TestNotesAPI:
     @notebooklm_vcr.use_cassette("notes_list_mind_maps.yaml")
     async def test_list_mind_maps(self):
         """List mind maps in a notebook."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             mind_maps = await client.notes.list_mind_maps(READONLY_NOTEBOOK_ID)
         assert isinstance(mind_maps, list)
 
@@ -223,8 +219,7 @@ class TestNotesAPI:
     @notebooklm_vcr.use_cassette("notes_create.yaml")
     async def test_create(self):
         """Create a note."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             note = await client.notes.create(
                 MUTABLE_NOTEBOOK_ID,
                 title="VCR Test Note",
@@ -237,17 +232,13 @@ class TestNotesAPI:
     @notebooklm_vcr.use_cassette("notes_create_and_update.yaml")
     async def test_create_and_update(self):
         """Create and update a note."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            # Create
+        async with vcr_client() as client:
             note = await client.notes.create(
                 MUTABLE_NOTEBOOK_ID,
                 title="VCR Update Test",
                 content="Original content.",
             )
             assert note is not None
-
-            # Update (returns None on success)
             await client.notes.update(
                 MUTABLE_NOTEBOOK_ID,
                 note.id,
@@ -261,108 +252,107 @@ class TestNotesAPI:
 # =============================================================================
 
 
-class TestArtifactsReadAPI:
-    """Artifacts API read operations."""
+# Artifact list method configurations: (method_name, cassette_name)
+ARTIFACT_LIST_METHODS = [
+    ("list", "artifacts_list.yaml"),
+    ("list_audio", "artifacts_list_audio.yaml"),
+    ("list_video", "artifacts_list_video.yaml"),
+    ("list_reports", "artifacts_list_reports.yaml"),
+    ("list_quizzes", "artifacts_list_quizzes.yaml"),
+    ("list_flashcards", "artifacts_list_flashcards.yaml"),
+    ("list_infographics", "artifacts_list_infographics.yaml"),
+    ("list_slide_decks", "artifacts_list_slide_decks.yaml"),
+    ("list_data_tables", "artifacts_list_data_tables.yaml"),
+]
+
+
+class TestArtifactsListAPI:
+    """Artifacts API list operations - parametrized to reduce duplication."""
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list.yaml")
-    async def test_list(self):
-        """List all artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            artifacts = await client.artifacts.list(READONLY_NOTEBOOK_ID)
-        assert isinstance(artifacts, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_audio.yaml")
-    async def test_list_audio(self):
-        """List audio artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            audio = await client.artifacts.list_audio(READONLY_NOTEBOOK_ID)
-        assert isinstance(audio, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_video.yaml")
-    async def test_list_video(self):
-        """List video artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            video = await client.artifacts.list_video(READONLY_NOTEBOOK_ID)
-        assert isinstance(video, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_reports.yaml")
-    async def test_list_reports(self):
-        """List report artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            reports = await client.artifacts.list_reports(READONLY_NOTEBOOK_ID)
-        assert isinstance(reports, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_quizzes.yaml")
-    async def test_list_quizzes(self):
-        """List quiz artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            quizzes = await client.artifacts.list_quizzes(READONLY_NOTEBOOK_ID)
-        assert isinstance(quizzes, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_flashcards.yaml")
-    async def test_list_flashcards(self):
-        """List flashcard artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            flashcards = await client.artifacts.list_flashcards(READONLY_NOTEBOOK_ID)
-        assert isinstance(flashcards, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_infographics.yaml")
-    async def test_list_infographics(self):
-        """List infographic artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            infographics = await client.artifacts.list_infographics(READONLY_NOTEBOOK_ID)
-        assert isinstance(infographics, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_slide_decks.yaml")
-    async def test_list_slide_decks(self):
-        """List slide deck artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            slide_decks = await client.artifacts.list_slide_decks(READONLY_NOTEBOOK_ID)
-        assert isinstance(slide_decks, list)
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @notebooklm_vcr.use_cassette("artifacts_list_data_tables.yaml")
-    async def test_list_data_tables(self):
-        """List data table artifacts."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
-            data_tables = await client.artifacts.list_data_tables(READONLY_NOTEBOOK_ID)
-        assert isinstance(data_tables, list)
+    @pytest.mark.parametrize("method_name,cassette", ARTIFACT_LIST_METHODS)
+    async def test_list_artifacts(self, method_name, cassette):
+        """Test artifact list methods."""
+        with notebooklm_vcr.use_cassette(cassette):
+            async with vcr_client() as client:
+                method = getattr(client.artifacts, method_name)
+                if method_name == "list":
+                    result = await method(READONLY_NOTEBOOK_ID)
+                else:
+                    result = await method(READONLY_NOTEBOOK_ID)
+                assert isinstance(result, list)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("artifacts_suggest_reports.yaml")
     async def test_suggest_reports(self):
         """Get report suggestions."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             suggestions = await client.artifacts.suggest_reports(READONLY_NOTEBOOK_ID)
         assert isinstance(suggestions, list)
+
+
+class TestArtifactsDownloadAPI:
+    """Artifacts API download operations."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_report.yaml")
+    async def test_download_report(self, tmp_path):
+        """Download a report as markdown."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "report.md"
+            try:
+                path = await client.artifacts.download_report(
+                    READONLY_NOTEBOOK_ID, str(output_path)
+                )
+                assert os.path.exists(path)
+                content = output_path.read_text(encoding="utf-8")
+                assert len(content) > 0 and "#" in content
+            except ValueError as e:
+                if "No completed report" in str(e):
+                    pytest.skip("No completed report artifact available")
+                raise
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_mind_map.yaml")
+    async def test_download_mind_map(self, tmp_path):
+        """Download a mind map as JSON."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "mindmap.json"
+            try:
+                path = await client.artifacts.download_mind_map(
+                    READONLY_NOTEBOOK_ID, str(output_path)
+                )
+                assert os.path.exists(path)
+                data = json.loads(output_path.read_text(encoding="utf-8"))
+                assert "name" in data
+            except ValueError as e:
+                if "No mind maps found" in str(e):
+                    pytest.skip("No mind map artifact available")
+                raise
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_download_data_table.yaml")
+    async def test_download_data_table(self, tmp_path):
+        """Download a data table as CSV."""
+        async with vcr_client() as client:
+            output_path = tmp_path / "data.csv"
+            try:
+                path = await client.artifacts.download_data_table(
+                    READONLY_NOTEBOOK_ID, str(output_path)
+                )
+                assert os.path.exists(path)
+                with open(output_path, encoding="utf-8-sig") as f:
+                    rows = list(csv.reader(f))
+                assert len(rows) >= 1
+            except ValueError as e:
+                if "No completed data table" in str(e):
+                    pytest.skip("No completed data table artifact available")
+                raise
 
 
 # =============================================================================
@@ -382,8 +372,7 @@ class TestArtifactsGenerateAPI:
     @notebooklm_vcr.use_cassette("artifacts_generate_report.yaml")
     async def test_generate_report(self):
         """Generate a briefing doc report."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             result = await client.artifacts.generate_report(
                 MUTABLE_NOTEBOOK_ID,
                 report_format=ReportFormat.BRIEFING_DOC,
@@ -395,8 +384,7 @@ class TestArtifactsGenerateAPI:
     @notebooklm_vcr.use_cassette("artifacts_generate_study_guide.yaml")
     async def test_generate_study_guide(self):
         """Generate a study guide."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             result = await client.artifacts.generate_study_guide(MUTABLE_NOTEBOOK_ID)
         assert result is not None
 
@@ -405,8 +393,7 @@ class TestArtifactsGenerateAPI:
     @notebooklm_vcr.use_cassette("artifacts_generate_quiz.yaml")
     async def test_generate_quiz(self):
         """Generate a quiz."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             result = await client.artifacts.generate_quiz(MUTABLE_NOTEBOOK_ID)
         assert result is not None
 
@@ -415,8 +402,7 @@ class TestArtifactsGenerateAPI:
     @notebooklm_vcr.use_cassette("artifacts_generate_flashcards.yaml")
     async def test_generate_flashcards(self):
         """Generate flashcards."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             result = await client.artifacts.generate_flashcards(MUTABLE_NOTEBOOK_ID)
         assert result is not None
 
@@ -434,8 +420,7 @@ class TestChatAPI:
     @notebooklm_vcr.use_cassette("chat_ask.yaml")
     async def test_ask(self):
         """Ask a question."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             result = await client.chat.ask(
                 MUTABLE_NOTEBOOK_ID,
                 "What is this notebook about?",
@@ -449,8 +434,7 @@ class TestChatAPI:
     @notebooklm_vcr.use_cassette("chat_ask_with_references.yaml")
     async def test_ask_with_references(self):
         """Ask a question that generates references."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             result = await client.chat.ask(
                 MUTABLE_NOTEBOOK_ID,
                 "Summarize the key points with specific citations from the sources.",
@@ -469,7 +453,6 @@ class TestChatAPI:
     @notebooklm_vcr.use_cassette("chat_get_history.yaml")
     async def test_get_history(self):
         """Get chat history."""
-        auth = await get_vcr_auth()
-        async with NotebookLMClient(auth) as client:
+        async with vcr_client() as client:
             history = await client.chat.get_history(MUTABLE_NOTEBOOK_ID)
         assert isinstance(history, list)

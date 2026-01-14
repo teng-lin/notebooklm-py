@@ -387,3 +387,254 @@ class TestDownloadUrl:
                 result = await api._download_url("https://other.example.com/file.mp4", output_path)
 
             assert result == output_path
+
+
+class TestDownloadReport:
+    """Test download_report method."""
+
+    @pytest.mark.asyncio
+    async def test_download_report_success(self, mock_artifacts_api):
+        """Test successful report download."""
+        api, mock_core = mock_artifacts_api
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "report.md")
+
+            # Patch _list_raw to return report artifact data
+            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+                # Type 2 (report), status 3 (completed), markdown at index 7 (wrapped in list)
+                mock_list.return_value = [
+                    [
+                        "report_001",
+                        "Report Title",
+                        2,  # type (report)
+                        None,
+                        3,  # status (completed)
+                        None,
+                        None,
+                        ["# Test Report\n\nThis is the report content."],  # markdown in list
+                    ]
+                ]
+
+                result = await api.download_report("nb_123", output_path)
+
+            assert result == output_path
+            # Verify file was written
+            with open(output_path, encoding="utf-8") as f:
+                content = f.read()
+            assert "# Test Report" in content
+
+    @pytest.mark.asyncio
+    async def test_download_report_no_report_found(self, mock_artifacts_api):
+        """Test error when no report artifact exists."""
+        api, mock_core = mock_artifacts_api
+
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = []
+
+            with pytest.raises(ValueError, match="No completed report"):
+                await api.download_report("nb_123", "/tmp/report.md")
+
+    @pytest.mark.asyncio
+    async def test_download_report_specific_id_not_found(self, mock_artifacts_api):
+        """Test error when specific report ID not found."""
+        api, mock_core = mock_artifacts_api
+
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = [["other_id", "Report", 2, None, 3, None, None, ["content"]]]
+
+            with pytest.raises(ValueError, match="Report report_001 not found"):
+                await api.download_report("nb_123", "/tmp/report.md", artifact_id="report_001")
+
+    @pytest.mark.asyncio
+    async def test_download_report_direct_string_content(self, mock_artifacts_api):
+        """Test report download when content is direct string (not wrapped in list)."""
+        api, mock_core = mock_artifacts_api
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "report.md")
+
+            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+                # Type 2 (report), status 3 (completed), markdown as direct string
+                mock_list.return_value = [
+                    [
+                        "report_002",
+                        "Direct String Report",
+                        2,  # type (report)
+                        None,
+                        3,  # status (completed)
+                        None,
+                        None,
+                        "# Direct String Report\n\nContent as string, not list.",  # direct string
+                    ]
+                ]
+
+                result = await api.download_report("nb_123", output_path)
+
+            assert result == output_path
+            with open(output_path, encoding="utf-8") as f:
+                content = f.read()
+            assert "# Direct String Report" in content
+            assert "Content as string, not list." in content
+
+
+class TestDownloadMindMap:
+    """Test download_mind_map method."""
+
+    @pytest.mark.asyncio
+    async def test_download_mind_map_success(self, mock_artifacts_api):
+        """Test successful mind map download."""
+        api, mock_core = mock_artifacts_api
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "mindmap.json")
+
+            # Mock mind maps via notes API
+            json_content = '{"name": "Root", "children": [{"name": "Child1"}]}'
+            api._notes.list_mind_maps = AsyncMock(
+                return_value=[
+                    [
+                        "mindmap_001",  # mm[0] = id
+                        [None, json_content],  # mm[1][1] = JSON string
+                        None,
+                        None,
+                        "Mind Map Title",  # mm[4] = title
+                    ]
+                ]
+            )
+
+            result = await api.download_mind_map("nb_123", output_path)
+
+            assert result == output_path
+            # Verify JSON was written correctly
+            import json
+
+            with open(output_path, encoding="utf-8") as f:
+                data = json.load(f)
+            assert data["name"] == "Root"
+            assert len(data["children"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_download_mind_map_no_mind_map_found(self, mock_artifacts_api):
+        """Test error when no mind map exists."""
+        api, mock_core = mock_artifacts_api
+        api._notes.list_mind_maps = AsyncMock(return_value=[])
+
+        with pytest.raises(ValueError, match="No mind maps found"):
+            await api.download_mind_map("nb_123", "/tmp/mindmap.json")
+
+    @pytest.mark.asyncio
+    async def test_download_mind_map_specific_id_not_found(self, mock_artifacts_api):
+        """Test error when specific mind map ID not found."""
+        api, mock_core = mock_artifacts_api
+        api._notes.list_mind_maps = AsyncMock(
+            return_value=[["other_id", [None, "{}"], None, None, "Other"]]
+        )
+
+        with pytest.raises(ValueError, match="Mind map mindmap_001 not found"):
+            await api.download_mind_map("nb_123", "/tmp/mindmap.json", artifact_id="mindmap_001")
+
+
+class TestDownloadDataTable:
+    """Test download_data_table method."""
+
+    @pytest.mark.asyncio
+    async def test_download_data_table_success(self, mock_artifacts_api):
+        """Test successful data table download."""
+        api, mock_core = mock_artifacts_api
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "data.csv")
+
+            # Patch _list_raw to return data table artifact
+            with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+                # Create the complex nested structure for data table
+                # artifact[18] contains the rich-text structure
+                artifact = ["table_001", "Data Table Title", 9, None, 3]
+                artifact.extend([None] * 13)  # Pad to index 18
+
+                # Create minimal valid data table structure
+                # Structure: raw_data[0][0][0][0][4][2] = rows array
+                rows_data = [
+                    # Header row
+                    [
+                        0,
+                        20,
+                        [
+                            [0, 5, [[0, 5, [[0, 5, [["Col1"]]]]]]],
+                            [5, 10, [[5, 10, [[5, 10, [["Col2"]]]]]]],
+                            [10, 20, [[10, 20, [[10, 20, [["Col3"]]]]]]],
+                        ],
+                    ],
+                    # Data row
+                    [
+                        20,
+                        40,
+                        [
+                            [20, 25, [[20, 25, [[20, 25, [["A"]]]]]]],
+                            [25, 30, [[25, 30, [[25, 30, [["B"]]]]]]],
+                            [30, 40, [[30, 40, [[30, 40, [["C"]]]]]]],
+                        ],
+                    ],
+                ]
+                # Build the nested structure: [0][0][0][0][4][2]
+                data_table_structure = [[[[[0, 100, None, None, [6, 7, rows_data]]]]]]
+                artifact.append(data_table_structure)
+                mock_list.return_value = [artifact]
+
+                result = await api.download_data_table("nb_123", output_path)
+
+            assert result == output_path
+            # Verify CSV was written correctly
+            import csv
+
+            with open(output_path, encoding="utf-8-sig") as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+            assert rows[0] == ["Col1", "Col2", "Col3"]
+            assert rows[1] == ["A", "B", "C"]
+
+    @pytest.mark.asyncio
+    async def test_download_data_table_no_table_found(self, mock_artifacts_api):
+        """Test error when no data table artifact exists."""
+        api, mock_core = mock_artifacts_api
+
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            mock_list.return_value = []
+
+            with pytest.raises(ValueError, match="No completed data table"):
+                await api.download_data_table("nb_123", "/tmp/data.csv")
+
+    @pytest.mark.asyncio
+    async def test_download_data_table_specific_id_not_found(self, mock_artifacts_api):
+        """Test error when specific data table ID not found."""
+        api, mock_core = mock_artifacts_api
+
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            # Need at least 19 elements for valid structure
+            artifact = ["other_id", "Table", 9, None, 3]
+            artifact.extend([None] * 14)  # Pad to 19 elements
+            mock_list.return_value = [artifact]
+
+            with pytest.raises(ValueError, match="Data table table_001 not found"):
+                await api.download_data_table("nb_123", "/tmp/data.csv", artifact_id="table_001")
+
+    @pytest.mark.asyncio
+    async def test_download_data_table_empty_headers(self, mock_artifacts_api):
+        """Test error when data table has invalid structure resulting in empty headers."""
+        api, mock_core = mock_artifacts_api
+
+        with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
+            artifact = ["table_001", "Data Table", 9, None, 3]
+            artifact.extend([None] * 13)  # Pad to index 18
+
+            # Create structure with invalid row format (missing cell array)
+            invalid_rows = [
+                [0, 20],  # Missing third element (cell array)
+            ]
+            data_table_structure = [[[[[0, 100, None, None, [6, 7, invalid_rows]]]]]]
+            artifact.append(data_table_structure)
+            mock_list.return_value = [artifact]
+
+            with pytest.raises(ValueError, match="Failed to extract headers"):
+                await api.download_data_table("nb_123", "/tmp/data.csv")

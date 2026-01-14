@@ -127,6 +127,9 @@ All generate commands support:
 | `video [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download video --latest` |
 | `slide-deck [path]` | Output directory | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download slide-deck ./slides/` |
 | `infographic [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download infographic ./info.png` |
+| `report [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download report ./report.md` |
+| `mind-map [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download mind-map ./map.json` |
+| `data-table [path]` | Output path | `-a/--artifact`, `--all`, `--latest`, `--name`, `--force`, `--dry-run` | `download data-table ./data.csv` |
 
 ### Note Commands (`notebooklm note <cmd>`)
 
@@ -388,13 +391,25 @@ notebooklm generate report "Executive summary for stakeholders" --type briefing-
 notebooklm generate report --type study-guide -s src_001 -s src_002
 ```
 
-### Download: `audio`, `video`, `slide-deck`, `infographic`
+### Download: `audio`, `video`, `slide-deck`, `infographic`, `report`, `mind-map`, `data-table`
 
 Download generated artifacts to your local machine.
 
 ```bash
 notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
 ```
+
+**Artifact Types and Output Formats:**
+
+| Type | Default Extension | Description |
+|------|-------------------|-------------|
+| `audio` | `.mp4` | Audio overview (podcast) in MP4 container |
+| `video` | `.mp4` | Video overview |
+| `slide-deck` | `.pdf` | Slide deck as PDF |
+| `infographic` | `.png` | Infographic image |
+| `report` | `.md` | Report as Markdown (Briefing Doc, Study Guide, etc.) |
+| `mind-map` | `.json` | Mind map as JSON tree structure |
+| `data-table` | `.csv` | Data table as CSV (UTF-8 with BOM for Excel) |
 
 **Options:**
 - `--all` - Download all artifacts of this type
@@ -420,6 +435,15 @@ notebooklm download slide-deck --name "Final Presentation"
 
 # Preview a batch download
 notebooklm download audio --all --dry-run
+
+# Download a report as markdown
+notebooklm download report ./study-guide.md
+
+# Download mind map as JSON
+notebooklm download mind-map ./concept-map.json
+
+# Download data table as CSV (opens in Excel)
+notebooklm download data-table ./research-data.csv
 ```
 
 ---

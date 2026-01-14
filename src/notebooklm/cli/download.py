@@ -5,6 +5,9 @@ Commands:
     video        Download video file
     slide-deck   Download slide deck PDF
     infographic  Download infographic image
+    report       Download report as markdown
+    mind-map     Download mind map as JSON
+    data-table   Download data table as CSV
 """
 
 import json
@@ -35,6 +38,9 @@ def download():
       video        Download video file
       slide-deck   Download slide deck PDF
       infographic  Download infographic image
+      report       Download report as markdown
+      mind-map     Download mind map as JSON
+      data-table   Download data table as CSV
     """
     pass
 
@@ -107,6 +113,9 @@ async def _download_artifacts_generic(
                 "video": client.artifacts.download_video,
                 "infographic": client.artifacts.download_infographic,
                 "slide-deck": client.artifacts.download_slide_deck,
+                "report": client.artifacts.download_report,
+                "mind-map": client.artifacts.download_mind_map,
+                "data-table": client.artifacts.download_data_table,
             }
             download_fn = download_methods.get(artifact_type_name)
             if not download_fn:
@@ -330,7 +339,61 @@ async def _download_artifacts_generic(
     return await _download()
 
 
-def _display_download_result(result: dict, artifact_type: str):
+def _execute_download(
+    ctx,
+    artifact_type_name: str,
+    artifact_type_id: int,
+    file_extension: str,
+    default_output_dir: str,
+    output_path: str | None,
+    notebook: str | None,
+    latest: bool,
+    earliest: bool,
+    download_all: bool,
+    name: str | None,
+    artifact_id: str | None,
+    json_output: bool,
+    dry_run: bool,
+    force: bool,
+    no_clobber: bool,
+) -> None:
+    """Execute download and handle output display."""
+    try:
+        result = run_async(
+            _download_artifacts_generic(
+                ctx=ctx,
+                artifact_type_name=artifact_type_name,
+                artifact_type_id=artifact_type_id,
+                file_extension=file_extension,
+                default_output_dir=default_output_dir,
+                output_path=output_path,
+                notebook=notebook,
+                latest=latest,
+                earliest=earliest,
+                download_all=download_all,
+                name=name,
+                artifact_id=artifact_id,
+                json_output=json_output,
+                dry_run=dry_run,
+                force=force,
+                no_clobber=no_clobber,
+            )
+        )
+
+        if json_output:
+            console.print(json.dumps(result, indent=2))
+            return
+
+        _display_download_result(result, artifact_type_name)
+
+        if "error" in result:
+            raise SystemExit(1)
+
+    except Exception as e:
+        handle_error(e)
+
+
+def _display_download_result(result: dict, artifact_type: str) -> None:
     """Display download results in user-friendly format."""
     if "error" in result:
         console.print(f"[red]Error:[/red] {result['error']}")
@@ -435,40 +498,24 @@ def download_audio(
       # Preview without downloading
       notebooklm download audio --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="audio",
-                artifact_type_id=1,
-                file_extension=".mp3",
-                default_output_dir="./audio",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        if "error" in result:
-            _display_download_result(result, "audio")
-            raise SystemExit(1)
-
-        _display_download_result(result, "audio")
-
-    except Exception as e:
-        handle_error(e)
+    _execute_download(
+        ctx,
+        "audio",
+        1,
+        ".mp3",
+        "./audio",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )
 
 
 @download.command("video")
@@ -517,40 +564,24 @@ def download_video(
       # Preview without downloading
       notebooklm download video --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="video",
-                artifact_type_id=3,
-                file_extension=".mp4",
-                default_output_dir="./video",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        if "error" in result:
-            _display_download_result(result, "video")
-            raise SystemExit(1)
-
-        _display_download_result(result, "video")
-
-    except Exception as e:
-        handle_error(e)
+    _execute_download(
+        ctx,
+        "video",
+        3,
+        ".mp4",
+        "./video",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )
 
 
 @download.command("slide-deck")
@@ -599,40 +630,24 @@ def download_slide_deck(
       # Preview without downloading
       notebooklm download slide-deck --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="slide-deck",
-                artifact_type_id=8,
-                file_extension=".pdf",
-                default_output_dir="./slides",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        if "error" in result:
-            _display_download_result(result, "slide-deck")
-            raise SystemExit(1)
-
-        _display_download_result(result, "slide-deck")
-
-    except Exception as e:
-        handle_error(e)
+    _execute_download(
+        ctx,
+        "slide-deck",
+        8,
+        ".pdf",
+        "./slides",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )
 
 
 @download.command("infographic")
@@ -681,37 +696,219 @@ def download_infographic(
       # Preview without downloading
       notebooklm download infographic --all --dry-run
     """
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name="infographic",
-                artifact_type_id=7,
-                file_extension=".png",
-                default_output_dir="./infographic",
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
+    _execute_download(
+        ctx,
+        "infographic",
+        7,
+        ".png",
+        "./infographic",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )
 
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
 
-        if "error" in result:
-            _display_download_result(result, "infographic")
-            raise SystemExit(1)
+@download.command("report")
+@click.argument("output_path", required=False, type=click.Path())
+@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
+@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
+@click.option("--earliest", is_flag=True, help="Download earliest")
+@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
+@click.option("--name", help="Filter by artifact title (fuzzy match)")
+@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
+@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
+@click.option("--dry-run", is_flag=True, help="Preview without downloading")
+@click.option("--force", is_flag=True, help="Overwrite existing files")
+@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
+@click.pass_context
+def download_report(
+    ctx,
+    output_path,
+    notebook,
+    latest,
+    earliest,
+    download_all,
+    name,
+    artifact_id,
+    json_output,
+    dry_run,
+    force,
+    no_clobber,
+):
+    """Download report(s) as markdown files.
 
-        _display_download_result(result, "infographic")
+    \b
+    Examples:
+      # Download latest report to default filename
+      notebooklm download report
 
-    except Exception as e:
-        handle_error(e)
+      # Download to specific path
+      notebooklm download report my-report.md
+
+      # Download all reports to directory
+      notebooklm download report --all ./reports/
+
+      # Download specific artifact by name
+      notebooklm download report --name "chapter 3"
+
+      # Preview without downloading
+      notebooklm download report --all --dry-run
+    """
+    _execute_download(
+        ctx,
+        "report",
+        2,
+        ".md",
+        "./reports",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )
+
+
+@download.command("mind-map")
+@click.argument("output_path", required=False, type=click.Path())
+@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
+@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
+@click.option("--earliest", is_flag=True, help="Download earliest")
+@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
+@click.option("--name", help="Filter by artifact title (fuzzy match)")
+@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
+@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
+@click.option("--dry-run", is_flag=True, help="Preview without downloading")
+@click.option("--force", is_flag=True, help="Overwrite existing files")
+@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
+@click.pass_context
+def download_mind_map(
+    ctx,
+    output_path,
+    notebook,
+    latest,
+    earliest,
+    download_all,
+    name,
+    artifact_id,
+    json_output,
+    dry_run,
+    force,
+    no_clobber,
+):
+    """Download mind map(s) as JSON files.
+
+    \b
+    Examples:
+      # Download latest mind map to default filename
+      notebooklm download mind-map
+
+      # Download to specific path
+      notebooklm download mind-map my-mindmap.json
+
+      # Download all mind maps to directory
+      notebooklm download mind-map --all ./mind-maps/
+
+      # Download specific artifact by name
+      notebooklm download mind-map --name "chapter 3"
+
+      # Preview without downloading
+      notebooklm download mind-map --all --dry-run
+    """
+    _execute_download(
+        ctx,
+        "mind-map",
+        5,
+        ".json",
+        "./mind-maps",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )
+
+
+@download.command("data-table")
+@click.argument("output_path", required=False, type=click.Path())
+@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
+@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
+@click.option("--earliest", is_flag=True, help="Download earliest")
+@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
+@click.option("--name", help="Filter by artifact title (fuzzy match)")
+@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
+@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
+@click.option("--dry-run", is_flag=True, help="Preview without downloading")
+@click.option("--force", is_flag=True, help="Overwrite existing files")
+@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
+@click.pass_context
+def download_data_table(
+    ctx,
+    output_path,
+    notebook,
+    latest,
+    earliest,
+    download_all,
+    name,
+    artifact_id,
+    json_output,
+    dry_run,
+    force,
+    no_clobber,
+):
+    """Download data table(s) as CSV files.
+
+    \b
+    Examples:
+      # Download latest data table to default filename
+      notebooklm download data-table
+
+      # Download to specific path
+      notebooklm download data-table my-data.csv
+
+      # Download all data tables to directory
+      notebooklm download data-table --all ./data-tables/
+
+      # Download specific artifact by name
+      notebooklm download data-table --name "chapter 3"
+
+      # Preview without downloading
+      notebooklm download data-table --all --dry-run
+    """
+    _execute_download(
+        ctx,
+        "data-table",
+        9,
+        ".csv",
+        "./data-tables",
+        output_path,
+        notebook,
+        latest,
+        earliest,
+        download_all,
+        name,
+        artifact_id,
+        json_output,
+        dry_run,
+        force,
+        no_clobber,
+    )

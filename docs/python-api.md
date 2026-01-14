@@ -305,6 +305,9 @@ print(f"Keywords: {guide['keywords']}")
 | `download_video(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download video to file (MP4) |
 | `download_infographic(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download infographic to file (PNG) |
 | `download_slide_deck(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download slide deck as PDF |
+| `download_report(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download report as Markdown (.md) |
+| `download_mind_map(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download mind map as JSON (.json) |
+| `download_data_table(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download data table as CSV (.csv) |
 
 **Download Methods:**
 
@@ -324,12 +327,27 @@ path = await client.artifacts.download_infographic(nb_id, "infographic.png")
 # Download slide deck as PDF
 path = await client.artifacts.download_slide_deck(nb_id, "./slides.pdf")
 # Returns: "./slides.pdf"
+
+# Download report as Markdown
+path = await client.artifacts.download_report(nb_id, "./study-guide.md")
+# Extracts markdown content from Briefing Doc, Study Guide, Blog Post, etc.
+
+# Download mind map as JSON
+path = await client.artifacts.download_mind_map(nb_id, "./concept-map.json")
+# JSON structure: {"name": "Topic", "children": [{"name": "Subtopic", ...}]}
+
+# Download data table as CSV
+path = await client.artifacts.download_data_table(nb_id, "./data.csv")
+# CSV uses UTF-8 with BOM encoding for Excel compatibility
 ```
 
 **Notes:**
 - If `artifact_id` is not specified, downloads the first completed artifact of that type
 - Raises `ValueError` if no completed artifact is found
 - Some URLs require browser-based download (handled automatically)
+- Report downloads extract the markdown content from the artifact
+- Mind map downloads return a JSON tree structure with `name` and `children` fields
+- Data table downloads parse the complex rich-text format into CSV rows/columns
 
 #### Export Methods
 
