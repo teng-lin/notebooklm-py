@@ -146,6 +146,5 @@ docs/
 ├── development.md         # Architecture, testing, releasing
 ├── rpc-development.md     # RPC capture and debugging
 ├── rpc-reference.md       # RPC payload structures
-├── examples/              # Runnable example scripts
-└── designs/               # Design decisions (ADRs)
+└── examples/              # Runnable example scripts
 ```
