@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-01-13
+## [0.2.0] - 2026-01-14
 
 ### Added
 - **Source fulltext extraction** - Retrieve the complete indexed text content of any source
@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All download commands support `--all`, `--latest`, `--name`, and `--artifact` selection options
 
 ### Fixed
-- **Regional Google domain authentication** - SID cookie extraction now works with regional Google domains (e.g., google.co.uk, google.de) in addition to google.com
+- **Regional Google domain authentication** - SID cookie extraction now works with regional Google domains (e.g., google.co.uk, google.de, google.cn) in addition to google.com
+- **Artifact completion detection** - Media URL availability is now verified before reporting artifact as complete, preventing premature "ready" status
 - **URL hostname validation** - Use proper URL parsing instead of string operations for security
 
 ### Changed

@@ -715,6 +715,7 @@ class TestIsGoogleDomain:
             (".google.co.id", True),  # Indonesia
             (".google.co.th", True),  # Thailand
             # .google.XX pattern (single ccTLD)
+            (".google.cn", True),  # China
             (".google.de", True),  # Germany
             (".google.fr", True),  # France
             (".google.it", True),  # Italy
@@ -920,21 +921,29 @@ class TestIsAllowedCookieDomainRegional:
 
 
 class TestExtractCookiesRegionalDomains:
-    """Test cookie extraction from regional Google domains (Issue #20)."""
+    """Test cookie extraction from regional Google domains (Issue #20, #27)."""
 
-    def test_extracts_sid_from_regional_domain(self):
-        """Test extracts SID cookie from regional Google domain like .google.com.sg."""
+    @pytest.mark.parametrize(
+        "domain,sid_value,description",
+        [
+            (".google.com.sg", "sid_from_singapore", "Issue #20 - Singapore"),
+            (".google.cn", "sid_from_china", "Issue #27 - China"),
+            (".google.co.uk", "sid_from_uk", "UK regional domain"),
+            (".google.de", "sid_from_de", "Germany regional domain"),
+        ],
+    )
+    def test_extracts_sid_from_regional_domain(self, domain, sid_value, description):
+        """Test extracts SID cookie from regional Google domains."""
         storage_state = {
             "cookies": [
-                # SID on regional domain (the bug scenario from Issue #20)
-                {"name": "SID", "value": "sid_from_singapore", "domain": ".google.com.sg"},
+                {"name": "SID", "value": sid_value, "domain": domain},
                 {"name": "OSID", "value": "osid_value", "domain": "notebooklm.google.com"},
             ]
         }
 
         cookies = extract_cookies_from_storage(storage_state)
 
-        assert cookies["SID"] == "sid_from_singapore"
+        assert cookies["SID"] == sid_value
         assert cookies["OSID"] == "osid_value"
 
     def test_extracts_sid_from_all_regional_patterns(self):

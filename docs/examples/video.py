@@ -15,6 +15,7 @@ Prerequisites:
 """
 
 import asyncio
+
 from notebooklm import NotebookLMClient, VideoFormat, VideoStyle
 
 
@@ -22,7 +23,6 @@ async def main():
     """Generate a video overview from notebook sources."""
 
     async with await NotebookLMClient.from_storage() as client:
-
         # Step 1: Create a notebook with content
         print("Creating notebook...")
         notebook = await client.notebooks.create("Video Demo Notebook")
@@ -79,8 +79,8 @@ async def main():
                 notebook.id,
                 generation.task_id,
                 initial_interval=10.0,  # Check every 10 seconds initially
-                max_interval=30.0,      # Max 30 seconds between checks
-                timeout=900.0,          # 15 minute timeout for videos
+                max_interval=30.0,  # Max 30 seconds between checks
+                timeout=900.0,  # 15 minute timeout for videos
             )
 
             if final_status.is_complete:

@@ -18,6 +18,7 @@ Usage:
 """
 
 import asyncio
+
 from notebooklm import NotebookLMClient
 
 
@@ -44,17 +45,13 @@ async def main():
         # 4. Generate an audio overview
         print("Generating podcast (this may take a few minutes)...")
         status = await client.artifacts.generate_audio(
-            nb.id,
-            instructions="Focus on the history and key milestones"
+            nb.id, instructions="Focus on the history and key milestones"
         )
         print(f"  Started generation, task_id: {status.task_id}")
 
         # Wait for completion
         final = await client.artifacts.wait_for_completion(
-            nb.id,
-            status.task_id,
-            timeout=300,
-            poll_interval=10
+            nb.id, status.task_id, timeout=300, poll_interval=10
         )
 
         if final.is_complete:

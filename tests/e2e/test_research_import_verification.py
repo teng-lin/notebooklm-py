@@ -5,6 +5,9 @@ This test verifies the complete flow:
 2. Import discovered sources
 3. Wait for sources to process
 4. Verify source count matches expected
+
+Note: These tests are marked as flaky because Google's IMPORT_RESEARCH API
+can occasionally take longer than the default 30s timeout to respond.
 """
 
 import asyncio
@@ -15,6 +18,7 @@ from .conftest import POLL_INTERVAL, requires_auth
 
 
 @requires_auth
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 class TestResearchImportVerification:
     """Verify research import actually adds sources to the notebook."""
 

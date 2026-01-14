@@ -143,7 +143,8 @@ docs/
 ├── configuration.md       # Storage and settings
 ├── troubleshooting.md     # Common issues and solutions
 ├── stability.md           # API versioning policy
-├── development.md         # Architecture, testing, releasing
+├── development.md         # Architecture and testing
+├── releasing.md           # Release checklist
 ├── rpc-development.md     # RPC capture and debugging
 ├── rpc-reference.md       # RPC payload structures
 └── examples/              # Runnable example scripts

@@ -18,7 +18,21 @@ from ._logging import configure_logging
 
 configure_logging()
 
-__version__ = "0.2.0"
+# Version sourced from pyproject.toml via importlib.metadata
+import logging
+from importlib.metadata import PackageNotFoundError, version
+
+_logger = logging.getLogger(__name__)
+
+try:
+    __version__ = version("notebooklm-py")
+except PackageNotFoundError:
+    __version__ = "0.0.0.dev0"  # Fallback when package is not installed
+    _logger.debug(
+        "Package 'notebooklm-py' not found in metadata. "
+        "Using fallback version '%s'. This is normal during development.",
+        __version__,
+    )
 
 # Public API: Authentication
 from .auth import DEFAULT_STORAGE_PATH, AuthTokens

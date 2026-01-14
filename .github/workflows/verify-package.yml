@@ -1,0 +1,123 @@
+name: Verify Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Package source'
+        required: true
+        default: 'testpypi'
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+jobs:
+  verify:
+    name: Verify from ${{ inputs.source }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Get version from pyproject.toml
+      id: version
+      run: |
+        VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Create verification venv
+      run: python -m venv verify-venv
+
+    - name: Install from TestPyPI
+      if: inputs.source == 'testpypi'
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        pip install --index-url https://test.pypi.org/simple/ \
+          --extra-index-url https://pypi.org/simple/ \
+          notebooklm-py==${{ steps.version.outputs.version }}
+
+    - name: Install from PyPI
+      if: inputs.source == 'pypi'
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        pip install notebooklm-py==${{ steps.version.outputs.version }}
+
+    - name: Verify version
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        INSTALLED=$(python -c "from notebooklm import __version__; print(__version__)")
+        EXPECTED="${{ steps.version.outputs.version }}"
+        if [ "$INSTALLED" != "$EXPECTED" ]; then
+          echo "Version mismatch: installed=$INSTALLED expected=$EXPECTED"
+          exit 1
+        fi
+        echo "Version verified: $INSTALLED"
+
+    - name: Verify CLI
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        notebooklm --version
+        notebooklm --help
+
+    - name: Verify imports
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        python -c "from notebooklm import NotebookLMClient, Notebook, Source, Artifact"
+        echo "Core imports verified"
+
+    - name: Install test dependencies
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        pip install pytest pytest-asyncio pytest-httpx pytest-cov pytest-rerunfailures python-dotenv vcrpy playwright
+        playwright install chromium
+        playwright install-deps
+
+    - name: Run unit tests
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        pytest tests/unit -v
+
+    - name: Run integration tests
+      shell: bash
+      run: |
+        source verify-venv/bin/activate
+        pytest tests/integration -v
+
+    - name: Skip E2E tests (fork)
+      if: github.repository != 'teng-lin/notebooklm-py'
+      run: |
+        echo "::warning::E2E tests skipped - secrets not available in fork repositories"
+        echo "## E2E Tests Skipped" >> $GITHUB_STEP_SUMMARY
+        echo "E2E tests were not run because this workflow is executing on a fork." >> $GITHUB_STEP_SUMMARY
+
+    - name: Run E2E tests
+      if: github.repository == 'teng-lin/notebooklm-py'
+      shell: bash
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      run: |
+        source verify-venv/bin/activate
+        if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then
+          echo "::error::NOTEBOOKLM_AUTH_JSON secret is not configured"
+          exit 1
+        fi
+        if [ -z "$NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID" ]; then
+          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID secret is not configured"
+          exit 1
+        fi
+        pytest tests/e2e -m "not variants" --reruns 2 -v
