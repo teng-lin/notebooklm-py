@@ -1,0 +1,65 @@
+name: RPC Health Check
+
+on:
+  schedule:
+    # Run at 7 AM UTC daily (1 hour after nightly E2E tests)
+    - cron: '0 7 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  health-check:
+    name: RPC Health Check
+    runs-on: ubuntu-latest
+    # Only run on main repo (not forks) due to secrets requirement
+    if: github.repository == 'teng-lin/notebooklm-py'
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+
+    - name: Run RPC Health Check
+      id: health
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+      run: |
+        python scripts/check_rpc_health.py | tee health-report.txt
+        exit ${PIPESTATUS[0]}
+
+    - name: Create Issue on Failure
+      if: steps.health.outcome == 'failure'
+      uses: peter-evans/create-issue-from-file@v5
+      with:
+        title: "RPC ID Mismatch Detected"
+        content-filepath: health-report.txt
+        labels: bug, rpc-breakage
+
+    - name: Upload Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpc-health-report
+        path: health-report.txt
+        retention-days: 30
+
+    - name: Fail if health check failed
+      if: steps.health.outcome == 'failure'
+      run: |
+        echo "RPC Health Check failed. See report above."
+        exit 1
