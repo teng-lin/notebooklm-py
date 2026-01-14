@@ -1020,7 +1020,7 @@ class TestExtractCookiesRegionalDomains:
 class TestLoadHttpxCookiesRegional:
     """Test load_httpx_cookies with regional Google domains."""
 
-    def test_loads_cookies_from_regional_domain(self):
+    def test_loads_cookies_from_regional_domain(self, tmp_path):
         """Test loading httpx cookies from regional Google domain."""
         storage_state = {
             "cookies": [
@@ -1029,24 +1029,14 @@ class TestLoadHttpxCookiesRegional:
             ]
         }
 
-        import json
-        import tempfile
-        from pathlib import Path
+        storage_file = tmp_path / "storage.json"
+        storage_file.write_text(json.dumps(storage_state))
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(storage_state, f)
-            temp_path = Path(f.name)
-
-        try:
-            cookies = load_httpx_cookies(path=temp_path)
-            assert cookies.get("SID", domain=".google.co.uk") == "sid_from_uk"
-        finally:
-            temp_path.unlink()
+        cookies = load_httpx_cookies(path=storage_file)
+        assert cookies.get("SID", domain=".google.co.uk") == "sid_from_uk"
 
     def test_loads_cookies_from_all_regional_patterns(self, tmp_path):
         """Test loading httpx cookies from all regional patterns."""
-        import json
-
         # Test with .google.de (single ccTLD)
         storage_state = {
             "cookies": [

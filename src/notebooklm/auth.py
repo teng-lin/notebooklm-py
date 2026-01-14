@@ -243,12 +243,8 @@ def _is_allowed_auth_domain(domain: str) -> bool:
     Returns:
         True if domain is allowed for auth cookies.
     """
-    # Exact match against primary allowlist (includes notebooklm.google.com, etc.)
-    if domain in ALLOWED_COOKIE_DOMAINS:
-        return True
-
-    # Check if it's a valid Google domain (base or regional)
-    return _is_google_domain(domain)
+    # Check if domain is in the primary allowlist or is a valid Google domain (base or regional)
+    return domain in ALLOWED_COOKIE_DOMAINS or _is_google_domain(domain)
 
 
 def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str]:
