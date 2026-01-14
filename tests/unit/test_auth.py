@@ -715,6 +715,7 @@ class TestIsGoogleDomain:
             (".google.co.id", True),  # Indonesia
             (".google.co.th", True),  # Thailand
             # .google.XX pattern (single ccTLD)
+            (".google.cn", True),  # China
             (".google.de", True),  # Germany
             (".google.fr", True),  # France
             (".google.it", True),  # Italy
@@ -935,6 +936,21 @@ class TestExtractCookiesRegionalDomains:
         cookies = extract_cookies_from_storage(storage_state)
 
         assert cookies["SID"] == "sid_from_singapore"
+        assert cookies["OSID"] == "osid_value"
+
+    def test_extracts_sid_from_china_domain(self):
+        """Test extracts SID cookie from .google.cn domain (Issue #27)."""
+        storage_state = {
+            "cookies": [
+                # SID on China domain (the bug scenario from Issue #27)
+                {"name": "SID", "value": "sid_from_china", "domain": ".google.cn"},
+                {"name": "OSID", "value": "osid_value", "domain": "notebooklm.google.com"},
+            ]
+        }
+
+        cookies = extract_cookies_from_storage(storage_state)
+
+        assert cookies["SID"] == "sid_from_china"
         assert cookies["OSID"] == "osid_value"
 
     def test_extracts_sid_from_all_regional_patterns(self):

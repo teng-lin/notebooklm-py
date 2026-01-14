@@ -105,6 +105,7 @@ GOOGLE_REGIONAL_CCTLDS = frozenset(
         "co.zw",  # Zimbabwe
         "co.bw",  # Botswana
         # .google.XX pattern (single ccTLD countries)
+        "cn",  # China
         "de",  # Germany
         "fr",  # France
         "it",  # Italy
