@@ -23,7 +23,7 @@ import asyncio
 import json
 import os
 import sys
-import time
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -67,14 +67,31 @@ class CheckResult:
 # Delay between RPC calls to avoid rate limiting (seconds)
 CALL_DELAY = 0.5
 
-# Methods that cannot be safely tested (destructive or require setup)
+# Status display icons
+STATUS_ICONS = {
+    CheckStatus.OK: "OK",
+    CheckStatus.MISMATCH: "MISMATCH",
+    CheckStatus.ERROR: "ERROR",
+    CheckStatus.SKIPPED: "SKIP",
+}
+
+# Methods that cannot be safely tested (destructive, create resources, or require setup)
 SKIP_METHODS = {
-    # These require specific preconditions or are destructive
+    # Destructive operations
     RPCMethod.DELETE_NOTEBOOK,
     RPCMethod.DELETE_SOURCE,
     RPCMethod.DELETE_AUDIO,
     RPCMethod.DELETE_STUDIO,
     RPCMethod.DELETE_NOTE,
+    # Resource-creating operations (would leak test data on each run)
+    RPCMethod.CREATE_NOTEBOOK,
+    RPCMethod.ADD_SOURCE,
+    RPCMethod.CREATE_NOTE,
+    RPCMethod.CREATE_AUDIO,
+    RPCMethod.CREATE_VIDEO,
+    RPCMethod.CREATE_ARTIFACT,
+    RPCMethod.START_FAST_RESEARCH,
+    RPCMethod.START_DEEP_RESEARCH,
     # Upload requires multipart file handling
     RPCMethod.ADD_SOURCE_FILE,
     # Query endpoint is not a batchexecute RPC
@@ -88,12 +105,8 @@ DUPLICATE_METHODS = {
 }
 
 
-def get_auth_tokens() -> tuple[dict[str, str], str, str]:
-    """Load auth from environment variable.
-
-    Returns:
-        Tuple of (cookies dict, csrf_token, session_id)
-    """
+def load_cookies_from_env() -> dict[str, str]:
+    """Load cookies from NOTEBOOKLM_AUTH_JSON environment variable."""
     auth_json = os.environ.get("NOTEBOOKLM_AUTH_JSON")
     if not auth_json:
         print("ERROR: NOTEBOOKLM_AUTH_JSON environment variable not set")
@@ -106,11 +119,7 @@ def get_auth_tokens() -> tuple[dict[str, str], str, str]:
         sys.exit(1)
 
     # Extract cookies
-    cookies = {}
-    for cookie in storage_state.get("cookies", []):
-        cookies[cookie["name"]] = cookie["value"]
-
-    return cookies, "", ""  # CSRF/session fetched separately
+    return {cookie["name"]: cookie["value"] for cookie in storage_state.get("cookies", [])}
 
 
 async def fetch_tokens(client: httpx.AsyncClient, cookies: dict[str, str]) -> AuthTokens:
@@ -195,88 +204,48 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if not notebook_id:
         return None
 
-    # Read-only methods
+    # Methods that take [notebook_id] as the only param
     if method in (
         RPCMethod.GET_NOTEBOOK,
         RPCMethod.GET_SOURCE_GUIDE,
         RPCMethod.GET_SUGGESTED_REPORTS,
+        RPCMethod.GET_SHARE_STATUS,
+        RPCMethod.REMOVE_RECENTLY_VIEWED,
     ):
         return [notebook_id]
 
-    if method == RPCMethod.LIST_ARTIFACTS:
+    # Methods that take [[notebook_id]] as the only param
+    if method in (
+        RPCMethod.LIST_ARTIFACTS,
+        RPCMethod.LIST_ARTIFACTS_ALT,
+        RPCMethod.POLL_STUDIO,
+        RPCMethod.GET_CONVERSATION_HISTORY,
+        RPCMethod.GET_NOTES_AND_MIND_MAPS,
+        RPCMethod.DISCOVER_SOURCES,
+        RPCMethod.GET_AUDIO,
+    ):
         return [[notebook_id]]
 
-    if method == RPCMethod.LIST_ARTIFACTS_ALT:
-        return [[notebook_id]]
-
-    if method == RPCMethod.POLL_STUDIO:
-        return [[notebook_id]]
-
-    if method == RPCMethod.GET_CONVERSATION_HISTORY:
-        return [[notebook_id]]
-
-    if method == RPCMethod.GET_NOTES_AND_MIND_MAPS:
-        return [[notebook_id]]
-
-    if method == RPCMethod.GET_SHARE_STATUS:
-        return [notebook_id]
-
-    if method == RPCMethod.DISCOVER_SOURCES:
-        return [[notebook_id]]
-
-    # Notebook operations (use existing notebook)
+    # Notebook operations (read-only - rename to same name is a no-op)
     if method == RPCMethod.RENAME_NOTEBOOK:
-        # Rename to same name (no-op)
         return [notebook_id, "RPC Health Check Test", None, None, None]
 
-    if method == RPCMethod.CREATE_NOTEBOOK:
-        # We'll create and immediately delete
-        return [f"RPC Health Check {int(time.time())}"]
-
-    # Source operations (require source ID - use placeholder for ID check only)
+    # Source operations (read-only - use placeholder IDs)
     if method == RPCMethod.GET_SOURCE:
         return [[notebook_id], ["placeholder_source_id"]]
 
-    if method == RPCMethod.ADD_SOURCE:
-        # Add a text source
-        return [
-            [notebook_id],
-            None,  # no URL
-            None,  # no file
-            "RPC Health Check",  # title
-            "Test content for RPC health check",  # content
-        ]
-
-    if method == RPCMethod.REFRESH_SOURCE:
-        return [[notebook_id], [["placeholder"]]]
-
-    if method == RPCMethod.CHECK_SOURCE_FRESHNESS:
+    if method in (RPCMethod.REFRESH_SOURCE, RPCMethod.CHECK_SOURCE_FRESHNESS):
         return [[notebook_id], [["placeholder"]]]
 
     if method == RPCMethod.UPDATE_SOURCE:
         return [[notebook_id], "placeholder", "New Title"]
 
-    # Summary/Query operations
+    # Summary operations (read-only)
     if method == RPCMethod.SUMMARIZE:
         return [[notebook_id], [], "Summarize the content"]
 
-    # Studio operations
-    if method == RPCMethod.CREATE_AUDIO:
-        return [[notebook_id], [], 1, 2, None, None, None]  # Deep dive, default length
-
-    if method == RPCMethod.GET_AUDIO:
-        return [[notebook_id]]
-
-    if method == RPCMethod.CREATE_VIDEO:
-        return [[notebook_id], [], 1, 1]  # Explainer, auto style
-
-    if method == RPCMethod.CREATE_ARTIFACT:
-        return [[notebook_id], [], 4, None]  # Quiz type
-
-    if method == RPCMethod.GET_ARTIFACT:
-        return [[notebook_id], "placeholder"]
-
-    if method == RPCMethod.GET_INTERACTIVE_HTML:
+    # Artifact operations (read-only - use placeholder IDs)
+    if method in (RPCMethod.GET_ARTIFACT, RPCMethod.GET_INTERACTIVE_HTML):
         return [[notebook_id], "placeholder"]
 
     if method == RPCMethod.RENAME_ARTIFACT:
@@ -285,38 +254,27 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.EXPORT_ARTIFACT:
         return [[notebook_id], "placeholder", 1]
 
-    # Research operations
-    if method == RPCMethod.START_FAST_RESEARCH:
-        return [[notebook_id], "Test query"]
-
-    if method == RPCMethod.START_DEEP_RESEARCH:
-        return [[notebook_id], "Test query"]
-
+    # Research operations (read-only - poll/import only)
     if method == RPCMethod.POLL_RESEARCH:
         return [[notebook_id], "placeholder_task_id"]
 
     if method == RPCMethod.IMPORT_RESEARCH:
         return [[notebook_id], "placeholder_research_id"]
 
-    # Note operations
-    if method == RPCMethod.CREATE_NOTE:
-        return [[notebook_id], "Test Note", "Test content"]
-
+    # Note operations (read-only - update only)
     if method == RPCMethod.UPDATE_NOTE:
         return [[notebook_id], "placeholder", "Updated", "Updated content"]
 
+    # Mind map operation (read-only)
     if method == RPCMethod.ACT_ON_SOURCES:
         return [[notebook_id], [], 5]  # Mind map type
 
-    # Sharing operations
+    # Sharing operations (read-only checks)
     if method == RPCMethod.SHARE_ARTIFACT:
         return [[notebook_id], "placeholder", True]
 
     if method == RPCMethod.SHARE_NOTEBOOK:
         return [notebook_id, 1]  # Restricted
-
-    if method == RPCMethod.REMOVE_RECENTLY_VIEWED:
-        return [notebook_id]
 
     return None
 
@@ -382,27 +340,20 @@ async def check_method(
         )
 
     # Check if expected ID is in response
-    if expected_id in found_ids:
-        return CheckResult(
-            method=method,
-            status=CheckStatus.OK,
-            expected_id=expected_id,
-            found_ids=found_ids,
-        )
-    else:
-        return CheckResult(
-            method=method,
-            status=CheckStatus.MISMATCH,
-            expected_id=expected_id,
-            found_ids=found_ids,
-            error=f"Expected '{expected_id}' not in response",
-        )
+    status = CheckStatus.OK if expected_id in found_ids else CheckStatus.MISMATCH
+    error_msg = None if status == CheckStatus.OK else f"Expected '{expected_id}' not in response"
+    return CheckResult(
+        method=method,
+        status=status,
+        expected_id=expected_id,
+        found_ids=found_ids,
+        error=error_msg,
+    )
 
 
 async def run_health_check() -> list[CheckResult]:
     """Run health check on all RPC methods."""
-    # Load auth
-    cookies, _, _ = get_auth_tokens()
+    cookies = load_cookies_from_env()
 
     # Get notebook IDs
     read_only_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
@@ -433,13 +384,7 @@ async def run_health_check() -> list[CheckResult]:
             results.append(result)
 
             # Print result
-            status_icon = {
-                CheckStatus.OK: "OK",
-                CheckStatus.MISMATCH: "MISMATCH",
-                CheckStatus.ERROR: "ERROR",
-                CheckStatus.SKIPPED: "SKIP",
-            }[result.status]
-
+            status_icon = STATUS_ICONS[result.status]
             line = f"{status_icon:8} {method.name} ({result.expected_id})"
             if result.error and result.status != CheckStatus.OK:
                 line += f" - {result.error}"
@@ -459,16 +404,13 @@ def print_summary(results: list[CheckResult]) -> int:
     print("SUMMARY")
     print("=" * 60)
 
-    ok_count = sum(1 for r in results if r.status == CheckStatus.OK)
-    mismatch_count = sum(1 for r in results if r.status == CheckStatus.MISMATCH)
-    error_count = sum(1 for r in results if r.status == CheckStatus.ERROR)
-    skipped_count = sum(1 for r in results if r.status == CheckStatus.SKIPPED)
+    counts = Counter(r.status for r in results)
     total = len(results)
 
-    print(f"OK:       {ok_count}/{total}")
-    print(f"MISMATCH: {mismatch_count}/{total}")
-    print(f"ERROR:    {error_count}/{total}")
-    print(f"SKIPPED:  {skipped_count}/{total}")
+    print(f"OK:       {counts[CheckStatus.OK]}/{total}")
+    print(f"MISMATCH: {counts[CheckStatus.MISMATCH]}/{total}")
+    print(f"ERROR:    {counts[CheckStatus.ERROR]}/{total}")
+    print(f"SKIPPED:  {counts[CheckStatus.SKIPPED]}/{total}")
 
     # Print details for mismatches
     mismatches = [r for r in results if r.status == CheckStatus.MISMATCH]
@@ -484,15 +426,14 @@ def print_summary(results: list[CheckResult]) -> int:
             print()
 
     # Return exit code
-    if mismatch_count > 0:
+    if counts[CheckStatus.MISMATCH] > 0:
         print("RESULT: FAIL - RPC ID mismatches detected")
         return 1
-    elif error_count > ok_count:
+    if counts[CheckStatus.ERROR] > counts[CheckStatus.OK]:
         print("RESULT: WARN - Many errors (possible auth issue)")
         return 1
-    else:
-        print("RESULT: PASS - All tested RPC methods OK")
-        return 0
+    print("RESULT: PASS - All tested RPC methods OK")
+    return 0
 
 
 def main() -> int:

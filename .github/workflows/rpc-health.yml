@@ -34,13 +34,21 @@ jobs:
     - name: Run RPC Health Check
       id: health
       continue-on-error: true
+      shell: bash
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       run: |
+        set -o pipefail
         python scripts/check_rpc_health.py | tee health-report.txt
-        exit ${PIPESTATUS[0]}
+
+    - name: Add Summary
+      if: always()
+      shell: bash
+      run: |
+        echo "## RPC Health Check Results" >> $GITHUB_STEP_SUMMARY
+        grep -A 10 "^SUMMARY$" health-report.txt >> $GITHUB_STEP_SUMMARY || echo "No summary found" >> $GITHUB_STEP_SUMMARY
 
     - name: Create Issue on Failure
       if: steps.health.outcome == 'failure'
@@ -48,7 +56,7 @@ jobs:
       with:
         title: "RPC ID Mismatch Detected"
         content-filepath: health-report.txt
-        labels: bug, rpc-breakage
+        labels: bug, rpc-breakage, automated
 
     - name: Upload Report
       if: always()
