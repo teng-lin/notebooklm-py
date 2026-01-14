@@ -309,6 +309,17 @@ class SourcesAPI:
         if video_id:
             result = await self._add_youtube_source(notebook_id, url)
         else:
+            # Warn if URL looks like YouTube but we couldn't extract a video ID.
+            # This could indicate: (1) non-video YouTube page (channel, playlist),
+            # (2) new YouTube URL format we don't handle yet, or (3) malformed URL.
+            # In any case, adding as web page which may result in poor indexing.
+            if is_youtube_url(url):
+                logger.warning(
+                    "URL appears to be YouTube but no video ID found: %s. "
+                    "Adding as web page - content may be incomplete. "
+                    "If this is a video URL, please report this as a bug.",
+                    url[:100],
+                )
             result = await self._add_url_source(notebook_id, url)
         if result is None:
             raise ValueError(f"Failed to add URL source: API returned no data for {url}")

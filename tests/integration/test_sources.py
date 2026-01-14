@@ -846,3 +846,116 @@ class TestReindexSource:
 
         assert new_source.id == "new_source_id"
         assert "failed to delete old source" in caplog.text.lower()
+
+
+class TestYouTubeUrlWarning:
+    """Tests for warning when YouTube hostname detected but no video ID."""
+
+    @pytest.mark.asyncio
+    async def test_youtube_channel_url_logs_warning(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        caplog,
+    ):
+        """Test that adding a YouTube channel URL logs a warning."""
+        import logging
+
+        # Mock ADD_SOURCE response (as web page)
+        response = build_rpc_response(
+            RPCMethod.ADD_SOURCE,
+            [
+                [
+                    [
+                        ["source_id"],
+                        "Some Channel",
+                        [None, 11, None, None, 5, None, 1, ["https://youtube.com/channel/abc"]],
+                        [None, 2],
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+            async with NotebookLMClient(auth_tokens) as client:
+                source = await client.sources.add_url(
+                    "nb_123", "https://www.youtube.com/channel/UCabc123"
+                )
+
+        assert source.id == "source_id"
+        # Should warn about YouTube URL without video ID
+        assert "youtube" in caplog.text.lower()
+        assert "no video id found" in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_youtube_video_url_no_warning(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        caplog,
+    ):
+        """Test that adding a valid YouTube video URL does NOT log a warning."""
+        import logging
+
+        # Mock ADD_SOURCE response (as YouTube)
+        response = build_rpc_response(
+            RPCMethod.ADD_SOURCE,
+            [
+                [
+                    [
+                        ["source_id"],
+                        "YouTube Video",
+                        [None, 11, None, None, 9, None, 1, ["https://youtube.com/watch?v=abc"]],
+                        [None, 2],
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+            async with NotebookLMClient(auth_tokens) as client:
+                source = await client.sources.add_url(
+                    "nb_123", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                )
+
+        assert source.id == "source_id"
+        # Should NOT warn - valid video URL
+        assert "no video id found" not in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_non_youtube_url_no_warning(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        caplog,
+    ):
+        """Test that adding a non-YouTube URL does NOT log a warning."""
+        import logging
+
+        response = build_rpc_response(
+            RPCMethod.ADD_SOURCE,
+            [
+                [
+                    [
+                        ["source_id"],
+                        "Example Site",
+                        [None, 11, None, None, 5, None, 1, ["https://example.com"]],
+                        [None, 2],
+                    ]
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+            async with NotebookLMClient(auth_tokens) as client:
+                source = await client.sources.add_url("nb_123", "https://example.com")
+
+        assert source.id == "source_id"
+        # Should NOT warn - not a YouTube URL
+        assert "youtube" not in caplog.text.lower() or "no video id" not in caplog.text.lower()
