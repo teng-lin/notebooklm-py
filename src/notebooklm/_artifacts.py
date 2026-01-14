@@ -1577,10 +1577,11 @@ class ArtifactsAPI:
             elif artifact_type == StudioContentType.VIDEO.value:
                 # Video URLs are in art[8] - check for any valid URL in the list
                 if len(art) > 8 and isinstance(art[8], list):
-                    for item in art[8]:
-                        if isinstance(item, list) and len(item) > 0:
-                            if self._is_valid_media_url(item[0]):
-                                return True
+                    return any(
+                        self._is_valid_media_url(item[0])
+                        for item in art[8]
+                        if isinstance(item, list) and len(item) > 0
+                    )
                 return False
 
             elif artifact_type == StudioContentType.INFOGRAPHIC.value:
@@ -1588,9 +1589,12 @@ class ArtifactsAPI:
 
             elif artifact_type == StudioContentType.SLIDE_DECK.value:
                 # Slide deck PDF URL is at art[16][3]
-                if len(art) > 16 and isinstance(art[16], list) and len(art[16]) > 3:
-                    return self._is_valid_media_url(art[16][3])
-                return False
+                return (
+                    len(art) > 16
+                    and isinstance(art[16], list)
+                    and len(art[16]) > 3
+                    and self._is_valid_media_url(art[16][3])
+                )
 
             # Non-media artifacts (Report, Quiz, Flashcard, Data Table, Mind Map):
             # Status code alone is sufficient for these types
