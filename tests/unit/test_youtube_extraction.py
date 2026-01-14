@@ -132,6 +132,24 @@ class TestYouTubeVideoIdExtraction:
         url = "https://www.youtube.com/shorts/NZdU4m72QeI?feature=share"
         assert client.sources._extract_youtube_video_id(url) == "NZdU4m72QeI"
 
+    def test_uppercase_path_segments(self, client):
+        """Test URLs with uppercase path segments are handled correctly.
+
+        URL paths are case-insensitive for path type detection (shorts, embed, etc.)
+        but the video ID itself preserves its original case.
+        """
+        # Uppercase SHORTS
+        url = "https://www.youtube.com/SHORTS/NZdU4m72QeI"
+        assert client.sources._extract_youtube_video_id(url) == "NZdU4m72QeI"
+
+        # Mixed case Embed
+        url = "https://www.youtube.com/Embed/dQw4w9WgXcQ"
+        assert client.sources._extract_youtube_video_id(url) == "dQw4w9WgXcQ"
+
+        # Uppercase LIVE
+        url = "https://www.youtube.com/LIVE/abc123XYZ"
+        assert client.sources._extract_youtube_video_id(url) == "abc123XYZ"
+
     def test_unsupported_subdomains_return_none(self, client):
         """Test that unsupported YouTube subdomains return None.
 
