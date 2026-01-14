@@ -5,6 +5,8 @@ Commands:
     video        Download video file
     slide-deck   Download slide deck PDF
     infographic  Download infographic image
+    quiz         Download quiz questions
+    flashcards   Download flashcard deck
 """
 
 import json
@@ -713,5 +715,89 @@ def download_infographic(
 
         _display_download_result(result, "infographic")
 
+    except Exception as e:
+        handle_error(e)
+
+
+@download.command("quiz")
+@click.argument("output_path", required=False, type=click.Path())
+@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "markdown", "html"]),
+    default="json",
+    help="Output format",
+)
+@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
+@click.pass_context
+def download_quiz_cmd(ctx, output_path, notebook, output_format, artifact_id):
+    """Download quiz questions.
+
+    \b
+    Examples:
+      notebooklm download quiz quiz.json
+      notebooklm download quiz --format markdown quiz.md
+      notebooklm download quiz --format html quiz.html
+    """
+    try:
+        nb_id = require_notebook(notebook)
+        storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+        cookies = load_auth_from_storage(storage_path)
+
+        async def _download():
+            csrf, session_id = await fetch_tokens(cookies)
+            auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+            async with NotebookLMClient(auth) as client:
+                # Default filename based on format
+                ext = {"json": ".json", "markdown": ".md", "html": ".html"}[output_format]
+                path = output_path or f"quiz{ext}"
+                return await client.artifacts.download_quiz(
+                    nb_id, path, artifact_id=artifact_id, output_format=output_format
+                )
+
+        result = run_async(_download())
+        console.print(f"[green]Downloaded quiz to:[/green] {result}")
+    except Exception as e:
+        handle_error(e)
+
+
+@download.command("flashcards")
+@click.argument("output_path", required=False, type=click.Path())
+@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "markdown", "html"]),
+    default="json",
+    help="Output format",
+)
+@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
+@click.pass_context
+def download_flashcards_cmd(ctx, output_path, notebook, output_format, artifact_id):
+    """Download flashcard deck.
+
+    \b
+    Examples:
+      notebooklm download flashcards cards.json
+      notebooklm download flashcards --format markdown cards.md
+    """
+    try:
+        nb_id = require_notebook(notebook)
+        storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+        cookies = load_auth_from_storage(storage_path)
+
+        async def _download():
+            csrf, session_id = await fetch_tokens(cookies)
+            auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+            async with NotebookLMClient(auth) as client:
+                ext = {"json": ".json", "markdown": ".md", "html": ".html"}[output_format]
+                path = output_path or f"flashcards{ext}"
+                return await client.artifacts.download_flashcards(
+                    nb_id, path, artifact_id=artifact_id, output_format=output_format
+                )
+
+        result = run_async(_download())
+        console.print(f"[green]Downloaded flashcards to:[/green] {result}")
     except Exception as e:
         handle_error(e)
