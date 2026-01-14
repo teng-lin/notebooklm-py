@@ -1087,6 +1087,22 @@ class ArtifactsAPI:
             for art in artifacts_data:
                 if len(art) > 0 and art[0] == task_id:
                     status_code = art[4] if len(art) > 4 else 0
+                    artifact_type = art[2] if len(art) > 2 else 0
+
+                    # For media artifacts, verify URL availability before reporting completion.
+                    # The API may set status=COMPLETED before media URLs are populated.
+                    if status_code == ArtifactStatus.COMPLETED:
+                        if not self._is_media_ready(art, artifact_type):
+                            type_name = self._get_artifact_type_name(artifact_type)
+                            logger.debug(
+                                "Artifact %s (type=%s) status=COMPLETED but media not ready, "
+                                "continuing poll",
+                                task_id,
+                                type_name,
+                            )
+                            # Downgrade to PROCESSING to continue polling
+                            status_code = ArtifactStatus.PROCESSING
+
                     status = artifact_status_to_str(status_code)
                     return GenerationStatus(task_id=task_id, status=status)
             return GenerationStatus(task_id=task_id, status="pending")
@@ -1459,3 +1475,132 @@ class ArtifactsAPI:
         return GenerationStatus(
             task_id="", status="failed", error="Generation failed - no artifact_id returned"
         )
+
+    def _get_artifact_type_name(self, artifact_type: int) -> str:
+        """Get human-readable name for an artifact type.
+
+        Args:
+            artifact_type: The StudioContentType enum value.
+
+        Returns:
+            The enum name if valid, otherwise the raw integer as string.
+        """
+        try:
+            return StudioContentType(artifact_type).name
+        except ValueError:
+            return str(artifact_type)
+
+    def _is_valid_media_url(self, value: Any) -> bool:
+        """Check if value is a valid HTTP(S) URL.
+
+        Args:
+            value: The value to check.
+
+        Returns:
+            True if value is a string starting with http:// or https://.
+        """
+        return isinstance(value, str) and value.startswith(("http://", "https://"))
+
+    def _find_infographic_url(self, art: builtins.list[Any]) -> str | None:
+        """Extract infographic image URL from artifact data.
+
+        Infographic URLs are deeply nested in the artifact structure.
+        This method searches backwards through the artifact to find the URL.
+
+        Args:
+            art: Raw artifact data from _list_raw().
+
+        Returns:
+            The image URL if found, None otherwise.
+        """
+        for item in reversed(art):
+            if not isinstance(item, list) or len(item) <= 2:
+                continue
+            content = item[2]
+            if not isinstance(content, list) or len(content) == 0:
+                continue
+            first_content = content[0]
+            if not isinstance(first_content, list) or len(first_content) <= 1:
+                continue
+            img_data = first_content[1]
+            if isinstance(img_data, list) and len(img_data) > 0:
+                url = img_data[0]
+                if self._is_valid_media_url(url):
+                    return url
+        return None
+
+    def _is_media_ready(self, art: builtins.list[Any], artifact_type: int) -> bool:
+        """Check if media artifact has URLs populated.
+
+        For media artifacts (audio, video, infographic, slide deck), the API may
+        set status=COMPLETED before the actual media URLs are populated. This
+        method verifies that URLs are available for download.
+
+        Artifact array structure (from BATCHEXECUTE responses):
+        - art[0]: artifact_id
+        - art[2]: artifact_type (StudioContentType enum value)
+        - art[4]: status_code (ArtifactStatus enum value)
+        - art[6][5]: audio media URL list
+        - art[8]: video metadata containing URL list
+        - art[16][3]: slide deck PDF URL
+
+        Args:
+            art: Raw artifact data from _list_raw().
+            artifact_type: The StudioContentType enum value.
+
+        Returns:
+            True if media URLs are available, or if artifact is non-media type.
+            Returns True on unexpected structure (defensive fallback).
+        """
+        try:
+            if artifact_type == StudioContentType.AUDIO.value:
+                # Audio URL is at art[6][5] - check for non-empty media list
+                if len(art) > 6 and isinstance(art[6], list) and len(art[6]) > 5:
+                    media_list = art[6][5]
+                    if isinstance(media_list, list) and len(media_list) > 0:
+                        # Check first item has a valid URL
+                        first_item = media_list[0]
+                        if isinstance(first_item, list) and len(first_item) > 0:
+                            return self._is_valid_media_url(first_item[0])
+                return False
+
+            elif artifact_type == StudioContentType.VIDEO.value:
+                # Video URLs are in art[8] - check for any valid URL in the list
+                if len(art) > 8 and isinstance(art[8], list):
+                    for item in art[8]:
+                        if isinstance(item, list) and len(item) > 0:
+                            if self._is_valid_media_url(item[0]):
+                                return True
+                return False
+
+            elif artifact_type == StudioContentType.INFOGRAPHIC.value:
+                return self._find_infographic_url(art) is not None
+
+            elif artifact_type == StudioContentType.SLIDE_DECK.value:
+                # Slide deck PDF URL is at art[16][3]
+                if len(art) > 16 and isinstance(art[16], list) and len(art[16]) > 3:
+                    return self._is_valid_media_url(art[16][3])
+                return False
+
+            # Non-media artifacts (Report, Quiz, Flashcard, Data Table, Mind Map):
+            # Status code alone is sufficient for these types
+            return True
+
+        except (IndexError, TypeError) as e:
+            # Defensive: if structure is unexpected, be conservative for media types
+            # Media types need URLs, so return False to continue polling
+            # Non-media types only need status code, so return True
+            media_types = {
+                StudioContentType.AUDIO.value,
+                StudioContentType.VIDEO.value,
+                StudioContentType.INFOGRAPHIC.value,
+                StudioContentType.SLIDE_DECK.value,
+            }
+            is_media = artifact_type in media_types
+            logger.debug(
+                "Unexpected artifact structure for type %s (media=%s): %s",
+                artifact_type,
+                is_media,
+                e,
+            )
+            return not is_media  # False for media (continue polling), True for non-media
