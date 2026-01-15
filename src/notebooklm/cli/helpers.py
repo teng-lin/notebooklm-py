@@ -24,6 +24,7 @@ from ..auth import (
     AuthTokens,
     fetch_tokens,
     load_auth_from_storage,
+    load_httpx_cookies,
 )
 from ..paths import get_browser_profile_dir, get_context_path
 
@@ -90,8 +91,11 @@ def get_client(ctx) -> tuple[dict, str, str]:
         FileNotFoundError: If auth storage not found
     """
     storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    # Use httpx.Cookies for proper SameSite=None handling
+    httpx_cookies = load_httpx_cookies(storage_path)
+    csrf, session_id = run_async(fetch_tokens(httpx_cookies))
+    # Convert to dict for backward compatibility
     cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = run_async(fetch_tokens(cookies))
     return cookies, csrf, session_id
 
 

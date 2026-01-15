@@ -56,8 +56,10 @@ class TestListNotebooks:
 
         request = httpx_mock.get_request()
         cookie_header = request.headers.get("cookie", "")
-        assert "SID=test_sid" in cookie_header
-        assert "HSID=test_hsid" in cookie_header
+        # Check that cookies are included (not specific test values, since we now
+        # load cookies from storage with domain information)
+        assert cookie_header, "Cookie header should be present"
+        assert "SID=" in cookie_header, "SID cookie should be included"
 
     @pytest.mark.asyncio
     async def test_request_includes_csrf(

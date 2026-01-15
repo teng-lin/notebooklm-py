@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from .auth import AuthTokens
+from .auth import AuthTokens, load_httpx_cookies
 from .rpc import (
     BATCHEXECUTE_URL,
     AuthError,
@@ -111,11 +111,16 @@ class ClientCore:
         Called automatically by NotebookLMClient.__aenter__.
         """
         if self._http_client is None:
+            # Load httpx.Cookies with proper domain information for authentication
+            # This is critical because cookies must have correct domains to be sent
+            # to Google's various services (notebooklm.google.com, accounts.google.com, etc.)
+            httpx_cookies = load_httpx_cookies()
+
             self._http_client = httpx.AsyncClient(
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-                    "Cookie": self.auth.cookie_header,
                 },
+                cookies=httpx_cookies,
                 timeout=self._timeout,
             )
 
@@ -134,7 +139,7 @@ class ClientCore:
         return self._http_client is not None
 
     def update_auth_headers(self) -> None:
-        """Update HTTP client headers with current auth tokens.
+        """Update HTTP client cookies with current auth tokens.
 
         Call this after modifying auth tokens (e.g., after refresh_auth())
         to ensure the HTTP client uses the updated credentials.
@@ -144,7 +149,15 @@ class ClientCore:
         """
         if not self._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
-        self._http_client.headers["Cookie"] = self.auth.cookie_header
+        # Reload httpx.Cookies with proper domain information
+        # This ensures cookies are sent to the correct Google domains
+        httpx_cookies = load_httpx_cookies()
+        self._http_client.cookies.clear()
+        for cookie in httpx_cookies.jar:
+            if cookie.value is not None:
+                self._http_client.cookies.set(
+                    cookie.name, cookie.value, domain=cookie.domain, path=cookie.path
+                )
 
     def _build_url(self, rpc_method: RPCMethod, source_path: str = "/") -> str:
         """Build the batchexecute URL for an RPC call.

@@ -511,17 +511,25 @@ class TestGetClient:
         assert session == "session_id"
 
     def test_uses_storage_path_from_context(self):
+        from pathlib import Path
         ctx = MagicMock()
-        ctx.obj = {"storage_path": "/custom/path"}
+        ctx.obj = {"storage_path": Path("/custom/path")}
 
-        with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
+        # Mock httpx.Cookies for load_httpx_cookies
+        mock_httpx_cookies = MagicMock()
+        mock_httpx_cookies.jar = []
 
-                get_client(ctx)
+        with patch("notebooklm.cli.helpers.load_httpx_cookies") as mock_load_cookies:
+            mock_load_cookies.return_value = mock_httpx_cookies
+            with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
+                mock_load.return_value = {"SID": "test"}
+                with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                    mock_fetch.return_value = ("csrf", "session")
 
-        mock_load.assert_called_once_with("/custom/path")
+                    get_client(ctx)
+
+        mock_load_cookies.assert_called_once_with(Path("/custom/path"))
+        mock_load.assert_called_once_with(Path("/custom/path"))
 
 
 class TestGetAuthTokens:
