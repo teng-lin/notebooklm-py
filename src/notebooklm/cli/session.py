@@ -34,6 +34,51 @@ from .helpers import (
 )
 
 
+def _ensure_chromium_installed() -> None:
+    """Check if Chromium is installed and install if needed.
+
+    This pre-flight check runs `playwright install --dry-run chromium` to detect
+    if the browser needs installation, then auto-installs if necessary.
+
+    Silently proceeds on any errors - Playwright will handle them during launch.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["playwright", "install", "--dry-run", "chromium"],
+            capture_output=True,
+            text=True,
+        )
+        # Check if dry-run indicates browser needs installing
+        stdout_lower = result.stdout.lower()
+        if "chromium" not in stdout_lower or "will download" not in stdout_lower:
+            return
+
+        console.print("[yellow]Chromium browser not installed. Installing now...[/yellow]")
+        install_result = subprocess.run(
+            ["playwright", "install", "chromium"],
+            capture_output=True,
+            text=True,
+        )
+        if install_result.returncode != 0:
+            console.print(
+                "[red]Failed to install Chromium browser.[/red]\n"
+                "Run manually: playwright install chromium"
+            )
+            raise SystemExit(1)
+        console.print("[green]Chromium installed successfully.[/green]\n")
+    except FileNotFoundError:
+        # playwright CLI not found, but sync_playwright imported successfully
+        # This can happen with some installation methods - proceed anyway
+        pass
+    except SystemExit:
+        raise
+    except Exception:
+        # If dry-run check fails for any reason, proceed and let Playwright handle it
+        pass
+
+
 def register_session_commands(cli):
     """Register session commands on the main CLI group."""
 
@@ -76,36 +121,7 @@ def register_session_commands(cli):
             raise SystemExit(1) from None
 
         # Pre-flight check: verify Chromium browser is installed
-        try:
-            import subprocess
-
-            result = subprocess.run(
-                ["playwright", "install", "--dry-run", "chromium"],
-                capture_output=True,
-                text=True,
-            )
-            # If dry-run shows browser needs installing, warn the user
-            if "chromium" in result.stdout.lower() and "will download" in result.stdout.lower():
-                console.print("[yellow]Chromium browser not installed. Installing now...[/yellow]")
-                install_result = subprocess.run(
-                    ["playwright", "install", "chromium"],
-                    capture_output=True,
-                    text=True,
-                )
-                if install_result.returncode != 0:
-                    console.print(
-                        "[red]Failed to install Chromium browser.[/red]\n"
-                        "Run manually: playwright install chromium"
-                    )
-                    raise SystemExit(1)
-                console.print("[green]Chromium installed successfully.[/green]\n")
-        except FileNotFoundError:
-            # playwright CLI not found, but sync_playwright imported successfully
-            # This can happen with some installation methods - proceed anyway
-            pass
-        except Exception:
-            # If dry-run check fails for any reason, proceed and let Playwright handle it
-            pass
+        _ensure_chromium_installed()
 
         storage_path = Path(storage) if storage else get_storage_path()
         browser_profile = get_browser_profile_dir()
@@ -452,11 +468,7 @@ def register_session_commands(cli):
 
     def _output_auth_check(checks: dict, details: dict, json_output: bool):
         """Output auth check results."""
-        all_passed = all(
-            v is True
-            for k, v in checks.items()
-            if v is not None  # Skip None (not tested)
-        )
+        all_passed = all(v is True for v in checks.values() if v is not None)
 
         if json_output:
             json_output_response(

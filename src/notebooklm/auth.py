@@ -295,16 +295,17 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
     if missing:
         # Provide more helpful error message with diagnostic info
         all_domains = {c.get("domain", "") for c in storage_state.get("cookies", [])}
-        google_domains = {d for d in all_domains if "google" in d.lower()}
-        found_names = list(cookies.keys())[:5]  # Show first 5 cookies found
+        google_domains = sorted(d for d in all_domains if "google" in d.lower())
+        found_names = list(cookies.keys())[:5]
 
-        error_msg = f"Missing required cookies: {missing}\n"
+        error_parts = [f"Missing required cookies: {missing}"]
         if found_names:
-            error_msg += f"Found cookies: {found_names}{'...' if len(cookies) > 5 else ''}\n"
+            suffix = "..." if len(cookies) > 5 else ""
+            error_parts.append(f"Found cookies: {found_names}{suffix}")
         if google_domains:
-            error_msg += f"Google domains in storage: {sorted(google_domains)}\n"
-        error_msg += "Run 'notebooklm login' to authenticate."
-        raise ValueError(error_msg)
+            error_parts.append(f"Google domains in storage: {google_domains}")
+        error_parts.append("Run 'notebooklm login' to authenticate.")
+        raise ValueError("\n".join(error_parts))
 
     return cookies
 

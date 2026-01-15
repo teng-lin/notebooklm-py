@@ -325,6 +325,7 @@ def handle_auth_error(json_output: bool = False):
     storage_path = get_storage_path()
     has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
     has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
+    storage_source = path_info["home_source"]
 
     if json_output:
         json_error_response(
@@ -333,7 +334,7 @@ def handle_auth_error(json_output: bool = False):
             extra={
                 "checked_paths": {
                     "storage_file": str(storage_path),
-                    "storage_source": path_info["home_source"],
+                    "storage_source": storage_source,
                     "env_var": "NOTEBOOKLM_AUTH_JSON" if has_env_var else None,
                 },
                 "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",

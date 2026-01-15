@@ -377,9 +377,7 @@ class TestHandleAuthError:
             # Enhanced error message makes multiple print calls
             assert mock_console.print.call_count >= 1
             # Verify key messages are present across all calls
-            all_output = " ".join(
-                str(call[0][0]) for call in mock_console.print.call_args_list
-            )
+            all_output = " ".join(str(call[0][0]) for call in mock_console.print.call_args_list)
             assert "not logged in" in all_output.lower()
             assert "login" in all_output.lower()
 

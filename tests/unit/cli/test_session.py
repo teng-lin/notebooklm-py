@@ -370,6 +370,241 @@ class TestStatusPaths:
         assert "NOTEBOOKLM_AUTH_JSON is set" in result.output
 
 
+# =============================================================================
+# AUTH CHECK COMMAND TESTS
+# =============================================================================
+
+
+class TestAuthCheckCommand:
+    """Tests for the 'auth check' command."""
+
+    @pytest.fixture
+    def mock_storage_path(self, tmp_path):
+        """Provide a temporary storage path for testing."""
+        storage_file = tmp_path / "storage_state.json"
+        with patch("notebooklm.cli.session.get_storage_path", return_value=storage_file):
+            yield storage_file
+
+    def test_auth_check_storage_not_found(self, runner, mock_storage_path):
+        """Test auth check when storage file doesn't exist."""
+        # Ensure file doesn't exist
+        if mock_storage_path.exists():
+            mock_storage_path.unlink()
+
+        result = runner.invoke(cli, ["auth", "check"])
+
+        assert result.exit_code == 0
+        assert "Storage exists" in result.output
+        assert "fail" in result.output.lower() or "✗" in result.output
+
+    def test_auth_check_storage_not_found_json(self, runner, mock_storage_path):
+        """Test auth check --json when storage file doesn't exist."""
+        if mock_storage_path.exists():
+            mock_storage_path.unlink()
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "error"
+        assert output["checks"]["storage_exists"] is False
+        assert "not found" in output["details"]["error"]
+
+    def test_auth_check_invalid_json(self, runner, mock_storage_path):
+        """Test auth check when storage file contains invalid JSON."""
+        mock_storage_path.write_text("{ invalid json }")
+
+        result = runner.invoke(cli, ["auth", "check"])
+
+        assert result.exit_code == 0
+        assert "JSON valid" in result.output
+        assert "fail" in result.output.lower() or "✗" in result.output
+
+    def test_auth_check_invalid_json_output(self, runner, mock_storage_path):
+        """Test auth check --json when storage contains invalid JSON."""
+        mock_storage_path.write_text("not valid json at all")
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "error"
+        assert output["checks"]["storage_exists"] is True
+        assert output["checks"]["json_valid"] is False
+        assert "Invalid JSON" in output["details"]["error"]
+
+    def test_auth_check_missing_sid_cookie(self, runner, mock_storage_path):
+        """Test auth check when SID cookie is missing."""
+        # Valid JSON but no SID cookie
+        storage_data = {
+            "cookies": [
+                {"name": "OTHER", "value": "test", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check"])
+
+        assert result.exit_code == 0
+        assert "SID" in result.output or "cookie" in result.output.lower()
+
+    def test_auth_check_valid_storage(self, runner, mock_storage_path):
+        """Test auth check with valid storage containing SID."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "HSID", "value": "test_hsid", "domain": ".google.com"},
+                {"name": "SSID", "value": "test_ssid", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check"])
+
+        assert result.exit_code == 0
+        assert "pass" in result.output.lower() or "✓" in result.output
+        assert "Authentication is valid" in result.output
+
+    def test_auth_check_valid_storage_json(self, runner, mock_storage_path):
+        """Test auth check --json with valid storage."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "HSID", "value": "test_hsid", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "ok"
+        assert output["checks"]["storage_exists"] is True
+        assert output["checks"]["json_valid"] is True
+        assert output["checks"]["cookies_present"] is True
+        assert output["checks"]["sid_cookie"] is True
+        assert "SID" in output["details"]["cookies_found"]
+
+    def test_auth_check_with_test_flag_success(self, runner, mock_storage_path):
+        """Test auth check --test with successful token fetch."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        with patch("notebooklm.auth.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = ("csrf_token_abc", "session_id_xyz")
+
+            result = runner.invoke(cli, ["auth", "check", "--test"])
+
+        assert result.exit_code == 0
+        assert "Token fetch" in result.output
+        assert "pass" in result.output.lower() or "✓" in result.output
+
+    def test_auth_check_with_test_flag_failure(self, runner, mock_storage_path):
+        """Test auth check --test when token fetch fails."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        with patch("notebooklm.auth.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.side_effect = ValueError("Authentication expired")
+
+            result = runner.invoke(cli, ["auth", "check", "--test"])
+
+        assert result.exit_code == 0
+        assert "Token fetch" in result.output
+        assert "fail" in result.output.lower() or "✗" in result.output
+        assert "expired" in result.output.lower() or "refresh" in result.output.lower()
+
+    def test_auth_check_with_test_flag_json(self, runner, mock_storage_path):
+        """Test auth check --test --json with successful token fetch."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        with patch("notebooklm.auth.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = ("csrf_12345", "sess_67890")
+
+            result = runner.invoke(cli, ["auth", "check", "--test", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "ok"
+        assert output["checks"]["token_fetch"] is True
+        assert output["details"]["csrf_length"] == 10
+        assert output["details"]["session_id_length"] == 10
+
+    def test_auth_check_env_var_takes_precedence(self, runner, mock_storage_path, monkeypatch):
+        """Test auth check uses NOTEBOOKLM_AUTH_JSON when set."""
+        # Even if storage file doesn't exist, env var should work
+        if mock_storage_path.exists():
+            mock_storage_path.unlink()
+
+        env_storage = {
+            "cookies": [
+                {"name": "SID", "value": "env_sid", "domain": ".google.com"},
+            ]
+        }
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(env_storage))
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["status"] == "ok"
+        assert output["details"]["auth_source"] == "NOTEBOOKLM_AUTH_JSON"
+
+    def test_auth_check_shows_cookie_domains(self, runner, mock_storage_path):
+        """Test auth check displays cookie domains."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "NID", "value": "test_nid", "domain": ".google.com.sg"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert ".google.com" in output["details"]["cookie_domains"]
+
+    def test_auth_check_skipped_token_fetch_shown(self, runner, mock_storage_path):
+        """Test auth check shows token fetch as skipped when --test not used."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert output["checks"]["token_fetch"] is None  # Not tested
+
+    def test_auth_check_help(self, runner):
+        """Test auth check --help shows usage information."""
+        result = runner.invoke(cli, ["auth", "check", "--help"])
+
+        assert result.exit_code == 0
+        assert "Check authentication status" in result.output
+        assert "--test" in result.output
+        assert "--json" in result.output
+
+
 class TestSessionEdgeCases:
     def test_use_handles_api_error_gracefully(self, runner, mock_auth, mock_context_file):
         """Test 'use' command handles API errors gracefully."""
