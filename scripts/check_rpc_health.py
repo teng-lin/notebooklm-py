@@ -107,7 +107,7 @@ DUPLICATE_METHODS = {
 }
 
 
-def load_auth() -> AuthTokens:
+def load_auth() -> dict[str, str]:
     """Load auth from environment or storage file.
 
     Uses the library's load_auth_from_storage() which handles:
@@ -354,6 +354,9 @@ async def run_health_check() -> list[CheckResult]:
         csrf_token, session_id = await fetch_tokens(cookies)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+    except httpx.HTTPError as e:
+        print(f"ERROR: Network error while fetching auth tokens: {e}", file=sys.stderr)
         sys.exit(1)
     auth = AuthTokens(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
     print(f"Auth OK (CSRF token length: {len(auth.csrf_token)})")
