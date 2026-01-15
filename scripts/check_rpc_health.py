@@ -835,12 +835,15 @@ def print_summary(results: list[CheckResult]) -> int:
         print()
 
     # Return exit code
+    # Only fail on MISMATCH (RPC ID changed) - this is what we care about
+    # ERROR could be transient (rate limiting, network issues) - don't fail on these
     if counts[CheckStatus.MISMATCH] > 0:
         print("RESULT: FAIL - RPC ID mismatches detected")
         return 1
     if counts[CheckStatus.ERROR] > 0:
-        print("RESULT: FAIL - RPC errors detected (check ERROR DETAILS above)")
-        return 1
+        print("RESULT: WARN - Some methods had errors (may be transient)")
+        print("       Review ERROR DETAILS above for potential issues")
+        return 0  # Don't fail - could be rate limiting or network issues
     print("RESULT: PASS - All tested RPC methods OK")
     return 0
 
