@@ -374,9 +374,14 @@ class TestHandleAuthError:
             with pytest.raises(SystemExit) as exc_info:
                 handle_auth_error(json_output=False)
             assert exc_info.value.code == 1
-            mock_console.print.assert_called_once()
-            call_args = mock_console.print.call_args[0][0]
-            assert "login" in call_args.lower()
+            # Enhanced error message makes multiple print calls
+            assert mock_console.print.call_count >= 1
+            # Verify key messages are present across all calls
+            all_output = " ".join(
+                str(call[0][0]) for call in mock_console.print.call_args_list
+            )
+            assert "not logged in" in all_output.lower()
+            assert "login" in all_output.lower()
 
     def test_json_outputs_json_error_and_exits(self, capsys):
         with pytest.raises(SystemExit) as exc_info:

@@ -361,15 +361,16 @@ def register_session_commands(cli):
           notebooklm auth check --test    # Full validation with network test
           notebooklm auth check --json    # Machine-readable output
         """
+        from typing import Any
+
         from ..auth import (
             extract_cookies_from_storage,
             fetch_tokens,
         )
 
-        from typing import Any
-
         storage_path = get_storage_path()
         has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
+        has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
 
         checks: dict[str, bool | None] = {
             "storage_exists": False,
@@ -378,9 +379,18 @@ def register_session_commands(cli):
             "sid_cookie": False,
             "token_fetch": None,  # None = not tested, True/False = result
         }
+
+        # Determine auth source for display
+        if has_env_var:
+            auth_source = "NOTEBOOKLM_AUTH_JSON"
+        elif has_home_env:
+            auth_source = f"$NOTEBOOKLM_HOME ({storage_path})"
+        else:
+            auth_source = f"file ({storage_path})"
+
         details: dict[str, Any] = {
             "storage_path": str(storage_path),
-            "auth_source": "env_var" if has_env_var else "file",
+            "auth_source": auth_source,
             "cookies_found": [],
             "cookie_domains": [],
             "error": None,
@@ -389,7 +399,6 @@ def register_session_commands(cli):
         # Check 1: Storage exists
         if has_env_var:
             checks["storage_exists"] = True
-            details["auth_source"] = "NOTEBOOKLM_AUTH_JSON"
         else:
             checks["storage_exists"] = storage_path.exists()
 

@@ -319,10 +319,12 @@ def handle_error(e: Exception):
 
 def handle_auth_error(json_output: bool = False):
     """Handle authentication errors with helpful context."""
-    from ..paths import get_storage_path
+    from ..paths import get_path_info, get_storage_path
 
+    path_info = get_path_info()
     storage_path = get_storage_path()
     has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
+    has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
 
     if json_output:
         json_error_response(
@@ -331,6 +333,7 @@ def handle_auth_error(json_output: bool = False):
             extra={
                 "checked_paths": {
                     "storage_file": str(storage_path),
+                    "storage_source": path_info["home_source"],
                     "env_var": "NOTEBOOKLM_AUTH_JSON" if has_env_var else None,
                 },
                 "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",
@@ -339,7 +342,12 @@ def handle_auth_error(json_output: bool = False):
     else:
         console.print("[red]Not logged in.[/red]\n")
         console.print("[dim]Checked locations:[/dim]")
-        console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
+        # Show the path with its source (NOTEBOOKLM_HOME or default)
+        if has_home_env:
+            console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
+            console.print("    [dim](via $NOTEBOOKLM_HOME)[/dim]")
+        else:
+            console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
         if has_env_var:
             console.print("  • NOTEBOOKLM_AUTH_JSON: [yellow]set but invalid[/yellow]")
         else:
