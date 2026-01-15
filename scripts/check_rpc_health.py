@@ -235,78 +235,93 @@ async def make_rpc_call_with_data(
         return None, f"Parse error: {e}"
 
 
-async def create_temp_notebook(
-    client: httpx.AsyncClient, auth: AuthTokens
-) -> tuple[str | None, str | None]:
-    """Create a temporary notebook for testing.
+async def test_rpc_method(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    method: RPCMethod,
+    params: list[Any],
+) -> CheckResult:
+    """Test an RPC method and return a CheckResult.
 
-    Returns:
-        Tuple of (notebook_id or None, error message or None)
+    Makes the RPC call and checks if the expected method ID appears in the response.
     """
-    name = f"RPC-Health-Check-{uuid4().hex[:8]}"
-    data, error = await make_rpc_call_with_data(client, auth, RPCMethod.CREATE_NOTEBOOK, [name])
-    if error:
-        return None, error
-    try:
-        # Response structure: [notebook_id, name, ...]
-        notebook_id = data[0]
-        return notebook_id, None
-    except (IndexError, TypeError) as e:
-        return None, f"Failed to extract notebook ID: {e}"
+    expected_id = method.value
+    found_ids, error = await make_rpc_call(client, auth, method, params)
+
+    if expected_id in found_ids:
+        return CheckResult(
+            method=method,
+            status=CheckStatus.OK,
+            expected_id=expected_id,
+            found_ids=found_ids,
+        )
+
+    return CheckResult(
+        method=method,
+        status=CheckStatus.ERROR,
+        expected_id=expected_id,
+        found_ids=found_ids,
+        error=error or "RPC ID not found in response",
+    )
 
 
-async def add_temp_source(
-    client: httpx.AsyncClient, auth: AuthTokens, notebook_id: str
-) -> tuple[str | None, str | None]:
-    """Add a text source to the temp notebook.
-
-    Returns:
-        Tuple of (source_id or None, error message or None)
-    """
-    # ADD_SOURCE params: [notebook_id, title, content, type=0 (text)]
-    params = [notebook_id, "Test Source", "Test content for RPC health check.", 0]
-    data, error = await make_rpc_call_with_data(client, auth, RPCMethod.ADD_SOURCE, params)
-    if error:
-        return None, error
-    try:
-        # Response structure: [[source_id, ...], ...]
-        source_id = data[0][0]
-        return source_id, None
-    except (IndexError, TypeError) as e:
-        return None, f"Failed to extract source ID: {e}"
+def format_check_output(result: CheckResult, suffix: str | None = None) -> str:
+    """Format a CheckResult for console output."""
+    status_icon = STATUS_ICONS[result.status]
+    line = f"{status_icon:8} {result.method.name}"
+    if suffix:
+        line += f" - {suffix}"
+    elif result.error and result.status != CheckStatus.OK:
+        line += f" - {result.error}"
+    return line
 
 
-async def create_temp_note(
-    client: httpx.AsyncClient, auth: AuthTokens, notebook_id: str
-) -> tuple[str | None, str | None]:
-    """Create a note in the temp notebook.
-
-    Returns:
-        Tuple of (note_id or None, error message or None)
-    """
-    # CREATE_NOTE params: [[notebook_id], title, content]
-    params = [[notebook_id], "Test Note", "Test note content"]
-    data, error = await make_rpc_call_with_data(client, auth, RPCMethod.CREATE_NOTE, params)
-    if error:
-        return None, error
-    try:
-        # Response structure: [note_id, ...]
-        note_id = data[0]
-        return note_id, None
-    except (IndexError, TypeError) as e:
-        return None, f"Failed to extract note ID: {e}"
+async def find_temp_notebook_id(client: httpx.AsyncClient, auth: AuthTokens) -> str | None:
+    """Find the temp notebook ID by listing notebooks and matching prefix."""
+    data, _ = await make_rpc_call_with_data(client, auth, RPCMethod.LIST_NOTEBOOKS, [])
+    if not data:
+        return None
+    for nb in data:
+        if isinstance(nb, list) and len(nb) > 1:
+            if isinstance(nb[1], str) and nb[1].startswith("RPC-Health-Check-"):
+                return nb[0]
+    return None
 
 
-async def delete_temp_notebook(
+async def extract_source_id(
     client: httpx.AsyncClient, auth: AuthTokens, notebook_id: str
 ) -> str | None:
-    """Delete the temp notebook (cleanup).
+    """Extract the first source ID from a notebook.
 
-    Returns:
-        Error message or None if successful
+    Response structure: data[3] contains sources list, data[3][0] is first source,
+    data[3][0][0] is source ID.
     """
-    _, error = await make_rpc_call(client, auth, RPCMethod.DELETE_NOTEBOOK, [notebook_id])
-    return error
+    data, _ = await make_rpc_call_with_data(client, auth, RPCMethod.GET_NOTEBOOK, [notebook_id])
+    try:
+        if data and len(data) > 3 and data[3] and len(data[3]) > 0 and len(data[3][0]) > 0:
+            return data[3][0][0]
+    except (IndexError, TypeError):
+        pass
+    return None
+
+
+async def extract_note_id(
+    client: httpx.AsyncClient, auth: AuthTokens, notebook_id: str
+) -> str | None:
+    """Extract the first note ID from a notebook.
+
+    Response structure: data[0] contains notes list, data[0][0] is first note,
+    data[0][0][0] is note ID.
+    """
+    data, _ = await make_rpc_call_with_data(
+        client, auth, RPCMethod.GET_NOTES_AND_MIND_MAPS, [[notebook_id]]
+    )
+    try:
+        if data and len(data) > 0 and data[0] and len(data[0]) > 0 and len(data[0][0]) > 0:
+            return data[0][0][0]
+    except (IndexError, TypeError):
+        pass
+    return None
 
 
 def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | None:
@@ -403,7 +418,6 @@ async def check_method(
     method: RPCMethod,
     notebook_id: str | None,
     full_mode: bool = False,
-    temp_resources: TempResources | None = None,
 ) -> CheckResult:
     """Check a single RPC method."""
     expected_id = method.value
@@ -495,15 +509,132 @@ async def check_method(
     )
 
 
+async def setup_temp_resources(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    results: list[CheckResult],
+) -> TempResources:
+    """Create temporary resources for full mode testing.
+
+    Tests CREATE_NOTEBOOK, ADD_SOURCE, and CREATE_NOTE RPC methods.
+    """
+    temp = TempResources()
+
+    # Test CREATE_NOTEBOOK
+    result = await test_rpc_method(
+        client, auth, RPCMethod.CREATE_NOTEBOOK, [f"RPC-Health-Check-{uuid4().hex[:8]}"]
+    )
+    results.append(result)
+    print(
+        format_check_output(
+            result, "temp notebook created" if result.status == CheckStatus.OK else None
+        )
+    )
+
+    if result.status != CheckStatus.OK:
+        return temp
+
+    # Find the notebook ID we just created
+    await asyncio.sleep(CALL_DELAY)
+    temp.notebook_id = await find_temp_notebook_id(client, auth)
+
+    if not temp.notebook_id:
+        print(
+            "WARNING: Notebook created but ID not found. May need manual cleanup.",
+            file=sys.stderr,
+        )
+        return temp
+
+    # Test ADD_SOURCE
+    await asyncio.sleep(CALL_DELAY)
+    result = await test_rpc_method(
+        client,
+        auth,
+        RPCMethod.ADD_SOURCE,
+        [temp.notebook_id, "Test Source", "Test content for RPC health check.", 0],
+    )
+    results.append(result)
+    print(
+        format_check_output(
+            result, "temp source added" if result.status == CheckStatus.OK else None
+        )
+    )
+
+    if result.status == CheckStatus.OK:
+        temp.source_id = await extract_source_id(client, auth, temp.notebook_id)
+
+    # Test CREATE_NOTE
+    await asyncio.sleep(CALL_DELAY)
+    result = await test_rpc_method(
+        client, auth, RPCMethod.CREATE_NOTE, [[temp.notebook_id], "Test Note", "Test note content"]
+    )
+    results.append(result)
+    print(
+        format_check_output(
+            result, "temp note created" if result.status == CheckStatus.OK else None
+        )
+    )
+
+    if result.status == CheckStatus.OK:
+        temp.note_id = await extract_note_id(client, auth, temp.notebook_id)
+
+    return temp
+
+
+async def cleanup_temp_resources(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    temp: TempResources,
+    results: list[CheckResult],
+) -> None:
+    """Delete temporary resources and test DELETE RPC methods."""
+    if not temp.notebook_id:
+        return
+
+    # Test DELETE_NOTE if we have a note
+    if temp.note_id:
+        await asyncio.sleep(CALL_DELAY)
+        result = await test_rpc_method(
+            client, auth, RPCMethod.DELETE_NOTE, [[temp.notebook_id], temp.note_id]
+        )
+        results.append(result)
+        print(
+            format_check_output(
+                result, "temp note deleted" if result.status == CheckStatus.OK else None
+            )
+        )
+
+    # Test DELETE_SOURCE if we have a source
+    if temp.source_id:
+        await asyncio.sleep(CALL_DELAY)
+        result = await test_rpc_method(
+            client, auth, RPCMethod.DELETE_SOURCE, [[temp.notebook_id], [[temp.source_id]]]
+        )
+        results.append(result)
+        print(
+            format_check_output(
+                result, "temp source deleted" if result.status == CheckStatus.OK else None
+            )
+        )
+
+    # Test DELETE_NOTEBOOK (always runs to cleanup)
+    await asyncio.sleep(CALL_DELAY)
+    result = await test_rpc_method(client, auth, RPCMethod.DELETE_NOTEBOOK, [temp.notebook_id])
+    results.append(result)
+    print(
+        format_check_output(
+            result, "temp notebook deleted" if result.status == CheckStatus.OK else None
+        )
+    )
+
+
 async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     """Run health check on all RPC methods."""
-    # Load cookies from env/storage using library's domain-filtered loader
     cookies = load_auth()
 
-    # Get notebook IDs
-    read_only_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
-    generation_id = os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
-    notebook_id = read_only_id or generation_id
+    notebook_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID") or os.environ.get(
+        "NOTEBOOKLM_GENERATION_NOTEBOOK_ID"
+    )
 
     if not notebook_id and not full_mode:
         print("WARNING: No notebook ID provided. Some methods will be skipped.", file=sys.stderr)
@@ -511,7 +642,6 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     results: list[CheckResult] = []
     temp_resources = TempResources()
 
-    # Fetch auth tokens using library's token fetcher
     print("Fetching auth tokens...")
     try:
         csrf_token, session_id = await fetch_tokens(cookies)
@@ -526,155 +656,14 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     print()
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        # In full mode, create temp notebook first and track as test results
         if full_mode:
             print("Creating temp resources for full testing...")
-
-            # Test CREATE_NOTEBOOK
-            found_ids, error = await make_rpc_call(
-                client, auth, RPCMethod.CREATE_NOTEBOOK, [f"RPC-Health-Check-{uuid4().hex[:8]}"]
-            )
-            if RPCMethod.CREATE_NOTEBOOK.value in found_ids:
-                print("OK       CREATE_NOTEBOOK - temp notebook created")
-                results.append(
-                    CheckResult(
-                        method=RPCMethod.CREATE_NOTEBOOK,
-                        status=CheckStatus.OK,
-                        expected_id=RPCMethod.CREATE_NOTEBOOK.value,
-                        found_ids=found_ids,
-                    )
-                )
-                # Extract notebook ID from response (it's typically the first string in found data)
-                # For now, list notebooks and find the one we just created
-                await asyncio.sleep(CALL_DELAY)
-                list_ids, _ = await make_rpc_call(client, auth, RPCMethod.LIST_NOTEBOOKS, [])
-                # Get fresh notebook list to find our temp notebook
-                try:
-                    data = decode_response(
-                        (
-                            await client.post(
-                                f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path=%2F",
-                                content=build_request_body(
-                                    encode_rpc_request(RPCMethod.LIST_NOTEBOOKS, []),
-                                    auth.csrf_token,
-                                ),
-                                headers={
-                                    "Content-Type": "application/x-www-form-urlencoded",
-                                    "Cookie": "; ".join(
-                                        f"{k}={v}" for k, v in auth.cookies.items()
-                                    ),
-                                },
-                            )
-                        ).text,
-                        RPCMethod.LIST_NOTEBOOKS.value,
-                    )
-                    # Find notebook starting with RPC-Health-Check-
-                    for nb in data or []:
-                        if isinstance(nb, list) and len(nb) > 1:
-                            if isinstance(nb[1], str) and nb[1].startswith("RPC-Health-Check-"):
-                                temp_resources.notebook_id = nb[0]
-                                break
-                except Exception:
-                    pass
-            else:
-                print(f"ERROR    CREATE_NOTEBOOK - {error or 'ID not in response'}")
-                results.append(
-                    CheckResult(
-                        method=RPCMethod.CREATE_NOTEBOOK,
-                        status=CheckStatus.ERROR,
-                        expected_id=RPCMethod.CREATE_NOTEBOOK.value,
-                        found_ids=found_ids,
-                        error=error or "RPC ID not found in response",
-                    )
-                )
-
+            temp_resources = await setup_temp_resources(client, auth, results)
             if temp_resources.notebook_id:
                 notebook_id = temp_resources.notebook_id
-
-                # Test ADD_SOURCE
-                await asyncio.sleep(CALL_DELAY)
-                found_ids, error = await make_rpc_call(
-                    client,
-                    auth,
-                    RPCMethod.ADD_SOURCE,
-                    [notebook_id, "Test Source", "Test content for RPC health check.", 0],
-                )
-                if RPCMethod.ADD_SOURCE.value in found_ids:
-                    print("OK       ADD_SOURCE - temp source added")
-                    results.append(
-                        CheckResult(
-                            method=RPCMethod.ADD_SOURCE,
-                            status=CheckStatus.OK,
-                            expected_id=RPCMethod.ADD_SOURCE.value,
-                            found_ids=found_ids,
-                        )
-                    )
-                    # Extract source_id for DELETE_SOURCE test
-                    try:
-                        data, _ = await make_rpc_call_with_data(
-                            client, auth, RPCMethod.GET_NOTEBOOK, [notebook_id]
-                        )
-                        # Sources are in data[3] as list of [source_id, ...]
-                        if data and len(data) > 3 and data[3]:
-                            temp_resources.source_id = data[3][0][0]
-                    except Exception:
-                        pass
-                else:
-                    print(f"ERROR    ADD_SOURCE - {error or 'ID not in response'}")
-                    results.append(
-                        CheckResult(
-                            method=RPCMethod.ADD_SOURCE,
-                            status=CheckStatus.ERROR,
-                            expected_id=RPCMethod.ADD_SOURCE.value,
-                            found_ids=found_ids,
-                            error=error or "RPC ID not found in response",
-                        )
-                    )
-
-                # Test CREATE_NOTE
-                await asyncio.sleep(CALL_DELAY)
-                found_ids, error = await make_rpc_call(
-                    client,
-                    auth,
-                    RPCMethod.CREATE_NOTE,
-                    [[notebook_id], "Test Note", "Test note content"],
-                )
-                if RPCMethod.CREATE_NOTE.value in found_ids:
-                    print("OK       CREATE_NOTE - temp note created")
-                    results.append(
-                        CheckResult(
-                            method=RPCMethod.CREATE_NOTE,
-                            status=CheckStatus.OK,
-                            expected_id=RPCMethod.CREATE_NOTE.value,
-                            found_ids=found_ids,
-                        )
-                    )
-                    # Extract note_id for DELETE_NOTE test
-                    try:
-                        data, _ = await make_rpc_call_with_data(
-                            client, auth, RPCMethod.GET_NOTES_AND_MIND_MAPS, [[notebook_id]]
-                        )
-                        # Notes are returned as list of [note_id, ...]
-                        if data and len(data) > 0 and data[0]:
-                            temp_resources.note_id = data[0][0][0]
-                    except Exception:
-                        pass
-                else:
-                    print(f"ERROR    CREATE_NOTE - {error or 'ID not in response'}")
-                    results.append(
-                        CheckResult(
-                            method=RPCMethod.CREATE_NOTE,
-                            status=CheckStatus.ERROR,
-                            expected_id=RPCMethod.CREATE_NOTE.value,
-                            found_ids=found_ids,
-                            error=error or "RPC ID not found in response",
-                        )
-                    )
-
             print()
 
         try:
-            # Get all RPC methods
             methods = list(RPCMethod)
             total = len(methods)
 
@@ -682,116 +671,23 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
             print("=" * 60)
 
             for i, method in enumerate(methods, 1):
-                result = await check_method(
-                    client, auth, method, notebook_id, full_mode, temp_resources
-                )
+                result = await check_method(client, auth, method, notebook_id, full_mode)
                 results.append(result)
 
-                # Print result
                 status_icon = STATUS_ICONS[result.status]
                 line = f"{status_icon:8} {method.name} ({result.expected_id})"
                 if result.error and result.status != CheckStatus.OK:
                     line += f" - {result.error}"
                 print(line)
 
-                # Delay between calls
-                if i < total and result.status not in (CheckStatus.SKIPPED,):
+                if i < total and result.status != CheckStatus.SKIPPED:
                     await asyncio.sleep(CALL_DELAY)
 
         finally:
-            # Cleanup temp notebook in full mode - test DELETE operations
             if full_mode and temp_resources.notebook_id:
                 print()
                 print("Testing DELETE operations during cleanup...")
-
-                # Test DELETE_NOTE if we have a note
-                if temp_resources.note_id:
-                    await asyncio.sleep(CALL_DELAY)
-                    found_ids, error = await make_rpc_call(
-                        client,
-                        auth,
-                        RPCMethod.DELETE_NOTE,
-                        [[temp_resources.notebook_id], temp_resources.note_id],
-                    )
-                    if RPCMethod.DELETE_NOTE.value in found_ids:
-                        print("OK       DELETE_NOTE - temp note deleted")
-                        results.append(
-                            CheckResult(
-                                method=RPCMethod.DELETE_NOTE,
-                                status=CheckStatus.OK,
-                                expected_id=RPCMethod.DELETE_NOTE.value,
-                                found_ids=found_ids,
-                            )
-                        )
-                    else:
-                        print(f"ERROR    DELETE_NOTE - {error or 'ID not in response'}")
-                        results.append(
-                            CheckResult(
-                                method=RPCMethod.DELETE_NOTE,
-                                status=CheckStatus.ERROR,
-                                expected_id=RPCMethod.DELETE_NOTE.value,
-                                found_ids=found_ids,
-                                error=error or "RPC ID not found in response",
-                            )
-                        )
-
-                # Test DELETE_SOURCE if we have a source
-                if temp_resources.source_id:
-                    await asyncio.sleep(CALL_DELAY)
-                    found_ids, error = await make_rpc_call(
-                        client,
-                        auth,
-                        RPCMethod.DELETE_SOURCE,
-                        [[temp_resources.notebook_id], [[temp_resources.source_id]]],
-                    )
-                    if RPCMethod.DELETE_SOURCE.value in found_ids:
-                        print("OK       DELETE_SOURCE - temp source deleted")
-                        results.append(
-                            CheckResult(
-                                method=RPCMethod.DELETE_SOURCE,
-                                status=CheckStatus.OK,
-                                expected_id=RPCMethod.DELETE_SOURCE.value,
-                                found_ids=found_ids,
-                            )
-                        )
-                    else:
-                        print(f"ERROR    DELETE_SOURCE - {error or 'ID not in response'}")
-                        results.append(
-                            CheckResult(
-                                method=RPCMethod.DELETE_SOURCE,
-                                status=CheckStatus.ERROR,
-                                expected_id=RPCMethod.DELETE_SOURCE.value,
-                                found_ids=found_ids,
-                                error=error or "RPC ID not found in response",
-                            )
-                        )
-
-                # Test DELETE_NOTEBOOK (always runs to cleanup)
-                await asyncio.sleep(CALL_DELAY)
-                found_ids, error = await make_rpc_call(
-                    client, auth, RPCMethod.DELETE_NOTEBOOK, [temp_resources.notebook_id]
-                )
-                if RPCMethod.DELETE_NOTEBOOK.value in found_ids:
-                    print("OK       DELETE_NOTEBOOK - temp notebook deleted")
-                    results.append(
-                        CheckResult(
-                            method=RPCMethod.DELETE_NOTEBOOK,
-                            status=CheckStatus.OK,
-                            expected_id=RPCMethod.DELETE_NOTEBOOK.value,
-                            found_ids=found_ids,
-                        )
-                    )
-                else:
-                    print(f"ERROR    DELETE_NOTEBOOK - {error or 'ID not in response'}")
-                    results.append(
-                        CheckResult(
-                            method=RPCMethod.DELETE_NOTEBOOK,
-                            status=CheckStatus.ERROR,
-                            expected_id=RPCMethod.DELETE_NOTEBOOK.value,
-                            found_ids=found_ids,
-                            error=error or "RPC ID not found in response",
-                        )
-                    )
+                await cleanup_temp_resources(client, auth, temp_resources, results)
 
     return results
 
