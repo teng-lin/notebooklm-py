@@ -290,37 +290,35 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
 
     for cookie in storage_state.get("cookies", []):
         domain = cookie.get("domain", "")
-        if _is_allowed_auth_domain(domain):
-            name = cookie.get("name")
-            if name:
-                # Prioritize .google.com cookies over regional domains (e.g., .google.de)
-                # to prevent wrong cookie values when the same name exists in multiple domains
-                if name not in cookies or domain == ".google.com":
-                    # Log when we're overwriting a regional cookie with base domain
-                    if name in cookies and domain == ".google.com":
-                        logger.debug(
-                            "Cookie %s: using .google.com value (overriding %s)",
-                            name,
-                            cookie_domains[name],
-                        )
-                    cookies[name] = cookie.get("value", "")
-                    cookie_domains[name] = domain
-                else:
-                    # Log when we're ignoring a duplicate from a regional domain
-                    logger.debug(
-                        "Cookie %s: ignoring duplicate from %s (keeping %s)",
-                        name,
-                        domain,
-                        cookie_domains[name],
-                    )
+        name = cookie.get("name")
+        if not _is_allowed_auth_domain(domain) or not name:
+            continue
 
-    # Log which domains cookies were extracted from (helpful for debugging)
-    unique_domains = set(cookie_domains.values())
-    if unique_domains:
+        # Prioritize .google.com cookies over regional domains (e.g., .google.de)
+        # to prevent wrong cookie values when the same name exists in multiple domains
+        is_base_domain = domain == ".google.com"
+        if name not in cookies or is_base_domain:
+            if name in cookies and is_base_domain:
+                logger.debug(
+                    "Cookie %s: using .google.com value (overriding %s)",
+                    name,
+                    cookie_domains[name],
+                )
+            cookies[name] = cookie.get("value", "")
+            cookie_domains[name] = domain
+        else:
+            logger.debug(
+                "Cookie %s: ignoring duplicate from %s (keeping %s)",
+                name,
+                domain,
+                cookie_domains[name],
+            )
+
+    # Log extraction summary for debugging
+    if cookie_domains:
+        unique_domains = sorted(set(cookie_domains.values()))
         logger.debug(
-            "Extracted %d cookies from domains: %s",
-            len(cookies),
-            ", ".join(sorted(unique_domains)),
+            "Extracted %d cookies from domains: %s", len(cookies), ", ".join(unique_domains)
         )
         if "SID" in cookie_domains:
             logger.debug("SID cookie from domain: %s", cookie_domains["SID"])

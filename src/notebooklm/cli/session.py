@@ -68,14 +68,11 @@ def _ensure_chromium_installed() -> None:
             )
             raise SystemExit(1)
         console.print("[green]Chromium installed successfully.[/green]\n")
-    except FileNotFoundError:
-        # playwright CLI not found, but sync_playwright imported successfully
-        # This can happen with some installation methods - proceed anyway
-        pass
     except SystemExit:
         raise
     except Exception:
-        # If dry-run check fails for any reason, proceed and let Playwright handle it
+        # FileNotFoundError: playwright CLI not found but sync_playwright imported
+        # Other exceptions: dry-run check failed - let Playwright handle it during launch
         pass
 
 
@@ -448,9 +445,7 @@ def register_session_commands(cli):
                 domain = cookie.get("domain", "")
                 name = cookie.get("name", "")
                 if domain and name and "google" in domain.lower():
-                    if domain not in cookies_by_domain:
-                        cookies_by_domain[domain] = []
-                    cookies_by_domain[domain].append(name)
+                    cookies_by_domain.setdefault(domain, []).append(name)
 
             details["cookies_by_domain"] = cookies_by_domain
             details["cookie_domains"] = list(cookies_by_domain.keys())
@@ -536,18 +531,17 @@ def register_session_commands(cli):
             # Key auth cookies to highlight
             key_cookies = {"SID", "HSID", "SSID", "APISID", "SAPISID", "SIDCC"}
 
+            def format_cookie_name(name: str) -> str:
+                if name in key_cookies:
+                    return f"[green]{name}[/green]"
+                if name.startswith("__Secure-"):
+                    return f"[blue]{name}[/blue]"
+                return f"[dim]{name}[/dim]"
+
             for domain in sorted(cookies_by_domain.keys()):
                 cookie_names = cookies_by_domain[domain]
-                # Format: highlight key cookies in green, others in dim
-                formatted_cookies = []
-                for name in sorted(cookie_names):
-                    if name in key_cookies:
-                        formatted_cookies.append(f"[green]{name}[/green]")
-                    elif name.startswith("__Secure-"):
-                        formatted_cookies.append(f"[blue]{name}[/blue]")
-                    else:
-                        formatted_cookies.append(f"[dim]{name}[/dim]")
-                cookie_table.add_row(domain, ", ".join(formatted_cookies))
+                formatted = [format_cookie_name(name) for name in sorted(cookie_names)]
+                cookie_table.add_row(domain, ", ".join(formatted))
 
             console.print(cookie_table)
 

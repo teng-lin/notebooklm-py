@@ -343,16 +343,11 @@ def handle_auth_error(json_output: bool = False):
     else:
         console.print("[red]Not logged in.[/red]\n")
         console.print("[dim]Checked locations:[/dim]")
-        # Show the path with its source (NOTEBOOKLM_HOME or default)
+        console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
         if has_home_env:
-            console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
             console.print("    [dim](via $NOTEBOOKLM_HOME)[/dim]")
-        else:
-            console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
-        if has_env_var:
-            console.print("  • NOTEBOOKLM_AUTH_JSON: [yellow]set but invalid[/yellow]")
-        else:
-            console.print("  • NOTEBOOKLM_AUTH_JSON: [dim]not set[/dim]")
+        env_status = "[yellow]set but invalid[/yellow]" if has_env_var else "[dim]not set[/dim]"
+        console.print(f"  • NOTEBOOKLM_AUTH_JSON: {env_status}")
         console.print("\n[bold]Options to authenticate:[/bold]")
         console.print("  1. Run: [green]notebooklm login[/green]")
         console.print("  2. Set [cyan]NOTEBOOKLM_AUTH_JSON[/cyan] env var (for CI/CD)")
