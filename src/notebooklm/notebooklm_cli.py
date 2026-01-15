@@ -83,11 +83,11 @@ def cli(ctx, storage, verbose):
     \b
     Tip: Use partial notebook IDs (e.g., 'notebooklm use abc' matches 'abc123...')
     """
-    # Configure logging based on verbosity
-    if verbose == 1:
-        logging.getLogger("notebooklm").setLevel(logging.INFO)
-    elif verbose >= 2:
+    # Configure logging based on verbosity: -v for INFO, -vv+ for DEBUG
+    if verbose >= 2:
         logging.getLogger("notebooklm").setLevel(logging.DEBUG)
+    elif verbose == 1:
+        logging.getLogger("notebooklm").setLevel(logging.INFO)
 
     ctx.ensure_object(dict)
     ctx.obj["storage_path"] = Path(storage) if storage else None

@@ -367,21 +367,26 @@ def with_client(f):
         logger.debug("CLI command starting: %s", cmd_name)
 
         json_output = kwargs.get("json_output", False)
+
+        def log_result(status: str, detail: str = "") -> float:
+            elapsed = time.monotonic() - start
+            msg = f"CLI command {status}: {cmd_name} ({elapsed:.3f}s)"
+            if detail:
+                msg += f" - {detail}"
+            logger.debug(msg)
+            return elapsed
+
         try:
             auth = get_auth_tokens(ctx)
-            # The decorated function returns a coroutine
             coro = f(ctx, *args, client_auth=auth, **kwargs)
             result = run_async(coro)
-            elapsed = time.monotonic() - start
-            logger.debug("CLI command completed: %s (%.3fs)", cmd_name, elapsed)
+            log_result("completed")
             return result
         except FileNotFoundError:
-            elapsed = time.monotonic() - start
-            logger.debug("CLI command failed: %s (%.3fs) - not authenticated", cmd_name, elapsed)
+            log_result("failed", "not authenticated")
             handle_auth_error(json_output)
         except Exception as e:
-            elapsed = time.monotonic() - start
-            logger.debug("CLI command failed: %s (%.3fs) - %s", cmd_name, elapsed, e)
+            log_result("failed", str(e))
             if json_output:
                 json_error_response("ERROR", str(e))
             else:
