@@ -185,27 +185,6 @@ Need network?
 
 ---
 
-## Releasing
-
-See **[releasing.md](releasing.md)** for the complete release checklist.
-
-### Quick Reference
-
-1. Validate documentation is up to date
-2. Update version in `pyproject.toml`
-3. Generate changelog entries and update `CHANGELOG.md`
-4. Commit and push to main
-5. Wait for CI + trigger E2E on main
-6. Verify on TestPyPI (verify-package workflow)
-7. Tag and push → publishes to PyPI
-8. Verify on PyPI (verify-package workflow)
-
-### Version Source of Truth
-
-Version is defined in `pyproject.toml`. The `__version__` in `__init__.py` is dynamically read using `importlib.metadata`.
-
----
-
 ## CI/CD
 
 ### Workflows
