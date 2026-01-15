@@ -75,6 +75,38 @@ def register_session_commands(cli):
             )
             raise SystemExit(1) from None
 
+        # Pre-flight check: verify Chromium browser is installed
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["playwright", "install", "--dry-run", "chromium"],
+                capture_output=True,
+                text=True,
+            )
+            # If dry-run shows browser needs installing, warn the user
+            if "chromium" in result.stdout.lower() and "will download" in result.stdout.lower():
+                console.print("[yellow]Chromium browser not installed. Installing now...[/yellow]")
+                install_result = subprocess.run(
+                    ["playwright", "install", "chromium"],
+                    capture_output=True,
+                    text=True,
+                )
+                if install_result.returncode != 0:
+                    console.print(
+                        "[red]Failed to install Chromium browser.[/red]\n"
+                        "Run manually: playwright install chromium"
+                    )
+                    raise SystemExit(1)
+                console.print("[green]Chromium installed successfully.[/green]\n")
+        except FileNotFoundError:
+            # playwright CLI not found, but sync_playwright imported successfully
+            # This can happen with some installation methods - proceed anyway
+            pass
+        except Exception:
+            # If dry-run check fails for any reason, proceed and let Playwright handle it
+            pass
+
         storage_path = Path(storage) if storage else get_storage_path()
         browser_profile = get_browser_profile_dir()
         storage_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -300,3 +332,180 @@ def register_session_commands(cli):
         """Clear current notebook context."""
         clear_context()
         console.print("[green]Context cleared[/green]")
+
+    @cli.group("auth")
+    def auth_group():
+        """Authentication management commands."""
+        pass
+
+    @auth_group.command("check")
+    @click.option(
+        "--test", "test_fetch", is_flag=True, help="Test token fetch (makes network request)"
+    )
+    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    def auth_check(test_fetch, json_output):
+        """Check authentication status and diagnose issues.
+
+        Validates that authentication is properly configured by checking:
+        - Storage file exists and is readable
+        - JSON structure is valid
+        - Required cookies (SID) are present
+        - Cookie domains are correct
+
+        Use --test to also verify tokens can be fetched from NotebookLM
+        (requires network access).
+
+        \b
+        Examples:
+          notebooklm auth check           # Quick local validation
+          notebooklm auth check --test    # Full validation with network test
+          notebooklm auth check --json    # Machine-readable output
+        """
+        from ..auth import (
+            extract_cookies_from_storage,
+            fetch_tokens,
+        )
+
+        from typing import Any
+
+        storage_path = get_storage_path()
+        has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
+
+        checks: dict[str, bool | None] = {
+            "storage_exists": False,
+            "json_valid": False,
+            "cookies_present": False,
+            "sid_cookie": False,
+            "token_fetch": None,  # None = not tested, True/False = result
+        }
+        details: dict[str, Any] = {
+            "storage_path": str(storage_path),
+            "auth_source": "env_var" if has_env_var else "file",
+            "cookies_found": [],
+            "cookie_domains": [],
+            "error": None,
+        }
+
+        # Check 1: Storage exists
+        if has_env_var:
+            checks["storage_exists"] = True
+            details["auth_source"] = "NOTEBOOKLM_AUTH_JSON"
+        else:
+            checks["storage_exists"] = storage_path.exists()
+
+        if not checks["storage_exists"]:
+            details["error"] = f"Storage file not found: {storage_path}"
+            _output_auth_check(checks, details, json_output)
+            return
+
+        # Check 2: JSON valid
+        try:
+            if has_env_var:
+                storage_state = json.loads(os.environ["NOTEBOOKLM_AUTH_JSON"])
+            else:
+                storage_state = json.loads(storage_path.read_text())
+            checks["json_valid"] = True
+        except json.JSONDecodeError as e:
+            details["error"] = f"Invalid JSON: {e}"
+            _output_auth_check(checks, details, json_output)
+            return
+
+        # Check 3: Cookies present
+        try:
+            cookies = extract_cookies_from_storage(storage_state)
+            checks["cookies_present"] = True
+            checks["sid_cookie"] = "SID" in cookies
+            details["cookies_found"] = list(cookies.keys())
+
+            # Extract domain info
+            for cookie in storage_state.get("cookies", []):
+                domain = cookie.get("domain", "")
+                if domain and "google" in domain.lower():
+                    if domain not in details["cookie_domains"]:
+                        details["cookie_domains"].append(domain)
+        except ValueError as e:
+            details["error"] = str(e)
+            _output_auth_check(checks, details, json_output)
+            return
+
+        # Check 4: Token fetch (optional)
+        if test_fetch:
+            try:
+                csrf, session_id = run_async(fetch_tokens(cookies))
+                checks["token_fetch"] = True
+                details["csrf_length"] = len(csrf)
+                details["session_id_length"] = len(session_id)
+            except Exception as e:
+                checks["token_fetch"] = False
+                details["error"] = f"Token fetch failed: {e}"
+
+        _output_auth_check(checks, details, json_output)
+
+    def _output_auth_check(checks: dict, details: dict, json_output: bool):
+        """Output auth check results."""
+        all_passed = all(
+            v is True
+            for k, v in checks.items()
+            if v is not None  # Skip None (not tested)
+        )
+
+        if json_output:
+            json_output_response(
+                {
+                    "status": "ok" if all_passed else "error",
+                    "checks": checks,
+                    "details": details,
+                }
+            )
+            return
+
+        # Rich output
+        table = Table(title="Authentication Check")
+        table.add_column("Check", style="dim")
+        table.add_column("Status")
+        table.add_column("Details", style="cyan")
+
+        def status_icon(val):
+            if val is None:
+                return "[dim]⊘ skipped[/dim]"
+            return "[green]✓ pass[/green]" if val else "[red]✗ fail[/red]"
+
+        table.add_row(
+            "Storage exists",
+            status_icon(checks["storage_exists"]),
+            details["auth_source"],
+        )
+        table.add_row(
+            "JSON valid",
+            status_icon(checks["json_valid"]),
+            "",
+        )
+        table.add_row(
+            "Cookies present",
+            status_icon(checks["cookies_present"]),
+            f"{len(details.get('cookies_found', []))} cookies" if checks["cookies_present"] else "",
+        )
+        table.add_row(
+            "SID cookie",
+            status_icon(checks["sid_cookie"]),
+            ", ".join(details.get("cookie_domains", [])[:3]) or "",
+        )
+        table.add_row(
+            "Token fetch",
+            status_icon(checks["token_fetch"]),
+            "use --test to check" if checks["token_fetch"] is None else "",
+        )
+
+        console.print(table)
+
+        if details.get("error"):
+            console.print(f"\n[red]Error:[/red] {details['error']}")
+
+        if all_passed:
+            console.print("\n[green]Authentication is valid.[/green]")
+        elif not checks["storage_exists"]:
+            console.print("\n[yellow]Run 'notebooklm login' to authenticate.[/yellow]")
+        elif checks["token_fetch"] is False:
+            console.print(
+                "\n[yellow]Cookies may be expired. Run 'notebooklm login' to refresh.[/yellow]"
+            )

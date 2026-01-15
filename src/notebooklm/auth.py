@@ -267,6 +267,7 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         ValueError: If required cookies (SID) are missing from storage state.
     """
     cookies = {}
+    cookie_domains: dict[str, str] = {}  # Track which domain each cookie came from
 
     for cookie in storage_state.get("cookies", []):
         domain = cookie.get("domain", "")
@@ -277,12 +278,33 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
                 # to prevent wrong cookie values when the same name exists in multiple domains
                 if name not in cookies or domain == ".google.com":
                     cookies[name] = cookie.get("value", "")
+                    cookie_domains[name] = domain
+
+    # Log which domains cookies were extracted from (helpful for debugging)
+    unique_domains = set(cookie_domains.values())
+    if unique_domains:
+        logger.debug(
+            "Extracted %d cookies from domains: %s",
+            len(cookies),
+            ", ".join(sorted(unique_domains)),
+        )
+        if "SID" in cookie_domains:
+            logger.debug("SID cookie from domain: %s", cookie_domains["SID"])
 
     missing = MINIMUM_REQUIRED_COOKIES - set(cookies.keys())
     if missing:
-        raise ValueError(
-            f"Missing required cookies: {missing}\nRun 'notebooklm login' to authenticate."
-        )
+        # Provide more helpful error message with diagnostic info
+        all_domains = {c.get("domain", "") for c in storage_state.get("cookies", [])}
+        google_domains = {d for d in all_domains if "google" in d.lower()}
+        found_names = list(cookies.keys())[:5]  # Show first 5 cookies found
+
+        error_msg = f"Missing required cookies: {missing}\n"
+        if found_names:
+            error_msg += f"Found cookies: {found_names}{'...' if len(cookies) > 5 else ''}\n"
+        if google_domains:
+            error_msg += f"Google domains in storage: {sorted(google_domains)}\n"
+        error_msg += "Run 'notebooklm login' to authenticate."
+        raise ValueError(error_msg)
 
     return cookies
 
