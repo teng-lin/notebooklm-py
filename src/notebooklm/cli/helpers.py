@@ -370,10 +370,10 @@ def with_client(f):
 
         def log_result(status: str, detail: str = "") -> float:
             elapsed = time.monotonic() - start
-            msg = f"CLI command {status}: {cmd_name} ({elapsed:.3f}s)"
             if detail:
-                msg += f" - {detail}"
-            logger.debug(msg)
+                logger.debug("CLI command %s: %s (%.3fs) - %s", status, cmd_name, elapsed, detail)
+            else:
+                logger.debug("CLI command %s: %s (%.3fs)", status, cmd_name, elapsed)
             return elapsed
 
         try:
