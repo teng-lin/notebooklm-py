@@ -992,18 +992,31 @@ class TestExtractCookiesRegionalDomains:
         assert cookies["SSID"] == "ssid_de"
 
     def test_prefers_primary_domain_over_regional(self):
-        """Test that if same cookie exists on both domains, both are captured."""
+        """Test that .google.com cookie wins over regional domains.
+
+        Regression test for PR #34: When the same cookie name exists on both
+        .google.com and a regional domain (e.g., .google.com.sg), the .google.com
+        value should ALWAYS be used regardless of cookie order in the list.
+        """
+        # Test case 1: base domain listed first
         storage_state = {
             "cookies": [
                 {"name": "SID", "value": "sid_global", "domain": ".google.com"},
                 {"name": "SID", "value": "sid_regional", "domain": ".google.com.sg"},
             ]
         }
-
         cookies = extract_cookies_from_storage(storage_state)
+        assert cookies["SID"] == "sid_global", ".google.com should win (base first)"
 
-        # Both are processed; last one wins (dict behavior)
-        assert cookies["SID"] in ["sid_global", "sid_regional"]
+        # Test case 2: regional domain listed first (this was the bug scenario)
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_regional", "domain": ".google.com.sg"},
+                {"name": "SID", "value": "sid_global", "domain": ".google.com"},
+            ]
+        }
+        cookies = extract_cookies_from_storage(storage_state)
+        assert cookies["SID"] == "sid_global", ".google.com should win (regional first)"
 
     def test_rejects_youtube_sid_but_accepts_regional_sid(self):
         """Test rejects SID from youtube but accepts from regional Google domain."""
@@ -1024,6 +1037,52 @@ class TestExtractCookiesRegionalDomains:
         )
         cookies = extract_cookies_from_storage(storage_state)
         assert cookies["SID"] == "regional_sid"
+
+    def test_cookie_extraction_order_independent(self):
+        """Test that cookie extraction is deterministic regardless of list order.
+
+        Regression test for PR #34: The original bug caused non-deterministic
+        behavior because Python dict's "last one wins" behavior meant the result
+        depended on cookie iteration order.
+
+        This test verifies that all permutations produce the same result.
+        """
+        from itertools import permutations
+
+        base_cookies = [
+            {"name": "SID", "value": "sid_base", "domain": ".google.com"},
+            {"name": "SID", "value": "sid_sg", "domain": ".google.com.sg"},
+            {"name": "SID", "value": "sid_de", "domain": ".google.de"},
+        ]
+
+        results = set()
+        for ordering in permutations(base_cookies):
+            storage_state = {"cookies": list(ordering)}
+            cookies = extract_cookies_from_storage(storage_state)
+            results.add(cookies["SID"])
+
+        # All permutations should produce the same result: .google.com wins
+        assert results == {"sid_base"}, (
+            f"Extraction should be deterministic, but got different results: {results}"
+        )
+
+    def test_regional_only_uses_first_encountered(self):
+        """Test behavior when only regional domains exist (no .google.com).
+
+        When .google.com is not present, we use whatever cookie we encounter.
+        This documents the expected fallback behavior.
+        """
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "sid_sg", "domain": ".google.com.sg"},
+                {"name": "SID", "value": "sid_de", "domain": ".google.de"},
+            ]
+        }
+
+        cookies = extract_cookies_from_storage(storage_state)
+
+        # Without .google.com, first encountered wins
+        assert cookies["SID"] == "sid_sg"
 
 
 class TestLoadHttpxCookiesRegional:
