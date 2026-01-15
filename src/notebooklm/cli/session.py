@@ -442,12 +442,18 @@ def register_session_commands(cli):
             checks["sid_cookie"] = "SID" in cookies
             details["cookies_found"] = list(cookies.keys())
 
-            # Extract domain info
+            # Build detailed cookie-by-domain mapping for debugging
+            cookies_by_domain: dict[str, list[str]] = {}
             for cookie in storage_state.get("cookies", []):
                 domain = cookie.get("domain", "")
-                if domain and "google" in domain.lower():
-                    if domain not in details["cookie_domains"]:
-                        details["cookie_domains"].append(domain)
+                name = cookie.get("name", "")
+                if domain and name and "google" in domain.lower():
+                    if domain not in cookies_by_domain:
+                        cookies_by_domain[domain] = []
+                    cookies_by_domain[domain].append(name)
+
+            details["cookies_by_domain"] = cookies_by_domain
+            details["cookie_domains"] = list(cookies_by_domain.keys())
         except ValueError as e:
             details["error"] = str(e)
             _output_auth_check(checks, details, json_output)
@@ -518,6 +524,32 @@ def register_session_commands(cli):
         )
 
         console.print(table)
+
+        # Show detailed cookie breakdown by domain
+        cookies_by_domain = details.get("cookies_by_domain", {})
+        if cookies_by_domain:
+            console.print()  # Blank line
+            cookie_table = Table(title="Cookies by Domain")
+            cookie_table.add_column("Domain", style="cyan")
+            cookie_table.add_column("Cookies")
+
+            # Key auth cookies to highlight
+            key_cookies = {"SID", "HSID", "SSID", "APISID", "SAPISID", "SIDCC"}
+
+            for domain in sorted(cookies_by_domain.keys()):
+                cookie_names = cookies_by_domain[domain]
+                # Format: highlight key cookies in green, others in dim
+                formatted_cookies = []
+                for name in sorted(cookie_names):
+                    if name in key_cookies:
+                        formatted_cookies.append(f"[green]{name}[/green]")
+                    elif name.startswith("__Secure-"):
+                        formatted_cookies.append(f"[blue]{name}[/blue]")
+                    else:
+                        formatted_cookies.append(f"[dim]{name}[/dim]")
+                cookie_table.add_row(domain, ", ".join(formatted_cookies))
+
+            console.print(cookie_table)
 
         if details.get("error"):
             console.print(f"\n[red]Error:[/red] {details['error']}")

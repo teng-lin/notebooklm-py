@@ -580,6 +580,35 @@ class TestAuthCheckCommand:
         output = json.loads(result.output)
         assert ".google.com" in output["details"]["cookie_domains"]
 
+    def test_auth_check_shows_cookies_by_domain(self, runner, mock_storage_path):
+        """Test auth check --json includes detailed cookies_by_domain."""
+        storage_data = {
+            "cookies": [
+                {"name": "SID", "value": "test_sid", "domain": ".google.com"},
+                {"name": "HSID", "value": "test_hsid", "domain": ".google.com"},
+                {"name": "SSID", "value": "test_ssid", "domain": ".google.com"},
+                {"name": "SID", "value": "regional_sid", "domain": ".google.com.sg"},
+                {"name": "__Secure-1PSID", "value": "secure1", "domain": ".google.com"},
+            ]
+        }
+        mock_storage_path.write_text(json.dumps(storage_data))
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        cookies_by_domain = output["details"]["cookies_by_domain"]
+
+        # Verify .google.com has expected cookies
+        assert ".google.com" in cookies_by_domain
+        assert "SID" in cookies_by_domain[".google.com"]
+        assert "HSID" in cookies_by_domain[".google.com"]
+        assert "__Secure-1PSID" in cookies_by_domain[".google.com"]
+
+        # Verify regional domain has its cookies
+        assert ".google.com.sg" in cookies_by_domain
+        assert "SID" in cookies_by_domain[".google.com.sg"]
+
     def test_auth_check_skipped_token_fetch_shown(self, runner, mock_storage_path):
         """Test auth check shows token fetch as skipped when --test not used."""
         storage_data = {
