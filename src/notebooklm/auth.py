@@ -257,6 +257,16 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
     because Google sets SID cookies on country-specific domains for users
     in those regions.
 
+    Cookie Priority Rules:
+        When the same cookie name exists on multiple domains (e.g., SID on both
+        .google.com and .google.com.sg), we use this priority order:
+
+        1. .google.com (base domain) - ALWAYS preferred when present
+        2. Regional domains - used as fallback when base domain cookie is missing
+
+        This prevents non-deterministic behavior where dict iteration order would
+        determine which cookie value wins. See PR #34 for the bug this fixes.
+
     Args:
         storage_state: Parsed JSON from Playwright's storage state file.
 
@@ -265,24 +275,68 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
 
     Raises:
         ValueError: If required cookies (SID) are missing from storage state.
+
+    Example:
+        >>> storage = {"cookies": [
+        ...     {"name": "SID", "value": "regional", "domain": ".google.com.sg"},
+        ...     {"name": "SID", "value": "base", "domain": ".google.com"},
+        ... ]}
+        >>> cookies = extract_cookies_from_storage(storage)
+        >>> cookies["SID"]
+        'base'  # .google.com wins regardless of list order
     """
     cookies = {}
+    cookie_domains: dict[str, str] = {}  # Track which domain each cookie came from
 
     for cookie in storage_state.get("cookies", []):
         domain = cookie.get("domain", "")
-        if _is_allowed_auth_domain(domain):
-            name = cookie.get("name")
-            if name:
-                # Prioritize .google.com cookies over regional domains (e.g., .google.de)
-                # to prevent wrong cookie values when the same name exists in multiple domains
-                if name not in cookies or domain == ".google.com":
-                    cookies[name] = cookie.get("value", "")
+        name = cookie.get("name")
+        if not _is_allowed_auth_domain(domain) or not name:
+            continue
+
+        # Prioritize .google.com cookies over regional domains (e.g., .google.de)
+        # to prevent wrong cookie values when the same name exists in multiple domains
+        is_base_domain = domain == ".google.com"
+        if name not in cookies or is_base_domain:
+            if name in cookies and is_base_domain:
+                logger.debug(
+                    "Cookie %s: using .google.com value (overriding %s)",
+                    name,
+                    cookie_domains[name],
+                )
+            cookies[name] = cookie.get("value", "")
+            cookie_domains[name] = domain
+        else:
+            logger.debug(
+                "Cookie %s: ignoring duplicate from %s (keeping %s)",
+                name,
+                domain,
+                cookie_domains[name],
+            )
+
+    # Log extraction summary for debugging
+    if cookie_domains:
+        unique_domains = sorted(set(cookie_domains.values()))
+        logger.debug(
+            "Extracted %d cookies from domains: %s", len(cookies), ", ".join(unique_domains)
+        )
+        if "SID" in cookie_domains:
+            logger.debug("SID cookie from domain: %s", cookie_domains["SID"])
 
     missing = MINIMUM_REQUIRED_COOKIES - set(cookies.keys())
     if missing:
-        raise ValueError(
-            f"Missing required cookies: {missing}\nRun 'notebooklm login' to authenticate."
-        )
+        # Provide more helpful error message with diagnostic info
+        all_domains = {c.get("domain", "") for c in storage_state.get("cookies", [])}
+        google_domains = sorted(d for d in all_domains if "google" in d.lower())
+        found_names = list(cookies.keys())[:5]
+
+        error_parts = [f"Missing required cookies: {missing}"]
+        if found_names:
+            error_parts.append(f"Found cookies: {found_names}{'...' if len(cookies) > 5 else ''}")
+        if google_domains:
+            error_parts.append(f"Google domains in storage: {google_domains}")
+        error_parts.append("Run 'notebooklm login' to authenticate.")
+        raise ValueError("\n".join(error_parts))
 
     return cookies
 

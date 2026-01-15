@@ -12,6 +12,7 @@ Provides common functionality for all CLI commands:
 import asyncio
 import json
 import logging
+import os
 import time
 from functools import wraps
 
@@ -317,11 +318,40 @@ def handle_error(e: Exception):
 
 
 def handle_auth_error(json_output: bool = False):
-    """Handle authentication errors."""
+    """Handle authentication errors with helpful context."""
+    from ..paths import get_path_info, get_storage_path
+
+    path_info = get_path_info()
+    storage_path = get_storage_path()
+    has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
+    has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
+    storage_source = path_info["home_source"]
+
     if json_output:
-        json_error_response("AUTH_REQUIRED", "Auth not found. Run 'notebooklm login' first.")
+        json_error_response(
+            "AUTH_REQUIRED",
+            "Auth not found. Run 'notebooklm login' first.",
+            extra={
+                "checked_paths": {
+                    "storage_file": str(storage_path),
+                    "storage_source": storage_source,
+                    "env_var": "NOTEBOOKLM_AUTH_JSON" if has_env_var else None,
+                },
+                "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",
+            },
+        )
     else:
-        console.print("[red]Not logged in. Run 'notebooklm login' first.[/red]")
+        console.print("[red]Not logged in.[/red]\n")
+        console.print("[dim]Checked locations:[/dim]")
+        console.print(f"  • Storage file: [cyan]{storage_path}[/cyan]")
+        if has_home_env:
+            console.print("    [dim](via $NOTEBOOKLM_HOME)[/dim]")
+        env_status = "[yellow]set but invalid[/yellow]" if has_env_var else "[dim]not set[/dim]"
+        console.print(f"  • NOTEBOOKLM_AUTH_JSON: {env_status}")
+        console.print("\n[bold]Options to authenticate:[/bold]")
+        console.print("  1. Run: [green]notebooklm login[/green]")
+        console.print("  2. Set [cyan]NOTEBOOKLM_AUTH_JSON[/cyan] env var (for CI/CD)")
+        console.print("  3. Use [cyan]--storage /path/to/file.json[/cyan] flag")
         raise SystemExit(1)
 
 
@@ -405,9 +435,18 @@ def json_output_response(data: dict) -> None:
     click.echo(json.dumps(data, indent=2, default=str))
 
 
-def json_error_response(code: str, message: str) -> None:
-    """Print JSON error and exit (no colors for machine parsing)."""
-    click.echo(json.dumps({"error": True, "code": code, "message": message}, indent=2))
+def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
+    """Print JSON error and exit (no colors for machine parsing).
+
+    Args:
+        code: Error code (e.g., "AUTH_REQUIRED", "ERROR")
+        message: Human-readable error message
+        extra: Optional additional data to include in response
+    """
+    response = {"error": True, "code": code, "message": message}
+    if extra:
+        response.update(extra)
+    click.echo(json.dumps(response, indent=2))
     raise SystemExit(1)
 
 
