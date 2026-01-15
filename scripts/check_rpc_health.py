@@ -23,7 +23,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -32,7 +31,7 @@ from typing import Any
 
 import httpx
 
-from notebooklm.auth import AuthTokens
+from notebooklm.auth import AuthTokens, fetch_tokens, load_auth_from_storage
 from notebooklm.rpc import (
     BATCHEXECUTE_URL,
     RPCMethod,
@@ -108,45 +107,27 @@ DUPLICATE_METHODS = {
 }
 
 
-def load_cookies_from_env() -> dict[str, str]:
-    """Load cookies from NOTEBOOKLM_AUTH_JSON environment variable."""
-    auth_json = os.environ.get("NOTEBOOKLM_AUTH_JSON")
-    if not auth_json:
-        print("ERROR: NOTEBOOKLM_AUTH_JSON environment variable not set", file=sys.stderr)
-        sys.exit(1)
+def load_auth() -> AuthTokens:
+    """Load auth from environment or storage file.
 
+    Uses the library's load_auth_from_storage() which handles:
+    - NOTEBOOKLM_AUTH_JSON env var (for CI)
+    - ~/.notebooklm/storage_state.json file (for local dev)
+    - Proper cookie domain filtering
+    """
     try:
-        storage_state = json.loads(auth_json)
-    except json.JSONDecodeError as e:
-        print(f"ERROR: Invalid JSON in NOTEBOOKLM_AUTH_JSON: {e}", file=sys.stderr)
+        cookies = load_auth_from_storage()
+    except FileNotFoundError:
+        print(
+            "ERROR: No authentication found.\n"
+            "Set NOTEBOOKLM_AUTH_JSON env var or run 'notebooklm login'",
+            file=sys.stderr,
+        )
         sys.exit(1)
-
-    # Extract cookies
-    return {cookie["name"]: cookie["value"] for cookie in storage_state.get("cookies", [])}
-
-
-async def fetch_tokens(client: httpx.AsyncClient, cookies: dict[str, str]) -> AuthTokens:
-    """Fetch CSRF token and session ID from NotebookLM homepage."""
-    cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
-    response = await client.get(
-        "https://notebooklm.google.com/",
-        headers={"Cookie": cookie_header},
-        follow_redirects=True,
-    )
-    html = response.text
-
-    # Extract CSRF token (SNlM0e)
-    csrf_match = re.search(r'"SNlM0e"\s*:\s*"([^"]+)"', html)
-    if not csrf_match:
-        print("ERROR: Could not extract CSRF token. Auth may be expired.", file=sys.stderr)
+    except ValueError as e:
+        print(f"ERROR: Invalid authentication: {e}", file=sys.stderr)
         sys.exit(1)
-    csrf_token = csrf_match.group(1)
-
-    # Extract session ID (FdrFJe)
-    session_match = re.search(r'"FdrFJe"\s*:\s*"([^"]+)"', html)
-    session_id = session_match.group(1) if session_match else ""
-
-    return AuthTokens(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    return cookies
 
 
 async def make_rpc_call(
@@ -354,7 +335,8 @@ async def check_method(
 
 async def run_health_check() -> list[CheckResult]:
     """Run health check on all RPC methods."""
-    cookies = load_cookies_from_env()
+    # Load cookies from env/storage using library's domain-filtered loader
+    cookies = load_auth()
 
     # Get notebook IDs
     read_only_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
@@ -366,13 +348,18 @@ async def run_health_check() -> list[CheckResult]:
 
     results: list[CheckResult] = []
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # Fetch auth tokens
-        print("Fetching auth tokens...")
-        auth = await fetch_tokens(client, cookies)
-        print(f"Auth OK (CSRF token length: {len(auth.csrf_token)})")
-        print()
+    # Fetch auth tokens using library's token fetcher
+    print("Fetching auth tokens...")
+    try:
+        csrf_token, session_id = await fetch_tokens(cookies)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+    auth = AuthTokens(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    print(f"Auth OK (CSRF token length: {len(auth.csrf_token)})")
+    print()
 
+    async with httpx.AsyncClient(timeout=30.0) as client:
         # Get all RPC methods
         methods = list(RPCMethod)
         total = len(methods)
