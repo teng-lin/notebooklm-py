@@ -1,10 +1,13 @@
 """Encode RPC requests for NotebookLM batchexecute API."""
 
 import json
+import logging
 from typing import Any
 from urllib.parse import quote
 
 from .types import RPCMethod
+
+logger = logging.getLogger(__name__)
 
 
 def encode_rpc_request(method: RPCMethod, params: list[Any]) -> list:
@@ -23,6 +26,7 @@ def encode_rpc_request(method: RPCMethod, params: list[Any]) -> list:
     """
     # JSON-encode params without spaces (compact format matching Chrome)
     params_json = json.dumps(params, separators=(",", ":"))
+    logger.debug("Encoding RPC: method=%s, param_count=%d", method.value, len(params))
 
     # Build inner request: [rpc_id, json_params, null, "generic"]
     inner = [method.value, params_json, None, "generic"]
@@ -61,7 +65,9 @@ def build_request_body(
     # but we support it here for flexibility
 
     # Join with & and add trailing &
-    return "&".join(body_parts) + "&"
+    body = "&".join(body_parts) + "&"
+    logger.debug("Built request body: size=%d bytes", len(body))
+    return body
 
 
 def build_url_params(

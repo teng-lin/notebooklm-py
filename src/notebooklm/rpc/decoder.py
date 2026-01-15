@@ -222,8 +222,10 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
     Raises:
         RPCError: If RPC returned an error or result not found (when allow_null=False)
     """
+    logger.debug("Decoding response: size=%d bytes", len(raw_response))
     cleaned = strip_anti_xssi(raw_response)
     chunks = parse_chunked_response(cleaned)
+    logger.debug("Parsed %d chunks from response", len(chunks))
 
     # Collect all RPC IDs for debugging
     found_ids = collect_rpc_ids(chunks)
