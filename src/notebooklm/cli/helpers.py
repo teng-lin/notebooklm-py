@@ -11,6 +11,8 @@ Provides common functionality for all CLI commands:
 
 import asyncio
 import json
+import logging
+import time
 from functools import wraps
 
 import click
@@ -26,6 +28,7 @@ from ..auth import (
 from ..paths import get_browser_profile_dir, get_context_path
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 # Backward-compatible module-level constants (for tests that patch these)
 # Note: Prefer using get_context_path() and get_browser_profile_dir() for dynamic resolution
@@ -359,15 +362,26 @@ def with_client(f):
     @wraps(f)
     @click.pass_context
     def wrapper(ctx, *args, **kwargs):
+        cmd_name = f.__name__
+        start = time.monotonic()
+        logger.debug("CLI command starting: %s", cmd_name)
+
         json_output = kwargs.get("json_output", False)
         try:
             auth = get_auth_tokens(ctx)
             # The decorated function returns a coroutine
             coro = f(ctx, *args, client_auth=auth, **kwargs)
-            return run_async(coro)
+            result = run_async(coro)
+            elapsed = time.monotonic() - start
+            logger.debug("CLI command completed: %s (%.3fs)", cmd_name, elapsed)
+            return result
         except FileNotFoundError:
+            elapsed = time.monotonic() - start
+            logger.debug("CLI command failed: %s (%.3fs) - not authenticated", cmd_name, elapsed)
             handle_auth_error(json_output)
         except Exception as e:
+            elapsed = time.monotonic() - start
+            logger.debug("CLI command failed: %s (%.3fs) - %s", cmd_name, elapsed, e)
             if json_output:
                 json_error_response("ERROR", str(e))
             else:

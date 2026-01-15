@@ -23,6 +23,7 @@ LLM-friendly design:
   notebooklm ask "what are the key themes?"
 """
 
+import logging
 from pathlib import Path
 
 import click
@@ -62,8 +63,14 @@ from .cli.grouped import SectionedGroup
     default=None,
     help=f"Path to storage_state.json (default: {DEFAULT_STORAGE_PATH})",
 )
+@click.option(
+    "-v",
+    "--verbose",
+    count=True,
+    help="Increase verbosity (-v for INFO, -vv for DEBUG)",
+)
 @click.pass_context
-def cli(ctx, storage):
+def cli(ctx, storage, verbose):
     """NotebookLM CLI.
 
     \b
@@ -76,6 +83,12 @@ def cli(ctx, storage):
     \b
     Tip: Use partial notebook IDs (e.g., 'notebooklm use abc' matches 'abc123...')
     """
+    # Configure logging based on verbosity
+    if verbose == 1:
+        logging.getLogger("notebooklm").setLevel(logging.INFO)
+    elif verbose >= 2:
+        logging.getLogger("notebooklm").setLevel(logging.DEBUG)
+
     ctx.ensure_object(dict)
     ctx.obj["storage_path"] = Path(storage) if storage else None
 
