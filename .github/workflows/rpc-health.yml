@@ -45,7 +45,7 @@ jobs:
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       run: |
         set -o pipefail
-        python scripts/check_rpc_health.py | tee health-report.txt
+        python scripts/check_rpc_health.py --full | tee health-report.txt
 
     - name: Add Summary
       if: always()
