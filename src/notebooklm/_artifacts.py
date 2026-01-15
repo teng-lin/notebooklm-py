@@ -234,6 +234,7 @@ class ArtifactsAPI:
         Returns:
             List of Artifact objects.
         """
+        logger.debug("Listing artifacts in notebook %s", notebook_id)
         artifacts: list[Artifact] = []
 
         # Fetch studio artifacts (audio, video, reports, etc.)
@@ -285,6 +286,7 @@ class ArtifactsAPI:
         Returns:
             Artifact object, or None if not found.
         """
+        logger.debug("Getting artifact %s from notebook %s", artifact_id, notebook_id)
         artifacts = await self.list(notebook_id)
         for artifact in artifacts:
             if artifact.id == artifact_id:
@@ -1500,6 +1502,7 @@ class ArtifactsAPI:
         Returns:
             True if deletion succeeded.
         """
+        logger.debug("Deleting artifact %s from notebook %s", artifact_id, notebook_id)
         params = [[2], artifact_id]
         await self._core.rpc_call(
             RPCMethod.DELETE_STUDIO,
@@ -1794,6 +1797,9 @@ class ArtifactsAPI:
         Returns:
             GenerationStatus with task_id on success, or error info on failure.
         """
+        # Extract artifact type from params for logging
+        artifact_type = params[2][2] if len(params) > 2 and len(params[2]) > 2 else "unknown"
+        logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         try:
             result = await self._core.rpc_call(
                 RPCMethod.CREATE_VIDEO,

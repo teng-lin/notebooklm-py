@@ -85,6 +85,11 @@ class ChatAPI:
                 conversation_id=result.conversation_id
             )
         """
+        logger.debug(
+            "Asking question in notebook %s (conversation=%s)",
+            notebook_id,
+            conversation_id or "new",
+        )
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -165,6 +170,7 @@ class ChatAPI:
         Returns:
             Raw conversation history data from API.
         """
+        logger.debug("Getting conversation history for notebook %s (limit=%d)", notebook_id, limit)
         params: list[Any] = [[], None, notebook_id, limit]
         return await self._core.rpc_call(
             RPCMethod.GET_CONVERSATION_HISTORY,
@@ -220,6 +226,7 @@ class ChatAPI:
         Raises:
             ValueError: If goal is CUSTOM but custom_prompt is not provided.
         """
+        logger.debug("Configuring chat for notebook %s", notebook_id)
         from .rpc import ChatGoal, ChatResponseLength
 
         if goal is None:

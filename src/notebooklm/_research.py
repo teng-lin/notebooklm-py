@@ -62,6 +62,12 @@ class ResearchAPI:
         Raises:
             ValueError: If source/mode combination is invalid.
         """
+        logger.debug(
+            "Starting %s research in notebook %s: %s",
+            mode,
+            notebook_id,
+            query[:50] if query else "",
+        )
         source_lower = source.lower()
         mode_lower = mode.lower()
 
@@ -109,6 +115,7 @@ class ResearchAPI:
         Returns:
             Dictionary with status, query, sources, and summary.
         """
+        logger.debug("Polling research status for notebook %s", notebook_id)
         params = [None, None, notebook_id]
         result = await self._core.rpc_call(
             RPCMethod.POLL_RESEARCH,
@@ -207,6 +214,7 @@ class ResearchAPI:
             To reliably verify imports, check the notebook's source list using
             `client.sources.list(notebook_id)` after calling this method.
         """
+        logger.debug("Importing %d research sources into notebook %s", len(sources), notebook_id)
         if not sources:
             return []
 
