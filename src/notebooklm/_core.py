@@ -151,13 +151,7 @@ class ClientCore:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
         # Reload httpx.Cookies with proper domain information
         # This ensures cookies are sent to the correct Google domains
-        httpx_cookies = load_httpx_cookies()
-        self._http_client.cookies.clear()
-        for cookie in httpx_cookies.jar:
-            if cookie.value is not None:
-                self._http_client.cookies.set(
-                    cookie.name, cookie.value, domain=cookie.domain, path=cookie.path
-                )
+        self._http_client.cookies = load_httpx_cookies()
 
     def _build_url(self, rpc_method: RPCMethod, source_path: str = "/") -> str:
         """Build the batchexecute URL for an RPC call.
