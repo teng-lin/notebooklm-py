@@ -265,6 +265,82 @@ async def test_rpc_method(
     )
 
 
+async def test_rpc_method_with_data(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    method: RPCMethod,
+    params: list[Any],
+) -> tuple[CheckResult, Any]:
+    """Test an RPC method and return both CheckResult and response data.
+
+    Use this when you need the response data (e.g., to extract created resource IDs).
+    More efficient than test_rpc_method + separate API call to get IDs.
+    """
+    expected_id = method.value
+
+    # Make RPC call and get response data
+    url = f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path=%2F"
+    rpc_request = encode_rpc_request(method, params)
+    body = build_request_body(rpc_request, auth.csrf_token)
+
+    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": cookie_header,
+    }
+
+    try:
+        response = await client.post(url, content=body, headers=headers)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        return CheckResult(
+            method=method,
+            status=CheckStatus.ERROR,
+            expected_id=expected_id,
+            found_ids=[],
+            error=f"HTTP {e.response.status_code}",
+        ), None
+    except httpx.RequestError as e:
+        return CheckResult(
+            method=method,
+            status=CheckStatus.ERROR,
+            expected_id=expected_id,
+            found_ids=[],
+            error=str(e),
+        ), None
+
+    # Parse response to get both IDs and data
+    try:
+        cleaned = strip_anti_xssi(response.text)
+        chunks = parse_chunked_response(cleaned)
+        found_ids = collect_rpc_ids(chunks)
+        data = decode_response(response.text, method.value)
+    except (json.JSONDecodeError, ValueError, IndexError, TypeError, RPCError) as e:
+        return CheckResult(
+            method=method,
+            status=CheckStatus.ERROR,
+            expected_id=expected_id,
+            found_ids=[],
+            error=f"Parse error: {e}",
+        ), None
+
+    if expected_id in found_ids:
+        return CheckResult(
+            method=method,
+            status=CheckStatus.OK,
+            expected_id=expected_id,
+            found_ids=found_ids,
+        ), data
+
+    return CheckResult(
+        method=method,
+        status=CheckStatus.ERROR,
+        expected_id=expected_id,
+        found_ids=found_ids,
+        error="RPC ID not found in response",
+    ), data
+
+
 def format_check_output(result: CheckResult, suffix: str | None = None) -> str:
     """Format a CheckResult for console output."""
     status_icon = STATUS_ICONS[result.status]
@@ -274,54 +350,6 @@ def format_check_output(result: CheckResult, suffix: str | None = None) -> str:
     elif result.error and result.status != CheckStatus.OK:
         line += f" - {result.error}"
     return line
-
-
-async def find_temp_notebook_id(client: httpx.AsyncClient, auth: AuthTokens) -> str | None:
-    """Find the temp notebook ID by listing notebooks and matching prefix."""
-    data, _ = await make_rpc_call_with_data(client, auth, RPCMethod.LIST_NOTEBOOKS, [])
-    if not data:
-        return None
-    for nb in data:
-        if isinstance(nb, list) and len(nb) > 1:
-            if isinstance(nb[1], str) and nb[1].startswith("RPC-Health-Check-"):
-                return nb[0]
-    return None
-
-
-async def extract_source_id(
-    client: httpx.AsyncClient, auth: AuthTokens, notebook_id: str
-) -> str | None:
-    """Extract the first source ID from a notebook.
-
-    Response structure: data[3] contains sources list, data[3][0] is first source,
-    data[3][0][0] is source ID.
-    """
-    data, _ = await make_rpc_call_with_data(client, auth, RPCMethod.GET_NOTEBOOK, [notebook_id])
-    try:
-        if data and len(data) > 3 and data[3] and len(data[3]) > 0 and len(data[3][0]) > 0:
-            return data[3][0][0]
-    except (IndexError, TypeError):
-        pass
-    return None
-
-
-async def extract_note_id(
-    client: httpx.AsyncClient, auth: AuthTokens, notebook_id: str
-) -> str | None:
-    """Extract the first note ID from a notebook.
-
-    Response structure: data[0] contains notes list, data[0][0] is first note,
-    data[0][0][0] is note ID.
-    """
-    data, _ = await make_rpc_call_with_data(
-        client, auth, RPCMethod.GET_NOTES_AND_MIND_MAPS, [[notebook_id]]
-    )
-    try:
-        if data and len(data) > 0 and data[0] and len(data[0]) > 0 and len(data[0][0]) > 0:
-            return data[0][0][0]
-    except (IndexError, TypeError):
-        pass
-    return None
 
 
 def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | None:
@@ -517,11 +545,12 @@ async def setup_temp_resources(
     """Create temporary resources for full mode testing.
 
     Tests CREATE_NOTEBOOK, ADD_SOURCE, and CREATE_NOTE RPC methods.
+    Extracts resource IDs directly from CREATE responses (no extra API calls).
     """
     temp = TempResources()
 
-    # Test CREATE_NOTEBOOK
-    result = await test_rpc_method(
+    # Test CREATE_NOTEBOOK - extract notebook_id from response[0]
+    result, data = await test_rpc_method_with_data(
         client, auth, RPCMethod.CREATE_NOTEBOOK, [f"RPC-Health-Check-{uuid4().hex[:8]}"]
     )
     results.append(result)
@@ -534,20 +563,23 @@ async def setup_temp_resources(
     if result.status != CheckStatus.OK:
         return temp
 
-    # Find the notebook ID we just created
-    await asyncio.sleep(CALL_DELAY)
-    temp.notebook_id = await find_temp_notebook_id(client, auth)
+    # Extract notebook_id directly from CREATE response
+    try:
+        if data and len(data) > 0:
+            temp.notebook_id = data[0]
+    except (IndexError, TypeError):
+        pass
 
     if not temp.notebook_id:
         print(
-            "WARNING: Notebook created but ID not found. May need manual cleanup.",
+            "WARNING: Notebook created but ID not found in response. May need manual cleanup.",
             file=sys.stderr,
         )
         return temp
 
-    # Test ADD_SOURCE
+    # Test ADD_SOURCE - extract source_id from response[0][0]
     await asyncio.sleep(CALL_DELAY)
-    result = await test_rpc_method(
+    result, data = await test_rpc_method_with_data(
         client,
         auth,
         RPCMethod.ADD_SOURCE,
@@ -561,11 +593,16 @@ async def setup_temp_resources(
     )
 
     if result.status == CheckStatus.OK:
-        temp.source_id = await extract_source_id(client, auth, temp.notebook_id)
+        # Extract source_id directly from ADD_SOURCE response
+        try:
+            if data and len(data) > 0 and len(data[0]) > 0:
+                temp.source_id = data[0][0]
+        except (IndexError, TypeError):
+            pass
 
-    # Test CREATE_NOTE
+    # Test CREATE_NOTE - extract note_id from response[0]
     await asyncio.sleep(CALL_DELAY)
-    result = await test_rpc_method(
+    result, data = await test_rpc_method_with_data(
         client, auth, RPCMethod.CREATE_NOTE, [[temp.notebook_id], "Test Note", "Test note content"]
     )
     results.append(result)
@@ -576,7 +613,12 @@ async def setup_temp_resources(
     )
 
     if result.status == CheckStatus.OK:
-        temp.note_id = await extract_note_id(client, auth, temp.notebook_id)
+        # Extract note_id directly from CREATE_NOTE response
+        try:
+            if data and len(data) > 0:
+                temp.note_id = data[0]
+        except (IndexError, TypeError):
+            pass
 
     return temp
 
