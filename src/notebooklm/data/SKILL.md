@@ -7,6 +7,26 @@ description: Automate Google NotebookLM - create notebooks, add sources, generat
 
 Automate Google NotebookLM: create notebooks, add sources, chat with content, generate artifacts (podcasts, videos, quizzes), and download results.
 
+## Installation
+
+**From PyPI (Recommended):**
+```bash
+pip install notebooklm-py
+```
+
+**From GitHub (use latest release tag, NOT main branch):**
+```bash
+# First check latest release at: https://github.com/teng-lin/notebooklm-py/releases/latest
+pip install git+https://github.com/teng-lin/notebooklm-py@v0.2.0
+```
+
+⚠️ **Important:** The `main` branch may contain unreleased changes. Always install from PyPI or a specific release tag for stability.
+
+After installation, install the Claude Code skill:
+```bash
+notebooklm skill install
+```
+
 ## Prerequisites
 
 **IMPORTANT:** Before using any command, you MUST authenticate:
