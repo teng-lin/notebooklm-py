@@ -133,6 +133,28 @@ class TempResources:
     note_id: str | None = None
 
 
+def extract_id(data: Any, *indices: int) -> str | None:
+    """Safely extract an ID from nested response data.
+
+    Args:
+        data: Response data (typically a nested list)
+        indices: Index path to traverse (e.g., 0 for data[0], or 0, 0 for data[0][0])
+
+    Returns:
+        The extracted string ID or None if not found
+    """
+    try:
+        result = data
+        for idx in indices:
+            result = result[idx]
+        # Handle both string and integer IDs (convert to string)
+        if result is None:
+            return None
+        return str(result) if isinstance(result, (str, int)) else None
+    except (IndexError, TypeError):
+        return None
+
+
 def load_auth() -> dict[str, str]:
     """Load auth from environment or storage file.
 
@@ -156,6 +178,37 @@ def load_auth() -> dict[str, str]:
     return cookies
 
 
+async def make_rpc_request(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    method: RPCMethod,
+    params: list[Any],
+) -> tuple[str | None, str | None]:
+    """Make an RPC request and return raw response text.
+
+    Returns:
+        Tuple of (response text or None, error message or None)
+    """
+    url = f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path=%2F"
+    rpc_request = encode_rpc_request(method, params)
+    body = build_request_body(rpc_request, auth.csrf_token)
+
+    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": cookie_header,
+    }
+
+    try:
+        response = await client.post(url, content=body, headers=headers)
+        response.raise_for_status()
+        return response.text, None
+    except httpx.HTTPStatusError as e:
+        return None, f"HTTP {e.response.status_code}"
+    except httpx.RequestError as e:
+        return None, str(e)
+
+
 async def make_rpc_call(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -167,72 +220,17 @@ async def make_rpc_call(
     Returns:
         Tuple of (list of RPC IDs found in response, error message or None)
     """
-    # Build URL
-    url = f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path=%2F"
-
-    # Encode request
-    rpc_request = encode_rpc_request(method, params)
-    body = build_request_body(rpc_request, auth.csrf_token)
-
-    # Make request
-    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": cookie_header,
-    }
+    response_text, error = await make_rpc_request(client, auth, method, params)
+    if error:
+        return [], error
 
     try:
-        response = await client.post(url, content=body, headers=headers)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        return [], f"HTTP {e.response.status_code}"
-    except httpx.RequestError as e:
-        return [], str(e)
-
-    # Parse response and extract IDs
-    try:
-        cleaned = strip_anti_xssi(response.text)
+        cleaned = strip_anti_xssi(response_text)
         chunks = parse_chunked_response(cleaned)
         found_ids = collect_rpc_ids(chunks)
         return found_ids, None
     except (json.JSONDecodeError, ValueError, IndexError, TypeError) as e:
         return [], f"Parse error: {e}"
-
-
-async def make_rpc_call_with_data(
-    client: httpx.AsyncClient,
-    auth: AuthTokens,
-    method: RPCMethod,
-    params: list[Any],
-) -> tuple[Any, str | None]:
-    """Make an RPC call and return decoded response data.
-
-    Returns:
-        Tuple of (decoded response data or None, error message or None)
-    """
-    url = f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path=%2F"
-    rpc_request = encode_rpc_request(method, params)
-    body = build_request_body(rpc_request, auth.csrf_token)
-
-    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": cookie_header,
-    }
-
-    try:
-        response = await client.post(url, content=body, headers=headers)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        return None, f"HTTP {e.response.status_code}"
-    except httpx.RequestError as e:
-        return None, str(e)
-
-    try:
-        data = decode_response(response.text, method.value)
-        return data, None
-    except (json.JSONDecodeError, ValueError, IndexError, TypeError, RPCError) as e:
-        return None, f"Parse error: {e}"
 
 
 async def test_rpc_method(
@@ -274,47 +272,24 @@ async def test_rpc_method_with_data(
     """Test an RPC method and return both CheckResult and response data.
 
     Use this when you need the response data (e.g., to extract created resource IDs).
-    More efficient than test_rpc_method + separate API call to get IDs.
     """
     expected_id = method.value
 
-    # Make RPC call and get response data
-    url = f"{BATCHEXECUTE_URL}?f.sid={auth.session_id}&source-path=%2F"
-    rpc_request = encode_rpc_request(method, params)
-    body = build_request_body(rpc_request, auth.csrf_token)
-
-    cookie_header = "; ".join(f"{k}={v}" for k, v in auth.cookies.items())
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": cookie_header,
-    }
-
-    try:
-        response = await client.post(url, content=body, headers=headers)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
+    response_text, error = await make_rpc_request(client, auth, method, params)
+    if error:
         return CheckResult(
             method=method,
             status=CheckStatus.ERROR,
             expected_id=expected_id,
             found_ids=[],
-            error=f"HTTP {e.response.status_code}",
-        ), None
-    except httpx.RequestError as e:
-        return CheckResult(
-            method=method,
-            status=CheckStatus.ERROR,
-            expected_id=expected_id,
-            found_ids=[],
-            error=str(e),
+            error=error,
         ), None
 
-    # Parse response to get both IDs and data
     try:
-        cleaned = strip_anti_xssi(response.text)
+        cleaned = strip_anti_xssi(response_text)
         chunks = parse_chunked_response(cleaned)
         found_ids = collect_rpc_ids(chunks)
-        data = decode_response(response.text, method.value)
+        data = decode_response(response_text, method.value)
     except (json.JSONDecodeError, ValueError, IndexError, TypeError, RPCError) as e:
         return CheckResult(
             method=method,
@@ -324,20 +299,14 @@ async def test_rpc_method_with_data(
             error=f"Parse error: {e}",
         ), None
 
-    if expected_id in found_ids:
-        return CheckResult(
-            method=method,
-            status=CheckStatus.OK,
-            expected_id=expected_id,
-            found_ids=found_ids,
-        ), data
-
+    status = CheckStatus.OK if expected_id in found_ids else CheckStatus.ERROR
+    error_msg = None if status == CheckStatus.OK else "RPC ID not found in response"
     return CheckResult(
         method=method,
-        status=CheckStatus.ERROR,
+        status=status,
         expected_id=expected_id,
         found_ids=found_ids,
-        error="RPC ID not found in response",
+        error=error_msg,
     ), data
 
 
@@ -563,13 +532,7 @@ async def setup_temp_resources(
     if result.status != CheckStatus.OK:
         return temp
 
-    # Extract notebook_id directly from CREATE response
-    try:
-        if data and len(data) > 0:
-            temp.notebook_id = data[0]
-    except (IndexError, TypeError):
-        pass
-
+    temp.notebook_id = extract_id(data, 0)
     if not temp.notebook_id:
         print(
             "WARNING: Notebook created but ID not found in response. May need manual cleanup.",
@@ -593,12 +556,7 @@ async def setup_temp_resources(
     )
 
     if result.status == CheckStatus.OK:
-        # Extract source_id directly from ADD_SOURCE response
-        try:
-            if data and len(data) > 0 and len(data[0]) > 0:
-                temp.source_id = data[0][0]
-        except (IndexError, TypeError):
-            pass
+        temp.source_id = extract_id(data, 0, 0)
 
     # Test CREATE_NOTE - extract note_id from response[0]
     await asyncio.sleep(CALL_DELAY)
@@ -613,12 +571,7 @@ async def setup_temp_resources(
     )
 
     if result.status == CheckStatus.OK:
-        # Extract note_id directly from CREATE_NOTE response
-        try:
-            if data and len(data) > 0:
-                temp.note_id = data[0]
-        except (IndexError, TypeError):
-            pass
+        temp.note_id = extract_id(data, 0)
 
     return temp
 
