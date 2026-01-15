@@ -55,7 +55,7 @@ class NotebooksAPI:
         Returns:
             The created Notebook object.
         """
-        logger.info("Creating notebook: %s", title)
+        logger.debug("Creating notebook: %s", title)
         params = [title, None, None, [2], [1]]
         result = await self._core.rpc_call(RPCMethod.CREATE_NOTEBOOK, params)
         notebook = Notebook.from_api_response(result)
@@ -90,7 +90,7 @@ class NotebooksAPI:
         Returns:
             True if deletion succeeded.
         """
-        logger.info("Deleting notebook: %s", notebook_id)
+        logger.debug("Deleting notebook: %s", notebook_id)
         params = [[notebook_id], [2]]
         await self._core.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
         return True
@@ -105,7 +105,7 @@ class NotebooksAPI:
         Returns:
             The renamed Notebook object (fetched after rename).
         """
-        logger.info("Renaming notebook %s to: %s", notebook_id, new_title)
+        logger.debug("Renaming notebook %s to: %s", notebook_id, new_title)
         # Payload format discovered via browser traffic capture:
         # [notebook_id, [[null, null, null, [null, new_title]]]]
         params = [notebook_id, [[None, None, None, [None, new_title]]]]

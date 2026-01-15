@@ -102,7 +102,7 @@ class NotesAPI:
         Returns:
             The created Note object.
         """
-        logger.info("Creating note in notebook %s: %s", notebook_id, title)
+        logger.debug("Creating note in notebook %s: %s", notebook_id, title)
         params = [notebook_id, "", [1], None, "New Note"]
         result = await self._core.rpc_call(
             RPCMethod.CREATE_NOTE,
@@ -143,7 +143,7 @@ class NotesAPI:
             content: The new content.
             title: The new title.
         """
-        logger.info("Updating note %s in notebook %s", note_id, notebook_id)
+        logger.debug("Updating note %s in notebook %s", note_id, notebook_id)
         params = [
             notebook_id,
             note_id,
@@ -169,7 +169,7 @@ class NotesAPI:
         Returns:
             True if deletion succeeded.
         """
-        logger.info("Deleting note %s from notebook %s", note_id, notebook_id)
+        logger.debug("Deleting note %s from notebook %s", note_id, notebook_id)
         params = [notebook_id, None, [note_id]]
         await self._core.rpc_call(
             RPCMethod.DELETE_NOTE,
