@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-01-14
+**Last Updated:** 2026-01-15
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -232,6 +232,96 @@ Version is defined in `pyproject.toml`. The `__version__` in `__init__.py` is dy
 |------|-----------|
 | Refresh credentials | Every 1-2 weeks |
 | Check nightly results | Daily |
+
+### Troubleshooting CI/CD Auth
+
+**First step:** Run `notebooklm auth check --json` in your workflow to diagnose issues.
+
+#### "NOTEBOOKLM_AUTH_JSON environment variable is set but empty"
+
+**Cause:** The `NOTEBOOKLM_AUTH_JSON` env var is set to an empty string.
+
+**Solution:**
+- Ensure the GitHub secret is properly configured
+- Check the secret isn't empty or whitespace-only
+- Verify the workflow syntax: `${{ secrets.NOTEBOOKLM_AUTH_JSON }}`
+
+#### "must contain valid Playwright storage state with a 'cookies' key"
+
+**Cause:** The JSON in `NOTEBOOKLM_AUTH_JSON` is missing the required structure.
+
+**Solution:** Ensure your secret contains valid Playwright storage state JSON:
+```json
+{
+  "cookies": [
+    {"name": "SID", "value": "...", "domain": ".google.com", ...},
+    ...
+  ],
+  "origins": []
+}
+```
+
+#### "Cannot run 'login' when NOTEBOOKLM_AUTH_JSON is set"
+
+**Cause:** You're trying to run `notebooklm login` in CI/CD where `NOTEBOOKLM_AUTH_JSON` is set.
+
+**Why:** The `login` command saves to a file, which conflicts with environment-based auth.
+
+**Solution:**
+- Don't run `login` in CI/CD - use the env var for auth instead
+- If you need to refresh auth, do it locally and update the secret
+
+#### Session expired in CI/CD
+
+**Cause:** Google sessions expire periodically (typically every 1-2 weeks).
+
+**Solution:**
+1. Re-run `notebooklm login` locally
+2. Copy the contents of `~/.notebooklm/storage_state.json`
+3. Update your GitHub secret
+
+#### Multiple accounts in CI/CD
+
+Use separate secrets and set `NOTEBOOKLM_AUTH_JSON` per job:
+
+```yaml
+jobs:
+  account-1:
+    env:
+      NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_ACCOUNT1 }}
+    steps:
+      - run: notebooklm list
+
+  account-2:
+    env:
+      NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_ACCOUNT2 }}
+    steps:
+      - run: notebooklm list
+```
+
+#### Debugging CI/CD auth issues
+
+Add diagnostic steps to your workflow:
+
+```yaml
+- name: Debug auth
+  run: |
+    # Comprehensive auth check (preferred)
+    notebooklm auth check --json
+
+    # Check if env var is set (without revealing content)
+    if [ -n "$NOTEBOOKLM_AUTH_JSON" ]; then
+      echo "NOTEBOOKLM_AUTH_JSON is set (length: ${#NOTEBOOKLM_AUTH_JSON})"
+    else
+      echo "NOTEBOOKLM_AUTH_JSON is not set"
+    fi
+```
+
+The `auth check --json` output shows:
+- Whether storage/env var is being used
+- Which cookies are present
+- Cookie domains (important for regional users)
+- Any validation errors
 
 ---
 
