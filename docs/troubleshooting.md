@@ -22,8 +22,6 @@ This shows:
 - Whether NOTEBOOKLM_AUTH_JSON or NOTEBOOKLM_HOME is being used
 - (With `--test`) Whether token fetch succeeds
 
-See [Authentication Lifecycle](#authentication-lifecycle) for background on token types.
-
 #### Automatic Token Refresh
 
 The client **automatically refreshes** CSRF tokens when authentication errors are detected. This happens transparently:
@@ -197,44 +195,6 @@ Some features have daily/hourly quotas:
 - **Audio Overviews:** Limited generations per day per account
 - **Video Overviews:** More restricted than audio
 - **Deep Research:** Consumes significant backend resources
-
-### Authentication Lifecycle
-
-notebooklm-py uses two types of tokens with different lifetimes:
-
-| Token Type | Lifetime | Auto-Refresh? | When Expired |
-|------------|----------|---------------|--------------|
-| **CSRF Token** (SNlM0e) | Hours | ✅ Yes | Automatic retry via `refresh_callback` |
-| **Session Cookies** (SID, HSID, etc.) | Weeks | ❌ No | Run `notebooklm login` |
-
-**CSRF tokens** expire frequently (hours) but are automatically refreshed when auth errors are detected. This is transparent to users—the library retries failed requests after refreshing.
-
-**Session cookies** are the underlying Google login and last weeks. When these expire, you must re-authenticate:
-
-```bash
-notebooklm login
-```
-
-The browser profile at `$NOTEBOOKLM_HOME/browser_profile/` (default: `~/.notebooklm/browser_profile/`) remembers your Google login, so re-authentication is typically just pressing ENTER (no password re-entry needed).
-
-**For CI/CD and automation:**
-- Use `NOTEBOOKLM_AUTH_JSON` environment variable
-- Update the secret every 1-2 weeks when sessions expire
-- CSRF auto-refresh handles day-to-day expiration
-
-**Session expiration triggers:**
-- Time-based expiration (weeks)
-- Security events (password change, suspicious activity)
-- Heavy API usage may trigger earlier expiration
-
-### Non-Functional RPC Methods
-
-Some discovered RPC endpoints don't work as expected:
-
-| RPC ID | Issue | Workaround |
-|--------|-------|------------|
-| `BnLyuf` (GET_ARTIFACT) | Returns 400 | Use `list` and filter |
-| `hizoJc` (GET_SOURCE) | Unreliable | Get from notebook metadata |
 
 ### Download Requirements
 
