@@ -332,8 +332,7 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
 
         error_parts = [f"Missing required cookies: {missing}"]
         if found_names:
-            suffix = "..." if len(cookies) > 5 else ""
-            error_parts.append(f"Found cookies: {found_names}{suffix}")
+            error_parts.append(f"Found cookies: {found_names}{'...' if len(cookies) > 5 else ''}")
         if google_domains:
             error_parts.append(f"Google domains in storage: {google_domains}")
         error_parts.append("Run 'notebooklm login' to authenticate.")

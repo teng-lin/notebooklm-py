@@ -9,7 +9,9 @@ Commands:
 
 import json
 import os
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.table import Table
@@ -42,8 +44,6 @@ def _ensure_chromium_installed() -> None:
 
     Silently proceeds on any errors - Playwright will handle them during launch.
     """
-    import subprocess
-
     try:
         result = subprocess.run(
             ["playwright", "install", "--dry-run", "chromium"],
@@ -70,10 +70,12 @@ def _ensure_chromium_installed() -> None:
         console.print("[green]Chromium installed successfully.[/green]\n")
     except SystemExit:
         raise
-    except Exception:
+    except Exception as e:
         # FileNotFoundError: playwright CLI not found but sync_playwright imported
         # Other exceptions: dry-run check failed - let Playwright handle it during launch
-        pass
+        console.print(
+            f"[dim]Warning: Chromium pre-flight check failed: {e}. Proceeding anyway.[/dim]"
+        )
 
 
 def register_session_commands(cli):
@@ -374,8 +376,6 @@ def register_session_commands(cli):
           notebooklm auth check --test    # Full validation with network test
           notebooklm auth check --json    # Machine-readable output
         """
-        from typing import Any
-
         from ..auth import (
             extract_cookies_from_storage,
             fetch_tokens,
@@ -448,7 +448,7 @@ def register_session_commands(cli):
                     cookies_by_domain.setdefault(domain, []).append(name)
 
             details["cookies_by_domain"] = cookies_by_domain
-            details["cookie_domains"] = list(cookies_by_domain.keys())
+            details["cookie_domains"] = sorted(cookies_by_domain.keys())
         except ValueError as e:
             details["error"] = str(e)
             _output_auth_check(checks, details, json_output)
