@@ -185,7 +185,8 @@ class TestSource:
             (10, "media"),
             (11, "text"),
             (13, "image"),
-            (14, "spreadsheet"),
+            (14, "google_spreadsheet"),
+            (16, "csv"),
         ],
     )
     def test_from_api_response_source_type_codes(self, type_code, expected_type):

@@ -114,6 +114,7 @@ class SourcesAPI:
                         SourceStatus.PROCESSING,
                         SourceStatus.READY,
                         SourceStatus.ERROR,
+                        SourceStatus.PREPARING,
                     ):
                         status = status_code
 

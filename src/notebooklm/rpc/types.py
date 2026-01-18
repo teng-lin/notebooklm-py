@@ -294,38 +294,44 @@ class SourceType(int, Enum):
     These integer codes identify the type of source content.
     Used in SourceFulltext.source_type and internal API responses.
 
-    Supported source types:
-    - Documents: PDF, TXT, Markdown, DOCX
-    - Images: PNG, JPG, JPEG, GIF, WEBP, AVIF, BMP, ICO, HEIC, HEIF, TIFF
-    - Media: Audio (MP3, WAV, M4A), YouTube videos
-    - Google Workspace: Docs, Sheets, Slides
-    - Web: URLs, pasted text
-
-    Type codes verified via systematic investigation (2025-01).
+    Verified via E2E testing (2026-01):
+    - Google Docs → 1 (GOOGLE_DOCS)
+    - Google Slides → 2 (GOOGLE_OTHER)
+    - PDF uploads → 3 (PDF)
+    - TXT uploads → 4 (PASTED_TEXT)
+    - Web URLs → 5 (WEB_PAGE)
+    - Markdown uploads → 8 (GENERATED_TEXT)
+    - YouTube URLs → 9 (YOUTUBE)
+    - M4A/MP4 uploads → 10 (MEDIA)
+    - DOCX uploads → 11 (TEXT)
+    - JPG/JPEG uploads → 13 (IMAGE)
+    - Google Sheets → 14 (GOOGLE_SPREADSHEET)
+    - CSV uploads → 16 (CSV)
     """
 
-    # Google Workspace types
+    # Google Workspace types (verified)
     GOOGLE_DOCS = 1  # Google Docs document
-    GOOGLE_OTHER = 2  # Google Sheets, Slides, or other workspace files
+    GOOGLE_OTHER = 2  # Google Slides (verified), possibly other workspace files
 
     # Document types
-    PDF = 3  # PDF document
-    PASTED_TEXT = 4  # Pasted text content
+    PDF = 3  # PDF document uploads (verified)
+    PASTED_TEXT = 4  # Pasted text content, TXT file uploads (verified)
 
     # Web types
-    WEB_PAGE = 5  # Web URL
+    WEB_PAGE = 5  # Web URL sources (verified)
 
     # Media types
-    GENERATED_TEXT = 8  # Note converted to source (via NotebookLM UI)
-    YOUTUBE = 9  # YouTube video transcript
-    MEDIA = 10  # Audio/video files (MP3, MP4, WAV, etc.) - transcribed
+    GENERATED_TEXT = 8  # Note converted to source, Markdown uploads (verified)
+    YOUTUBE = 9  # YouTube video transcript (verified)
+    MEDIA = 10  # Audio/video files (M4A, MP4, etc.) - transcribed (verified)
 
     # Upload types
-    TEXT = 11  # Text-based uploads (TXT, MD, DOCX)
+    TEXT = 11  # DOCX and other document uploads (verified)
 
     # Rich media types
-    IMAGE = 13  # Image files (PNG, JPG, WEBP, AVIF, GIF, etc.) - OCR'd
-    SPREADSHEET = 14  # Spreadsheet/CSV data imports
+    IMAGE = 13  # Image files (JPG, etc.) - OCR'd (verified)
+    GOOGLE_SPREADSHEET = 14  # Google Sheets (verified)
+    CSV = 16  # CSV file uploads (verified)
 
 
 # Source type code to string mapping (uses int keys for mypy compatibility)
@@ -340,7 +346,8 @@ _SOURCE_TYPE_MAP: dict[int, str] = {
     SourceType.MEDIA: "media",
     SourceType.TEXT: "text",
     SourceType.IMAGE: "image",
-    SourceType.SPREADSHEET: "spreadsheet",
+    SourceType.GOOGLE_SPREADSHEET: "google_spreadsheet",
+    SourceType.CSV: "csv",
 }
 
 
@@ -374,6 +381,7 @@ class SourceStatus(int, Enum):
     PROCESSING = 1  # Source is being processed (indexing content)
     READY = 2  # Source is ready for use
     ERROR = 3  # Source processing failed
+    PREPARING = 5  # Source is being prepared/uploaded (pre-processing stage)
 
 
 # Source status code to string mapping (uses int keys for mypy compatibility)
@@ -381,6 +389,7 @@ _SOURCE_STATUS_MAP: dict[int, str] = {
     SourceStatus.PROCESSING: "processing",
     SourceStatus.READY: "ready",
     SourceStatus.ERROR: "error",
+    SourceStatus.PREPARING: "preparing",
 }
 
 
