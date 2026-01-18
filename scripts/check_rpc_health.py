@@ -330,6 +330,11 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.LIST_NOTEBOOKS:
         return []
 
+    # Global settings (no notebook required)
+    if method == RPCMethod.SET_OUTPUT_LANGUAGE:
+        # Empty string reads current setting without changing
+        return [[[None, [[None, None, None, None, [""]]]]]]
+
     # Methods that require a notebook ID
     if not notebook_id:
         return None

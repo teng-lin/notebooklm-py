@@ -47,6 +47,18 @@ See [Configuration](configuration.md) for details on environment variables and C
 | `auth check --test` | Validate with network test | `notebooklm auth check --test` |
 | `auth check --json` | Output as JSON | `notebooklm auth check --json` |
 
+### Language Commands (`notebooklm language <cmd>`)
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `list` | List all supported languages | `language list` |
+| `get` | Show current language setting | `language get` |
+| `get --local` | Show local config only (skip server sync) | `language get --local` |
+| `set <code>` | Set language for artifact generation | `language set zh_Hans` |
+| `set <code> --local` | Set local config only (skip server sync) | `language set ja --local` |
+
+**Note:** Language is a **GLOBAL** setting that affects all notebooks in your account.
+
 ### Notebook Commands
 
 | Command | Description | Example |
@@ -96,6 +108,7 @@ See [Configuration](configuration.md) for details on environment variables and C
 All generate commands support:
 - `--source/-s` to select specific sources (repeatable)
 - `--json` for machine-readable output (returns `task_id` and `status`)
+- `--language` to override output language (defaults to config or 'en')
 
 | Command | Options | Example |
 |---------|---------|---------|
@@ -224,6 +237,49 @@ notebooklm status --json
 │ Browser Profile │ .../browser_profile         │                 │
 └─────────────────┴──────────────────────────────┴─────────────────┘
 ```
+
+### Language: `list`, `get`, `set`
+
+Manage the output language for artifact generation (audio, video, etc.).
+
+**Important:** Language is a **GLOBAL** setting that affects all notebooks in your account.
+
+```bash
+# List all supported languages with native names
+notebooklm language list
+
+# Show current language setting (syncs from server)
+notebooklm language get
+
+# Set language to Simplified Chinese
+notebooklm language set zh_Hans
+
+# Set language to Japanese
+notebooklm language set ja
+```
+
+**Options for `get`:**
+- `--local` - Skip server sync, show local config only
+- `--json` - Output as JSON
+
+**Options for `set`:**
+- `--local` - Save to local config only, skip server sync
+- `--json` - Output as JSON
+
+**Common language codes:**
+| Code | Language |
+|------|----------|
+| `en` | English |
+| `zh_Hans` | 中文（简体） - Simplified Chinese |
+| `zh_Hant` | 中文（繁體） - Traditional Chinese |
+| `ja` | 日本語 - Japanese |
+| `ko` | 한국어 - Korean |
+| `es` | Español - Spanish |
+| `fr` | Français - French |
+| `de` | Deutsch - German |
+| `pt_BR` | Português (Brasil) - Brazilian Portuguese |
+
+Run `notebooklm language list` for all 80+ supported languages.
 
 ### Session: `auth check`
 

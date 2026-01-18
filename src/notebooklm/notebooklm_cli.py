@@ -36,6 +36,7 @@ from .cli import (
     artifact,
     download,
     generate,
+    language,
     note,
     register_chat_commands,
     register_notebook_commands,
@@ -110,6 +111,7 @@ cli.add_command(download)
 cli.add_command(note)
 cli.add_command(skill)
 cli.add_command(research)
+cli.add_command(language)
 
 
 # =============================================================================

@@ -82,6 +82,15 @@ def get_browser_profile_dir() -> Path:
     return get_home_dir() / "browser_profile"
 
 
+def get_config_path() -> Path:
+    """Get config.json path.
+
+    Returns:
+        Path to config.json within NOTEBOOKLM_HOME.
+    """
+    return get_home_dir() / "config.json"
+
+
 def get_path_info() -> dict[str, str]:
     """Get diagnostic info about resolved paths.
 
@@ -101,5 +110,6 @@ def get_path_info() -> dict[str, str]:
         "home_source": "NOTEBOOKLM_HOME" if home_from_env else "default (~/.notebooklm)",
         "storage_path": str(get_storage_path()),
         "context_path": str(get_context_path()),
+        "config_path": str(get_config_path()),
         "browser_profile_dir": str(get_browser_profile_dir()),
     }

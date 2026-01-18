@@ -55,6 +55,7 @@ from .helpers import (
     # Decorators
     with_client,
 )
+from .language import get_language, language
 from .note import note
 from .notebook import register_notebook_commands
 from .options import (
@@ -85,6 +86,9 @@ __all__ = [
     "note",
     "skill",
     "research",
+    "language",
+    # Language config
+    "get_language",
     # Register functions (top-level command style)
     "register_session_commands",
     "register_notebook_commands",

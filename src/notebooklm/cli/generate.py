@@ -38,7 +38,24 @@ from .helpers import (
     require_notebook,
     with_client,
 )
+from .language import get_language
 from .options import json_option
+
+DEFAULT_LANGUAGE = "en"
+
+
+def resolve_language(language: str | None) -> str:
+    """Resolve language from CLI flag, config, or default.
+
+    Priority: CLI flag > config file > "en" default.
+    Uses explicit None checks to avoid treating empty string as falsy.
+    """
+    if language is not None:
+        return language
+    config_lang = get_language()
+    if config_lang is not None:
+        return config_lang
+    return DEFAULT_LANGUAGE
 
 
 async def handle_generation_result(
@@ -209,7 +226,7 @@ def generate():
     type=click.Choice(["short", "default", "long"]),
     default="default",
 )
-@click.option("--language", default="en")
+@click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @json_option
@@ -256,7 +273,7 @@ def generate_audio(
             result = await client.artifacts.generate_audio(
                 nb_id,
                 source_ids=sources,
-                language=language,
+                language=resolve_language(language),
                 instructions=description or None,
                 audio_format=format_map[audio_format],
                 audio_length=length_map[audio_length],
@@ -298,7 +315,7 @@ def generate_audio(
     ),
     default="auto",
 )
-@click.option("--language", default="en")
+@click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @json_option
@@ -346,7 +363,7 @@ def generate_video(
             result = await client.artifacts.generate_video(
                 nb_id,
                 source_ids=sources,
-                language=language,
+                language=resolve_language(language),
                 instructions=description or None,
                 video_format=format_map[video_format],
                 video_style=style_map[style],
@@ -379,7 +396,7 @@ def generate_video(
     type=click.Choice(["default", "short"]),
     default="default",
 )
-@click.option("--language", default="en")
+@click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @json_option
@@ -422,7 +439,7 @@ def generate_slide_deck(
             result = await client.artifacts.generate_slide_deck(
                 nb_id,
                 source_ids=sources,
-                language=language,
+                language=resolve_language(language),
                 instructions=description or None,
                 slide_format=format_map[deck_format],
                 slide_length=length_map[deck_length],
@@ -561,7 +578,7 @@ def generate_flashcards(
     type=click.Choice(["concise", "standard", "detailed"]),
     default="standard",
 )
-@click.option("--language", default="en")
+@click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @json_option
@@ -606,7 +623,7 @@ def generate_infographic(
             result = await client.artifacts.generate_infographic(
                 nb_id,
                 source_ids=sources,
-                language=language,
+                language=resolve_language(language),
                 instructions=description or None,
                 orientation=orientation_map[orientation],
                 detail_level=detail_map[detail],
@@ -625,7 +642,7 @@ def generate_infographic(
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--language", default="en")
+@click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @json_option
@@ -649,7 +666,10 @@ def generate_data_table(
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
             result = await client.artifacts.generate_data_table(
-                nb_id, source_ids=sources, language=language, instructions=description
+                nb_id,
+                source_ids=sources,
+                language=resolve_language(language),
+                instructions=description,
             )
             await handle_generation_result(client, nb_id, result, "data table", wait, json_output)
 

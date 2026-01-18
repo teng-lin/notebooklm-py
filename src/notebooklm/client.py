@@ -29,6 +29,7 @@ from ._core import DEFAULT_TIMEOUT, ClientCore
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
+from ._settings import SettingsAPI
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect
 from .auth import AuthTokens
@@ -46,6 +47,7 @@ class NotebookLMClient:
     - chat: Ask questions and manage conversations
     - research: Start research sessions and import sources
     - notes: Create and manage user notes
+    - settings: Manage user settings (output language, etc.)
 
     Usage:
         # Create from saved authentication
@@ -64,6 +66,7 @@ class NotebookLMClient:
         chat: ChatAPI for conversations
         research: ResearchAPI for web/drive research
         notes: NotesAPI for user notes
+        settings: SettingsAPI for user settings
         auth: The AuthTokens used for authentication
     """
 
@@ -86,6 +89,7 @@ class NotebookLMClient:
         self.artifacts = ArtifactsAPI(self._core, notes_api=self.notes)
         self.chat = ChatAPI(self._core)
         self.research = ResearchAPI(self._core)
+        self.settings = SettingsAPI(self._core)
 
     @property
     def auth(self) -> AuthTokens:

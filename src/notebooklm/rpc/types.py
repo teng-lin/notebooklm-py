@@ -84,6 +84,9 @@ class RPCMethod(str, Enum):
     # Additional notebook operations
     REMOVE_RECENTLY_VIEWED = "fejl7e"
 
+    # User settings
+    SET_OUTPUT_LANGUAGE = "hT54vc"  # Set/get output language for artifact generation
+
 
 class StudioContentType(int, Enum):
     """Types of studio content that can be generated.

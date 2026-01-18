@@ -86,6 +86,9 @@ Before starting workflows, verify the CLI is ready:
 - `notebooklm list` - list notebooks
 - `notebooklm source list` - list sources
 - `notebooklm artifact list` - list artifacts
+- `notebooklm language list` - list supported languages
+- `notebooklm language get` - get current language
+- `notebooklm language set` - set language (global setting)
 - `notebooklm artifact wait` - wait for artifact completion (in subagent context)
 - `notebooklm source wait` - wait for source processing (in subagent context)
 - `notebooklm research status` - check research status
@@ -146,6 +149,9 @@ Before starting workflows, verify the CLI is ready:
 | Download flashcards | `notebooklm download flashcards cards.json` |
 | Download flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
 | Delete notebook | `notebooklm notebook delete <id>` |
+| List languages | `notebooklm language list` |
+| Get language | `notebooklm language get` |
+| Set language | `notebooklm language set zh_Hans` |
 
 **Parallel safety:** Use explicit notebook IDs in parallel workflows. Commands supporting `-n` shorthand: `artifact wait`, `source wait`, `research wait/status`, `download *`. Download commands also support `-a/--artifact`. Other commands use `--notebook`. For chat, use `--new` to start fresh conversations (avoids conversation ID conflicts).
 
@@ -199,6 +205,7 @@ if matches:
 
 All generate commands support:
 - `-s, --source` to use specific source(s) instead of all sources
+- `--language` to set output language (defaults to configured language or 'en')
 - `--json` for machine-readable output (returns `task_id` and `status`)
 
 | Type | Command | Downloadable |
@@ -452,6 +459,50 @@ All commands use consistent exit codes:
 
 **Polling intervals:** When checking status manually, poll every 15-30 seconds to avoid excessive API calls.
 
+## Language Configuration
+
+Language setting controls the output language for generated artifacts (audio, video, etc.).
+
+**Important:** Language is a **GLOBAL** setting that affects all notebooks in your account.
+
+```bash
+# List all 80+ supported languages with native names
+notebooklm language list
+
+# Show current language setting
+notebooklm language get
+
+# Set language for artifact generation
+notebooklm language set zh_Hans  # Simplified Chinese
+notebooklm language set ja       # Japanese
+notebooklm language set en       # English (default)
+```
+
+**Common language codes:**
+| Code | Language |
+|------|----------|
+| `en` | English |
+| `zh_Hans` | 中文（简体） - Simplified Chinese |
+| `zh_Hant` | 中文（繁體） - Traditional Chinese |
+| `ja` | 日本語 - Japanese |
+| `ko` | 한국어 - Korean |
+| `es` | Español - Spanish |
+| `fr` | Français - French |
+| `de` | Deutsch - German |
+| `pt_BR` | Português (Brasil) |
+
+**Override per command:** Use `--language` flag on generate commands:
+```bash
+notebooklm generate audio --language ja   # Japanese podcast
+notebooklm generate video --language zh_Hans  # Chinese video
+```
+
+**Offline mode:** Use `--local` flag to skip server sync:
+```bash
+notebooklm language set zh_Hans --local  # Save locally only
+notebooklm language get --local  # Read local config only
+```
+
 ## Troubleshooting
 
 ```bash
@@ -464,6 +515,7 @@ notebooklm research --help     # Research status/wait
 notebooklm generate --help     # Content generation
 notebooklm artifact --help     # Artifact management
 notebooklm download --help     # Download content
+notebooklm language --help     # Language settings
 ```
 
 **Diagnose auth:** `notebooklm auth check` - shows cookie domains, storage path, validation status
