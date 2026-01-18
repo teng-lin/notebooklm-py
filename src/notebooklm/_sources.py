@@ -371,7 +371,7 @@ class SourcesAPI:
             raise SourceAddError(
                 title,
                 cause=e,
-                message=f"Failed to add text source '{title}': {e}",
+                message=f"Failed to add text source '{title}'",
             ) from e
 
         if result is None:

@@ -252,8 +252,6 @@ class SourceAddError(SourceError):
             "  - Rate limiting or quota exceeded"
         )
         super().__init__(msg)
-        if cause:
-            self.__cause__ = cause
 
 
 @dataclass
