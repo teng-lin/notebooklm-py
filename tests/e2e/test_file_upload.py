@@ -514,8 +514,8 @@ class TestFileUpload:
             )
             assert source is not None
             assert source.id is not None
-            # Markdown uploads are treated as GENERATED_TEXT type (8)
-            assert source.source_type == "generated_text"
+            # Markdown uploads are treated as MARKDOWN type (8)
+            assert source.source_type == "markdown"
             assert source.source_type_code == 8
         finally:
             os.unlink(temp_path)
@@ -594,8 +594,8 @@ class TestFileUpload:
         assert source is not None
         assert source.id is not None
         assert source.title == "test_document.docx"
-        # DOCX uploads are treated as TEXT type (11)
-        assert source.source_type == "text"
+        # DOCX uploads are treated as DOCX type (11)
+        assert source.source_type == "docx"
         assert source.source_type_code == 11
 
     @pytest.mark.asyncio

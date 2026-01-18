@@ -273,7 +273,7 @@ class Source:
     id: str
     title: str | None = None
     url: str | None = None
-    source_type: str = "text"
+    source_type: str = "unknown"
     source_type_code: int | None = None
     created_at: datetime | None = None
     status: int = SourceStatus.READY  # Default to READY (2)
@@ -333,7 +333,7 @@ class Source:
                         if len(entry[2]) > 7 and isinstance(entry[2][7], list):
                             url = entry[2][7][0] if entry[2][7] else None
 
-                    return cls(id=str(source_id), title=title, url=url, source_type="text")
+                    return cls(id=str(source_id), title=title, url=url, source_type="unknown")
 
                 # Deeply nested: continue with URL and type code extraction
                 url = None
@@ -364,7 +364,7 @@ class Source:
         # Simple flat format: [id, title] or [id, title, ...]
         source_id = data[0] if len(data) > 0 else ""
         title = data[1] if len(data) > 1 else None
-        return cls(id=str(source_id), title=title, source_type="text")
+        return cls(id=str(source_id), title=title, source_type="unknown")
 
 
 @dataclass

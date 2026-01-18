@@ -562,18 +562,17 @@ def get_source_type_display(source_type: str) -> str:
         # From SourceType enum via source_type_code_to_str()
         "google_docs": "📄 Google Docs",
         "google_other": "📊 Google Workspace",
+        "google_spreadsheet": "📊 Google Sheets",
         "pdf": "📄 PDF",
         "pasted_text": "📝 Pasted Text",
-        "text": "📝 Text",
-        "url": "🔗 Web URL",
-        "generated": "✨ Generated",
+        "docx": "📝 DOCX",
+        "web_page": "🔗 Web URL",
+        "markdown": "📝 Markdown",
         "youtube": "🎥 YouTube",
         "media": "🎵 Media",
         "upload": "📎 Upload",
         "image": "🖼️ Image",
-        "spreadsheet": "📊 Spreadsheet",
+        "csv": "📊 CSV",
         "unknown": "❓ Unknown",
-        # Legacy types for backward compatibility
-        "text_file": "📝 Text File",
     }
     return type_map.get(source_type, f"❓ {source_type}")

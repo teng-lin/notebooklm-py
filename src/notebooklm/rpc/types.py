@@ -300,10 +300,10 @@ class SourceType(int, Enum):
     - PDF uploads → 3 (PDF)
     - TXT uploads → 4 (PASTED_TEXT)
     - Web URLs → 5 (WEB_PAGE)
-    - Markdown uploads → 8 (GENERATED_TEXT)
+    - Markdown uploads → 8 (MARKDOWN)
     - YouTube URLs → 9 (YOUTUBE)
     - M4A/MP4 uploads → 10 (MEDIA)
-    - DOCX uploads → 11 (TEXT)
+    - DOCX uploads → 11 (DOCX)
     - JPG/JPEG uploads → 13 (IMAGE)
     - Google Sheets → 14 (GOOGLE_SPREADSHEET)
     - CSV uploads → 16 (CSV)
@@ -321,12 +321,12 @@ class SourceType(int, Enum):
     WEB_PAGE = 5  # Web URL sources (verified)
 
     # Media types
-    GENERATED_TEXT = 8  # Note converted to source, Markdown uploads (verified)
+    MARKDOWN = 8  # Markdown uploads, note converted to source (verified)
     YOUTUBE = 9  # YouTube video transcript (verified)
     MEDIA = 10  # Audio/video files (M4A, MP4, etc.) - transcribed (verified)
 
-    # Upload types
-    TEXT = 11  # DOCX and other document uploads (verified)
+    # Document uploads
+    DOCX = 11  # DOCX document uploads (verified)
 
     # Rich media types
     IMAGE = 13  # Image files (JPG, etc.) - OCR'd (verified)
@@ -341,10 +341,10 @@ _SOURCE_TYPE_MAP: dict[int, str] = {
     SourceType.PDF: "pdf",
     SourceType.PASTED_TEXT: "pasted_text",
     SourceType.WEB_PAGE: "web_page",
-    SourceType.GENERATED_TEXT: "generated_text",
+    SourceType.MARKDOWN: "markdown",
     SourceType.YOUTUBE: "youtube",
     SourceType.MEDIA: "media",
-    SourceType.TEXT: "text",
+    SourceType.DOCX: "docx",
     SourceType.IMAGE: "image",
     SourceType.GOOGLE_SPREADSHEET: "google_spreadsheet",
     SourceType.CSV: "csv",

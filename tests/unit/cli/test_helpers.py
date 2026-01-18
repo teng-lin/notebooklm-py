@@ -162,23 +162,26 @@ class TestGetSourceTypeDisplay:
     def test_youtube(self):
         assert get_source_type_display("youtube") == "🎥 YouTube"
 
-    def test_url(self):
-        assert get_source_type_display("url") == "🔗 Web URL"
+    def test_web_page(self):
+        assert get_source_type_display("web_page") == "🔗 Web URL"
 
     def test_pdf(self):
         assert get_source_type_display("pdf") == "📄 PDF"
 
-    def test_text_file(self):
-        assert get_source_type_display("text_file") == "📝 Text File"
+    def test_markdown(self):
+        assert get_source_type_display("markdown") == "📝 Markdown"
 
-    def test_spreadsheet(self):
-        assert get_source_type_display("spreadsheet") == "📊 Spreadsheet"
+    def test_google_spreadsheet(self):
+        assert get_source_type_display("google_spreadsheet") == "📊 Google Sheets"
+
+    def test_csv(self):
+        assert get_source_type_display("csv") == "📊 CSV"
 
     def test_upload(self):
         assert get_source_type_display("upload") == "📎 Upload"
 
-    def test_text(self):
-        assert get_source_type_display("text") == "📝 Text"
+    def test_docx(self):
+        assert get_source_type_display("docx") == "📝 DOCX"
 
     def test_pasted_text(self):
         assert get_source_type_display("pasted_text") == "📝 Pasted Text"

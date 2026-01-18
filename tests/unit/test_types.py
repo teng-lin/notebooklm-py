@@ -106,7 +106,7 @@ class TestSource:
 
         assert source.id == "src_123"
         assert source.title == "Source Title"
-        assert source.source_type == "text"
+        assert source.source_type == "unknown"
 
     def test_from_api_response_nested_format(self):
         """Test parsing medium nested format."""
@@ -180,10 +180,10 @@ class TestSource:
             (3, "pdf"),
             (4, "pasted_text"),
             (5, "web_page"),
-            (8, "generated_text"),
+            (8, "markdown"),
             (9, "youtube"),
             (10, "media"),
-            (11, "text"),
+            (11, "docx"),
             (13, "image"),
             (14, "google_spreadsheet"),
             (16, "csv"),
