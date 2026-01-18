@@ -77,6 +77,7 @@ from .types import (
     SourceProcessingError,
     SourceStatus,
     SourceTimeoutError,
+    SourceType,
     # Enums for configuration
     StudioContentType,
     SuggestedTopic,
@@ -130,4 +131,5 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
+    "SourceType",
 ]

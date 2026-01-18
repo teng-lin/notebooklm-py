@@ -89,6 +89,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                             "id": src.id,
                             "title": src.title,
                             "type": src.source_type,
+                            "type_code": src.source_type_code,
                             "url": src.url,
                             "status": source_status_to_str(src.status),
                             "status_id": src.status,
@@ -203,6 +204,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                         "id": src.id,
                         "title": src.title,
                         "type": src.source_type,
+                        "type_code": src.source_type_code,
                         "url": src.url,
                     }
                 }

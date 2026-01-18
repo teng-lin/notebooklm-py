@@ -30,11 +30,13 @@ from .rpc.types import (
     SlideDeckFormat,
     SlideDeckLength,
     SourceStatus,
+    SourceType,
     StudioContentType,
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
     source_status_to_str,
+    source_type_code_to_str,
 )
 
 __all__ = [
@@ -75,9 +77,11 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
+    "SourceType",
     # Helper functions
     "artifact_status_to_str",
     "source_status_to_str",
+    "source_type_code_to_str",
 ]
 
 
@@ -262,7 +266,8 @@ class Source:
         id: Unique source identifier.
         title: Source title (may be URL if not yet processed).
         url: Original URL for web/YouTube sources.
-        source_type: Type of source (text, url, youtube, pdf, upload, etc.).
+        source_type: Type of source as string (for display/backward compat).
+        source_type_code: Integer type code from SourceType enum (if known).
         created_at: When the source was added.
         status: Processing status (1=processing, 2=ready, 3=error).
     """
@@ -271,6 +276,7 @@ class Source:
     title: str | None = None
     url: str | None = None
     source_type: str = "text"
+    source_type_code: int | None = None
     created_at: datetime | None = None
     status: int = SourceStatus.READY  # Default to READY (2)
 
@@ -288,6 +294,20 @@ class Source:
     def is_error(self) -> bool:
         """Check if source processing failed (status=ERROR)."""
         return self.status == SourceStatus.ERROR
+
+    @property
+    def type_enum(self) -> "SourceType | None":
+        """Get the SourceType enum value if source_type_code is known.
+
+        Returns:
+            SourceType enum member, or None if type code is unknown.
+        """
+        if self.source_type_code is None:
+            return None
+        try:
+            return SourceType(self.source_type_code)
+        except ValueError:
+            return None
 
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> "Source":
@@ -373,7 +393,9 @@ class SourceFulltext:
         source_id: The source UUID.
         title: Source title.
         content: Full indexed text content.
-        source_type: Type code (1=google_docs, 3=pdf, 4=pasted_text, 5=web_page, 9=youtube).
+        source_type: Integer type code. Use SourceType enum for comparison:
+            SourceType.GOOGLE_DOCS (1), SourceType.PDF (3), SourceType.PASTED_TEXT (4),
+            SourceType.WEB_PAGE (5), SourceType.YOUTUBE (9), etc.
         url: Original URL for web/YouTube sources.
         char_count: Number of characters in the content.
     """

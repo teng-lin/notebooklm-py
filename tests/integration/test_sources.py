@@ -8,6 +8,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient, Source
 from notebooklm.rpc import RPCMethod
+from notebooklm.rpc.types import SourceType
 
 
 class TestAddSource:
@@ -154,7 +155,7 @@ class TestSourcesAPI:
                                 11,
                                 [1704067200, 0],
                                 None,
-                                5,
+                                SourceType.WEB_PAGE,
                                 None,
                                 None,
                                 ["https://example.com"],
@@ -170,7 +171,7 @@ class TestSourcesAPI:
                                 11,
                                 [1704240000, 0],
                                 None,
-                                5,
+                                SourceType.YOUTUBE,
                                 None,
                                 None,
                                 ["https://youtube.com/watch?v=abc"],

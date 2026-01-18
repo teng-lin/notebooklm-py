@@ -178,10 +178,17 @@ class TestGetSourceTypeDisplay:
         assert get_source_type_display("upload") == "📎 Upload"
 
     def test_text(self):
-        assert get_source_type_display("text") == "📝 Pasted Text"
+        assert get_source_type_display("text") == "📝 Text"
 
-    def test_unknown_defaults_to_text(self):
-        assert get_source_type_display("unknown") == "📝 Text"
+    def test_pasted_text(self):
+        assert get_source_type_display("pasted_text") == "📝 Pasted Text"
+
+    def test_unknown_type(self):
+        assert get_source_type_display("unknown") == "❓ Unknown"
+
+    def test_unrecognized_type_shows_name(self):
+        # Unrecognized types should show the type name
+        assert get_source_type_display("future_type") == "❓ future_type"
 
 
 class TestArtifactTypeMappings:

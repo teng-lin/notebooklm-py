@@ -553,18 +553,27 @@ def get_source_type_display(source_type: str) -> str:
     """Get display string for source type.
 
     Args:
-        source_type: Type code from Source object
+        source_type: Type string from Source object (derived from SourceType enum)
 
     Returns:
         Display string with emoji
     """
     type_map = {
-        "youtube": "🎥 YouTube",
-        "url": "🔗 Web URL",
+        # From SourceType enum via source_type_code_to_str()
+        "google_docs": "📄 Google Docs",
+        "google_other": "📊 Google Workspace",
         "pdf": "📄 PDF",
-        "text_file": "📝 Text File",
-        "spreadsheet": "📊 Spreadsheet",
+        "pasted_text": "📝 Pasted Text",
+        "text": "📝 Text",
+        "url": "🔗 Web URL",
+        "generated": "✨ Generated",
+        "youtube": "🎥 YouTube",
+        "media": "🎵 Media",
         "upload": "📎 Upload",
-        "text": "📝 Pasted Text",
+        "image": "🖼️ Image",
+        "spreadsheet": "📊 Spreadsheet",
+        "unknown": "❓ Unknown",
+        # Legacy types for backward compatibility
+        "text_file": "📝 Text File",
     }
-    return type_map.get(source_type, "📝 Text")
+    return type_map.get(source_type, f"❓ {source_type}")

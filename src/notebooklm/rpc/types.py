@@ -288,6 +288,80 @@ class ExportType(int, Enum):
     SHEETS = 2  # Export to Google Sheets
 
 
+class SourceType(int, Enum):
+    """Source type codes used by NotebookLM API.
+
+    These integer codes identify the type of source content.
+    Used in SourceFulltext.source_type and internal API responses.
+
+    Supported source types:
+    - Documents: PDF, TXT, Markdown, DOCX
+    - Images: PNG, JPG, JPEG, GIF, WEBP, AVIF, BMP, ICO, HEIC, HEIF, TIFF
+    - Media: Audio (MP3, WAV, M4A), YouTube videos
+    - Google Workspace: Docs, Sheets, Slides
+    - Web: URLs, pasted text
+
+    Type codes verified via systematic investigation (2025-01).
+    """
+
+    # Google Workspace types
+    GOOGLE_DOCS = 1  # Google Docs document
+    GOOGLE_OTHER = 2  # Google Sheets, Slides, or other workspace files
+
+    # Document types
+    PDF = 3  # PDF document
+    PASTED_TEXT = 4  # Pasted text content
+
+    # Web types
+    WEB_PAGE = 5  # Web URL
+
+    # Media types
+    GENERATED_TEXT = 8  # Note converted to source (via NotebookLM UI)
+    YOUTUBE = 9  # YouTube video transcript
+    MEDIA = 10  # Audio/video files (MP3, MP4, WAV, etc.) - transcribed
+
+    # Upload types
+    TEXT = 11  # Text-based uploads (TXT, MD, DOCX)
+
+    # Rich media types
+    IMAGE = 13  # Image files (PNG, JPG, WEBP, AVIF, GIF, etc.) - OCR'd
+    SPREADSHEET = 14  # Spreadsheet/CSV data imports
+
+
+# Source type code to string mapping (uses int keys for mypy compatibility)
+_SOURCE_TYPE_MAP: dict[int, str] = {
+    SourceType.GOOGLE_DOCS: "google_docs",
+    SourceType.GOOGLE_OTHER: "google_other",
+    SourceType.PDF: "pdf",
+    SourceType.PASTED_TEXT: "pasted_text",
+    SourceType.WEB_PAGE: "url",
+    SourceType.GENERATED_TEXT: "generated",
+    SourceType.YOUTUBE: "youtube",
+    SourceType.MEDIA: "media",
+    SourceType.TEXT: "text",
+    SourceType.IMAGE: "image",
+    SourceType.SPREADSHEET: "spreadsheet",
+}
+
+
+def source_type_code_to_str(type_code: int | SourceType | None) -> str:
+    """Convert source type code to human-readable string.
+
+    This is the single source of truth for source type code to string mapping.
+    Use this helper instead of inline conditionals to ensure consistency.
+
+    Args:
+        type_code: Type code as int, SourceType enum, or None.
+
+    Returns:
+        String type: "pdf", "youtube", "media", "image", etc.
+        Returns "unknown" for unrecognized codes or None.
+    """
+    if type_code is None:
+        return "unknown"
+    return _SOURCE_TYPE_MAP.get(type_code, "unknown")
+
+
 class SourceStatus(int, Enum):
     """Processing status of a source.
 

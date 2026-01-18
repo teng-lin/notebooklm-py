@@ -745,7 +745,7 @@ class SourceFulltext:
     source_id: str                     # UUID of the source
     title: str                         # Source title
     content: str                       # Full indexed text content
-    source_type: int | None            # Source type code
+    source_type: int | None            # Source type code (use SourceType enum)
     url: str | None                    # Original URL (if applicable)
     char_count: int                    # Character count
 
@@ -851,6 +851,46 @@ class SlideDeckLength(Enum):
 class ExportType(Enum):
     DOCS = 1    # Export to Google Docs
     SHEETS = 2  # Export to Google Sheets
+```
+
+### Sources
+
+```python
+class SourceType(Enum):
+    """Source type codes used by NotebookLM API."""
+    GOOGLE_DOCS = 1      # Google Docs document
+    GOOGLE_OTHER = 2     # Google Sheets, Slides, or other workspace files
+    PDF = 3              # PDF document
+    PASTED_TEXT = 4      # Pasted text content
+    WEB_PAGE = 5         # Web URL
+    GENERATED_TEXT = 8   # Note converted to source (via NotebookLM UI)
+    YOUTUBE = 9          # YouTube video transcript
+    MEDIA = 10           # Audio/video files (MP3, MP4, WAV, etc.) - transcribed
+    TEXT = 11            # Text-based uploads (TXT, MD, DOCX)
+    IMAGE = 13           # Image files (PNG, JPG, WEBP, etc.) - OCR'd
+    SPREADSHEET = 14     # Spreadsheet/CSV data imports
+
+class SourceStatus(Enum):
+    PROCESSING = 1  # Source is being processed (indexing content)
+    READY = 2       # Source is ready for use
+    ERROR = 3       # Source processing failed
+```
+
+**Usage Example:**
+```python
+from notebooklm import SourceType
+
+# List sources and check type codes
+sources = await client.sources.list(nb_id)
+for src in sources:
+    if src.source_type_code == SourceType.PDF:
+        print(f"PDF: {src.title}")
+    elif src.source_type_code == SourceType.MEDIA:
+        print(f"Audio/Video: {src.title}")
+
+    # Or use the type_enum property
+    if src.type_enum == SourceType.IMAGE:
+        print(f"Image (OCR'd): {src.title}")
 ```
 
 ### Chat Configuration
