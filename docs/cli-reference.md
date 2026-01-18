@@ -51,11 +51,11 @@ See [Configuration](configuration.md) for details on environment variables and C
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `list` | List all supported languages | `language list` |
-| `get` | Show current language setting | `language get` |
-| `get --local` | Show local config only (skip server sync) | `language get --local` |
-| `set <code>` | Set language for artifact generation | `language set zh_Hans` |
-| `set <code> --local` | Set local config only (skip server sync) | `language set ja --local` |
+| `list` | List all supported languages | `notebooklm language list` |
+| `get` | Show current language setting | `notebooklm language get` |
+| `get --local` | Show local config only (skip server sync) | `notebooklm language get --local` |
+| `set <code>` | Set language for artifact generation | `notebooklm language set zh_Hans` |
+| `set <code> --local` | Set local config only (skip server sync) | `notebooklm language set ja --local` |
 
 **Note:** Language is a **GLOBAL** setting that affects all notebooks in your account.
 

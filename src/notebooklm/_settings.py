@@ -67,21 +67,16 @@ class SettingsAPI:
         Expected structure: result[2][4][0] contains the language code.
         Returns None if structure doesn't match (logs at debug level for debugging).
         """
-        if not isinstance(result, list) or len(result) <= 2:
-            logger.debug("Response missing expected list structure: %s", type(result))
-            return None
-        settings = result[2]
-        if not isinstance(settings, list) or len(settings) <= 4:
+        try:
+            # The API can return an empty string for the language code, which we treat as None.
+            lang_code = result[2][4][0]  # type: ignore[index]
+            return lang_code or None
+        except (TypeError, IndexError):
             logger.debug(
-                "Settings element missing expected structure: len=%s",
-                len(settings) if isinstance(settings, list) else "N/A",
+                "Could not parse language from response due to unexpected structure: %s",
+                result,
             )
             return None
-        lang_list = settings[4]
-        if not isinstance(lang_list, list) or len(lang_list) == 0:
-            logger.debug("Language list element missing or empty")
-            return None
-        return lang_list[0] or None
 
     async def get_output_language(self) -> str | None:
         """Get the current output language setting.
