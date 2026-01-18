@@ -68,29 +68,32 @@ class TestLanguageListCommand:
 
 class TestLanguageGetCommand:
     def test_language_get_default_not_set(self, runner, mock_config_file):
-        """Test 'language get' when no language is configured."""
-        result = runner.invoke(cli, ["language", "get"])
+        """Test 'language get --local' when no language is configured."""
+        # Use --local to test local config only (skip server fetch)
+        result = runner.invoke(cli, ["language", "get", "--local"])
 
         assert result.exit_code == 0
         assert "not set" in result.output
         assert "defaults to 'en'" in result.output
 
     def test_language_get_when_set(self, runner, mock_config_file):
-        """Test 'language get' when language is configured."""
+        """Test 'language get --local' when language is configured."""
         # Write config file with language
         mock_config_file.write_text(json.dumps({"language": "zh_Hans"}))
 
-        result = runner.invoke(cli, ["language", "get"])
+        # Use --local to test local config only
+        result = runner.invoke(cli, ["language", "get", "--local"])
 
         assert result.exit_code == 0
         assert "zh_Hans" in result.output
         assert "中文" in result.output or "global" in result.output.lower()
 
     def test_language_get_json_output(self, runner, mock_config_file):
-        """Test 'language get --json' outputs JSON format."""
+        """Test 'language get --local --json' outputs JSON format."""
         mock_config_file.write_text(json.dumps({"language": "ja"}))
 
-        result = runner.invoke(cli, ["language", "get", "--json"])
+        # Use --local to test local config only
+        result = runner.invoke(cli, ["language", "get", "--local", "--json"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -99,8 +102,9 @@ class TestLanguageGetCommand:
         assert data["is_default"] is False
 
     def test_language_get_json_when_not_set(self, runner, mock_config_file):
-        """Test 'language get --json' when not configured."""
-        result = runner.invoke(cli, ["language", "get", "--json"])
+        """Test 'language get --local --json' when not configured."""
+        # Use --local to test local config only
+        result = runner.invoke(cli, ["language", "get", "--local", "--json"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)

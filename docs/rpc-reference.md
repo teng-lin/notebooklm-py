@@ -1,7 +1,7 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-01-14
+**Last Updated:** 2026-01-18
 **Source of Truth:** `src/notebooklm/rpc/types.py`
 **Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
 
@@ -50,6 +50,8 @@
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
 | `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML content | `_artifacts.py` |
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_notebooks.py` |
+| `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
+| `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
 
 ### Content Type Codes (StudioContentType)
 
@@ -1152,6 +1154,82 @@ await rpc_call(
 
 # Response: Imported sources with IDs
 ```
+
+---
+
+## User Settings
+
+Global user settings that affect all notebooks in an account.
+
+### RPC: GET_USER_SETTINGS (ZwVcOc)
+
+**Source:** `_settings.py::get_output_language()`
+
+Get user settings including the current output language.
+
+```python
+params = [
+    None,                                                    # 0
+    [1, None, None, None, None, None, None, None, None, None, [1]],  # 1: Fixed config
+]
+
+# Called with root source_path:
+await rpc_call(
+    RPCMethod.GET_USER_SETTINGS,
+    params,
+    source_path="/",  # Global setting uses root path
+)
+
+# Response structure:
+# [[
+#     null,
+#     [6, 500, 300, 500000],        # [0][1]: Limits/quotas
+#     [true, null, null, true, ["ja"]],  # [0][2]: Settings (language at [4][0])
+#     [[1]],                         # [0][3]: Unknown
+#     [true, 1, 3, 2]               # [0][4]: Feature flags
+# ]]
+#
+# Language code at: result[0][2][4][0]
+```
+
+### RPC: SET_USER_SETTINGS (hT54vc)
+
+**Source:** `_settings.py::set_output_language()`
+
+Set user settings (currently used for output language).
+
+**Important:** This is a **GLOBAL setting** that affects all notebooks in the account.
+
+```python
+# Language code goes in a triple-nested structure
+params = [
+    [[None, [[None, None, None, None, [language]]]]],  # 0: Nested language config
+]
+
+# Called with root source_path:
+await rpc_call(
+    RPCMethod.SET_USER_SETTINGS,
+    params,
+    source_path="/",  # Global setting uses root path
+)
+
+# Response structure:
+# [
+#     null,
+#     [6, 500, 300, 500000],              # [1]: Limits
+#     [true, null, null, true, ["ja"]],   # [2]: Updated settings (language at [4][0])
+#     ...
+# ]
+#
+# Language code at: result[2][4][0]
+```
+
+**Supported Languages:**
+
+Common language codes include:
+- `en` (English), `ja` (日本語), `zh_Hans` (中文简体), `zh_Hant` (中文繁體)
+- `ko` (한국어), `es` (Español), `fr` (Français), `de` (Deutsch), `pt_BR` (Português)
+- See `cli/language.py::SUPPORTED_LANGUAGES` for the full list of 80+ languages
 
 ---
 

@@ -21,7 +21,7 @@ class TestSettingsAPI:
             [100, 50, 10],  # Limits
             [True, None, None, True, ["zh_Hans"]],  # Settings with language
         ]
-        response = build_rpc_response(RPCMethod.SET_OUTPUT_LANGUAGE, response_data)
+        response = build_rpc_response(RPCMethod.SET_USER_SETTINGS, response_data)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -39,7 +39,7 @@ class TestSettingsAPI:
             [100, 50, 10],
             [True, None, None, True, ["en"]],
         ]
-        response = build_rpc_response(RPCMethod.SET_OUTPUT_LANGUAGE, response_data)
+        response = build_rpc_response(RPCMethod.SET_USER_SETTINGS, response_data)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -51,13 +51,16 @@ class TestSettingsAPI:
     async def test_get_output_language(
         self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response
     ):
-        """Test getting output language uses empty string."""
+        """Test getting output language from user settings."""
+        # Response structure for GET_USER_SETTINGS: result[0][2][4][0]
         response_data = [
-            None,
-            [100, 50, 10],
-            [True, None, None, True, ["ja"]],
+            [
+                None,
+                [100, 50, 10],  # Limits
+                [True, None, None, True, ["ja"]],  # Settings with language
+            ]
         ]
-        response = build_rpc_response(RPCMethod.SET_OUTPUT_LANGUAGE, response_data)
+        response = build_rpc_response(RPCMethod.GET_USER_SETTINGS, response_data)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -72,11 +75,13 @@ class TestSettingsAPI:
         """Test getting output language returns None when not set on server."""
         # Server returns empty string when language not set
         response_data = [
-            None,
-            [100, 50, 10],
-            [True, None, None, True, [""]],  # Empty string
+            [
+                None,
+                [100, 50, 10],
+                [True, None, None, True, [""]],  # Empty string
+            ]
         ]
-        response = build_rpc_response(RPCMethod.SET_OUTPUT_LANGUAGE, response_data)
+        response = build_rpc_response(RPCMethod.GET_USER_SETTINGS, response_data)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -90,8 +95,8 @@ class TestSettingsAPI:
     ):
         """Test getting output language returns None on unexpected response structure."""
         # Malformed response - missing expected structure
-        response_data = [None, None]  # Missing settings element
-        response = build_rpc_response(RPCMethod.SET_OUTPUT_LANGUAGE, response_data)
+        response_data = [[None, None]]  # Missing settings element
+        response = build_rpc_response(RPCMethod.GET_USER_SETTINGS, response_data)
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:

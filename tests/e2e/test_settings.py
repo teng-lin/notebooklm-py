@@ -46,10 +46,18 @@ class TestSettingsLanguage:
     @pytest.mark.asyncio
     async def test_set_language_to_english(self, client):
         """Test setting language to English."""
-        result = await client.settings.set_output_language("en")
-        # Should work without error
-        if result is not None:
-            assert result == "en"
+        # Get current to restore
+        original = await client.settings.get_output_language()
+
+        try:
+            await client.settings.set_output_language("en")
+            # Verify via get
+            current = await client.settings.get_output_language()
+            assert current == "en"
+        finally:
+            # Restore original (if different from "en")
+            if original and original != "en":
+                await client.settings.set_output_language(original)
 
     @pytest.mark.asyncio
     async def test_set_language_to_japanese(self, client):
@@ -58,9 +66,10 @@ class TestSettingsLanguage:
         original = await client.settings.get_output_language()
 
         try:
-            result = await client.settings.set_output_language("ja")
-            if result is not None:
-                assert result == "ja"
+            await client.settings.set_output_language("ja")
+            # Verify via get
+            current = await client.settings.get_output_language()
+            assert current == "ja"
         finally:
             # Restore
             restore_lang = original if original else "en"
@@ -74,9 +83,10 @@ class TestSettingsLanguage:
 
         try:
             # Brazilian Portuguese
-            result = await client.settings.set_output_language("pt_BR")
-            if result is not None:
-                assert result == "pt_BR"
+            await client.settings.set_output_language("pt_BR")
+            # Verify via get
+            current = await client.settings.get_output_language()
+            assert current == "pt_BR"
         finally:
             # Restore
             restore_lang = original if original else "en"

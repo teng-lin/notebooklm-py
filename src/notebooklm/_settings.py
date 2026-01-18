@@ -1,11 +1,31 @@
 """User settings API."""
 
 import logging
+from collections.abc import Sequence
 
 from ._core import ClientCore
 from .rpc import RPCMethod
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_nested_value(data: list | None, path: Sequence[int]) -> str | None:
+    """Extract a value from nested lists by following an index path.
+
+    Args:
+        data: The nested list structure to extract from.
+        path: Sequence of indices to follow (e.g., [2, 4, 0] for data[2][4][0]).
+
+    Returns:
+        The extracted string value, or None if the path is invalid or value is empty.
+    """
+    try:
+        result = data
+        for idx in path:
+            result = result[idx]  # type: ignore[index]
+        return result or None  # type: ignore[return-value]
+    except (TypeError, IndexError):
+        return None
 
 
 class SettingsAPI:
@@ -19,7 +39,11 @@ class SettingsAPI:
             await client.settings.set_output_language("zh_Hans")
     """
 
-    def __init__(self, core: ClientCore):
+    # Response paths for extracting language code from different RPC responses
+    _SET_LANGUAGE_PATH = (2, 4, 0)  # result[2][4][0]
+    _GET_SETTINGS_PATH = (0, 2, 4, 0)  # result[0][2][4][0]
+
+    def __init__(self, core: ClientCore) -> None:
         """Initialize the settings API.
 
         Args:
@@ -32,57 +56,65 @@ class SettingsAPI:
 
         This is a global setting that affects all notebooks in your account.
 
+        Note: Use get_output_language() to read the current setting.
+        Empty strings are rejected (they would reset to default, not read current).
+
         Args:
             language: Language code (e.g., "en", "zh_Hans", "ja").
-                     Use empty string "" to read current setting without changing.
+                     Must be a non-empty valid language code.
 
         Returns:
-            The current language setting after the call, or None if not set.
+            The language that was set, or None if the response couldn't be parsed.
         """
+        if not language:
+            logger.warning(
+                "Empty language string resets to default, not reads current. "
+                "Use a specific language code instead."
+            )
+            return None
+
         logger.debug("Setting output language: %s", language)
 
-        # Params structure from RPC capture:
-        # [[[null,[[null,null,null,null,["language_code"]]]]]]
+        # Params structure: [[[null,[[null,null,null,null,["language_code"]]]]]]
         params = [[[None, [[None, None, None, None, [language]]]]]]
 
         result = await self._core.rpc_call(
-            RPCMethod.SET_OUTPUT_LANGUAGE,
+            RPCMethod.SET_USER_SETTINGS,
             params,
-            source_path="/",  # Use root path for global setting
+            source_path="/",
         )
 
-        # Response structure from discovery doc:
-        # [null, [limits], [True, null, null, True, ["zh_Hans"]], ...]
-        # Language is at response[2][4][0]
-        current_language = self._extract_language_from_response(result)
-        if current_language:
-            logger.debug("Output language is now: %s", current_language)
-        else:
-            logger.debug("Could not parse language from response")
+        current_language = _extract_nested_value(result, self._SET_LANGUAGE_PATH)
+        self._log_language_result(current_language, "Output language is now")
         return current_language
-
-    def _extract_language_from_response(self, result: list | None) -> str | None:
-        """Extract language code from RPC response.
-
-        Expected structure: result[2][4][0] contains the language code.
-        Returns None if structure doesn't match (logs at debug level for debugging).
-        """
-        try:
-            # The API can return an empty string for the language code, which we treat as None.
-            lang_code = result[2][4][0]  # type: ignore[index]
-            return lang_code or None
-        except (TypeError, IndexError):
-            logger.debug(
-                "Could not parse language from response due to unexpected structure: %s",
-                result,
-            )
-            return None
 
     async def get_output_language(self) -> str | None:
         """Get the current output language setting.
 
+        Fetches user settings from the server and extracts the language code.
+
         Returns:
-            The current language code, or None if not set (defaults to "en").
+            The current language code (e.g., "en", "ja", "zh_Hans"),
+            or None if not set or couldn't be parsed.
         """
-        # Call with empty string to read without changing
-        return await self.set_output_language("")
+        logger.debug("Fetching user settings to get output language")
+
+        # Params structure: [null,[1,null,null,null,null,null,null,null,null,null,[1]]]
+        params = [None, [1, None, None, None, None, None, None, None, None, None, [1]]]
+
+        result = await self._core.rpc_call(
+            RPCMethod.GET_USER_SETTINGS,
+            params,
+            source_path="/",
+        )
+
+        current_language = _extract_nested_value(result, self._GET_SETTINGS_PATH)
+        self._log_language_result(current_language, "Current output language")
+        return current_language
+
+    def _log_language_result(self, language: str | None, success_prefix: str) -> None:
+        """Log the result of a language operation."""
+        if language:
+            logger.debug("%s: %s", success_prefix, language)
+        else:
+            logger.debug("Could not parse language from response")

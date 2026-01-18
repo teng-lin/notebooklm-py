@@ -85,7 +85,8 @@ class RPCMethod(str, Enum):
     REMOVE_RECENTLY_VIEWED = "fejl7e"
 
     # User settings
-    SET_OUTPUT_LANGUAGE = "hT54vc"  # Set/get output language for artifact generation
+    GET_USER_SETTINGS = "ZwVcOc"  # Get user settings including output language
+    SET_USER_SETTINGS = "hT54vc"  # Set user settings (e.g., output language)
 
 
 class StudioContentType(int, Enum):

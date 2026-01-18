@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-01-10
+**Last Updated:** 2026-01-18
 
 Complete reference for the `notebooklm` Python library.
 
@@ -630,6 +630,31 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 ```
 
 **Note:** Mind maps are detected by checking if the content contains `'"children":' or `'"nodes":'` keys, which indicate JSON mind map data structure.
+
+---
+
+### SettingsAPI (`client.settings`)
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `get_output_language()` | none | `Optional[str]` | Get current output language setting |
+| `set_output_language(language)` | `str` | `Optional[str]` | Set output language for artifact generation |
+
+**Example:**
+```python
+# Get current language setting
+lang = await client.settings.get_output_language()
+print(f"Current language: {lang}")  # e.g., "en", "ja", "zh_Hans"
+
+# Set language for artifact generation
+result = await client.settings.set_output_language("ja")  # Japanese
+print(f"Language set to: {result}")
+```
+
+**Important:** Language is a **GLOBAL setting** that affects all notebooks in your account. Supported languages include:
+- `en` (English), `ja` (日本語), `zh_Hans` (中文简体), `zh_Hant` (中文繁體)
+- `ko` (한국어), `es` (Español), `fr` (Français), `de` (Deutsch), `pt_BR` (Português)
+- And [80+ other languages](cli-reference.md#language-commands)
 
 ---
 
