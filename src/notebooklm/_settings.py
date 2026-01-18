@@ -68,8 +68,8 @@ class SettingsAPI:
         """
         if not language:
             logger.warning(
-                "Empty language string resets to default, not reads current. "
-                "Use a specific language code instead."
+                "Empty string not supported - use get_output_language() to read the current setting. "
+                "Passing empty string to the API would reset the language to default, not read it."
             )
             return None
 
