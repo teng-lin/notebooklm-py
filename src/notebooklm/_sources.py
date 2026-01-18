@@ -152,7 +152,10 @@ class SourcesAPI:
         Returns:
             Source object with current status, or None if not found.
         """
-        # GET_SOURCE RPC doesn't work, so filter from notebook data instead
+        # GET_SOURCE RPC (hizoJc) appears to be unreliable for source metadata lookup,
+        # especially for newly created sources. It returns None or incomplete data.
+        # Fallback to filtering from list() which uses GET_NOTEBOOK (rLM1Ne)
+        # and reliably returns all sources with their status/types.
         sources = await self.list(notebook_id)
         for source in sources:
             if source.id == source_id:
@@ -428,7 +431,15 @@ class SourcesAPI:
         await self._upload_file_streaming(upload_url, file_path)
 
         # Return source with the ID we got from registration
-        source = Source(id=source_id, title=filename, source_type="upload")
+        # Note: source_type_code is None because the actual type is determined
+        # by the API after processing (PDF, TEXT, IMAGE, etc.)
+        # Use wait=True or get() to retrieve the actual type after processing
+        source = Source(
+            id=source_id,
+            title=filename,
+            source_type="upload",  # Placeholder until processed
+            # source_type_code left as None - actual type determined by API
+        )
 
         if wait:
             return await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)

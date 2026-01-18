@@ -140,66 +140,68 @@ class TestSource:
         assert source.title == "Deep Source"
         assert source.url == "https://deep.example.com"
 
-    def test_from_api_response_youtube_url(self):
-        """Test that YouTube URLs are detected."""
+    def test_from_api_response_youtube_source(self):
+        """Test that YouTube sources are parsed with type code 9."""
         data = [
             [
                 [
                     ["src_yt"],
                     "YouTube Video",
-                    [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]],
+                    [None, None, None, None, 9, None, None, ["https://youtube.com/watch?v=abc"]],
                 ]
             ]
         ]
         source = Source.from_api_response(data)
 
         assert source.source_type == "youtube"
+        assert source.source_type_code == 9
 
-    def test_from_api_response_youtu_be_short_url(self):
-        """Test that youtu.be short URLs are detected."""
+    def test_from_api_response_web_page_source(self):
+        """Test that web page sources are parsed with type code 5."""
         data = [
             [
                 [
-                    ["src_yt2"],
-                    "Short Video",
-                    [None, None, None, None, None, None, None, ["https://youtu.be/abc"]],
+                    ["src_web"],
+                    "Web Article",
+                    [None, None, None, None, 5, None, None, ["https://example.com/article"]],
                 ]
             ]
         ]
         source = Source.from_api_response(data)
 
-        assert source.source_type == "youtube"
+        assert source.source_type == "web_page"
+        assert source.source_type_code == 5
 
     @pytest.mark.parametrize(
-        "url,expected_type",
+        "type_code,expected_type",
         [
-            # Valid YouTube URLs (should be detected as "youtube")
-            ("https://www.youtube.com/watch?v=abc", "youtube"),
-            ("https://m.youtube.com/watch?v=abc", "youtube"),
-            ("https://music.youtube.com/watch?v=abc", "youtube"),
-            ("https://youtu.be/abc", "youtube"),
-            ("https://YOUTUBE.COM/watch?v=abc", "youtube"),  # Case insensitive
-            ("https://YouTube.Com/watch?v=abc", "youtube"),  # Mixed case
-            # Invalid URLs - should NOT be detected as YouTube
-            ("https://evil.com/youtube.com/fake", "url"),  # youtube.com in path
-            ("https://youtube.com.fake.com/video", "url"),  # Subdomain of fake.com
-            ("https://notyoutube.com/video", "url"),  # Different domain
-            ("https://example.com?redirect=youtube.com", "url"),  # In query param
+            (1, "google_docs"),
+            (2, "google_other"),
+            (3, "pdf"),
+            (4, "pasted_text"),
+            (5, "web_page"),
+            (8, "generated_text"),
+            (9, "youtube"),
+            (10, "media"),
+            (11, "text"),
+            (13, "image"),
+            (14, "spreadsheet"),
         ],
     )
-    def test_from_api_response_youtube_url_detection(self, url, expected_type):
-        """Test YouTube URL detection handles edge cases correctly."""
+    def test_from_api_response_source_type_codes(self, type_code, expected_type):
+        """Test that source type codes are correctly mapped to type strings."""
         data = [
             [
                 [
                     ["src_test"],
-                    "Test Video",
-                    [None, None, None, None, None, None, None, [url]],
+                    "Test Source",
+                    [None, None, None, None, type_code, None, None, ["https://example.com"]],
                 ]
             ]
         ]
         source = Source.from_api_response(data)
         assert source.source_type == expected_type
+        assert source.source_type_code == type_code
 
     def test_from_api_response_empty_data_raises(self):
         """Test that empty data raises ValueError."""

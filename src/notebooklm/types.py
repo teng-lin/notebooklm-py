@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from ._url_utils import is_youtube_url
-
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
     AudioFormat,
@@ -337,8 +335,9 @@ class Source:
 
                     return cls(id=str(source_id), title=title, url=url, source_type="text")
 
-                # Deeply nested: continue with URL extraction
+                # Deeply nested: continue with URL and type code extraction
                 url = None
+                source_type_code = None
                 if len(entry) > 2 and isinstance(entry[2], list):
                     if len(entry[2]) > 7:
                         url_list = entry[2][7]
@@ -347,19 +346,19 @@ class Source:
                     if not url and len(entry[2]) > 0:
                         if isinstance(entry[2][0], str) and entry[2][0].startswith("http"):
                             url = entry[2][0]
+                    # Extract type code at entry[2][4] if available
+                    if len(entry[2]) > 4 and isinstance(entry[2][4], int):
+                        source_type_code = entry[2][4]
 
-                # Determine source type
-                source_type = "text"
-                if url:
-                    source_type = "youtube" if is_youtube_url(url) else "url"
-                elif title and (title.endswith(".pdf") or title.endswith(".txt")):
-                    source_type = "text_file"
+                # Derive source_type from type code (source of truth)
+                source_type = source_type_code_to_str(source_type_code)
 
                 return cls(
                     id=str(source_id),
                     title=title,
                     url=url,
                     source_type=source_type,
+                    source_type_code=source_type_code,
                 )
 
         # Simple flat format: [id, title] or [id, title, ...]
