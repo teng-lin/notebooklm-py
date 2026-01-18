@@ -522,3 +522,46 @@ class TestGenerateCommandsExist:
     def test_generate_slide_deck_command_exists(self, runner):
         result = runner.invoke(cli, ["generate", "slide-deck", "--help"])
         assert result.exit_code == 0
+
+
+# =============================================================================
+# LANGUAGE VALIDATION TESTS
+# =============================================================================
+
+
+class TestGenerateLanguageValidation:
+    def test_invalid_language_code_rejected(self, runner, mock_auth):
+        """Test that invalid language codes are rejected with helpful error."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["generate", "audio", "-n", "nb_123", "--language", "invalid_code"],
+                )
+
+        assert result.exit_code != 0
+        assert "Unknown language code: invalid_code" in result.output
+        assert "notebooklm language list" in result.output
+
+    def test_valid_language_code_accepted(self, runner, mock_auth):
+        """Test that valid language codes are accepted."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(
+                return_value={"artifact_id": "audio_123", "status": "processing"}
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["generate", "audio", "-n", "nb_123", "--language", "ja"]
+                )
+
+            assert result.exit_code == 0

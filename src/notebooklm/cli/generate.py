@@ -38,7 +38,7 @@ from .helpers import (
     require_notebook,
     with_client,
 )
-from .language import get_language
+from .language import SUPPORTED_LANGUAGES, get_language
 from .options import json_option
 
 DEFAULT_LANGUAGE = "en"
@@ -49,8 +49,15 @@ def resolve_language(language: str | None) -> str:
 
     Priority: CLI flag > config file > "en" default.
     Uses explicit None checks to avoid treating empty string as falsy.
+    Validates that the language code is supported.
     """
     if language is not None:
+        if language not in SUPPORTED_LANGUAGES:
+            raise click.BadParameter(
+                f"Unknown language code: {language}\n"
+                "Run 'notebooklm language list' to see supported codes.",
+                param_hint="'--language'",
+            )
         return language
     config_lang = get_language()
     if config_lang is not None:
