@@ -70,6 +70,7 @@ from .types import (
     SlideDeckLength,
     Source,
     # Exceptions
+    SourceAddError,
     SourceError,
     SourceFulltext,
     SourceNotFoundError,
@@ -106,6 +107,7 @@ __all__ = [
     "ChatMode",
     # Exceptions
     "SourceError",
+    "SourceAddError",
     "SourceProcessingError",
     "SourceTimeoutError",
     "SourceNotFoundError",

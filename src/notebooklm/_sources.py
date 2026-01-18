@@ -14,10 +14,11 @@ import httpx
 
 from ._core import ClientCore
 from ._url_utils import is_youtube_url
-from .rpc import UPLOAD_URL, RPCMethod
+from .rpc import UPLOAD_URL, RPCError, RPCMethod
 from .rpc.types import SourceStatus
 from .types import (
     Source,
+    SourceAddError,
     SourceFulltext,
     SourceNotFoundError,
     SourceProcessingError,
@@ -306,20 +307,25 @@ class SourcesAPI:
         """
         logger.debug("Adding URL source to notebook %s: %s", notebook_id, url[:80])
         video_id = self._extract_youtube_video_id(url)
-        if video_id:
-            result = await self._add_youtube_source(notebook_id, url)
-        else:
-            # Warn if URL looks like YouTube but we couldn't extract video ID
-            if is_youtube_url(url):
-                logger.warning(
-                    "URL appears to be YouTube but no video ID found: %s. "
-                    "Adding as web page - content may be incomplete. "
-                    "If this is a video URL, please report this as a bug.",
-                    url[:100],
-                )
-            result = await self._add_url_source(notebook_id, url)
+        try:
+            if video_id:
+                result = await self._add_youtube_source(notebook_id, url)
+            else:
+                # Warn if URL looks like YouTube but we couldn't extract video ID
+                if is_youtube_url(url):
+                    logger.warning(
+                        "URL appears to be YouTube but no video ID found: %s. "
+                        "Adding as web page - content may be incomplete. "
+                        "If this is a video URL, please report this as a bug.",
+                        url[:100],
+                    )
+                result = await self._add_url_source(notebook_id, url)
+        except RPCError as e:
+            # Wrap RPC error with more helpful context for users
+            raise SourceAddError(url, cause=e) from e
+
         if result is None:
-            raise ValueError(f"Failed to add URL source: API returned no data for {url}")
+            raise SourceAddError(url, message=f"API returned no data for URL: {url}")
         source = Source.from_api_response(result)
 
         if wait:
@@ -355,11 +361,22 @@ class SourcesAPI:
             None,
             None,
         ]
-        result = await self._core.rpc_call(
-            RPCMethod.ADD_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
+        try:
+            result = await self._core.rpc_call(
+                RPCMethod.ADD_SOURCE,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+            )
+        except RPCError as e:
+            raise SourceAddError(
+                title,
+                cause=e,
+                message=f"Failed to add text source '{title}': {e}",
+            ) from e
+
+        if result is None:
+            raise SourceAddError(title, message=f"API returned no data for text source: {title}")
+
         source = Source.from_api_response(result)
 
         if wait:

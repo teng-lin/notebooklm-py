@@ -251,6 +251,15 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
                 rpc_id=rpc_id,
                 found_ids=found_ids,
             )
+        # Log raw response details at debug level for troubleshooting
+        # Show first 500 chars of cleaned response
+        response_preview = cleaned[:500] if len(cleaned) > 500 else cleaned
+        logger.debug(
+            "Empty result for RPC ID '%s'. Chunks parsed: %d. Response preview: %s",
+            rpc_id,
+            len(chunks),
+            response_preview,
+        )
         raise RPCError(f"No result found for RPC ID: {rpc_id}", rpc_id=rpc_id)
 
     return result

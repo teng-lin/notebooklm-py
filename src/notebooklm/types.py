@@ -226,6 +226,36 @@ class SourceNotFoundError(SourceError):
         super().__init__(f"Source {source_id} not found")
 
 
+class SourceAddError(SourceError):
+    """Raised when adding a source fails.
+
+    Common causes include:
+    - URL is invalid or inaccessible
+    - Content is behind a paywall
+    - Source content is empty or could not be parsed
+    - Rate limiting or quota exceeded
+
+    Attributes:
+        url: The URL or identifier of the source that failed.
+        cause: The underlying exception that caused the failure.
+    """
+
+    def __init__(self, url: str, cause: Exception | None = None, message: str | None = None):
+        self.url = url
+        self.cause = cause
+        msg = message or (
+            f"Failed to add source: {url}\n"
+            "Possible causes:\n"
+            "  - URL is invalid or inaccessible\n"
+            "  - Content is behind a paywall or requires authentication\n"
+            "  - Page content is empty or could not be parsed\n"
+            "  - Rate limiting or quota exceeded"
+        )
+        super().__init__(msg)
+        if cause:
+            self.__cause__ = cause
+
+
 @dataclass
 class Source:
     """Represents a NotebookLM source.
