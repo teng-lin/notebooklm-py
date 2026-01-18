@@ -536,9 +536,7 @@ class TestGenerateLanguageValidation:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
-            with patch(
-                "notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock
-            ) as mock_fetch:
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
