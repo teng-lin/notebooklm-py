@@ -1,5 +1,6 @@
 """Tests for language CLI commands (list, get, set)."""
 
+import importlib
 import json
 from unittest.mock import patch
 
@@ -7,6 +8,10 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
+
+# Import the module explicitly to avoid confusion with the Click group
+# (notebooklm.cli exports 'language' as a Click Group, which shadows the module)
+language_module = importlib.import_module("notebooklm.cli.language")
 
 
 @pytest.fixture
@@ -20,8 +25,8 @@ def mock_config_file(tmp_path):
     config_file = tmp_path / "config.json"
     home_dir = tmp_path
     with (
-        patch("notebooklm.cli.language.get_config_path", return_value=config_file),
-        patch("notebooklm.cli.language.get_home_dir", return_value=home_dir),
+        patch.object(language_module, "get_config_path", return_value=config_file),
+        patch.object(language_module, "get_home_dir", return_value=home_dir),
     ):
         yield config_file
 
