@@ -295,20 +295,6 @@ class Source:
         """Check if source processing failed (status=ERROR)."""
         return self.status == SourceStatus.ERROR
 
-    @property
-    def type_enum(self) -> "SourceType | None":
-        """Get the SourceType enum value if source_type_code is known.
-
-        Returns:
-            SourceType enum member, or None if type code is unknown.
-        """
-        if self.source_type_code is None:
-            return None
-        try:
-            return SourceType(self.source_type_code)
-        except ValueError:
-            return None
-
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> "Source":
         """Parse source data from various API response formats.

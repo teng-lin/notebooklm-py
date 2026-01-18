@@ -887,10 +887,10 @@ for src in sources:
         print(f"PDF: {src.title}")
     elif src.source_type_code == SourceType.MEDIA:
         print(f"Audio/Video: {src.title}")
-
-    # Or use the type_enum property
-    if src.type_enum == SourceType.IMAGE:
+    elif src.source_type_code == SourceType.IMAGE:
         print(f"Image (OCR'd): {src.title}")
+    elif src.source_type_code is None:
+        print(f"Unknown type: {src.title}")
 ```
 
 ### Chat Configuration
