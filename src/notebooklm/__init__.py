@@ -41,7 +41,15 @@ from .auth import DEFAULT_STORAGE_PATH, AuthTokens
 from .client import NotebookLMClient
 
 # Public API: RPC errors (needed for exception handling)
-from .rpc import RPCError
+from .rpc import (
+    AuthError,
+    ClientError,
+    NetworkError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+    TimeoutError,
+)
 
 # Public API: Types and dataclasses
 from .types import (
@@ -113,6 +121,12 @@ __all__ = [
     "SourceTimeoutError",
     "SourceNotFoundError",
     "RPCError",
+    "AuthError",
+    "NetworkError",
+    "TimeoutError",
+    "RateLimitError",
+    "ServerError",
+    "ClientError",
     # Enums
     "StudioContentType",
     "AudioFormat",

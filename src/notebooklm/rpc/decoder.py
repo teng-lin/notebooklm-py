@@ -32,6 +32,116 @@ class AuthError(RPCError):
     """
 
 
+class NetworkError(RPCError):
+    """Raised when RPC call fails due to network issues.
+
+    This includes connection failures, DNS errors, and other transport-level problems.
+    These errors are typically transient and may succeed on retry.
+
+    Attributes:
+        rpc_id: The RPC method ID that failed.
+        original_error: The underlying network exception.
+    """
+
+    def __init__(
+        self, message: str, rpc_id: str | None = None, original_error: Exception | None = None
+    ):
+        super().__init__(message, rpc_id=rpc_id)
+        self.original_error = original_error
+
+
+class TimeoutError(NetworkError):
+    """Raised when RPC call times out.
+
+    Indicates the request took too long to complete. May succeed with a longer timeout
+    or during periods of lower API load.
+
+    Attributes:
+        rpc_id: The RPC method ID that timed out.
+        timeout_seconds: The timeout duration that was exceeded.
+        original_error: The underlying timeout exception.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        rpc_id: str | None = None,
+        timeout_seconds: float | None = None,
+        original_error: Exception | None = None,
+    ):
+        super().__init__(message, rpc_id=rpc_id, original_error=original_error)
+        self.timeout_seconds = timeout_seconds
+
+
+class RateLimitError(RPCError):
+    """Raised when API rate limit is exceeded.
+
+    The API has rejected the request due to too many requests in a time window.
+    Requests should be retried after a delay.
+
+    Attributes:
+        rpc_id: The RPC method ID that was rate limited.
+        retry_after: Suggested seconds to wait before retrying (if available).
+        code: Error code from API response.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        rpc_id: str | None = None,
+        retry_after: int | None = None,
+        code: Any | None = None,
+    ):
+        super().__init__(message, rpc_id=rpc_id, code=code)
+        self.retry_after = retry_after
+
+
+class ServerError(RPCError):
+    """Raised when API returns a 5xx server error.
+
+    Indicates a problem on Google's servers. These are typically transient
+    and may succeed on retry with exponential backoff.
+
+    Attributes:
+        rpc_id: The RPC method ID that failed.
+        status_code: HTTP status code (500-599).
+        code: Error code from response.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        rpc_id: str | None = None,
+        status_code: int | None = None,
+        code: Any | None = None,
+    ):
+        super().__init__(message, rpc_id=rpc_id, code=code)
+        self.status_code = status_code
+
+
+class ClientError(RPCError):
+    """Raised when API returns a 4xx client error.
+
+    Indicates a problem with the request itself (invalid parameters, malformed data, etc.).
+    These errors typically should not be retried without fixing the request.
+
+    Attributes:
+        rpc_id: The RPC method ID that failed.
+        status_code: HTTP status code (400-499, excluding 401/403).
+        code: Error code from response.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        rpc_id: str | None = None,
+        status_code: int | None = None,
+        code: Any | None = None,
+    ):
+        super().__init__(message, rpc_id=rpc_id, code=code)
+        self.status_code = status_code
+
+
 def strip_anti_xssi(response: str) -> str:
     """
     Remove anti-XSSI prefix from response.
@@ -191,8 +301,8 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
                 # This indicates rate limiting, quota exceeded, or other API restrictions
                 if result_data is None and len(item) > 5 and item[5] is not None:
                     if _contains_user_displayable_error(item[5]):
-                        raise RPCError(
-                            "Request rejected by API - may indicate rate limiting or quota exceeded",
+                        raise RateLimitError(
+                            "API rate limit or quota exceeded. Please wait before retrying.",
                             rpc_id=rpc_id,
                             code="USER_DISPLAYABLE_ERROR",
                         )

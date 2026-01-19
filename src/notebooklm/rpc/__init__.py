@@ -2,7 +2,12 @@
 
 from .decoder import (
     AuthError,
+    ClientError,
+    NetworkError,
+    RateLimitError,
     RPCError,
+    ServerError,
+    TimeoutError,
     collect_rpc_ids,
     decode_response,
     extract_rpc_result,
@@ -65,6 +70,12 @@ __all__ = [
     "extract_rpc_result",
     "collect_rpc_ids",
     "decode_response",
+    # Exceptions
     "RPCError",
     "AuthError",
+    "NetworkError",
+    "TimeoutError",
+    "RateLimitError",
+    "ServerError",
+    "ClientError",
 ]
