@@ -72,22 +72,12 @@ def get_error_message_for_code(code: int | None) -> tuple[str, bool]:
     if code in _ERROR_CODE_MESSAGES:
         return _ERROR_CODE_MESSAGES[code]
 
-    # Unknown code - provide generic guidance
+    # Unknown code - provide generic guidance based on HTTP status code ranges
     if 400 <= code < 500:
-        return (
-            f"Client error {code}. Check your request parameters.",
-            False,
-        )
-    elif 500 <= code < 600:
-        return (
-            f"Server error {code}. This is usually temporary - try again later.",
-            True,
-        )
-    else:
-        return (
-            f"Error code: {code}",
-            False,
-        )
+        return (f"Client error {code}. Check your request parameters.", False)
+    if 500 <= code < 600:
+        return (f"Server error {code}. This is usually temporary - try again later.", True)
+    return (f"Error code: {code}", False)
 
 
 class RPCError(Exception):
@@ -141,11 +131,13 @@ class NetworkError(RPCError):
         self.original_error = original_error
 
 
-class TimeoutError(NetworkError):
+class RPCTimeoutError(NetworkError):
     """Raised when RPC call times out.
 
     Indicates the request took too long to complete. May succeed with a longer timeout
     or during periods of lower API load.
+
+    Note: Named RPCTimeoutError to avoid shadowing Python's built-in TimeoutError.
 
     Attributes:
         rpc_id: The RPC method ID that timed out.
@@ -269,8 +261,12 @@ def parse_chunked_response(response: str) -> list[Any]:
     Returns:
         List of parsed JSON chunks
 
+    Raises:
+        RPCError: If more than 10% of chunks are malformed, indicating API issues.
+
     Note:
-        Malformed chunks are skipped with a warning logged.
+        Malformed chunks are skipped with a warning logged. If the error rate
+        exceeds 10%, raises RPCError as this likely indicates API changes.
     """
     if not response or not response.strip():
         return []
@@ -325,12 +321,20 @@ def parse_chunked_response(response: str) -> list[Any]:
                 )
             i += 1
 
-    # Summary warning if chunks were skipped
+    # Fail if error rate is too high (indicates API problems)
     if skipped_count > 0:
+        error_rate = skipped_count / len(lines) if lines else 0
+        if error_rate > 0.1:  # More than 10% malformed
+            raise RPCError(
+                f"Response parsing failed: {skipped_count} of {len(lines)} chunks malformed. "
+                f"This may indicate API changes or data corruption.",
+                raw_response_preview=response[:500],
+            )
+        # Non-critical but warn user results may be incomplete
         logger.warning(
-            "Skipped %d malformed chunk(s) out of %d total lines. Response may be incomplete.",
+            "Parsed response but skipped %d malformed chunks (%d%%). Results may be incomplete.",
             skipped_count,
-            len(lines),
+            int(error_rate * 100),
         )
 
     return chunks

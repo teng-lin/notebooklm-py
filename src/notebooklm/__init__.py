@@ -47,8 +47,8 @@ from .rpc import (
     NetworkError,
     RateLimitError,
     RPCError,
+    RPCTimeoutError,
     ServerError,
-    TimeoutError,
 )
 
 # Public API: Types and dataclasses
@@ -133,7 +133,7 @@ __all__ = [
     "RPCError",
     "AuthError",
     "NetworkError",
-    "TimeoutError",
+    "RPCTimeoutError",
     "RateLimitError",
     "ServerError",
     "ClientError",
