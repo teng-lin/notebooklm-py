@@ -323,6 +323,18 @@ class ArtifactNotReadyError(ArtifactError):
         super().__init__(msg)
 
 
+def _build_artifact_error_message(
+    action: str, artifact_type: str, artifact_id: str | None, details: str | None
+) -> str:
+    """Build a consistent error message for artifact operations."""
+    msg = f"Failed to {action} {artifact_type} artifact"
+    if artifact_id:
+        msg += f" {artifact_id}"
+    if details:
+        msg += f": {details}"
+    return msg
+
+
 class ArtifactParseError(ArtifactError):
     """Raised when artifact data cannot be parsed or has invalid structure.
 
@@ -347,14 +359,9 @@ class ArtifactParseError(ArtifactError):
         self.artifact_id = artifact_id
         self.details = details
         self.cause = cause
-
-        msg = f"Failed to parse {artifact_type} artifact"
-        if artifact_id:
-            msg += f" {artifact_id}"
-        if details:
-            msg += f": {details}"
-
-        super().__init__(msg)
+        super().__init__(
+            _build_artifact_error_message("parse", artifact_type, artifact_id, details)
+        )
 
 
 class ArtifactDownloadError(ArtifactError):
@@ -381,14 +388,9 @@ class ArtifactDownloadError(ArtifactError):
         self.artifact_id = artifact_id
         self.details = details
         self.cause = cause
-
-        msg = f"Failed to download {artifact_type} artifact"
-        if artifact_id:
-            msg += f" {artifact_id}"
-        if details:
-            msg += f": {details}"
-
-        super().__init__(msg)
+        super().__init__(
+            _build_artifact_error_message("download", artifact_type, artifact_id, details)
+        )
 
 
 @dataclass
