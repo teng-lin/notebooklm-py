@@ -54,6 +54,11 @@ from .rpc import (
 # Public API: Types and dataclasses
 from .types import (
     Artifact,
+    ArtifactDownloadError,
+    ArtifactError,
+    ArtifactNotFoundError,
+    ArtifactNotReadyError,
+    ArtifactParseError,
     AskResult,
     AudioFormat,
     AudioLength,
@@ -120,6 +125,11 @@ __all__ = [
     "SourceProcessingError",
     "SourceTimeoutError",
     "SourceNotFoundError",
+    "ArtifactError",
+    "ArtifactNotFoundError",
+    "ArtifactNotReadyError",
+    "ArtifactParseError",
+    "ArtifactDownloadError",
     "RPCError",
     "AuthError",
     "NetworkError",

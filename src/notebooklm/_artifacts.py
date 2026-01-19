@@ -38,7 +38,15 @@ from .rpc import (
     VideoStyle,
     artifact_status_to_str,
 )
-from .types import Artifact, GenerationStatus, ReportSuggestion
+from .types import (
+    Artifact,
+    ArtifactDownloadError,
+    ArtifactNotFoundError,
+    ArtifactNotReadyError,
+    ArtifactParseError,
+    GenerationStatus,
+    ReportSuggestion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +72,10 @@ def _extract_app_data(html_content: str) -> dict:
     """
     match = re.search(r'data-app-data="([^"]+)"', html_content)
     if not match:
-        raise ValueError("No data-app-data attribute found in HTML")
+        raise ArtifactParseError(
+            "quiz/flashcard",
+            details="No data-app-data attribute found in HTML",
+        )
 
     encoded_json = match.group(1)
     decoded_json = html.unescape(encoded_json)
@@ -145,13 +156,13 @@ def _parse_data_table(raw_data: list) -> tuple[list[str], list[list[str]]]:
         and rows is a list of row data (each row is a list of cell strings).
 
     Raises:
-        ValueError: If the data structure cannot be parsed or is empty.
+        ArtifactParseError: If the data structure cannot be parsed or is empty.
     """
     try:
         # Navigate through nested wrappers to reach the rows array
         rows_array = raw_data[0][0][0][0][4][2]
         if not rows_array:
-            raise ValueError("Empty data table.")
+            raise ArtifactParseError("data_table", details="Empty data table")
 
         headers: list[str] = []
         rows: list[list[str]] = []
@@ -174,12 +185,19 @@ def _parse_data_table(raw_data: list) -> tuple[list[str], list[list[str]]]:
 
         # Validate we extracted usable data
         if not headers:
-            raise ValueError("Failed to extract headers from data table.")
+            raise ArtifactParseError(
+                "data_table",
+                details="Failed to extract headers from data table",
+            )
 
         return headers, rows
 
     except (IndexError, TypeError, KeyError) as e:
-        raise ValueError(f"Failed to parse data table structure: {e}") from e
+        raise ArtifactParseError(
+            "data_table",
+            details=f"Failed to parse data table structure: {e}",
+            cause=e,
+        ) from e
 
 
 class ArtifactsAPI:
@@ -939,22 +957,30 @@ class ArtifactsAPI:
         if artifact_id:
             audio_art = next((a for a in audio_candidates if a[0] == artifact_id), None)
             if not audio_art:
-                raise ValueError(f"Audio artifact {artifact_id} not found or not ready.")
+                raise ArtifactNotReadyError("audio", artifact_id=artifact_id)
         else:
             audio_art = audio_candidates[0] if audio_candidates else None
 
         if not audio_art:
-            raise ValueError("No completed audio overview found.")
+            raise ArtifactNotReadyError("audio")
 
         # Extract URL from metadata[6][5]
         try:
             metadata = audio_art[6]
             if not isinstance(metadata, list) or len(metadata) <= 5:
-                raise ValueError("Invalid audio metadata structure.")
+                raise ArtifactParseError(
+                    "audio",
+                    artifact_id=artifact_id,
+                    details="Invalid audio metadata structure",
+                )
 
             media_list = metadata[5]
             if not isinstance(media_list, list) or len(media_list) == 0:
-                raise ValueError("No media URLs found.")
+                raise ArtifactParseError(
+                    "audio",
+                    artifact_id=artifact_id,
+                    details="No media URLs found",
+                )
 
             url = None
             for item in media_list:
@@ -966,12 +992,21 @@ class ArtifactsAPI:
                 url = media_list[0][0]
 
             if not url:
-                raise ValueError("Could not extract download URL.")
+                raise ArtifactDownloadError(
+                    "audio",
+                    artifact_id=artifact_id,
+                    details="Could not extract download URL",
+                )
 
             return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse audio artifact structure: {e}") from e
+            raise ArtifactParseError(
+                "audio",
+                artifact_id=artifact_id,
+                details=f"Failed to parse audio artifact structure: {e}",
+                cause=e,
+            ) from e
 
     async def download_video(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -1001,21 +1036,21 @@ class ArtifactsAPI:
         if artifact_id:
             video_art = next((v for v in video_candidates if v[0] == artifact_id), None)
             if not video_art:
-                raise ValueError(f"Video artifact {artifact_id} not found or not ready.")
+                raise ArtifactNotReadyError("video", artifact_id=artifact_id)
         else:
             video_art = video_candidates[0] if video_candidates else None
 
         if not video_art:
-            raise ValueError("No completed video overview found.")
+            raise ArtifactNotReadyError("video_overview")
 
         # Extract URL from metadata[8]
         try:
             if len(video_art) <= 8:
-                raise ValueError("Invalid video artifact structure.")
+                raise ArtifactParseError("video_artifact", details="Invalid structure")
 
             metadata = video_art[8]
             if not isinstance(metadata, list):
-                raise ValueError("Invalid video metadata structure.")
+                raise ArtifactParseError("video_metadata", details="Invalid structure")
 
             media_list = None
             for item in metadata:
@@ -1031,7 +1066,7 @@ class ArtifactsAPI:
                     break
 
             if not media_list:
-                raise ValueError("No media URLs found.")
+                raise ArtifactParseError("media", details="No media URLs found")
 
             url = None
             for item in media_list:
@@ -1044,12 +1079,14 @@ class ArtifactsAPI:
                 url = media_list[0][0]
 
             if not url:
-                raise ValueError("Could not extract download URL.")
+                raise ArtifactDownloadError("media", details="Could not extract download URL")
 
             return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse video artifact structure: {e}") from e
+            raise ArtifactParseError(
+                "video_artifact", details=f"Failed to parse structure: {e}", cause=e
+            ) from e
 
     async def download_infographic(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -1079,12 +1116,12 @@ class ArtifactsAPI:
         if artifact_id:
             info_art = next((i for i in info_candidates if i[0] == artifact_id), None)
             if not info_art:
-                raise ValueError(f"Infographic {artifact_id} not found or not ready.")
+                raise ArtifactNotReadyError("infographic", artifact_id=artifact_id)
         else:
             info_art = info_candidates[0] if info_candidates else None
 
         if not info_art:
-            raise ValueError("No completed infographic found.")
+            raise ArtifactNotReadyError("infographic")
 
         # Extract URL from metadata
         try:
@@ -1105,13 +1142,15 @@ class ArtifactsAPI:
                                 break
 
             if not metadata:
-                raise ValueError("Could not find infographic metadata.")
+                raise ArtifactParseError("infographic", details="Could not find metadata")
 
             url = metadata[2][0][1][0]
             return await self._download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse infographic structure: {e}") from e
+            raise ArtifactParseError(
+                "infographic", details=f"Failed to parse structure: {e}", cause=e
+            ) from e
 
     async def download_slide_deck(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -1141,31 +1180,33 @@ class ArtifactsAPI:
         if artifact_id:
             slide_art = next((s for s in slide_candidates if s[0] == artifact_id), None)
             if not slide_art:
-                raise ValueError(f"Slide deck {artifact_id} not found or not ready.")
+                raise ArtifactNotReadyError("slide_deck", artifact_id=artifact_id)
         else:
             slide_art = slide_candidates[0] if slide_candidates else None
 
         if not slide_art:
-            raise ValueError("No completed slide deck found.")
+            raise ArtifactNotReadyError("slide_deck")
 
         # Extract PDF URL from metadata at index 16, position 3
         # Structure: artifact[16] = [config, title, slides_list, pdf_url]
         try:
             if len(slide_art) <= 16:
-                raise ValueError("Invalid slide deck artifact structure.")
+                raise ArtifactParseError("slide_deck_artifact", details="Invalid structure")
 
             metadata = slide_art[16]
             if not isinstance(metadata, list) or len(metadata) < 4:
-                raise ValueError("Invalid slide deck metadata structure.")
+                raise ArtifactParseError("slide_deck_metadata", details="Invalid structure")
 
             pdf_url = metadata[3]
             if not isinstance(pdf_url, str) or not pdf_url.startswith("http"):
-                raise ValueError("Could not find PDF download URL.")
+                raise ArtifactDownloadError("slide_deck", details="Could not find PDF download URL")
 
             return await self._download_url(pdf_url, output_path)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse slide deck structure: {e}") from e
+            raise ArtifactParseError(
+                "slide_deck", details=f"Failed to parse structure: {e}", cause=e
+            ) from e
 
     async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
         """Fetch artifact HTML content for quiz/flashcard types."""
@@ -1214,7 +1255,6 @@ class ArtifactsAPI:
 
         # Type-specific configuration
         is_quiz = artifact_type == "quiz"
-        type_label = "quiz" if is_quiz else "flashcard deck"
         default_title = "Untitled Quiz" if is_quiz else "Untitled Flashcards"
 
         # Fetch and filter artifacts
@@ -1225,7 +1265,7 @@ class ArtifactsAPI:
         )
         completed = [a for a in artifacts if a.is_completed]
         if not completed:
-            raise ValueError(f"No completed {type_label} found.")
+            raise ArtifactNotReadyError(artifact_type)
 
         # Sort by creation date to ensure we get the latest by default
         completed.sort(key=lambda a: a.created_at.timestamp() if a.created_at else 0, reverse=True)
@@ -1234,19 +1274,21 @@ class ArtifactsAPI:
         if artifact_id:
             artifact = next((a for a in completed if a.id == artifact_id), None)
             if not artifact:
-                raise ValueError(f"{artifact_type.capitalize()} artifact {artifact_id} not found.")
+                raise ArtifactNotFoundError(artifact_id, artifact_type=artifact_type)
         else:
             artifact = completed[0]
 
         # Fetch and parse HTML content
         html_content = await self._get_artifact_content(notebook_id, artifact.id)
         if not html_content:
-            raise ValueError(f"Failed to fetch {type_label} content.")
+            raise ArtifactDownloadError(artifact_type, details="Failed to fetch content")
 
         try:
             app_data = _extract_app_data(html_content)
         except (ValueError, json.JSONDecodeError) as e:
-            raise ValueError(f"Failed to parse {type_label} content: {e}") from e
+            raise ArtifactParseError(
+                artifact_type, details=f"Failed to parse content: {e}", cause=e
+            ) from e
 
         # Format output
         title = artifact.title or default_title
@@ -1338,7 +1380,7 @@ class ArtifactsAPI:
             )
 
             if not isinstance(markdown_content, str):
-                raise ValueError("Invalid report content structure.")
+                raise ArtifactParseError("report_content", details="Invalid structure")
 
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -1346,7 +1388,9 @@ class ArtifactsAPI:
             return str(output)
 
         except (IndexError, TypeError) as e:
-            raise ValueError(f"Failed to parse report structure: {e}") from e
+            raise ArtifactParseError(
+                "report", details=f"Failed to parse structure: {e}", cause=e
+            ) from e
 
     async def download_mind_map(
         self,
@@ -1368,19 +1412,19 @@ class ArtifactsAPI:
         """
         mind_maps = await self._notes.list_mind_maps(notebook_id)
         if not mind_maps:
-            raise ValueError("No mind maps found.")
+            raise ArtifactNotReadyError("mind_map")
 
         if artifact_id:
             mind_map = next((mm for mm in mind_maps if mm[0] == artifact_id), None)
             if not mind_map:
-                raise ValueError(f"Mind map {artifact_id} not found.")
+                raise ArtifactNotFoundError(artifact_id, artifact_type="mind_map")
         else:
             mind_map = mind_maps[0]
 
         try:
             json_string = mind_map[1][1]
             if not isinstance(json_string, str):
-                raise ValueError("Invalid mind map content structure.")
+                raise ArtifactParseError("mind_map_content", details="Invalid structure")
 
             json_data = json.loads(json_string)
 
@@ -1390,7 +1434,9 @@ class ArtifactsAPI:
             return str(output)
 
         except (IndexError, TypeError, json.JSONDecodeError) as e:
-            raise ValueError(f"Failed to parse mind map structure: {e}") from e
+            raise ArtifactParseError(
+                "mind_map", details=f"Failed to parse structure: {e}", cause=e
+            ) from e
 
     async def download_data_table(
         self,
@@ -1436,7 +1482,9 @@ class ArtifactsAPI:
             return str(output)
 
         except (IndexError, TypeError, ValueError) as e:
-            raise ValueError(f"Failed to parse data table structure: {e}") from e
+            raise ArtifactParseError(
+                "data_table", details=f"Failed to parse structure: {e}", cause=e
+            ) from e
 
     async def download_quiz(
         self,
@@ -1855,11 +1903,13 @@ class ArtifactsAPI:
         if artifact_id:
             artifact = next((a for a in candidates if a[0] == artifact_id), None)
             if not artifact:
-                raise ValueError(f"{type_name} {artifact_id} not found or not ready.")
+                raise ArtifactNotReadyError(
+                    type_name.lower().replace(" ", "_"), artifact_id=artifact_id
+                )
             return artifact
 
         if not candidates:
-            raise ValueError(f"No completed {type_name_lower} found.")
+            raise ArtifactNotReadyError(type_name_lower)
 
         # Sort by creation timestamp (descending) to get the latest.
         # Timestamp is at index 15, position 0.
@@ -1898,7 +1948,9 @@ class ArtifactsAPI:
 
                     content_type = response.headers.get("content-type", "")
                     if "text/html" in content_type:
-                        raise ValueError("Received HTML instead of media file")
+                        raise ArtifactDownloadError(
+                            "media", details="Received HTML instead of media file"
+                        )
 
                     output_file = Path(output_path)
                     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1940,9 +1992,10 @@ class ArtifactsAPI:
 
             content_type = response.headers.get("content-type", "")
             if "text/html" in content_type:
-                raise ValueError(
-                    "Download failed: received HTML instead of media file. "
-                    "Authentication may have expired. Run 'notebooklm login'."
+                raise ArtifactDownloadError(
+                    "media",
+                    details="Download failed: received HTML instead of media file. "
+                    "Authentication may have expired. Run 'notebooklm login'.",
                 )
 
             output_file.write_bytes(response.content)
