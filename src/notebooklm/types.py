@@ -268,6 +268,23 @@ class Source:
         source_type_code: Integer type code from SourceType enum (if known).
         created_at: When the source was added.
         status: Processing status (1=processing, 2=ready, 3=error).
+
+    Breaking changes in v0.3.0:
+        source_type string values changed for consistency with SourceType enum:
+        - "url" → "web_page"
+        - "generated" → "markdown"
+        - "text" → "docx"
+        - "spreadsheet" → "google_spreadsheet"
+        - Added: "csv"
+
+        Migration: Use source_type_code (int) for stable comparisons instead of
+        source_type (str). Example:
+            # Old (breaks in 0.3.0):
+            if source.source_type == "url": ...
+
+            # New (stable API):
+            from notebooklm.rpc.types import SourceType
+            if source.source_type_code == SourceType.WEB_PAGE: ...
     """
 
     id: str

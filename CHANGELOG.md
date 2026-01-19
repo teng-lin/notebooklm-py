@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-18
+
+### Breaking Changes
+- **Source type string values** - `Source.source_type` string values have changed for consistency with SourceType enum:
+  - `"url"` → `"web_page"`
+  - `"generated"` → `"markdown"`
+  - `"text"` → `"docx"`
+  - `"spreadsheet"` → `"google_spreadsheet"`
+  - Added: `"csv"`
+
+  **Migration**: Use `source_type_code` (int) for stable comparisons instead of `source_type` (str):
+  ```python
+  # Old (breaks in 0.3.0):
+  if source.source_type == "url": ...
+
+  # New (stable API):
+  from notebooklm.rpc.types import SourceType
+  if source.source_type_code == SourceType.WEB_PAGE: ...
+  ```
+
+### Added
+- **SourceType enum expansion** - New type codes verified via E2E testing:
+  - `DOCX = 11` - DOCX document uploads (renamed from TEXT)
+  - `MARKDOWN = 8` - Markdown uploads, notes converted to sources (renamed from GENERATED_TEXT)
+  - `CSV = 16` - CSV file uploads
+  - `GOOGLE_SPREADSHEET = 14` - Google Sheets sources
+- **SourceStatus.PREPARING** - New status (5) for sources in upload/preparation phase
+- **source_type_code field** - Sources now include integer type code from SourceType enum for stable comparisons
+- **E2E test coverage** - Added file upload tests for CSV, MP3, MP4, DOCX, JPG, Markdown with type verification
+
+### Changed
+- **Source type detection** - Use API-provided type codes as source of truth instead of URL heuristics
+- **CLI file handling** - Simplified to always use `add_file()` for proper type detection
+- **Default source_type** - Changed from `"text"` to `"unknown"` for sources without type codes
+
 ## [0.2.1] - 2026-01-15
 
 ### Added
