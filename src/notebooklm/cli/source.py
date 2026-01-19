@@ -89,6 +89,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                             "id": src.id,
                             "title": src.title,
                             "type": src.source_type,
+                            "type_code": src.source_type_code,
                             "url": src.url,
                             "status": source_status_to_str(src.status),
                             "status_id": src.status,
@@ -172,16 +173,8 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
             # Security: Ensure it's a regular file (not a symlink to sensitive file)
             if not file_path.is_file():
                 raise click.ClickException(f"Not a regular file: {content}")
-            suffix = file_path.suffix.lower()
-            if suffix in (".txt", ".md", ".markdown", ".rst", ".text"):
-                detected_type = "text"
-                try:
-                    file_content = file_path.read_text(encoding="utf-8")
-                except UnicodeDecodeError:
-                    raise click.ClickException(f"File must be UTF-8 encoded: {content}") from None
-                file_title = title or file_path.name
-            else:
-                detected_type = "file"
+            # All files use add_file() for proper type detection
+            detected_type = "file"
         else:
             detected_type = "text"
             file_title = title or "Pasted Text"
@@ -203,6 +196,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                         "id": src.id,
                         "title": src.title,
                         "type": src.source_type,
+                        "type_code": src.source_type_code,
                         "url": src.url,
                     }
                 }

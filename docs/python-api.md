@@ -680,7 +680,8 @@ class Source:
     id: str
     title: Optional[str]
     url: Optional[str]
-    source_type: str  # "url", "youtube", "text", "pdf", "upload", etc.
+    source_type: str  # "web_page", "youtube", "docx", "pdf", "pasted_text", "markdown", etc.
+    source_type_code: Optional[int]  # Integer code from SourceType enum (recommended for stable comparisons)
     created_at: Optional[datetime]
 ```
 
@@ -745,7 +746,7 @@ class SourceFulltext:
     source_id: str                     # UUID of the source
     title: str                         # Source title
     content: str                       # Full indexed text content
-    source_type: int | None            # Source type code
+    source_type: int | None            # Source type code (use SourceType enum)
     url: str | None                    # Original URL (if applicable)
     char_count: int                    # Character count
 
@@ -851,6 +852,48 @@ class SlideDeckLength(Enum):
 class ExportType(Enum):
     DOCS = 1    # Export to Google Docs
     SHEETS = 2  # Export to Google Sheets
+```
+
+### Sources
+
+```python
+class SourceType(Enum):
+    """Source type codes used by NotebookLM API."""
+    GOOGLE_DOCS = 1          # Google Docs document
+    GOOGLE_OTHER = 2         # Google Slides or other workspace files
+    PDF = 3                  # PDF document uploads
+    PASTED_TEXT = 4          # Pasted text content, TXT file uploads
+    WEB_PAGE = 5             # Web URL sources
+    MARKDOWN = 8             # Markdown uploads, note converted to source
+    YOUTUBE = 9              # YouTube video transcript
+    MEDIA = 10               # Audio/video files (M4A, MP4, MP3, etc.) - transcribed
+    DOCX = 11                # DOCX document uploads
+    IMAGE = 13               # Image files (JPG, PNG, etc.) - OCR'd
+    GOOGLE_SPREADSHEET = 14  # Google Sheets
+    CSV = 16                 # CSV file uploads
+
+class SourceStatus(Enum):
+    PROCESSING = 1  # Source is being processed (indexing content)
+    READY = 2       # Source is ready for use
+    ERROR = 3       # Source processing failed
+    PREPARING = 5   # Source is being prepared/uploaded (pre-processing stage)
+```
+
+**Usage Example:**
+```python
+from notebooklm import SourceType
+
+# List sources and check type codes
+sources = await client.sources.list(nb_id)
+for src in sources:
+    if src.source_type_code == SourceType.PDF:
+        print(f"PDF: {src.title}")
+    elif src.source_type_code == SourceType.MEDIA:
+        print(f"Audio/Video: {src.title}")
+    elif src.source_type_code == SourceType.IMAGE:
+        print(f"Image (OCR'd): {src.title}")
+    elif src.source_type_code is None:
+        print(f"Unknown type: {src.title}")
 ```
 
 ### Chat Configuration

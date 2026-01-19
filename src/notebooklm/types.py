@@ -12,8 +12,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from ._url_utils import is_youtube_url
-
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
     AudioFormat,
@@ -30,11 +28,13 @@ from .rpc.types import (
     SlideDeckFormat,
     SlideDeckLength,
     SourceStatus,
+    SourceType,
     StudioContentType,
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
     source_status_to_str,
+    source_type_code_to_str,
 )
 
 __all__ = [
@@ -75,9 +75,11 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
+    "SourceType",
     # Helper functions
     "artifact_status_to_str",
     "source_status_to_str",
+    "source_type_code_to_str",
 ]
 
 
@@ -262,15 +264,34 @@ class Source:
         id: Unique source identifier.
         title: Source title (may be URL if not yet processed).
         url: Original URL for web/YouTube sources.
-        source_type: Type of source (text, url, youtube, pdf, upload, etc.).
+        source_type: Type of source as string (for display/backward compat).
+        source_type_code: Integer type code from SourceType enum (if known).
         created_at: When the source was added.
         status: Processing status (1=processing, 2=ready, 3=error).
+
+    Breaking changes in v0.3.0:
+        source_type string values changed for consistency with SourceType enum:
+        - "url" → "web_page"
+        - "generated" → "markdown"
+        - "text" → "docx"
+        - "spreadsheet" → "google_spreadsheet"
+        - Added: "csv"
+
+        Migration: Use source_type_code (int) for stable comparisons instead of
+        source_type (str). Example:
+            # Old (breaks in 0.3.0):
+            if source.source_type == "url": ...
+
+            # New (stable API):
+            from notebooklm.rpc.types import SourceType
+            if source.source_type_code == SourceType.WEB_PAGE: ...
     """
 
     id: str
     title: str | None = None
     url: str | None = None
-    source_type: str = "text"
+    source_type: str = "unknown"
+    source_type_code: int | None = None
     created_at: datetime | None = None
     status: int = SourceStatus.READY  # Default to READY (2)
 
@@ -329,10 +350,11 @@ class Source:
                         if len(entry[2]) > 7 and isinstance(entry[2][7], list):
                             url = entry[2][7][0] if entry[2][7] else None
 
-                    return cls(id=str(source_id), title=title, url=url, source_type="text")
+                    return cls(id=str(source_id), title=title, url=url, source_type="unknown")
 
-                # Deeply nested: continue with URL extraction
+                # Deeply nested: continue with URL and type code extraction
                 url = None
+                source_type_code = None
                 if len(entry) > 2 and isinstance(entry[2], list):
                     if len(entry[2]) > 7:
                         url_list = entry[2][7]
@@ -341,25 +363,25 @@ class Source:
                     if not url and len(entry[2]) > 0:
                         if isinstance(entry[2][0], str) and entry[2][0].startswith("http"):
                             url = entry[2][0]
+                    # Extract type code at entry[2][4] if available
+                    if len(entry[2]) > 4 and isinstance(entry[2][4], int):
+                        source_type_code = entry[2][4]
 
-                # Determine source type
-                source_type = "text"
-                if url:
-                    source_type = "youtube" if is_youtube_url(url) else "url"
-                elif title and (title.endswith(".pdf") or title.endswith(".txt")):
-                    source_type = "text_file"
+                # Derive source_type from type code (source of truth)
+                source_type = source_type_code_to_str(source_type_code)
 
                 return cls(
                     id=str(source_id),
                     title=title,
                     url=url,
                     source_type=source_type,
+                    source_type_code=source_type_code,
                 )
 
         # Simple flat format: [id, title] or [id, title, ...]
         source_id = data[0] if len(data) > 0 else ""
         title = data[1] if len(data) > 1 else None
-        return cls(id=str(source_id), title=title, source_type="text")
+        return cls(id=str(source_id), title=title, source_type="unknown")
 
 
 @dataclass
@@ -373,7 +395,9 @@ class SourceFulltext:
         source_id: The source UUID.
         title: Source title.
         content: Full indexed text content.
-        source_type: Type code (1=google_docs, 3=pdf, 4=pasted_text, 5=web_page, 9=youtube).
+        source_type: Integer type code. Use SourceType enum for comparison:
+            SourceType.GOOGLE_DOCS (1), SourceType.PDF (3), SourceType.PASTED_TEXT (4),
+            SourceType.WEB_PAGE (5), SourceType.YOUTUBE (9), etc.
         url: Original URL for web/YouTube sources.
         char_count: Number of characters in the content.
     """

@@ -15,7 +15,7 @@ import httpx
 from ._core import ClientCore
 from ._url_utils import is_youtube_url
 from .rpc import UPLOAD_URL, RPCError, RPCMethod
-from .rpc.types import SourceStatus
+from .rpc.types import SourceStatus, source_type_code_to_str
 from .types import (
     Source,
     SourceAddError,
@@ -88,34 +88,12 @@ class SourcesAPI:
                 src_id = src[0][0] if isinstance(src[0], list) else src[0]
                 title = src[1] if len(src) > 1 else None
 
-                # Detect URL if present
+                # Extract URL if present (at src[2][7])
                 url = None
-                source_type = "text"
                 if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 7:
                     url_list = src[2][7]
                     if isinstance(url_list, list) and len(url_list) > 0:
                         url = url_list[0]
-                        # Detect YouTube vs other URLs
-                        source_type = "youtube" if is_youtube_url(url) else "url"
-
-                # Extract file info if no URL
-                if not url and title:
-                    if title.endswith(".pdf"):
-                        source_type = "pdf"
-                    elif title.endswith((".txt", ".md", ".doc", ".docx")):
-                        source_type = "text_file"
-                    elif title.endswith((".xls", ".xlsx", ".csv")):
-                        source_type = "spreadsheet"
-
-                # Check for file upload indicator
-                if (
-                    source_type == "text"
-                    and len(src) > 2
-                    and isinstance(src[2], list)
-                    and len(src[2]) > 1
-                ):
-                    if isinstance(src[2][1], int) and src[2][1] > 0:
-                        source_type = "upload"
 
                 # Extract timestamp from src[2][2] - [seconds, nanoseconds]
                 created_at = None
@@ -136,8 +114,20 @@ class SourcesAPI:
                         SourceStatus.PROCESSING,
                         SourceStatus.READY,
                         SourceStatus.ERROR,
+                        SourceStatus.PREPARING,
                     ):
                         status = status_code
+
+                # Extract source type code from src[2][4]
+                # See SourceType enum for valid values
+                source_type_code = None
+                if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 4:
+                    type_code = src[2][4]
+                    if isinstance(type_code, int):
+                        source_type_code = type_code
+
+                # Derive source_type string from source_type_code (source of truth)
+                source_type = source_type_code_to_str(source_type_code)
 
                 sources.append(
                     Source(
@@ -145,6 +135,7 @@ class SourcesAPI:
                         title=title,
                         url=url,
                         source_type=source_type,
+                        source_type_code=source_type_code,
                         created_at=created_at,
                         status=status,
                     )
@@ -162,7 +153,10 @@ class SourcesAPI:
         Returns:
             Source object with current status, or None if not found.
         """
-        # GET_SOURCE RPC doesn't work, so filter from notebook data instead
+        # GET_SOURCE RPC (hizoJc) appears to be unreliable for source metadata lookup,
+        # especially for newly created sources. It returns None or incomplete data.
+        # Fallback to filtering from list() which uses GET_NOTEBOOK (rLM1Ne)
+        # and reliably returns all sources with their status/types.
         sources = await self.list(notebook_id)
         for source in sources:
             if source.id == source_id:
@@ -438,7 +432,15 @@ class SourcesAPI:
         await self._upload_file_streaming(upload_url, file_path)
 
         # Return source with the ID we got from registration
-        source = Source(id=source_id, title=filename, source_type="upload")
+        # Note: source_type_code is None because the actual type is determined
+        # by the API after processing (PDF, TEXT, IMAGE, etc.)
+        # Use wait=True or get() to retrieve the actual type after processing
+        source = Source(
+            id=source_id,
+            title=filename,
+            source_type="upload",  # Placeholder until processed
+            # source_type_code left as None - actual type determined by API
+        )
 
         if wait:
             return await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)

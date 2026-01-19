@@ -106,7 +106,7 @@ class TestSource:
 
         assert source.id == "src_123"
         assert source.title == "Source Title"
-        assert source.source_type == "text"
+        assert source.source_type == "unknown"
 
     def test_from_api_response_nested_format(self):
         """Test parsing medium nested format."""
@@ -140,66 +140,69 @@ class TestSource:
         assert source.title == "Deep Source"
         assert source.url == "https://deep.example.com"
 
-    def test_from_api_response_youtube_url(self):
-        """Test that YouTube URLs are detected."""
+    def test_from_api_response_youtube_source(self):
+        """Test that YouTube sources are parsed with type code 9."""
         data = [
             [
                 [
                     ["src_yt"],
                     "YouTube Video",
-                    [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]],
+                    [None, None, None, None, 9, None, None, ["https://youtube.com/watch?v=abc"]],
                 ]
             ]
         ]
         source = Source.from_api_response(data)
 
         assert source.source_type == "youtube"
+        assert source.source_type_code == 9
 
-    def test_from_api_response_youtu_be_short_url(self):
-        """Test that youtu.be short URLs are detected."""
+    def test_from_api_response_web_page_source(self):
+        """Test that web page sources are parsed with type code 5."""
         data = [
             [
                 [
-                    ["src_yt2"],
-                    "Short Video",
-                    [None, None, None, None, None, None, None, ["https://youtu.be/abc"]],
+                    ["src_web"],
+                    "Web Article",
+                    [None, None, None, None, 5, None, None, ["https://example.com/article"]],
                 ]
             ]
         ]
         source = Source.from_api_response(data)
 
-        assert source.source_type == "youtube"
+        assert source.source_type == "web_page"
+        assert source.source_type_code == 5
 
     @pytest.mark.parametrize(
-        "url,expected_type",
+        "type_code,expected_type",
         [
-            # Valid YouTube URLs (should be detected as "youtube")
-            ("https://www.youtube.com/watch?v=abc", "youtube"),
-            ("https://m.youtube.com/watch?v=abc", "youtube"),
-            ("https://music.youtube.com/watch?v=abc", "youtube"),
-            ("https://youtu.be/abc", "youtube"),
-            ("https://YOUTUBE.COM/watch?v=abc", "youtube"),  # Case insensitive
-            ("https://YouTube.Com/watch?v=abc", "youtube"),  # Mixed case
-            # Invalid URLs - should NOT be detected as YouTube
-            ("https://evil.com/youtube.com/fake", "url"),  # youtube.com in path
-            ("https://youtube.com.fake.com/video", "url"),  # Subdomain of fake.com
-            ("https://notyoutube.com/video", "url"),  # Different domain
-            ("https://example.com?redirect=youtube.com", "url"),  # In query param
+            (1, "google_docs"),
+            (2, "google_other"),
+            (3, "pdf"),
+            (4, "pasted_text"),
+            (5, "web_page"),
+            (8, "markdown"),
+            (9, "youtube"),
+            (10, "media"),
+            (11, "docx"),
+            (13, "image"),
+            (14, "google_spreadsheet"),
+            (16, "csv"),
         ],
     )
-    def test_from_api_response_youtube_url_detection(self, url, expected_type):
-        """Test YouTube URL detection handles edge cases correctly."""
+    def test_from_api_response_source_type_codes(self, type_code, expected_type):
+        """Test that source type codes are correctly mapped to type strings."""
         data = [
             [
                 [
                     ["src_test"],
-                    "Test Video",
-                    [None, None, None, None, None, None, None, [url]],
+                    "Test Source",
+                    [None, None, None, None, type_code, None, None, ["https://example.com"]],
                 ]
             ]
         ]
         source = Source.from_api_response(data)
         assert source.source_type == expected_type
+        assert source.source_type_code == type_code
 
     def test_from_api_response_empty_data_raises(self):
         """Test that empty data raises ValueError."""
@@ -210,6 +213,91 @@ class TestSource:
         """Test that None raises ValueError."""
         with pytest.raises(ValueError, match="Invalid source data"):
             Source.from_api_response(None)
+
+
+class TestSourceTypeBreakingChanges:
+    """Test breaking changes in v0.3.0 source_type strings."""
+
+    def test_web_page_replaces_url(self):
+        """Test that URL sources now have type 'web_page' not 'url'."""
+        data = [
+            [
+                [
+                    ["src_web"],
+                    "Title",
+                    [None, None, None, None, 5, None, None, ["https://example.com"]],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+        assert source.source_type == "web_page"  # NOT "url"
+        assert source.source_type_code == 5
+
+    def test_markdown_replaces_generated(self):
+        """Test that generated text now has type 'markdown' not 'generated'."""
+        data = [[[["src_md"], "Title", [None, None, None, None, 8, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "markdown"  # NOT "generated"
+        assert source.source_type_code == 8
+
+    def test_docx_replaces_text(self):
+        """Test that DOCX uploads now have type 'docx' not 'text'."""
+        data = [[[["src_docx"], "Title", [None, None, None, None, 11, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "docx"  # NOT "text"
+        assert source.source_type_code == 11
+
+    def test_google_spreadsheet_replaces_spreadsheet(self):
+        """Test that spreadsheet now has type 'google_spreadsheet'."""
+        data = [[[["src_sheet"], "Title", [None, None, None, None, 14, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "google_spreadsheet"  # NOT "spreadsheet"
+        assert source.source_type_code == 14
+
+    def test_csv_type_added(self):
+        """Test that CSV type is now available."""
+        data = [[[["src_csv"], "Title", [None, None, None, None, 16, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "csv"
+        assert source.source_type_code == 16
+
+    def test_migration_path_with_type_code(self):
+        """Test documented migration path using source_type_code."""
+        from notebooklm.rpc.types import SourceType
+
+        data = [
+            [
+                [
+                    ["src_web"],
+                    "Title",
+                    [None, None, None, None, 5, None, None, ["https://example.com"]],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        # Old way (broken in 0.3.0):
+        # if source.source_type == "url": ...  # This breaks!
+
+        # New way (stable API):
+        assert source.source_type_code == SourceType.WEB_PAGE  # This works!
+        assert source.source_type_code == 5
+
+    def test_source_type_code_none_handling(self):
+        """Test parsing source without type code metadata."""
+        # Minimal data without type code
+        data = [[[["src_no_type"], "Title", []]]]
+        source = Source.from_api_response(data)
+        assert source.id == "src_no_type"
+        assert source.source_type_code is None
+        assert source.source_type == "unknown"
+
+    def test_default_value_changed_to_unknown(self):
+        """Test default source_type changed from 'text' to 'unknown'."""
+        # Simple flat format (no type code)
+        data = ["src_123", "Source Title"]
+        source = Source.from_api_response(data)
+        assert source.source_type == "unknown"  # NOT "text"
 
 
 class TestArtifact:

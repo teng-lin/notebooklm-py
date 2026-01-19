@@ -8,6 +8,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient, Source
 from notebooklm.rpc import RPCMethod
+from notebooklm.rpc.types import SourceType
 
 
 class TestAddSource:
@@ -102,15 +103,28 @@ class TestGetSource:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        # get_source filters from get_notebook, so mock GET_NOTEBOOK response
+        # get() filters from get_notebook, so mock GET_NOTEBOOK response
         response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
                 [
                     "Test Notebook",
                     [
-                        [["source_456"], "Source Title", [None, 0, [1704067200, 0]], [None, 2]],
-                        [["source_789"], "Other Source", [None, 0, [1704153600, 0]], [None, 2]],
+                        [
+                            ["source_456"],
+                            "Source Title",
+                            [
+                                None,
+                                None,
+                                None,
+                                None,
+                                5,  # SourceType.WEB_PAGE
+                                None,
+                                None,
+                                ["https://example.com"],
+                            ],
+                            [None, 2],  # Status.READY
+                        ]
                     ],
                     "nb_123",
                     "📘",
@@ -127,6 +141,8 @@ class TestGetSource:
         assert isinstance(source, Source)
         assert source.id == "source_456"
         assert source.title == "Source Title"
+        assert source.source_type_code == 5
+        assert source.source_type == "web_page"
 
 
 class TestSourcesAPI:
@@ -154,7 +170,7 @@ class TestSourcesAPI:
                                 11,
                                 [1704067200, 0],
                                 None,
-                                5,
+                                SourceType.WEB_PAGE,
                                 None,
                                 None,
                                 ["https://example.com"],
@@ -170,7 +186,7 @@ class TestSourcesAPI:
                                 11,
                                 [1704240000, 0],
                                 None,
-                                5,
+                                SourceType.YOUTUBE,
                                 None,
                                 None,
                                 ["https://youtube.com/watch?v=abc"],
@@ -192,7 +208,7 @@ class TestSourcesAPI:
 
         assert len(sources) == 3
         assert sources[0].id == "src_001"
-        assert sources[0].source_type == "url"
+        assert sources[0].source_type == "web_page"
         assert sources[0].url == "https://example.com"
         assert sources[2].source_type == "youtube"
 
