@@ -215,6 +215,91 @@ class TestSource:
             Source.from_api_response(None)
 
 
+class TestSourceTypeBreakingChanges:
+    """Test breaking changes in v0.3.0 source_type strings."""
+
+    def test_web_page_replaces_url(self):
+        """Test that URL sources now have type 'web_page' not 'url'."""
+        data = [
+            [
+                [
+                    ["src_web"],
+                    "Title",
+                    [None, None, None, None, 5, None, None, ["https://example.com"]],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+        assert source.source_type == "web_page"  # NOT "url"
+        assert source.source_type_code == 5
+
+    def test_markdown_replaces_generated(self):
+        """Test that generated text now has type 'markdown' not 'generated'."""
+        data = [[[["src_md"], "Title", [None, None, None, None, 8, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "markdown"  # NOT "generated"
+        assert source.source_type_code == 8
+
+    def test_docx_replaces_text(self):
+        """Test that DOCX uploads now have type 'docx' not 'text'."""
+        data = [[[["src_docx"], "Title", [None, None, None, None, 11, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "docx"  # NOT "text"
+        assert source.source_type_code == 11
+
+    def test_google_spreadsheet_replaces_spreadsheet(self):
+        """Test that spreadsheet now has type 'google_spreadsheet'."""
+        data = [[[["src_sheet"], "Title", [None, None, None, None, 14, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "google_spreadsheet"  # NOT "spreadsheet"
+        assert source.source_type_code == 14
+
+    def test_csv_type_added(self):
+        """Test that CSV type is now available."""
+        data = [[[["src_csv"], "Title", [None, None, None, None, 16, None, None, []]]]]
+        source = Source.from_api_response(data)
+        assert source.source_type == "csv"
+        assert source.source_type_code == 16
+
+    def test_migration_path_with_type_code(self):
+        """Test documented migration path using source_type_code."""
+        from notebooklm.rpc.types import SourceType
+
+        data = [
+            [
+                [
+                    ["src_web"],
+                    "Title",
+                    [None, None, None, None, 5, None, None, ["https://example.com"]],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        # Old way (broken in 0.3.0):
+        # if source.source_type == "url": ...  # This breaks!
+
+        # New way (stable API):
+        assert source.source_type_code == SourceType.WEB_PAGE  # This works!
+        assert source.source_type_code == 5
+
+    def test_source_type_code_none_handling(self):
+        """Test parsing source without type code metadata."""
+        # Minimal data without type code
+        data = [[[["src_no_type"], "Title", []]]]
+        source = Source.from_api_response(data)
+        assert source.id == "src_no_type"
+        assert source.source_type_code is None
+        assert source.source_type == "unknown"
+
+    def test_default_value_changed_to_unknown(self):
+        """Test default source_type changed from 'text' to 'unknown'."""
+        # Simple flat format (no type code)
+        data = ["src_123", "Source Title"]
+        source = Source.from_api_response(data)
+        assert source.source_type == "unknown"  # NOT "text"
+
+
 class TestArtifact:
     def test_from_api_response_basic(self):
         """Test parsing basic artifact data."""

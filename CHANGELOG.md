@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   if source.source_type_code == SourceType.WEB_PAGE: ...
   ```
 
+- **Default source_type value** - Changed from `"text"` to `"unknown"` for sources without type information. This affects sources created without type codes or when parsing fails.
+
 ### Added
 - **SourceType enum expansion** - New type codes verified via E2E testing:
   - `DOCX = 11` - DOCX document uploads (renamed from TEXT)

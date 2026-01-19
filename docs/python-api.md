@@ -680,7 +680,8 @@ class Source:
     id: str
     title: Optional[str]
     url: Optional[str]
-    source_type: str  # "url", "youtube", "text", "pdf", "upload", etc.
+    source_type: str  # "web_page", "youtube", "docx", "pdf", "pasted_text", "markdown", etc.
+    source_type_code: Optional[int]  # Integer code from SourceType enum (recommended for stable comparisons)
     created_at: Optional[datetime]
 ```
 
@@ -858,22 +859,24 @@ class ExportType(Enum):
 ```python
 class SourceType(Enum):
     """Source type codes used by NotebookLM API."""
-    GOOGLE_DOCS = 1      # Google Docs document
-    GOOGLE_OTHER = 2     # Google Sheets, Slides, or other workspace files
-    PDF = 3              # PDF document
-    PASTED_TEXT = 4      # Pasted text content
-    WEB_PAGE = 5         # Web URL
-    GENERATED_TEXT = 8   # Note converted to source (via NotebookLM UI)
-    YOUTUBE = 9          # YouTube video transcript
-    MEDIA = 10           # Audio/video files (MP3, MP4, WAV, etc.) - transcribed
-    TEXT = 11            # Text-based uploads (TXT, MD, DOCX)
-    IMAGE = 13           # Image files (PNG, JPG, WEBP, etc.) - OCR'd
-    SPREADSHEET = 14     # Spreadsheet/CSV data imports
+    GOOGLE_DOCS = 1          # Google Docs document
+    GOOGLE_OTHER = 2         # Google Slides or other workspace files
+    PDF = 3                  # PDF document uploads
+    PASTED_TEXT = 4          # Pasted text content, TXT file uploads
+    WEB_PAGE = 5             # Web URL sources
+    MARKDOWN = 8             # Markdown uploads, note converted to source
+    YOUTUBE = 9              # YouTube video transcript
+    MEDIA = 10               # Audio/video files (M4A, MP4, MP3, etc.) - transcribed
+    DOCX = 11                # DOCX document uploads
+    IMAGE = 13               # Image files (JPG, PNG, etc.) - OCR'd
+    GOOGLE_SPREADSHEET = 14  # Google Sheets
+    CSV = 16                 # CSV file uploads
 
 class SourceStatus(Enum):
     PROCESSING = 1  # Source is being processed (indexing content)
     READY = 2       # Source is ready for use
     ERROR = 3       # Source processing failed
+    PREPARING = 5   # Source is being prepared/uploaded (pre-processing stage)
 ```
 
 **Usage Example:**

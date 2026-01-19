@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from notebooklm.rpc.types import SourceType
+
 from .conftest import requires_auth
 
 
@@ -465,7 +467,7 @@ class TestFileUpload:
         assert source.id is not None
         assert source.title == "test_upload.pdf"
         assert source.source_type == "pdf"
-        assert source.source_type_code == 3
+        assert source.source_type_code == SourceType.PDF
 
     @pytest.mark.asyncio
     async def test_add_text_file(self, client, temp_notebook):
@@ -488,7 +490,7 @@ class TestFileUpload:
             assert source.id is not None
             # Text uploads are treated as PASTED_TEXT type (4)
             assert source.source_type == "pasted_text"
-            assert source.source_type_code == 4
+            assert source.source_type_code == SourceType.PASTED_TEXT
         finally:
             os.unlink(temp_path)
 
@@ -516,7 +518,7 @@ class TestFileUpload:
             assert source.id is not None
             # Markdown uploads are treated as MARKDOWN type (8)
             assert source.source_type == "markdown"
-            assert source.source_type_code == 8
+            assert source.source_type_code == SourceType.MARKDOWN
         finally:
             os.unlink(temp_path)
 
@@ -539,7 +541,7 @@ class TestFileUpload:
         assert source.title == "test_data.csv"
         # CSVs are type 16 (CSV)
         assert source.source_type == "csv"
-        assert source.source_type_code == 16
+        assert source.source_type_code == SourceType.CSV
 
     @pytest.mark.asyncio
     async def test_add_mp3_file(self, client, temp_notebook, tmp_path):
@@ -596,7 +598,7 @@ class TestFileUpload:
         assert source.title == "test_document.docx"
         # DOCX uploads are treated as DOCX type (11)
         assert source.source_type == "docx"
-        assert source.source_type_code == 11
+        assert source.source_type_code == SourceType.DOCX
 
     @pytest.mark.asyncio
     async def test_add_jpg_file(self, client, temp_notebook, tmp_path):
@@ -617,4 +619,4 @@ class TestFileUpload:
         assert source.title == "test_image.jpg"
         # JPG uploads are type 13 (IMAGE)
         assert source.source_type == "image"
-        assert source.source_type_code == 13
+        assert source.source_type_code == SourceType.IMAGE
