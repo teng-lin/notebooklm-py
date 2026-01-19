@@ -6,11 +6,13 @@ from .decoder import (
     NetworkError,
     RateLimitError,
     RPCError,
+    RPCErrorCode,
     ServerError,
     TimeoutError,
     collect_rpc_ids,
     decode_response,
     extract_rpc_result,
+    get_error_message_for_code,
     parse_chunked_response,
     strip_anti_xssi,
 )
@@ -78,4 +80,7 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "ClientError",
+    # Error handling utilities
+    "RPCErrorCode",
+    "get_error_message_for_code",
 ]
