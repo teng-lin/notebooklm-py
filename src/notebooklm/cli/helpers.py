@@ -21,7 +21,6 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from .._url_utils import is_youtube_url
 from ..auth import (
     AuthTokens,
     fetch_tokens,
@@ -518,44 +517,6 @@ def get_artifact_type_display(artifact: "Artifact") -> str:
         return report_displays.get(artifact.report_subtype or "report", "📄 Report")
 
     return display_map.get(kind, f"Unknown ({kind})")
-
-
-def detect_source_type(src: list) -> str:
-    """Detect source type from API data structure.
-
-    Detection logic:
-    - Check src[2][7] for YouTube/URL indicators
-    - Check src[3][1] for type code
-    - Check file size indicators at src[2][1]
-    - Use title extension as fallback (.pdf, .txt, etc.)
-
-    Returns:
-        Display string with emoji (e.g., "🎥 YouTube")
-    """
-    # Check for URL at position [2][7] (YouTube/URL indicator)
-    if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 7:
-        url_field = src[2][7]
-        if url_field and isinstance(url_field, list) and len(url_field) > 0:
-            url = url_field[0]
-            return "🎥 YouTube" if is_youtube_url(url) else "🔗 Web URL"
-
-    # Check title for file extension
-    title = src[1] if len(src) > 1 else ""
-    if title:
-        if title.endswith(".pdf"):
-            return "📄 PDF"
-        elif title.endswith((".txt", ".md", ".doc", ".docx")):
-            return "📝 Text File"
-        elif title.endswith((".xls", ".xlsx", ".csv")):
-            return "📊 Spreadsheet"
-
-    # Check for file size indicator (uploaded files have src[2][1] as size)
-    if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 1:
-        if isinstance(src[2][1], int) and src[2][1] > 0:
-            return "📎 Upload"
-
-    # Default to pasted text
-    return "📝 Pasted Text"
 
 
 def get_source_type_display(source_type: str) -> str:

@@ -9,7 +9,6 @@ from notebooklm import Artifact
 from notebooklm.cli.helpers import (
     ARTIFACT_TYPE_MAP,
     clear_context,
-    detect_source_type,
     # Type display helpers
     get_artifact_type_display,
     get_auth_tokens,
@@ -127,76 +126,6 @@ class TestGetArtifactTypeDisplay:
         """Unknown report subtype should return default Report"""
         art = _make_artifact(2, title="Some Random Title")
         assert get_artifact_type_display(art) == "📄 Report"
-
-
-class TestDetectSourceType:
-    def test_youtube_url(self):
-        src = [
-            "id",
-            "Video Title",
-            [None, None, None, None, None, None, None, ["https://youtube.com/watch?v=abc"]],
-        ]
-        assert detect_source_type(src) == "🎥 YouTube"
-
-    def test_youtu_be_url(self):
-        src = [
-            "id",
-            "Video Title",
-            [None, None, None, None, None, None, None, ["https://youtu.be/abc"]],
-        ]
-        assert detect_source_type(src) == "🎥 YouTube"
-
-    def test_web_url(self):
-        src = [
-            "id",
-            "Web Page",
-            [None, None, None, None, None, None, None, ["https://example.com/article"]],
-        ]
-        assert detect_source_type(src) == "🔗 Web URL"
-
-    def test_pdf_file(self):
-        src = ["id", "document.pdf", [None, 12345]]
-        assert detect_source_type(src) == "📄 PDF"
-
-    def test_text_file_txt(self):
-        src = ["id", "notes.txt", [None, 1234]]
-        assert detect_source_type(src) == "📝 Text File"
-
-    def test_text_file_md(self):
-        src = ["id", "readme.md", [None, 1234]]
-        assert detect_source_type(src) == "📝 Text File"
-
-    def test_text_file_doc(self):
-        src = ["id", "readme.doc", [None, 1234]]
-        assert detect_source_type(src) == "📝 Text File"
-
-    def test_text_file_docx(self):
-        src = ["id", "readme.docx", [None, 1234]]
-        assert detect_source_type(src) == "📝 Text File"
-
-    def test_spreadsheet_csv(self):
-        src = ["id", "data.csv", [None, 1234]]
-        assert detect_source_type(src) == "📊 Spreadsheet"
-
-    def test_spreadsheet_xlsx(self):
-        src = ["id", "data.xlsx", [None, 1234]]
-        assert detect_source_type(src) == "📊 Spreadsheet"
-
-    def test_spreadsheet_xls(self):
-        src = ["id", "data.xls", [None, 1234]]
-        assert detect_source_type(src) == "📊 Spreadsheet"
-
-    def test_uploaded_file_with_size(self):
-        src = ["id", "Unknown File", [None, 5000]]
-        assert detect_source_type(src) == "📎 Upload"
-
-    def test_pasted_text(self):
-        src = ["id", "Pasted Text", [None, 0]]
-        assert detect_source_type(src) == "📝 Pasted Text"
-
-    def test_empty_source(self):
-        src = []
-        assert detect_source_type(src) == "📝 Pasted Text"
 
 
 class TestGetSourceTypeDisplay:

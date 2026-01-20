@@ -30,7 +30,6 @@ from .helpers import (
     clear_context,
     # Console
     console,
-    detect_source_type,
     get_artifact_type_display,
     get_auth_tokens,
     # Auth
@@ -133,6 +132,5 @@ __all__ = [
     "ARTIFACT_TYPE_DISPLAY",
     "ARTIFACT_TYPE_MAP",
     "get_artifact_type_display",
-    "detect_source_type",
     "get_source_type_display",
 ]
