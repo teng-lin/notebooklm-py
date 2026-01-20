@@ -1,9 +1,12 @@
 """Unit tests for types module dataclasses and parsing."""
 
+import warnings
+
 import pytest
 
 from notebooklm.types import (
     Artifact,
+    ArtifactType,
     AskResult,
     ChatMode,
     ChatReference,
@@ -15,6 +18,8 @@ from notebooklm.types import (
     ReportSuggestion,
     Source,
     SourceFulltext,
+    SourceType,
+    UnknownTypeWarning,
 )
 
 
@@ -106,7 +111,7 @@ class TestSource:
 
         assert source.id == "src_123"
         assert source.title == "Source Title"
-        assert source.source_type == "unknown"
+        assert source.kind == SourceType.UNKNOWN
 
     def test_from_api_response_nested_format(self):
         """Test parsing medium nested format."""
@@ -153,8 +158,8 @@ class TestSource:
         ]
         source = Source.from_api_response(data)
 
-        assert source.source_type == "youtube"
-        assert source.source_type_code == 9
+        assert source.kind == SourceType.YOUTUBE
+        assert source.kind == "youtube"  # str enum comparison
 
     def test_from_api_response_web_page_source(self):
         """Test that web page sources are parsed with type code 5."""
@@ -169,28 +174,28 @@ class TestSource:
         ]
         source = Source.from_api_response(data)
 
-        assert source.source_type == "web_page"
-        assert source.source_type_code == 5
+        assert source.kind == SourceType.WEB_PAGE
+        assert source.kind == "web_page"  # str enum comparison
 
     @pytest.mark.parametrize(
-        "type_code,expected_type",
+        "type_code,expected_kind",
         [
-            (1, "google_docs"),
-            (2, "google_other"),
-            (3, "pdf"),
-            (4, "pasted_text"),
-            (5, "web_page"),
-            (8, "markdown"),
-            (9, "youtube"),
-            (10, "media"),
-            (11, "docx"),
-            (13, "image"),
-            (14, "google_spreadsheet"),
-            (16, "csv"),
+            (1, SourceType.GOOGLE_DOCS),
+            (2, SourceType.GOOGLE_SLIDES),
+            (3, SourceType.PDF),
+            (4, SourceType.PASTED_TEXT),
+            (5, SourceType.WEB_PAGE),
+            (8, SourceType.MARKDOWN),
+            (9, SourceType.YOUTUBE),
+            (10, SourceType.MEDIA),
+            (11, SourceType.DOCX),
+            (13, SourceType.IMAGE),
+            (14, SourceType.GOOGLE_SPREADSHEET),
+            (16, SourceType.CSV),
         ],
     )
-    def test_from_api_response_source_type_codes(self, type_code, expected_type):
-        """Test that source type codes are correctly mapped to type strings."""
+    def test_from_api_response_source_type_codes(self, type_code, expected_kind):
+        """Test that source type codes are correctly mapped to SourceType enum."""
         data = [
             [
                 [
@@ -201,8 +206,9 @@ class TestSource:
             ]
         ]
         source = Source.from_api_response(data)
-        assert source.source_type == expected_type
-        assert source.source_type_code == type_code
+        assert source.kind == expected_kind
+        # Also verify str comparison works
+        assert source.kind == expected_kind.value
 
     def test_from_api_response_empty_data_raises(self):
         """Test that empty data raises ValueError."""
@@ -215,89 +221,59 @@ class TestSource:
             Source.from_api_response(None)
 
 
-class TestSourceTypeBreakingChanges:
-    """Test breaking changes in v0.3.0 source_type strings."""
+class TestSourceKindProperty:
+    """Tests for the Source.kind property."""
 
-    def test_web_page_replaces_url(self):
-        """Test that URL sources now have type 'web_page' not 'url'."""
-        data = [
-            [
-                [
-                    ["src_web"],
-                    "Title",
-                    [None, None, None, None, 5, None, None, ["https://example.com"]],
-                ]
-            ]
-        ]
-        source = Source.from_api_response(data)
-        assert source.source_type == "web_page"  # NOT "url"
-        assert source.source_type_code == 5
+    def test_kind_returns_str_enum(self):
+        """Test that kind returns a SourceType str enum."""
+        source = Source(id="x", _type_code=3)  # PDF
+        assert source.kind == SourceType.PDF
+        assert isinstance(source.kind, SourceType)
+        assert isinstance(source.kind, str)
 
-    def test_markdown_replaces_generated(self):
-        """Test that generated text now has type 'markdown' not 'generated'."""
-        data = [[[["src_md"], "Title", [None, None, None, None, 8, None, None, []]]]]
-        source = Source.from_api_response(data)
-        assert source.source_type == "markdown"  # NOT "generated"
-        assert source.source_type_code == 8
+    def test_kind_str_comparison(self):
+        """Test that kind can be compared with strings."""
+        source = Source(id="x", _type_code=5)  # WEB_PAGE
+        assert source.kind == "web_page"
+        assert source.kind.value == "web_page"
+        assert f"Type: {source.kind.value}" == "Type: web_page"
 
-    def test_docx_replaces_text(self):
-        """Test that DOCX uploads now have type 'docx' not 'text'."""
-        data = [[[["src_docx"], "Title", [None, None, None, None, 11, None, None, []]]]]
-        source = Source.from_api_response(data)
-        assert source.source_type == "docx"  # NOT "text"
-        assert source.source_type_code == 11
+    def test_kind_unknown_for_none_type_code(self):
+        """Test that kind returns UNKNOWN for None type code."""
+        source = Source(id="x", _type_code=None)
+        assert source.kind == SourceType.UNKNOWN
 
-    def test_google_spreadsheet_replaces_spreadsheet(self):
-        """Test that spreadsheet now has type 'google_spreadsheet'."""
-        data = [[[["src_sheet"], "Title", [None, None, None, None, 14, None, None, []]]]]
-        source = Source.from_api_response(data)
-        assert source.source_type == "google_spreadsheet"  # NOT "spreadsheet"
-        assert source.source_type_code == 14
+    def test_kind_unknown_for_unrecognized_type_code(self):
+        """Test that kind returns UNKNOWN for unrecognized type codes."""
+        # Clear the warned set to ensure we get the warning
+        from notebooklm.types import _warned_source_types
 
-    def test_csv_type_added(self):
-        """Test that CSV type is now available."""
-        data = [[[["src_csv"], "Title", [None, None, None, None, 16, None, None, []]]]]
-        source = Source.from_api_response(data)
-        assert source.source_type == "csv"
-        assert source.source_type_code == 16
+        _warned_source_types.clear()
 
-    def test_migration_path_with_type_code(self):
-        """Test documented migration path using source_type_code."""
-        from notebooklm.rpc.types import SourceType
+        source = Source(id="x", _type_code=999)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = source.kind
+            assert result == SourceType.UNKNOWN
+            assert len(w) == 1
+            assert issubclass(w[0].category, UnknownTypeWarning)
+            assert "999" in str(w[0].message)
 
-        data = [
-            [
-                [
-                    ["src_web"],
-                    "Title",
-                    [None, None, None, None, 5, None, None, ["https://example.com"]],
-                ]
-            ]
-        ]
-        source = Source.from_api_response(data)
+    def test_kind_warning_deduplication(self):
+        """Test that warnings for unknown types are deduplicated."""
+        from notebooklm.types import _warned_source_types
 
-        # Old way (broken in 0.3.0):
-        # if source.source_type == "url": ...  # This breaks!
+        _warned_source_types.clear()
 
-        # New way (stable API):
-        assert source.source_type_code == SourceType.WEB_PAGE  # This works!
-        assert source.source_type_code == 5
+        source1 = Source(id="x", _type_code=888)
+        source2 = Source(id="y", _type_code=888)
 
-    def test_source_type_code_none_handling(self):
-        """Test parsing source without type code metadata."""
-        # Minimal data without type code
-        data = [[[["src_no_type"], "Title", []]]]
-        source = Source.from_api_response(data)
-        assert source.id == "src_no_type"
-        assert source.source_type_code is None
-        assert source.source_type == "unknown"
-
-    def test_default_value_changed_to_unknown(self):
-        """Test default source_type changed from 'text' to 'unknown'."""
-        # Simple flat format (no type code)
-        data = ["src_123", "Source Title"]
-        source = Source.from_api_response(data)
-        assert source.source_type == "unknown"  # NOT "text"
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _ = source1.kind
+            _ = source2.kind
+            # Only one warning should be emitted for type code 888
+            assert len([x for x in w if "888" in str(x.message)]) == 1
 
 
 class TestArtifact:
@@ -308,7 +284,7 @@ class TestArtifact:
 
         assert artifact.id == "art_123"
         assert artifact.title == "Audio Overview"
-        assert artifact.artifact_type == 1
+        assert artifact.kind == ArtifactType.AUDIO
         assert artifact.status == 3
 
     def test_from_api_response_with_timestamp(self):
@@ -342,7 +318,7 @@ class TestArtifact:
         data = ["art_quiz", "Quiz", 4, None, 3, None, None, None, None, [None, [2]]]
         artifact = Artifact.from_api_response(data)
 
-        assert artifact.variant == 2
+        assert artifact.kind == ArtifactType.QUIZ
         assert artifact.is_quiz is True
         assert artifact.is_flashcards is False
 
@@ -351,7 +327,7 @@ class TestArtifact:
         data = ["art_fc", "Flashcards", 4, None, 3, None, None, None, None, [None, [1]]]
         artifact = Artifact.from_api_response(data)
 
-        assert artifact.variant == 1
+        assert artifact.kind == ArtifactType.FLASHCARDS
         assert artifact.is_flashcards is True
         assert artifact.is_quiz is False
 
@@ -422,6 +398,74 @@ class TestArtifact:
         artifact = Artifact.from_api_response(["id", "Audio", 1, None, 3])
 
         assert artifact.report_subtype is None
+
+
+class TestArtifactKindProperty:
+    """Tests for the Artifact.kind property."""
+
+    def test_kind_returns_str_enum(self):
+        """Test that kind returns an ArtifactType str enum."""
+        artifact = Artifact(id="x", title="Test", _artifact_type=1, status=3)
+        assert artifact.kind == ArtifactType.AUDIO
+        assert isinstance(artifact.kind, ArtifactType)
+        assert isinstance(artifact.kind, str)
+
+    def test_kind_str_comparison(self):
+        """Test that kind can be compared with strings."""
+        artifact = Artifact(id="x", title="Test", _artifact_type=3, status=3)
+        assert artifact.kind == "video"
+        assert artifact.kind.value == "video"
+        assert f"Type: {artifact.kind.value}" == "Type: video"
+
+    @pytest.mark.parametrize(
+        "artifact_type,variant,expected_kind",
+        [
+            (1, None, ArtifactType.AUDIO),
+            (2, None, ArtifactType.REPORT),
+            (3, None, ArtifactType.VIDEO),
+            (4, 1, ArtifactType.FLASHCARDS),
+            (4, 2, ArtifactType.QUIZ),
+            (5, None, ArtifactType.MIND_MAP),
+            (7, None, ArtifactType.INFOGRAPHIC),
+            (8, None, ArtifactType.SLIDES),
+            (9, None, ArtifactType.DATA_TABLE),
+        ],
+    )
+    def test_kind_mapping(self, artifact_type, variant, expected_kind):
+        """Test that artifact types are correctly mapped to ArtifactType enum."""
+        artifact = Artifact(
+            id="x", title="Test", _artifact_type=artifact_type, status=3, _variant=variant
+        )
+        assert artifact.kind == expected_kind
+
+    def test_kind_unknown_for_unrecognized_type(self):
+        """Test that kind returns UNKNOWN for unrecognized artifact types."""
+        from notebooklm.types import _warned_artifact_types
+
+        _warned_artifact_types.clear()
+
+        artifact = Artifact(id="x", title="Test", _artifact_type=999, status=3)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = artifact.kind
+            assert result == ArtifactType.UNKNOWN
+            assert len(w) == 1
+            assert issubclass(w[0].category, UnknownTypeWarning)
+            assert "999" in str(w[0].message)
+
+    def test_kind_unknown_for_unrecognized_quiz_variant(self):
+        """Test that kind returns UNKNOWN for unrecognized QUIZ variants."""
+        from notebooklm.types import _warned_artifact_types
+
+        _warned_artifact_types.clear()
+
+        artifact = Artifact(id="x", title="Test", _artifact_type=4, status=3, _variant=99)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = artifact.kind
+            assert result == ArtifactType.UNKNOWN
+            assert len(w) == 1
+            assert issubclass(w[0].category, UnknownTypeWarning)
 
 
 class TestGenerationStatus:
@@ -693,7 +737,7 @@ class TestSourceFulltext:
             source_id="src-123",
             title="My Source",
             content="This is the full content of the source.",
-            source_type=5,  # web_page
+            _type_code=5,  # web_page
             url="https://example.com",
             char_count=40,
         )
@@ -701,7 +745,7 @@ class TestSourceFulltext:
         assert fulltext.source_id == "src-123"
         assert fulltext.title == "My Source"
         assert fulltext.content == "This is the full content of the source."
-        assert fulltext.source_type == 5
+        assert fulltext.kind == SourceType.WEB_PAGE
         assert fulltext.url == "https://example.com"
         assert fulltext.char_count == 40
 
@@ -714,7 +758,7 @@ class TestSourceFulltext:
         )
 
         assert fulltext.source_id == "src-123"
-        assert fulltext.source_type is None
+        assert fulltext.kind == SourceType.UNKNOWN
         assert fulltext.url is None
         assert fulltext.char_count == 0
 

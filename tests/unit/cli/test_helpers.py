@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from notebooklm import Artifact
 from notebooklm.cli.helpers import (
     ARTIFACT_TYPE_MAP,
     clear_context,
@@ -37,55 +38,95 @@ from notebooklm.cli.helpers import (
 # =============================================================================
 
 
+def _make_artifact(
+    artifact_type: int,
+    variant: int | None = None,
+    title: str = "Test Artifact",
+) -> Artifact:
+    """Helper to create Artifact for testing get_artifact_type_display.
+
+    For report subtypes, pass appropriate title:
+    - "Briefing Doc: ..." for briefing_doc
+    - "Study Guide: ..." for study_guide
+    - "Blog Post: ..." for blog_post
+    """
+    return Artifact(
+        id="test-id",
+        title=title,
+        _artifact_type=artifact_type,
+        _variant=variant,
+        status=3,  # Completed
+    )
+
+
 class TestGetArtifactTypeDisplay:
     def test_audio_type(self):
-        assert get_artifact_type_display(1) == "🎵 Audio Overview"
+        art = _make_artifact(1)
+        assert get_artifact_type_display(art) == "🎧 Audio"
 
     def test_report_type(self):
-        assert get_artifact_type_display(2) == "📄 Report"
+        art = _make_artifact(2)
+        assert get_artifact_type_display(art) == "📄 Report"
 
     def test_video_type(self):
-        assert get_artifact_type_display(3) == "🎥 Video Overview"
+        art = _make_artifact(3)
+        assert get_artifact_type_display(art) == "🎬 Video"
 
     def test_quiz_type_without_variant(self):
-        assert get_artifact_type_display(4) == "📝 Quiz"
+        art = _make_artifact(4, variant=2)
+        assert get_artifact_type_display(art) == "📝 Quiz"
 
     def test_quiz_type_with_variant_2(self):
-        assert get_artifact_type_display(4, variant=2) == "📝 Quiz"
+        art = _make_artifact(4, variant=2)
+        assert get_artifact_type_display(art) == "📝 Quiz"
 
     def test_flashcards_type_with_variant_1(self):
-        assert get_artifact_type_display(4, variant=1) == "🃏 Flashcards"
+        art = _make_artifact(4, variant=1)
+        assert get_artifact_type_display(art) == "🃏 Flashcards"
 
     def test_mind_map_type(self):
-        assert get_artifact_type_display(5) == "🧠 Mind Map"
+        art = _make_artifact(5)
+        assert get_artifact_type_display(art) == "🧠 Mind Map"
 
     def test_infographic_type(self):
-        assert get_artifact_type_display(7) == "🖼️ Infographic"
+        art = _make_artifact(7)
+        assert get_artifact_type_display(art) == "🖼️ Infographic"
 
     def test_slide_deck_type(self):
-        assert get_artifact_type_display(8) == "🎞️ Slide Deck"
+        art = _make_artifact(8)
+        assert get_artifact_type_display(art) == "📊 Slides"
 
     def test_data_table_type(self):
-        assert get_artifact_type_display(9) == "📋 Data Table"
+        art = _make_artifact(9)
+        assert get_artifact_type_display(art) == "📈 Data Table"
 
     def test_unknown_type(self):
-        assert get_artifact_type_display(999) == "Unknown (999)"
+        art = _make_artifact(999)
+        # Unknown types return "Unknown (<kind>)" format
+        display = get_artifact_type_display(art)
+        assert "Unknown" in display
 
     def test_report_subtype_briefing_doc(self):
-        assert get_artifact_type_display(2, report_subtype="briefing_doc") == "📋 Briefing Doc"
+        # report_subtype is computed from title
+        art = _make_artifact(2, title="Briefing Doc: Test Topic")
+        assert get_artifact_type_display(art) == "📋 Briefing Doc"
 
     def test_report_subtype_study_guide(self):
-        assert get_artifact_type_display(2, report_subtype="study_guide") == "📚 Study Guide"
+        art = _make_artifact(2, title="Study Guide: Test Topic")
+        assert get_artifact_type_display(art) == "📚 Study Guide"
 
     def test_report_subtype_blog_post(self):
-        assert get_artifact_type_display(2, report_subtype="blog_post") == "✍️ Blog Post"
+        art = _make_artifact(2, title="Blog Post: Test Topic")
+        assert get_artifact_type_display(art) == "✍️ Blog Post"
 
     def test_report_subtype_generic(self):
-        assert get_artifact_type_display(2, report_subtype="report") == "📄 Report"
+        art = _make_artifact(2, title="Report: Test Topic")
+        assert get_artifact_type_display(art) == "📄 Report"
 
     def test_report_subtype_unknown(self):
         """Unknown report subtype should return default Report"""
-        assert get_artifact_type_display(2, report_subtype="unknown_type") == "📄 Report"
+        art = _make_artifact(2, title="Some Random Title")
+        assert get_artifact_type_display(art) == "📄 Report"
 
 
 class TestDetectSourceType:

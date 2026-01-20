@@ -271,7 +271,7 @@ class ArtifactsAPI:
         for art_data in artifacts_data:
             if isinstance(art_data, list) and len(art_data) > 0:
                 artifact = Artifact.from_api_response(art_data)
-                if artifact_type is None or artifact.artifact_type == artifact_type:
+                if artifact_type is None or artifact._artifact_type == artifact_type:
                     artifacts.append(artifact)
 
         # Fetch mind maps from notes system (if not filtering to non-mind-map type)
@@ -283,7 +283,7 @@ class ArtifactsAPI:
                     if mind_map_artifact is not None:  # None means deleted (status=2)
                         if (
                             artifact_type is None
-                            or mind_map_artifact.artifact_type == artifact_type
+                            or mind_map_artifact._artifact_type == artifact_type
                         ):
                             artifacts.append(mind_map_artifact)
             except (RPCError, httpx.HTTPError) as e:

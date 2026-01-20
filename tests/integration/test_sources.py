@@ -6,9 +6,8 @@ import urllib.parse
 import pytest
 from pytest_httpx import HTTPXMock
 
-from notebooklm import NotebookLMClient, Source
+from notebooklm import NotebookLMClient, Source, SourceType
 from notebooklm.rpc import RPCMethod
-from notebooklm.rpc.types import SourceType
 
 
 class TestAddSource:
@@ -141,8 +140,8 @@ class TestGetSource:
         assert isinstance(source, Source)
         assert source.id == "source_456"
         assert source.title == "Source Title"
-        assert source.source_type_code == 5
-        assert source.source_type == "web_page"
+        assert source.kind == SourceType.WEB_PAGE
+        assert source.kind == "web_page"
 
 
 class TestSourcesAPI:
@@ -170,7 +169,7 @@ class TestSourcesAPI:
                                 11,
                                 [1704067200, 0],
                                 None,
-                                SourceType.WEB_PAGE,
+                                5,  # WEB_PAGE type code
                                 None,
                                 None,
                                 ["https://example.com"],
@@ -186,7 +185,7 @@ class TestSourcesAPI:
                                 11,
                                 [1704240000, 0],
                                 None,
-                                SourceType.YOUTUBE,
+                                9,  # YOUTUBE type code
                                 None,
                                 None,
                                 ["https://youtube.com/watch?v=abc"],
@@ -208,9 +207,9 @@ class TestSourcesAPI:
 
         assert len(sources) == 3
         assert sources[0].id == "src_001"
-        assert sources[0].source_type == "web_page"
+        assert sources[0].kind == "web_page"
         assert sources[0].url == "https://example.com"
-        assert sources[2].source_type == "youtube"
+        assert sources[2].kind == "youtube"
 
     @pytest.mark.asyncio
     async def test_list_sources_empty(
@@ -456,7 +455,7 @@ class TestAddFileSource:
         assert source is not None
         assert source.id == "file_source_123"
         assert source.title == "test_document.txt"
-        assert source.source_type == "upload"
+        assert source.kind == "unknown"
 
         # Verify all 3 requests were made
         requests = httpx_mock.get_requests()
@@ -640,7 +639,7 @@ class TestGetFulltext:
         assert isinstance(fulltext, SourceFulltext)
         assert fulltext.source_id == "source_123"
         assert fulltext.title == "My Article"
-        assert fulltext.source_type == 5  # web_page
+        assert fulltext.kind == SourceType.WEB_PAGE
         assert fulltext.url == "https://example.com"
         assert "first paragraph" in fulltext.content
         assert "second paragraph" in fulltext.content

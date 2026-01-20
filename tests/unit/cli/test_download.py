@@ -17,13 +17,13 @@ download_module = get_cli_module("download")
 
 
 def make_artifact(
-    id: str, title: str, artifact_type: int, status: int = 3, created_at: datetime = None
+    id: str, title: str, _artifact_type: int, status: int = 3, created_at: datetime = None
 ) -> Artifact:
     """Create an Artifact for testing."""
     return Artifact(
         id=id,
         title=title,
-        artifact_type=artifact_type,
+        _artifact_type=_artifact_type,
         status=status,
         created_at=created_at or datetime.fromtimestamp(1234567890),
     )

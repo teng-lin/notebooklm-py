@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from notebooklm import Artifact, ReportSuggestion
+from notebooklm import Artifact, ArtifactType, ReportSuggestion
 
 from .conftest import assert_generation_started, requires_auth
 
@@ -59,9 +59,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing audio artifacts."""
         artifacts = await client.artifacts.list_audio(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be audio type (1)
+        # All returned should be audio type
         for art in artifacts:
-            assert art.artifact_type == 1
+            assert art.kind == ArtifactType.AUDIO
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -69,9 +69,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing video artifacts."""
         artifacts = await client.artifacts.list_video(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be video type (3)
+        # All returned should be video type
         for art in artifacts:
-            assert art.artifact_type == 3
+            assert art.kind == ArtifactType.VIDEO
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -79,9 +79,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing report artifacts."""
         artifacts = await client.artifacts.list_reports(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be report type (2)
+        # All returned should be report type
         for art in artifacts:
-            assert art.artifact_type == 2
+            assert art.kind == ArtifactType.REPORT
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -89,9 +89,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing quiz artifacts."""
         artifacts = await client.artifacts.list_quizzes(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be quizzes (type 4, variant 2)
+        # All returned should be quizzes
         for art in artifacts:
-            assert art.artifact_type == 4
+            assert art.kind == ArtifactType.QUIZ
             assert art.is_quiz is True
 
     @pytest.mark.asyncio
@@ -100,9 +100,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing flashcard artifacts."""
         artifacts = await client.artifacts.list_flashcards(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be flashcards (type 4, variant 1)
+        # All returned should be flashcards
         for art in artifacts:
-            assert art.artifact_type == 4
+            assert art.kind == ArtifactType.FLASHCARDS
             assert art.is_flashcards is True
 
     @pytest.mark.asyncio
@@ -111,9 +111,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing infographic artifacts."""
         artifacts = await client.artifacts.list_infographics(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be infographic type (7)
+        # All returned should be infographic type
         for art in artifacts:
-            assert art.artifact_type == 7
+            assert art.kind == ArtifactType.INFOGRAPHIC
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -121,9 +121,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing slide deck artifacts."""
         artifacts = await client.artifacts.list_slide_decks(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be slide deck type (8)
+        # All returned should be slide deck type
         for art in artifacts:
-            assert art.artifact_type == 8
+            assert art.kind == ArtifactType.SLIDES
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
@@ -131,9 +131,9 @@ class TestArtifactTypeSpecificLists:
         """Test listing data table artifacts."""
         artifacts = await client.artifacts.list_data_tables(read_only_notebook_id)
         assert isinstance(artifacts, list)
-        # All returned should be data table type (9)
+        # All returned should be data table type
         for art in artifacts:
-            assert art.artifact_type == 9
+            assert art.kind == ArtifactType.DATA_TABLE
 
 
 @requires_auth

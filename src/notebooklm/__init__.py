@@ -59,6 +59,7 @@ from .types import (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactType,
     AskResult,
     AudioFormat,
     AudioLength,
@@ -94,6 +95,8 @@ from .types import (
     # Enums for configuration
     StudioContentType,
     SuggestedTopic,
+    # Warnings
+    UnknownTypeWarning,
     VideoFormat,
     VideoStyle,
 )
@@ -137,7 +140,12 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "ClientError",
-    # Enums
+    # Warnings
+    "UnknownTypeWarning",
+    # User-facing type enums (str enums for .kind property)
+    "SourceType",
+    "ArtifactType",
+    # Configuration enums
     "StudioContentType",
     "AudioFormat",
     "AudioLength",
@@ -155,5 +163,4 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
-    "SourceType",
 ]

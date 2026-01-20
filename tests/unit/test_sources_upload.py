@@ -396,7 +396,7 @@ class TestAddFile:
 
         assert result.id == "src_new_123"
         assert result.title == "test.pdf"
-        assert result.source_type == "upload"
+        assert result.kind == "unknown"
 
     @pytest.mark.asyncio
     async def test_add_file_raises_file_not_found(self, sources_api, mock_core):

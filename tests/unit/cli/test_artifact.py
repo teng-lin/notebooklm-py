@@ -42,8 +42,8 @@ class TestArtifactList:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    Artifact(id="art_1", title="Quiz One", artifact_type=4, status=3),
-                    Artifact(id="art_2", title="Briefing Doc", artifact_type=2, status=3),
+                    Artifact(id="art_1", title="Quiz One", _artifact_type=4, status=3),
+                    Artifact(id="art_2", title="Briefing Doc", _artifact_type=2, status=3),
                 ]
             )
             mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
@@ -63,7 +63,7 @@ class TestArtifactList:
             # Mind maps are now included via artifacts.list() from the notes system
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    Artifact(id="mm_1", title="My Mind Map", artifact_type=5, status=3),
+                    Artifact(id="mm_1", title="My Mind Map", _artifact_type=5, status=3),
                 ]
             )
             mock_client_cls.return_value = mock_client
@@ -80,7 +80,7 @@ class TestArtifactList:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    Artifact(id="art_1", title="Test Artifact", artifact_type=4, status=3),
+                    Artifact(id="art_1", title="Test Artifact", _artifact_type=4, status=3),
                 ]
             )
             mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
@@ -109,14 +109,14 @@ class TestArtifactGet:
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    Artifact(id="art_123", title="Test Artifact", artifact_type=4, status=3)
+                    Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)
                 ]
             )
             mock_client.artifacts.get = AsyncMock(
                 return_value=Artifact(
                     id="art_123",
                     title="Test Artifact",
-                    artifact_type=4,
+                    _artifact_type=4,
                     status=3,
                     created_at=datetime(2024, 1, 1),
                 )
@@ -159,11 +159,11 @@ class TestArtifactRename:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Old Title", artifact_type=4, status=3)]
+                return_value=[Artifact(id="art_123", title="Old Title", _artifact_type=4, status=3)]
             )
             mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
             mock_client.artifacts.rename = AsyncMock(
-                return_value=Artifact(id="art_123", title="New Title", artifact_type=4, status=3)
+                return_value=Artifact(id="art_123", title="New Title", _artifact_type=4, status=3)
             )
             mock_client_cls.return_value = mock_client
 
@@ -181,7 +181,7 @@ class TestArtifactRename:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution (include the mind map)
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="mm_123", title="Old Title", artifact_type=5, status=3)]
+                return_value=[Artifact(id="mm_123", title="Old Title", _artifact_type=5, status=3)]
             )
             mock_client.notes.list_mind_maps = AsyncMock(
                 return_value=[
@@ -212,7 +212,7 @@ class TestArtifactDelete:
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    Artifact(id="art_123", title="Test Artifact", artifact_type=4, status=3)
+                    Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)
                 ]
             )
             mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
@@ -232,7 +232,7 @@ class TestArtifactDelete:
             # Mock list for partial ID resolution (include the mind map)
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
-                    Artifact(id="mm_456", title="Mind Map Title", artifact_type=5, status=3)
+                    Artifact(id="mm_456", title="Mind Map Title", _artifact_type=5, status=3)
                 ]
             )
             mock_client.notes.list_mind_maps = AsyncMock(
@@ -263,7 +263,7 @@ class TestArtifactExport:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Doc", artifact_type=2, status=3)]
+                return_value=[Artifact(id="art_123", title="Doc", _artifact_type=2, status=3)]
             )
             mock_client.artifacts.export = AsyncMock(
                 return_value={"url": "https://docs.google.com/document/d/123"}
@@ -292,7 +292,7 @@ class TestArtifactExport:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Table", artifact_type=9, status=3)]
+                return_value=[Artifact(id="art_123", title="Table", _artifact_type=9, status=3)]
             )
             mock_client.artifacts.export = AsyncMock(
                 return_value={"url": "https://sheets.google.com/spreadsheets/d/123"}
@@ -332,7 +332,7 @@ class TestArtifactExport:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Doc", artifact_type=2, status=3)]
+                return_value=[Artifact(id="art_123", title="Doc", _artifact_type=2, status=3)]
             )
             mock_client.artifacts.export = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -381,7 +381,7 @@ class TestArtifactWait:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=3)]
+                return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=3)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 return_value=MagicMock(
@@ -402,7 +402,7 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=1)]
+                return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 return_value=MagicMock(
@@ -423,7 +423,7 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=1)]
+                return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 side_effect=TimeoutError("Timed out")
@@ -444,7 +444,7 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=3)]
+                return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=3)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 return_value=MagicMock(
@@ -469,7 +469,7 @@ class TestArtifactWait:
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
-                return_value=[Artifact(id="art_123", title="Test", artifact_type=1, status=1)]
+                return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
             )
             mock_client.artifacts.wait_for_completion = AsyncMock(
                 side_effect=TimeoutError("Timed out")

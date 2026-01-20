@@ -42,7 +42,7 @@ class TestSourceList:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
-                    Source(id="src_1", title="Source One", source_type="url"),
+                    Source(id="src_1", title="Source One"),
                 ]
             )
             mock_client_cls.return_value = mock_client
@@ -62,7 +62,6 @@ class TestSourceList:
                     Source(
                         id="src_1",
                         title="Test Source",
-                        source_type="url",
                         url="https://example.com",
                     ),
                 ]
@@ -92,7 +91,9 @@ class TestSourceAdd:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(
-                    id="src_new", title="Example", url="https://example.com", source_type="url"
+                    id="src_new",
+                    title="Example",
+                    url="https://example.com",
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -113,7 +114,6 @@ class TestSourceAdd:
                     id="src_yt",
                     title="YouTube Video",
                     url="https://youtube.com/watch?v=abc",
-                    source_type="youtube",
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -131,7 +131,7 @@ class TestSourceAdd:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
-                return_value=Source(id="src_text", title="My Text Source", source_type="text")
+                return_value=Source(id="src_text", title="My Text Source")
             )
             mock_client_cls.return_value = mock_client
 
@@ -148,7 +148,7 @@ class TestSourceAdd:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
-                return_value=Source(id="src_text", title="Custom Title", source_type="text")
+                return_value=Source(id="src_text", title="Custom Title")
             )
             mock_client_cls.return_value = mock_client
 
@@ -179,7 +179,7 @@ class TestSourceAdd:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
-                return_value=Source(id="src_file", title="test.pdf", source_type="upload")
+                return_value=Source(id="src_file", title="test.pdf")
             )
             mock_client_cls.return_value = mock_client
 
@@ -197,7 +197,9 @@ class TestSourceAdd:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(
-                    id="src_new", title="Example", url="https://example.com", source_type="url"
+                    id="src_new",
+                    title="Example",
+                    url="https://example.com",
                 )
             )
             mock_client_cls.return_value = mock_client
@@ -224,13 +226,12 @@ class TestSourceGet:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get = AsyncMock(
                 return_value=Source(
                     id="src_123",
                     title="Test Source",
-                    source_type="url",
                     url="https://example.com",
                     created_at=datetime(2024, 1, 1),
                 )
@@ -273,7 +274,7 @@ class TestSourceDelete:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
@@ -291,7 +292,7 @@ class TestSourceDelete:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.delete = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
@@ -315,10 +316,10 @@ class TestSourceRename:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Old Title", source_type="url")]
+                return_value=[Source(id="src_123", title="Old Title")]
             )
             mock_client.sources.rename = AsyncMock(
-                return_value=Source(id="src_123", title="New Title", source_type="url")
+                return_value=Source(id="src_123", title="New Title")
             )
             mock_client_cls.return_value = mock_client
 
@@ -344,10 +345,10 @@ class TestSourceRefresh:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Original Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Original Source")]
             )
             mock_client.sources.refresh = AsyncMock(
-                return_value=Source(id="src_123", title="Refreshed Source", source_type="url")
+                return_value=Source(id="src_123", title="Refreshed Source")
             )
             mock_client_cls.return_value = mock_client
 
@@ -363,7 +364,7 @@ class TestSourceRefresh:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Original Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Original Source")]
             )
             mock_client.sources.refresh = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -386,7 +387,10 @@ class TestSourceAddDrive:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_drive = AsyncMock(
-                return_value=Source(id="src_drive", title="My Google Doc", source_type="drive")
+                return_value=Source(
+                    id="src_drive",
+                    title="My Google Doc",
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -403,7 +407,10 @@ class TestSourceAddDrive:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_drive = AsyncMock(
-                return_value=Source(id="src_drive", title="PDF from Drive", source_type="drive")
+                return_value=Source(
+                    id="src_drive",
+                    title="PDF from Drive",
+                )
             )
             mock_client_cls.return_value = mock_client
 
@@ -441,7 +448,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={
@@ -465,7 +472,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(return_value={"summary": "", "keywords": []})
             mock_client_cls.return_value = mock_client
@@ -481,7 +488,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={"summary": "Test summary", "keywords": ["keyword1", "keyword2"]}
@@ -505,7 +512,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={"summary": "Summary without keywords", "keywords": []}
@@ -526,7 +533,7 @@ class TestSourceGuide:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.get_guide = AsyncMock(
                 return_value={"summary": "", "keywords": ["AI", "ML", "Data"]}
@@ -554,7 +561,7 @@ class TestSourceStale:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.check_freshness = AsyncMock(return_value=False)  # Not fresh = stale
             mock_client_cls.return_value = mock_client
@@ -572,7 +579,7 @@ class TestSourceStale:
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
-                return_value=[Source(id="src_123", title="Test Source", source_type="url")]
+                return_value=[Source(id="src_123", title="Test Source")]
             )
             mock_client.sources.check_freshness = AsyncMock(return_value=True)  # Fresh
             mock_client_cls.return_value = mock_client

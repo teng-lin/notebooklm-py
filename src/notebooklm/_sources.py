@@ -15,7 +15,7 @@ import httpx
 from ._core import ClientCore
 from ._url_utils import is_youtube_url
 from .rpc import UPLOAD_URL, RPCError, RPCMethod
-from .rpc.types import SourceStatus, source_type_code_to_str
+from .rpc.types import SourceStatus
 from .types import (
     Source,
     SourceAddError,
@@ -120,22 +120,18 @@ class SourcesAPI:
 
                 # Extract source type code from src[2][4]
                 # See SourceType enum for valid values
-                source_type_code = None
+                type_code = None
                 if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 4:
-                    type_code = src[2][4]
-                    if isinstance(type_code, int):
-                        source_type_code = type_code
-
-                # Derive source_type string from source_type_code (source of truth)
-                source_type = source_type_code_to_str(source_type_code)
+                    tc = src[2][4]
+                    if isinstance(tc, int):
+                        type_code = tc
 
                 sources.append(
                     Source(
                         id=str(src_id),
                         title=title,
                         url=url,
-                        source_type=source_type,
-                        source_type_code=source_type_code,
+                        _type_code=type_code,
                         created_at=created_at,
                         status=status,
                     )
@@ -432,14 +428,13 @@ class SourcesAPI:
         await self._upload_file_streaming(upload_url, file_path)
 
         # Return source with the ID we got from registration
-        # Note: source_type_code is None because the actual type is determined
+        # Note: _type_code is None because the actual type is determined
         # by the API after processing (PDF, TEXT, IMAGE, etc.)
         # Use wait=True or get() to retrieve the actual type after processing
         source = Source(
             id=source_id,
             title=filename,
-            source_type="upload",  # Placeholder until processed
-            # source_type_code left as None - actual type determined by API
+            _type_code=None,  # Placeholder until processed
         )
 
         if wait:
@@ -713,7 +708,7 @@ class SourcesAPI:
             source_id=source_id,
             title=title,
             content=content,
-            source_type=source_type,
+            _type_code=source_type,
             url=url,
             char_count=len(content),
         )

@@ -6,10 +6,13 @@ for convenient access.
 Usage:
     from notebooklm.types import Notebook, Source, Artifact, GenerationStatus
     from notebooklm.types import AudioFormat, VideoFormat, StudioContentType
+    from notebooklm.types import SourceType, ArtifactType  # str enums for .kind
 """
 
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any, Optional
 
 # Re-export enums from rpc/types.py for convenience
@@ -28,14 +31,178 @@ from .rpc.types import (
     SlideDeckFormat,
     SlideDeckLength,
     SourceStatus,
-    SourceType,
     StudioContentType,
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
     source_status_to_str,
-    source_type_code_to_str,
 )
+
+# =============================================================================
+# User-facing Type Enums (str enums for .kind property)
+# =============================================================================
+
+
+class UnknownTypeWarning(UserWarning):
+    """Emitted when encountering unrecognized type codes from Google API.
+
+    This warning indicates the API returned a type code that this version
+    of notebooklm-py doesn't recognize. Consider updating to the latest version.
+    """
+
+    pass
+
+
+class SourceType(str, Enum):
+    """User-facing source types.
+
+    This is a str enum, so comparisons work with both enum members and strings:
+        source.kind == SourceType.WEB_PAGE  # True
+        source.kind == "web_page"           # Also True
+    """
+
+    GOOGLE_DOCS = "google_docs"
+    GOOGLE_SLIDES = "google_slides"
+    GOOGLE_SPREADSHEET = "google_spreadsheet"
+    PDF = "pdf"
+    PASTED_TEXT = "pasted_text"
+    WEB_PAGE = "web_page"
+    GOOGLE_DRIVE_AUDIO = "google_drive_audio"
+    GOOGLE_DRIVE_VIDEO = "google_drive_video"
+    YOUTUBE = "youtube"
+    MARKDOWN = "markdown"
+    DOCX = "docx"
+    EPUB = "epub"
+    CSV = "csv"
+    IMAGE = "image"
+    MEDIA = "media"
+    UNKNOWN = "unknown"
+
+
+class ArtifactType(str, Enum):
+    """User-facing artifact types.
+
+    This is a str enum that hides internal variant complexity. For example,
+    quizzes and flashcards are both type 4 internally but distinguished by variant.
+
+    Comparisons work with both enum members and strings:
+        artifact.kind == ArtifactType.AUDIO  # True
+        artifact.kind == "audio"             # Also True
+    """
+
+    AUDIO = "audio"
+    VIDEO = "video"
+    REPORT = "report"
+    QUIZ = "quiz"
+    FLASHCARDS = "flashcards"
+    MIND_MAP = "mind_map"
+    INFOGRAPHIC = "infographic"
+    SLIDES = "slides"
+    DATA_TABLE = "data_table"
+    UNKNOWN = "unknown"
+
+
+# Module-level sets for warning deduplication
+_warned_source_types: set[int] = set()
+_warned_artifact_types: set[tuple[int, int | None]] = set()
+
+
+# Mapping from internal int codes to SourceType enum
+_SOURCE_TYPE_CODE_MAP: dict[int, SourceType] = {
+    1: SourceType.GOOGLE_DOCS,
+    2: SourceType.GOOGLE_SLIDES,  # Was GOOGLE_OTHER, now more specific
+    3: SourceType.PDF,
+    4: SourceType.PASTED_TEXT,
+    5: SourceType.WEB_PAGE,
+    8: SourceType.MARKDOWN,
+    9: SourceType.YOUTUBE,
+    10: SourceType.MEDIA,
+    11: SourceType.DOCX,
+    13: SourceType.IMAGE,
+    14: SourceType.GOOGLE_SPREADSHEET,
+    16: SourceType.CSV,
+}
+
+# Mapping from internal int codes to ArtifactType enum
+_ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
+    1: ArtifactType.AUDIO,
+    2: ArtifactType.REPORT,
+    3: ArtifactType.VIDEO,
+    5: ArtifactType.MIND_MAP,
+    7: ArtifactType.INFOGRAPHIC,
+    8: ArtifactType.SLIDES,
+    9: ArtifactType.DATA_TABLE,
+}
+
+
+def _safe_source_type(type_code: int | None) -> SourceType:
+    """Convert internal type code to user-facing SourceType enum.
+
+    Args:
+        type_code: Integer type code from API response.
+
+    Returns:
+        SourceType enum member. Returns UNKNOWN for unrecognized codes.
+    """
+    if type_code is None:
+        return SourceType.UNKNOWN
+
+    result = _SOURCE_TYPE_CODE_MAP.get(type_code)
+    if result is None:
+        if type_code not in _warned_source_types:
+            _warned_source_types.add(type_code)
+            warnings.warn(
+                f"Unknown source type code {type_code}. "
+                "Consider updating notebooklm-py to the latest version.",
+                UnknownTypeWarning,
+                stacklevel=3,
+            )
+        return SourceType.UNKNOWN
+    return result
+
+
+def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
+    """Convert internal artifact type and variant to user-facing ArtifactType.
+
+    Args:
+        artifact_type: StudioContentType integer value from API.
+        variant: Optional variant code (e.g., for quiz vs flashcards).
+
+    Returns:
+        ArtifactType enum member. Returns UNKNOWN for unrecognized types.
+    """
+    # Handle QUIZ/FLASHCARDS distinction (both use type 4)
+    if artifact_type == 4:  # StudioContentType.QUIZ
+        if variant == 1:
+            return ArtifactType.FLASHCARDS
+        elif variant == 2:
+            return ArtifactType.QUIZ
+        else:
+            key = (artifact_type, variant)
+            if key not in _warned_artifact_types:
+                _warned_artifact_types.add(key)
+                warnings.warn(
+                    f"Unknown QUIZ variant {variant}. "
+                    "Consider updating notebooklm-py to the latest version.",
+                    UnknownTypeWarning,
+                    stacklevel=3,
+                )
+            return ArtifactType.UNKNOWN
+
+    result = _ARTIFACT_TYPE_CODE_MAP.get(artifact_type)
+    if result is None:
+        key = (artifact_type, variant)
+        if key not in _warned_artifact_types:
+            _warned_artifact_types.add(key)
+            warnings.warn(
+                f"Unknown artifact type {artifact_type}. "
+                "Consider updating notebooklm-py to the latest version.",
+                UnknownTypeWarning,
+                stacklevel=3,
+            )
+        return ArtifactType.UNKNOWN
+    return result
+
 
 __all__ = [
     # Dataclasses
@@ -63,7 +230,12 @@ __all__ = [
     "ArtifactNotReadyError",
     "ArtifactParseError",
     "ArtifactDownloadError",
-    # Re-exported enums
+    # Warnings
+    "UnknownTypeWarning",
+    # User-facing type enums (str enums for .kind property)
+    "SourceType",
+    "ArtifactType",
+    # Re-exported enums (configuration/RPC)
     "StudioContentType",
     "AudioFormat",
     "AudioLength",
@@ -81,19 +253,15 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
-    "SourceType",
     # Helper functions
     "artifact_status_to_str",
     "source_status_to_str",
-    "source_type_code_to_str",
 ]
 
 
 # =============================================================================
 # Chat Mode Enum (service-level, not RPC-level)
 # =============================================================================
-
-from enum import Enum
 
 
 class ChatMode(Enum):
@@ -401,36 +569,32 @@ class Source:
         id: Unique source identifier.
         title: Source title (may be URL if not yet processed).
         url: Original URL for web/YouTube sources.
-        source_type: Type of source as string (for display/backward compat).
-        source_type_code: Integer type code from SourceType enum (if known).
+        kind: Source type as SourceType enum (str enum, comparable to strings).
         created_at: When the source was added.
         status: Processing status (1=processing, 2=ready, 3=error).
 
-    Breaking changes in v0.3.0:
-        source_type string values changed for consistency with SourceType enum:
-        - "url" → "web_page"
-        - "generated" → "markdown"
-        - "text" → "docx"
-        - "spreadsheet" → "google_spreadsheet"
-        - Added: "csv"
-
-        Migration: Use source_type_code (int) for stable comparisons instead of
-        source_type (str). Example:
-            # Old (breaks in 0.3.0):
-            if source.source_type == "url": ...
-
-            # New (stable API):
-            from notebooklm.rpc.types import SourceType
-            if source.source_type_code == SourceType.WEB_PAGE: ...
+    Example:
+        source.kind == SourceType.WEB_PAGE  # True
+        source.kind == "web_page"           # Also True (str enum)
+        f"Type: {source.kind}"              # "Type: web_page"
     """
 
     id: str
     title: str | None = None
     url: str | None = None
-    source_type: str = "unknown"
-    source_type_code: int | None = None
+    _type_code: int | None = field(default=None, repr=False)
     created_at: datetime | None = None
     status: int = SourceStatus.READY  # Default to READY (2)
+
+    @property
+    def kind(self) -> SourceType:
+        """Get source type as SourceType enum.
+
+        Returns:
+            SourceType enum member. Returns SourceType.UNKNOWN for
+            unrecognized type codes (with a warning on first occurrence).
+        """
+        return _safe_source_type(self._type_code)
 
     @property
     def is_ready(self) -> bool:
@@ -487,11 +651,11 @@ class Source:
                         if len(entry[2]) > 7 and isinstance(entry[2][7], list):
                             url = entry[2][7][0] if entry[2][7] else None
 
-                    return cls(id=str(source_id), title=title, url=url, source_type="unknown")
+                    return cls(id=str(source_id), title=title, url=url, _type_code=None)
 
                 # Deeply nested: continue with URL and type code extraction
                 url = None
-                source_type_code = None
+                type_code = None
                 if len(entry) > 2 and isinstance(entry[2], list):
                     if len(entry[2]) > 7:
                         url_list = entry[2][7]
@@ -502,23 +666,19 @@ class Source:
                             url = entry[2][0]
                     # Extract type code at entry[2][4] if available
                     if len(entry[2]) > 4 and isinstance(entry[2][4], int):
-                        source_type_code = entry[2][4]
-
-                # Derive source_type from type code (source of truth)
-                source_type = source_type_code_to_str(source_type_code)
+                        type_code = entry[2][4]
 
                 return cls(
                     id=str(source_id),
                     title=title,
                     url=url,
-                    source_type=source_type,
-                    source_type_code=source_type_code,
+                    _type_code=type_code,
                 )
 
         # Simple flat format: [id, title] or [id, title, ...]
         source_id = data[0] if len(data) > 0 else ""
         title = data[1] if len(data) > 1 else None
-        return cls(id=str(source_id), title=title, source_type="unknown")
+        return cls(id=str(source_id), title=title, _type_code=None)
 
 
 @dataclass
@@ -532,19 +692,26 @@ class SourceFulltext:
         source_id: The source UUID.
         title: Source title.
         content: Full indexed text content.
-        source_type: Integer type code. Use SourceType enum for comparison:
-            SourceType.GOOGLE_DOCS (1), SourceType.PDF (3), SourceType.PASTED_TEXT (4),
-            SourceType.WEB_PAGE (5), SourceType.YOUTUBE (9), etc.
+        kind: Source type as SourceType enum (use .kind property).
         url: Original URL for web/YouTube sources.
         char_count: Number of characters in the content.
+
+    Example:
+        fulltext.kind == SourceType.WEB_PAGE  # True
+        fulltext.kind == "web_page"           # Also True (str enum)
     """
 
     source_id: str
     title: str
     content: str
-    source_type: int | None = None
+    _type_code: int | None = field(default=None, repr=False)
     url: str | None = None
     char_count: int = 0
+
+    @property
+    def kind(self) -> SourceType:
+        """Get source type as SourceType enum."""
+        return _safe_source_type(self._type_code)
 
     def find_citation_context(
         self,
@@ -599,15 +766,38 @@ class Artifact:
     Artifacts are AI-generated content like Audio Overviews, Video Overviews,
     Reports, Quizzes, Flashcards, Mind Maps, Infographics, Slide Decks, and
     Data Tables.
+
+    Attributes:
+        id: Unique artifact identifier.
+        title: Artifact title.
+        kind: Artifact type as ArtifactType enum (str enum, comparable to strings).
+        status: Processing status (1=processing, 2=pending, 3=completed).
+        created_at: When the artifact was created.
+        url: Download URL (if available).
+
+    Example:
+        artifact.kind == ArtifactType.AUDIO  # True
+        artifact.kind == "audio"             # Also True (str enum)
+        f"Type: {artifact.kind}"             # "Type: audio"
     """
 
     id: str
     title: str
-    artifact_type: int  # StudioContentType enum value
-    status: int  # 1=processing, 3=completed
+    _artifact_type: int = field(repr=False)  # StudioContentType enum value
+    status: int  # 1=processing, 2=pending, 3=completed
     created_at: datetime | None = None
     url: str | None = None
-    variant: int | None = None  # For type 4: 1=flashcards, 2=quiz
+    _variant: int | None = field(default=None, repr=False)  # For type 4: 1=flashcards, 2=quiz
+
+    @property
+    def kind(self) -> ArtifactType:
+        """Get artifact type as ArtifactType enum.
+
+        Returns:
+            ArtifactType enum member. Returns ArtifactType.UNKNOWN for
+            unrecognized type codes (with a warning on first occurrence).
+        """
+        return _map_artifact_kind(self._artifact_type, self._variant)
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> "Artifact":
@@ -640,10 +830,10 @@ class Artifact:
         return cls(
             id=str(artifact_id),
             title=str(title),
-            artifact_type=artifact_type,
+            _artifact_type=artifact_type,
             status=status,
             created_at=created_at,
-            variant=variant,
+            _variant=variant,
         )
 
     @classmethod
@@ -697,10 +887,10 @@ class Artifact:
         return cls(
             id=str(mind_map_id),
             title=title,
-            artifact_type=5,  # StudioContentType.MIND_MAP
+            _artifact_type=5,  # StudioContentType.MIND_MAP
             status=3,  # Mind maps are always "completed" once created
             created_at=created_at,
-            variant=None,
+            _variant=None,
         )
 
     @property
@@ -730,12 +920,12 @@ class Artifact:
     @property
     def is_quiz(self) -> bool:
         """Check if this is a quiz (type 4, variant 2)."""
-        return self.artifact_type == 4 and self.variant == 2
+        return self._artifact_type == 4 and self._variant == 2
 
     @property
     def is_flashcards(self) -> bool:
         """Check if this is flashcards (type 4, variant 1)."""
-        return self.artifact_type == 4 and self.variant == 1
+        return self._artifact_type == 4 and self._variant == 1
 
     @property
     def report_subtype(self) -> str | None:
@@ -744,7 +934,7 @@ class Artifact:
         Returns:
             'briefing_doc', 'study_guide', 'blog_post', or None if not a report.
         """
-        if self.artifact_type != 2:
+        if self._artifact_type != 2:
             return None
         title_lower = self.title.lower()
         if title_lower.startswith("briefing doc"):

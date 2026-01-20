@@ -88,8 +88,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                             "index": i,
                             "id": src.id,
                             "title": src.title,
-                            "type": src.source_type,
-                            "type_code": src.source_type_code,
+                            "type": str(src.kind),
                             "url": src.url,
                             "status": source_status_to_str(src.status),
                             "status_id": src.status,
@@ -110,7 +109,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
             table.add_column("Status", style="yellow")
 
             for src in sources:
-                type_display = get_source_type_display(src.source_type)
+                type_display = get_source_type_display(src.kind)
                 created = src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
                 status = source_status_to_str(src.status)
                 table.add_row(src.id, src.title or "-", type_display, created, status)
@@ -195,8 +194,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                     "source": {
                         "id": src.id,
                         "title": src.title,
-                        "type": src.source_type,
-                        "type_code": src.source_type_code,
+                        "type": str(src.kind),
                         "url": src.url,
                     }
                 }
@@ -236,7 +234,7 @@ def source_get(ctx, source_id, notebook_id, client_auth):
             if src:
                 console.print(f"[bold cyan]Source:[/bold cyan] {src.id}")
                 console.print(f"[bold]Title:[/bold] {src.title}")
-                console.print(f"[bold]Type:[/bold] {get_source_type_display(src.source_type)}")
+                console.print(f"[bold]Type:[/bold] {get_source_type_display(src.kind)}")
                 if src.url:
                     console.print(f"[bold]URL:[/bold] {src.url}")
                 if src.created_at:

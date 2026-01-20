@@ -20,7 +20,7 @@ import click
 
 from ..auth import AuthTokens, fetch_tokens, load_auth_from_storage
 from ..client import NotebookLMClient
-from ..types import Artifact
+from ..types import Artifact, ArtifactType
 from .download_helpers import ArtifactDict, artifact_title_to_filename, select_artifact
 from .helpers import (
     console,
@@ -33,20 +33,28 @@ from .helpers import (
 class ArtifactConfig(TypedDict):
     """Configuration for an artifact type."""
 
-    type_id: int
+    kind: ArtifactType
     extension: str
     default_dir: str
 
 
 # Artifact type configurations for download commands
 ARTIFACT_CONFIGS: dict[str, ArtifactConfig] = {
-    "audio": {"type_id": 1, "extension": ".mp3", "default_dir": "./audio"},
-    "video": {"type_id": 3, "extension": ".mp4", "default_dir": "./video"},
-    "report": {"type_id": 2, "extension": ".md", "default_dir": "./reports"},
-    "mind-map": {"type_id": 5, "extension": ".json", "default_dir": "./mind-maps"},
-    "infographic": {"type_id": 7, "extension": ".png", "default_dir": "./infographic"},
-    "slide-deck": {"type_id": 8, "extension": ".pdf", "default_dir": "./slides"},
-    "data-table": {"type_id": 9, "extension": ".csv", "default_dir": "./data-tables"},
+    "audio": {"kind": ArtifactType.AUDIO, "extension": ".mp3", "default_dir": "./audio"},
+    "video": {"kind": ArtifactType.VIDEO, "extension": ".mp4", "default_dir": "./video"},
+    "report": {"kind": ArtifactType.REPORT, "extension": ".md", "default_dir": "./reports"},
+    "mind-map": {"kind": ArtifactType.MIND_MAP, "extension": ".json", "default_dir": "./mind-maps"},
+    "infographic": {
+        "kind": ArtifactType.INFOGRAPHIC,
+        "extension": ".png",
+        "default_dir": "./infographic",
+    },
+    "slide-deck": {"kind": ArtifactType.SLIDES, "extension": ".pdf", "default_dir": "./slides"},
+    "data-table": {
+        "kind": ArtifactType.DATA_TABLE,
+        "extension": ".csv",
+        "default_dir": "./data-tables",
+    },
 }
 
 
@@ -70,7 +78,7 @@ def download():
 async def _download_artifacts_generic(
     ctx,
     artifact_type_name: str,
-    artifact_type_id: int,
+    artifact_kind: ArtifactType,
     file_extension: str,
     default_output_dir: str,
     output_path: str | None,
@@ -94,7 +102,7 @@ async def _download_artifacts_generic(
     Args:
         ctx: Click context
         artifact_type_name: Human-readable type name ("audio", "video", etc.)
-        artifact_type_id: RPC type ID (1=audio, 3=video, 7=infographic, 8=slide-deck)
+        artifact_kind: ArtifactType enum value to filter by
         file_extension: File extension (".mp3", ".mp4", ".png", ".pdf")
         default_output_dir: Default output directory for --all flag
         output_path: User-specified output path
@@ -150,9 +158,7 @@ async def _download_artifacts_generic(
             completed_artifacts = [
                 a
                 for a in all_artifacts
-                if isinstance(a, Artifact)
-                and a.artifact_type == artifact_type_id
-                and a.is_completed
+                if isinstance(a, Artifact) and a.kind == artifact_kind and a.is_completed
             ]
 
             if not completed_artifacts:
@@ -359,60 +365,6 @@ async def _download_artifacts_generic(
                 return {"error": str(e), "artifact": selected}
 
     return await _download()
-
-
-def _execute_download(
-    ctx,
-    artifact_type_name: str,
-    artifact_type_id: int,
-    file_extension: str,
-    default_output_dir: str,
-    output_path: str | None,
-    notebook: str | None,
-    latest: bool,
-    earliest: bool,
-    download_all: bool,
-    name: str | None,
-    artifact_id: str | None,
-    json_output: bool,
-    dry_run: bool,
-    force: bool,
-    no_clobber: bool,
-) -> None:
-    """Execute download and handle output display."""
-    try:
-        result = run_async(
-            _download_artifacts_generic(
-                ctx=ctx,
-                artifact_type_name=artifact_type_name,
-                artifact_type_id=artifact_type_id,
-                file_extension=file_extension,
-                default_output_dir=default_output_dir,
-                output_path=output_path,
-                notebook=notebook,
-                latest=latest,
-                earliest=earliest,
-                download_all=download_all,
-                name=name,
-                artifact_id=artifact_id,
-                json_output=json_output,
-                dry_run=dry_run,
-                force=force,
-                no_clobber=no_clobber,
-            )
-        )
-
-        if json_output:
-            console.print(json.dumps(result, indent=2))
-            return
-
-        _display_download_result(result, artifact_type_name)
-
-        if "error" in result:
-            raise SystemExit(1)
-
-    except Exception as e:
-        handle_error(e)
 
 
 def _display_download_result(result: dict, artifact_type: str) -> None:
@@ -634,7 +586,7 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
             _download_artifacts_generic(
                 ctx=ctx,
                 artifact_type_name=artifact_type,
-                artifact_type_id=config["type_id"],
+                artifact_kind=config["kind"],
                 file_extension=config["extension"],
                 default_output_dir=config["default_dir"],
                 **kwargs,

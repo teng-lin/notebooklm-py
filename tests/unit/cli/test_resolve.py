@@ -215,9 +215,9 @@ def mock_client_with_sources():
 def sample_sources():
     """Sample sources for testing."""
     return [
-        Source(id="src123def456ghi789", title="First Source", source_type="url"),
-        Source(id="xyz789uvw456rst123", title="Second Source", source_type="text"),
-        Source(id="src999zzz888yyy777", title="Third Source", source_type="pdf"),
+        Source(id="src123def456ghi789", title="First Source"),
+        Source(id="xyz789uvw456rst123", title="Second Source"),
+        Source(id="src999zzz888yyy777", title="Third Source"),
     ]
 
 
@@ -333,10 +333,7 @@ class TestResolveSourceIdAmbiguityDisplay:
     @pytest.mark.asyncio
     async def test_shows_up_to_five_matches(self, mock_client_with_sources):
         """Ambiguous error shows up to 5 matching sources."""
-        sources = [
-            Source(id=f"src{i}00000000000000", title=f"Source {i}", source_type="text")
-            for i in range(7)
-        ]
+        sources = [Source(id=f"src{i}00000000000000", title=f"Source {i}") for i in range(7)]
         mock_client_with_sources.sources.list = AsyncMock(return_value=sources)
 
         with pytest.raises(click.ClickException) as exc_info:

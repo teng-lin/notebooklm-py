@@ -6,11 +6,9 @@ from notebooklm.rpc.types import (
     ArtifactStatus,
     RPCMethod,
     SourceStatus,
-    SourceType,
     StudioContentType,
     artifact_status_to_str,
     source_status_to_str,
-    source_type_code_to_str,
 )
 
 
@@ -118,54 +116,6 @@ class TestArtifactStatusToStr:
         assert artifact_status_to_str(4) == "unknown"
         assert artifact_status_to_str(99) == "unknown"
         assert artifact_status_to_str(-1) == "unknown"
-
-
-class TestSourceTypeCodeToStr:
-    """Tests for source_type_code_to_str helper function."""
-
-    def test_all_known_types(self):
-        """Test all SourceType enum values map correctly."""
-        assert source_type_code_to_str(SourceType.GOOGLE_DOCS) == "google_docs"
-        assert source_type_code_to_str(1) == "google_docs"
-        assert source_type_code_to_str(SourceType.GOOGLE_OTHER) == "google_other"
-        assert source_type_code_to_str(2) == "google_other"
-        assert source_type_code_to_str(SourceType.PDF) == "pdf"
-        assert source_type_code_to_str(3) == "pdf"
-        assert source_type_code_to_str(SourceType.PASTED_TEXT) == "pasted_text"
-        assert source_type_code_to_str(4) == "pasted_text"
-        assert source_type_code_to_str(SourceType.WEB_PAGE) == "web_page"
-        assert source_type_code_to_str(5) == "web_page"
-        assert source_type_code_to_str(SourceType.MARKDOWN) == "markdown"
-        assert source_type_code_to_str(8) == "markdown"
-        assert source_type_code_to_str(SourceType.YOUTUBE) == "youtube"
-        assert source_type_code_to_str(9) == "youtube"
-        assert source_type_code_to_str(SourceType.MEDIA) == "media"
-        assert source_type_code_to_str(10) == "media"
-        assert source_type_code_to_str(SourceType.DOCX) == "docx"
-        assert source_type_code_to_str(11) == "docx"
-        assert source_type_code_to_str(SourceType.IMAGE) == "image"
-        assert source_type_code_to_str(13) == "image"
-        assert source_type_code_to_str(SourceType.GOOGLE_SPREADSHEET) == "google_spreadsheet"
-        assert source_type_code_to_str(14) == "google_spreadsheet"
-        assert source_type_code_to_str(SourceType.CSV) == "csv"
-        assert source_type_code_to_str(16) == "csv"
-
-    def test_none_returns_unknown(self):
-        """Test None returns 'unknown'."""
-        assert source_type_code_to_str(None) == "unknown"
-
-    def test_gap_codes_return_unknown(self):
-        """Test gap codes (6, 7, 12, 15) return 'unknown'."""
-        assert source_type_code_to_str(6) == "unknown"
-        assert source_type_code_to_str(7) == "unknown"
-        assert source_type_code_to_str(12) == "unknown"
-        assert source_type_code_to_str(15) == "unknown"
-
-    def test_invalid_codes_return_unknown(self):
-        """Test unknown codes return 'unknown'."""
-        assert source_type_code_to_str(0) == "unknown"
-        assert source_type_code_to_str(99) == "unknown"
-        assert source_type_code_to_str(-1) == "unknown"
 
 
 class TestSourceStatusToStr:
