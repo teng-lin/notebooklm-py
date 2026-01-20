@@ -682,6 +682,50 @@ class TestGenerateWithRetry:
         assert result == rate_limited
         assert generate_fn.call_count == 1
 
+    @pytest.mark.asyncio
+    async def test_retry_delays_increase_exponentially(self):
+        """Verify delays follow exponential backoff pattern (60s, 120s, 240s)."""
+        from notebooklm.cli.generate import generate_with_retry
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+        generate_fn = AsyncMock(return_value=rate_limited)
+
+        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await generate_with_retry(
+                generate_fn, max_retries=3, artifact_type="audio", json_output=True
+            )
+
+        # Verify delays: 60s, 120s, 240s (3 retries = 3 sleeps)
+        delays = [call[0][0] for call in mock_sleep.call_args_list]
+        assert delays == [60.0, 120.0, 240.0]
+
+    @pytest.mark.asyncio
+    async def test_retry_delay_caps_at_max(self):
+        """Verify delay caps at 300s even with many retries."""
+        from notebooklm.cli.generate import RETRY_MAX_DELAY, generate_with_retry
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+        generate_fn = AsyncMock(return_value=rate_limited)
+
+        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await generate_with_retry(
+                generate_fn, max_retries=10, artifact_type="audio", json_output=True
+            )
+
+        # Verify no delay exceeds RETRY_MAX_DELAY (300s)
+        delays = [call[0][0] for call in mock_sleep.call_args_list]
+        assert len(delays) == 10  # 10 retries = 10 sleeps
+        for delay in delays:
+            assert delay <= RETRY_MAX_DELAY
+        # Later delays should be capped at 300
+        assert delays[-1] == RETRY_MAX_DELAY
+
 
 class TestRetryOptionAvailable:
     """Test that --retry option is available on generate commands."""

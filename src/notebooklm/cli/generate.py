@@ -81,34 +81,29 @@ async def generate_with_retry(
     """Generate artifact with retry on rate limit.
 
     Retries the generation call with exponential backoff when rate limited.
+    Always makes at least one attempt, even when max_retries=0.
 
     Args:
         generate_fn: Async function that performs the generation.
-        max_retries: Maximum number of retries (0 = no retry).
+        max_retries: Maximum number of retries (0 = no retry, just one attempt).
         artifact_type: Display name for progress messages.
         json_output: Whether to suppress console output.
 
     Returns:
         GenerationStatus or None if generation failed.
     """
-    result: GenerationStatus | None = None
-
     for attempt in range(max_retries + 1):
         result = await generate_fn()
 
-        # Check if rate limited
-        is_rate_limited = isinstance(result, GenerationStatus) and result.is_rate_limited
-
-        if not is_rate_limited:
-            # Success or non-rate-limit failure
+        # Return immediately if not rate limited (success or other failure)
+        if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
             return result
 
-        # Rate limited - check if we have retries left
+        # Rate limited with no retries left
         if attempt >= max_retries:
-            # No more retries
             return result
 
-        # Calculate delay and wait
+        # Wait before retry
         delay = calculate_backoff_delay(attempt)
         if not json_output:
             console.print(
@@ -117,7 +112,8 @@ async def generate_with_retry(
             )
         await asyncio.sleep(delay)
 
-    return result
+    # Unreachable, but satisfies type checker
+    return None
 
 
 def resolve_language(language: str | None) -> str:
@@ -378,10 +374,7 @@ def generate_audio(
                     audio_length=length_map[audio_length],
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(_generate, max_retries, "audio", json_output)
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "audio", json_output)
             await handle_generation_result(client, nb_id, result, "audio", wait, json_output)
 
     return _run()
@@ -477,10 +470,7 @@ def generate_video(
                     video_style=style_map[style],
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(_generate, max_retries, "video", json_output)
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "video", json_output)
             await handle_generation_result(
                 client, nb_id, result, "video", wait, json_output, timeout=600.0
             )
@@ -562,12 +552,7 @@ def generate_slide_deck(
                     slide_length=length_map[deck_length],
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(
-                    _generate, max_retries, "slide deck", json_output
-                )
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "slide deck", json_output)
             await handle_generation_result(client, nb_id, result, "slide deck", wait, json_output)
 
     return _run()
@@ -636,10 +621,7 @@ def generate_quiz(
                     difficulty=difficulty_map[difficulty],
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(_generate, max_retries, "quiz", json_output)
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "quiz", json_output)
             await handle_generation_result(client, nb_id, result, "quiz", wait, json_output)
 
     return _run()
@@ -708,12 +690,7 @@ def generate_flashcards(
                     difficulty=difficulty_map[difficulty],
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(
-                    _generate, max_retries, "flashcards", json_output
-                )
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "flashcards", json_output)
             await handle_generation_result(client, nb_id, result, "flashcards", wait, json_output)
 
     return _run()
@@ -793,12 +770,7 @@ def generate_infographic(
                     detail_level=detail_map[detail],
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(
-                    _generate, max_retries, "infographic", json_output
-                )
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "infographic", json_output)
             await handle_generation_result(client, nb_id, result, "infographic", wait, json_output)
 
     return _run()
@@ -854,12 +826,7 @@ def generate_data_table(
                     instructions=description,
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(
-                    _generate, max_retries, "data table", json_output
-                )
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, "data table", json_output)
             await handle_generation_result(client, nb_id, result, "data table", wait, json_output)
 
     return _run()
@@ -1007,12 +974,7 @@ def generate_report_cmd(
                     custom_prompt=custom_prompt,
                 )
 
-            if max_retries > 0:
-                result = await generate_with_retry(
-                    _generate, max_retries, format_display, json_output
-                )
-            else:
-                result = await _generate()
+            result = await generate_with_retry(_generate, max_retries, format_display, json_output)
             await handle_generation_result(client, nb_id, result, format_display, wait, json_output)
 
     return _run()
