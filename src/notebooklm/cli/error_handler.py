@@ -84,11 +84,10 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
             raise SystemExit(130) from None
     except RateLimitError as e:
         retry_msg = f" Retry after {e.retry_after}s." if e.retry_after else ""
-        extra_data: dict[str, Any] | None = (
-            {"retry_after": e.retry_after} if e.retry_after else None
-        )
+        extra_data: dict[str, Any] = {}
+        if e.retry_after:
+            extra_data["retry_after"] = e.retry_after
         if verbose and e.method_id:
-            extra_data = extra_data or {}
             extra_data["method_id"] = e.method_id
         _output_error(
             f"Error: Rate limited.{retry_msg}",
