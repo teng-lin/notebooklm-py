@@ -224,6 +224,12 @@ class NotebooksAPI:
     ) -> dict:
         """Toggle notebook sharing.
 
+        Note: This method uses SHARE_ARTIFACT for artifact-level sharing.
+        For notebook-level sharing with user management, use client.sharing instead:
+
+            await client.sharing.set_public(notebook_id, True)
+            await client.sharing.add_user(notebook_id, email, SharePermission.VIEWER)
+
         Sharing is a NOTEBOOK-LEVEL setting. When enabled, ALL artifacts in the
         notebook become accessible via their URLs.
 

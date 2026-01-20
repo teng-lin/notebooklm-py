@@ -101,6 +101,11 @@ from .types import (
     QuizQuantity,
     ReportFormat,
     ReportSuggestion,
+    ShareAccess,
+    SharedUser,
+    SharePermission,
+    ShareStatus,
+    ShareViewLevel,
     SlideDeckFormat,
     SlideDeckLength,
     Source,
@@ -137,6 +142,8 @@ __all__ = [
     "ChatReference",
     "AskResult",
     "ChatMode",
+    "SharedUser",
+    "ShareStatus",
     # Base Exceptions
     "NotebookLMError",
     "ValidationError",
@@ -191,4 +198,7 @@ __all__ = [
     "DriveMimeType",
     "ExportType",
     "SourceStatus",
+    "ShareAccess",
+    "ShareViewLevel",
+    "SharePermission",
 ]
