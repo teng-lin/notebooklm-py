@@ -7,40 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking Changes
-- **Source type string values** - `Source.source_type` string values have changed for consistency with SourceType enum:
-  - `"url"` → `"web_page"`
-  - `"generated"` → `"markdown"`
-  - `"text"` → `"docx"`
-  - `"spreadsheet"` → `"google_spreadsheet"`
-  - Added: `"csv"`
-- **Default source_type value** - Changed from `"text"` to `"unknown"` for sources without type information
-
 ### Added
+- **`SourceType` enum** - New `str, Enum` for type-safe source identification:
+  - `GOOGLE_DOCS`, `GOOGLE_SLIDES`, `GOOGLE_SPREADSHEET`, `PDF`, `PASTED_TEXT`, `WEB_PAGE`, `YOUTUBE`, `MARKDOWN`, `DOCX`, `CSV`, `IMAGE`, `MEDIA`, `UNKNOWN`
 - **`ArtifactType` enum** - New `str, Enum` for type-safe artifact identification:
   - `AUDIO`, `VIDEO`, `REPORT`, `QUIZ`, `FLASHCARDS`, `MIND_MAP`, `INFOGRAPHIC`, `SLIDES`, `DATA_TABLE`, `UNKNOWN`
 - **`.kind` property** - Unified type access across `Source`, `Artifact`, and `SourceFulltext`:
   ```python
   # Works with both enum and string comparison
-  artifact.kind == ArtifactType.AUDIO  # True
-  artifact.kind == "audio"             # Also True
   source.kind == SourceType.PDF        # True
   source.kind == "pdf"                 # Also True
+  artifact.kind == ArtifactType.AUDIO  # True
+  artifact.kind == "audio"             # Also True
   ```
 - **`UnknownTypeWarning`** - Warning (deduplicated) when API returns unknown type codes
-- **SourceType enum expansion** - New type codes verified via E2E testing:
-  - `DOCX = 11` - DOCX document uploads
-  - `MARKDOWN = 8` - Markdown uploads, notes converted to sources
-  - `CSV = 16` - CSV file uploads
-  - `GOOGLE_SPREADSHEET = 14` - Google Sheets sources
-- **SourceStatus.PREPARING** - New status (5) for sources in upload/preparation phase
+- **`SourceStatus.PREPARING`** - New status (5) for sources in upload/preparation phase
 - **E2E test coverage** - Added file upload tests for CSV, MP3, MP4, DOCX, JPG, Markdown with type verification
 
 ### Changed
-- **Type enums consolidated** - `SourceType` and `ArtifactType` moved from `rpc/types.py` to `types.py`
-- **Internal fields renamed** - Type code fields now use underscore prefix (`_type_code`, `_artifact_type`, `_variant`) to indicate internal use
 - **Source type detection** - Use API-provided type codes as source of truth instead of URL heuristics
 - **CLI file handling** - Simplified to always use `add_file()` for proper type detection
+- **`StudioContentType`** - Now internal only (use `ArtifactType` for public API)
 
 ### Deprecated
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` enum)
