@@ -288,6 +288,29 @@ class ExportType(int, Enum):
     SHEETS = 2  # Export to Google Sheets
 
 
+class ShareAccess(int, Enum):
+    """Notebook access level for public sharing."""
+
+    RESTRICTED = 0  # Only explicitly shared users
+    ANYONE_WITH_LINK = 1  # Public link access
+
+
+class ShareViewLevel(int, Enum):
+    """What viewers can access when shared."""
+
+    FULL_NOTEBOOK = 0  # Chat + sources + notes
+    CHAT_ONLY = 1  # Chat interface only
+
+
+class SharePermission(int, Enum):
+    """User permission level for sharing."""
+
+    OWNER = 1  # Full control (read-only, cannot assign)
+    EDITOR = 2  # Can edit notebook
+    VIEWER = 3  # Read-only access
+    _REMOVE = 4  # Internal: remove user from share list
+
+
 class SourceStatus(int, Enum):
     """Processing status of a source.
 

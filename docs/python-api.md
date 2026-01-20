@@ -157,6 +157,7 @@ class NotebookLMClient:
     chat: ChatAPI              # Conversations
     research: ResearchAPI      # Web/Drive research
     notes: NotesAPI            # User notes
+    sharing: SharingAPI        # Notebook sharing
 
     @classmethod
     async def from_storage(cls, path: str = None) -> "NotebookLMClient"
@@ -658,6 +659,86 @@ print(f"Language set to: {result}")
 
 ---
 
+### SharingAPI (`client.sharing`)
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `get_status(notebook_id)` | `str` | `ShareStatus` | Get current sharing configuration |
+| `set_public(notebook_id, public)` | `str, bool` | `ShareStatus` | Enable/disable public link sharing |
+| `set_view_level(notebook_id, level)` | `str, ShareViewLevel` | `None` | Set what viewers can access |
+| `add_user(notebook_id, email, permission, notify, welcome_message)` | `str, str, SharePermission, bool, str` | `ShareStatus` | Share with a user |
+| `update_user(notebook_id, email, permission)` | `str, str, SharePermission` | `ShareStatus` | Update user's permission |
+| `remove_user(notebook_id, email)` | `str, str` | `ShareStatus` | Remove user's access |
+
+**Example:**
+```python
+from notebooklm import SharePermission, ShareViewLevel
+
+# Get current sharing status
+status = await client.sharing.get_status(nb_id)
+print(f"Public: {status.is_public}")
+print(f"Users: {[u.email for u in status.shared_users]}")
+
+# Enable public sharing (anyone with link)
+status = await client.sharing.set_public(nb_id, True)
+print(f"Share URL: {status.share_url}")
+
+# Set view level (what viewers can access)
+await client.sharing.set_view_level(nb_id, ShareViewLevel.CHAT_ONLY)
+
+# Share with specific users
+status = await client.sharing.add_user(
+    nb_id,
+    "colleague@example.com",
+    SharePermission.VIEWER,
+    notify=True,
+    welcome_message="Check out my research!"
+)
+
+# Update user permission
+status = await client.sharing.update_user(
+    nb_id,
+    "colleague@example.com",
+    SharePermission.EDITOR
+)
+
+# Remove user access
+status = await client.sharing.remove_user(nb_id, "colleague@example.com")
+
+# Disable public sharing
+status = await client.sharing.set_public(nb_id, False)
+```
+
+**ShareStatus Object:**
+```python
+@dataclass
+class ShareStatus:
+    notebook_id: str              # The notebook ID
+    is_public: bool               # Whether publicly accessible
+    access: ShareAccess           # RESTRICTED or ANYONE_WITH_LINK
+    view_level: ShareViewLevel    # FULL_NOTEBOOK or CHAT_ONLY
+    shared_users: list[SharedUser]  # Users with access
+    share_url: str | None         # Public URL (if public)
+
+@dataclass
+class SharedUser:
+    email: str                    # User's email
+    permission: SharePermission   # OWNER, EDITOR, or VIEWER
+    display_name: str | None      # User's display name
+    avatar_url: str | None        # User's avatar URL
+```
+
+**Permission Levels:**
+- `SharePermission.OWNER` - Full control (read-only, cannot be assigned)
+- `SharePermission.EDITOR` - Can edit notebook content
+- `SharePermission.VIEWER` - Read-only access
+
+**View Levels:**
+- `ShareViewLevel.FULL_NOTEBOOK` - Viewers can access chat, sources, and notes
+- `ShareViewLevel.CHAT_ONLY` - Viewers can only access the chat interface
+
+---
+
 ## Data Types
 
 ### Notebook
@@ -796,6 +877,30 @@ else:
 
 **Tip:** Cache `fulltext` when processing multiple citations from the same source to avoid repeated API calls.
 
+### ShareStatus
+
+```python
+@dataclass
+class ShareStatus:
+    notebook_id: str                   # The notebook ID
+    is_public: bool                    # Whether publicly accessible
+    access: ShareAccess                # RESTRICTED or ANYONE_WITH_LINK
+    view_level: ShareViewLevel         # FULL_NOTEBOOK or CHAT_ONLY
+    shared_users: list[SharedUser]     # List of users with access
+    share_url: str | None              # Public URL if is_public=True
+```
+
+### SharedUser
+
+```python
+@dataclass
+class SharedUser:
+    email: str                         # User's email address
+    permission: SharePermission        # OWNER, EDITOR, or VIEWER
+    display_name: str | None           # User's display name
+    avatar_url: str | None             # URL to user's avatar image
+```
+
 ### SourceFulltext
 
 ```python
@@ -922,6 +1027,23 @@ class SlideDeckLength(Enum):
 class ExportType(Enum):
     DOCS = 1    # Export to Google Docs
     SHEETS = 2  # Export to Google Sheets
+```
+
+### Sharing
+
+```python
+class ShareAccess(Enum):
+    RESTRICTED = 0        # Only explicitly shared users
+    ANYONE_WITH_LINK = 1  # Public link access
+
+class ShareViewLevel(Enum):
+    FULL_NOTEBOOK = 0     # Chat + sources + notes
+    CHAT_ONLY = 1         # Chat interface only
+
+class SharePermission(Enum):
+    OWNER = 1             # Full control (read-only, cannot assign)
+    EDITOR = 2            # Can edit notebook
+    VIEWER = 3            # Read-only access
 ```
 
 ### Source and Artifact Types

@@ -46,7 +46,7 @@
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_artifacts.py` |
 | `RGP97b` | SHARE_ARTIFACT | Toggle notebook sharing | `_notebooks.py` |
 | `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_notebooks.py` |
-| `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | Not implemented |
+| `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
 | `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML content | `_artifacts.py` |
 | `fejl7e` | REMOVE_RECENTLY_VIEWED | Remove notebook from recent list | `_notebooks.py` |
@@ -887,9 +887,9 @@ await rpc_call(
 
 ### RPC: GET_SHARE_STATUS (JFMDGd)
 
-**Source:** Not yet implemented
+**Source:** `_sharing.py::get_status()`
 
-Get the current share settings for a notebook.
+Get the current share settings for a notebook, including users with access and public status.
 
 ```python
 params = [
@@ -897,69 +897,149 @@ params = [
     [2],          # 1: Fixed flag
 ]
 
-# Response: Share status information
+# Called with source_path:
+await rpc_call(
+    RPCMethod.GET_SHARE_STATUS,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+)
+
+# Response structure:
+# [
+#     [  # [0]: List of users with access
+#         [
+#             "email@example.com",     # [0]: email
+#             1,                       # [1]: permission (1=owner, 2=editor, 3=viewer)
+#             [],                      # [2]: flags (empty)
+#             [
+#                 "Display Name",      # [3][0]: display name
+#                 "https://..."        # [3][1]: avatar URL
+#             ]
+#         ],
+#         # ... more users
+#     ],
+#     [true],  # [1]: is_public - [true] or [false]
+#     1000     # [2]: unknown constant (ignore)
+# ]
 ```
 
 ### RPC: SHARE_NOTEBOOK (QDyure)
 
-**Source:** `_notebooks.py::share()`
+**Source:** `_sharing.py::set_public()`, `_sharing.py::add_user()`, `_sharing.py::remove_user()`
 
-Set notebook visibility (restricted vs anyone with link).
+Multi-purpose RPC for managing notebook sharing: toggle public access, add/update users, or remove users.
 
+**Toggle public/restricted access:**
 ```python
-# visibility: [0] = restricted, [1] = anyone with link
-# access: [0, ""] = chat only?, [1, ""] = full notebook?
-
+# access_value: 0=restricted, 1=anyone with link
 params = [
     [
         [
-            notebook_id,  # Notebook ID
-            None,
-            visibility,   # [0]=restricted, [1]=public link
-            access,       # [0, ""] or [1, ""] - access level
+            notebook_id,
+            None,                  # no user changes
+            [access_value],        # [0]=restricted, [1]=public
+            [access_value, ""]     # [flag, welcome_message]
         ]
     ],
-    1,            # Fixed value
+    1,      # action type
     None,
-    [2],          # Fixed flag
+    [2]     # fixed flag
+]
+
+# Response: [] (empty on success)
+```
+
+**Add/update user:**
+```python
+# permission: 2=editor, 3=viewer, 4=remove
+# notify_flag: 0=no email, 1=send notification
+# message_flag: 0=has message, 1=no message
+params = [
+    [
+        [
+            notebook_id,
+            [[email, None, permission]],  # user to add/update
+            None,                          # None = no public access change
+            [message_flag, welcome_message]
+        ]
+    ],
+    notify_flag,  # 0 or 1
+    None,
+    [2]
+]
+
+# Response: [] (empty on success)
+```
+
+**Remove user:**
+```python
+params = [
+    [
+        [
+            notebook_id,
+            [[email, None, 4]],  # 4 = remove permission
+            None,
+            [0, ""]
+        ]
+    ],
+    0,      # no notification
+    None,
+    [2]
 ]
 ```
 
-### RPC: SET_SHARE_ACCESS (via RENAME_NOTEBOOK s0tc2d)
+### RPC: SET_VIEW_LEVEL (via RENAME_NOTEBOOK s0tc2d)
 
-**Source:** Not yet implemented (same RPC ID as RENAME_NOTEBOOK)
+**Source:** `_sharing.py::set_view_level()`
 
-Set viewer access level (chat only vs full notebook).
+Set what viewers can access (full notebook vs chat only).
 
 **Note:** This uses the same RPC ID as RENAME_NOTEBOOK (`s0tc2d`) but with different parameter structure.
 
 ```python
-# The access toggle is at index [8] in a deeply nested array
+# view_level: 0=full notebook, 1=chat only
 params = [
     notebook_id,  # 0: Notebook ID
     [
         [
             None, None, None, None,   # indices 0-3
             None, None, None, None,   # indices 4-7
-            [[access_level]],         # index 8: [[1]] for chat only?
+            [[view_level]],           # index 8: [[0]] or [[1]]
         ]
     ],
 ]
+
+# Response: Full notebook data (same as rename response)
 ```
 
 ### Notebook Sharing Overview
 
 **Sharing is a notebook-level setting.** When you share a notebook, ALL artifacts become accessible.
 
-Notebooks have **two independent sharing toggles**:
+Notebooks have **three sharing dimensions**:
 
 1. **Visibility** (SHARE_NOTEBOOK - QDyure or SHARE_ARTIFACT - RGP97b):
-   - `[0]` = Restricted (only specific people)
+   - `[0]` = Restricted (only explicitly shared users)
    - `[1]` = Anyone with the link
 
-2. **Access Level** (SET_SHARE_ACCESS - s0tc2d):
+2. **View Level** (RENAME_NOTEBOOK - s0tc2d):
+   - `[[0]]` = Full notebook (chat + sources + notes)
    - `[[1]]` = Chat only (viewers can only use chat)
-   - Other = Full notebook access
+
+3. **User Permissions** (SHARE_NOTEBOOK - QDyure):
+   - `1` = Owner (read-only, cannot be assigned)
+   - `2` = Editor (can edit notebook)
+   - `3` = Viewer (read-only access)
+   - `4` = Remove (internal: remove user from share list)
+
+**Python API:**
+```python
+# Use client.sharing for all sharing operations
+status = await client.sharing.get_status(notebook_id)
+await client.sharing.set_public(notebook_id, True)
+await client.sharing.set_view_level(notebook_id, ShareViewLevel.CHAT_ONLY)
+await client.sharing.add_user(notebook_id, "user@example.com", SharePermission.VIEWER)
+```
 
 **Share URLs:**
 - Notebook: `https://notebooklm.google.com/notebook/{notebook_id}`
