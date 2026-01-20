@@ -110,10 +110,15 @@ class TestArtifactStatusToStr:
         assert artifact_status_to_str(ArtifactStatus.COMPLETED) == "completed"
         assert artifact_status_to_str(3) == "completed"
 
+    def test_failed_status(self):
+        """Test status code 4 (FAILED) returns 'failed'."""
+        assert artifact_status_to_str(ArtifactStatus.FAILED) == "failed"
+        assert artifact_status_to_str(4) == "failed"
+
     def test_unknown_status_codes(self):
         """Test unknown status codes return 'unknown'."""
         assert artifact_status_to_str(0) == "unknown"
-        assert artifact_status_to_str(4) == "unknown"
+        assert artifact_status_to_str(5) == "unknown"
         assert artifact_status_to_str(99) == "unknown"
         assert artifact_status_to_str(-1) == "unknown"
 

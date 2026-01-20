@@ -31,6 +31,7 @@ from .exceptions import (
 
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
+    ArtifactStatus,
     AudioFormat,
     AudioLength,
     ChatGoal,
@@ -249,6 +250,7 @@ __all__ = [
     "SourceType",
     "ArtifactType",
     # Re-exported enums (configuration/RPC)
+    "ArtifactStatus",
     "StudioContentType",
     "AudioFormat",
     "AudioLength",
@@ -575,7 +577,7 @@ class Artifact:
         id: Unique artifact identifier.
         title: Artifact title.
         kind: Artifact type as ArtifactType enum (str enum, comparable to strings).
-        status: Processing status (1=processing, 2=pending, 3=completed).
+        status: Processing status (1=processing, 2=pending, 3=completed, 4=failed).
         created_at: When the artifact was created.
         url: Download URL (if available).
 
@@ -588,7 +590,7 @@ class Artifact:
     id: str
     title: str
     _artifact_type: int = field(repr=False)  # StudioContentType enum value
-    status: int  # 1=processing, 2=pending, 3=completed
+    status: int  # 1=processing, 2=pending, 3=completed, 4=failed
     created_at: datetime | None = None
     url: str | None = None
     _variant: int | None = field(default=None, repr=False)  # For type 4: 1=flashcards, 2=quiz
@@ -699,25 +701,30 @@ class Artifact:
 
     @property
     def is_completed(self) -> bool:
-        """Check if artifact generation is complete (status=3)."""
-        return self.status == 3
+        """Check if artifact generation is complete (status=COMPLETED)."""
+        return self.status == ArtifactStatus.COMPLETED
 
     @property
     def is_processing(self) -> bool:
-        """Check if artifact is being generated (status=1)."""
-        return self.status == 1
+        """Check if artifact is being generated (status=PROCESSING)."""
+        return self.status == ArtifactStatus.PROCESSING
 
     @property
     def is_pending(self) -> bool:
-        """Check if artifact is queued/transitional (status=2)."""
-        return self.status == 2
+        """Check if artifact is queued/transitional (status=PENDING)."""
+        return self.status == ArtifactStatus.PENDING
+
+    @property
+    def is_failed(self) -> bool:
+        """Check if artifact generation failed (status=FAILED)."""
+        return self.status == ArtifactStatus.FAILED
 
     @property
     def status_str(self) -> str:
         """Get human-readable status string.
 
         Returns:
-            "in_progress", "pending", "completed", or "unknown".
+            "in_progress", "pending", "completed", "failed", or "unknown".
         """
         return artifact_status_to_str(self.status)
 

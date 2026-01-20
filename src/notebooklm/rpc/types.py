@@ -119,12 +119,14 @@ class ArtifactStatus(int, Enum):
     PROCESSING = 1  # Artifact is being generated
     PENDING = 2  # Artifact is queued
     COMPLETED = 3  # Artifact is ready for use/download
+    FAILED = 4  # Generation failed
 
 
 _ARTIFACT_STATUS_MAP: dict[int, str] = {
     ArtifactStatus.PROCESSING: "in_progress",
     ArtifactStatus.PENDING: "pending",
     ArtifactStatus.COMPLETED: "completed",
+    ArtifactStatus.FAILED: "failed",
 }
 
 
@@ -138,7 +140,7 @@ def artifact_status_to_str(status_code: int) -> str:
         status_code: Numeric status from API response (artifact_data[4]).
 
     Returns:
-        String status: "in_progress", "pending", "completed", or "unknown".
+        String status: "in_progress", "pending", "completed", "failed", or "unknown".
         Returns "unknown" for unrecognized codes (future-proofing).
     """
     return _ARTIFACT_STATUS_MAP.get(status_code, "unknown")
