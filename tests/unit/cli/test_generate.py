@@ -636,7 +636,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
 
-        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             result = await generate_with_retry(
                 generate_fn, max_retries=3, artifact_type="audio", json_output=True
             )
@@ -656,7 +656,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(return_value=rate_limited)
 
-        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock):
+        with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await generate_with_retry(
                 generate_fn, max_retries=2, artifact_type="audio", json_output=True
             )
@@ -693,7 +693,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(return_value=rate_limited)
 
-        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await generate_with_retry(
                 generate_fn, max_retries=3, artifact_type="audio", json_output=True
             )
@@ -713,7 +713,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(return_value=rate_limited)
 
-        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             await generate_with_retry(
                 generate_fn, max_retries=10, artifact_type="audio", json_output=True
             )
