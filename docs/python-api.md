@@ -675,20 +675,20 @@ print(f"Language set to: {result}")
 from notebooklm import SharePermission, ShareViewLevel
 
 # Get current sharing status
-status = await client.sharing.get_status(nb_id)
+status = await client.sharing.get_status(notebook_id)
 print(f"Public: {status.is_public}")
 print(f"Users: {[u.email for u in status.shared_users]}")
 
 # Enable public sharing (anyone with link)
-status = await client.sharing.set_public(nb_id, True)
+status = await client.sharing.set_public(notebook_id, True)
 print(f"Share URL: {status.share_url}")
 
 # Set view level (what viewers can access)
-await client.sharing.set_view_level(nb_id, ShareViewLevel.CHAT_ONLY)
+await client.sharing.set_view_level(notebook_id, ShareViewLevel.CHAT_ONLY)
 
 # Share with specific users
 status = await client.sharing.add_user(
-    nb_id,
+    notebook_id,
     "colleague@example.com",
     SharePermission.VIEWER,
     notify=True,
@@ -697,35 +697,16 @@ status = await client.sharing.add_user(
 
 # Update user permission
 status = await client.sharing.update_user(
-    nb_id,
+    notebook_id,
     "colleague@example.com",
     SharePermission.EDITOR
 )
 
 # Remove user access
-status = await client.sharing.remove_user(nb_id, "colleague@example.com")
+status = await client.sharing.remove_user(notebook_id, "colleague@example.com")
 
 # Disable public sharing
-status = await client.sharing.set_public(nb_id, False)
-```
-
-**ShareStatus Object:**
-```python
-@dataclass
-class ShareStatus:
-    notebook_id: str              # The notebook ID
-    is_public: bool               # Whether publicly accessible
-    access: ShareAccess           # RESTRICTED or ANYONE_WITH_LINK
-    view_level: ShareViewLevel    # FULL_NOTEBOOK or CHAT_ONLY
-    shared_users: list[SharedUser]  # Users with access
-    share_url: str | None         # Public URL (if public)
-
-@dataclass
-class SharedUser:
-    email: str                    # User's email
-    permission: SharePermission   # OWNER, EDITOR, or VIEWER
-    display_name: str | None      # User's display name
-    avatar_url: str | None        # User's avatar URL
+status = await client.sharing.set_public(notebook_id, False)
 ```
 
 **Permission Levels:**
