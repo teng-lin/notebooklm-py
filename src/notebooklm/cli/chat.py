@@ -100,7 +100,11 @@ def register_chat_commands(cli):
                                     )
                         except Exception as e:
                             # Log error but continue - history fetch is optional
-                            logger.debug("Failed to fetch conversation history: %s", e)
+                            logger.debug(
+                                "Failed to fetch conversation history (%s): %s",
+                                type(e).__name__,
+                                e,
+                            )
                             if not json_output:
                                 console.print(
                                     "[dim]Starting new conversation (history unavailable)[/dim]"

@@ -159,12 +159,11 @@ class ChatAPI:
 
         answer_text, references = self._parse_ask_response_with_references(response.text)
 
+        turns = self._core.get_cached_conversation(conversation_id)
         if answer_text:
-            turns = self._core.get_cached_conversation(conversation_id)
             turn_number = len(turns) + 1
             self._core.cache_conversation_turn(conversation_id, question, answer_text, turn_number)
         else:
-            turns = self._core.get_cached_conversation(conversation_id)
             turn_number = len(turns)
 
         return AskResult(
@@ -303,81 +302,6 @@ class ChatAPI:
             history.append([turn["answer"], None, 2])
             history.append([turn["query"], None, 1])
         return history
-
-    def _parse_ask_response(self, response_text: str) -> str:
-        """Parse the streaming response to extract the answer."""
-        if response_text.startswith(")]}'"):
-            response_text = response_text[4:]
-
-        lines = response_text.strip().split("\n")
-        longest_answer = ""
-
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            if not line:
-                i += 1
-                continue
-
-            try:
-                int(line)
-                i += 1
-                if i < len(lines):
-                    json_str = lines[i]
-                    text, is_answer = self._extract_answer_from_chunk(json_str)
-                    if text and is_answer and len(text) > len(longest_answer):
-                        longest_answer = text
-                i += 1
-            except ValueError:
-                text, is_answer = self._extract_answer_from_chunk(line)
-                if text and is_answer and len(text) > len(longest_answer):
-                    longest_answer = text
-                i += 1
-
-        if not longest_answer:
-            logger.debug(
-                "No answer extracted from response (%d lines parsed)",
-                len(lines),
-            )
-        return longest_answer
-
-    def _extract_answer_from_chunk(self, json_str: str) -> tuple[str | None, bool]:
-        """Extract answer text from a response chunk."""
-        try:
-            data = json.loads(json_str)
-        except json.JSONDecodeError:
-            return None, False
-
-        if not isinstance(data, list):
-            return None, False
-
-        for item in data:
-            if not isinstance(item, list) or len(item) < 3:
-                continue
-            if item[0] != "wrb.fr":
-                continue
-
-            inner_json = item[2]
-            if not isinstance(inner_json, str):
-                continue
-
-            try:
-                inner_data = json.loads(inner_json)
-                if isinstance(inner_data, list) and len(inner_data) > 0:
-                    first = inner_data[0]
-                    if isinstance(first, list) and len(first) > 0:
-                        text = first[0]
-                        if isinstance(text, str) and len(text) > _MIN_ANSWER_LENGTH:
-                            is_answer = False
-                            if len(first) > 4 and isinstance(first[4], list):
-                                type_info = first[4]
-                                if len(type_info) > 0 and type_info[-1] == 1:
-                                    is_answer = True
-                            return text, is_answer
-            except json.JSONDecodeError:
-                continue
-
-        return None, False
 
     def _parse_ask_response_with_references(
         self, response_text: str

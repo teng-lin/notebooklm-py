@@ -114,7 +114,12 @@ def get_current_notebook() -> str | None:
         data = json.loads(context_file.read_text())
         return data.get("notebook_id")
     except (OSError, json.JSONDecodeError) as e:
-        logger.debug("Failed to read notebook context from %s: %s", context_file, e)
+        logger.debug(
+            "Failed to read notebook context from %s (%s): %s",
+            context_file,
+            type(e).__name__,
+            e,
+        )
         return None
 
 
@@ -153,7 +158,12 @@ def get_current_conversation() -> str | None:
         data = json.loads(context_file.read_text())
         return data.get("conversation_id")
     except (OSError, json.JSONDecodeError) as e:
-        logger.debug("Failed to read conversation context from %s: %s", context_file, e)
+        logger.debug(
+            "Failed to read conversation context from %s (%s): %s",
+            context_file,
+            type(e).__name__,
+            e,
+        )
         return None
 
 
@@ -170,7 +180,12 @@ def set_current_conversation(conversation_id: str | None):
             del data["conversation_id"]
         context_file.write_text(json.dumps(data, indent=2))
     except (OSError, json.JSONDecodeError) as e:
-        logger.debug("Failed to update conversation context in %s: %s", context_file, e)
+        logger.debug(
+            "Failed to update conversation context in %s (%s): %s",
+            context_file,
+            type(e).__name__,
+            e,
+        )
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
