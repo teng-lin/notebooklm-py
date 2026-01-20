@@ -8,6 +8,12 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.auth import AuthTokens
+from notebooklm.types import (
+    ArtifactDownloadError,
+    ArtifactNotFoundError,
+    ArtifactNotReadyError,
+    ArtifactParseError,
+)
 
 
 @pytest.fixture
@@ -82,7 +88,7 @@ class TestDownloadAudio:
         api, mock_core = mock_artifacts_api
         mock_core.rpc_call.return_value = [[]]  # Empty list
 
-        with pytest.raises(ValueError, match="No completed audio"):
+        with pytest.raises(ArtifactNotReadyError):
             await api.download_audio("nb_123", "/tmp/audio.mp4")
 
     @pytest.mark.asyncio
@@ -91,7 +97,7 @@ class TestDownloadAudio:
         api, mock_core = mock_artifacts_api
         mock_core.rpc_call.return_value = [[["other_id", "Audio", 1, None, 3, None, [None] * 6]]]
 
-        with pytest.raises(ValueError, match="Audio artifact audio_001 not found"):
+        with pytest.raises(ArtifactNotReadyError):
             await api.download_audio("nb_123", "/tmp/audio.mp4", artifact_id="audio_001")
 
     @pytest.mark.asyncio
@@ -104,7 +110,7 @@ class TestDownloadAudio:
             ]
         ]
 
-        with pytest.raises(ValueError, match="Invalid audio metadata|Failed to parse"):
+        with pytest.raises(ArtifactParseError):
             await api.download_audio("nb_123", "/tmp/audio.mp4")
 
 
@@ -151,7 +157,7 @@ class TestDownloadVideo:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
-            with pytest.raises(ValueError, match="No completed video"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_video("nb_123", "/tmp/video.mp4")
 
     @pytest.mark.asyncio
@@ -162,7 +168,7 @@ class TestDownloadVideo:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = [["other_id", "Video", 3, None, 3, None, None, None, []]]
 
-            with pytest.raises(ValueError, match="Video artifact video_001 not found"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_video("nb_123", "/tmp/video.mp4", artifact_id="video_001")
 
 
@@ -210,7 +216,7 @@ class TestDownloadInfographic:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
-            with pytest.raises(ValueError, match="No completed infographic"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_infographic("nb_123", "/tmp/info.png")
 
 
@@ -258,7 +264,7 @@ class TestDownloadSlideDeck:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
-            with pytest.raises(ValueError, match="No completed slide"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_slide_deck("nb_123", "/tmp/slides.pdf")
 
     @pytest.mark.asyncio
@@ -273,7 +279,7 @@ class TestDownloadSlideDeck:
             artifact.append([["config"], "title", [], "http://example.com/test.pdf"])
             mock_list.return_value = [artifact]
 
-            with pytest.raises(ValueError, match="Slide deck slides_001 not found"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_slide_deck("nb_123", "/tmp/slides.pdf", artifact_id="slides_001")
 
     @pytest.mark.asyncio
@@ -288,7 +294,7 @@ class TestDownloadSlideDeck:
             artifact.append(["only", "two"])  # Invalid: needs 4 elements
             mock_list.return_value = [artifact]
 
-            with pytest.raises(ValueError, match="Invalid slide deck metadata"):
+            with pytest.raises(ArtifactParseError):
                 await api.download_slide_deck("nb_123", "/tmp/slides.pdf")
 
 
@@ -432,7 +438,7 @@ class TestDownloadReport:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
-            with pytest.raises(ValueError, match="No completed report"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_report("nb_123", "/tmp/report.md")
 
     @pytest.mark.asyncio
@@ -443,7 +449,7 @@ class TestDownloadReport:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = [["other_id", "Report", 2, None, 3, None, None, ["content"]]]
 
-            with pytest.raises(ValueError, match="Report report_001 not found"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_report("nb_123", "/tmp/report.md", artifact_id="report_001")
 
     @pytest.mark.asyncio
@@ -520,7 +526,7 @@ class TestDownloadMindMap:
         api, mock_core = mock_artifacts_api
         api._notes.list_mind_maps = AsyncMock(return_value=[])
 
-        with pytest.raises(ValueError, match="No mind maps found"):
+        with pytest.raises(ArtifactNotReadyError):
             await api.download_mind_map("nb_123", "/tmp/mindmap.json")
 
     @pytest.mark.asyncio
@@ -531,7 +537,7 @@ class TestDownloadMindMap:
             return_value=[["other_id", [None, "{}"], None, None, "Other"]]
         )
 
-        with pytest.raises(ValueError, match="Mind map mindmap_001 not found"):
+        with pytest.raises(ArtifactNotFoundError):
             await api.download_mind_map("nb_123", "/tmp/mindmap.json", artifact_id="mindmap_001")
 
 
@@ -602,7 +608,7 @@ class TestDownloadDataTable:
         with patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = []
 
-            with pytest.raises(ValueError, match="No completed data table"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_data_table("nb_123", "/tmp/data.csv")
 
     @pytest.mark.asyncio
@@ -616,7 +622,7 @@ class TestDownloadDataTable:
             artifact.extend([None] * 14)  # Pad to 19 elements
             mock_list.return_value = [artifact]
 
-            with pytest.raises(ValueError, match="Data table table_001 not found"):
+            with pytest.raises(ArtifactNotReadyError):
                 await api.download_data_table("nb_123", "/tmp/data.csv", artifact_id="table_001")
 
     @pytest.mark.asyncio
@@ -636,5 +642,5 @@ class TestDownloadDataTable:
             artifact.append(data_table_structure)
             mock_list.return_value = [artifact]
 
-            with pytest.raises(ValueError, match="Failed to extract headers"):
+            with pytest.raises(ArtifactParseError):
                 await api.download_data_table("nb_123", "/tmp/data.csv")
