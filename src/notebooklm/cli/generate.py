@@ -12,6 +12,8 @@ Commands:
     report       Generate report
 """
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import click
@@ -39,9 +41,83 @@ from .helpers import (
     with_client,
 )
 from .language import SUPPORTED_LANGUAGES, get_language
-from .options import json_option
+from .options import json_option, retry_option
 
 DEFAULT_LANGUAGE = "en"
+
+# Retry constants
+RETRY_INITIAL_DELAY = 60.0  # seconds
+RETRY_MAX_DELAY = 300.0  # 5 minutes
+RETRY_BACKOFF_MULTIPLIER = 2.0
+
+
+def calculate_backoff_delay(
+    attempt: int,
+    initial_delay: float = RETRY_INITIAL_DELAY,
+    max_delay: float = RETRY_MAX_DELAY,
+    multiplier: float = RETRY_BACKOFF_MULTIPLIER,
+) -> float:
+    """Calculate exponential backoff delay for a retry attempt.
+
+    Args:
+        attempt: The current attempt number (0-indexed).
+        initial_delay: Initial delay in seconds.
+        max_delay: Maximum delay cap in seconds.
+        multiplier: Backoff multiplier.
+
+    Returns:
+        Delay in seconds for this attempt.
+    """
+    delay = initial_delay * (multiplier**attempt)
+    return min(delay, max_delay)
+
+
+async def generate_with_retry(
+    generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
+    max_retries: int,
+    artifact_type: str,
+    json_output: bool = False,
+) -> GenerationStatus | None:
+    """Generate artifact with retry on rate limit.
+
+    Retries the generation call with exponential backoff when rate limited.
+
+    Args:
+        generate_fn: Async function that performs the generation.
+        max_retries: Maximum number of retries (0 = no retry).
+        artifact_type: Display name for progress messages.
+        json_output: Whether to suppress console output.
+
+    Returns:
+        GenerationStatus or None if generation failed.
+    """
+    result: GenerationStatus | None = None
+
+    for attempt in range(max_retries + 1):
+        result = await generate_fn()
+
+        # Check if rate limited
+        is_rate_limited = isinstance(result, GenerationStatus) and result.is_rate_limited
+
+        if not is_rate_limited:
+            # Success or non-rate-limit failure
+            return result
+
+        # Rate limited - check if we have retries left
+        if attempt >= max_retries:
+            # No more retries
+            return result
+
+        # Calculate delay and wait
+        delay = calculate_backoff_delay(attempt)
+        if not json_output:
+            console.print(
+                f"[yellow]{artifact_type.title()} rate limited. "
+                f"Retrying in {int(delay)}s (attempt {attempt + 2}/{max_retries + 1})...[/yellow]"
+            )
+        await asyncio.sleep(delay)
+
+    return result
 
 
 def resolve_language(language: str | None) -> str:
@@ -93,7 +169,7 @@ async def handle_generation_result(
     Returns:
         Final GenerationStatus, or None if generation failed.
     """
-    # Handle failed generation
+    # Handle failed generation or rate limiting
     if not result:
         if json_output:
             json_error_response(
@@ -101,11 +177,23 @@ async def handle_generation_result(
                 f"{artifact_type.title()} generation failed",
             )
         else:
-            console.print(
-                f"[red]{artifact_type.title()} generation failed "
-                "(Google may be rate limiting)[/red]"
-            )
+            console.print(f"[red]{artifact_type.title()} generation failed.[/red]")
         return None
+
+    # Check for rate limiting (result exists but failed due to rate limit)
+    if isinstance(result, GenerationStatus) and result.is_rate_limited:
+        if json_output:
+            json_error_response(
+                "RATE_LIMITED",
+                f"{artifact_type.title()} generation rate limited by Google",
+            )
+        else:
+            console.print(
+                f"[red]{artifact_type.title()} generation rate limited by Google.[/red]\n"
+                "[yellow]Daily quota may be exceeded. Try again in 1-24 hours, "
+                "or use --retry N to retry automatically.[/yellow]"
+            )
+        return result
 
     # Extract task_id from various result formats
     task_id: str | None = None
@@ -236,6 +324,7 @@ def generate():
 @click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_audio(
@@ -247,6 +336,7 @@ def generate_audio(
     language,
     source_ids,
     wait,
+    max_retries,
     json_output,
     client_auth,
 ):
@@ -277,14 +367,21 @@ def generate_audio(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_audio(
-                nb_id,
-                source_ids=sources,
-                language=resolve_language(language),
-                instructions=description or None,
-                audio_format=format_map[audio_format],
-                audio_length=length_map[audio_length],
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_audio(
+                    nb_id,
+                    source_ids=sources,
+                    language=resolve_language(language),
+                    instructions=description or None,
+                    audio_format=format_map[audio_format],
+                    audio_length=length_map[audio_length],
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(_generate, max_retries, "audio", json_output)
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, "audio", wait, json_output)
 
     return _run()
@@ -325,6 +422,7 @@ def generate_audio(
 @click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_video(
@@ -336,6 +434,7 @@ def generate_video(
     language,
     source_ids,
     wait,
+    max_retries,
     json_output,
     client_auth,
 ):
@@ -367,14 +466,21 @@ def generate_video(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_video(
-                nb_id,
-                source_ids=sources,
-                language=resolve_language(language),
-                instructions=description or None,
-                video_format=format_map[video_format],
-                video_style=style_map[style],
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_video(
+                    nb_id,
+                    source_ids=sources,
+                    language=resolve_language(language),
+                    instructions=description or None,
+                    video_format=format_map[video_format],
+                    video_style=style_map[style],
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(_generate, max_retries, "video", json_output)
+            else:
+                result = await _generate()
             await handle_generation_result(
                 client, nb_id, result, "video", wait, json_output, timeout=600.0
             )
@@ -406,6 +512,7 @@ def generate_video(
 @click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_slide_deck(
@@ -417,6 +524,7 @@ def generate_slide_deck(
     language,
     source_ids,
     wait,
+    max_retries,
     json_output,
     client_auth,
 ):
@@ -443,14 +551,23 @@ def generate_slide_deck(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_slide_deck(
-                nb_id,
-                source_ids=sources,
-                language=resolve_language(language),
-                instructions=description or None,
-                slide_format=format_map[deck_format],
-                slide_length=length_map[deck_length],
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_slide_deck(
+                    nb_id,
+                    source_ids=sources,
+                    language=resolve_language(language),
+                    instructions=description or None,
+                    slide_format=format_map[deck_format],
+                    slide_length=length_map[deck_length],
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(
+                    _generate, max_retries, "slide deck", json_output
+                )
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, "slide deck", wait, json_output)
 
     return _run()
@@ -469,10 +586,20 @@ def generate_slide_deck(
 @click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_quiz(
-    ctx, description, notebook_id, quantity, difficulty, source_ids, wait, json_output, client_auth
+    ctx,
+    description,
+    notebook_id,
+    quantity,
+    difficulty,
+    source_ids,
+    wait,
+    max_retries,
+    json_output,
+    client_auth,
 ):
     """Generate quiz.
 
@@ -499,13 +626,20 @@ def generate_quiz(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_quiz(
-                nb_id,
-                source_ids=sources,
-                instructions=description or None,
-                quantity=quantity_map[quantity],
-                difficulty=difficulty_map[difficulty],
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_quiz(
+                    nb_id,
+                    source_ids=sources,
+                    instructions=description or None,
+                    quantity=quantity_map[quantity],
+                    difficulty=difficulty_map[difficulty],
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(_generate, max_retries, "quiz", json_output)
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, "quiz", wait, json_output)
 
     return _run()
@@ -524,10 +658,20 @@ def generate_quiz(
 @click.option("--difficulty", type=click.Choice(["easy", "medium", "hard"]), default="medium")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_flashcards(
-    ctx, description, notebook_id, quantity, difficulty, source_ids, wait, json_output, client_auth
+    ctx,
+    description,
+    notebook_id,
+    quantity,
+    difficulty,
+    source_ids,
+    wait,
+    max_retries,
+    json_output,
+    client_auth,
 ):
     """Generate flashcards.
 
@@ -554,13 +698,22 @@ def generate_flashcards(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_flashcards(
-                nb_id,
-                source_ids=sources,
-                instructions=description or None,
-                quantity=quantity_map[quantity],
-                difficulty=difficulty_map[difficulty],
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_flashcards(
+                    nb_id,
+                    source_ids=sources,
+                    instructions=description or None,
+                    quantity=quantity_map[quantity],
+                    difficulty=difficulty_map[difficulty],
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(
+                    _generate, max_retries, "flashcards", json_output
+                )
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, "flashcards", wait, json_output)
 
     return _run()
@@ -588,6 +741,7 @@ def generate_flashcards(
 @click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_infographic(
@@ -599,6 +753,7 @@ def generate_infographic(
     language,
     source_ids,
     wait,
+    max_retries,
     json_output,
     client_auth,
 ):
@@ -627,14 +782,23 @@ def generate_infographic(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_infographic(
-                nb_id,
-                source_ids=sources,
-                language=resolve_language(language),
-                instructions=description or None,
-                orientation=orientation_map[orientation],
-                detail_level=detail_map[detail],
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_infographic(
+                    nb_id,
+                    source_ids=sources,
+                    language=resolve_language(language),
+                    instructions=description or None,
+                    orientation=orientation_map[orientation],
+                    detail_level=detail_map[detail],
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(
+                    _generate, max_retries, "infographic", json_output
+                )
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, "infographic", wait, json_output)
 
     return _run()
@@ -652,10 +816,19 @@ def generate_infographic(
 @click.option("--language", default=None, help="Output language (default: from config or 'en')")
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_data_table(
-    ctx, description, notebook_id, language, source_ids, wait, json_output, client_auth
+    ctx,
+    description,
+    notebook_id,
+    language,
+    source_ids,
+    wait,
+    max_retries,
+    json_output,
+    client_auth,
 ):
     """Generate data table.
 
@@ -672,12 +845,21 @@ def generate_data_table(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_data_table(
-                nb_id,
-                source_ids=sources,
-                language=resolve_language(language),
-                instructions=description,
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_data_table(
+                    nb_id,
+                    source_ids=sources,
+                    language=resolve_language(language),
+                    instructions=description,
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(
+                    _generate, max_retries, "data table", json_output
+                )
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, "data table", wait, json_output)
 
     return _run()
@@ -760,10 +942,19 @@ def _output_mind_map_result(result: Any, json_output: bool) -> None:
 )
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
+@retry_option
 @json_option
 @with_client
 def generate_report_cmd(
-    ctx, description, report_format, notebook_id, source_ids, wait, json_output, client_auth
+    ctx,
+    description,
+    report_format,
+    notebook_id,
+    source_ids,
+    wait,
+    max_retries,
+    json_output,
+    client_auth,
 ):
     """Generate a report (briefing doc, study guide, blog post, or custom).
 
@@ -807,12 +998,21 @@ def generate_report_cmd(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             sources = list(source_ids) if source_ids else None
-            result = await client.artifacts.generate_report(
-                nb_id,
-                source_ids=sources,
-                report_format=report_format_enum,
-                custom_prompt=custom_prompt,
-            )
+
+            async def _generate():
+                return await client.artifacts.generate_report(
+                    nb_id,
+                    source_ids=sources,
+                    report_format=report_format_enum,
+                    custom_prompt=custom_prompt,
+                )
+
+            if max_retries > 0:
+                result = await generate_with_retry(
+                    _generate, max_retries, format_display, json_output
+                )
+            else:
+                result = await _generate()
             await handle_generation_result(client, nb_id, result, format_display, wait, json_output)
 
     return _run()

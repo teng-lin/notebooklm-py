@@ -80,6 +80,17 @@ def output_option(f):
     )(f)
 
 
+def retry_option(f):
+    """Add --retry option for rate limit retry with exponential backoff."""
+    return click.option(
+        "--retry",
+        "max_retries",
+        type=int,
+        default=0,
+        help="Retry N times with exponential backoff on rate limit",
+    )(f)
+
+
 # Composite decorators for common patterns
 
 
@@ -89,5 +100,5 @@ def standard_options(f):
 
 
 def generate_options(f):
-    """Apply notebook + json + wait options for generation commands."""
-    return notebook_option(json_option(wait_option(f)))
+    """Apply notebook + json + wait + retry options for generation commands."""
+    return notebook_option(json_option(wait_option(retry_option(f))))

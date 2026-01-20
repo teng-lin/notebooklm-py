@@ -563,3 +563,194 @@ class TestGenerateLanguageValidation:
                 )
 
             assert result.exit_code == 0
+
+
+# =============================================================================
+# RETRY FUNCTIONALITY TESTS
+# =============================================================================
+
+
+class TestCalculateBackoffDelay:
+    """Tests for the calculate_backoff_delay helper function."""
+
+    def test_initial_delay(self):
+        """Test that first attempt uses initial delay."""
+        from notebooklm.cli.generate import calculate_backoff_delay
+
+        delay = calculate_backoff_delay(0, initial_delay=60.0)
+        assert delay == 60.0
+
+    def test_exponential_backoff(self):
+        """Test that delay increases exponentially."""
+        from notebooklm.cli.generate import calculate_backoff_delay
+
+        assert calculate_backoff_delay(0, initial_delay=60.0) == 60.0
+        assert calculate_backoff_delay(1, initial_delay=60.0) == 120.0
+        assert calculate_backoff_delay(2, initial_delay=60.0) == 240.0
+
+    def test_max_delay_cap(self):
+        """Test that delay is capped at max_delay."""
+        from notebooklm.cli.generate import calculate_backoff_delay
+
+        delay = calculate_backoff_delay(10, initial_delay=60.0, max_delay=300.0)
+        assert delay == 300.0
+
+    def test_custom_multiplier(self):
+        """Test custom backoff multiplier."""
+        from notebooklm.cli.generate import calculate_backoff_delay
+
+        delay = calculate_backoff_delay(1, initial_delay=10.0, multiplier=3.0)
+        assert delay == 30.0
+
+
+class TestGenerateWithRetry:
+    """Tests for the generate_with_retry helper function."""
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_success(self):
+        """Test that successful generation doesn't trigger retry."""
+        from notebooklm.cli.generate import generate_with_retry
+        from notebooklm.types import GenerationStatus
+
+        success_result = GenerationStatus(
+            task_id="task_123", status="pending", error=None, error_code=None
+        )
+        generate_fn = AsyncMock(return_value=success_result)
+
+        result = await generate_with_retry(generate_fn, max_retries=3, artifact_type="audio")
+
+        assert result == success_result
+        assert generate_fn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retry_on_rate_limit(self):
+        """Test that rate limit triggers retry."""
+        from notebooklm.cli.generate import generate_with_retry
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+        success_result = GenerationStatus(
+            task_id="task_123", status="pending", error=None, error_code=None
+        )
+        generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
+
+        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await generate_with_retry(
+                generate_fn, max_retries=3, artifact_type="audio", json_output=True
+            )
+
+        assert result == success_result
+        assert generate_fn.call_count == 2
+        mock_sleep.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_retry_exhausted(self):
+        """Test that all retries being exhausted returns last result."""
+        from notebooklm.cli.generate import generate_with_retry
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+        generate_fn = AsyncMock(return_value=rate_limited)
+
+        with patch("notebooklm.cli.generate.asyncio.sleep", new_callable=AsyncMock):
+            result = await generate_with_retry(
+                generate_fn, max_retries=2, artifact_type="audio", json_output=True
+            )
+
+        assert result == rate_limited
+        assert generate_fn.call_count == 3  # initial + 2 retries
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_max_retries_zero(self):
+        """Test that max_retries=0 means no retry attempts."""
+        from notebooklm.cli.generate import generate_with_retry
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+        generate_fn = AsyncMock(return_value=rate_limited)
+
+        result = await generate_with_retry(
+            generate_fn, max_retries=0, artifact_type="audio", json_output=True
+        )
+
+        assert result == rate_limited
+        assert generate_fn.call_count == 1
+
+
+class TestRetryOptionAvailable:
+    """Test that --retry option is available on generate commands."""
+
+    def test_retry_option_in_audio_help(self, runner):
+        """Test --retry option appears in audio command help."""
+        result = runner.invoke(cli, ["generate", "audio", "--help"])
+        assert result.exit_code == 0
+        assert "--retry" in result.output
+
+    def test_retry_option_in_video_help(self, runner):
+        """Test --retry option appears in video command help."""
+        result = runner.invoke(cli, ["generate", "video", "--help"])
+        assert result.exit_code == 0
+        assert "--retry" in result.output
+
+    def test_retry_option_in_slide_deck_help(self, runner):
+        """Test --retry option appears in slide-deck command help."""
+        result = runner.invoke(cli, ["generate", "slide-deck", "--help"])
+        assert result.exit_code == 0
+        assert "--retry" in result.output
+
+    def test_retry_option_in_quiz_help(self, runner):
+        """Test --retry option appears in quiz command help."""
+        result = runner.invoke(cli, ["generate", "quiz", "--help"])
+        assert result.exit_code == 0
+        assert "--retry" in result.output
+
+
+class TestRateLimitDetection:
+    """Test rate limit detection in handle_generation_result."""
+
+    def test_rate_limit_message_shown(self, runner, mock_auth):
+        """Test that rate limit error shows proper message."""
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
+
+            assert "rate limited by Google" in result.output
+            assert "--retry" in result.output
+
+    def test_rate_limit_json_output(self, runner, mock_auth):
+        """Test that rate limit error produces correct JSON output."""
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
+            mock_client_cls.return_value = mock_client
+
+            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
+
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "RATE_LIMITED"
