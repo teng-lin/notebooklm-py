@@ -146,7 +146,7 @@ class TestCallGenerateRateLimit:
 
         # Simulate rate limit error from RPC
         mock_core.rpc_call.side_effect = RPCError(
-            "Rate limit exceeded", code="USER_DISPLAYABLE_ERROR"
+            "Rate limit exceeded", rpc_code="USER_DISPLAYABLE_ERROR"
         )
 
         result = await api.generate_video("nb_123")
@@ -161,7 +161,7 @@ class TestCallGenerateRateLimit:
         """Test that non-rate-limit RPC errors propagate."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.side_effect = RPCError("Server error", code="INTERNAL_ERROR")
+        mock_core.rpc_call.side_effect = RPCError("Server error", rpc_code="INTERNAL_ERROR")
 
         with pytest.raises(RPCError, match="Server error"):
             await api.generate_video("nb_123")

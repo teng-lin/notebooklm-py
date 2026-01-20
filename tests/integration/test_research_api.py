@@ -79,9 +79,11 @@ class TestResearchAPI:
         auth_tokens,
         httpx_mock: HTTPXMock,
     ):
-        """Test that deep research on drive raises ValueError."""
+        """Test that deep research on drive raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ValueError, match="Deep Research only supports Web"):
+            with pytest.raises(ValidationError, match="Deep Research only supports Web"):
                 await client.research.start("nb_123", "query", source="drive", mode="deep")
 
     @pytest.mark.asyncio
@@ -90,9 +92,11 @@ class TestResearchAPI:
         auth_tokens,
         httpx_mock: HTTPXMock,
     ):
-        """Test that invalid source raises ValueError."""
+        """Test that invalid source raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ValueError, match="Invalid source"):
+            with pytest.raises(ValidationError, match="Invalid source"):
                 await client.research.start("nb_123", "query", source="invalid")
 
     @pytest.mark.asyncio
@@ -101,9 +105,11 @@ class TestResearchAPI:
         auth_tokens,
         httpx_mock: HTTPXMock,
     ):
-        """Test that invalid mode raises ValueError."""
+        """Test that invalid mode raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ValueError, match="Invalid mode"):
+            with pytest.raises(ValidationError, match="Invalid mode"):
                 await client.research.start("nb_123", "query", mode="invalid")
 
     @pytest.mark.asyncio

@@ -88,7 +88,9 @@ class TestConfigureChat:
     @pytest.mark.asyncio
     async def test_configure_chat_custom_requires_prompt(self, mock_client):
         """Test configure_chat raises error when CUSTOM goal without prompt."""
-        with pytest.raises(ValueError, match="custom_prompt is required"):
+        from notebooklm.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="custom_prompt is required"):
             await mock_client.chat.configure(
                 "notebook_123",
                 goal=ChatGoal.CUSTOM,

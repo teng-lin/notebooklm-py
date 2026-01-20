@@ -388,9 +388,11 @@ class TestCollectRpcIds:
 class TestRPCError:
     def test_found_ids_stored(self):
         """Test found_ids is stored in exception."""
-        error = RPCError("message", rpc_id="Id1", found_ids=["Id2", "Id3"])
+        error = RPCError("message", method_id="Id1", found_ids=["Id2", "Id3"])
 
         assert error.found_ids == ["Id2", "Id3"]
+        assert error.method_id == "Id1"
+        # Backward compatibility alias
         assert error.rpc_id == "Id1"
 
     def test_found_ids_defaults_to_empty_list(self):
@@ -419,6 +421,8 @@ class TestAuthError:
         """AuthError should preserve message and attributes."""
         from notebooklm.rpc import AuthError
 
-        error = AuthError("Token expired", rpc_id="abc123")
+        error = AuthError("Token expired", method_id="abc123")
         assert str(error) == "Token expired"
+        assert error.method_id == "abc123"
+        # Backward compatibility alias
         assert error.rpc_id == "abc123"

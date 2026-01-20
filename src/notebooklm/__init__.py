@@ -40,25 +40,46 @@ from .auth import DEFAULT_STORAGE_PATH, AuthTokens
 # Public API: Client
 from .client import NotebookLMClient
 
-# Public API: RPC errors (needed for exception handling)
-from .rpc import (
-    AuthError,
-    ClientError,
-    NetworkError,
-    RateLimitError,
-    RPCError,
-    RPCTimeoutError,
-    ServerError,
-)
-
-# Public API: Types and dataclasses
-from .types import (
-    Artifact,
+# Public API: Exceptions (centralized in exceptions.py)
+from .exceptions import (
+    # Domain: Artifacts
     ArtifactDownloadError,
     ArtifactError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    # RPC Protocol
+    AuthError,
+    # Domain: Chat
+    ChatError,
+    ClientError,
+    # Validation/Config
+    ConfigurationError,
+    DecodingError,
+    # Network
+    NetworkError,
+    # Domain: Notebooks
+    NotebookError,
+    # Base
+    NotebookLMError,
+    NotebookNotFoundError,
+    RateLimitError,
+    RPCError,
+    RPCTimeoutError,
+    ServerError,
+    # Domain: Sources
+    SourceAddError,
+    SourceError,
+    SourceNotFoundError,
+    SourceProcessingError,
+    SourceTimeoutError,
+    UnknownRPCMethodError,
+    ValidationError,
+)
+
+# Public API: Types and dataclasses
+from .types import (
+    Artifact,
     ArtifactType,
     AskResult,
     AudioFormat,
@@ -83,14 +104,8 @@ from .types import (
     SlideDeckFormat,
     SlideDeckLength,
     Source,
-    # Exceptions
-    SourceAddError,
-    SourceError,
     SourceFulltext,
-    SourceNotFoundError,
-    SourceProcessingError,
     SourceStatus,
-    SourceTimeoutError,
     SourceType,
     # Enums for configuration
     StudioContentType,
@@ -122,24 +137,37 @@ __all__ = [
     "ChatReference",
     "AskResult",
     "ChatMode",
-    # Exceptions
-    "SourceError",
-    "SourceAddError",
-    "SourceProcessingError",
-    "SourceTimeoutError",
-    "SourceNotFoundError",
-    "ArtifactError",
-    "ArtifactNotFoundError",
-    "ArtifactNotReadyError",
-    "ArtifactParseError",
-    "ArtifactDownloadError",
+    # Base Exceptions
+    "NotebookLMError",
+    "ValidationError",
+    "ConfigurationError",
+    # RPC/Network Exceptions
     "RPCError",
+    "DecodingError",
+    "UnknownRPCMethodError",
     "AuthError",
     "NetworkError",
     "RPCTimeoutError",
     "RateLimitError",
     "ServerError",
     "ClientError",
+    # Domain Exceptions: Notebooks
+    "NotebookError",
+    "NotebookNotFoundError",
+    # Domain Exceptions: Chat
+    "ChatError",
+    # Domain Exceptions: Sources
+    "SourceError",
+    "SourceAddError",
+    "SourceProcessingError",
+    "SourceTimeoutError",
+    "SourceNotFoundError",
+    # Domain Exceptions: Artifacts
+    "ArtifactError",
+    "ArtifactNotFoundError",
+    "ArtifactNotReadyError",
+    "ArtifactParseError",
+    "ArtifactDownloadError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)

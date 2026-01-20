@@ -95,9 +95,11 @@ class TestChatAPI:
         auth_tokens,
         httpx_mock: HTTPXMock,
     ):
-        """Test that CUSTOM mode without prompt raises ValueError."""
+        """Test that CUSTOM mode without prompt raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ValueError, match="custom_prompt is required"):
+            with pytest.raises(ValidationError, match="custom_prompt is required"):
                 await client.chat.configure("nb_123", goal=ChatGoal.CUSTOM)
 
     @pytest.mark.asyncio

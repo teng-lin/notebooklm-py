@@ -19,6 +19,7 @@ import httpx
 
 from ._core import ClientCore
 from .auth import load_httpx_cookies
+from .exceptions import ValidationError
 from .rpc import (
     ArtifactStatus,
     AudioFormat,
@@ -1249,7 +1250,7 @@ class ArtifactsAPI:
         # Validate output format
         valid_formats = ("json", "markdown", "html")
         if output_format not in valid_formats:
-            raise ValueError(
+            raise ValidationError(
                 f"Invalid output_format: {output_format!r}. Use one of: {', '.join(valid_formats)}"
             )
 
@@ -1862,7 +1863,7 @@ class ArtifactsAPI:
                     task_id="",
                     status="failed",
                     error=str(e),
-                    error_code=e.code,
+                    error_code=str(e.code) if e.code is not None else None,
                 )
             raise
 

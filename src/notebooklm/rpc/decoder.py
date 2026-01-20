@@ -6,6 +6,35 @@ import re
 from enum import IntEnum
 from typing import Any
 
+# Import exceptions from centralized module
+from ..exceptions import (
+    AuthError,
+    ClientError,
+    NetworkError,
+    RateLimitError,
+    RPCError,
+    RPCTimeoutError,
+    ServerError,
+)
+
+# Re-export for backward compatibility (imports from notebooklm.rpc.decoder still work)
+__all__ = [
+    "RPCError",
+    "AuthError",
+    "NetworkError",
+    "RPCTimeoutError",
+    "RateLimitError",
+    "ServerError",
+    "ClientError",
+    "RPCErrorCode",
+    "get_error_message_for_code",
+    "strip_anti_xssi",
+    "parse_chunked_response",
+    "collect_rpc_ids",
+    "extract_rpc_result",
+    "decode_response",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,151 +107,6 @@ def get_error_message_for_code(code: int | None) -> tuple[str, bool]:
     if 500 <= code < 600:
         return (f"Server error {code}. This is usually temporary - try again later.", True)
     return (f"Error code: {code}", False)
-
-
-class RPCError(Exception):
-    """Raised when RPC call returns an error.
-
-    Attributes:
-        rpc_id: The RPC method ID that failed.
-        code: Error code from API response (if available).
-        found_ids: List of RPC IDs found in the response.
-        raw_response_preview: First 500 chars of response (for debugging).
-    """
-
-    def __init__(
-        self,
-        message: str,
-        rpc_id: str | None = None,
-        code: Any | None = None,
-        found_ids: list[str] | None = None,
-        raw_response_preview: str | None = None,
-    ):
-        self.rpc_id = rpc_id
-        self.code = code
-        self.found_ids = found_ids or []
-        self.raw_response_preview = raw_response_preview
-        super().__init__(message)
-
-
-class AuthError(RPCError):
-    """Raised when RPC call fails due to authentication issues.
-
-    This is a subclass of RPCError for backwards compatibility.
-    Catching RPCError will also catch AuthError.
-    """
-
-
-class NetworkError(RPCError):
-    """Raised when RPC call fails due to network issues.
-
-    This includes connection failures, DNS errors, and other transport-level problems.
-    These errors are typically transient and may succeed on retry.
-
-    Attributes:
-        rpc_id: The RPC method ID that failed.
-        original_error: The underlying network exception.
-    """
-
-    def __init__(
-        self, message: str, rpc_id: str | None = None, original_error: Exception | None = None
-    ):
-        super().__init__(message, rpc_id=rpc_id)
-        self.original_error = original_error
-
-
-class RPCTimeoutError(NetworkError):
-    """Raised when RPC call times out.
-
-    Indicates the request took too long to complete. May succeed with a longer timeout
-    or during periods of lower API load.
-
-    Note: Named RPCTimeoutError to avoid shadowing Python's built-in TimeoutError.
-
-    Attributes:
-        rpc_id: The RPC method ID that timed out.
-        timeout_seconds: The timeout duration that was exceeded.
-        original_error: The underlying timeout exception.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        rpc_id: str | None = None,
-        timeout_seconds: float | None = None,
-        original_error: Exception | None = None,
-    ):
-        super().__init__(message, rpc_id=rpc_id, original_error=original_error)
-        self.timeout_seconds = timeout_seconds
-
-
-class RateLimitError(RPCError):
-    """Raised when API rate limit is exceeded.
-
-    The API has rejected the request due to too many requests in a time window.
-    Requests should be retried after a delay.
-
-    Attributes:
-        rpc_id: The RPC method ID that was rate limited.
-        retry_after: Suggested seconds to wait before retrying (if available).
-        code: Error code from API response.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        rpc_id: str | None = None,
-        retry_after: int | None = None,
-        code: Any | None = None,
-    ):
-        super().__init__(message, rpc_id=rpc_id, code=code)
-        self.retry_after = retry_after
-
-
-class ServerError(RPCError):
-    """Raised when API returns a 5xx server error.
-
-    Indicates a problem on Google's servers. These are typically transient
-    and may succeed on retry with exponential backoff.
-
-    Attributes:
-        rpc_id: The RPC method ID that failed.
-        status_code: HTTP status code (500-599).
-        code: Error code from response.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        rpc_id: str | None = None,
-        status_code: int | None = None,
-        code: Any | None = None,
-    ):
-        super().__init__(message, rpc_id=rpc_id, code=code)
-        self.status_code = status_code
-
-
-class ClientError(RPCError):
-    """Raised when API returns a 4xx client error.
-
-    Indicates a problem with the request itself (invalid parameters, malformed data, etc.).
-    These errors typically should not be retried without fixing the request.
-
-    Attributes:
-        rpc_id: The RPC method ID that failed.
-        status_code: HTTP status code (400-499, excluding 401/403).
-        code: Error code from response.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        rpc_id: str | None = None,
-        status_code: int | None = None,
-        code: Any | None = None,
-    ):
-        super().__init__(message, rpc_id=rpc_id, code=code)
-        self.status_code = status_code
 
 
 def strip_anti_xssi(response: str) -> str:
@@ -328,7 +212,7 @@ def parse_chunked_response(response: str) -> list[Any]:
             raise RPCError(
                 f"Response parsing failed: {skipped_count} of {len(lines)} chunks malformed. "
                 f"This may indicate API changes or data corruption.",
-                raw_response_preview=response[:500],
+                raw_response=response[:500],
             )
         # Non-critical but warn user results may be incomplete
         logger.warning(
@@ -421,8 +305,8 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
 
                 raise RPCError(
                     error_msg,
-                    rpc_id=rpc_id,
-                    code=error_code,
+                    method_id=rpc_id,
+                    rpc_code=error_code,
                 )
 
             if item[0] == "wrb.fr" and item[1] == rpc_id:
@@ -434,8 +318,8 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
                     if _contains_user_displayable_error(item[5]):
                         raise RateLimitError(
                             "API rate limit or quota exceeded. Please wait before retrying.",
-                            rpc_id=rpc_id,
-                            code="USER_DISPLAYABLE_ERROR",
+                            method_id=rpc_id,
+                            rpc_code="USER_DISPLAYABLE_ERROR",
                         )
 
                 if isinstance(result_data, str):
@@ -483,8 +367,8 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
         # Add context to errors from extract_rpc_result
         if not e.found_ids:
             e.found_ids = found_ids
-        if not e.raw_response_preview:
-            e.raw_response_preview = response_preview
+        if not e.raw_response:
+            e.raw_response = response_preview
         raise
 
     if result is None and not allow_null:
@@ -494,9 +378,9 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
                 f"No result found for RPC ID '{rpc_id}'. "
                 f"Response contains IDs: {found_ids}. "
                 f"The RPC method ID may have changed.",
-                rpc_id=rpc_id,
+                method_id=rpc_id,
                 found_ids=found_ids,
-                raw_response_preview=response_preview,
+                raw_response=response_preview,
             )
         # Log raw response details at debug level for troubleshooting
         logger.debug(
@@ -507,8 +391,8 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
         )
         raise RPCError(
             f"No result found for RPC ID: {rpc_id}",
-            rpc_id=rpc_id,
-            raw_response_preview=response_preview,
+            method_id=rpc_id,
+            raw_response=response_preview,
         )
 
     return result

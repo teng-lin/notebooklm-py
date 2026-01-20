@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from ._core import ClientCore
+from .exceptions import ValidationError
 from .rpc import QUERY_URL, RPCMethod
 from .types import AskResult, ChatReference, ConversationTurn
 
@@ -224,7 +225,7 @@ class ChatAPI:
             custom_prompt: Custom instructions (required if goal is CUSTOM).
 
         Raises:
-            ValueError: If goal is CUSTOM but custom_prompt is not provided.
+            ValidationError: If goal is CUSTOM but custom_prompt is not provided.
         """
         logger.debug("Configuring chat for notebook %s", notebook_id)
         from .rpc import ChatGoal, ChatResponseLength
@@ -235,7 +236,7 @@ class ChatAPI:
             response_length = ChatResponseLength.DEFAULT
 
         if goal == ChatGoal.CUSTOM and not custom_prompt:
-            raise ValueError("custom_prompt is required when goal is CUSTOM")
+            raise ValidationError("custom_prompt is required when goal is CUSTOM")
 
         goal_array = [goal.value, custom_prompt] if goal == ChatGoal.CUSTOM else [goal.value]
 
