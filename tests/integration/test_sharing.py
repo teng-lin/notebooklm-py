@@ -154,15 +154,27 @@ class TestSetViewLevel:
         build_rpc_response,
     ):
         """Test setting view level to chat only."""
-        # RENAME_NOTEBOOK is used for set_view_level
-        response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
-        httpx_mock.add_response(content=response.encode())
+        # First call: RENAME_NOTEBOOK (to set view level)
+        rename_response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
+        httpx_mock.add_response(content=rename_response.encode())
+
+        # Second call: GET_SHARE_STATUS (to get current status)
+        status_response = build_rpc_response(
+            RPCMethod.GET_SHARE_STATUS,
+            [[["owner@example.com", 1, [], ["Owner", "https://avatar"]]], [False], 1000],
+        )
+        httpx_mock.add_response(content=status_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            await client.sharing.set_view_level("nb_123", ShareViewLevel.CHAT_ONLY)
+            status = await client.sharing.set_view_level("nb_123", ShareViewLevel.CHAT_ONLY)
 
-        request = httpx_mock.get_request()
-        assert RPCMethod.RENAME_NOTEBOOK.value in str(request.url)
+        # Verify the returned status has the correct view_level we set
+        assert status.view_level == ShareViewLevel.CHAT_ONLY
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+        assert RPCMethod.RENAME_NOTEBOOK.value in str(requests[0].url)
+        assert RPCMethod.GET_SHARE_STATUS.value in str(requests[1].url)
 
     @pytest.mark.asyncio
     async def test_set_view_level_full_notebook(
@@ -172,14 +184,26 @@ class TestSetViewLevel:
         build_rpc_response,
     ):
         """Test setting view level to full notebook."""
-        response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
-        httpx_mock.add_response(content=response.encode())
+        # First call: RENAME_NOTEBOOK (to set view level)
+        rename_response = build_rpc_response(RPCMethod.RENAME_NOTEBOOK, None)
+        httpx_mock.add_response(content=rename_response.encode())
+
+        # Second call: GET_SHARE_STATUS (to get current status)
+        status_response = build_rpc_response(
+            RPCMethod.GET_SHARE_STATUS,
+            [[["owner@example.com", 1, [], ["Owner", "https://avatar"]]], [False], 1000],
+        )
+        httpx_mock.add_response(content=status_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            await client.sharing.set_view_level("nb_123", ShareViewLevel.FULL_NOTEBOOK)
+            status = await client.sharing.set_view_level("nb_123", ShareViewLevel.FULL_NOTEBOOK)
 
-        request = httpx_mock.get_request()
-        assert RPCMethod.RENAME_NOTEBOOK.value in str(request.url)
+        # Verify the returned status has the correct view_level we set
+        assert status.view_level == ShareViewLevel.FULL_NOTEBOOK
+
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 2
+        assert RPCMethod.RENAME_NOTEBOOK.value in str(requests[0].url)
 
 
 class TestAddUser:

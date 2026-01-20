@@ -99,12 +99,20 @@ class SharingAPI:
         self,
         notebook_id: str,
         level: ShareViewLevel,
-    ) -> None:
+    ) -> ShareStatus:
         """Set what viewers can access.
 
         Args:
             notebook_id: The notebook ID.
             level: FULL_NOTEBOOK or CHAT_ONLY.
+
+        Returns:
+            Updated ShareStatus with the new view_level.
+
+        Note:
+            The GET_SHARE_STATUS API does not return view_level, so the
+            returned status includes the view_level we just set rather
+            than fetching it from the API.
         """
         logger.debug("Setting notebook %s view level to %s", notebook_id, level.name)
         params = [
@@ -116,6 +124,17 @@ class SharingAPI:
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+        )
+        # Fetch current status and override view_level with what we just set
+        # (GET_SHARE_STATUS doesn't return view_level)
+        status = await self.get_status(notebook_id)
+        return ShareStatus(
+            notebook_id=status.notebook_id,
+            is_public=status.is_public,
+            access=status.access,
+            view_level=level,
+            shared_users=status.shared_users,
+            share_url=status.share_url,
         )
 
     async def add_user(

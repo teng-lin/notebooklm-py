@@ -5,8 +5,9 @@ Commands:
     create     Create a new notebook
     delete     Delete a notebook
     rename     Rename a notebook
-    share      Configure notebook sharing
     summary    Get notebook summary with AI-generated insights
+
+Note: Sharing commands moved to 'share' command group.
 """
 
 import click
@@ -156,52 +157,6 @@ def register_notebook_commands(cli):
                 await client.notebooks.rename(resolved_id, new_title)
                 console.print(f"[green]Renamed notebook:[/green] {resolved_id}")
                 console.print(f"[bold]New title:[/bold] {new_title}")
-
-        return _run()
-
-    @cli.command("share")
-    @click.option(
-        "-n",
-        "--notebook",
-        "notebook_id",
-        default=None,
-        help="Notebook ID (uses current if not set). Supports partial IDs.",
-    )
-    @click.option(
-        "--revoke",
-        is_flag=True,
-        default=False,
-        help="Revoke sharing (make notebook private)",
-    )
-    @with_client
-    def share_cmd(ctx, notebook_id, revoke, client_auth):
-        """Toggle notebook sharing.
-
-        By default, enables sharing and returns a shareable URL.
-        Use --revoke to disable sharing.
-
-        When sharing is enabled, ALL artifacts in the notebook become
-        accessible via their URLs.
-
-        \b
-        Examples:
-          notebooklm share                  # Enable sharing
-          notebooklm share --revoke         # Disable sharing
-
-        NOTEBOOK_ID supports partial matching (e.g., 'abc' matches 'abc123...').
-        """
-        notebook_id = require_notebook(notebook_id)
-        public = not revoke
-
-        async def _run():
-            async with NotebookLMClient(client_auth) as client:
-                resolved_id = await resolve_notebook_id(client, notebook_id)
-                result = await client.notebooks.share(resolved_id, public=public)
-
-                status = "shared" if result["public"] else "private"
-                console.print(f"[green]Notebook is now {status}[/green]")
-                if result.get("url"):
-                    console.print(f"[blue]Share URL: {result['url']}[/blue]")
 
         return _run()
 

@@ -70,6 +70,7 @@ def create_mock_client():
     mock_client.chat = MagicMock()
     mock_client.research = MagicMock()
     mock_client.notes = MagicMock()
+    mock_client.sharing = MagicMock()
 
     return mock_client
 
@@ -153,6 +154,7 @@ class MultiPatcher:
             patch("notebooklm.cli.notebook.NotebookLMClient"),
             patch("notebooklm.cli.chat.NotebookLMClient"),
             patch("notebooklm.cli.session.NotebookLMClient"),
+            patch("notebooklm.cli.share.NotebookLMClient"),
         ]
         self.mocks = []
 
@@ -171,9 +173,10 @@ def patch_main_cli_client():
     """Create a context manager that patches NotebookLMClient in CLI command modules.
 
     After refactoring, top-level commands are in separate modules:
-    - notebook.py: list, create, delete, rename, share, summary
+    - notebook.py: list, create, delete, rename, summary
     - chat.py: ask, configure, history
     - session.py: use
+    - share.py: status, public, view-level, add, update, remove
 
     Returns:
         A context manager that patches NotebookLMClient in all relevant modules

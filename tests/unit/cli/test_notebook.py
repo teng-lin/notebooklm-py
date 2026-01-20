@@ -269,73 +269,11 @@ class TestNotebookRename:
 
 
 # =============================================================================
-# NOTEBOOK SHARE TESTS
+# NOTEBOOK SHARE TESTS (moved to share command group)
 # =============================================================================
 
-
-class TestNotebookShare:
-    def test_notebook_share_enable(self, runner, mock_auth):
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            # Mock list for partial ID resolution
-            mock_client.notebooks.list = AsyncMock(
-                return_value=[
-                    Notebook(
-                        id="nb_123",
-                        title="Test Notebook",
-                        created_at=datetime(2024, 1, 1),
-                        is_owner=True,
-                    ),
-                ]
-            )
-            mock_client.notebooks.share = AsyncMock(
-                return_value={
-                    "public": True,
-                    "url": "https://notebooklm.google.com/notebook/nb_123",
-                    "artifact_id": None,
-                }
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["share", "-n", "nb_123"])
-
-            assert result.exit_code == 0
-            assert "Notebook is now shared" in result.output
-            assert "Share URL" in result.output
-            mock_client.notebooks.share.assert_called_once_with("nb_123", public=True)
-
-    def test_notebook_share_revoke(self, runner, mock_auth):
-        with patch_main_cli_client() as mock_client_cls:
-            mock_client = create_mock_client()
-            # Mock list for partial ID resolution
-            mock_client.notebooks.list = AsyncMock(
-                return_value=[
-                    Notebook(
-                        id="nb_123",
-                        title="Test Notebook",
-                        created_at=datetime(2024, 1, 1),
-                        is_owner=True,
-                    ),
-                ]
-            )
-            mock_client.notebooks.share = AsyncMock(
-                return_value={
-                    "public": False,
-                    "url": None,
-                    "artifact_id": None,
-                }
-            )
-            mock_client_cls.return_value = mock_client
-
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
-                mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["share", "-n", "nb_123", "--revoke"])
-
-            assert result.exit_code == 0
-            assert "Notebook is now private" in result.output
-            mock_client.notebooks.share.assert_called_once_with("nb_123", public=False)
+# Note: Share functionality has moved to 'share' command group.
+# Tests are now in tests/unit/cli/test_share.py
 
 
 # =============================================================================

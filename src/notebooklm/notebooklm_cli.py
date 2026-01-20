@@ -43,6 +43,7 @@ from .cli import (
     # Register functions for top-level commands
     register_session_commands,
     research,
+    share,
     skill,
     source,
 )
@@ -109,6 +110,7 @@ cli.add_command(artifact)
 cli.add_command(generate)
 cli.add_command(download)
 cli.add_command(note)
+cli.add_command(share)
 cli.add_command(skill)
 cli.add_command(research)
 cli.add_command(language)

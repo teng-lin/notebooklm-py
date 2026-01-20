@@ -72,6 +72,7 @@ from .research import research
 
 # Register functions (top-level command style)
 from .session import register_session_commands
+from .share import share
 from .skill import skill
 from .source import source
 
@@ -82,6 +83,7 @@ __all__ = [
     "generate",
     "download",
     "note",
+    "share",
     "skill",
     "research",
     "language",
