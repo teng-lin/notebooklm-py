@@ -789,7 +789,7 @@ class TestArtifactErrorPaths:
         httpx_mock.add_response(status_code=500)
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(RPCError, match="HTTP 500"):
+            with pytest.raises(RPCError, match="Server error 500"):
                 await client.artifacts.list("nb_123")
 
     @pytest.mark.asyncio

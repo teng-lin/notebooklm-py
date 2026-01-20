@@ -12,6 +12,7 @@ import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.rpc.decoder import RPCError
+from notebooklm.types import ArtifactDownloadError
 
 
 @pytest.fixture
@@ -71,7 +72,7 @@ class TestDownloadUrlsBatch:
 
     @pytest.mark.asyncio
     async def test_batch_download_html_response_rejected(self, mock_artifacts_api, tmp_path):
-        """Test that HTML responses are rejected (auth expired)."""
+        """Test that HTML responses raise ArtifactDownloadError (auth expired)."""
         api, _ = mock_artifacts_api
 
         # Mock response returning HTML instead of media
@@ -94,10 +95,9 @@ class TestDownloadUrlsBatch:
                 ("https://example.com/file.mp4", str(tmp_path / "file.mp4")),
             ]
 
-            result = await api._download_urls_batch(urls_and_paths)
-
-        # HTML response should be rejected, returning empty list
-        assert result == []
+            # HTML response should raise ArtifactDownloadError
+            with pytest.raises(ArtifactDownloadError, match="Received HTML instead of media"):
+                await api._download_urls_batch(urls_and_paths)
 
     @pytest.mark.asyncio
     async def test_batch_download_partial_failure(self, mock_artifacts_api, tmp_path):

@@ -621,7 +621,7 @@ class TestRpcCallAutoRetry:
         core._http_client = MagicMock()
         core._http_client.post = mock_post
 
-        with pytest.raises(RPCError, match="HTTP 500"):
+        with pytest.raises(RPCError, match="Server error 500"):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 0, "Should not refresh on non-auth error"

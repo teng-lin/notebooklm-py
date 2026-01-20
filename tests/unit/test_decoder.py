@@ -5,6 +5,7 @@ import json
 import pytest
 
 from notebooklm.rpc.decoder import (
+    RateLimitError,
     RPCError,
     collect_rpc_ids,
     decode_response,
@@ -89,14 +90,17 @@ class TestParseChunkedResponse:
         assert chunks == []
 
     def test_ignores_malformed_chunks(self):
-        """Test malformed chunks are ignored."""
-        valid = json.dumps(["valid"])
-        response = f"{len(valid)}\n{valid}\n99\nnot-json\n"
+        """Test malformed chunks are ignored when below 10% threshold."""
+        # Add 10 valid chunks and 1 malformed = 9% error rate (below 10% threshold)
+        valid_chunks = [json.dumps([f"valid{i}"]) for i in range(10)]
+        valid_parts = "\n".join([f"{len(c)}\n{c}" for c in valid_chunks])
+        response = f"{valid_parts}\n99\nnot-json\n"
 
         chunks = parse_chunked_response(response)
 
-        assert len(chunks) == 1
-        assert chunks[0] == ["valid"]
+        assert len(chunks) == 10
+        assert chunks[0] == ["valid0"]
+        assert chunks[9] == ["valid9"]
 
 
 class TestExtractRPCResult:
@@ -159,7 +163,7 @@ class TestExtractRPCResult:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_raises_on_user_displayable_error(self):
-        """Test raises RPCError when UserDisplayableError is embedded in response.
+        """Test raises RateLimitError when UserDisplayableError is embedded in response.
 
         Google's API returns this pattern for rate limiting, quota exceeded,
         and other user-facing restrictions.
@@ -187,7 +191,7 @@ class TestExtractRPCResult:
             ]
         ]
 
-        with pytest.raises(RPCError, match="rate limiting"):
+        with pytest.raises(RateLimitError, match="rate limit"):
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
     def test_user_displayable_error_sets_code(self):
@@ -195,7 +199,7 @@ class TestExtractRPCResult:
         error_info = [8, None, [["UserDisplayableError", []]]]
         chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, error_info]]
 
-        with pytest.raises(RPCError) as exc_info:
+        with pytest.raises(RateLimitError) as exc_info:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
         assert exc_info.value.code == "USER_DISPLAYABLE_ERROR"
@@ -226,7 +230,7 @@ class TestExtractRPCResult:
         }
         chunks = [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, None, None, None, error_info]]
 
-        with pytest.raises(RPCError, match="rate limiting"):
+        with pytest.raises(RateLimitError, match="rate limit"):
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
 
