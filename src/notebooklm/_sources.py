@@ -68,17 +68,30 @@ class SourcesAPI:
         )
 
         if not notebook or not isinstance(notebook, list) or len(notebook) == 0:
-            logger.debug("Empty or invalid notebook response when listing sources")
+            logger.warning(
+                "Empty or invalid notebook response when listing sources for %s "
+                "(API response structure may have changed)",
+                notebook_id,
+            )
             return []
 
         nb_info = notebook[0]
         if not isinstance(nb_info, list) or len(nb_info) <= 1:
-            logger.debug("Invalid notebook structure: expected list with sources at index 1")
+            logger.warning(
+                "Unexpected notebook structure for %s: expected list with sources at index 1 "
+                "(API structure may have changed)",
+                notebook_id,
+            )
             return []
 
         sources_list = nb_info[1]
         if not isinstance(sources_list, list):
-            logger.debug("Sources list is not a list type: %s", type(sources_list))
+            logger.warning(
+                "Sources data for %s is not a list (type=%s), returning empty list "
+                "(API structure may have changed)",
+                notebook_id,
+                type(sources_list).__name__,
+            )
             return []
 
         # Convert raw source data to Source objects

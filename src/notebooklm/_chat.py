@@ -12,8 +12,10 @@ import uuid
 from typing import Any
 from urllib.parse import quote, urlencode
 
+import httpx
+
 from ._core import ClientCore
-from .exceptions import ValidationError
+from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import QUERY_URL, RPCMethod
 from .types import AskResult, ChatReference, ConversationTurn
 
@@ -139,8 +141,21 @@ class ChatAPI:
         url = f"{QUERY_URL}?{query_string}"
 
         http_client = self._core.get_http_client()
-        response = await http_client.post(url, content=body)
-        response.raise_for_status()
+        try:
+            response = await http_client.post(url, content=body)
+            response.raise_for_status()
+        except httpx.TimeoutException as e:
+            raise NetworkError(
+                f"Chat request timed out: {e}",
+                original_error=e,
+            ) from e
+        except httpx.HTTPStatusError as e:
+            raise ChatError(f"Chat request failed with HTTP {e.response.status_code}: {e}") from e
+        except httpx.RequestError as e:
+            raise NetworkError(
+                f"Chat request failed: {e}",
+                original_error=e,
+            ) from e
 
         answer_text, references = self._parse_ask_response_with_references(response.text)
 

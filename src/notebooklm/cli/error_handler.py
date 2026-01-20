@@ -4,8 +4,10 @@ This module provides a context manager for consistent error handling
 across all CLI commands.
 """
 
+import json
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import Any
 
 import click
 
@@ -20,8 +22,38 @@ from ..exceptions import (
 )
 
 
+def _output_error(
+    message: str,
+    code: str,
+    json_output: bool,
+    exit_code: int,
+    extra: dict[str, Any] | None = None,
+    hint: str | None = None,
+) -> None:
+    """Output error message in text or JSON format and exit.
+
+    Args:
+        message: Human-readable error message
+        code: Error code for JSON output (e.g., "RATE_LIMITED", "AUTH_ERROR")
+        json_output: If True, output as JSON; otherwise as text
+        exit_code: Exit code to use
+        extra: Additional fields to include in JSON output
+        hint: Additional hint to show in text mode
+    """
+    if json_output:
+        response: dict = {"error": True, "code": code, "message": message}
+        if extra:
+            response.update(extra)
+        click.echo(json.dumps(response, indent=2))
+    else:
+        click.echo(message, err=True)
+        if hint:
+            click.echo(hint, err=True)
+    raise SystemExit(exit_code)
+
+
 @contextmanager
-def handle_errors(verbose: bool = False) -> Generator[None, None, None]:
+def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator[None, None, None]:
     """Context manager for consistent CLI error handling.
 
     Catches library exceptions and converts them to user-friendly
@@ -34,6 +66,7 @@ def handle_errors(verbose: bool = False) -> Generator[None, None, None]:
 
     Args:
         verbose: If True, show additional debug info (method_id, etc.)
+        json_output: If True, output errors as JSON
 
     Example:
         @click.command()
@@ -44,40 +77,59 @@ def handle_errors(verbose: bool = False) -> Generator[None, None, None]:
     try:
         yield
     except KeyboardInterrupt:
-        click.echo("\nCancelled.", err=True)
-        raise SystemExit(130) from None
+        if json_output:
+            _output_error("Cancelled by user", "CANCELLED", True, 130)
+        else:
+            click.echo("\nCancelled.", err=True)
+            raise SystemExit(130) from None
     except RateLimitError as e:
         retry_msg = f" Retry after {e.retry_after}s." if e.retry_after else ""
-        click.echo(f"Error: Rate limited.{retry_msg}", err=True)
+        extra_data: dict[str, Any] | None = (
+            {"retry_after": e.retry_after} if e.retry_after else None
+        )
         if verbose and e.method_id:
-            click.echo(f"  RPC Method: {e.method_id}", err=True)
-        raise SystemExit(1) from None
+            extra_data = extra_data or {}
+            extra_data["method_id"] = e.method_id
+        _output_error(
+            f"Error: Rate limited.{retry_msg}",
+            "RATE_LIMITED",
+            json_output,
+            1,
+            extra=extra_data,
+        )
     except AuthError as e:
-        click.echo(f"Authentication error: {e}", err=True)
-        click.echo("Run 'notebooklm login' to re-authenticate.", err=True)
-        raise SystemExit(1) from None
+        _output_error(
+            f"Authentication error: {e}",
+            "AUTH_ERROR",
+            json_output,
+            1,
+            hint="Run 'notebooklm login' to re-authenticate.",
+        )
     except ValidationError as e:
-        click.echo(f"Validation error: {e}", err=True)
-        raise SystemExit(1) from None
+        _output_error(f"Validation error: {e}", "VALIDATION_ERROR", json_output, 1)
     except ConfigurationError as e:
-        click.echo(f"Configuration error: {e}", err=True)
-        raise SystemExit(1) from None
+        _output_error(f"Configuration error: {e}", "CONFIG_ERROR", json_output, 1)
     except NetworkError as e:
-        click.echo(f"Network error: {e}", err=True)
-        click.echo("Check your internet connection and try again.", err=True)
-        raise SystemExit(1) from None
+        _output_error(
+            f"Network error: {e}",
+            "NETWORK_ERROR",
+            json_output,
+            1,
+            hint="Check your internet connection and try again.",
+        )
     except NotebookLMError as e:
-        click.echo(f"Error: {e}", err=True)
+        extra_info: dict[str, Any] | None = None
         if verbose and isinstance(e, RPCError) and e.method_id:
-            click.echo(f"  RPC Method: {e.method_id}", err=True)
-        raise SystemExit(1) from None
+            extra_info = {"method_id": e.method_id}
+        _output_error(f"Error: {e}", "NOTEBOOKLM_ERROR", json_output, 1, extra=extra_info)
     except click.ClickException:
         # Let Click handle its own exceptions (--help, bad args, etc.)
         raise
     except Exception as e:
-        click.echo(f"Unexpected error: {e}", err=True)
-        click.echo(
-            "This may be a bug. Please report at https://github.com/teng-lin/notebooklm-py/issues",
-            err=True,
+        _output_error(
+            f"Unexpected error: {e}",
+            "UNEXPECTED_ERROR",
+            json_output,
+            2,
+            hint="This may be a bug. Please report at https://github.com/teng-lin/notebooklm-py/issues",
         )
-        raise SystemExit(2) from None

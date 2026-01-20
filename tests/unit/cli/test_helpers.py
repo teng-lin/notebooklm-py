@@ -423,7 +423,11 @@ class TestWithClientDecorator:
         assert "login" in result.output.lower()
 
     def test_decorator_handles_exception_non_json(self):
-        """Test error handling in non-JSON mode"""
+        """Test error handling in non-JSON mode.
+
+        Unexpected errors (non-library exceptions) use exit code 2 to
+        distinguish from user errors (exit code 1).
+        """
         import click
         from click.testing import CliRunner
 
@@ -442,11 +446,16 @@ class TestWithClientDecorator:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
-        assert result.exit_code == 1
+        # Exit code 2 = unexpected error (bugs, unhandled exceptions)
+        assert result.exit_code == 2
         assert "Test error" in result.output
 
     def test_decorator_handles_exception_json_mode(self):
-        """Test error handling in JSON mode"""
+        """Test error handling in JSON mode.
+
+        Unexpected errors (non-library exceptions) use exit code 2 to
+        distinguish from user errors (exit code 1).
+        """
         import click
         from click.testing import CliRunner
 
@@ -466,9 +475,11 @@ class TestWithClientDecorator:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd, ["--json"])
 
-        assert result.exit_code == 1
+        # Exit code 2 = unexpected error (bugs, unhandled exceptions)
+        assert result.exit_code == 2
         data = json.loads(result.output)
         assert data["error"] is True
+        assert data["code"] == "UNEXPECTED_ERROR"
         assert "Test error" in data["message"]
 
 

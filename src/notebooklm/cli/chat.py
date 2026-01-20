@@ -6,6 +6,8 @@ Commands:
     history    Get conversation history or clear local cache
 """
 
+import logging
+
 import click
 from rich.table import Table
 
@@ -19,6 +21,8 @@ from .helpers import (
     set_current_conversation,
     with_client,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def register_chat_commands(cli):
@@ -94,8 +98,13 @@ def register_chat_commands(cli):
                                     console.print(
                                         f"[dim]Continuing conversation {effective_conv_id[:8]}...[/dim]"
                                     )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # Log error but continue - history fetch is optional
+                            logger.debug("Failed to fetch conversation history: %s", e)
+                            if not json_output:
+                                console.print(
+                                    "[dim]Starting new conversation (history unavailable)[/dim]"
+                                )
 
                 # Convert source_ids tuple to list, or None if empty
                 sources = list(source_ids) if source_ids else None
