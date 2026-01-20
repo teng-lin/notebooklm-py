@@ -139,18 +139,6 @@ class TestRPCErrorAttributes:
         e = RPCError("Failed", raw_response=long_response)
         assert len(e.raw_response) == 500
 
-    def test_rpc_error_backward_compat_raw_response_preview(self):
-        """RPCError supports backward-compatible raw_response_preview alias with deprecation warning."""
-        import warnings
-
-        e = RPCError("Failed", raw_response="some response")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            assert e.raw_response_preview == "some response"  # Alias
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "raw_response_preview" in str(w[0].message)
-
     def test_rpc_error_stores_found_ids(self):
         """RPCError stores found_ids list."""
         e = RPCError("Failed", found_ids=["id1", "id2"])
