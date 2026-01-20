@@ -248,26 +248,28 @@ class ClientCore:
                     msg = f"API rate limit exceeded calling {method.name}"
                     if retry_after:
                         msg += f". Retry after {retry_after} seconds"
-                    raise RateLimitError(msg, rpc_id=method.value, retry_after=retry_after) from e
+                    raise RateLimitError(
+                        msg, method_id=method.value, retry_after=retry_after
+                    ) from e
 
                 if 500 <= status < 600:
                     raise ServerError(
                         f"Server error {status} calling {method.name}: {e.response.reason_phrase}",
-                        rpc_id=method.value,
+                        method_id=method.value,
                         status_code=status,
                     ) from e
 
                 if 400 <= status < 500 and status not in (401, 403):
                     raise ClientError(
                         f"Client error {status} calling {method.name}: {e.response.reason_phrase}",
-                        rpc_id=method.value,
+                        method_id=method.value,
                         status_code=status,
                     ) from e
 
                 # 401/403 or other: Generic RPCError (handled by auth retry above)
                 raise RPCError(
                     f"HTTP {status} calling {method.name}: {e.response.reason_phrase}",
-                    rpc_id=method.value,
+                    method_id=method.value,
                 ) from e
 
             # Network/connection errors
@@ -278,7 +280,7 @@ class ClientCore:
                 if isinstance(e, httpx.ConnectTimeout):
                     raise NetworkError(
                         f"Connection timed out calling {method.name}: {e}",
-                        rpc_id=method.value,
+                        method_id=method.value,
                         original_error=e,
                     ) from e
 
@@ -286,7 +288,7 @@ class ClientCore:
                 if isinstance(e, httpx.TimeoutException):
                     raise RPCTimeoutError(
                         f"Request timed out calling {method.name}",
-                        rpc_id=method.value,
+                        method_id=method.value,
                         timeout_seconds=self._timeout,
                         original_error=e,
                     ) from e
@@ -295,14 +297,14 @@ class ClientCore:
                 if isinstance(e, httpx.ConnectError):
                     raise NetworkError(
                         f"Connection failed calling {method.name}: {e}",
-                        rpc_id=method.value,
+                        method_id=method.value,
                         original_error=e,
                     ) from e
 
                 # Other request errors
                 raise NetworkError(
                     f"Request failed calling {method.name}: {e}",
-                    rpc_id=method.value,
+                    method_id=method.value,
                     original_error=e,
                 ) from e
 
@@ -329,7 +331,7 @@ class ClientCore:
             logger.error("RPC %s failed after %.3fs: %s", method.name, elapsed, e)
             raise RPCError(
                 f"Failed to decode response for {method.name}: {e}",
-                rpc_id=method.value,
+                method_id=method.value,
             ) from e
 
     async def _try_refresh_and_retry(

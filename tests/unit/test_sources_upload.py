@@ -116,18 +116,22 @@ class TestRegisterFileSource:
 
     @pytest.mark.asyncio
     async def test_register_file_source_raises_on_null_response(self, sources_api, mock_core):
-        """Test that null response raises ValueError."""
+        """Test that null response raises SourceAddError."""
+        from notebooklm.exceptions import SourceAddError
+
         mock_core.rpc_call.return_value = None
 
-        with pytest.raises(ValueError, match="Failed to get SOURCE_ID"):
+        with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
             await sources_api._register_file_source("nb_123", "test.pdf")
 
     @pytest.mark.asyncio
     async def test_register_file_source_raises_on_empty_response(self, sources_api, mock_core):
-        """Test that empty response raises ValueError."""
+        """Test that empty response raises SourceAddError."""
+        from notebooklm.exceptions import SourceAddError
+
         mock_core.rpc_call.return_value = []
 
-        with pytest.raises(ValueError, match="Failed to get SOURCE_ID"):
+        with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
             await sources_api._register_file_source("nb_123", "test.pdf")
 
     @pytest.mark.asyncio
@@ -141,10 +145,12 @@ class TestRegisterFileSource:
 
     @pytest.mark.asyncio
     async def test_register_file_source_raises_on_non_string_id(self, sources_api, mock_core):
-        """Test that non-string source ID raises ValueError."""
+        """Test that non-string source ID raises SourceAddError."""
+        from notebooklm.exceptions import SourceAddError
+
         mock_core.rpc_call.return_value = [[[[[[12345]]]]]]
 
-        with pytest.raises(ValueError, match="Failed to get SOURCE_ID"):
+        with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
             await sources_api._register_file_source("nb_123", "test.pdf")
 
 
@@ -226,7 +232,9 @@ class TestStartResumableUpload:
     async def test_start_resumable_upload_raises_on_missing_url_header(
         self, sources_api, mock_core
     ):
-        """Test that missing upload URL header raises ValueError."""
+        """Test that missing upload URL header raises SourceAddError."""
+        from notebooklm.exceptions import SourceAddError
+
         mock_response = MagicMock()
         mock_response.headers = {}  # No x-goog-upload-url
 
@@ -237,7 +245,7 @@ class TestStartResumableUpload:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            with pytest.raises(ValueError, match="Failed to get upload URL"):
+            with pytest.raises(SourceAddError, match="Failed to get upload URL"):
                 await sources_api._start_resumable_upload("nb_123", "test.pdf", 1024, "src_456")
 
     @pytest.mark.asyncio

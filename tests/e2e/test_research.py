@@ -50,8 +50,10 @@ class TestResearchStart:
 
     @pytest.mark.asyncio
     async def test_start_research_invalid_source(self, client, temp_notebook):
-        """Test that invalid source raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid source"):
+        """Test that invalid source raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="Invalid source"):
             await client.research.start(
                 temp_notebook.id,
                 query="test query",
@@ -60,8 +62,10 @@ class TestResearchStart:
 
     @pytest.mark.asyncio
     async def test_start_research_invalid_mode(self, client, temp_notebook):
-        """Test that invalid mode raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid mode"):
+        """Test that invalid mode raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="Invalid mode"):
             await client.research.start(
                 temp_notebook.id,
                 query="test query",
@@ -70,8 +74,10 @@ class TestResearchStart:
 
     @pytest.mark.asyncio
     async def test_start_deep_drive_research_invalid(self, client, temp_notebook):
-        """Test that deep research with drive source raises ValueError."""
-        with pytest.raises(ValueError, match="Deep Research only supports Web"):
+        """Test that deep research with drive source raises ValidationError."""
+        from notebooklm.exceptions import ValidationError
+
+        with pytest.raises(ValidationError, match="Deep Research only supports Web"):
             await client.research.start(
                 temp_notebook.id,
                 query="test query",

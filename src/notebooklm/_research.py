@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from ._core import ClientCore
+from .exceptions import ValidationError
 from .rpc import RPCMethod
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ class ResearchAPI:
             Dictionary with task_id, report_id, and metadata.
 
         Raises:
-            ValueError: If source/mode combination is invalid.
+            ValidationError: If source/mode combination is invalid.
         """
         logger.debug(
             "Starting %s research in notebook %s: %s",
@@ -72,11 +73,11 @@ class ResearchAPI:
         mode_lower = mode.lower()
 
         if source_lower not in ("web", "drive"):
-            raise ValueError(f"Invalid source '{source}'. Use 'web' or 'drive'.")
+            raise ValidationError(f"Invalid source '{source}'. Use 'web' or 'drive'.")
         if mode_lower not in ("fast", "deep"):
-            raise ValueError(f"Invalid mode '{mode}'. Use 'fast' or 'deep'.")
+            raise ValidationError(f"Invalid mode '{mode}'. Use 'fast' or 'deep'.")
         if mode_lower == "deep" and source_lower == "drive":
-            raise ValueError("Deep Research only supports Web sources.")
+            raise ValidationError("Deep Research only supports Web sources.")
 
         # 1 = Web, 2 = Drive
         source_type = 1 if source_lower == "web" else 2

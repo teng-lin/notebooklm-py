@@ -5,6 +5,8 @@ import tempfile
 
 import pytest
 
+from notebooklm.exceptions import ArtifactNotReadyError
+
 from .conftest import requires_auth
 
 # Magic bytes for file type verification
@@ -51,10 +53,8 @@ class TestDownloadAudio:
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0
                 assert is_mp4(output_path), "Downloaded audio is not a valid MP4 file"
-            except ValueError as e:
-                if "No completed audio" in str(e):
-                    pytest.skip("No completed audio artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No completed audio artifact available")
 
 
 @requires_auth
@@ -71,10 +71,8 @@ class TestDownloadVideo:
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0
                 assert is_mp4(output_path), "Downloaded video is not a valid MP4 file"
-            except ValueError as e:
-                if "No completed video" in str(e):
-                    pytest.skip("No completed video artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No completed video artifact available")
 
 
 @requires_auth
@@ -93,10 +91,8 @@ class TestDownloadInfographic:
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0
                 assert is_png(output_path), "Downloaded infographic is not a valid PNG file"
-            except ValueError as e:
-                if "No completed infographic" in str(e):
-                    pytest.skip("No completed infographic artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No completed infographic artifact available")
 
 
 @requires_auth
@@ -115,10 +111,8 @@ class TestDownloadSlideDeck:
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0
                 assert is_pdf(output_path), "Downloaded slide deck is not a valid PDF file"
-            except ValueError as e:
-                if "No completed slide" in str(e):
-                    pytest.skip("No completed slide deck artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No completed slide deck artifact available")
 
 
 @requires_auth
@@ -183,10 +177,8 @@ class TestDownloadReport:
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0
                 assert is_valid_markdown(output_path), "Downloaded report is not valid markdown"
-            except ValueError as e:
-                if "No completed report" in str(e):
-                    pytest.skip("No completed report artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No completed report artifact available")
 
 
 @requires_auth
@@ -210,10 +202,8 @@ class TestDownloadMindMap:
                 with open(output_path, encoding="utf-8") as f:
                     data = json.load(f)
                 assert "name" in data, "Mind map JSON should have 'name' field"
-            except ValueError as e:
-                if "No mind maps found" in str(e):
-                    pytest.skip("No mind map artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No mind map artifact available")
 
 
 @requires_auth
@@ -232,7 +222,5 @@ class TestDownloadDataTable:
                 assert os.path.exists(output_path)
                 assert os.path.getsize(output_path) > 0
                 assert is_valid_csv(output_path), "Downloaded data table is not valid CSV"
-            except ValueError as e:
-                if "No completed data table" in str(e):
-                    pytest.skip("No completed data table artifact available")
-                raise
+            except ArtifactNotReadyError:
+                pytest.skip("No completed data table artifact available")

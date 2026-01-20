@@ -15,6 +15,20 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
+# Import exceptions from centralized module (re-export for backward compatibility)
+from .exceptions import (
+    ArtifactDownloadError,
+    ArtifactError,
+    ArtifactNotFoundError,
+    ArtifactNotReadyError,
+    ArtifactParseError,
+    SourceAddError,
+    SourceError,
+    SourceNotFoundError,
+    SourceProcessingError,
+    SourceTimeoutError,
+)
+
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
     AudioFormat,
@@ -350,215 +364,6 @@ class NotebookDescription:
 # =============================================================================
 # Source Types
 # =============================================================================
-
-
-class SourceError(Exception):
-    """Base exception for source-related errors."""
-
-    pass
-
-
-class SourceProcessingError(SourceError):
-    """Raised when source processing fails (status=ERROR).
-
-    Attributes:
-        source_id: The ID of the source that failed.
-        status: The status code (typically 3 for ERROR).
-    """
-
-    def __init__(self, source_id: str, status: int = 3, message: str = ""):
-        self.source_id = source_id
-        self.status = status
-        msg = message or f"Source {source_id} failed to process"
-        super().__init__(msg)
-
-
-class SourceTimeoutError(SourceError):
-    """Raised when waiting for source readiness times out.
-
-    Attributes:
-        source_id: The ID of the source.
-        timeout: The timeout duration in seconds.
-        last_status: The last observed status before timeout.
-    """
-
-    def __init__(self, source_id: str, timeout: float, last_status: int | None = None):
-        self.source_id = source_id
-        self.timeout = timeout
-        self.last_status = last_status
-        status_info = f" (last status: {last_status})" if last_status is not None else ""
-        super().__init__(f"Source {source_id} not ready after {timeout:.1f}s{status_info}")
-
-
-class SourceNotFoundError(SourceError):
-    """Raised when a source is not found in the notebook.
-
-    Attributes:
-        source_id: The ID of the source that was not found.
-    """
-
-    def __init__(self, source_id: str):
-        self.source_id = source_id
-        super().__init__(f"Source {source_id} not found")
-
-
-class SourceAddError(SourceError):
-    """Raised when adding a source fails.
-
-    Common causes include:
-    - URL is invalid or inaccessible
-    - Content is behind a paywall
-    - Source content is empty or could not be parsed
-    - Rate limiting or quota exceeded
-
-    Attributes:
-        url: The URL or identifier of the source that failed.
-        cause: The underlying exception that caused the failure.
-    """
-
-    def __init__(self, url: str, cause: Exception | None = None, message: str | None = None):
-        self.url = url
-        self.cause = cause
-        msg = message or (
-            f"Failed to add source: {url}\n"
-            "Possible causes:\n"
-            "  - URL is invalid or inaccessible\n"
-            "  - Content is behind a paywall or requires authentication\n"
-            "  - Page content is empty or could not be parsed\n"
-            "  - Rate limiting or quota exceeded"
-        )
-        super().__init__(msg)
-
-
-# =============================================================================
-# Artifact Error Types
-# =============================================================================
-
-
-class ArtifactError(Exception):
-    """Base exception for artifact-related errors.
-
-    This includes errors when generating, fetching, parsing, or downloading artifacts
-    such as audio overviews, videos, reports, quizzes, and other generated content.
-    """
-
-    pass
-
-
-class ArtifactNotFoundError(ArtifactError):
-    """Raised when a specific artifact is not found.
-
-    Attributes:
-        artifact_id: The ID of the artifact that was not found.
-        artifact_type: The type of artifact (e.g., "audio", "video", "report").
-    """
-
-    def __init__(self, artifact_id: str, artifact_type: str | None = None):
-        self.artifact_id = artifact_id
-        self.artifact_type = artifact_type
-        type_info = f" {artifact_type}" if artifact_type else ""
-        super().__init__(f"{type_info.capitalize()} artifact {artifact_id} not found")
-
-
-class ArtifactNotReadyError(ArtifactError):
-    """Raised when an artifact is not in a completed/ready state.
-
-    This typically means the artifact is still being generated or has failed processing.
-
-    Attributes:
-        artifact_type: The type of artifact (e.g., "audio", "video").
-        artifact_id: The ID of the artifact (if known).
-        status: The current status of the artifact (if known).
-    """
-
-    def __init__(
-        self,
-        artifact_type: str,
-        artifact_id: str | None = None,
-        status: str | None = None,
-    ):
-        self.artifact_type = artifact_type
-        self.artifact_id = artifact_id
-        self.status = status
-
-        if artifact_id:
-            msg = f"{artifact_type.capitalize()} artifact {artifact_id} is not ready"
-            if status:
-                msg += f" (status: {status})"
-        else:
-            msg = f"No completed {artifact_type} found"
-
-        super().__init__(msg)
-
-
-def _build_artifact_error_message(
-    action: str, artifact_type: str, artifact_id: str | None, details: str | None
-) -> str:
-    """Build a consistent error message for artifact operations."""
-    msg = f"Failed to {action} {artifact_type} artifact"
-    if artifact_id:
-        msg += f" {artifact_id}"
-    if details:
-        msg += f": {details}"
-    return msg
-
-
-class ArtifactParseError(ArtifactError):
-    """Raised when artifact data cannot be parsed or has invalid structure.
-
-    This indicates the API returned data in an unexpected format, which may occur
-    when the API structure changes or the response is malformed.
-
-    Attributes:
-        artifact_type: The type of artifact being parsed.
-        artifact_id: The ID of the artifact (if known).
-        details: Additional error details from the parsing attempt.
-        cause: The underlying exception that caused the failure.
-    """
-
-    def __init__(
-        self,
-        artifact_type: str,
-        details: str | None = None,
-        artifact_id: str | None = None,
-        cause: Exception | None = None,
-    ):
-        self.artifact_type = artifact_type
-        self.artifact_id = artifact_id
-        self.details = details
-        self.cause = cause
-        super().__init__(
-            _build_artifact_error_message("parse", artifact_type, artifact_id, details)
-        )
-
-
-class ArtifactDownloadError(ArtifactError):
-    """Raised when downloading artifact content fails.
-
-    This occurs when the artifact exists but its content cannot be retrieved,
-    such as missing download URLs or HTTP errors during download.
-
-    Attributes:
-        artifact_type: The type of artifact being downloaded.
-        artifact_id: The ID of the artifact (if known).
-        details: Additional error details.
-        cause: The underlying exception that caused the failure.
-    """
-
-    def __init__(
-        self,
-        artifact_type: str,
-        details: str | None = None,
-        artifact_id: str | None = None,
-        cause: Exception | None = None,
-    ):
-        self.artifact_type = artifact_type
-        self.artifact_id = artifact_id
-        self.details = details
-        self.cause = cause
-        super().__init__(
-            _build_artifact_error_message("download", artifact_type, artifact_id, details)
-        )
 
 
 @dataclass

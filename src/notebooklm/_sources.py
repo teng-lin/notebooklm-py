@@ -14,6 +14,7 @@ import httpx
 
 from ._core import ClientCore
 from ._url_utils import is_youtube_url
+from .exceptions import ValidationError
 from .rpc import UPLOAD_URL, RPCError, RPCMethod
 from .rpc.types import SourceStatus
 from .types import (
@@ -412,7 +413,7 @@ class SourcesAPI:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         if not file_path.is_file():
-            raise ValueError(f"Not a regular file: {file_path}")
+            raise ValidationError(f"Not a regular file: {file_path}")
 
         filename = file_path.name
         # Get file size without loading into memory
@@ -895,7 +896,7 @@ class SourcesAPI:
             if source_id:
                 return source_id
 
-        raise ValueError("Failed to get SOURCE_ID from registration response")
+        raise SourceAddError(filename, message="Failed to get SOURCE_ID from registration response")
 
     async def _start_resumable_upload(
         self,
@@ -935,7 +936,9 @@ class SourcesAPI:
 
             upload_url = response.headers.get("x-goog-upload-url")
             if not upload_url:
-                raise ValueError("Failed to get upload URL from response headers")
+                raise SourceAddError(
+                    filename, message="Failed to get upload URL from response headers"
+                )
 
             return upload_url
 

@@ -520,7 +520,7 @@ class TestRpcCallAutoRetry:
             decode_call_count[0] += 1
             if decode_call_count[0] == 1:
                 # First decode fails with auth error
-                raise RPCError("Authentication expired", rpc_id="wXbhsf")
+                raise RPCError("Authentication expired", method_id="wXbhsf")
             return ["result"]
 
         with patch("notebooklm._core.decode_response", side_effect=mock_decode):
