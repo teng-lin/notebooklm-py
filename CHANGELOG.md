@@ -25,9 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **E2E test coverage** - Added file upload tests for CSV, MP3, MP4, DOCX, JPG, Markdown with type verification
 
 ### Changed
-- **Source type detection** - Use API-provided type codes as source of truth instead of URL heuristics
+- **Source type detection** - Use API-provided type codes as source of truth instead of URL/extension heuristics
 - **CLI file handling** - Simplified to always use `add_file()` for proper type detection
 - **`StudioContentType`** - Now internal only (use `ArtifactType` for public API)
+
+### Removed
+- **`detect_source_type()`** - Obsolete heuristic function replaced by `Source.kind` property
 
 ### Deprecated
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` enum)
