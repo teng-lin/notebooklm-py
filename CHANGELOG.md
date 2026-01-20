@@ -44,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` enum)
-- **`Source.source_type_code`** - Use `.kind` property instead
 - **`Artifact.artifact_type`** - Use `.kind` property instead (returns `ArtifactType` enum)
 - **`SourceFulltext.source_type`** - Use `.kind` property instead
 
