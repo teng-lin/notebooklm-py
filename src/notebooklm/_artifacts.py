@@ -1858,12 +1858,12 @@ class ArtifactsAPI:
             )
             return self._parse_generation_result(result)
         except RPCError as e:
-            if e.code == "USER_DISPLAYABLE_ERROR":
+            if e.rpc_code == "USER_DISPLAYABLE_ERROR":
                 return GenerationStatus(
                     task_id="",
                     status="failed",
                     error=str(e),
-                    error_code=str(e.code) if e.code is not None else None,
+                    error_code=str(e.rpc_code) if e.rpc_code is not None else None,
                 )
             raise
 

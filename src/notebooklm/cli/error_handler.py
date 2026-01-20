@@ -15,6 +15,7 @@ from ..exceptions import (
     NetworkError,
     NotebookLMError,
     RateLimitError,
+    RPCError,
     ValidationError,
 )
 
@@ -67,7 +68,7 @@ def handle_errors(verbose: bool = False) -> Generator[None, None, None]:
         raise SystemExit(1) from None
     except NotebookLMError as e:
         click.echo(f"Error: {e}", err=True)
-        if verbose and hasattr(e, "method_id") and e.method_id:
+        if verbose and isinstance(e, RPCError) and e.method_id:
             click.echo(f"  RPC Method: {e.method_id}", err=True)
         raise SystemExit(1) from None
     except click.ClickException:

@@ -202,7 +202,7 @@ class TestExtractRPCResult:
         with pytest.raises(RateLimitError) as exc_info:
             extract_rpc_result(chunks, RPCMethod.LIST_NOTEBOOKS.value)
 
-        assert exc_info.value.code == "USER_DISPLAYABLE_ERROR"
+        assert exc_info.value.rpc_code == "USER_DISPLAYABLE_ERROR"
 
     def test_null_result_without_error_info_returns_none(self):
         """Test null result without UserDisplayableError returns None normally."""
@@ -392,8 +392,6 @@ class TestRPCError:
 
         assert error.found_ids == ["Id2", "Id3"]
         assert error.method_id == "Id1"
-        # Backward compatibility alias
-        assert error.rpc_id == "Id1"
 
     def test_found_ids_defaults_to_empty_list(self):
         """Test found_ids defaults to empty list when not provided."""
@@ -424,5 +422,3 @@ class TestAuthError:
         error = AuthError("Token expired", method_id="abc123")
         assert str(error) == "Token expired"
         assert error.method_id == "abc123"
-        # Backward compatibility alias
-        assert error.rpc_id == "abc123"

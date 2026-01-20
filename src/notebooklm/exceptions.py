@@ -110,6 +110,13 @@ class NetworkError(NotebookLMError):
     @property
     def rpc_id(self) -> str | None:
         """Alias for method_id (deprecated, use method_id instead)."""
+        import warnings
+
+        warnings.warn(
+            "The 'rpc_id' attribute is deprecated, use 'method_id' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.method_id
 
 
@@ -147,16 +154,37 @@ class RPCError(NotebookLMError):
     @property
     def rpc_id(self) -> str | None:
         """Alias for method_id (deprecated, use method_id instead)."""
+        import warnings
+
+        warnings.warn(
+            "The 'rpc_id' attribute is deprecated, use 'method_id' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.method_id
 
     @property
     def code(self) -> str | int | None:
         """Alias for rpc_code (deprecated, use rpc_code instead)."""
+        import warnings
+
+        warnings.warn(
+            "The 'code' attribute is deprecated, use 'rpc_code' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.rpc_code
 
     @property
     def raw_response_preview(self) -> str | None:
         """Alias for raw_response (deprecated, use raw_response instead)."""
+        import warnings
+
+        warnings.warn(
+            "The 'raw_response_preview' attribute is deprecated, use 'raw_response' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.raw_response
 
 
