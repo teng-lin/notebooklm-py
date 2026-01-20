@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-01-18
+**Last Updated:** 2026-01-20
 
 Complete reference for the `notebooklm` Python library.
 
@@ -240,7 +240,7 @@ await client.sources.add_file(nb_id, Path("./document.pdf"))
 # List and manage
 sources = await client.sources.list(nb_id)
 for src in sources:
-    print(f"{src.id}: {src.title} ({src.source_type})")
+    print(f"{src.id}: {src.title} ({src.kind})")
 
 await client.sources.rename(nb_id, src.id, "Better Title")
 await client.sources.refresh(nb_id, src.id)  # Re-fetch URL content
@@ -680,9 +680,30 @@ class Source:
     id: str
     title: Optional[str]
     url: Optional[str]
-    source_type: str  # "web_page", "youtube", "docx", "pdf", "pasted_text", "markdown", etc.
-    source_type_code: Optional[int]  # Integer code from SourceType enum (recommended for stable comparisons)
     created_at: Optional[datetime]
+
+    @property
+    def kind(self) -> SourceType:
+        """Get source type as SourceType enum."""
+```
+
+**Type Identification:**
+
+Use the `.kind` property to identify source types. It returns a `SourceType` enum which is also a `str`, enabling both enum and string comparisons:
+
+```python
+from notebooklm import SourceType
+
+# Enum comparison (recommended)
+if source.kind == SourceType.PDF:
+    print("This is a PDF")
+
+# String comparison (also works)
+if source.kind == "pdf":
+    print("This is a PDF")
+
+# Use in f-strings
+print(f"Type: {source.kind}")  # "Type: pdf"
 ```
 
 ### Artifact
@@ -691,11 +712,48 @@ class Source:
 @dataclass
 class Artifact:
     id: str
-    title: Optional[str]
-    artifact_type: StudioContentType
-    status: str  # "in_progress", "completed", "failed"
-    url: Optional[str]
+    title: str
+    status: int                     # 1=processing, 2=pending, 3=completed
     created_at: Optional[datetime]
+    url: Optional[str]
+
+    @property
+    def kind(self) -> ArtifactType:
+        """Get artifact type as ArtifactType enum."""
+
+    @property
+    def is_completed(self) -> bool:
+        """Check if artifact generation is complete."""
+
+    @property
+    def is_quiz(self) -> bool:
+        """Check if this is a quiz artifact."""
+
+    @property
+    def is_flashcards(self) -> bool:
+        """Check if this is a flashcards artifact."""
+```
+
+**Type Identification:**
+
+Use the `.kind` property to identify artifact types. It returns an `ArtifactType` enum which is also a `str`:
+
+```python
+from notebooklm import ArtifactType
+
+# Enum comparison (recommended)
+if artifact.kind == ArtifactType.AUDIO:
+    print("This is an audio overview")
+
+# String comparison (also works)
+if artifact.kind == "audio":
+    print("This is an audio overview")
+
+# Check specific types
+if artifact.is_quiz:
+    print("This is a quiz")
+elif artifact.is_flashcards:
+    print("This is a flashcard deck")
 ```
 
 ### AskResult
@@ -746,9 +804,12 @@ class SourceFulltext:
     source_id: str                     # UUID of the source
     title: str                         # Source title
     content: str                       # Full indexed text content
-    source_type: int | None            # Source type code (use SourceType enum)
     url: str | None                    # Original URL (if applicable)
     char_count: int                    # Character count
+
+    @property
+    def kind(self) -> SourceType:
+        """Get source type as SourceType enum."""
 
     def find_citation_context(
         self,
@@ -756,6 +817,15 @@ class SourceFulltext:
         context_chars: int = 200,
     ) -> list[tuple[str, int]]:
         """Search for citation text, return list of (context, position) tuples."""
+```
+
+**Type Identification:**
+
+Like `Source`, use the `.kind` property to get the source type:
+
+```python
+fulltext = await client.sources.get_fulltext(nb_id, source_id)
+print(f"Content type: {fulltext.kind}")  # "pdf", "web_page", etc.
 ```
 
 ---
@@ -854,23 +924,46 @@ class ExportType(Enum):
     SHEETS = 2  # Export to Google Sheets
 ```
 
-### Sources
+### Source and Artifact Types
 
 ```python
-class SourceType(Enum):
-    """Source type codes used by NotebookLM API."""
-    GOOGLE_DOCS = 1          # Google Docs document
-    GOOGLE_OTHER = 2         # Google Slides or other workspace files
-    PDF = 3                  # PDF document uploads
-    PASTED_TEXT = 4          # Pasted text content, TXT file uploads
-    WEB_PAGE = 5             # Web URL sources
-    MARKDOWN = 8             # Markdown uploads, note converted to source
-    YOUTUBE = 9              # YouTube video transcript
-    MEDIA = 10               # Audio/video files (M4A, MP4, MP3, etc.) - transcribed
-    DOCX = 11                # DOCX document uploads
-    IMAGE = 13               # Image files (JPG, PNG, etc.) - OCR'd
-    GOOGLE_SPREADSHEET = 14  # Google Sheets
-    CSV = 16                 # CSV file uploads
+class SourceType(str, Enum):
+    """Source types - use with source.kind property.
+
+    This is a str enum, enabling both enum and string comparisons:
+        source.kind == SourceType.PDF   # True
+        source.kind == "pdf"            # Also True
+    """
+    GOOGLE_DOCS = "google_docs"
+    GOOGLE_SLIDES = "google_slides"
+    GOOGLE_SPREADSHEET = "google_spreadsheet"
+    PDF = "pdf"
+    PASTED_TEXT = "pasted_text"
+    WEB_PAGE = "web_page"
+    YOUTUBE = "youtube"
+    MARKDOWN = "markdown"
+    DOCX = "docx"
+    CSV = "csv"
+    IMAGE = "image"
+    MEDIA = "media"
+    UNKNOWN = "unknown"
+
+class ArtifactType(str, Enum):
+    """Artifact types - use with artifact.kind property.
+
+    This is a str enum that hides internal variant complexity.
+    Quizzes and flashcards are distinguished automatically.
+    """
+    AUDIO = "audio"
+    VIDEO = "video"
+    REPORT = "report"
+    QUIZ = "quiz"
+    FLASHCARDS = "flashcards"
+    MIND_MAP = "mind_map"
+    INFOGRAPHIC = "infographic"
+    SLIDES = "slides"
+    DATA_TABLE = "data_table"
+    UNKNOWN = "unknown"
 
 class SourceStatus(Enum):
     PROCESSING = 1  # Source is being processed (indexing content)
@@ -881,19 +974,29 @@ class SourceStatus(Enum):
 
 **Usage Example:**
 ```python
-from notebooklm import SourceType
+from notebooklm import SourceType, ArtifactType
 
-# List sources and check type codes
+# List sources by type using .kind property
 sources = await client.sources.list(nb_id)
 for src in sources:
-    if src.source_type_code == SourceType.PDF:
+    if src.kind == SourceType.PDF:
         print(f"PDF: {src.title}")
-    elif src.source_type_code == SourceType.MEDIA:
+    elif src.kind == SourceType.MEDIA:
         print(f"Audio/Video: {src.title}")
-    elif src.source_type_code == SourceType.IMAGE:
+    elif src.kind == SourceType.IMAGE:
         print(f"Image (OCR'd): {src.title}")
-    elif src.source_type_code is None:
+    elif src.kind == SourceType.UNKNOWN:
         print(f"Unknown type: {src.title}")
+
+# List artifacts by type using .kind property
+artifacts = await client.artifacts.list(nb_id)
+for art in artifacts:
+    if art.kind == ArtifactType.AUDIO:
+        print(f"Audio: {art.title}")
+    elif art.kind == ArtifactType.VIDEO:
+        print(f"Video: {art.title}")
+    elif art.kind == ArtifactType.QUIZ:
+        print(f"Quiz: {art.title}")
 ```
 
 ### Chat Configuration

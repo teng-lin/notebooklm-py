@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`ArtifactType` enum** - New `str, Enum` for type-safe artifact identification:
+  - `AUDIO`, `VIDEO`, `REPORT`, `QUIZ`, `FLASHCARDS`, `MIND_MAP`, `INFOGRAPHIC`, `SLIDES`, `DATA_TABLE`, `UNKNOWN`
+- **`.kind` property** - Unified type access across `Source`, `Artifact`, and `SourceFulltext`:
+  ```python
+  # Works with both enum and string comparison
+  artifact.kind == ArtifactType.AUDIO  # True
+  artifact.kind == "audio"             # Also True
+  source.kind == SourceType.PDF        # True
+  source.kind == "pdf"                 # Also True
+  ```
+- **`UnknownTypeWarning`** - Warning (deduplicated) when API returns unknown type codes
+
+### Changed
+- **Type enums consolidated** - `SourceType` and `ArtifactType` moved from `rpc/types.py` to `types.py`
+- **Internal fields renamed** - Type code fields now use underscore prefix (`_type_code`, `_artifact_type`, `_variant`) to indicate internal use
+- **`SourceFulltext.source_type`** - Renamed to `_type_code`, use `.kind` property instead
+
+### Deprecated
+- **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` enum)
+- **`Source.source_type_code`** - Use `.kind` property instead
+- **`Artifact.artifact_type`** - Use `.kind` property instead (returns `ArtifactType` enum)
+- **`SourceFulltext.source_type`** - Use `.kind` property instead
+
 ## [0.3.0] - 2026-01-18
 
 ### Breaking Changes
