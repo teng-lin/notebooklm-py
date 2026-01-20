@@ -9,7 +9,6 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.types import (
-    ArtifactDownloadError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,

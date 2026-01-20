@@ -9,10 +9,7 @@ from pytest_httpx import HTTPXMock
 from notebooklm import NotebookLMClient
 from notebooklm.rpc import AudioFormat, AudioLength, RPCError, RPCMethod, VideoFormat, VideoStyle
 from notebooklm.types import (
-    ArtifactDownloadError,
-    ArtifactNotFoundError,
     ArtifactNotReadyError,
-    ArtifactParseError,
 )
 
 
