@@ -40,20 +40,7 @@ logger = logging.getLogger(__name__)
 CONTEXT_FILE = get_context_path()
 BROWSER_PROFILE_DIR = get_browser_profile_dir()
 
-# Artifact type display mapping
-ARTIFACT_TYPE_DISPLAY = {
-    1: "🎵 Audio Overview",
-    2: "📄 Report",
-    3: "🎥 Video Overview",
-    4: "📝 Quiz",
-    5: "🧠 Mind Map",
-    # Note: Type 6 appears unused in current API
-    7: "🖼️ Infographic",
-    8: "🎞️ Slide Deck",
-    9: "📋 Data Table",
-}
-
-# CLI artifact type to StudioContentType enum mapping
+# CLI artifact type to StudioContentType enum mapping (for filtering)
 ARTIFACT_TYPE_MAP = {
     "video": 3,
     "slide-deck": 8,

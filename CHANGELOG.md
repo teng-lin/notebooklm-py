@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - **`detect_source_type()`** - Obsolete heuristic function replaced by `Source.kind` property
+- **`ARTIFACT_TYPE_DISPLAY`** - Unused constant replaced by `get_artifact_type_display()`
 
 ### Deprecated
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` enum)

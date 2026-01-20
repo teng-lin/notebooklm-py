@@ -22,7 +22,6 @@ from .download import download
 from .generate import generate
 from .helpers import (
     # Display
-    ARTIFACT_TYPE_DISPLAY,
     ARTIFACT_TYPE_MAP,
     BROWSER_PROFILE_DIR,
     # Context
@@ -129,7 +128,6 @@ __all__ = [
     "json_output_response",
     "json_error_response",
     # Display
-    "ARTIFACT_TYPE_DISPLAY",
     "ARTIFACT_TYPE_MAP",
     "get_artifact_type_display",
     "get_source_type_display",
