@@ -153,6 +153,7 @@ _ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
 # Backward-compatible mapping from SourceType to old source_type strings
 # Used by deprecated Source.source_type property
 # Old values were heuristic: "text", "url", "youtube", "text_file"
+# Only includes types that _SOURCE_TYPE_CODE_MAP can produce
 _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
     SourceType.GOOGLE_DOCS: "text",
     SourceType.GOOGLE_SLIDES: "text",
@@ -160,8 +161,6 @@ _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
     SourceType.PDF: "text_file",
     SourceType.PASTED_TEXT: "text",
     SourceType.WEB_PAGE: "url",
-    SourceType.GOOGLE_DRIVE_AUDIO: "text",
-    SourceType.GOOGLE_DRIVE_VIDEO: "text",
     SourceType.YOUTUBE: "youtube",
     SourceType.MARKDOWN: "text_file",
     SourceType.DOCX: "text_file",
