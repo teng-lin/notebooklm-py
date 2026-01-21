@@ -34,7 +34,7 @@
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
 | `cFji9` | GET_NOTES_AND_MIND_MAPS | List notes and mind maps | `_notes.py` |
-| `yyryJe` | ACT_ON_SOURCES | Mind map generation | `_artifacts.py` |
+| `yyryJe` | GENERATE_MIND_MAP | Mind map generation | `_artifacts.py` |
 | `VfAZjd` | SUMMARIZE | Get notebook summary | `_notebooks.py` |
 | `FLmJqe` | REFRESH_SOURCE | Refresh URL/Drive source | `_sources.py` |
 | `yR9Yof` | CHECK_SOURCE_FRESHNESS | Check if source needs refresh | `_sources.py` |
@@ -660,14 +660,14 @@ params = [
 ]
 ```
 
-#### Mind Map (Type 5) - Uses ACT_ON_SOURCES (yyryJe)
+#### Mind Map (Type 5) - Uses GENERATE_MIND_MAP (yyryJe)
 
 **Source:** `_artifacts.py::generate_mind_map()`
 
 **Note:** Mind map uses a different RPC method than other artifacts.
 
 ```python
-# RPC: ACT_ON_SOURCES (yyryJe), NOT CREATE_ARTIFACT
+# RPC: GENERATE_MIND_MAP (yyryJe), NOT CREATE_ARTIFACT
 params = [
     source_ids_nested,                            # 0: [[[sid]] for sid in source_ids]
     None,                                         # 1
@@ -1424,7 +1424,7 @@ await rpc_call(
 
 ### RPC: GET_SUGGESTED_REPORTS (ciyUvf)
 
-**Source:** `_artifacts.py::suggest_reports()` (currently uses ACT_ON_SOURCES alternative)
+**Source:** `_artifacts.py::suggest_reports()`
 
 Get AI-suggested report formats based on notebook content.
 
@@ -1454,7 +1454,7 @@ await rpc_call(
 # audience_level: 1=Beginner, 2=Intermediate, 3=Advanced
 ```
 
-**Note:** The current implementation uses `ACT_ON_SOURCES` with `"suggested_report_formats"` command as an alternative approach. This dedicated RPC method provides the same functionality.
+**Note:** This is the dedicated RPC method for getting suggested report formats. Previously `ACT_ON_SOURCES` with `"suggested_report_formats"` command was attempted but it doesn't work correctly.
 
 ---
 

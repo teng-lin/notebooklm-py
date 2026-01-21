@@ -433,7 +433,7 @@ class TestArtifactsSourceSelection:
         # Verify get_source_ids was called
         mock_core.get_source_ids.assert_called_once_with("nb_123")
 
-        # Verify ACT_ON_SOURCES RPC was called with correct source encoding
+        # Verify GENERATE_MIND_MAP RPC was called with correct source encoding
         mock_core.rpc_call.assert_called_once()
         call_args = mock_core.rpc_call.call_args
         params = call_args.args[1]
@@ -444,25 +444,29 @@ class TestArtifactsSourceSelection:
         assert source_ids_nested == [[["src_mm_1"]], [["src_mm_2"]]]
 
     @pytest.mark.asyncio
-    async def test_suggest_reports_source_encoding(self, mock_core, mock_notes_api):
-        """Test suggest_reports has correct source encoding format."""
+    async def test_suggest_reports_uses_get_suggested_reports(self, mock_core, mock_notes_api):
+        """Test suggest_reports uses GET_SUGGESTED_REPORTS RPC."""
+        from notebooklm.rpc.types import RPCMethod
+
         api = ArtifactsAPI(mock_core, mock_notes_api)
 
-        # Mock get_source_ids to return source IDs
-        mock_core.get_source_ids.return_value = ["src_sug"]
-
-        # Mock the suggest_reports RPC call
+        # Mock the GET_SUGGESTED_REPORTS RPC call
+        # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
         mock_core.rpc_call.return_value = [
-            ["Report Title", "Description", None, None, "Custom prompt", 2]
+            [["Report Title", "Description", None, None, "Custom prompt", 2]]
         ]
 
-        await api.suggest_reports(
-            notebook_id="nb_123",
-            source_ids=None,
-        )
+        result = await api.suggest_reports(notebook_id="nb_123")
 
-        # Verify get_source_ids was called
-        mock_core.get_source_ids.assert_called_once_with("nb_123")
+        # Verify GET_SUGGESTED_REPORTS was called with correct params
+        mock_core.rpc_call.assert_called_once()
+        call_args = mock_core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.GET_SUGGESTED_REPORTS
+        assert call_args.args[1] == [[2], "nb_123"]
+
+        # Verify result parsing
+        assert len(result) == 1
+        assert result[0].title == "Report Title"
 
 
 class TestEmptySourceIds:

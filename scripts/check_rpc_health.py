@@ -84,9 +84,8 @@ STATUS_ICONS = {
 }
 
 # Methods that are duplicates (same ID, different name)
-DUPLICATE_METHODS = {
-    RPCMethod.GENERATE_MIND_MAP,  # Same as ACT_ON_SOURCES (yyryJe)
-}
+# Currently empty - no duplicate method IDs in use
+DUPLICATE_METHODS: set[RPCMethod] = set()
 
 # Methods that require real resource IDs (fail with placeholders).
 # These return HTTP 400 with placeholder IDs but would work with real IDs.
@@ -471,7 +470,7 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         return [[notebook_id], "placeholder", "Updated", "Updated content"]
 
     # Mind map operation (read-only)
-    if method == RPCMethod.ACT_ON_SOURCES:
+    if method == RPCMethod.GENERATE_MIND_MAP:
         return [[notebook_id], [], 5]  # Mind map type
 
     # Sharing operations (read-only checks)

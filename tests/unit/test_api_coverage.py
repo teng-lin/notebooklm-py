@@ -172,9 +172,12 @@ class TestGetSuggestedReportFormats:
     @pytest.mark.asyncio
     async def test_get_suggested_report_formats_parses_response(self, mock_client):
         """Test get_suggested_report_formats correctly parses API response."""
+        # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
         mock_response = [
-            ["Strategy Report", "Analysis of...", None, None, "Create a detailed...", 2],
-            ["Summary Brief", "Quick overview...", None, None, "Summarize the...", 1],
+            [
+                ["Strategy Report", "Analysis of...", None, None, "Create a detailed...", 2],
+                ["Summary Brief", "Quick overview...", None, None, "Summarize the...", 1],
+            ]
         ]
         mock_client._core.rpc_call = AsyncMock(return_value=mock_response)
         mock_client._core.get_notebook = AsyncMock(return_value=[[None, []]])

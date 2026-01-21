@@ -257,7 +257,7 @@ class TestMindMap:
                 ]
             ],
         )
-        mindmap_response = build_rpc_response(RPCMethod.ACT_ON_SOURCES, None)
+        mindmap_response = build_rpc_response(RPCMethod.GENERATE_MIND_MAP, None)
         httpx_mock.add_response(content=notebook_response.encode())
         httpx_mock.add_response(content=mindmap_response.encode())
 

@@ -56,8 +56,7 @@ class RPCMethod(str, Enum):
     IMPORT_RESEARCH = "LBwxtb"
 
     # Note and mind map operations
-    ACT_ON_SOURCES = "yyryJe"
-    GENERATE_MIND_MAP = "yyryJe"  # Same RPC as ACT_ON_SOURCES
+    GENERATE_MIND_MAP = "yyryJe"  # Generate mind map from sources
     CREATE_NOTE = "CYK0Xb"
     GET_NOTES_AND_MIND_MAPS = "cFji9"  # Returns both notes and mind maps
     UPDATE_NOTE = "cYAfTb"

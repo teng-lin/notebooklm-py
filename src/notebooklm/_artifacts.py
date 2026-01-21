@@ -885,7 +885,7 @@ class ArtifactsAPI:
         ]
 
         result = await self._core.rpc_call(
-            RPCMethod.ACT_ON_SOURCES,
+            RPCMethod.GENERATE_MIND_MAP,
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
@@ -912,7 +912,7 @@ class ArtifactsAPI:
                 if isinstance(mind_map_data, dict) and "name" in mind_map_data:
                     title = mind_map_data["name"]
 
-                # The ACT_ON_SOURCES RPC generates content but does NOT persist it.
+                # The GENERATE_MIND_MAP RPC generates content but does NOT persist it.
                 # We must explicitly create a note to save the mind map.
                 note = await self._notes.create(notebook_id, title=title, content=mind_map_json)
                 note_id = note.id if note else None
@@ -1762,43 +1762,29 @@ class ArtifactsAPI:
     async def suggest_reports(
         self,
         notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
     ) -> builtins.list[ReportSuggestion]:
         """Get AI-suggested report formats for a notebook.
 
         Args:
             notebook_id: The notebook ID.
-            source_ids: Specific source IDs to analyze.
 
         Returns:
             List of ReportSuggestion objects.
         """
-        if source_ids is None:
-            source_ids = await self._core.get_source_ids(notebook_id)
-
-        source_ids_nested = [[[sid]] for sid in source_ids] if source_ids else []
-
-        params = [
-            source_ids_nested,
-            None,
-            None,
-            None,
-            None,
-            ["suggested_report_formats", [["[CONTEXT]", ""]], ""],
-            None,
-            [2, None, [1]],
-        ]
+        params = [[2], notebook_id]
 
         result = await self._core.rpc_call(
-            RPCMethod.ACT_ON_SOURCES,
+            RPCMethod.GET_SUGGESTED_REPORTS,
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
 
         suggestions = []
-        if result and isinstance(result, list):
-            for item in result:
+        # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
+        if result and isinstance(result, list) and len(result) > 0:
+            items = result[0] if isinstance(result[0], list) else result
+            for item in items:
                 if isinstance(item, list) and len(item) >= 5:
                     suggestions.append(
                         ReportSuggestion(

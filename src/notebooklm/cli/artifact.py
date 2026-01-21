@@ -404,17 +404,15 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("-s", "--source", "source_ids", multiple=True, help="Limit to specific sources")
 @click.option("--json", "json_output", is_flag=True, help="Output JSON format")
 @with_client
-def artifact_suggestions(ctx, notebook_id, source_ids, json_output, client_auth):
+def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
     """Get AI-suggested report topics based on notebook content."""
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            ids = list(source_ids) if source_ids else None
-            suggestions = await client.artifacts.suggest_reports(nb_id, ids)
+            suggestions = await client.artifacts.suggest_reports(nb_id)
 
             if not suggestions:
                 console.print("[yellow]No suggestions available[/yellow]")
