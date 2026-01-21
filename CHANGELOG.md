@@ -72,6 +72,7 @@ See [Migration Guide](docs/stability.md#migrating-from-v02x-to-v030) for upgrade
 
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` str enum)
 - **`Artifact.artifact_type`** - Use `.kind` property instead (returns `ArtifactType` str enum)
+- **`Artifact.variant`** - Use `.kind`, `.is_quiz`, or `.is_flashcards` instead
 - **`SourceFulltext.source_type`** - Use `.kind` property instead
 - **`StudioContentType`** - Use `ArtifactType` (str enum) for user-facing code
 

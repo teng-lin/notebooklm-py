@@ -28,9 +28,9 @@ Release Plan for vX.Y.Z:
 4. Commit changes
 5. ⏸️ CONFIRM: Create PR to main?
 6. Wait for CI to pass on PR
-7. Merge PR to main
-8. ⏸️ CONFIRM: Publish to TestPyPI?
-9. Verify TestPyPI package
+7. ⏸️ CONFIRM: Publish to TestPyPI?
+8. Verify TestPyPI package
+9. Merge PR to main
 10. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
 11. Wait for PyPI publish
 12. Create GitHub release
@@ -173,23 +173,6 @@ Proceed with release preparation?
   - Type checking
   - Unit and integration tests (Python 3.10-3.14, all platforms)
 
-### Merge to Main
-
-- [ ] Once CI passes, merge the PR:
-  ```bash
-  gh pr merge --squash --delete-branch
-  ```
-- [ ] Pull latest main (in main repo or update worktree):
-  ```bash
-  git checkout main && git pull origin main
-  ```
-
-### E2E Tests on Main (Optional)
-
-- [ ] Go to **Actions** → **Nightly E2E**
-- [ ] Click **Run workflow**, select `main` branch
-- [ ] Wait for E2E tests to pass
-
 ---
 
 ## Package Verification
@@ -200,7 +183,7 @@ Proceed with release preparation?
 
 - [ ] **⏸️ CONFIRM:** Ask user "Ready to publish to TestPyPI?"
 - [ ] Go to **Actions** → **Publish to TestPyPI**
-- [ ] Click **Run workflow**
+- [ ] Click **Run workflow**, select the **release/X.Y.Z** branch
 - [ ] Wait for upload to complete
 - [ ] Verify package appears: https://test.pypi.org/project/notebooklm-py/
 
@@ -212,10 +195,24 @@ Proceed with release preparation?
 - [ ] Click **Run workflow** with **source**: `testpypi`
 - [ ] Wait for all tests to pass (unit, integration, E2E)
 - [ ] If verification fails:
-  1. Create a new release branch with bumped patch version
-  2. Fix issues
-  3. Create new PR
-  4. Merge and re-run **Publish to TestPyPI**
+  1. Fix issues in the release worktree
+  2. Bump patch version in `pyproject.toml`
+  3. Update `CHANGELOG.md` with fix
+  4. Commit, push, and re-run **Publish to TestPyPI**
+
+---
+
+## Merge to Main
+
+- [ ] Once TestPyPI verification passes, merge the PR:
+  ```bash
+  gh pr merge --squash --delete-branch
+  ```
+- [ ] Pull latest main (in main repo):
+  ```bash
+  cd /path/to/notebooklm-py
+  git pull origin main
+  ```
 
 ---
 

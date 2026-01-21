@@ -117,6 +117,7 @@ The following are deprecated and will be removed in **v0.4.0**:
 |------------|-------------|-------|
 | `Source.source_type` | `Source.kind` | Returns `SourceType` str enum |
 | `Artifact.artifact_type` | `Artifact.kind` | Returns `ArtifactType` str enum |
+| `Artifact.variant` | `Artifact.kind` | Use `.is_quiz` / `.is_flashcards` |
 | `SourceFulltext.source_type` | `SourceFulltext.kind` | Returns `SourceType` str enum |
 | `StudioContentType` | `ArtifactType` | Str enum for user-facing code |
 
@@ -182,6 +183,27 @@ if artifact.kind == "audio":
 
 **Available `ArtifactType` values:**
 `AUDIO`, `VIDEO`, `REPORT`, `QUIZ`, `FLASHCARDS`, `MIND_MAP`, `INFOGRAPHIC`, `SLIDE_DECK`, `DATA_TABLE`, `UNKNOWN`
+
+#### 3. `Artifact.variant` → `Artifact.kind` or helpers
+
+**Before (deprecated):**
+```python
+if artifact.artifact_type == 4 and artifact.variant == 2:  # ⚠️ Deprecated
+    print("This is a quiz")
+```
+
+**After (recommended):**
+```python
+# Option 1: Use .kind
+if artifact.kind == ArtifactType.QUIZ:
+    print("This is a quiz")
+
+# Option 2: Use helper properties
+if artifact.is_quiz:
+    print("This is a quiz")
+if artifact.is_flashcards:
+    print("These are flashcards")
+```
 
 #### Why These Changes?
 
