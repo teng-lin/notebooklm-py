@@ -28,13 +28,14 @@ Release Plan for vX.Y.Z:
 4. Commit changes
 5. ⏸️ CONFIRM: Create PR to main?
 6. Wait for CI to pass on PR
-7. ⏸️ CONFIRM: Publish to TestPyPI?
-8. Verify TestPyPI package
-9. Merge PR to main
-10. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
-11. Wait for PyPI publish
-12. Create GitHub release
-13. Clean up worktree
+7. Run E2E tests on release branch
+8. ⏸️ CONFIRM: Publish to TestPyPI?
+9. Verify TestPyPI package
+10. Merge PR to main
+11. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
+12. Wait for PyPI publish
+13. Create GitHub release
+14. Clean up worktree
 
 Proceed with release preparation?
 ```
@@ -172,6 +173,16 @@ Proceed with release preparation?
   - Linting and formatting
   - Type checking
   - Unit and integration tests (Python 3.10-3.14, all platforms)
+
+### E2E Tests on Release Branch
+
+- [ ] Go to **Actions** → **Nightly E2E**
+- [ ] Click **Run workflow**, select the `release/X.Y.Z` branch
+- [ ] Wait for E2E tests to pass
+- [ ] If E2E tests fail:
+  1. Fix issues in the release worktree
+  2. Commit and push
+  3. Re-run E2E tests
 
 ---
 
