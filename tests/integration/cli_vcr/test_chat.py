@@ -7,7 +7,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import assert_command_success, notebooklm_vcr, skip_no_cassettes
+from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -28,6 +28,11 @@ class TestAskCommand:
         result = runner.invoke(cli, ["ask", "--json", "What is this notebook about?"])
         # allow_no_context=True: cassette may not match mock notebook ID
         assert_command_success(result)
+
+        if result.exit_code == 0:
+            data = parse_json_output(result.output)
+            assert data is not None, "Expected valid JSON output"
+            assert isinstance(data, (list, dict))
 
 
 class TestHistoryCommand:

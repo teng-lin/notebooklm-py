@@ -19,7 +19,14 @@ from integration.conftest import skip_no_cassettes  # noqa: E402
 from vcr_config import notebooklm_vcr  # noqa: E402
 
 # Re-export for use by test files
-__all__ = ["runner", "mock_context", "skip_no_cassettes", "notebooklm_vcr"]
+__all__ = [
+    "runner",
+    "mock_context",
+    "skip_no_cassettes",
+    "notebooklm_vcr",
+    "assert_command_success",
+    "parse_json_output",
+]
 
 
 @pytest.fixture
@@ -87,7 +94,19 @@ def parse_json_output(output: str) -> list | dict | None:
     except json.JSONDecodeError:
         pass
 
-    # Try each line (some output may have non-JSON prefix)
+    # If whole output is not JSON, try finding the start of a JSON object.
+    # This handles multi-line JSON with a prefix.
+    brace_pos = output.find("{")
+    bracket_pos = output.find("[")
+    start_positions = [p for p in (brace_pos, bracket_pos) if p != -1]
+    if start_positions:
+        start_pos = min(start_positions)
+        try:
+            return json.loads(output[start_pos:])
+        except json.JSONDecodeError:
+            pass
+
+    # Try each line (some output may have single-line JSON prefix)
     for line in output.strip().split("\n"):
         try:
             return json.loads(line)
