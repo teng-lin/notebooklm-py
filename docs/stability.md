@@ -77,7 +77,7 @@ ArtifactError, ArtifactDownloadError, ArtifactNotFoundError, ArtifactNotReadyErr
 ChatError
 
 # Enums
-AudioFormat, VideoFormat, StudioContentType, ExportType
+AudioFormat, VideoFormat, ExportType
 SourceType, ArtifactType, SourceStatus
 ShareAccess, SharePermission, ShareViewLevel
 ChatGoal, ChatResponseLength, ChatMode

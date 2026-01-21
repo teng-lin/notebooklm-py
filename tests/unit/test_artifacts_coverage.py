@@ -401,7 +401,7 @@ class TestIsMediaReady:
         art = [
             "artifact_id",  # 0
             "title",  # 1
-            1,  # 2: StudioContentType.AUDIO
+            1,  # 2: ArtifactTypeCode.AUDIO
             None,  # 3
             3,  # 4: ArtifactStatus.COMPLETED
             None,  # 5

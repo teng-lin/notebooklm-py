@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Source type detection** - Use API-provided type codes as source of truth instead of URL/extension heuristics
 - **CLI file handling** - Simplified to always use `add_file()` for proper type detection
-- **`StudioContentType`** - Now internal only (use `ArtifactType` for public API)
+- **`StudioContentType`** - Renamed to `ArtifactTypeCode`, now internal only (use `ArtifactType` for public API)
 
 ### Removed
 - **`detect_source_type()`** - Obsolete heuristic function replaced by `Source.kind` property

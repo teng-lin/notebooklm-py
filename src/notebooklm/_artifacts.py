@@ -22,6 +22,7 @@ from .auth import load_httpx_cookies
 from .exceptions import ValidationError
 from .rpc import (
     ArtifactStatus,
+    ArtifactTypeCode,
     AudioFormat,
     AudioLength,
     ExportType,
@@ -34,7 +35,6 @@ from .rpc import (
     RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
-    StudioContentType,
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
@@ -54,10 +54,10 @@ logger = logging.getLogger(__name__)
 # Media artifact types that require URL availability before reporting completion
 _MEDIA_ARTIFACT_TYPES = frozenset(
     {
-        StudioContentType.AUDIO.value,
-        StudioContentType.VIDEO.value,
-        StudioContentType.INFOGRAPHIC.value,
-        StudioContentType.SLIDE_DECK.value,
+        ArtifactTypeCode.AUDIO.value,
+        ArtifactTypeCode.VIDEO.value,
+        ArtifactTypeCode.INFOGRAPHIC.value,
+        ArtifactTypeCode.SLIDE_DECK.value,
     }
 )
 
@@ -247,8 +247,8 @@ class ArtifactsAPI:
 
         Args:
             notebook_id: The notebook ID.
-            artifact_type: Optional StudioContentType value to filter by.
-                Use StudioContentType.MIND_MAP (5) to get only mind maps.
+            artifact_type: Optional ArtifactTypeCode value to filter by.
+                Use ArtifactTypeCode.MIND_MAP (5) to get only mind maps.
 
         Returns:
             List of Artifact objects.
@@ -276,7 +276,7 @@ class ArtifactsAPI:
                     artifacts.append(artifact)
 
         # Fetch mind maps from notes system (if not filtering to non-mind-map type)
-        if artifact_type is None or artifact_type == StudioContentType.MIND_MAP.value:
+        if artifact_type is None or artifact_type == ArtifactTypeCode.MIND_MAP.value:
             try:
                 mind_maps = await self._notes.list_mind_maps(notebook_id)
                 for mm_data in mind_maps:
@@ -314,37 +314,37 @@ class ArtifactsAPI:
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
-        return await self.list(notebook_id, StudioContentType.AUDIO.value)
+        return await self.list(notebook_id, ArtifactTypeCode.AUDIO.value)
 
     async def list_video(self, notebook_id: str) -> builtins.list[Artifact]:
         """List video overview artifacts."""
-        return await self.list(notebook_id, StudioContentType.VIDEO.value)
+        return await self.list(notebook_id, ArtifactTypeCode.VIDEO.value)
 
     async def list_reports(self, notebook_id: str) -> builtins.list[Artifact]:
         """List report artifacts (Briefing Doc, Study Guide, Blog Post)."""
-        return await self.list(notebook_id, StudioContentType.REPORT.value)
+        return await self.list(notebook_id, ArtifactTypeCode.REPORT.value)
 
     async def list_quizzes(self, notebook_id: str) -> builtins.list[Artifact]:
         """List quiz artifacts (type 4 with variant 2)."""
-        all_type4 = await self.list(notebook_id, StudioContentType.QUIZ_FLASHCARD.value)
+        all_type4 = await self.list(notebook_id, ArtifactTypeCode.QUIZ_FLASHCARD.value)
         return [a for a in all_type4 if a.is_quiz]
 
     async def list_flashcards(self, notebook_id: str) -> builtins.list[Artifact]:
         """List flashcard artifacts (type 4 with variant 1)."""
-        all_type4 = await self.list(notebook_id, StudioContentType.QUIZ_FLASHCARD.value)
+        all_type4 = await self.list(notebook_id, ArtifactTypeCode.QUIZ_FLASHCARD.value)
         return [a for a in all_type4 if a.is_flashcards]
 
     async def list_infographics(self, notebook_id: str) -> builtins.list[Artifact]:
         """List infographic artifacts."""
-        return await self.list(notebook_id, StudioContentType.INFOGRAPHIC.value)
+        return await self.list(notebook_id, ArtifactTypeCode.INFOGRAPHIC.value)
 
     async def list_slide_decks(self, notebook_id: str) -> builtins.list[Artifact]:
         """List slide deck artifacts."""
-        return await self.list(notebook_id, StudioContentType.SLIDE_DECK.value)
+        return await self.list(notebook_id, ArtifactTypeCode.SLIDE_DECK.value)
 
     async def list_data_tables(self, notebook_id: str) -> builtins.list[Artifact]:
         """List data table artifacts."""
-        return await self.list(notebook_id, StudioContentType.DATA_TABLE.value)
+        return await self.list(notebook_id, ArtifactTypeCode.DATA_TABLE.value)
 
     # =========================================================================
     # Generate Operations
@@ -387,7 +387,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                1,  # StudioContentType.AUDIO
+                1,  # ArtifactTypeCode.AUDIO
                 source_ids_triple,
                 None,
                 None,
@@ -444,7 +444,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                3,  # StudioContentType.VIDEO
+                3,  # ArtifactTypeCode.VIDEO
                 source_ids_triple,
                 None,
                 None,
@@ -535,7 +535,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                2,  # StudioContentType.REPORT
+                2,  # ArtifactTypeCode.REPORT
                 source_ids_triple,
                 None,
                 None,
@@ -615,7 +615,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                4,  # StudioContentType.QUIZ_FLASHCARD
+                4,  # ArtifactTypeCode.QUIZ_FLASHCARD
                 source_ids_triple,
                 None,
                 None,
@@ -672,7 +672,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                4,  # StudioContentType.QUIZ_FLASHCARD
+                4,  # ArtifactTypeCode.QUIZ_FLASHCARD
                 source_ids_triple,
                 None,
                 None,
@@ -730,7 +730,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                7,  # StudioContentType.INFOGRAPHIC
+                7,  # ArtifactTypeCode.INFOGRAPHIC
                 source_ids_triple,
                 None,
                 None,
@@ -782,7 +782,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                8,  # StudioContentType.SLIDE_DECK
+                8,  # ArtifactTypeCode.SLIDE_DECK
                 source_ids_triple,
                 None,
                 None,
@@ -830,7 +830,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                9,  # StudioContentType.DATA_TABLE
+                9,  # ArtifactTypeCode.DATA_TABLE
                 source_ids_triple,
                 None,
                 None,
@@ -951,7 +951,7 @@ class ArtifactsAPI:
             for a in artifacts_data
             if isinstance(a, list)
             and len(a) > 4
-            and a[2] == StudioContentType.AUDIO
+            and a[2] == ArtifactTypeCode.AUDIO
             and a[4] == ArtifactStatus.COMPLETED
         ]
 
@@ -1030,7 +1030,7 @@ class ArtifactsAPI:
             for a in artifacts_data
             if isinstance(a, list)
             and len(a) > 4
-            and a[2] == StudioContentType.VIDEO
+            and a[2] == ArtifactTypeCode.VIDEO
             and a[4] == ArtifactStatus.COMPLETED
         ]
 
@@ -1110,7 +1110,7 @@ class ArtifactsAPI:
             for a in artifacts_data
             if isinstance(a, list)
             and len(a) > 4
-            and a[2] == StudioContentType.INFOGRAPHIC
+            and a[2] == ArtifactTypeCode.INFOGRAPHIC
             and a[4] == ArtifactStatus.COMPLETED
         ]
 
@@ -1174,7 +1174,7 @@ class ArtifactsAPI:
             for a in artifacts_data
             if isinstance(a, list)
             and len(a) > 4
-            and a[2] == StudioContentType.SLIDE_DECK
+            and a[2] == ArtifactTypeCode.SLIDE_DECK
             and a[4] == ArtifactStatus.COMPLETED
         ]
 
@@ -1366,7 +1366,7 @@ class ArtifactsAPI:
             for a in artifacts_data
             if isinstance(a, list)
             and len(a) > 7
-            and a[2] == StudioContentType.REPORT
+            and a[2] == ArtifactTypeCode.REPORT
             and a[4] == ArtifactStatus.COMPLETED
         ]
 
@@ -1462,7 +1462,7 @@ class ArtifactsAPI:
             for a in artifacts_data
             if isinstance(a, list)
             and len(a) > 18
-            and a[2] == StudioContentType.DATA_TABLE
+            and a[2] == ArtifactTypeCode.DATA_TABLE
             and a[4] == ArtifactStatus.COMPLETED
         ]
 
@@ -2037,13 +2037,13 @@ class ArtifactsAPI:
         """Get human-readable name for an artifact type.
 
         Args:
-            artifact_type: The StudioContentType enum value.
+            artifact_type: The ArtifactTypeCode enum value.
 
         Returns:
             The enum name if valid, otherwise the raw integer as string.
         """
         try:
-            return StudioContentType(artifact_type).name
+            return ArtifactTypeCode(artifact_type).name
         except ValueError:
             return str(artifact_type)
 
@@ -2095,7 +2095,7 @@ class ArtifactsAPI:
 
         Artifact array structure (from BATCHEXECUTE responses):
         - art[0]: artifact_id
-        - art[2]: artifact_type (StudioContentType enum value)
+        - art[2]: artifact_type (ArtifactTypeCode enum value)
         - art[4]: status_code (ArtifactStatus enum value)
         - art[6][5]: audio media URL list
         - art[8]: video metadata containing URL list
@@ -2103,14 +2103,14 @@ class ArtifactsAPI:
 
         Args:
             art: Raw artifact data from _list_raw().
-            artifact_type: The StudioContentType enum value.
+            artifact_type: The ArtifactTypeCode enum value.
 
         Returns:
             True if media URLs are available, or if artifact is non-media type.
             Returns True on unexpected structure (defensive fallback).
         """
         try:
-            if artifact_type == StudioContentType.AUDIO.value:
+            if artifact_type == ArtifactTypeCode.AUDIO.value:
                 # Audio URL is at art[6][5] - check for non-empty media list
                 if len(art) > 6 and isinstance(art[6], list) and len(art[6]) > 5:
                     media_list = art[6][5]
@@ -2121,7 +2121,7 @@ class ArtifactsAPI:
                             return self._is_valid_media_url(first_item[0])
                 return False
 
-            elif artifact_type == StudioContentType.VIDEO.value:
+            elif artifact_type == ArtifactTypeCode.VIDEO.value:
                 # Video URLs are in art[8] - check for any valid URL in the list
                 if len(art) > 8 and isinstance(art[8], list):
                     return any(
@@ -2131,10 +2131,10 @@ class ArtifactsAPI:
                     )
                 return False
 
-            elif artifact_type == StudioContentType.INFOGRAPHIC.value:
+            elif artifact_type == ArtifactTypeCode.INFOGRAPHIC.value:
                 return self._find_infographic_url(art) is not None
 
-            elif artifact_type == StudioContentType.SLIDE_DECK.value:
+            elif artifact_type == ArtifactTypeCode.SLIDE_DECK.value:
                 # Slide deck PDF URL is at art[16][3]
                 return (
                     len(art) > 16

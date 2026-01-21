@@ -22,6 +22,7 @@ from .types import (
     QUERY_URL,
     UPLOAD_URL,
     ArtifactStatus,
+    ArtifactTypeCode,
     AudioFormat,
     AudioLength,
     ChatGoal,
@@ -36,7 +37,7 @@ from .types import (
     RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
-    StudioContentType,
+    StudioContentType,  # Deprecated alias for ArtifactTypeCode
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
@@ -47,7 +48,8 @@ __all__ = [
     "BATCHEXECUTE_URL",
     "QUERY_URL",
     "UPLOAD_URL",
-    "StudioContentType",
+    "ArtifactTypeCode",
+    "StudioContentType",  # Deprecated alias
     "ArtifactStatus",
     "artifact_status_to_str",
     "AudioFormat",

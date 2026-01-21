@@ -5,7 +5,7 @@ for convenient access.
 
 Usage:
     from notebooklm.types import Notebook, Source, Artifact, GenerationStatus
-    from notebooklm.types import AudioFormat, VideoFormat, StudioContentType
+    from notebooklm.types import AudioFormat, VideoFormat
     from notebooklm.types import SourceType, ArtifactType  # str enums for .kind
 """
 
@@ -49,7 +49,6 @@ from .rpc.types import (
     SlideDeckFormat,
     SlideDeckLength,
     SourceStatus,
-    StudioContentType,
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
@@ -182,14 +181,14 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     """Convert internal artifact type and variant to user-facing ArtifactType.
 
     Args:
-        artifact_type: StudioContentType integer value from API.
+        artifact_type: ArtifactTypeCode integer value from API.
         variant: Optional variant code (e.g., for quiz vs flashcards).
 
     Returns:
         ArtifactType enum member. Returns UNKNOWN for unrecognized types.
     """
     # Handle QUIZ/FLASHCARDS distinction (both use type 4)
-    if artifact_type == 4:  # StudioContentType.QUIZ
+    if artifact_type == 4:  # ArtifactTypeCode.QUIZ
         if variant == 1:
             return ArtifactType.FLASHCARDS
         elif variant == 2:
@@ -256,7 +255,7 @@ __all__ = [
     "ArtifactType",
     # Re-exported enums (configuration/RPC)
     "ArtifactStatus",
-    "StudioContentType",
+    # Note: ArtifactTypeCode/StudioContentType are internal - not exported here
     "AudioFormat",
     "AudioLength",
     "VideoFormat",
@@ -597,7 +596,7 @@ class Artifact:
 
     id: str
     title: str
-    _artifact_type: int = field(repr=False)  # StudioContentType enum value
+    _artifact_type: int = field(repr=False)  # ArtifactTypeCode enum value
     status: int  # 1=processing, 2=pending, 3=completed, 4=failed
     created_at: datetime | None = None
     url: str | None = None
@@ -701,7 +700,7 @@ class Artifact:
         return cls(
             id=str(mind_map_id),
             title=title,
-            _artifact_type=5,  # StudioContentType.MIND_MAP
+            _artifact_type=5,  # ArtifactTypeCode.MIND_MAP
             status=3,  # Mind maps are always "completed" once created
             created_at=created_at,
             _variant=None,

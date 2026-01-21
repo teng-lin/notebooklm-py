@@ -4,9 +4,9 @@ from notebooklm.rpc.types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
     ArtifactStatus,
+    ArtifactTypeCode,
     RPCMethod,
     SourceStatus,
-    StudioContentType,
     artifact_status_to_str,
     source_status_to_str,
 )
@@ -62,26 +62,26 @@ class TestRPCMethod:
         assert isinstance(RPCMethod.LIST_NOTEBOOKS.value, str)
 
 
-class TestStudioContentType:
+class TestArtifactTypeCode:
     def test_audio_type(self):
         """Test AUDIO content type code."""
-        assert StudioContentType.AUDIO == 1
+        assert ArtifactTypeCode.AUDIO == 1
 
     def test_video_type(self):
         """Test VIDEO content type code."""
-        assert StudioContentType.VIDEO == 3
+        assert ArtifactTypeCode.VIDEO == 3
 
     def test_slide_deck_type(self):
         """Test SLIDE_DECK content type code."""
-        assert StudioContentType.SLIDE_DECK == 8
+        assert ArtifactTypeCode.SLIDE_DECK == 8
 
     def test_report_type(self):
         """Test REPORT content type code (includes Briefing Doc, Study Guide, etc.)."""
-        assert StudioContentType.REPORT == 2
+        assert ArtifactTypeCode.REPORT == 2
 
-    def test_studio_type_is_int(self):
-        """Test StudioContentType values are integers."""
-        assert isinstance(StudioContentType.AUDIO.value, int)
+    def test_artifact_type_code_is_int(self):
+        """Test ArtifactTypeCode values are integers."""
+        assert isinstance(ArtifactTypeCode.AUDIO.value, int)
 
 
 class TestArtifactStatusToStr:

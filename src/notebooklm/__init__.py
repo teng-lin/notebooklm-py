@@ -113,7 +113,6 @@ from .types import (
     SourceStatus,
     SourceType,
     # Enums for configuration
-    StudioContentType,
     SuggestedTopic,
     # Warnings
     UnknownTypeWarning,
@@ -181,7 +180,6 @@ __all__ = [
     "SourceType",
     "ArtifactType",
     # Configuration enums
-    "StudioContentType",
     "AudioFormat",
     "AudioLength",
     "VideoFormat",

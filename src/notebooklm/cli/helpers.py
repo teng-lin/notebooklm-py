@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 CONTEXT_FILE = get_context_path()
 BROWSER_PROFILE_DIR = get_browser_profile_dir()
 
-# CLI artifact type to StudioContentType enum mapping (for filtering)
+# CLI artifact type to ArtifactTypeCode enum mapping (for filtering)
 ARTIFACT_TYPE_MAP = {
     "video": 3,
     "slide-deck": 8,

@@ -694,7 +694,7 @@ async def setup_temp_resources(
                 [
                     None,
                     None,
-                    4,  # StudioContentType.QUIZ_FLASHCARD
+                    4,  # ArtifactTypeCode.QUIZ_FLASHCARD
                     source_ids_triple,
                     None,
                     None,

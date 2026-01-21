@@ -242,11 +242,11 @@ async def main():
         print(f"Total artifacts: {len(all_artifacts)}")
 
         # Categorize by type
-        from notebooklm.rpc import StudioContentType
+        from notebooklm.rpc import ArtifactTypeCode
 
         type_counts = {}
         for art in all_artifacts:
-            type_name = StudioContentType(art.artifact_type).name
+            type_name = ArtifactTypeCode(art.artifact_type).name
             type_counts[type_name] = type_counts.get(type_name, 0) + 1
 
         for type_name, count in type_counts.items():

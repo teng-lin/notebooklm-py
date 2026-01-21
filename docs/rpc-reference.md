@@ -53,7 +53,7 @@
 | `ZwVcOc` | GET_USER_SETTINGS | Get user settings including output language | `_settings.py` |
 | `hT54vc` | SET_USER_SETTINGS | Set user settings (e.g., output language) | `_settings.py` |
 
-### Content Type Codes (StudioContentType)
+### Content Type Codes (ArtifactTypeCode)
 
 | Code | Type | Used By |
 |------|------|---------|
@@ -439,7 +439,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        1,                            # [2]: StudioContentType.AUDIO
+        1,                            # [2]: ArtifactTypeCode.AUDIO
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]
@@ -470,7 +470,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        3,                            # [2]: StudioContentType.VIDEO
+        3,                            # [2]: ArtifactTypeCode.VIDEO
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]
@@ -503,7 +503,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        2,                            # [2]: StudioContentType.REPORT
+        2,                            # [2]: ArtifactTypeCode.REPORT
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]
@@ -536,7 +536,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        4,                            # [2]: StudioContentType.QUIZ_FLASHCARD
+        4,                            # [2]: ArtifactTypeCode.QUIZ_FLASHCARD
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]
@@ -571,7 +571,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        4,                            # [2]: StudioContentType.QUIZ_FLASHCARD
+        4,                            # [2]: ArtifactTypeCode.QUIZ_FLASHCARD
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]
@@ -608,7 +608,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        7,                            # [2]: StudioContentType.INFOGRAPHIC
+        7,                            # [2]: ArtifactTypeCode.INFOGRAPHIC
         source_ids_triple,            # [3]
         None, None, None, None, None, None, None, None, None, None,  # [4-13]
         [
@@ -633,7 +633,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        8,                            # [2]: StudioContentType.SLIDE_DECK
+        8,                            # [2]: ArtifactTypeCode.SLIDE_DECK
         source_ids_triple,            # [3]
         None, None, None, None, None, None, None, None, None, None, None, None,  # [4-15]
         [[instructions, language, format_code, length_code]],  # [16]
@@ -652,7 +652,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        9,                            # [2]: StudioContentType.DATA_TABLE
+        9,                            # [2]: ArtifactTypeCode.DATA_TABLE
         source_ids_triple,            # [3]
         None, None, None, None, None, None, None, None, None, None, None, None, None, None,  # [4-17]
         [None, [instructions, language]],  # [18]

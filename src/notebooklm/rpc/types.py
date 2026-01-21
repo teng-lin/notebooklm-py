@@ -81,11 +81,14 @@ class RPCMethod(str, Enum):
     SET_USER_SETTINGS = "hT54vc"  # Set user settings (e.g., output language)
 
 
-class StudioContentType(int, Enum):
-    """Types of studio content that can be generated.
+class ArtifactTypeCode(int, Enum):
+    """Integer codes for artifact types used in RPC calls.
 
-    These are integer codes used in the CREATE_ARTIFACT (R7cb6c) RPC call.
+    These are the raw codes used in the CREATE_ARTIFACT (R7cb6c) RPC call.
     Values correspond to artifact_data[2] in API responses.
+
+    Note: This is an internal enum. Users should use ArtifactType (str enum)
+    from notebooklm.types for a cleaner API.
     """
 
     AUDIO = 1
@@ -100,6 +103,10 @@ class StudioContentType(int, Enum):
     INFOGRAPHIC = 7
     SLIDE_DECK = 8
     DATA_TABLE = 9
+
+
+# Deprecated alias for backward compatibility
+StudioContentType = ArtifactTypeCode
 
 
 class ArtifactStatus(int, Enum):
@@ -231,7 +238,7 @@ class SlideDeckLength(int, Enum):
 class ReportFormat(str, Enum):
     """Report format options for type 2 artifacts.
 
-    All reports use StudioContentType.REPORT (2) but are differentiated
+    All reports use ArtifactTypeCode.REPORT (2) but are differentiated
     by the title/description/prompt configuration.
     """
 
