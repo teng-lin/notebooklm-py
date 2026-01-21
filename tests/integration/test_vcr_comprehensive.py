@@ -643,9 +643,7 @@ class TestSourcesAdditionalAPI:
             sources = await client.sources.list(READONLY_NOTEBOOK_ID)
             if not sources:
                 pytest.skip("No sources available")
-            is_fresh = await client.sources.check_freshness(
-                READONLY_NOTEBOOK_ID, sources[0].id
-            )
+            is_fresh = await client.sources.check_freshness(READONLY_NOTEBOOK_ID, sources[0].id)
         assert isinstance(is_fresh, bool)
 
     @pytest.mark.vcr
@@ -660,9 +658,7 @@ class TestSourcesAdditionalAPI:
             if not sources:
                 pytest.skip("No sources available")
             # Find a WEB_PAGE source (text sources can't be refreshed)
-            url_source = next(
-                (s for s in sources if s.kind == SourceType.WEB_PAGE), None
-            )
+            url_source = next((s for s in sources if s.kind == SourceType.WEB_PAGE), None)
             if not url_source:
                 pytest.skip("No WEB_PAGE source available for refresh")
             result = await client.sources.refresh(MUTABLE_NOTEBOOK_ID, url_source.id)
@@ -796,13 +792,9 @@ class TestArtifactsAdditionalAPI:
             artifact = artifacts[0]
             original_title = artifact.title
             # Rename
-            await client.artifacts.rename(
-                MUTABLE_NOTEBOOK_ID, artifact.id, "VCR Renamed Artifact"
-            )
+            await client.artifacts.rename(MUTABLE_NOTEBOOK_ID, artifact.id, "VCR Renamed Artifact")
             # Restore original name
-            await client.artifacts.rename(
-                MUTABLE_NOTEBOOK_ID, artifact.id, original_title
-            )
+            await client.artifacts.rename(MUTABLE_NOTEBOOK_ID, artifact.id, original_title)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
