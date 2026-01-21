@@ -39,6 +39,11 @@ class TestArtifactListByType:
             ("quiz", "artifacts_list_quizzes.yaml"),
             ("report", "artifacts_list_reports.yaml"),
             ("video", "artifacts_list_video.yaml"),
+            ("flashcard", "artifacts_list_flashcards.yaml"),
+            ("infographic", "artifacts_list_infographics.yaml"),
+            ("slide-deck", "artifacts_list_slide_decks.yaml"),
+            ("data-table", "artifacts_list_data_tables.yaml"),
+            ("mind-map", "artifacts_list_audio.yaml"),  # Uses audio cassette as fallback
         ],
     )
     def test_artifact_list_by_type(
@@ -49,3 +54,14 @@ class TestArtifactListByType:
             result = runner.invoke(cli, ["artifact", "list", "--type", artifact_type])
             # allow_no_context=True: cassette may not match mock notebook ID
             assert_command_success(result)
+
+
+class TestArtifactSuggestReportsCommand:
+    """Test 'notebooklm artifact suggestions' command."""
+
+    @notebooklm_vcr.use_cassette("artifacts_suggest_reports.yaml")
+    def test_artifact_suggestions(self, runner, mock_auth_for_vcr, mock_context):
+        """Get artifact suggestions works with real client."""
+        result = runner.invoke(cli, ["artifact", "suggestions"])
+        # allow_no_context=True: cassette may not match mock notebook ID
+        assert_command_success(result)
