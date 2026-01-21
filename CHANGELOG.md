@@ -65,9 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ARTIFACT_TYPE_DISPLAY`** - Unused constant replaced by `get_artifact_type_display()`
 
 ### Deprecated
+The following attributes emit `DeprecationWarning` when accessed and will be removed in **v0.4.0**.
+See [Migration Guide](docs/stability.md#migrating-from-v02x-to-v030) for upgrade instructions.
+
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` enum)
 - **`Artifact.artifact_type`** - Use `.kind` property instead (returns `ArtifactType` enum)
+- **`Artifact.variant`** - Use `.kind`, `.is_quiz`, or `.is_flashcards` instead
 - **`SourceFulltext.source_type`** - Use `.kind` property instead
+- **`StudioContentType`** - Use `ArtifactType` (str enum) for user-facing code
 
 ## [0.2.1] - 2026-01-15
 

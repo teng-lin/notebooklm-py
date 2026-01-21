@@ -150,6 +150,27 @@ _ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
     9: ArtifactType.DATA_TABLE,
 }
 
+# Backward-compatible mapping from SourceType to old source_type strings
+# Used by deprecated Source.source_type property
+# Old values were heuristic: "text", "url", "youtube", "text_file"
+_SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
+    SourceType.GOOGLE_DOCS: "text",
+    SourceType.GOOGLE_SLIDES: "text",
+    SourceType.GOOGLE_SPREADSHEET: "text",
+    SourceType.PDF: "text_file",
+    SourceType.PASTED_TEXT: "text",
+    SourceType.WEB_PAGE: "url",
+    SourceType.GOOGLE_DRIVE_AUDIO: "text",
+    SourceType.GOOGLE_DRIVE_VIDEO: "text",
+    SourceType.YOUTUBE: "youtube",
+    SourceType.MARKDOWN: "text_file",
+    SourceType.DOCX: "text_file",
+    SourceType.CSV: "text",
+    SourceType.IMAGE: "text",
+    SourceType.MEDIA: "text",
+    SourceType.UNKNOWN: "text",
+}
+
 
 def _safe_source_type(type_code: int | None) -> SourceType:
     """Convert internal type code to user-facing SourceType enum.
@@ -410,6 +431,24 @@ class Source:
         return _safe_source_type(self._type_code)
 
     @property
+    def source_type(self) -> str:
+        """Deprecated: Use .kind instead.
+
+        Returns the old-style source type string for backward compatibility.
+        Values: "text", "url", "youtube", "text_file"
+
+        .. deprecated:: 0.3.0
+            Use the ``.kind`` property which returns a ``SourceType`` enum.
+            Will be removed in v0.4.0.
+        """
+        warnings.warn(
+            "Source.source_type is deprecated, use .kind instead. Will be removed in v0.4.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _SOURCE_TYPE_COMPAT_MAP.get(self.kind, "text")
+
+    @property
     def is_ready(self) -> bool:
         """Check if source is ready for use (status=READY)."""
         return self.status == SourceStatus.READY
@@ -526,6 +565,25 @@ class SourceFulltext:
         """Get source type as SourceType enum."""
         return _safe_source_type(self._type_code)
 
+    @property
+    def source_type(self) -> str:
+        """Deprecated: Use .kind instead.
+
+        Returns the old-style source type string for backward compatibility.
+        Values: "text", "url", "youtube", "text_file"
+
+        .. deprecated:: 0.3.0
+            Use the ``.kind`` property which returns a ``SourceType`` enum.
+            Will be removed in v0.4.0.
+        """
+        warnings.warn(
+            "SourceFulltext.source_type is deprecated, use .kind instead. "
+            "Will be removed in v0.4.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return _SOURCE_TYPE_COMPAT_MAP.get(self.kind, "text")
+
     def find_citation_context(
         self,
         cited_text: str,
@@ -611,6 +669,41 @@ class Artifact:
             unrecognized type codes (with a warning on first occurrence).
         """
         return _map_artifact_kind(self._artifact_type, self._variant)
+
+    @property
+    def artifact_type(self) -> int:
+        """Deprecated: Use .kind instead.
+
+        Returns the raw integer type code for backward compatibility.
+
+        .. deprecated:: 0.3.0
+            Use the ``.kind`` property which returns an ``ArtifactType`` enum.
+            Will be removed in v0.4.0.
+        """
+        warnings.warn(
+            "Artifact.artifact_type is deprecated, use .kind instead. Will be removed in v0.4.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._artifact_type
+
+    @property
+    def variant(self) -> int | None:
+        """Deprecated: Use .kind, .is_quiz, or .is_flashcards instead.
+
+        Returns the variant code for type 4 artifacts (1=flashcards, 2=quiz).
+
+        .. deprecated:: 0.3.0
+            Use ``.kind == ArtifactType.QUIZ`` or ``.is_quiz`` / ``.is_flashcards``.
+            Will be removed in v0.4.0.
+        """
+        warnings.warn(
+            "Artifact.variant is deprecated. Use .kind, .is_quiz, or .is_flashcards instead. "
+            "Will be removed in v0.4.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._variant
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> "Artifact":
