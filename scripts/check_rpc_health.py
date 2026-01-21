@@ -412,11 +412,14 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method in (
         RPCMethod.GET_NOTEBOOK,
         RPCMethod.GET_SOURCE_GUIDE,
-        RPCMethod.GET_SUGGESTED_REPORTS,
         RPCMethod.GET_SHARE_STATUS,
         RPCMethod.REMOVE_RECENTLY_VIEWED,
     ):
         return [notebook_id]
+
+    # GET_SUGGESTED_REPORTS has special params: [[2], notebook_id]
+    if method == RPCMethod.GET_SUGGESTED_REPORTS:
+        return [[2], notebook_id]
 
     # Methods that take [[notebook_id]] as the only param
     if method in (
