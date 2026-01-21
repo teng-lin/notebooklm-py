@@ -53,9 +53,9 @@ class TestRPCMethod:
         """Test CREATE_ARTIFACT RPC ID."""
         assert RPCMethod.CREATE_ARTIFACT == "R7cb6c"
 
-    def test_poll_artifact(self):
-        """Test POLL_ARTIFACT RPC ID."""
-        assert RPCMethod.POLL_ARTIFACT == "gArtLc"
+    def test_list_artifacts(self):
+        """Test LIST_ARTIFACTS RPC ID."""
+        assert RPCMethod.LIST_ARTIFACTS == "gArtLc"
 
     def test_rpc_method_is_string(self):
         """Test RPCMethod values are strings (for JSON serialization)."""

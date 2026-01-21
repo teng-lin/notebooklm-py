@@ -163,9 +163,16 @@ class TestStudioContent:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        response = build_rpc_response(
-            RPCMethod.LIST_ARTIFACTS, ["task_id_123", "completed", "https://audio.url"]
-        )
+        # LIST_ARTIFACTS format: [[artifact1, artifact2, ...]]
+        # Use REPORT type (no URL check needed) for simpler test
+        artifact = [
+            "task_id_123",
+            "Briefing Doc",
+            2,  # REPORT type (no URL check)
+            None,
+            3,  # COMPLETED status
+        ]
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[artifact]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -176,7 +183,6 @@ class TestStudioContent:
 
         assert result is not None
         assert result.status == "completed"
-        assert result.url == "https://audio.url"
 
 
 class TestGenerateQuiz:
@@ -736,16 +742,22 @@ class TestArtifactErrorPaths:
                 await client.artifacts.download_slide_deck("nb_123", "/tmp/slides")
 
     @pytest.mark.asyncio
-    async def test_poll_status_with_url(
+    async def test_poll_status_in_progress(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test poll_status returns url when available."""
-        response = build_rpc_response(
-            RPCMethod.LIST_ARTIFACTS, ["task_id_123", "completed", "https://audio.url", None]
-        )
+        """Test poll_status returns in_progress for processing artifacts."""
+        # LIST_ARTIFACTS format: [[artifact1, artifact2, ...]]
+        artifact = [
+            "task_id_123",
+            "Report",
+            2,  # REPORT type
+            None,
+            1,  # PROCESSING status
+        ]
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[artifact]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -755,19 +767,25 @@ class TestArtifactErrorPaths:
             )
 
         assert result is not None
-        assert result.url == "https://audio.url"
+        assert result.status == "in_progress"
 
     @pytest.mark.asyncio
-    async def test_poll_status_with_error(
+    async def test_poll_status_failed(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test poll_status returns error message when available."""
-        response = build_rpc_response(
-            RPCMethod.LIST_ARTIFACTS, ["task_id_123", "failed", None, "Generation failed"]
-        )
+        """Test poll_status returns failed status."""
+        # LIST_ARTIFACTS format: [[artifact1, artifact2, ...]]
+        artifact = [
+            "task_id_123",
+            "Report",
+            2,  # REPORT type
+            None,
+            4,  # FAILED status
+        ]
+        response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[artifact]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
@@ -777,7 +795,7 @@ class TestArtifactErrorPaths:
             )
 
         assert result is not None
-        assert result.error == "Generation failed"
+        assert result.status == "failed"
 
     @pytest.mark.asyncio
     async def test_rpc_error_http_500(

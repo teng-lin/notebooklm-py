@@ -180,8 +180,18 @@ class TestWaitForCompletion:
         """Test that timeout is raised after max wait time."""
         api, mock_core = mock_artifacts_api
 
-        # Always return in_progress status
-        mock_core.rpc_call.return_value = ["task_123", "in_progress", None, None]
+        # Always return in_progress status via LIST_ARTIFACTS format
+        mock_core.rpc_call.return_value = [
+            [
+                [
+                    "task_123",
+                    "Title",
+                    2,  # REPORT type (no URL check needed)
+                    None,
+                    1,  # PROCESSING status
+                ]
+            ]
+        ]
 
         # Patch the event loop time to simulate time passing
         loop = asyncio.get_running_loop()
@@ -206,45 +216,29 @@ class TestWaitForCompletion:
         """Test successful completion without timeout."""
         api, mock_core = mock_artifacts_api
 
-        # Return completed on second poll
+        # Return completed on second poll via LIST_ARTIFACTS format
         mock_core.rpc_call.side_effect = [
-            ["task_123", "in_progress", None, None],
-            ["task_123", "completed", "http://url", None],
-        ]
-
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await api.wait_for_completion("nb_123", "task_123", timeout=60.0)
-
-        assert result.status == "completed"
-        assert result.url == "http://url"
-
-    @pytest.mark.asyncio
-    async def test_poll_returns_none_uses_fallback(self, mock_artifacts_api):
-        """Test fallback to _list_raw when poll_status returns None."""
-        api, mock_core = mock_artifacts_api
-
-        # First poll returns None, triggering fallback path
-        # Then complete on second poll
-        # Note: For audio artifacts (type=1), we need URL at art[6][5] to report completed
-        mock_core.rpc_call.side_effect = [
-            None,  # First call (poll_status) returns None, triggering fallback
+            # First poll - in_progress
             [
                 [
-                    [  # Second call (_list_raw) succeeds with URL data
+                    [
                         "task_123",
                         "Title",
-                        1,  # AUDIO
+                        2,  # REPORT type (no URL check needed)
                         None,
-                        3,  # COMPLETED
+                        1,  # PROCESSING status
+                    ]
+                ]
+            ],
+            # Second poll - completed
+            [
+                [
+                    [
+                        "task_123",
+                        "Title",
+                        2,  # REPORT type
                         None,
-                        [
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            [["https://audio.url/file.mp4", None, "audio/mp4"]],
-                        ],
+                        3,  # COMPLETED status
                     ]
                 ]
             ],
@@ -254,6 +248,29 @@ class TestWaitForCompletion:
             result = await api.wait_for_completion("nb_123", "task_123", timeout=60.0)
 
         assert result.status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_poll_returns_pending_when_artifact_not_found(self, mock_artifacts_api):
+        """Test poll_status returns pending when artifact ID not in list."""
+        api, mock_core = mock_artifacts_api
+
+        # LIST_ARTIFACTS returns list without our artifact ID
+        mock_core.rpc_call.return_value = [
+            [
+                [  # Different artifact
+                    "other_artifact",
+                    "Title",
+                    2,  # REPORT type
+                    None,
+                    3,  # COMPLETED
+                ]
+            ]
+        ]
+
+        result = await api.poll_status("nb_123", "task_123")
+
+        assert result.status == "pending"
+        assert result.task_id == "task_123"
 
 
 # =============================================================================
@@ -326,8 +343,18 @@ class TestDeprecationWarnings:
         """Test that poll_interval parameter triggers deprecation warning."""
         api, mock_core = mock_artifacts_api
 
-        # Return completed immediately
-        mock_core.rpc_call.return_value = ["task_123", "completed", "http://url", None]
+        # Return completed immediately via LIST_ARTIFACTS format
+        mock_core.rpc_call.return_value = [
+            [
+                [
+                    "task_123",
+                    "Title",
+                    2,  # REPORT type (no URL check needed)
+                    None,
+                    3,  # COMPLETED status
+                ]
+            ]
+        ]
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -645,29 +672,26 @@ class TestPollStatusMediaReadiness:
         """Test poll_status returns completed when audio URL is present."""
         api, mock_core = mock_artifacts_api
 
-        # POLL_ARTIFACT returns None, triggering fallback
-        mock_core.rpc_call.side_effect = [
-            None,  # POLL_ARTIFACT
+        # LIST_ARTIFACTS response
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    [  # LIST_ARTIFACTS response
-                        "task_123",
-                        "Audio Overview",
-                        1,  # AUDIO
+                [  # LIST_ARTIFACTS response
+                    "task_123",
+                    "Audio Overview",
+                    1,  # AUDIO
+                    None,
+                    3,  # COMPLETED
+                    None,
+                    [
                         None,
-                        3,  # COMPLETED
                         None,
-                        [
-                            None,
-                            None,
-                            None,
-                            None,
-                            None,
-                            [["https://audio.url/file.mp4", None, "audio/mp4"]],
-                        ],
-                    ]
+                        None,
+                        None,
+                        None,
+                        [["https://audio.url/file.mp4", None, "audio/mp4"]],
+                    ],
                 ]
-            ],
+            ]
         ]
 
         status = await api.poll_status("nb_123", "task_123")
@@ -678,22 +702,19 @@ class TestPollStatusMediaReadiness:
         """Test poll_status returns in_progress when audio URL is missing."""
         api, mock_core = mock_artifacts_api
 
-        # POLL_ARTIFACT returns None, triggering fallback
-        mock_core.rpc_call.side_effect = [
-            None,  # POLL_ARTIFACT
+        # LIST_ARTIFACTS response - status=COMPLETED but no URL
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    [  # LIST_ARTIFACTS response - status=COMPLETED but no URL
-                        "task_123",
-                        "Audio Overview",
-                        1,  # AUDIO
-                        None,
-                        3,  # COMPLETED
-                        None,
-                        [None, None, None, None, None, []],  # Empty media list
-                    ]
+                [  # LIST_ARTIFACTS response - status=COMPLETED but no URL
+                    "task_123",
+                    "Audio Overview",
+                    1,  # AUDIO
+                    None,
+                    3,  # COMPLETED
+                    None,
+                    [None, None, None, None, None, []],  # Empty media list
                 ]
-            ],
+            ]
         ]
 
         status = await api.poll_status("nb_123", "task_123")
@@ -705,23 +726,21 @@ class TestPollStatusMediaReadiness:
         """Test poll_status returns in_progress when video URL is missing."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.side_effect = [
-            None,  # POLL_ARTIFACT
+        # LIST_ARTIFACTS - video with status=COMPLETED but no URL
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    [  # LIST_ARTIFACTS - video with status=COMPLETED but no URL
-                        "task_123",
-                        "Video Overview",
-                        3,  # VIDEO
-                        None,
-                        3,  # COMPLETED
-                        None,
-                        None,
-                        None,
-                        [],  # Empty video metadata
-                    ]
+                [  # LIST_ARTIFACTS - video with status=COMPLETED but no URL
+                    "task_123",
+                    "Video Overview",
+                    3,  # VIDEO
+                    None,
+                    3,  # COMPLETED
+                    None,
+                    None,
+                    None,
+                    [],  # Empty video metadata
                 ]
-            ],
+            ]
         ]
 
         status = await api.poll_status("nb_123", "task_123")
@@ -732,19 +751,17 @@ class TestPollStatusMediaReadiness:
         """Test poll_status returns completed for quiz (no URL check needed)."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.side_effect = [
-            None,  # POLL_ARTIFACT
+        # LIST_ARTIFACTS - quiz
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    [  # LIST_ARTIFACTS - quiz
-                        "task_123",
-                        "Quiz",
-                        4,  # QUIZ
-                        None,
-                        3,  # COMPLETED
-                    ]
+                [  # LIST_ARTIFACTS - quiz
+                    "task_123",
+                    "Quiz",
+                    4,  # QUIZ
+                    None,
+                    3,  # COMPLETED
                 ]
-            ],
+            ]
         ]
 
         status = await api.poll_status("nb_123", "task_123")
@@ -756,21 +773,19 @@ class TestPollStatusMediaReadiness:
         """Test poll_status returns in_progress for PROCESSING status (no URL check)."""
         api, mock_core = mock_artifacts_api
 
-        mock_core.rpc_call.side_effect = [
-            None,  # POLL_ARTIFACT
+        # LIST_ARTIFACTS - audio still processing
+        mock_core.rpc_call.return_value = [
             [
-                [
-                    [  # LIST_ARTIFACTS - audio still processing
-                        "task_123",
-                        "Audio Overview",
-                        1,  # AUDIO
-                        None,
-                        1,  # PROCESSING (not COMPLETED)
-                        None,
-                        [None, None, None, None, None, []],
-                    ]
+                [  # LIST_ARTIFACTS - audio still processing
+                    "task_123",
+                    "Audio Overview",
+                    1,  # AUDIO
+                    None,
+                    1,  # PROCESSING (not COMPLETED)
+                    None,
+                    [None, None, None, None, None, []],
                 ]
-            ],
+            ]
         ]
 
         status = await api.poll_status("nb_123", "task_123")

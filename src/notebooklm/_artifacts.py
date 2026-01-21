@@ -1585,45 +1585,31 @@ class ArtifactsAPI:
         Returns:
             GenerationStatus with current status.
         """
-        # POLL_ARTIFACT RPC is unreliable - use list as fallback
-        params = [task_id, notebook_id, [2]]
-        result = await self._core.rpc_call(
-            RPCMethod.POLL_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
+        # List all artifacts and find by ID (no poll-by-ID RPC exists)
+        artifacts_data = await self._list_raw(notebook_id)
+        for art in artifacts_data:
+            if len(art) > 0 and art[0] == task_id:
+                status_code = art[4] if len(art) > 4 else 0
+                artifact_type = art[2] if len(art) > 2 else 0
 
-        if result is None:
-            artifacts_data = await self._list_raw(notebook_id)
-            for art in artifacts_data:
-                if len(art) > 0 and art[0] == task_id:
-                    status_code = art[4] if len(art) > 4 else 0
-                    artifact_type = art[2] if len(art) > 2 else 0
+                # For media artifacts, verify URL availability before reporting completion.
+                # The API may set status=COMPLETED before media URLs are populated.
+                if status_code == ArtifactStatus.COMPLETED:
+                    if not self._is_media_ready(art, artifact_type):
+                        type_name = self._get_artifact_type_name(artifact_type)
+                        logger.debug(
+                            "Artifact %s (type=%s) status=COMPLETED but media not ready, "
+                            "continuing poll",
+                            task_id,
+                            type_name,
+                        )
+                        # Downgrade to PROCESSING to continue polling
+                        status_code = ArtifactStatus.PROCESSING
 
-                    # For media artifacts, verify URL availability before reporting completion.
-                    # The API may set status=COMPLETED before media URLs are populated.
-                    if status_code == ArtifactStatus.COMPLETED:
-                        if not self._is_media_ready(art, artifact_type):
-                            type_name = self._get_artifact_type_name(artifact_type)
-                            logger.debug(
-                                "Artifact %s (type=%s) status=COMPLETED but media not ready, "
-                                "continuing poll",
-                                task_id,
-                                type_name,
-                            )
-                            # Downgrade to PROCESSING to continue polling
-                            status_code = ArtifactStatus.PROCESSING
+                status = artifact_status_to_str(status_code)
+                return GenerationStatus(task_id=task_id, status=status)
 
-                    status = artifact_status_to_str(status_code)
-                    return GenerationStatus(task_id=task_id, status=status)
-            return GenerationStatus(task_id=task_id, status="pending")
-
-        status = result[1] if len(result) > 1 else "unknown"
-        url = result[2] if len(result) > 2 else None
-        error = result[3] if len(result) > 3 else None
-
-        return GenerationStatus(task_id=task_id, status=status, url=url, error=error)
+        return GenerationStatus(task_id=task_id, status="pending")
 
     async def wait_for_completion(
         self,

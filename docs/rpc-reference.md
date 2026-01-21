@@ -27,7 +27,7 @@
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
-| `gArtLc` | LIST_ARTIFACTS / POLL_ARTIFACT | List/poll artifacts | `_artifacts.py` |
+| `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
 | `hPTbtc` | GET_CONVERSATION_HISTORY | Get chat history | `_chat.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
@@ -680,9 +680,9 @@ params = [
 ]
 ```
 
-### RPC: LIST_ARTIFACTS / POLL_ARTIFACT (gArtLc)
+### RPC: LIST_ARTIFACTS (gArtLc)
 
-**Source:** `_artifacts.py::list()`
+**Source:** `_artifacts.py::list()`, `_artifacts.py::poll_status()`
 
 ```python
 params = [

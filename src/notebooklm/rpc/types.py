@@ -42,10 +42,8 @@ class RPCMethod(str, Enum):
 
     # Artifact operations
     CREATE_ARTIFACT = "R7cb6c"  # Generate any artifact (audio, video, report, quiz, etc.)
-    POLL_ARTIFACT = "gArtLc"  # Poll for artifact generation status
-    LIST_ARTIFACTS = "gArtLc"  # Same RPC as POLL_ARTIFACT, alias for listing
+    LIST_ARTIFACTS = "gArtLc"  # List all artifacts in a notebook
     DELETE_ARTIFACT = "V5N4be"
-    GET_ARTIFACT = "BnLyuf"
     RENAME_ARTIFACT = "rc3d8d"
     EXPORT_ARTIFACT = "Krh3pd"
     SHARE_ARTIFACT = "RGP97b"
