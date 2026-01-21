@@ -19,7 +19,7 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from ..rpc import ExportType
 from .helpers import (
-    ARTIFACT_TYPE_MAP,
+    cli_name_to_artifact_type,
     console,
     get_artifact_type_display,
     json_output_response,
@@ -65,6 +65,7 @@ def artifact():
     type=click.Choice(
         [
             "all",
+            "audio",
             "video",
             "slide-deck",
             "quiz",
@@ -83,7 +84,7 @@ def artifact():
 def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
     """List artifacts in a notebook."""
     nb_id = require_notebook(notebook_id)
-    type_filter = None if artifact_type == "all" else ARTIFACT_TYPE_MAP.get(artifact_type)
+    type_filter = cli_name_to_artifact_type(artifact_type)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:

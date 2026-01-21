@@ -22,11 +22,11 @@ from .download import download
 from .generate import generate
 from .helpers import (
     # Display
-    ARTIFACT_TYPE_MAP,
     BROWSER_PROFILE_DIR,
     # Context
     CONTEXT_FILE,
     clear_context,
+    cli_name_to_artifact_type,
     # Console
     console,
     get_artifact_type_display,
@@ -130,7 +130,7 @@ __all__ = [
     "json_output_response",
     "json_error_response",
     # Display
-    "ARTIFACT_TYPE_MAP",
+    "cli_name_to_artifact_type",
     "get_artifact_type_display",
     "get_source_type_display",
 ]

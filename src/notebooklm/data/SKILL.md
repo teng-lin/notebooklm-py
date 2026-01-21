@@ -218,7 +218,7 @@ All generate commands support:
 |------|---------|---------|----------|
 | Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .mp3 |
 | Video | `generate video` | `--format [explainer\|brief]`, `--style [auto\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]` | .mp4 |
-| Slides | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` | .pdf |
+| Slide Deck | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` | .pdf |
 | Infographic | `generate infographic` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]` | .png |
 | Report | `generate report` | `--format [briefing-doc\|study-guide\|blog-post\|custom]` | .md |
 | Mind Map | `generate mind-map` | *(sync, instant)* | .json |
@@ -443,7 +443,7 @@ All commands use consistent exit codes:
 
 ## Known Limitations
 
-**Rate limiting:** Audio, video, quiz, flashcards, infographic, and slides generation may fail due to Google's rate limits. This is an API limitation, not a bug.
+**Rate limiting:** Audio, video, quiz, flashcards, infographic, and slide deck generation may fail due to Google's rate limits. This is an API limitation, not a bug.
 
 **Reliable operations:** These always work:
 - Notebooks (list, create, delete, rename)
@@ -455,7 +455,7 @@ All commands use consistent exit codes:
 - Audio (podcast) generation
 - Video generation
 - Quiz and flashcard generation
-- Infographic and slides generation
+- Infographic and slide deck generation
 
 **Workaround:** If generation fails:
 1. Check status: `notebooklm artifact list`

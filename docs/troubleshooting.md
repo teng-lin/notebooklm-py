@@ -227,7 +227,7 @@ Download URLs for audio/video are temporary:
 ```python
 # Get fresh artifact list before download
 artifacts = await client.artifacts.list(nb_id)
-audio = next(a for a in artifacts if a.artifact_type == "audio")
+audio = next(a for a in artifacts if a.kind == "audio")
 # Use audio.url immediately
 ```
 

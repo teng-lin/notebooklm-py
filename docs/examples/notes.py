@@ -241,12 +241,10 @@ async def main():
         all_artifacts = await client.artifacts.list(notebook.id)
         print(f"Total artifacts: {len(all_artifacts)}")
 
-        # Categorize by type
-        from notebooklm.rpc import ArtifactTypeCode
-
-        type_counts = {}
+        # Categorize by type using the user-facing kind property
+        type_counts: dict[str, int] = {}
         for art in all_artifacts:
-            type_name = ArtifactTypeCode(art.artifact_type).name
+            type_name = art.kind.value  # e.g., "audio", "video", "report"
             type_counts[type_name] = type_counts.get(type_name, 0) + 1
 
         for type_name, count in type_counts.items():
