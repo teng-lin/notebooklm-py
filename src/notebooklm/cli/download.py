@@ -49,7 +49,11 @@ ARTIFACT_CONFIGS: dict[str, ArtifactConfig] = {
         "extension": ".png",
         "default_dir": "./infographic",
     },
-    "slide-deck": {"kind": ArtifactType.SLIDE_DECK, "extension": ".pdf", "default_dir": "./slides"},
+    "slide-deck": {
+        "kind": ArtifactType.SLIDE_DECK,
+        "extension": ".pdf",
+        "default_dir": "./slide-decks",
+    },
     "data-table": {
         "kind": ArtifactType.DATA_TABLE,
         "extension": ".csv",
