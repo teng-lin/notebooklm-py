@@ -1,17 +1,18 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-01-20
+**Last Updated:** 2026-01-21
 
 Checklist for releasing a new version of `notebooklm-py`.
 
 > **For Claude Code:** Follow this checklist step by step. **NO STEPS ARE OPTIONAL.** "Quick release" means efficient execution, NOT skipping steps.
 >
 > **Critical rules:**
-> 1. **Never combine commit and push** - always commit first, show user, then ask "Push to main?"
-> 2. **Explicit confirmation required** for: pushing to main, publishing to TestPyPI, creating tags, pushing tags
-> 3. **"ok" is not confirmation** - restate what you're about to do and wait for explicit "yes"
-> 4. **TestPyPI is mandatory** - it catches packaging issues that tests cannot detect
+> 1. **Always use a worktree** - never work directly on main for releases
+> 2. **Use PRs, not direct pushes** - all release changes go through a PR
+> 3. **Explicit confirmation required** for: creating PR, publishing to TestPyPI, creating tags, pushing tags
+> 4. **"ok" is not confirmation** - restate what you're about to do and wait for explicit "yes"
+> 5. **TestPyPI is mandatory** - it catches packaging issues that tests cannot detect
 
 ---
 
@@ -21,18 +22,41 @@ Before starting, present this summary to the user:
 
 ```
 Release Plan for vX.Y.Z:
-1. Update pyproject.toml and CHANGELOG.md
-2. Commit (will show diff first)
-3. ⏸️ CONFIRM: Push to main?
-4. Wait for CI (test.yml + E2E)
-5. ⏸️ CONFIRM: Publish to TestPyPI?
-6. Verify TestPyPI package
-7. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
-8. Wait for PyPI publish
-9. Create GitHub release
+1. Create release worktree (release/X.Y.Z branch)
+2. Update pyproject.toml and CHANGELOG.md
+3. Run pre-commit checks (ruff, mypy, pytest)
+4. Commit changes
+5. ⏸️ CONFIRM: Create PR to main?
+6. Wait for CI to pass on PR
+7. Merge PR to main
+8. ⏸️ CONFIRM: Publish to TestPyPI?
+9. Verify TestPyPI package
+10. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
+11. Wait for PyPI publish
+12. Create GitHub release
+13. Clean up worktree
 
 Proceed with release preparation?
 ```
+
+---
+
+## Setup
+
+### Create Release Worktree
+
+- [ ] Create a dedicated worktree for the release:
+  ```bash
+  git worktree add .worktrees/release-X.Y.Z -b release/X.Y.Z
+  cd .worktrees/release-X.Y.Z
+  ```
+- [ ] Set up the development environment:
+  ```bash
+  uv venv .venv
+  uv pip install -e ".[all]"
+  playwright install chromium
+  source .venv/bin/activate
+  ```
 
 ---
 
@@ -106,15 +130,23 @@ Proceed with release preparation?
   [X.Y.Z]: https://github.com/teng-lin/notebooklm-py/compare/vPREV...vX.Y.Z
   ```
 
+### Pre-Commit Checks
+
+- [ ] Run all checks before committing:
+  ```bash
+  ruff format src/ tests/ && ruff check src/ tests/ && mypy src/notebooklm --ignore-missing-imports && pytest
+  ```
+- [ ] Fix any issues before proceeding
+
 ### Commit
 
 - [ ] Verify changes:
   ```bash
   git diff
   ```
-- [ ] Commit (do NOT push yet):
+- [ ] Commit:
   ```bash
-  git add pyproject.toml CHANGELOG.md
+  git add pyproject.toml CHANGELOG.md docs/
   git commit -m "chore: release vX.Y.Z"
   ```
 - [ ] Show commit to user:
@@ -126,19 +158,33 @@ Proceed with release preparation?
 
 ## CI Verification
 
-### Push to Main
+### Create Pull Request
 
-- [ ] **⏸️ CONFIRM:** Ask user "Ready to push to main? This will trigger CI."
-- [ ] Push to main:
+- [ ] **⏸️ CONFIRM:** Ask user "Ready to create PR for release vX.Y.Z?"
+- [ ] Push branch and create PR:
   ```bash
-  git push origin main
+  git push -u origin release/X.Y.Z
+  gh pr create --title "chore: release vX.Y.Z" --body "Release vX.Y.Z
+
+  See CHANGELOG.md for details."
   ```
 - [ ] Wait for **test.yml** to pass:
   - Linting and formatting
   - Type checking
   - Unit and integration tests (Python 3.10-3.14, all platforms)
 
-### E2E Tests on Main
+### Merge to Main
+
+- [ ] Once CI passes, merge the PR:
+  ```bash
+  gh pr merge --squash --delete-branch
+  ```
+- [ ] Pull latest main (in main repo or update worktree):
+  ```bash
+  git checkout main && git pull origin main
+  ```
+
+### E2E Tests on Main (Optional)
 
 - [ ] Go to **Actions** → **Nightly E2E**
 - [ ] Click **Run workflow**, select `main` branch
@@ -166,11 +212,10 @@ Proceed with release preparation?
 - [ ] Click **Run workflow** with **source**: `testpypi`
 - [ ] Wait for all tests to pass (unit, integration, E2E)
 - [ ] If verification fails:
-  1. Fix issues locally
-  2. Bump patch version in `pyproject.toml`
-  3. Update `CHANGELOG.md` with fix
-  4. Amend or create new commit
-  5. Push and re-run **Publish to TestPyPI**
+  1. Create a new release branch with bumped patch version
+  2. Fix issues
+  3. Create new PR
+  4. Merge and re-run **Publish to TestPyPI**
 
 ---
 
@@ -179,7 +224,7 @@ Proceed with release preparation?
 ### Tag and Publish
 
 - [ ] **⏸️ CONFIRM:** Ask user "TestPyPI verified. Ready to create tag vX.Y.Z and publish to PyPI? This is irreversible."
-- [ ] Create tag:
+- [ ] Create tag (on main branch):
   ```bash
   git tag vX.Y.Z
   ```
@@ -212,29 +257,51 @@ Proceed with release preparation?
 
 ---
 
+## Cleanup
+
+### Remove Release Worktree
+
+- [ ] Return to main repo:
+  ```bash
+  cd /path/to/notebooklm-py
+  ```
+- [ ] Remove the release worktree:
+  ```bash
+  git worktree remove .worktrees/release-X.Y.Z
+  ```
+- [ ] Delete the local branch (if not already deleted by PR merge):
+  ```bash
+  git branch -d release/X.Y.Z
+  ```
+
+---
+
 ## Troubleshooting
 
-### CI fails after push
+### CI fails on PR
 
-> **Warning:** Only do this immediately after your own push, before anyone else pulls.
-
+Fix issues in the release worktree and push again:
 ```bash
-# Fix locally, then amend
+# In release worktree
 git add -A
-git commit --amend --no-edit
-git push --force origin main
+git commit -m "fix: address CI failures"
+git push
 ```
 
-### Need to abort after commit
-
-> **Warning:** Force pushing rewrites history. Only do this if you haven't shared the commit.
+### Need to abort release
 
 ```bash
-# Undo release commit (local only)
-git reset --hard HEAD~1
+# Close the PR without merging
+gh pr close
 
-# If already pushed (use with caution)
-git push --force origin main
+# Remove worktree
+git worktree remove .worktrees/release-X.Y.Z
+
+# Delete local branch
+git branch -D release/X.Y.Z
+
+# Delete remote branch (if pushed)
+git push origin --delete release/X.Y.Z
 ```
 
 ### Tag already exists
