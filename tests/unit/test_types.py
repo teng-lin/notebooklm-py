@@ -439,7 +439,7 @@ class TestArtifactKindProperty:
             (4, 2, ArtifactType.QUIZ),
             (5, None, ArtifactType.MIND_MAP),
             (7, None, ArtifactType.INFOGRAPHIC),
-            (8, None, ArtifactType.SLIDES),
+            (8, None, ArtifactType.SLIDE_DECK),
             (9, None, ArtifactType.DATA_TABLE),
         ],
     )

@@ -45,6 +45,7 @@ from .types import (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactType,
     GenerationStatus,
     ReportSuggestion,
 )
@@ -235,7 +236,9 @@ class ArtifactsAPI:
     # List/Get Operations
     # =========================================================================
 
-    async def list(self, notebook_id: str, artifact_type: int | None = None) -> list[Artifact]:
+    async def list(
+        self, notebook_id: str, artifact_type: ArtifactType | None = None
+    ) -> list[Artifact]:
         """List all artifacts in a notebook, including mind maps.
 
         This returns all AI-generated content: Audio Overviews, Video Overviews,
@@ -247,8 +250,8 @@ class ArtifactsAPI:
 
         Args:
             notebook_id: The notebook ID.
-            artifact_type: Optional ArtifactTypeCode value to filter by.
-                Use ArtifactTypeCode.MIND_MAP (5) to get only mind maps.
+            artifact_type: Optional ArtifactType to filter by.
+                Use ArtifactType.MIND_MAP to get only mind maps.
 
         Returns:
             List of Artifact objects.
@@ -272,20 +275,17 @@ class ArtifactsAPI:
         for art_data in artifacts_data:
             if isinstance(art_data, list) and len(art_data) > 0:
                 artifact = Artifact.from_api_response(art_data)
-                if artifact_type is None or artifact._artifact_type == artifact_type:
+                if artifact_type is None or artifact.kind == artifact_type:
                     artifacts.append(artifact)
 
         # Fetch mind maps from notes system (if not filtering to non-mind-map type)
-        if artifact_type is None or artifact_type == ArtifactTypeCode.MIND_MAP.value:
+        if artifact_type is None or artifact_type == ArtifactType.MIND_MAP:
             try:
                 mind_maps = await self._notes.list_mind_maps(notebook_id)
                 for mm_data in mind_maps:
                     mind_map_artifact = Artifact.from_mind_map(mm_data)
                     if mind_map_artifact is not None:  # None means deleted (status=2)
-                        if (
-                            artifact_type is None
-                            or mind_map_artifact._artifact_type == artifact_type
-                        ):
+                        if artifact_type is None or mind_map_artifact.kind == artifact_type:
                             artifacts.append(mind_map_artifact)
             except (RPCError, httpx.HTTPError) as e:
                 # Network/API errors - log and continue with studio artifacts
@@ -314,37 +314,35 @@ class ArtifactsAPI:
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
-        return await self.list(notebook_id, ArtifactTypeCode.AUDIO.value)
+        return await self.list(notebook_id, ArtifactType.AUDIO)
 
     async def list_video(self, notebook_id: str) -> builtins.list[Artifact]:
         """List video overview artifacts."""
-        return await self.list(notebook_id, ArtifactTypeCode.VIDEO.value)
+        return await self.list(notebook_id, ArtifactType.VIDEO)
 
     async def list_reports(self, notebook_id: str) -> builtins.list[Artifact]:
         """List report artifacts (Briefing Doc, Study Guide, Blog Post)."""
-        return await self.list(notebook_id, ArtifactTypeCode.REPORT.value)
+        return await self.list(notebook_id, ArtifactType.REPORT)
 
     async def list_quizzes(self, notebook_id: str) -> builtins.list[Artifact]:
-        """List quiz artifacts (type 4 with variant 2)."""
-        all_type4 = await self.list(notebook_id, ArtifactTypeCode.QUIZ_FLASHCARD.value)
-        return [a for a in all_type4 if a.is_quiz]
+        """List quiz artifacts."""
+        return await self.list(notebook_id, ArtifactType.QUIZ)
 
     async def list_flashcards(self, notebook_id: str) -> builtins.list[Artifact]:
-        """List flashcard artifacts (type 4 with variant 1)."""
-        all_type4 = await self.list(notebook_id, ArtifactTypeCode.QUIZ_FLASHCARD.value)
-        return [a for a in all_type4 if a.is_flashcards]
+        """List flashcard artifacts."""
+        return await self.list(notebook_id, ArtifactType.FLASHCARDS)
 
     async def list_infographics(self, notebook_id: str) -> builtins.list[Artifact]:
         """List infographic artifacts."""
-        return await self.list(notebook_id, ArtifactTypeCode.INFOGRAPHIC.value)
+        return await self.list(notebook_id, ArtifactType.INFOGRAPHIC)
 
     async def list_slide_decks(self, notebook_id: str) -> builtins.list[Artifact]:
         """List slide deck artifacts."""
-        return await self.list(notebook_id, ArtifactTypeCode.SLIDE_DECK.value)
+        return await self.list(notebook_id, ArtifactType.SLIDE_DECK)
 
     async def list_data_tables(self, notebook_id: str) -> builtins.list[Artifact]:
         """List data table artifacts."""
-        return await self.list(notebook_id, ArtifactTypeCode.DATA_TABLE.value)
+        return await self.list(notebook_id, ArtifactType.DATA_TABLE)
 
     # =========================================================================
     # Generate Operations

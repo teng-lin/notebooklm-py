@@ -123,7 +123,7 @@ class TestArtifactTypeSpecificLists:
         assert isinstance(artifacts, list)
         # All returned should be slide deck type
         for art in artifacts:
-            assert art.kind == ArtifactType.SLIDES
+            assert art.kind == ArtifactType.SLIDE_DECK
 
     @pytest.mark.asyncio
     @pytest.mark.readonly

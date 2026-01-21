@@ -7,8 +7,8 @@ import pytest
 
 from notebooklm import Artifact
 from notebooklm.cli.helpers import (
-    ARTIFACT_TYPE_MAP,
     clear_context,
+    cli_name_to_artifact_type,
     # Type display helpers
     get_artifact_type_display,
     get_auth_tokens,
@@ -31,6 +31,7 @@ from notebooklm.cli.helpers import (
     # Decorator
     with_client,
 )
+from notebooklm.types import ArtifactType
 
 # =============================================================================
 # ARTIFACT TYPE DISPLAY TESTS
@@ -93,7 +94,7 @@ class TestGetArtifactTypeDisplay:
 
     def test_slide_deck_type(self):
         art = _make_artifact(8)
-        assert get_artifact_type_display(art) == "📊 Slides"
+        assert get_artifact_type_display(art) == "📊 Slide Deck"
 
     def test_data_table_type(self):
         art = _make_artifact(9)
@@ -168,30 +169,41 @@ class TestGetSourceTypeDisplay:
         assert get_source_type_display("future_type") == "❓ future_type"
 
 
-class TestArtifactTypeMappings:
-    def test_artifact_type_map_video(self):
-        assert ARTIFACT_TYPE_MAP["video"] == 3
+class TestCliNameToArtifactType:
+    def test_audio(self):
+        assert cli_name_to_artifact_type("audio") == ArtifactType.AUDIO
 
-    def test_artifact_type_map_slide_deck(self):
-        assert ARTIFACT_TYPE_MAP["slide-deck"] == 8
+    def test_video(self):
+        assert cli_name_to_artifact_type("video") == ArtifactType.VIDEO
 
-    def test_artifact_type_map_quiz(self):
-        assert ARTIFACT_TYPE_MAP["quiz"] == 4
+    def test_slide_deck(self):
+        assert cli_name_to_artifact_type("slide-deck") == ArtifactType.SLIDE_DECK
 
-    def test_artifact_type_map_flashcard(self):
-        assert ARTIFACT_TYPE_MAP["flashcard"] == 4
+    def test_quiz(self):
+        assert cli_name_to_artifact_type("quiz") == ArtifactType.QUIZ
 
-    def test_artifact_type_map_mind_map(self):
-        assert ARTIFACT_TYPE_MAP["mind-map"] == 5
+    def test_flashcard_alias(self):
+        # CLI uses singular "flashcard", maps to ArtifactType.FLASHCARDS
+        assert cli_name_to_artifact_type("flashcard") == ArtifactType.FLASHCARDS
 
-    def test_artifact_type_map_infographic(self):
-        assert ARTIFACT_TYPE_MAP["infographic"] == 7
+    def test_mind_map(self):
+        assert cli_name_to_artifact_type("mind-map") == ArtifactType.MIND_MAP
 
-    def test_artifact_type_map_data_table(self):
-        assert ARTIFACT_TYPE_MAP["data-table"] == 9
+    def test_infographic(self):
+        assert cli_name_to_artifact_type("infographic") == ArtifactType.INFOGRAPHIC
 
-    def test_artifact_type_map_report(self):
-        assert ARTIFACT_TYPE_MAP["report"] == 2
+    def test_data_table(self):
+        assert cli_name_to_artifact_type("data-table") == ArtifactType.DATA_TABLE
+
+    def test_report(self):
+        assert cli_name_to_artifact_type("report") == ArtifactType.REPORT
+
+    def test_all_returns_none(self):
+        assert cli_name_to_artifact_type("all") is None
+
+    def test_invalid_type_raises_keyerror(self):
+        with pytest.raises(KeyError):
+            cli_name_to_artifact_type("invalid-type")
 
 
 # =============================================================================

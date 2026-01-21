@@ -27,6 +27,7 @@ from ..auth import (
     load_auth_from_storage,
 )
 from ..paths import get_browser_profile_dir, get_context_path
+from ..types import ArtifactType
 
 if TYPE_CHECKING:
     from ..types import Artifact
@@ -40,17 +41,34 @@ logger = logging.getLogger(__name__)
 CONTEXT_FILE = get_context_path()
 BROWSER_PROFILE_DIR = get_browser_profile_dir()
 
-# CLI artifact type to ArtifactTypeCode enum mapping (for filtering)
-ARTIFACT_TYPE_MAP = {
-    "video": 3,
-    "slide-deck": 8,
-    "quiz": 4,
-    "flashcard": 4,  # Same as quiz
-    "infographic": 7,
-    "data-table": 9,
-    "mind-map": 5,
-    "report": 2,
+# CLI artifact type name aliases
+_CLI_ARTIFACT_ALIASES = {
+    "flashcard": "flashcards",  # CLI uses singular, enum uses plural
 }
+
+
+def cli_name_to_artifact_type(name: str) -> ArtifactType | None:
+    """Convert CLI artifact type name to ArtifactType enum.
+
+    Args:
+        name: CLI artifact type name (e.g., "video", "slide-deck", "flashcard").
+            Use "all" to get None (no filter).
+
+    Returns:
+        ArtifactType enum member, or None if name is "all".
+
+    Raises:
+        KeyError: If name is not a valid artifact type.
+    """
+    if name == "all":
+        return None
+
+    # Handle aliases
+    name = _CLI_ARTIFACT_ALIASES.get(name, name)
+
+    # Convert kebab-case to snake_case and uppercase for enum lookup
+    enum_name = name.upper().replace("-", "_")
+    return ArtifactType[enum_name]
 
 
 # =============================================================================
@@ -499,7 +517,7 @@ def get_artifact_type_display(artifact: "Artifact") -> str:
         ArtifactType.FLASHCARDS: "🃏 Flashcards",
         ArtifactType.MIND_MAP: "🧠 Mind Map",
         ArtifactType.INFOGRAPHIC: "🖼️ Infographic",
-        ArtifactType.SLIDES: "📊 Slides",
+        ArtifactType.SLIDE_DECK: "📊 Slide Deck",
         ArtifactType.DATA_TABLE: "📈 Data Table",
     }
 

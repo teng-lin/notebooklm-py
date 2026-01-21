@@ -113,7 +113,7 @@ class ArtifactType(str, Enum):
     FLASHCARDS = "flashcards"
     MIND_MAP = "mind_map"
     INFOGRAPHIC = "infographic"
-    SLIDES = "slides"
+    SLIDE_DECK = "slide_deck"
     DATA_TABLE = "data_table"
     UNKNOWN = "unknown"
 
@@ -146,7 +146,7 @@ _ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
     3: ArtifactType.VIDEO,
     5: ArtifactType.MIND_MAP,
     7: ArtifactType.INFOGRAPHIC,
-    8: ArtifactType.SLIDES,
+    8: ArtifactType.SLIDE_DECK,
     9: ArtifactType.DATA_TABLE,
 }
 

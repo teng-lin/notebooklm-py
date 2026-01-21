@@ -1064,7 +1064,7 @@ class ArtifactType(str, Enum):
     FLASHCARDS = "flashcards"
     MIND_MAP = "mind_map"
     INFOGRAPHIC = "infographic"
-    SLIDES = "slides"
+    SLIDE_DECK = "slide_deck"
     DATA_TABLE = "data_table"
     UNKNOWN = "unknown"
 
