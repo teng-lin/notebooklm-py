@@ -172,7 +172,8 @@ def extract_id(data: Any, *indices: int) -> str | None:
         result = data
         for idx in indices:
             result = result[idx]
-        # Recursively extract the first ID from the result
+        # API responses have varying nesting depths (e.g., [[['id']]], [['id']], ['id']).
+        # Recursively drill down to find the actual string/int ID.
         return extract_id_recursive(result)
     except (IndexError, TypeError):
         return None
@@ -647,7 +648,7 @@ async def setup_temp_resources(
     if result.status == CheckStatus.OK:
         temp.source_id = extract_id(data, 0, 0)
         if not temp.source_id:
-            print(f"  WARNING: Source ID extraction failed. Response: {repr(data)[:200]}")
+            print(f"  WARNING: ADD_SOURCE ID extraction failed. Response: {repr(data)[:200]}")
 
     # Test ADD_SOURCE_FILE - registers file source intent (no actual upload needed)
     # Params format: [[[filename]], notebook_id, [2], [1, None, ...]]
@@ -741,7 +742,9 @@ async def setup_temp_resources(
             # Artifact ID is at response[0][0]
             temp.artifact_id = extract_id(data, 0, 0)
             if not temp.artifact_id:
-                print(f"  WARNING: Artifact ID extraction failed. Response: {repr(data)[:200]}")
+                print(
+                    f"  WARNING: CREATE_ARTIFACT ID extraction failed. Response: {repr(data)[:200]}"
+                )
 
         # Poll for artifact completion and test GET_ARTIFACT
         if temp.artifact_id:
