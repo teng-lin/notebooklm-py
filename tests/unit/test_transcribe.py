@@ -57,33 +57,32 @@ class TestCheckDependencies:
         assert error_msg is None or isinstance(error_msg, str)
 
     def test_yt_dlp_missing(self):
-        """Should report yt-dlp missing."""
-        import sys
+        """Should report yt-dlp missing when yt-dlp import fails."""
+        import notebooklm._transcribe as transcribe_module
 
-        from notebooklm._transcribe import checkTranscribeDependencies
-
-        # Save original modules
-        original_yt_dlp = sys.modules.get("yt_dlp")
-        original_whisper = sys.modules.get("whisper")
+        # Reset the whisper backend cache to ensure clean state
+        original_backend = transcribe_module._WHISPER_BACKEND
+        transcribe_module._WHISPER_BACKEND = None
 
         try:
-            # Remove yt_dlp from modules to simulate it being missing
-            sys.modules["yt_dlp"] = None
-            if "whisper" not in sys.modules:
-                sys.modules["whisper"] = MagicMock()
+            # Mock yt_dlp import to raise ImportError
+            # Mock whisper to be available so only yt-dlp is missing
+            with (
+                patch.dict("sys.modules", {"yt_dlp": None}),
+                patch.object(
+                    transcribe_module,
+                    "_detectWhisperBackend",
+                    return_value="openai",
+                ),
+            ):
+                is_available, error_msg = transcribe_module.checkTranscribeDependencies()
 
-            # The function checks by attempting import, so we need to force reload
-            # For this test, we'll just verify the function exists and has correct signature
-            is_available, error_msg = checkTranscribeDependencies()
-            # Result depends on actual installed packages
-            assert isinstance(is_available, bool)
-            assert error_msg is None or isinstance(error_msg, str)
+                assert is_available is False
+                assert error_msg is not None
+                assert "yt-dlp" in error_msg
         finally:
-            # Restore original modules
-            if original_yt_dlp is not None:
-                sys.modules["yt_dlp"] = original_yt_dlp
-            if original_whisper is not None:
-                sys.modules["whisper"] = original_whisper
+            # Restore the cache
+            transcribe_module._WHISPER_BACKEND = original_backend
 
 
 class TestTranscriptionResult:
@@ -151,11 +150,65 @@ class TestExceptions:
 class TestDownloadYoutubeAudio:
     """Tests for downloadYoutubeAudio function."""
 
-    def test_function_exists(self):
-        """Should have downloadYoutubeAudio function available."""
-        from notebooklm._transcribe import downloadYoutubeAudio
+    def test_downloads_audio_and_returns_path_and_title(self, tmp_path):
+        """Should download audio using yt-dlp and return file path and title."""
+        import importlib
+        import sys
 
-        assert callable(downloadYoutubeAudio)
+        # Create a fake downloaded mp3 file
+        fake_audio = tmp_path / "Test Video.mp3"
+        fake_audio.write_bytes(b"fake audio content")
+
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.extract_info.return_value = {"title": "Test Video"}
+
+        # Create mock yt_dlp module with YoutubeDL as context manager
+        mock_yt_dlp = MagicMock()
+        mock_yt_dlp.YoutubeDL.return_value.__enter__.return_value = mock_ydl_instance
+        mock_yt_dlp.YoutubeDL.return_value.__exit__.return_value = False
+        mock_yt_dlp.utils.DownloadError = Exception  # Mock the exception class
+
+        # Save original module if exists
+        original_yt_dlp = sys.modules.get("yt_dlp")
+
+        try:
+            # Replace yt_dlp in sys.modules
+            sys.modules["yt_dlp"] = mock_yt_dlp
+
+            # Reload the module to pick up our mock
+            import notebooklm._transcribe as transcribe_module
+
+            importlib.reload(transcribe_module)
+
+            audio_path, title = transcribe_module.downloadYoutubeAudio(
+                "https://youtube.com/watch?v=test123",
+                output_dir=tmp_path,
+            )
+
+            assert audio_path == fake_audio
+            assert title == "Test Video"
+            mock_ydl_instance.extract_info.assert_called_once_with(
+                "https://youtube.com/watch?v=test123", download=True
+            )
+        finally:
+            # Restore original module
+            if original_yt_dlp is not None:
+                sys.modules["yt_dlp"] = original_yt_dlp
+            elif "yt_dlp" in sys.modules:
+                del sys.modules["yt_dlp"]
+
+            # Reload to restore original state
+            importlib.reload(transcribe_module)
+
+    def test_raises_dependency_error_when_yt_dlp_missing(self):
+        """Should raise DependencyMissingError when yt-dlp is not installed."""
+        from notebooklm._transcribe import DependencyMissingError, downloadYoutubeAudio
+
+        with patch.dict("sys.modules", {"yt_dlp": None}):
+            with pytest.raises(DependencyMissingError) as exc_info:
+                downloadYoutubeAudio("https://youtube.com/watch?v=test123")
+
+            assert "yt-dlp" in str(exc_info.value)
 
 
 class TestTranscribeAudio:

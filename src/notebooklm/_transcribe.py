@@ -179,14 +179,12 @@ def downloadYoutubeAudio(url: str, output_dir: Path | None = None) -> tuple[Path
             info = ydl.extract_info(url, download=True)
             title = info.get("title", "Unknown")
 
-            # Find the downloaded file
-            # yt-dlp converts to mp3, so look for that
-            for file in output_dir.iterdir():
-                if file.suffix == ".mp3":
-                    return (file, title)
-
-            # Fallback: look for any audio file
-            for file in output_dir.iterdir():
+            # Find the downloaded file, prioritizing mp3
+            audio_files = sorted(
+                output_dir.iterdir(),
+                key=lambda f: f.suffix != ".mp3",  # Sorts .mp3 files to the front
+            )
+            for file in audio_files:
                 if file.suffix in (".mp3", ".m4a", ".wav", ".webm", ".opus"):
                     return (file, title)
 
@@ -348,11 +346,7 @@ def transcribeFromYoutube(
         result = transcribeAudio(audio_path, model=model, language=language)
 
         # Update title from YouTube metadata
-        result = TranscriptionResult(
-            text=result.text,
-            language=result.language,
-            source_title=title,
-        )
+        result = result._replace(source_title=title)
 
         if keep_audio:
             return (result, audio_path)
