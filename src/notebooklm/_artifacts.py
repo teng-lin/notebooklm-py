@@ -1790,7 +1790,7 @@ class ArtifactsAPI:
                         ReportSuggestion(
                             title=item[0] if isinstance(item[0], str) else "",
                             description=item[1] if isinstance(item[1], str) else "",
-                            prompt=item[4] if len(item) > 4 and isinstance(item[4], str) else "",
+                            prompt=item[4] if isinstance(item[4], str) else "",
                             audience_level=item[5] if len(item) > 5 else 2,
                         )
                     )
