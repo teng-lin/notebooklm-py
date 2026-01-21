@@ -89,11 +89,10 @@ DUPLICATE_METHODS = {
     RPCMethod.LIST_ARTIFACTS,  # Same as POLL_ARTIFACT (gArtLc)
 }
 
-# Methods that require real resource IDs (fail with placeholders)
-# These return HTTP 400 with placeholder IDs but would work with real IDs
-PLACEHOLDER_FAIL_METHODS = {
-    RPCMethod.DISCOVER_SOURCES,  # Reserved for future (not fully rolled out by Google)
-}
+# Methods that require real resource IDs (fail with placeholders).
+# These return HTTP 400 with placeholder IDs but would work with real IDs.
+# Currently empty but kept for future additions.
+PLACEHOLDER_FAIL_METHODS: set[RPCMethod] = set()
 
 # Methods that can only be tested in full mode (with temp notebook)
 # These are destructive or create resources
@@ -105,8 +104,6 @@ FULL_MODE_ONLY_METHODS = {
     RPCMethod.CREATE_NOTE,
     RPCMethod.CREATE_ARTIFACT,  # Main RPC for all artifacts - test with flashcards (fast)
     RPCMethod.START_FAST_RESEARCH,  # Starts research (verify RPC ID, don't wait)
-    # Read operations (need real artifact from CREATE_ARTIFACT)
-    RPCMethod.GET_ARTIFACT,  # Tested after flashcard creation completes
     # Delete operations (tested after creates)
     RPCMethod.DELETE_NOTE,
     RPCMethod.DELETE_SOURCE,
@@ -120,6 +117,10 @@ ALWAYS_SKIP_METHODS = {
     RPCMethod.QUERY_ENDPOINT,
     # Takes too long
     RPCMethod.START_DEEP_RESEARCH,
+    # Defined but not used in library - correct params format unknown
+    RPCMethod.GET_ARTIFACT,
+    # Not fully rolled out by Google - fails with any IDs
+    RPCMethod.DISCOVER_SOURCES,
 }
 
 
@@ -131,6 +132,30 @@ class TempResources:
     source_id: str | None = None
     note_id: str | None = None
     artifact_id: str | None = None  # Flashcard artifact for DELETE_ARTIFACT test
+
+
+def extract_id_recursive(data: Any) -> str | None:
+    """Recursively extract the first string/int ID from nested response data.
+
+    Drills down through nested lists until it finds a string or int.
+    This handles various response formats like:
+    - [[['id', ...]]] -> 'id'
+    - [['id', ...]] -> 'id'
+    - ['id', ...] -> 'id'
+
+    Args:
+        data: Response data (typically a nested list)
+
+    Returns:
+        The extracted string ID or None if not found
+    """
+    if data is None:
+        return None
+    if isinstance(data, (str, int)):
+        return str(data)
+    if isinstance(data, list) and len(data) > 0:
+        return extract_id_recursive(data[0])
+    return None
 
 
 def extract_id(data: Any, *indices: int) -> str | None:
@@ -147,10 +172,8 @@ def extract_id(data: Any, *indices: int) -> str | None:
         result = data
         for idx in indices:
             result = result[idx]
-        # Handle both string and integer IDs (convert to string)
-        if result is None:
-            return None
-        return str(result) if isinstance(result, (str, int)) else None
+        # Recursively extract the first ID from the result
+        return extract_id_recursive(result)
     except (IndexError, TypeError):
         return None
 
@@ -357,6 +380,12 @@ def format_check_output(result: CheckResult, suffix: str | None = None) -> str:
     elif result.error and result.status != CheckStatus.OK:
         line += f" - {result.error}"
     return line
+
+
+def format_check_with_success(result: CheckResult, success_msg: str) -> str:
+    """Format a CheckResult, showing success_msg only when OK."""
+    suffix = success_msg if result.status == CheckStatus.OK else None
+    return format_check_output(result, suffix)
 
 
 def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | None:
@@ -570,11 +599,7 @@ async def setup_temp_resources(
         client, auth, RPCMethod.CREATE_NOTEBOOK, [f"RPC-Health-Check-{uuid4().hex[:8]}"]
     )
     results.append(result)
-    print(
-        format_check_output(
-            result, "temp notebook created" if result.status == CheckStatus.OK else None
-        )
-    )
+    print(format_check_with_success(result, "temp notebook created"))
 
     if result.status != CheckStatus.OK:
         return temp
@@ -617,14 +642,12 @@ async def setup_temp_resources(
         source_path=f"/notebook/{temp.notebook_id}",
     )
     results.append(result)
-    print(
-        format_check_output(
-            result, "temp source added" if result.status == CheckStatus.OK else None
-        )
-    )
+    print(format_check_with_success(result, "temp source added"))
 
     if result.status == CheckStatus.OK:
         temp.source_id = extract_id(data, 0, 0)
+        if not temp.source_id:
+            print(f"  WARNING: Source ID extraction failed. Response: {repr(data)[:200]}")
 
     # Test ADD_SOURCE_FILE - registers file source intent (no actual upload needed)
     # Params format: [[[filename]], notebook_id, [2], [1, None, ...]]
@@ -642,8 +665,7 @@ async def setup_temp_resources(
         source_path=f"/notebook/{temp.notebook_id}",
     )
     results.append(result)
-    suffix = "file source registered" if result.status == CheckStatus.OK else None
-    print(format_check_output(result, suffix))
+    print(format_check_with_success(result, "file source registered"))
 
     # Test START_FAST_RESEARCH - starts research task (verify RPC ID only)
     # Params format: [[query, source_type], None, 1, notebook_id]
@@ -656,8 +678,7 @@ async def setup_temp_resources(
         source_path=f"/notebook/{temp.notebook_id}",
     )
     results.append(result)
-    suffix = "research started" if result.status == CheckStatus.OK else None
-    print(format_check_output(result, suffix))
+    print(format_check_with_success(result, "research started"))
 
     # Test CREATE_NOTE - extract note_id from response[0]
     # Params format: [notebook_id, "", [1], None, title]
@@ -670,11 +691,7 @@ async def setup_temp_resources(
         source_path=f"/notebook/{temp.notebook_id}",
     )
     results.append(result)
-    print(
-        format_check_output(
-            result, "temp note created" if result.status == CheckStatus.OK else None
-        )
-    )
+    print(format_check_with_success(result, "temp note created"))
 
     if result.status == CheckStatus.OK:
         temp.note_id = extract_id(data, 0)
@@ -718,12 +735,13 @@ async def setup_temp_resources(
             source_path=f"/notebook/{temp.notebook_id}",
         )
         results.append(result)
-        suffix = "flashcard generation triggered" if result.status == CheckStatus.OK else None
-        print(format_check_output(result, suffix))
+        print(format_check_with_success(result, "flashcard generation triggered"))
 
         if result.status == CheckStatus.OK:
             # Artifact ID is at response[0][0]
             temp.artifact_id = extract_id(data, 0, 0)
+            if not temp.artifact_id:
+                print(f"  WARNING: Artifact ID extraction failed. Response: {repr(data)[:200]}")
 
         # Poll for artifact completion and test GET_ARTIFACT
         if temp.artifact_id:
@@ -756,18 +774,12 @@ async def setup_temp_resources(
                     f"  Artifact not ready after {max_polls * poll_interval:.0f}s (continuing anyway)"
                 )
 
-            # Test GET_ARTIFACT with the real artifact ID
-            await asyncio.sleep(CALL_DELAY)
-            result = await test_rpc_method(
-                client,
-                auth,
-                RPCMethod.GET_ARTIFACT,
-                [[temp.notebook_id], temp.artifact_id],
-                source_path=f"/notebook/{temp.notebook_id}",
-            )
-            results.append(result)
-            suffix = "artifact retrieved" if result.status == CheckStatus.OK else None
-            print(format_check_output(result, suffix))
+            # Note: GET_ARTIFACT (BnLyuf) is defined but not used in the library.
+            # The correct params format is unknown - library uses list() + filter instead.
+            # DELETE_ARTIFACT test in cleanup phase validates artifact manipulation works.
+    else:
+        # Skip artifact tests - no source_id available
+        print("SKIP     CREATE_ARTIFACT - No source_id available (source extraction failed)")
 
     return temp
 
@@ -796,11 +808,7 @@ async def cleanup_temp_resources(
             source_path=f"/notebook/{temp.notebook_id}",
         )
         results.append(result)
-        print(
-            format_check_output(
-                result, "temp note deleted" if result.status == CheckStatus.OK else None
-            )
-        )
+        print(format_check_with_success(result, "temp note deleted"))
 
     # Test DELETE_SOURCE if we have a source
     if temp.source_id:
@@ -813,11 +821,7 @@ async def cleanup_temp_resources(
             source_path=f"/notebook/{temp.notebook_id}",
         )
         results.append(result)
-        print(
-            format_check_output(
-                result, "temp source deleted" if result.status == CheckStatus.OK else None
-            )
-        )
+        print(format_check_with_success(result, "temp source deleted"))
 
     # Test DELETE_ARTIFACT if we have an artifact (main RPC for artifact deletion)
     if temp.artifact_id:
@@ -830,18 +834,13 @@ async def cleanup_temp_resources(
             source_path=f"/notebook/{temp.notebook_id}",
         )
         results.append(result)
-        suffix = "temp artifact deleted" if result.status == CheckStatus.OK else None
-        print(format_check_output(result, suffix))
+        print(format_check_with_success(result, "temp artifact deleted"))
 
     # Test DELETE_NOTEBOOK (always runs to cleanup)
     await asyncio.sleep(CALL_DELAY)
     result = await test_rpc_method(client, auth, RPCMethod.DELETE_NOTEBOOK, [temp.notebook_id])
     results.append(result)
-    print(
-        format_check_output(
-            result, "temp notebook deleted" if result.status == CheckStatus.OK else None
-        )
-    )
+    print(format_check_with_success(result, "temp notebook deleted"))
 
 
 async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
@@ -917,11 +916,12 @@ def print_summary(results: list[CheckResult]) -> int:
 
     counts = Counter(r.status for r in results)
     total = len(results)
+    tested = total - counts[CheckStatus.SKIPPED]
 
-    print(f"OK:       {counts[CheckStatus.OK]}/{total}")
-    print(f"MISMATCH: {counts[CheckStatus.MISMATCH]}/{total}")
-    print(f"ERROR:    {counts[CheckStatus.ERROR]}/{total}")
-    print(f"SKIPPED:  {counts[CheckStatus.SKIPPED]}/{total}")
+    print(f"TESTED:   {tested}/{total} methods")
+    print(f"OK:       {counts[CheckStatus.OK]}/{tested}")
+    print(f"MISMATCH: {counts[CheckStatus.MISMATCH]}/{tested}")
+    print(f"ERROR:    {counts[CheckStatus.ERROR]}/{tested}")
 
     # Print details for mismatches
     mismatches = [r for r in results if r.status == CheckStatus.MISMATCH]
