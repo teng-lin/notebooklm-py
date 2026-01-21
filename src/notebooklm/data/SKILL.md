@@ -12,6 +12,10 @@ Complete programmatic access to Google NotebookLM—including capabilities not e
 **From PyPI (Recommended):**
 ```bash
 pip install notebooklm-py
+
+# For transcription features (YouTube/audio to text):
+pip install notebooklm-py[transcribe]      # Cross-platform (openai-whisper)
+pip install notebooklm-py[transcribe-mlx]  # Mac Apple Silicon (mlx-whisper, faster)
 ```
 
 **From GitHub (use latest release tag, NOT main branch):**
@@ -102,6 +106,7 @@ Before starting workflows, verify the CLI is ready:
 - `notebooklm create` - create notebook
 - `notebooklm ask "..."` - chat queries
 - `notebooklm source add` - add sources
+- `notebooklm source add-transcribe` - transcribe and add (long-running, ask in main conversation)
 
 **Ask before running:**
 - `notebooklm delete` - destructive
@@ -125,6 +130,8 @@ Before starting workflows, verify the CLI is ready:
 | Add URL source | `notebooklm source add "https://..."` |
 | Add file | `notebooklm source add ./file.pdf` |
 | Add YouTube | `notebooklm source add "https://youtube.com/..."` |
+| Transcribe YouTube | `notebooklm source add-transcribe "https://youtube.com/..."` |
+| Transcribe audio file | `notebooklm source add-transcribe ./audio.mp3` |
 | List sources | `notebooklm source list` |
 | Wait for source processing | `notebooklm source wait <source_id>` |
 | Web research (fast) | `notebooklm source add-research "query"` |
@@ -237,6 +244,7 @@ These capabilities are available via CLI but not in NotebookLM's web interface:
 | **Mind map extraction** | `download mind-map` | Export hierarchical JSON for visualization tools |
 | **Data table export** | `download data-table` | Download structured tables as CSV |
 | **Source fulltext** | `source fulltext <id>` | Retrieve the indexed text content of any source |
+| **Audio transcription** | `source add-transcribe` | Transcribe YouTube/audio files and add as text source |
 | **Programmatic sharing** | `share` commands | Manage sharing permissions without the UI |
 
 ## Common Workflows

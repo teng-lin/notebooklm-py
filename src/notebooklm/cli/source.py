@@ -387,6 +387,172 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, client_auth):
     return _run()
 
 
+@source.command("add-transcribe")
+@click.argument("content")
+@click.option(
+    "-n",
+    "--notebook",
+    "notebook_id",
+    default=None,
+    help="Notebook ID (uses current if not set)",
+)
+@click.option(
+    "--language",
+    default=None,
+    help="Language code for transcription (e.g., 'en', 'zh'). Auto-detected if not set.",
+)
+@click.option(
+    "--model",
+    default="base",
+    help="Whisper model: tiny, base, small, medium, large (default: base)",
+)
+@click.option("--title", help="Custom title for the source")
+@click.option("--keep-audio", is_flag=True, help="Keep downloaded audio file")
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    help="Directory for audio file (default: temp directory)",
+)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@with_client
+def source_add_transcribe(
+    ctx,
+    content,
+    notebook_id,
+    language,
+    model,
+    title,
+    keep_audio,
+    output_dir,
+    json_output,
+    client_auth,
+):
+    """Transcribe audio and add as a text source.
+
+    Downloads audio from YouTube URLs or uses local audio files, transcribes
+    using Whisper (mlx-whisper on Mac, openai-whisper elsewhere), and adds
+    the transcript as a text source.
+
+    \b
+    Install dependencies:
+      pip install notebooklm-py[transcribe]      # Cross-platform
+      pip install notebooklm-py[transcribe-mlx]  # Mac Apple Silicon (faster)
+
+    \b
+    Examples:
+      source add-transcribe "https://youtube.com/watch?v=xxx"
+      source add-transcribe ./podcast.mp3
+      source add-transcribe "https://youtu.be/abc" --language en
+      source add-transcribe ./audio.wav --model small --title "Interview"
+      source add-transcribe "https://youtube.com/..." --keep-audio --output-dir ./audio
+    """
+    from .._transcribe import (
+        AudioFileNotFoundError,
+        DependencyMissingError,
+        TranscriptionFailedError,
+        YouTubeDownloadError,
+        checkTranscribeDependencies,
+        detectInputType,
+        getWhisperBackend,
+        transcribeAudio,
+        transcribeFromYoutube,
+    )
+
+    # Check dependencies first
+    is_available, error_msg = checkTranscribeDependencies()
+    if not is_available:
+        raise click.ClickException(error_msg or "Missing transcription dependencies")
+
+    nb_id = require_notebook(notebook_id)
+    input_type = detectInputType(content)
+
+    # Validate input
+    if input_type == "file" and not Path(content).exists():
+        raise click.ClickException(f"Audio file not found: {content}")
+
+    # Show which backend is being used
+    backend = getWhisperBackend()
+    backend_name = "mlx-whisper" if backend == "mlx" else "openai-whisper"
+
+    async def _run():
+        async with NotebookLMClient(client_auth) as client:
+            try:
+                if input_type == "youtube":
+                    if not json_output:
+                        console.print(
+                            f"[yellow]Downloading audio from YouTube (using {backend_name})...[/yellow]"
+                        )
+
+                    result, audio_path = transcribeFromYoutube(
+                        content,
+                        model=model,
+                        language=language,
+                        keep_audio=keep_audio,
+                        output_dir=Path(output_dir) if output_dir else None,
+                    )
+
+                    if keep_audio and audio_path and not json_output:
+                        console.print(f"[dim]Audio saved: {audio_path}[/dim]")
+
+                else:
+                    if not json_output:
+                        console.print(
+                            f"[yellow]Transcribing audio file (using {backend_name})...[/yellow]"
+                        )
+
+                    result = transcribeAudio(
+                        Path(content),
+                        model=model,
+                        language=language,
+                    )
+
+                if not json_output:
+                    console.print(
+                        f"[green]Transcription complete:[/green] "
+                        f"{len(result.text)} chars, language: {result.language}"
+                    )
+
+                # Use custom title or auto-generated title
+                source_title = title or f"Transcript: {result.source_title}"
+
+                if not json_output:
+                    console.print("[yellow]Adding transcript as source...[/yellow]")
+
+                src = await client.sources.add_text(nb_id, source_title, result.text)
+
+                if json_output:
+                    data = {
+                        "source": {
+                            "id": src.id,
+                            "title": src.title,
+                            "type": str(src.kind),
+                        },
+                        "transcription": {
+                            "language": result.language,
+                            "char_count": len(result.text),
+                            "original_title": result.source_title,
+                        },
+                    }
+                    json_output_response(data)
+                else:
+                    console.print(f"[green]Added source:[/green] {src.id}")
+                    console.print(f"[bold]Title:[/bold] {src.title}")
+
+            except DependencyMissingError as e:
+                raise click.ClickException(str(e)) from None
+            except YouTubeDownloadError as e:
+                raise click.ClickException(f"YouTube download failed: {e}") from None
+            except AudioFileNotFoundError as e:
+                raise click.ClickException(str(e)) from None
+            except TranscriptionFailedError as e:
+                raise click.ClickException(f"Transcription failed: {e}") from None
+
+    if not json_output:
+        with console.status("Processing..."):
+            return _run()
+    return _run()
+
+
 @source.command("add-research")
 @click.argument("query")
 @click.option(

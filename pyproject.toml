@@ -35,6 +35,14 @@ Issues = "https://github.com/teng-lin/notebooklm-py/issues"
 
 [project.optional-dependencies]
 browser = ["playwright>=1.40.0"]
+transcribe = [
+    "yt-dlp>=2024.1.0",
+    "openai-whisper>=20231117",
+]
+transcribe-mlx = [
+    "yt-dlp>=2024.1.0",
+    "mlx-whisper>=0.4.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -46,7 +54,7 @@ dev = [
     "ruff>=0.4.0",
     "vcrpy>=6.0.0",
 ]
-all = ["notebooklm-py[browser,dev]"]
+all = ["notebooklm-py[browser,dev,transcribe]"]
 
 [project.scripts]
 notebooklm = "notebooklm.notebooklm_cli:main"
