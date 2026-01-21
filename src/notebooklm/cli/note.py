@@ -17,6 +17,7 @@ from ..types import Note
 from .helpers import (
     console,
     require_notebook,
+    resolve_note_id,
     with_client,
 )
 
@@ -32,6 +33,11 @@ def note():
       get     Get note content
       save    Update note content
       delete  Delete a note
+
+    \b
+    Partial ID Support:
+      NOTE_ID arguments support partial matching. Instead of typing the full
+      UUID, you can use a prefix (e.g., 'abc' matches 'abc123def456...').
     """
     pass
 
@@ -122,12 +128,16 @@ def note_create(ctx, content, notebook_id, title, client_auth):
 )
 @with_client
 def note_get(ctx, note_id, notebook_id, client_auth):
-    """Get note content."""
+    """Get note content.
+
+    NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            n = await client.notes.get(nb_id, note_id)
+            resolved_id = await resolve_note_id(client, nb_id, note_id)
+            n = await client.notes.get(nb_id, resolved_id)
 
             if n and isinstance(n, Note):
                 console.print(f"[bold cyan]ID:[/bold cyan] {n.id}")
@@ -152,7 +162,10 @@ def note_get(ctx, note_id, notebook_id, client_auth):
 @click.option("--content", help="New content")
 @with_client
 def note_save(ctx, note_id, notebook_id, title, content, client_auth):
-    """Update note content."""
+    """Update note content.
+
+    NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     if not title and not content:
         console.print("[yellow]Provide --title and/or --content[/yellow]")
         return
@@ -161,8 +174,9 @@ def note_save(ctx, note_id, notebook_id, title, content, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            await client.notes.update(nb_id, note_id, content=content, title=title)
-            console.print(f"[green]Note updated:[/green] {note_id}")
+            resolved_id = await resolve_note_id(client, nb_id, note_id)
+            await client.notes.update(nb_id, resolved_id, content=content, title=title)
+            console.print(f"[green]Note updated:[/green] {resolved_id}")
 
     return _run()
 
@@ -179,18 +193,22 @@ def note_save(ctx, note_id, notebook_id, title, content, client_auth):
 )
 @with_client
 def note_rename(ctx, note_id, new_title, notebook_id, client_auth):
-    """Rename a note."""
+    """Rename a note.
+
+    NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            resolved_id = await resolve_note_id(client, nb_id, note_id)
             # Get current note to preserve content
-            n = await client.notes.get(nb_id, note_id)
+            n = await client.notes.get(nb_id, resolved_id)
             if not n or not isinstance(n, Note):
                 console.print("[yellow]Note not found[/yellow]")
                 return
 
-            await client.notes.update(nb_id, note_id, content=n.content or "", title=new_title)
+            await client.notes.update(nb_id, resolved_id, content=n.content or "", title=new_title)
             console.print(f"[green]Note renamed:[/green] {new_title}")
 
     return _run()
@@ -208,15 +226,20 @@ def note_rename(ctx, note_id, new_title, notebook_id, client_auth):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 @with_client
 def note_delete(ctx, note_id, notebook_id, yes, client_auth):
-    """Delete a note."""
-    if not yes and not click.confirm(f"Delete note {note_id}?"):
-        return
+    """Delete a note.
 
+    NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
+    """
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            await client.notes.delete(nb_id, note_id)
-            console.print(f"[green]Deleted note:[/green] {note_id}")
+            resolved_id = await resolve_note_id(client, nb_id, note_id)
+
+            if not yes and not click.confirm(f"Delete note {resolved_id}?"):
+                return
+
+            await client.notes.delete(nb_id, resolved_id)
+            console.print(f"[green]Deleted note:[/green] {resolved_id}")
 
     return _run()

@@ -137,6 +137,10 @@ class TestNoteGet:
     def test_note_get(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list for resolve_note_id
+            mock_client.notes.list = AsyncMock(
+                return_value=[make_note("note_123", "My Note", "This is the content")]
+            )
             mock_client.notes.get = AsyncMock(
                 return_value=make_note("note_123", "My Note", "This is the content")
             )
@@ -153,6 +157,8 @@ class TestNoteGet:
     def test_note_get_not_found(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list to return empty (no match for resolve_note_id)
+            mock_client.notes.list = AsyncMock(return_value=[])
             mock_client.notes.get = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -160,8 +166,9 @@ class TestNoteGet:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["note", "get", "nonexistent", "-n", "nb_123"])
 
-            assert result.exit_code == 0
-            assert "Note not found" in result.output
+            # resolve_note_id will raise ClickException for no match
+            assert result.exit_code == 1
+            assert "No note found" in result.output
 
 
 # =============================================================================
@@ -173,6 +180,10 @@ class TestNoteSave:
     def test_note_save_content(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list for resolve_note_id
+            mock_client.notes.list = AsyncMock(
+                return_value=[make_note("note_123", "Test Note", "Original content")]
+            )
             mock_client.notes.update = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -188,6 +199,10 @@ class TestNoteSave:
     def test_note_save_title(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list for resolve_note_id
+            mock_client.notes.list = AsyncMock(
+                return_value=[make_note("note_123", "Old Title", "Content")]
+            )
             mock_client.notes.update = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -222,6 +237,10 @@ class TestNoteRename:
     def test_note_rename(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list for resolve_note_id
+            mock_client.notes.list = AsyncMock(
+                return_value=[make_note("note_123", "Old Title", "Original content")]
+            )
             mock_client.notes.get = AsyncMock(
                 return_value=make_note("note_123", "Old Title", "Original content")
             )
@@ -240,6 +259,8 @@ class TestNoteRename:
     def test_note_rename_not_found(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list to return empty (no match for resolve_note_id)
+            mock_client.notes.list = AsyncMock(return_value=[])
             mock_client.notes.get = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
@@ -249,8 +270,9 @@ class TestNoteRename:
                     cli, ["note", "rename", "nonexistent", "New Title", "-n", "nb_123"]
                 )
 
-            assert result.exit_code == 0
-            assert "Note not found" in result.output
+            # resolve_note_id will raise ClickException for no match
+            assert result.exit_code == 1
+            assert "No note found" in result.output
 
 
 # =============================================================================
@@ -262,6 +284,10 @@ class TestNoteDelete:
     def test_note_delete(self, runner, mock_auth):
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
+            # Mock notes.list for resolve_note_id
+            mock_client.notes.list = AsyncMock(
+                return_value=[make_note("note_123", "Test Note", "Content")]
+            )
             mock_client.notes.delete = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 

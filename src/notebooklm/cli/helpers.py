@@ -296,6 +296,16 @@ async def resolve_artifact_id(client, notebook_id: str, partial_id: str) -> str:
     )
 
 
+async def resolve_note_id(client, notebook_id: str, partial_id: str) -> str:
+    """Resolve partial note ID to full ID."""
+    return await _resolve_partial_id(
+        partial_id,
+        list_fn=lambda: client.notes.list(notebook_id),
+        entity_name="note",
+        list_command="note list",
+    )
+
+
 # =============================================================================
 # ERROR HANDLING
 # =============================================================================
