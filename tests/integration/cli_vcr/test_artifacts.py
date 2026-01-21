@@ -7,7 +7,7 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import assert_command_success, notebooklm_vcr, skip_no_cassettes
+from .conftest import assert_command_success, notebooklm_vcr, parse_json_output, skip_no_cassettes
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -15,19 +15,21 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 class TestArtifactListCommand:
     """Test 'notebooklm artifact list' command."""
 
+    @pytest.mark.parametrize("json_flag", [False, True])
     @notebooklm_vcr.use_cassette("artifacts_list.yaml")
-    def test_artifact_list(self, runner, mock_auth_for_vcr, mock_context):
-        """List artifacts shows results from real client."""
-        result = runner.invoke(cli, ["artifact", "list"])
-        # allow_no_context=True: cassette may not match mock notebook ID
+    def test_artifact_list(self, runner, mock_auth_for_vcr, mock_context, json_flag):
+        """List artifacts with optional --json flag."""
+        args = ["artifact", "list"]
+        if json_flag:
+            args.append("--json")
+
+        result = runner.invoke(cli, args)
         assert_command_success(result)
 
-    @notebooklm_vcr.use_cassette("artifacts_list.yaml")
-    def test_artifact_list_json(self, runner, mock_auth_for_vcr, mock_context):
-        """List artifacts with --json flag returns JSON output."""
-        result = runner.invoke(cli, ["artifact", "list", "--json"])
-        # allow_no_context=True: cassette may not match mock notebook ID
-        assert_command_success(result)
+        if json_flag and result.exit_code == 0:
+            data = parse_json_output(result.output)
+            assert data is not None, "Expected valid JSON output"
+            assert isinstance(data, (list, dict))
 
 
 class TestArtifactListByType:
@@ -52,16 +54,14 @@ class TestArtifactListByType:
         """List artifacts filtered by type."""
         with notebooklm_vcr.use_cassette(cassette):
             result = runner.invoke(cli, ["artifact", "list", "--type", artifact_type])
-            # allow_no_context=True: cassette may not match mock notebook ID
             assert_command_success(result)
 
 
-class TestArtifactSuggestReportsCommand:
+class TestArtifactSuggestionsCommand:
     """Test 'notebooklm artifact suggestions' command."""
 
     @notebooklm_vcr.use_cassette("artifacts_suggest_reports.yaml")
     def test_artifact_suggestions(self, runner, mock_auth_for_vcr, mock_context):
         """Get artifact suggestions works with real client."""
         result = runner.invoke(cli, ["artifact", "suggestions"])
-        # allow_no_context=True: cassette may not match mock notebook ID
         assert_command_success(result)

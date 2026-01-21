@@ -12,26 +12,18 @@ from .conftest import assert_command_success, notebooklm_vcr, skip_no_cassettes
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 
-class TestNoteListCommand:
-    """Test 'notebooklm note list' command."""
+class TestNoteCommands:
+    """Test 'notebooklm note' commands."""
 
-    @notebooklm_vcr.use_cassette("notes_list.yaml")
-    def test_note_list(self, runner, mock_auth_for_vcr, mock_context):
-        """List notes shows results from real client."""
-        result = runner.invoke(cli, ["note", "list"])
-        # allow_no_context=True: cassette may not match mock notebook ID
-        assert_command_success(result)
-
-
-class TestNoteCreateCommand:
-    """Test 'notebooklm note create' command."""
-
-    @notebooklm_vcr.use_cassette("notes_create.yaml")
-    def test_note_create(self, runner, mock_auth_for_vcr, mock_context):
-        """Create note works with real client."""
-        result = runner.invoke(
-            cli,
-            ["note", "create", "-t", "Test Note", "This is test content."],
-        )
-        # allow_no_context=True: cassette may not match mock notebook ID
-        assert_command_success(result)
+    @pytest.mark.parametrize(
+        ("cassette", "args"),
+        [
+            ("notes_list.yaml", ["note", "list"]),
+            ("notes_create.yaml", ["note", "create", "-t", "Test Note", "This is test content."]),
+        ],
+    )
+    def test_note_command(self, runner, mock_auth_for_vcr, mock_context, cassette, args):
+        """Note commands work with real client."""
+        with notebooklm_vcr.use_cassette(cassette):
+            result = runner.invoke(cli, args)
+            assert_command_success(result)
