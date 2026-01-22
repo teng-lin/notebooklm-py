@@ -25,7 +25,7 @@ import pytest
 # Add tests directory to path for vcr_config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, skip_no_cassettes
+from conftest import get_vcr_auth, requires_cassette, skip_no_cassettes
 from notebooklm import NotebookLMClient, ReportFormat
 from vcr_config import notebooklm_vcr
 
@@ -498,6 +498,22 @@ class TestArtifactsGenerateAPI:
             result = await client.artifacts.generate_flashcards(MUTABLE_NOTEBOOK_ID)
         assert result is not None
 
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_generate_mind_map.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_generate_mind_map.yaml")
+    async def test_generate_mind_map(self):
+        """Generate a mind map from notebook sources."""
+        async with vcr_client() as client:
+            result = await client.artifacts.generate_mind_map(MUTABLE_NOTEBOOK_ID)
+        assert result is not None
+        # Mind map returns a dict with mind_map and note_id
+        assert isinstance(result, dict)
+        assert "mind_map" in result
+        assert "note_id" in result
+        # The mind_map has the tree structure with name
+        assert "name" in result["mind_map"]
+
 
 # =============================================================================
 # Chat API
@@ -646,6 +662,49 @@ class TestSourcesAdditionalAPI:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
+    @requires_cassette("sources_add_drive.yaml")
+    @notebooklm_vcr.use_cassette("sources_add_drive.yaml")
+    async def test_add_drive(self):
+        """Add a Google Drive source (Google Doc)."""
+        from notebooklm import SourceType
+        from notebooklm.rpc.types import DriveMimeType
+
+        async with vcr_client() as client:
+            # Note: This test requires a real Google Doc file_id during recording
+            # The file_id below is a placeholder - replace when recording
+            # Use: NOTEBOOKLM_VCR_RECORD=1 pytest -k test_add_drive
+            source = await client.sources.add_drive(
+                MUTABLE_NOTEBOOK_ID,
+                file_id="1bAgBGlybk82LZfbz6IPCwpQ12E4hlDQsuWTVWJVEHfM",
+                title="VCR Test Google Doc",
+                mime_type=DriveMimeType.GOOGLE_DOC.value,
+            )
+        assert source is not None
+        assert source.id is not None
+        assert source.kind == SourceType.GOOGLE_DOCS
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("sources_add_youtube.yaml")
+    @notebooklm_vcr.use_cassette("sources_add_youtube.yaml")
+    async def test_add_youtube(self):
+        """Add a YouTube source via add_url (auto-detects YouTube URLs)."""
+        from notebooklm import SourceType
+
+        async with vcr_client() as client:
+            # YouTube URLs are added via add_url which auto-detects and uses
+            # the YouTube-specific RPC internally
+            # Use: NOTEBOOKLM_VCR_RECORD=1 pytest -k test_add_youtube
+            source = await client.sources.add_url(
+                MUTABLE_NOTEBOOK_ID,
+                url="https://www.youtube.com/watch?v=JMUxmLyrhSk",
+            )
+        assert source is not None
+        assert source.id is not None
+        assert source.kind == SourceType.YOUTUBE
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("sources_check_freshness.yaml")
     async def test_check_freshness(self):
         """Check source freshness."""
@@ -776,6 +835,47 @@ class TestNotebooksAdditionalAPI:
             # This just removes from the recent list, doesn't delete
             await client.notebooks.remove_from_recent(MUTABLE_NOTEBOOK_ID)
         # No return value to check - if it doesn't raise, it worked
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("notebooks_share.yaml")
+    @notebooklm_vcr.use_cassette("notebooks_share.yaml")
+    async def test_share(self):
+        """Test sharing a notebook (toggle on then off)."""
+        async with vcr_client() as client:
+            # Enable sharing
+            result = await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=True)
+            assert result["public"] is True
+            assert "notebooklm.google.com" in result["url"]
+
+            # Disable sharing (restore original state)
+            result = await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=False)
+            assert result["public"] is False
+            assert result["url"] is None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("notebooks_share_with_artifact.yaml")
+    @notebooklm_vcr.use_cassette("notebooks_share_with_artifact.yaml")
+    async def test_share_with_artifact(self):
+        """Test sharing with artifact deep-link."""
+        async with vcr_client() as client:
+            # List artifacts to find one
+            artifacts = await client.artifacts.list(MUTABLE_NOTEBOOK_ID)
+            if not artifacts:
+                pytest.skip("No artifacts available for share test")
+
+            artifact_id = artifacts[0].id
+
+            # Share with artifact ID
+            result = await client.notebooks.share(
+                MUTABLE_NOTEBOOK_ID, public=True, artifact_id=artifact_id
+            )
+            assert result["public"] is True
+            assert artifact_id in result["url"]
+
+            # Disable sharing
+            await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=False)
 
 
 # =============================================================================

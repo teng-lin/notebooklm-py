@@ -33,6 +33,15 @@ skip_no_cassettes = pytest.mark.skipif(
 )
 
 
+def requires_cassette(cassette_name: str):
+    """Skip test if specific cassette file doesn't exist (unless in record mode)."""
+    cassette_path = CASSETTES_DIR / cassette_name
+    return pytest.mark.skipif(
+        not cassette_path.exists() and not _vcr_record_mode,
+        reason=f"Cassette '{cassette_name}' not found. Set NOTEBOOKLM_VCR_RECORD=1 to record.",
+    )
+
+
 async def get_vcr_auth() -> AuthTokens:
     """Get auth tokens for VCR tests.
 

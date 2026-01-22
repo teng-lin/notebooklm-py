@@ -272,6 +272,87 @@ class TestGetNotebookDescription:
         assert "briefing" in result.suggested_topics[0].prompt
 
 
+class TestShareArtifact:
+    """Tests for notebooks.share() method using SHARE_ARTIFACT RPC."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock NotebookLMClient."""
+        auth = AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="test_csrf",
+            session_id="test_session",
+        )
+        client = NotebookLMClient(auth)
+        client._core._http_client = MagicMock()
+        client._core.rpc_call = AsyncMock(return_value=None)
+        return client
+
+    @pytest.mark.asyncio
+    async def test_share_enable_public(self, mock_client):
+        """Test enabling public sharing for a notebook."""
+        result = await mock_client.notebooks.share("notebook_123", public=True)
+
+        mock_client._core.rpc_call.assert_called_once()
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.SHARE_ARTIFACT
+        params = call_args.args[1]
+
+        # Verify payload structure: [[1], notebook_id]
+        assert params[0] == [1]  # Enable sharing
+        assert params[1] == "notebook_123"
+
+        # Verify return structure
+        assert result["public"] is True
+        assert result["url"] == "https://notebooklm.google.com/notebook/notebook_123"
+        assert result["artifact_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_share_disable_public(self, mock_client):
+        """Test disabling public sharing for a notebook."""
+        result = await mock_client.notebooks.share("notebook_123", public=False)
+
+        call_args = mock_client._core.rpc_call.call_args
+        params = call_args.args[1]
+
+        # Verify payload structure: [[0], notebook_id]
+        assert params[0] == [0]  # Disable sharing
+        assert params[1] == "notebook_123"
+
+        # Verify return structure
+        assert result["public"] is False
+        assert result["url"] is None
+
+    @pytest.mark.asyncio
+    async def test_share_with_artifact_id(self, mock_client):
+        """Test sharing with specific artifact ID for deep-linking."""
+        result = await mock_client.notebooks.share(
+            "notebook_123", public=True, artifact_id="artifact_456"
+        )
+
+        call_args = mock_client._core.rpc_call.call_args
+        params = call_args.args[1]
+
+        # Verify payload structure with artifact: [[1], notebook_id, artifact_id]
+        assert params[0] == [1]
+        assert params[1] == "notebook_123"
+        assert params[2] == "artifact_456"
+
+        # Verify URL includes artifact ID
+        assert result["artifact_id"] == "artifact_456"
+        expected_url = "https://notebooklm.google.com/notebook/notebook_123?artifactId=artifact_456"
+        assert result["url"] == expected_url
+
+    @pytest.mark.asyncio
+    async def test_share_uses_correct_source_path(self, mock_client):
+        """Test share uses correct source_path for request routing."""
+        await mock_client.notebooks.share("notebook_123")
+
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.kwargs["source_path"] == "/notebook/notebook_123"
+        assert call_args.kwargs["allow_null"] is True
+
+
 class TestPayloadFixes:
     """Tests for fixed payload structures."""
 
