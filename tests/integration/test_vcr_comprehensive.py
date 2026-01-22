@@ -287,10 +287,7 @@ class TestArtifactsListAPI:
         with notebooklm_vcr.use_cassette(cassette):
             async with vcr_client() as client:
                 method = getattr(client.artifacts, method_name)
-                if method_name == "list":
-                    result = await method(READONLY_NOTEBOOK_ID)
-                else:
-                    result = await method(READONLY_NOTEBOOK_ID)
+                result = await method(READONLY_NOTEBOOK_ID)
                 assert isinstance(result, list)
 
     @pytest.mark.vcr

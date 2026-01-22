@@ -13,6 +13,33 @@ from notebooklm.rpc.types import (
     RPCMethod,
 )
 
+# =============================================================================
+# Shared Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def mock_client():
+    """Create a mock NotebookLMClient for unit testing.
+
+    Provides a client with mocked HTTP client and rpc_call that returns None by default.
+    Tests can override the return value via mock_client._core.rpc_call.return_value.
+    """
+    auth = AuthTokens(
+        cookies={"SID": "test"},
+        csrf_token="test_csrf",
+        session_id="test_session",
+    )
+    client = NotebookLMClient(auth)
+    client._core._http_client = MagicMock()
+    client._core.rpc_call = AsyncMock(return_value=None)
+    return client
+
+
+# =============================================================================
+# Enum Tests
+# =============================================================================
+
 
 class TestNewEnums:
     """Tests for newly added enums."""
@@ -43,19 +70,6 @@ class TestNewEnums:
 
 class TestConfigureChat:
     """Tests for configure_chat method."""
-
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=None)
-        return client
 
     @pytest.mark.asyncio
     async def test_configure_chat_default(self, mock_client):
@@ -114,18 +128,6 @@ class TestConfigureChat:
 class TestGetSourceGuide:
     """Tests for get_source_guide method."""
 
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        return client
-
     @pytest.mark.asyncio
     async def test_get_source_guide_parses_response(self, mock_client):
         """Test get_source_guide correctly parses API response."""
@@ -161,18 +163,6 @@ class TestGetSourceGuide:
 class TestGetSuggestedReportFormats:
     """Tests for get_suggested_report_formats method."""
 
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        return client
-
     @pytest.mark.asyncio
     async def test_get_suggested_report_formats_parses_response(self, mock_client):
         """Test get_suggested_report_formats correctly parses API response."""
@@ -198,22 +188,12 @@ class TestGetSuggestedReportFormats:
 class TestAddSourceDrive:
     """Tests for add_source_drive method."""
 
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=[["source_id_123"]])
-        return client
-
     @pytest.mark.asyncio
     async def test_add_source_drive_payload_structure(self, mock_client):
         """Test add_source_drive creates correct payload."""
+        # Set return value for source parsing (Source.from_api_response needs valid data)
+        mock_client._core.rpc_call.return_value = [[[["source_id_123"], "My Document"]]]
+
         await mock_client.sources.add_drive(
             "notebook_123",
             file_id="drive_file_abc",
@@ -237,18 +217,6 @@ class TestAddSourceDrive:
 
 class TestGetNotebookDescription:
     """Tests for get_notebook_description method."""
-
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        return client
 
     @pytest.mark.asyncio
     async def test_get_notebook_description_parses_response(self, mock_client):
@@ -274,19 +242,6 @@ class TestGetNotebookDescription:
 
 class TestShareArtifact:
     """Tests for notebooks.share() method using SHARE_ARTIFACT RPC."""
-
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=None)
-        return client
 
     @pytest.mark.asyncio
     async def test_share_enable_public(self, mock_client):
@@ -356,19 +311,6 @@ class TestShareArtifact:
 class TestPayloadFixes:
     """Tests for fixed payload structures."""
 
-    @pytest.fixture
-    def mock_client(self):
-        """Create a mock NotebookLMClient."""
-        auth = AuthTokens(
-            cookies={"SID": "test"},
-            csrf_token="test_csrf",
-            session_id="test_session",
-        )
-        client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=True)
-        return client
-
     @pytest.mark.asyncio
     async def test_check_source_freshness_payload(self, mock_client):
         """Test check_source_freshness uses correct payload structure."""
@@ -394,3 +336,136 @@ class TestPayloadFixes:
         assert params[0] is None
         assert params[1] == ["source_456"]
         assert params[2] == [2]
+
+
+class TestAddUrlYouTubeDetection:
+    """Tests for add_url method with YouTube auto-detection."""
+
+    @pytest.mark.asyncio
+    async def test_add_url_detects_youtube_standard(self, mock_client):
+        """Test add_url detects standard YouTube URL and uses YouTube RPC."""
+        # Mock response for source parsing
+        mock_client._core.rpc_call.return_value = [[[["source_id_123"], "Video Title"]]]
+
+        await mock_client.sources.add_url(
+            "notebook_123", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        )
+
+        # Verify it called the YouTube-specific RPC (ADD_SOURCE with YouTube payload)
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.ADD_SOURCE
+
+    @pytest.mark.asyncio
+    async def test_add_url_detects_youtube_short(self, mock_client):
+        """Test add_url detects youtu.be short URL."""
+        mock_client._core.rpc_call.return_value = [[[["source_id_123"], "Video Title"]]]
+
+        await mock_client.sources.add_url("notebook_123", "https://youtu.be/dQw4w9WgXcQ")
+
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.ADD_SOURCE
+
+    @pytest.mark.asyncio
+    async def test_add_url_detects_youtube_shorts(self, mock_client):
+        """Test add_url detects YouTube Shorts URL."""
+        mock_client._core.rpc_call.return_value = [[[["source_id_123"], "Short Title"]]]
+
+        await mock_client.sources.add_url(
+            "notebook_123", "https://www.youtube.com/shorts/dQw4w9WgXcQ"
+        )
+
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.ADD_SOURCE
+
+    @pytest.mark.asyncio
+    async def test_add_url_regular_url_not_youtube(self, mock_client):
+        """Test add_url treats non-YouTube URLs as web pages."""
+        mock_client._core.rpc_call.return_value = [[[["source_id_123"], "Web Page"]]]
+
+        await mock_client.sources.add_url("notebook_123", "https://example.com/article")
+
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.ADD_SOURCE
+
+    @pytest.mark.asyncio
+    async def test_add_url_youtube_mobile(self, mock_client):
+        """Test add_url detects mobile YouTube URL."""
+        mock_client._core.rpc_call.return_value = [[[["source_id_123"], "Video Title"]]]
+
+        await mock_client.sources.add_url(
+            "notebook_123", "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
+        )
+
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.ADD_SOURCE
+
+
+class TestGenerateMindMap:
+    """Tests for generate_mind_map method."""
+
+    @pytest.mark.asyncio
+    async def test_generate_mind_map_payload_structure(self, mock_client):
+        """Test generate_mind_map creates correct RPC payload."""
+        # Mock get_source_ids to return test source IDs
+        mock_client._core.get_source_ids = AsyncMock(return_value=["source_1", "source_2"])
+        # Response format: [[json_string]] - mind map JSON at result[0][0]
+        mock_client._core.rpc_call.return_value = [['{"name": "Root", "children": []}']]
+        # Mock notes.create which is called to persist the mind map
+        mock_client.artifacts._notes.create = AsyncMock(return_value=MagicMock(id="note_id_123"))
+
+        await mock_client.artifacts.generate_mind_map("notebook_123")
+
+        call_args = mock_client._core.rpc_call.call_args
+        assert call_args.args[0] == RPCMethod.GENERATE_MIND_MAP
+        params = call_args.args[1]
+
+        # Verify source IDs are nested correctly: [[[sid]] for sid in source_ids]
+        assert params[0] == [[["source_1"]], [["source_2"]]]
+        # Verify mind map generation params
+        assert "interactive_mindmap" in str(params[5])
+
+    @pytest.mark.asyncio
+    async def test_generate_mind_map_parses_response(self, mock_client):
+        """Test generate_mind_map correctly parses API response."""
+        mock_client._core.get_source_ids = AsyncMock(return_value=["source_1"])
+        # Response format: [[json_string]] - mind map JSON at result[0][0]
+        mind_map_json = '{"name": "Main Topic", "children": [{"name": "Subtopic 1"}]}'
+        mock_client._core.rpc_call.return_value = [[mind_map_json]]
+        mock_client.artifacts._notes.create = AsyncMock(return_value=MagicMock(id="note_abc"))
+
+        result = await mock_client.artifacts.generate_mind_map("notebook_123")
+
+        assert "mind_map" in result
+        assert result["mind_map"]["name"] == "Main Topic"
+        assert len(result["mind_map"]["children"]) == 1
+        assert result["note_id"] == "note_abc"
+
+    @pytest.mark.asyncio
+    async def test_generate_mind_map_with_specific_sources(self, mock_client):
+        """Test generate_mind_map with specific source IDs."""
+        mock_client._core.rpc_call.return_value = [['{"name": "Root"}']]
+        mock_client.artifacts._notes.create = AsyncMock(return_value=MagicMock(id="note_id_123"))
+
+        await mock_client.artifacts.generate_mind_map(
+            "notebook_123", source_ids=["specific_source"]
+        )
+
+        call_args = mock_client._core.rpc_call.call_args
+        params = call_args.args[1]
+
+        # Verify only specific source is included
+        assert params[0] == [[["specific_source"]]]
+
+    @pytest.mark.asyncio
+    async def test_generate_mind_map_empty_sources(self, mock_client):
+        """Test generate_mind_map with no sources."""
+        mock_client._core.get_source_ids = AsyncMock(return_value=[])
+        mock_client._core.rpc_call.return_value = [['{"name": "Empty"}']]
+        mock_client.artifacts._notes.create = AsyncMock(return_value=MagicMock(id="note_id"))
+
+        result = await mock_client.artifacts.generate_mind_map("notebook_123")
+
+        call_args = mock_client._core.rpc_call.call_args
+        params = call_args.args[1]
+        assert params[0] == []  # Empty source list
+        assert result["mind_map"]["name"] == "Empty"
