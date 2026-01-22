@@ -104,6 +104,10 @@ class TestSourceRetrieval:
         assert isinstance(guide, dict)
         assert "summary" in guide
         assert "keywords" in guide
+        # Verify values are actually populated (not empty due to parsing bugs)
+        assert guide["summary"], "Expected non-empty summary from source guide"
+        assert isinstance(guide["keywords"], list)
+        assert len(guide["keywords"]) > 0, "Expected non-empty keywords from source guide"
 
 
 @requires_auth

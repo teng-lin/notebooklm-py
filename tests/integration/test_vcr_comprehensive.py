@@ -146,6 +146,10 @@ class TestSourcesAPI:
                 pytest.skip("No sources available")
             guide = await client.sources.get_guide(READONLY_NOTEBOOK_ID, sources[0].id)
         assert guide is not None
+        # Verify values are actually populated (catches parsing bugs like issue #70)
+        assert guide["summary"], "Expected non-empty summary from source guide"
+        assert isinstance(guide["keywords"], list)
+        assert len(guide["keywords"]) > 0, "Expected non-empty keywords from source guide"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
