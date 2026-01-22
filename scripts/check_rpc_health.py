@@ -344,6 +344,14 @@ async def test_rpc_method_with_data(
             found_ids=[],
             error=error,
         ), None
+    if response_text is None:
+        return CheckResult(
+            method=method,
+            status=CheckStatus.ERROR,
+            expected_id=expected_id,
+            found_ids=[],
+            error="Empty response from server",
+        ), None
 
     try:
         cleaned = strip_anti_xssi(response_text)
