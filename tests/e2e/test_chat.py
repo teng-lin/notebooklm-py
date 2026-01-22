@@ -8,7 +8,7 @@ import pytest
 
 from notebooklm import AskResult, ChatReference
 
-from .conftest import requires_auth
+from .conftest import is_valid_uuid, requires_auth
 
 
 @pytest.mark.e2e
@@ -50,9 +50,10 @@ class TestChatE2E:
             for ref in result.references:
                 assert isinstance(ref, ChatReference)
                 assert ref.source_id
-                # Source ID should be a UUID
-                assert len(ref.source_id) == 36
-                assert ref.source_id.count("-") == 4
+                # Source ID should be a valid UUID
+                assert is_valid_uuid(ref.source_id), (
+                    f"Source ID '{ref.source_id}' is not a valid UUID format"
+                )
 
     @pytest.mark.asyncio
     async def test_ask_returns_references_with_cited_text(self, client, multi_source_notebook_id):

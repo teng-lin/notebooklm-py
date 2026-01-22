@@ -128,7 +128,11 @@ class TestExportArtifact:
         artifact_id = artifacts[0].id
         try:
             result = await client.artifacts.export(read_only_notebook_id, artifact_id)
-            assert result is not None or result is None
+            # Export returns a list with Google Docs URL(s) on success
+            if result is not None:
+                assert isinstance(result, list), "Export result should be a list"
+                if len(result) > 0:
+                    assert "docs.google.com" in result[0], "Export URL should be a Google Docs URL"
         except Exception:
             pytest.skip("Export not available for this artifact type")
 

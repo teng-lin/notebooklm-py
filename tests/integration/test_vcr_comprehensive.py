@@ -87,6 +87,8 @@ class TestNotebooksAPI:
         async with vcr_client() as client:
             summary = await client.notebooks.get_summary(READONLY_NOTEBOOK_ID)
         assert summary is not None
+        assert isinstance(summary, str), "Summary should be a string"
+        # Summary may be empty for notebooks without sources, but type must be correct
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -96,6 +98,12 @@ class TestNotebooksAPI:
         async with vcr_client() as client:
             description = await client.notebooks.get_description(READONLY_NOTEBOOK_ID)
         assert description is not None
+        # Verify NotebookDescription structure
+        assert hasattr(description, "summary"), "Description should have summary attribute"
+        assert hasattr(description, "suggested_topics"), (
+            "Description should have suggested_topics attribute"
+        )
+        assert isinstance(description.suggested_topics, list)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -105,6 +113,7 @@ class TestNotebooksAPI:
         async with vcr_client() as client:
             raw = await client.notebooks.get_raw(READONLY_NOTEBOOK_ID)
         assert raw is not None
+        assert isinstance(raw, list), "Raw notebook data should be a list"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -236,6 +245,8 @@ class TestNotesAPI:
                 content="This is a test note created by VCR recording.",
             )
         assert note is not None
+        assert note.id, "Note should have a non-empty ID"
+        assert note.title == "VCR Test Note"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -301,6 +312,11 @@ class TestArtifactsListAPI:
         async with vcr_client() as client:
             suggestions = await client.artifacts.suggest_reports(READONLY_NOTEBOOK_ID)
         assert isinstance(suggestions, list)
+        # Verify structure if suggestions exist
+        for suggestion in suggestions:
+            assert suggestion.title, "Suggestion should have a non-empty title"
+            assert suggestion.description, "Suggestion should have a non-empty description"
+            assert suggestion.prompt, "Suggestion should have a non-empty prompt"
 
 
 class TestArtifactsDownloadAPI:
@@ -470,6 +486,8 @@ class TestArtifactsGenerateAPI:
                 report_format=ReportFormat.BRIEFING_DOC,
             )
         assert result is not None
+        assert result.task_id, "Generation result should have a non-empty task_id"
+        assert hasattr(result, "status"), "Generation result should have status attribute"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -479,6 +497,8 @@ class TestArtifactsGenerateAPI:
         async with vcr_client() as client:
             result = await client.artifacts.generate_study_guide(MUTABLE_NOTEBOOK_ID)
         assert result is not None
+        assert result.task_id, "Generation result should have a non-empty task_id"
+        assert hasattr(result, "status"), "Generation result should have status attribute"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -488,6 +508,8 @@ class TestArtifactsGenerateAPI:
         async with vcr_client() as client:
             result = await client.artifacts.generate_quiz(MUTABLE_NOTEBOOK_ID)
         assert result is not None
+        assert result.task_id, "Generation result should have a non-empty task_id"
+        assert hasattr(result, "status"), "Generation result should have status attribute"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -497,6 +519,8 @@ class TestArtifactsGenerateAPI:
         async with vcr_client() as client:
             result = await client.artifacts.generate_flashcards(MUTABLE_NOTEBOOK_ID)
         assert result is not None
+        assert result.task_id, "Generation result should have a non-empty task_id"
+        assert hasattr(result, "status"), "Generation result should have status attribute"
 
 
 # =============================================================================
@@ -518,8 +542,9 @@ class TestChatAPI:
                 "What is this notebook about?",
             )
         assert result is not None
-        assert result.answer is not None
-        assert result.conversation_id is not None
+        assert result.answer, "Answer should be a non-empty string"
+        assert result.conversation_id, "Conversation ID should be non-empty"
+        assert isinstance(result.references, list), "References should be a list"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -642,7 +667,8 @@ class TestSourcesAdditionalAPI:
                 str(test_file),
             )
         assert source is not None
-        assert source.id is not None
+        assert source.id, "Source should have a non-empty ID"
+        assert source.title, "Source should have a non-empty title"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -861,6 +887,12 @@ class TestArtifactsAdditionalAPI:
                 MUTABLE_NOTEBOOK_ID, report.id, title="VCR Export Test"
             )
         assert result is not None
+        # export_report returns a list with Google Docs URL(s)
+        assert isinstance(result, list), "Export result should be a list"
+        assert len(result) > 0, "Export result should contain at least one URL"
+        assert result[0].startswith("https://docs.google.com/"), (
+            "Export URL should be a Google Docs URL"
+        )
 
 
 # =============================================================================
