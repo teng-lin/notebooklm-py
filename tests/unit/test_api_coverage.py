@@ -129,11 +129,15 @@ class TestGetSourceGuide:
     @pytest.mark.asyncio
     async def test_get_source_guide_parses_response(self, mock_client):
         """Test get_source_guide correctly parses API response."""
+        # Real API returns 3 levels of nesting: [[[null, [summary], [[keywords]], []]]]
         mock_response = [
             [
-                None,
-                ["This is a **summary** of the document."],
-                [["Topic 1", "Topic 2", "Topic 3"]],
+                [
+                    None,
+                    ["This is a **summary** of the document."],
+                    [["Topic 1", "Topic 2", "Topic 3"]],
+                    [],
+                ]
             ]
         ]
         mock_client._core.rpc_call = AsyncMock(return_value=mock_response)

@@ -351,13 +351,17 @@ class TestSourcesAPI:
         build_rpc_response,
     ):
         """Test getting source guide."""
+        # Real API returns 3 levels of nesting: [[[null, [summary], [[keywords]], []]]]
         response = build_rpc_response(
             RPCMethod.GET_SOURCE_GUIDE,
             [
                 [
-                    None,
-                    ["This is a **summary** of the source content..."],
-                    [["keyword1", "keyword2", "keyword3"]],
+                    [
+                        None,
+                        ["This is a **summary** of the source content..."],
+                        [["keyword1", "keyword2", "keyword3"]],
+                        [],
+                    ]
                 ]
             ],
         )
@@ -369,6 +373,7 @@ class TestSourcesAPI:
         assert "summary" in guide
         assert "keywords" in guide
         assert "**summary**" in guide["summary"]
+        assert guide["keywords"] == ["keyword1", "keyword2", "keyword3"]
 
     @pytest.mark.asyncio
     async def test_get_guide_empty(
@@ -378,7 +383,8 @@ class TestSourcesAPI:
         build_rpc_response,
     ):
         """Test getting guide for source with no AI analysis."""
-        response = build_rpc_response(RPCMethod.GET_SOURCE_GUIDE, [[None, [], []]])
+        # Real API returns 3 levels of nesting even for empty responses
+        response = build_rpc_response(RPCMethod.GET_SOURCE_GUIDE, [[[None, [], [], []]]])
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:

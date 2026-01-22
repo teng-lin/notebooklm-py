@@ -631,19 +631,22 @@ class SourcesAPI:
             allow_null=True,
         )
 
-        # Parse response structure: [[null, [summary], [keywords]]]
+        # Parse response structure: [[[null, [summary], [[keywords]], []]]]
+        # Real API returns 3 levels of nesting before the data array
         summary = ""
         keywords: list[str] = []
 
         if result and isinstance(result, list) and len(result) > 0:
-            inner = result[0]
-            if isinstance(inner, list):
-                # Summary at [1][0]
-                if len(inner) > 1 and isinstance(inner[1], list) and len(inner[1]) > 0:
-                    summary = inner[1][0] if isinstance(inner[1][0], str) else ""
-                # Keywords at [2][0]
-                if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
-                    keywords = inner[2][0] if isinstance(inner[2][0], list) else []
+            outer = result[0]
+            if isinstance(outer, list) and len(outer) > 0:
+                inner = outer[0]
+                if isinstance(inner, list):
+                    # Summary at [1][0]
+                    if len(inner) > 1 and isinstance(inner[1], list) and len(inner[1]) > 0:
+                        summary = inner[1][0] if isinstance(inner[1][0], str) else ""
+                    # Keywords at [2][0]
+                    if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
+                        keywords = inner[2][0] if isinstance(inner[2][0], list) else []
 
         return {"summary": summary, "keywords": keywords}
 
