@@ -8,6 +8,7 @@ Generation tests are in test_generation.py. This file contains:
 """
 
 import asyncio
+import json
 
 import pytest
 
@@ -274,8 +275,6 @@ class TestArtifactLifecycle:
             item_key: Key containing the list of items (e.g., "questions", "cards")
             item_validators: Keys that must exist in each item
         """
-        import json
-
         # 1. Generate artifact
         result = await generate_method(notebook_id)
         assert_generation_started(result, artifact_type)
