@@ -318,7 +318,7 @@ class TestSourcesAPI:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        """Test checking freshness - source is fresh."""
+        """Test checking freshness - source is fresh (explicit True)."""
         response = build_rpc_response("yR9Yof", True)
         httpx_mock.add_response(content=response.encode())
 
@@ -326,6 +326,48 @@ class TestSourcesAPI:
             is_fresh = await client.sources.check_freshness("nb_123", "src_001")
 
         assert is_fresh is True
+
+    @pytest.mark.asyncio
+    async def test_check_freshness_fresh_empty_array(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test checking freshness - source is fresh (empty array response).
+
+        The real API returns [] (empty array) when source is fresh,
+        not True. This test ensures we handle the actual API response.
+        """
+        # Real API returns empty array for fresh sources
+        response = build_rpc_response("yR9Yof", [])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            is_fresh = await client.sources.check_freshness("nb_123", "src_001")
+
+        assert is_fresh is True, "Empty array should mean source is fresh"
+
+    @pytest.mark.asyncio
+    async def test_check_freshness_fresh_drive_nested(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test checking freshness - Drive source is fresh (nested response).
+
+        Drive sources return [[null, true, [source_id]]] when fresh,
+        not an empty array like URL sources.
+        """
+        # Real API returns nested structure for Drive sources
+        response = build_rpc_response("yR9Yof", [[None, True, ["src_001"]]])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            is_fresh = await client.sources.check_freshness("nb_123", "src_001")
+
+        assert is_fresh is True, "Nested [null, true, ...] should mean source is fresh"
 
     @pytest.mark.asyncio
     async def test_check_freshness_stale(

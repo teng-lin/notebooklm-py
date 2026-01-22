@@ -224,8 +224,8 @@ class TestAddSourceDrive:
         call_args = mock_client._core.rpc_call.call_args
         params = call_args[0][1]
 
-        # Verify source data structure
-        source_data = params[0][0][0]
+        # Verify source data structure - params[0] is [source_data] (single wrap)
+        source_data = params[0][0]
         assert source_data[0] == [
             "drive_file_abc",
             "application/vnd.google-apps.document",

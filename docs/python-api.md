@@ -228,6 +228,7 @@ await client.notebooks.share(nb.id, settings={"public": True})
 | `add_drive(notebook_id, file_id, title, mime_type)` | `str, str, str, str` | `Source` | Add Google Drive doc |
 | `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
+| `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
 | `delete(notebook_id, source_id)` | `str, str` | `bool` | Delete source |
 
 **Example:**
@@ -245,6 +246,11 @@ for src in sources:
 
 await client.sources.rename(nb_id, src.id, "Better Title")
 await client.sources.refresh(nb_id, src.id)  # Re-fetch URL content
+
+# Check if a source needs refreshing (content changed)
+is_fresh = await client.sources.check_freshness(nb_id, src.id)
+if not is_fresh:
+    await client.sources.refresh(nb_id, src.id)
 
 # Get full indexed content (what NotebookLM uses for answers)
 fulltext = await client.sources.get_fulltext(nb_id, src.id)

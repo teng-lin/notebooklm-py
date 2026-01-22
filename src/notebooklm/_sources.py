@@ -509,7 +509,7 @@ class SourcesAPI:
             1,
         ]
         params = [
-            [[source_data]],
+            [source_data],  # Single wrap, not double - matches web UI
             notebook_id,
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
@@ -604,8 +604,24 @@ class SourcesAPI:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        # False means stale, True means fresh
-        return result is True
+        # API returns different structures depending on source type:
+        #   - [] (empty array): source is fresh (URL sources)
+        #   - [[null, true, [source_id]]]: source is fresh (Drive sources)
+        #   - True: source is fresh
+        #   - False: source is stale
+        if result is True:
+            return True
+        if result is False:
+            return False
+        if isinstance(result, list):
+            # Empty array means fresh
+            if len(result) == 0:
+                return True
+            # Check for nested structure [[null, true, ...]] from Drive sources
+            first = result[0]
+            if isinstance(first, list) and len(first) > 1 and first[1] is True:
+                return True
+        return False
 
     async def get_guide(self, notebook_id: str, source_id: str) -> dict[str, Any]:
         """Get AI-generated summary and keywords for a specific source.

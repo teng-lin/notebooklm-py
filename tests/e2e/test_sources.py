@@ -157,10 +157,11 @@ class TestSourceMutations:
 
         await asyncio.sleep(2)  # Wait for processing
 
-        # Check freshness
+        # Check freshness - a newly added source should be fresh
         freshness = await client.sources.check_freshness(temp_notebook.id, source.id)
-        # check_freshness() returns bool: True if fresh, False if stale
         assert isinstance(freshness, bool)
+        # Newly added source should be fresh (not stale)
+        assert freshness is True, "Newly added source should be fresh"
 
 
 @requires_auth

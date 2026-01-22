@@ -255,6 +255,28 @@ params = [
 ]
 ```
 
+### RPC: ADD_SOURCE (izAoDd) - Google Drive
+
+**Source:** `_sources.py::add_drive()`
+
+```python
+# Drive source structure - single-wrapped (not double!)
+source_data = [
+    [file_id, mime_type, 1, title],  # 0: File info
+    None, None, None, None, None,    # 1-5: Padding
+    None, None, None, None,          # 6-9: Padding
+    1,                               # 10: Trailing flag
+]
+params = [
+    [source_data],  # 0: Single-wrapped (NOT [[source_data]])
+    notebook_id,    # 1: Notebook ID
+    [2],            # 2: Source type flag
+    [1, None, None, None, None, None, None, None, None, None, [1]],  # 3: Config
+]
+```
+
+**Note:** The nesting level is critical. Web UI sends `[source_data]` (single wrap), not `[[source_data]]` (double wrap).
+
 ### RPC: DELETE_SOURCE (tGMBJ)
 
 **Source:** `_sources.py::delete()`
@@ -1092,7 +1114,11 @@ await rpc_call(
     source_path=f"/notebook/{notebook_id}",
 )
 
-# Response: True = fresh, False = stale (needs refresh)
+# Response varies by source type:
+#   URL sources:   [] (empty array) = fresh
+#   Drive sources: [[null, true, [source_id]]] = fresh
+#                  [[null, false, [source_id]]] = stale
+#   Legacy:        True = fresh, False = stale
 ```
 
 ---

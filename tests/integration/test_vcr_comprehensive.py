@@ -163,7 +163,10 @@ class TestSourcesAPI:
             fulltext = await client.sources.get_fulltext(READONLY_NOTEBOOK_ID, sources[0].id)
         assert fulltext is not None
         assert fulltext.source_id == sources[0].id
-        assert len(fulltext.content) > 0
+        # Verify content is actually populated (catches parsing bugs like issue #70)
+        assert fulltext.content, "Expected non-empty content from fulltext"
+        assert fulltext.title, "Expected non-empty title from fulltext"
+        assert fulltext.char_count > 0, "Expected positive char_count"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -190,6 +193,9 @@ class TestSourcesAPI:
                 url="https://en.wikipedia.org/wiki/Artificial_intelligence",
             )
         assert source is not None
+        assert source.id, "Expected non-empty source ID"
+        # Title may be extracted from the page
+        assert source.title is not None
 
 
 # =============================================================================
@@ -649,6 +655,28 @@ class TestSourcesAdditionalAPI:
                 pytest.skip("No sources available")
             is_fresh = await client.sources.check_freshness(READONLY_NOTEBOOK_ID, sources[0].id)
         assert isinstance(is_fresh, bool)
+        # The cassette shows API returns [] which should be interpreted as fresh
+        assert is_fresh is True, "Source in cassette should be fresh (API returned [])"
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("sources_check_freshness_drive.yaml")
+    async def test_check_freshness_drive(self):
+        """Check freshness for Drive source (different response format)."""
+        from notebooklm import SourceType
+
+        async with vcr_client() as client:
+            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
+            if not sources:
+                pytest.skip("No sources available")
+            # Find a GOOGLE_DOCS source
+            drive_source = next((s for s in sources if s.kind == SourceType.GOOGLE_DOCS), None)
+            if not drive_source:
+                pytest.skip("No GOOGLE_DOCS source available")
+            is_fresh = await client.sources.check_freshness(MUTABLE_NOTEBOOK_ID, drive_source.id)
+        assert isinstance(is_fresh, bool)
+        # Drive sources return [[null, true, [source_id]]] when fresh
+        assert is_fresh is True, "Drive source should be fresh"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -666,7 +694,8 @@ class TestSourcesAdditionalAPI:
             if not url_source:
                 pytest.skip("No WEB_PAGE source available for refresh")
             result = await client.sources.refresh(MUTABLE_NOTEBOOK_ID, url_source.id)
-        assert isinstance(result, bool)
+        # refresh() returns True if initiated successfully (no exception)
+        assert result is True, "refresh() should return True on success"
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
