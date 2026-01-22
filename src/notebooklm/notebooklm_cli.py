@@ -122,6 +122,18 @@ cli.add_command(language)
 
 
 def main():
+    # Fix for Windows asyncio hanging issue
+    # Use WindowsSelectorEventLoopPolicy instead of default ProactorEventLoop
+    import sys
+    import asyncio
+    import os
+
+    # Force UTF-8 encoding for Unicode output on non-English Windows systems
+    os.environ.setdefault('PYTHONUTF8', '1')
+
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     cli()
 
 
