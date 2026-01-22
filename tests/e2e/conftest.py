@@ -1,7 +1,7 @@
 """E2E test fixtures and configuration."""
 
 import os
-import re
+import uuid
 import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -26,22 +26,21 @@ from notebooklm.auth import (
 )
 from notebooklm.paths import get_home_dir
 
-# UUID regex pattern for validation
-UUID_PATTERN = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
-)
-
 
 def is_valid_uuid(value: str) -> bool:
-    """Check if a string is a valid UUID format.
+    """Check if a string is a valid UUID.
 
     Args:
         value: String to validate
 
     Returns:
-        True if value matches UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+        True if value is a valid UUID, False otherwise.
     """
-    return bool(UUID_PATTERN.match(value))
+    try:
+        uuid.UUID(str(value))
+        return True
+    except ValueError:
+        return False
 
 
 # =============================================================================

@@ -298,10 +298,7 @@ class TestArtifactsListAPI:
         with notebooklm_vcr.use_cassette(cassette):
             async with vcr_client() as client:
                 method = getattr(client.artifacts, method_name)
-                if method_name == "list":
-                    result = await method(READONLY_NOTEBOOK_ID)
-                else:
-                    result = await method(READONLY_NOTEBOOK_ID)
+                result = await method(READONLY_NOTEBOOK_ID)
                 assert isinstance(result, list)
 
     @pytest.mark.vcr
@@ -475,6 +472,14 @@ class TestArtifactsGenerateAPI:
     They use the mutable notebook to avoid polluting the read-only one.
     """
 
+    def _assert_generation_started(self, result: object, artifact_type: str) -> None:
+        """Assert that artifact generation started successfully."""
+        assert result is not None, f"{artifact_type} generation returned None"
+        assert result.task_id, f"{artifact_type} generation should have a non-empty task_id"
+        assert hasattr(result, "status"), (
+            f"{artifact_type} generation result should have status attribute"
+        )
+
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("artifacts_generate_report.yaml")
@@ -485,9 +490,7 @@ class TestArtifactsGenerateAPI:
                 MUTABLE_NOTEBOOK_ID,
                 report_format=ReportFormat.BRIEFING_DOC,
             )
-        assert result is not None
-        assert result.task_id, "Generation result should have a non-empty task_id"
-        assert hasattr(result, "status"), "Generation result should have status attribute"
+        self._assert_generation_started(result, "report")
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -496,9 +499,7 @@ class TestArtifactsGenerateAPI:
         """Generate a study guide."""
         async with vcr_client() as client:
             result = await client.artifacts.generate_study_guide(MUTABLE_NOTEBOOK_ID)
-        assert result is not None
-        assert result.task_id, "Generation result should have a non-empty task_id"
-        assert hasattr(result, "status"), "Generation result should have status attribute"
+        self._assert_generation_started(result, "study_guide")
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -507,9 +508,7 @@ class TestArtifactsGenerateAPI:
         """Generate a quiz."""
         async with vcr_client() as client:
             result = await client.artifacts.generate_quiz(MUTABLE_NOTEBOOK_ID)
-        assert result is not None
-        assert result.task_id, "Generation result should have a non-empty task_id"
-        assert hasattr(result, "status"), "Generation result should have status attribute"
+        self._assert_generation_started(result, "quiz")
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -518,9 +517,7 @@ class TestArtifactsGenerateAPI:
         """Generate flashcards."""
         async with vcr_client() as client:
             result = await client.artifacts.generate_flashcards(MUTABLE_NOTEBOOK_ID)
-        assert result is not None
-        assert result.task_id, "Generation result should have a non-empty task_id"
-        assert hasattr(result, "status"), "Generation result should have status attribute"
+        self._assert_generation_started(result, "flashcards")
 
 
 # =============================================================================
