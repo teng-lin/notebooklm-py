@@ -864,15 +864,16 @@ class TestNotebooksAdditionalAPI:
 
             artifact_id = artifacts[0].id
 
-            # Share with artifact ID
-            result = await client.notebooks.share(
-                MUTABLE_NOTEBOOK_ID, public=True, artifact_id=artifact_id
-            )
-            assert result["public"] is True
-            assert artifact_id in result["url"]
-
-            # Disable sharing
-            await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=False)
+            try:
+                # Share with artifact ID
+                result = await client.notebooks.share(
+                    MUTABLE_NOTEBOOK_ID, public=True, artifact_id=artifact_id
+                )
+                assert result["public"] is True
+                assert artifact_id in result["url"]
+            finally:
+                # Disable sharing (cleanup even if assertion fails)
+                await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=False)
 
 
 # =============================================================================
