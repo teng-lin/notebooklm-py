@@ -23,6 +23,7 @@ LLM-friendly design:
   notebooklm ask "what are the key themes?"
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -124,11 +125,16 @@ cli.add_command(language)
 
 
 def main():
-    # Force UTF-8 encoding for Unicode output on non-English Windows systems
-    # Prevents UnicodeEncodeError when displaying Unicode characters (✓, ✗, box drawing)
-    # on systems with legacy encodings (cp950, cp932, cp936, etc.)
+    # Windows-specific fixes
     if sys.platform == "win32":
+        # Force UTF-8 encoding for Unicode output on non-English Windows systems
+        # Prevents UnicodeEncodeError when displaying Unicode characters (✓, ✗, box drawing)
+        # on systems with legacy encodings (cp950, cp932, cp936, etc.)
         os.environ.setdefault("PYTHONUTF8", "1")
+
+        # Fix asyncio hanging issue - use WindowsSelectorEventLoopPolicy instead of
+        # default ProactorEventLoop to avoid IOCP blocking on network operations
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     cli()
 
