@@ -120,21 +120,37 @@ class TestExportArtifact:
     @pytest.mark.asyncio
     @pytest.mark.readonly
     async def test_export_artifact(self, client, read_only_notebook_id):
-        """Exports existing artifact - read-only."""
-        artifacts = await client.artifacts.list(read_only_notebook_id)
-        if not artifacts or len(artifacts) == 0:
-            pytest.skip("No artifacts available to export")
+        """Exports existing artifact - read-only.
 
-        artifact_id = artifacts[0].id
-        try:
-            result = await client.artifacts.export(read_only_notebook_id, artifact_id)
-            # Export returns a list with Google Docs URL(s) on success
-            if result is not None:
-                assert isinstance(result, list), "Export result should be a list"
-                if len(result) > 0:
-                    assert "docs.google.com" in result[0], "Export URL should be a Google Docs URL"
-        except Exception:
-            pytest.skip("Export not available for this artifact type")
+        Note: Only report and data_table artifacts support export.
+        Reports export to Google Docs, data tables export to Google Sheets.
+        """
+        from notebooklm import ArtifactType
+
+        artifacts = await client.artifacts.list(read_only_notebook_id)
+        if not artifacts:
+            pytest.skip("No artifacts available")
+
+        # Filter for exportable artifacts (only report and data_table support export)
+        exportable = [
+            a for a in artifacts if a.kind in (ArtifactType.REPORT, ArtifactType.DATA_TABLE)
+        ]
+        if not exportable:
+            pytest.skip("No exportable artifacts (report or data_table) available")
+
+        artifact = exportable[0]
+        result = await client.artifacts.export(read_only_notebook_id, artifact.id)
+
+        # Export returns a list with Google Docs/Sheets URL(s) on success
+        assert result is not None, "Export should return a result"
+        assert isinstance(result, list), "Export result should be a list"
+        assert len(result) > 0, "Successful export should return at least one URL"
+
+        # Reports go to Docs, data tables go to Sheets
+        url = result[0]
+        assert "docs.google.com" in url or "sheets.google.com" in url, (
+            f"Export URL should be Google Docs or Sheets, got: {url}"
+        )
 
 
 def is_valid_markdown(path: str) -> bool:
