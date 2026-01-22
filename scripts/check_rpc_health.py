@@ -259,6 +259,8 @@ async def make_rpc_call(
     response_text, error = await make_rpc_request(client, auth, method, params, source_path)
     if error:
         return [], error
+    if response_text is None:
+        return [], "Empty response from server"
 
     try:
         cleaned = strip_anti_xssi(response_text)
