@@ -1,5 +1,8 @@
 """Integration tests for ChatAPI."""
 
+import json
+import re
+
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -169,9 +172,6 @@ class TestChatReferences:
         httpx_mock: HTTPXMock,
     ):
         """Test ask() returns references when citations are present."""
-        import json
-        import re
-
         # Build a realistic response with citations
         # Structure discovered via API analysis:
         # cite[1][4] = [[passage_wrapper]] where passage_wrapper[0] = [start, end, nested]
@@ -294,9 +294,6 @@ class TestChatReferences:
         httpx_mock: HTTPXMock,
     ):
         """Test ask() works when no citations are in the response."""
-        import json
-        import re
-
         inner_data = [
             [
                 "This is a simple answer without any source citations.",
@@ -333,9 +330,6 @@ class TestChatReferences:
         httpx_mock: HTTPXMock,
     ):
         """Test that references include character position information."""
-        import json
-        import re
-
         inner_data = [
             [
                 "Answer with citation [1].",
@@ -394,3 +388,129 @@ class TestChatReferences:
         assert ref.start_char == 1000
         assert ref.end_char == 1500
         assert ref.chunk_id == "chunk-001"
+
+
+class TestChatAPIErrors:
+    """Error handling tests for ChatAPI."""
+
+    @pytest.mark.asyncio
+    async def test_ask_empty_response(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """Test handling empty response from server."""
+        # Empty streaming response
+        response_body = b")]}}'\n0\n\n"
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=response_body,
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask("nb_123", "What is this?", source_ids=["src_001"])
+
+        # Should return empty answer, not crash
+        assert result.answer == ""
+
+    @pytest.mark.asyncio
+    async def test_ask_minimal_response(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """Test handling minimal but valid response."""
+        # Minimal valid response with just the answer
+        inner_data = [
+            [
+                "Partial answer from minimal response.",
+                None,
+                [12345],
+                None,
+                [[], None, None, [], 1],
+            ]
+        ]
+        inner_json = json.dumps(inner_data)
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
+
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=response_body.encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask("nb_123", "Question?", source_ids=["src_001"])
+
+        # Should extract the answer
+        assert result.answer == "Partial answer from minimal response."
+        assert result.references == []
+
+
+class TestChatMultiTurn:
+    """Test multi-turn conversation handling."""
+
+    @pytest.mark.asyncio
+    async def test_follow_up_uses_conversation_id(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """Test that follow-up questions preserve conversation ID."""
+        # First response
+        first_inner = [
+            [
+                "First answer about the topic.",
+                None,
+                None,
+                None,
+                [[], None, None, [], 1],
+            ]
+        ]
+        first_chunk = json.dumps([["wrb.fr", None, json.dumps(first_inner)]])
+        first_response = f")]}}'\n{len(first_chunk)}\n{first_chunk}\n"
+
+        # Second response
+        second_inner = [
+            [
+                "Follow-up answer with more details.",
+                None,
+                None,
+                None,
+                [[], None, None, [], 1],
+            ]
+        ]
+        second_chunk = json.dumps([["wrb.fr", None, json.dumps(second_inner)]])
+        second_response = f")]}}'\n{len(second_chunk)}\n{second_chunk}\n"
+
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=first_response.encode(),
+            method="POST",
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=second_response.encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            # First question - generates new conversation_id client-side
+            result1 = await client.chat.ask("nb_123", "What is this about?", source_ids=["src_001"])
+            assert result1.conversation_id is not None
+            assert "First answer" in result1.answer
+            assert result1.is_follow_up is False
+
+            # Follow-up question using same conversation ID
+            result2 = await client.chat.ask(
+                "nb_123",
+                "Tell me more about it",
+                source_ids=["src_001"],
+                conversation_id=result1.conversation_id,
+            )
+            # Follow-up should have same conversation_id
+            assert result2.conversation_id == result1.conversation_id
+            assert "Follow-up" in result2.answer
+            assert result2.is_follow_up is True

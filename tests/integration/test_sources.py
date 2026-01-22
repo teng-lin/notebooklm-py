@@ -742,3 +742,97 @@ class TestGetFulltext:
         assert fulltext.title == "Empty Source"
         assert fulltext.content == ""
         assert fulltext.char_count == 0
+
+
+class TestSourcesAPIErrors:
+    """Error handling tests for SourcesAPI."""
+
+    @pytest.mark.asyncio
+    async def test_add_url_empty_response(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test adding URL when server returns empty response."""
+        # Server returns empty list for failed add
+        response = build_rpc_response(RPCMethod.ADD_SOURCE, [])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValueError, match="Invalid source data"):
+                await client.sources.add_url("nb_123", "https://example.com")
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_null_response(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test getting fulltext when server returns null."""
+        from notebooklm.exceptions import SourceNotFoundError
+
+        response = build_rpc_response(RPCMethod.GET_SOURCE, None)
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(SourceNotFoundError, match="not found"):
+                await client.sources.get_fulltext("nb_123", "nonexistent")
+
+
+class TestSourceStatusTransitions:
+    """Test source status handling."""
+
+    def _build_source_with_status(self, source_id: str, title: str, status_code: int) -> list:
+        """Build mock source data with given status code."""
+        return [
+            [
+                "Test Notebook",
+                [
+                    [
+                        [source_id],
+                        title,
+                        [None, 1],  # Source type info
+                        [None, status_code],  # Status code
+                    ]
+                ],
+                "nb_123",
+                None,
+                None,
+                [None, None, None, None, None, [1704067200, 0]],
+            ]
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "source_id,title,status_code,is_ready",
+        [
+            ("src_001", "Ready Source", 2, True),
+            ("src_002", "Processing Source", 1, False),
+        ],
+    )
+    async def test_source_status(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        source_id: str,
+        title: str,
+        status_code: int,
+        is_ready: bool,
+    ):
+        """Test source with different status codes."""
+        response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            self._build_source_with_status(source_id, title, status_code),
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            sources = await client.sources.list("nb_123")
+
+        assert len(sources) == 1
+        assert sources[0].id == source_id
+        assert sources[0].title == title
+        assert sources[0].is_ready == is_ready

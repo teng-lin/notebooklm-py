@@ -239,3 +239,111 @@ class TestArtifactMutations:
         artifacts = await client.artifacts.list(temp_notebook.id)
         artifact_ids = [a.id for a in artifacts]
         assert artifact_id not in artifact_ids
+
+
+@requires_auth
+class TestArtifactLifecycle:
+    """Full lifecycle tests: generate → wait → download → verify.
+
+    Marked as variants since they're slower and consume API quota.
+    Run with: pytest -m variants tests/e2e/test_artifacts.py
+    """
+
+    async def _run_lifecycle_test(
+        self,
+        client,
+        notebook_id: str,
+        tmp_path,
+        artifact_type: str,
+        generate_method,
+        download_method,
+        expected_keys: list[str],
+        item_key: str,
+        item_validators: list[str],
+    ):
+        """Helper to run artifact lifecycle test: generate → wait → download → verify.
+
+        Args:
+            client: NotebookLM client
+            notebook_id: Notebook to use for generation
+            tmp_path: Temp directory for download
+            artifact_type: Name for assertion messages (e.g., "Quiz")
+            generate_method: Async method to call for generation
+            download_method: Async method to call for download
+            expected_keys: Keys that must exist in downloaded content
+            item_key: Key containing the list of items (e.g., "questions", "cards")
+            item_validators: Keys that must exist in each item
+        """
+        import json
+
+        # 1. Generate artifact
+        result = await generate_method(notebook_id)
+        assert_generation_started(result, artifact_type)
+        artifact_id = result.task_id
+
+        # 2. Wait for completion
+        final_status = await client.artifacts.wait_for_completion(
+            notebook_id,
+            artifact_id,
+            initial_interval=2.0,
+            max_interval=10.0,
+            timeout=120.0,
+        )
+        assert final_status is not None, "Artifact status should not be None"
+        assert final_status.is_complete, (
+            f"{artifact_type} should complete, got status: {final_status.status}"
+        )
+
+        # 3. Download and verify file exists
+        output_path = tmp_path / f"{artifact_type.lower()}.json"
+        downloaded = await download_method(
+            notebook_id,
+            str(output_path),
+            artifact_id=artifact_id,
+        )
+        assert downloaded == str(output_path)
+        assert output_path.exists()
+
+        # 4. Verify content structure
+        content = json.loads(output_path.read_text())
+        for key in expected_keys:
+            assert key in content, f"{artifact_type} should have {key}"
+        assert isinstance(content[item_key], list)
+        if content[item_key]:
+            item = content[item_key][0]
+            has_valid_key = any(k in item for k in item_validators)
+            assert has_valid_key, f"Item should have one of: {item_validators}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.variants
+    @pytest.mark.slow
+    async def test_quiz_full_lifecycle(self, client, temp_notebook, tmp_path):
+        """Test complete quiz lifecycle: generate → wait → download → verify content."""
+        await self._run_lifecycle_test(
+            client=client,
+            notebook_id=temp_notebook.id,
+            tmp_path=tmp_path,
+            artifact_type="Quiz",
+            generate_method=client.artifacts.generate_quiz,
+            download_method=client.artifacts.download_quiz,
+            expected_keys=["title", "questions"],
+            item_key="questions",
+            item_validators=["question", "q"],
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.variants
+    @pytest.mark.slow
+    async def test_flashcards_full_lifecycle(self, client, temp_notebook, tmp_path):
+        """Test complete flashcards lifecycle: generate → wait → download → verify."""
+        await self._run_lifecycle_test(
+            client=client,
+            notebook_id=temp_notebook.id,
+            tmp_path=tmp_path,
+            artifact_type="Flashcards",
+            generate_method=client.artifacts.generate_flashcards,
+            download_method=client.artifacts.download_flashcards,
+            expected_keys=["title", "cards"],
+            item_key="cards",
+            item_validators=["front", "back"],
+        )

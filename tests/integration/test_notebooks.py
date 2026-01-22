@@ -491,3 +491,28 @@ class TestNotebookEdgeCases:
         # Should only include valid topics
         assert len(description.suggested_topics) == 1
         assert description.suggested_topics[0].question == "Valid question"
+
+
+class TestNotebooksAPIErrors:
+    """Error handling tests for NotebooksAPI."""
+
+    @pytest.mark.asyncio
+    async def test_get_notebook_empty_list_response(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Test handling empty list response from server."""
+        # Server returns empty list when notebook has no data
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, [[]])
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.notebooks.get("nb_123")
+
+        # Current behavior: empty response creates Notebook with empty values
+        # Note: Ideally this would return None, but this test documents actual behavior
+        assert result is not None
+        assert result.id == ""
+        assert result.title == ""
