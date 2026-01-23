@@ -24,6 +24,8 @@ LLM-friendly design:
 """
 
 import logging
+import os
+import sys
 from pathlib import Path
 
 import click
@@ -125,9 +127,8 @@ def main():
     # Force UTF-8 encoding for Unicode output on non-English Windows systems
     # Prevents UnicodeEncodeError when displaying Unicode characters (✓, ✗, box drawing)
     # on systems with legacy encodings (cp950, cp932, cp936, etc.)
-    import os
-
-    os.environ.setdefault('PYTHONUTF8', '1')
+    if sys.platform == "win32":
+        os.environ.setdefault("PYTHONUTF8", "1")
 
     cli()
 
