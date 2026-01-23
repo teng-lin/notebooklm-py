@@ -39,33 +39,13 @@ from .helpers import (
     json_output_response,
     require_notebook,
     resolve_notebook_id,
-    resolve_source_id,
+    resolve_source_ids,
     with_client,
 )
 from .language import SUPPORTED_LANGUAGES, get_language
 from .options import json_option, retry_option
 
 DEFAULT_LANGUAGE = "en"
-
-
-async def resolve_source_ids(client, notebook_id: str, source_ids: tuple) -> list[str] | None:
-    """Resolve multiple partial source IDs to full IDs.
-
-    Args:
-        client: NotebookLM client
-        notebook_id: Resolved notebook ID
-        source_ids: Tuple of partial source IDs from CLI
-
-    Returns:
-        List of resolved source IDs, or None if no source IDs provided
-    """
-    if not source_ids:
-        return None
-    resolved = []
-    for sid in source_ids:
-        resolved.append(await resolve_source_id(client, notebook_id, sid))
-    return resolved
-
 
 # Retry constants
 RETRY_INITIAL_DELAY = 60.0  # seconds

@@ -19,7 +19,7 @@ from .helpers import (
     json_output_response,
     require_notebook,
     resolve_notebook_id,
-    resolve_source_id,
+    resolve_source_ids,
     set_current_conversation,
     with_client,
 )
@@ -113,12 +113,7 @@ def register_chat_commands(cli):
                                     "[dim]Starting new conversation (history unavailable)[/dim]"
                                 )
 
-                # Resolve partial source IDs if provided
-                sources = None
-                if source_ids:
-                    sources = []
-                    for sid in source_ids:
-                        sources.append(await resolve_source_id(client, nb_id_resolved, sid))
+                sources = await resolve_source_ids(client, nb_id_resolved, source_ids)
                 result = await client.chat.ask(
                     nb_id_resolved, question, source_ids=sources, conversation_id=effective_conv_id
                 )

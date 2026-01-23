@@ -93,11 +93,8 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
             # artifacts.list() already includes mind maps from notes system
             artifacts = await client.artifacts.list(nb_id_resolved, artifact_type=type_filter)
 
-            nb = None
             if json_output:
                 nb = await client.notebooks.get(nb_id_resolved)
-
-            if json_output:
                 data = {
                     "notebook_id": nb_id_resolved,
                     "notebook_title": nb.title if nb else None,

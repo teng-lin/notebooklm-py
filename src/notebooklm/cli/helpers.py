@@ -324,6 +324,27 @@ async def resolve_note_id(client, notebook_id: str, partial_id: str) -> str:
     )
 
 
+async def resolve_source_ids(
+    client, notebook_id: str, source_ids: tuple[str, ...]
+) -> list[str] | None:
+    """Resolve multiple partial source IDs to full IDs.
+
+    Args:
+        client: NotebookLM client
+        notebook_id: Resolved notebook ID
+        source_ids: Tuple of partial source IDs from CLI
+
+    Returns:
+        List of resolved source IDs, or None if no source IDs provided
+    """
+    if not source_ids:
+        return None
+    resolved = []
+    for sid in source_ids:
+        resolved.append(await resolve_source_id(client, notebook_id, sid))
+    return resolved
+
+
 # =============================================================================
 # ERROR HANDLING
 # =============================================================================
