@@ -1340,3 +1340,277 @@ class TestArtifactSourceSelection:
 
                 assert result is not None
                 assert result.task_id is not None
+
+
+# =============================================================================
+# Sources API - Get Operations (High Priority Gap)
+# =============================================================================
+
+
+class TestSourcesGetAPI:
+    """VCR tests for source get operations."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("sources_get.yaml")
+    async def test_get_source(self):
+        """Get a specific source by ID."""
+        async with vcr_client() as client:
+            sources = await client.sources.list(READONLY_NOTEBOOK_ID)
+            if not sources:
+                pytest.skip("No sources available")
+
+            source = await client.sources.get(READONLY_NOTEBOOK_ID, sources[0].id)
+            assert source is not None
+            assert source.id == sources[0].id
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("sources_get_not_found.yaml")
+    async def test_get_source_not_found(self):
+        """Get a non-existent source returns None."""
+        async with vcr_client() as client:
+            source = await client.sources.get(READONLY_NOTEBOOK_ID, "nonexistent_source_id")
+            assert source is None
+
+
+# =============================================================================
+# Notes API - Get and Update Operations (High Priority Gap)
+# =============================================================================
+
+
+class TestNotesGetUpdateAPI:
+    """VCR tests for notes get and update operations."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("notes_get.yaml")
+    async def test_get_note(self):
+        """Get a specific note by ID."""
+        async with vcr_client() as client:
+            notes = await client.notes.list(READONLY_NOTEBOOK_ID)
+            if not notes:
+                pytest.skip("No notes available")
+
+            note = await client.notes.get(READONLY_NOTEBOOK_ID, notes[0].id)
+            assert note is not None
+            assert note.id == notes[0].id
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("notes_get_not_found.yaml")
+    async def test_get_note_not_found(self):
+        """Get a non-existent note returns None."""
+        async with vcr_client() as client:
+            note = await client.notes.get(READONLY_NOTEBOOK_ID, "nonexistent_note_id")
+            assert note is None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("notes_update.yaml")
+    async def test_update_note(self):
+        """Update a note's content and title."""
+        async with vcr_client() as client:
+            # Create a note to update
+            note = await client.notes.create(
+                MUTABLE_NOTEBOOK_ID,
+                title="VCR Update Test Note",
+                content="Original content for update test.",
+            )
+            assert note is not None
+
+            # Update it
+            await client.notes.update(
+                MUTABLE_NOTEBOOK_ID,
+                note.id,
+                title="VCR Updated Title",
+                content="Updated content for VCR test.",
+            )
+
+            # Verify the update
+            updated = await client.notes.get(MUTABLE_NOTEBOOK_ID, note.id)
+            assert updated is not None
+            assert updated.title == "VCR Updated Title"
+            assert updated.content == "Updated content for VCR test."
+
+
+# =============================================================================
+# Artifacts API - Get Operations (High Priority Gap)
+# =============================================================================
+
+
+class TestArtifactsGetAPI:
+    """VCR tests for artifact get operations."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_get.yaml")
+    async def test_get_artifact(self):
+        """Get a specific artifact by ID."""
+        async with vcr_client() as client:
+            artifacts = await client.artifacts.list(READONLY_NOTEBOOK_ID)
+            if not artifacts:
+                pytest.skip("No artifacts available")
+
+            artifact = await client.artifacts.get(READONLY_NOTEBOOK_ID, artifacts[0].id)
+            assert artifact is not None
+            assert artifact.id == artifacts[0].id
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("artifacts_get_not_found.yaml")
+    async def test_get_artifact_not_found(self):
+        """Get a non-existent artifact returns None."""
+        async with vcr_client() as client:
+            artifact = await client.artifacts.get(READONLY_NOTEBOOK_ID, "nonexistent_artifact_id")
+            assert artifact is None
+
+
+# =============================================================================
+# Sharing API - Additional Operations (High Priority Gap)
+# =============================================================================
+
+
+class TestSharingAdditionalAPI:
+    """VCR tests for sharing API operations not in base TestSharingAPI."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("sharing_set_view_level.yaml")
+    async def test_set_view_level(self):
+        """Set sharing view level."""
+        from notebooklm import ShareViewLevel
+
+        async with vcr_client() as client:
+            # Set view level to chat only
+            await client.sharing.set_view_level(MUTABLE_NOTEBOOK_ID, ShareViewLevel.CHAT_ONLY)
+            # Set back to full notebook
+            await client.sharing.set_view_level(MUTABLE_NOTEBOOK_ID, ShareViewLevel.FULL_NOTEBOOK)
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("sharing_workflow.yaml")
+    async def test_sharing_workflow(self):
+        """Complete sharing workflow: enable, set view level, disable."""
+        from notebooklm import ShareViewLevel
+
+        async with vcr_client() as client:
+            # 1. Get initial status
+            initial = await client.sharing.get_status(MUTABLE_NOTEBOOK_ID)
+            was_public = initial.is_public
+
+            # 2. Enable public sharing
+            public_status = await client.sharing.set_public(MUTABLE_NOTEBOOK_ID, True)
+            assert public_status.is_public is True
+            assert public_status.share_url is not None
+
+            # 3. Set view level
+            await client.sharing.set_view_level(MUTABLE_NOTEBOOK_ID, ShareViewLevel.CHAT_ONLY)
+
+            # 4. Verify status
+            current = await client.sharing.get_status(MUTABLE_NOTEBOOK_ID)
+            assert current.is_public is True
+
+            # 5. Restore original state
+            await client.sharing.set_public(MUTABLE_NOTEBOOK_ID, was_public)
+
+
+# =============================================================================
+# Chat API - Configuration and References (High Priority Gap)
+# =============================================================================
+
+
+class TestChatConfigurationAPI:
+    """VCR tests for chat configuration operations."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("chat_set_mode.yaml")
+    async def test_set_mode(self):
+        """Set chat mode to learning guide then back to default."""
+        from notebooklm import ChatMode
+
+        async with vcr_client() as client:
+            # Set to learning guide
+            await client.chat.set_mode(MUTABLE_NOTEBOOK_ID, ChatMode.LEARNING_GUIDE)
+            # Restore to default
+            await client.chat.set_mode(MUTABLE_NOTEBOOK_ID, ChatMode.DEFAULT)
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("chat_configure.yaml")
+    async def test_configure(self):
+        """Configure chat with custom persona."""
+        from notebooklm import ChatGoal
+
+        async with vcr_client() as client:
+            await client.chat.configure(
+                MUTABLE_NOTEBOOK_ID,
+                goal=ChatGoal.CUSTOM,
+                custom_prompt="You are a helpful assistant for VCR testing.",
+            )
+            # Restore to default
+            await client.chat.configure(MUTABLE_NOTEBOOK_ID, goal=ChatGoal.DEFAULT)
+
+
+class TestChatReferencesAPI:
+    """VCR tests for chat reference validation."""
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("chat_references_with_citations.yaml")
+    async def test_ask_returns_references_with_citations(self):
+        """Test that ask returns references with proper structure."""
+        async with vcr_client() as client:
+            result = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "Summarize the key points with specific citations.",
+            )
+            assert result is not None
+            assert result.answer is not None
+            assert result.conversation_id is not None
+
+            # If references exist, verify structure
+            for ref in result.references:
+                assert ref.source_id is not None
+                assert ref.citation_number is not None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("chat_references_source_validation.yaml")
+    async def test_reference_source_ids_exist(self):
+        """Test that reference source IDs match actual sources."""
+        async with vcr_client() as client:
+            # Get sources in the notebook
+            sources = await client.sources.list(READONLY_NOTEBOOK_ID)
+            source_ids = {s.id for s in sources}
+
+            # Ask a question that generates citations
+            result = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "Explain the main concepts with references to sources.",
+            )
+
+            # All reference source IDs should exist in the notebook
+            for ref in result.references:
+                assert ref.source_id in source_ids, (
+                    f"Reference source_id {ref.source_id} not found in notebook"
+                )
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("chat_references_sequential_numbers.yaml")
+    async def test_references_have_sequential_numbers(self):
+        """Test that references have sequential citation numbers."""
+        async with vcr_client() as client:
+            result = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "List the key points with citations.",
+            )
+
+            if result.references:
+                citation_numbers = [ref.citation_number for ref in result.references]
+                # All citation numbers should be assigned
+                assert all(n is not None for n in citation_numbers)
+                # Should be sequential starting from 1
+                assert citation_numbers == list(range(1, len(citation_numbers) + 1))
