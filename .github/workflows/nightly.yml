@@ -12,43 +12,67 @@ on:
         description: 'Specific test to run (e.g., tests/e2e/test_downloads.py::TestDownloadReport)'
         required: false
         default: ''
-      branch:
-        description: 'Branch to test'
+      custom_branch:
+        description: 'Override branch to test (leave empty to test the branch you triggered from)'
         required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - main
-          - develop
+        default: ''
 
 jobs:
-  e2e:
-    name: E2E Tests (${{ matrix.branch }}/${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    # Only run on main repo (not forks) due to secrets requirement
+  # Determine which branch to test
+  resolve-branch:
+    runs-on: ubuntu-latest
     if: github.repository == 'teng-lin/notebooklm-py'
+    outputs:
+      branch: ${{ steps.resolve.outputs.branch }}
+      is_standard: ${{ steps.resolve.outputs.is_standard }}
+    steps:
+      - name: Resolve target branch
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # Scheduled: determine from cron expression
+            if [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
+              echo "branch=main" >> $GITHUB_OUTPUT
+            else
+              echo "branch=develop" >> $GITHUB_OUTPUT
+            fi
+            echo "is_standard=true" >> $GITHUB_OUTPUT
+          else
+            # Manual: use custom_branch if set, otherwise use triggering branch
+            CUSTOM="${{ inputs.custom_branch }}"
+            if [ -n "$CUSTOM" ]; then
+              TARGET="$CUSTOM"
+            else
+              TARGET="${{ github.ref_name }}"
+            fi
+            echo "branch=$TARGET" >> $GITHUB_OUTPUT
+            # Check if it's main or develop
+            if [ "$TARGET" = "main" ] || [ "$TARGET" = "develop" ]; then
+              echo "is_standard=true" >> $GITHUB_OUTPUT
+            else
+              echo "is_standard=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+          echo "Resolved branch: $(cat $GITHUB_OUTPUT | grep branch= | cut -d= -f2)"
+
+  # Run E2E tests on the resolved branch
+  e2e:
+    name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}/${{ matrix.os }})
+    needs: resolve-branch
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        branch: [main, develop]
-        exclude:
-          # Scheduled runs: 6 AM UTC = main only, 11 AM UTC = develop only
-          - branch: ${{ github.event_name == 'schedule' && github.event.schedule == '0 6 * * *' && 'develop' || '' }}
-          - branch: ${{ github.event_name == 'schedule' && github.event.schedule == '0 11 * * *' && 'main' || '' }}
-          # Manual runs: filter by selected branch
-          - branch: ${{ github.event_name == 'workflow_dispatch' && inputs.branch == 'main' && 'develop' || '' }}
-          - branch: ${{ github.event_name == 'workflow_dispatch' && inputs.branch == 'develop' && 'main' || '' }}
 
     concurrency:
-      group: nightly-${{ matrix.branch }}-${{ matrix.os }}
+      group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}
       cancel-in-progress: true
 
     steps:
     - uses: actions/checkout@v6
       with:
-        ref: ${{ matrix.branch }}
+        ref: ${{ needs.resolve-branch.outputs.branch }}
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -89,7 +113,7 @@ jobs:
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       shell: bash
       run: |
-        echo "Testing branch: ${{ matrix.branch }}"
+        echo "Testing branch: ${{ needs.resolve-branch.outputs.branch }}"
         TEST_FILTER="${{ inputs.test_filter }}"
         if [ -n "$TEST_FILTER" ]; then
           # Run specific test(s) when filter provided

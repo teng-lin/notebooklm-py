@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Infrastructure
 - Added develop branch to nightly E2E tests with staggered schedule
+- Added custom branch support to nightly E2E workflow for release testing
 
 ## [0.3.0] - 2026-01-21
 
