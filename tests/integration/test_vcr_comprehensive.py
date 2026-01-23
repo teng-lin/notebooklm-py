@@ -25,7 +25,7 @@ import pytest
 # Add tests directory to path for vcr_config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import get_vcr_auth, requires_cassette, skip_no_cassettes
+from conftest import get_vcr_auth, skip_no_cassettes
 from notebooklm import NotebookLMClient, ReportFormat
 from vcr_config import notebooklm_vcr
 
@@ -521,7 +521,6 @@ class TestArtifactsGenerateAPI:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("artifacts_generate_mind_map.yaml")
     @notebooklm_vcr.use_cassette("artifacts_generate_mind_map.yaml")
     async def test_generate_mind_map(self):
         """Generate a mind map from notebook sources."""
@@ -685,7 +684,6 @@ class TestSourcesAdditionalAPI:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("sources_add_drive.yaml")
     @notebooklm_vcr.use_cassette("sources_add_drive.yaml")
     async def test_add_drive(self):
         """Add a Google Drive source (Google Doc)."""
@@ -708,7 +706,6 @@ class TestSourcesAdditionalAPI:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("sources_add_youtube.yaml")
     @notebooklm_vcr.use_cassette("sources_add_youtube.yaml")
     async def test_add_youtube(self):
         """Add a YouTube source via add_url (auto-detects YouTube URLs)."""
@@ -861,7 +858,6 @@ class TestNotebooksAdditionalAPI:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("notebooks_share.yaml")
     @notebooklm_vcr.use_cassette("notebooks_share.yaml")
     async def test_share(self):
         """Test sharing a notebook (toggle on then off)."""
@@ -878,7 +874,6 @@ class TestNotebooksAdditionalAPI:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("notebooks_share_with_artifact.yaml")
     @notebooklm_vcr.use_cassette("notebooks_share_with_artifact.yaml")
     async def test_share_with_artifact(self):
         """Test sharing with artifact deep-link."""
@@ -1144,10 +1139,6 @@ class TestArtifactsBinaryDownloads:
         """Download a binary artifact and verify file format."""
         from notebooklm.exceptions import ArtifactNotReadyError
 
-        cassette_path = Path(__file__).parent.parent / "cassettes" / cassette
-        if not cassette_path.exists():
-            pytest.skip(f"Cassette {cassette} not available")
-
         with notebooklm_vcr.use_cassette(cassette):
             async with vcr_client() as client:
                 output_path = tmp_path / filename
@@ -1177,7 +1168,6 @@ class TestSourcesPolling:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("sources_wait_until_ready.yaml")
     @notebooklm_vcr.use_cassette("sources_wait_until_ready.yaml")
     async def test_wait_until_ready(self):
         """Test waiting for a single source to become ready."""
@@ -1202,7 +1192,6 @@ class TestSourcesPolling:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("sources_wait_for_sources.yaml")
     @notebooklm_vcr.use_cassette("sources_wait_for_sources.yaml")
     async def test_wait_for_sources(self):
         """Test waiting for multiple sources to become ready in parallel."""
@@ -1245,7 +1234,6 @@ class TestChatSourceSelection:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("chat_ask_with_source_ids.yaml")
     @notebooklm_vcr.use_cassette("chat_ask_with_source_ids.yaml")
     async def test_ask_with_single_source(self):
         """Test asking a question using only one source."""
@@ -1267,7 +1255,6 @@ class TestChatSourceSelection:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("chat_ask_with_multiple_source_ids.yaml")
     @notebooklm_vcr.use_cassette("chat_ask_with_multiple_source_ids.yaml")
     async def test_ask_with_multiple_sources(self):
         """Test asking a question using multiple sources."""
@@ -1289,7 +1276,6 @@ class TestChatSourceSelection:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("chat_follow_up_different_sources.yaml")
     @notebooklm_vcr.use_cassette("chat_follow_up_different_sources.yaml")
     async def test_follow_up_with_different_sources(self):
         """Test that follow-up can use different source selection."""
@@ -1342,10 +1328,6 @@ class TestArtifactSourceSelection:
         self, method_name, cassette, min_sources, description
     ):
         """Test artifact generation using a subset of sources."""
-        cassette_path = Path(__file__).parent.parent / "cassettes" / cassette
-        if not cassette_path.exists():
-            pytest.skip(f"Cassette {cassette} not available")
-
         with notebooklm_vcr.use_cassette(cassette):
             async with vcr_client() as client:
                 sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
