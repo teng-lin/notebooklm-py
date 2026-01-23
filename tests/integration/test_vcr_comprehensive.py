@@ -26,7 +26,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 from conftest import get_vcr_auth, skip_no_cassettes
-from notebooklm import NotebookLMClient, ReportFormat
+from notebooklm import (
+    Artifact,
+    ChatReference,
+    GenerationStatus,
+    Note,
+    Notebook,
+    NotebookLMClient,
+    ReportFormat,
+    Source,
+)
 from vcr_config import notebooklm_vcr
 
 # Skip all tests in this module if cassettes are not available
@@ -67,6 +76,7 @@ class TestNotebooksAPI:
         async with vcr_client() as client:
             notebooks = await client.notebooks.list()
         assert isinstance(notebooks, list)
+        assert all(isinstance(nb, Notebook) for nb in notebooks)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -76,6 +86,7 @@ class TestNotebooksAPI:
         async with vcr_client() as client:
             notebook = await client.notebooks.get(READONLY_NOTEBOOK_ID)
         assert notebook is not None
+        assert isinstance(notebook, Notebook)
         if READONLY_NOTEBOOK_ID:
             assert notebook.id == READONLY_NOTEBOOK_ID
 
@@ -143,6 +154,7 @@ class TestSourcesAPI:
         async with vcr_client() as client:
             sources = await client.sources.list(READONLY_NOTEBOOK_ID)
         assert isinstance(sources, list)
+        assert all(isinstance(src, Source) for src in sources)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -189,6 +201,7 @@ class TestSourcesAPI:
                 content="This is a test source created by VCR recording.",
             )
         assert source is not None
+        assert isinstance(source, Source)
         assert source.title == "VCR Test Source"
 
     @pytest.mark.vcr
@@ -202,6 +215,7 @@ class TestSourcesAPI:
                 url="https://en.wikipedia.org/wiki/Artificial_intelligence",
             )
         assert source is not None
+        assert isinstance(source, Source)
         assert source.id, "Expected non-empty source ID"
         # Title may be extracted from the page
         assert source.title is not None
@@ -223,15 +237,22 @@ class TestNotesAPI:
         async with vcr_client() as client:
             notes = await client.notes.list(READONLY_NOTEBOOK_ID)
         assert isinstance(notes, list)
+        assert all(isinstance(note, Note) for note in notes)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette("notes_list_mind_maps.yaml")
     async def test_list_mind_maps(self):
-        """List mind maps in a notebook."""
+        """List mind maps in a notebook.
+
+        Note: list_mind_maps returns raw mind map data (nested lists), not Artifact objects.
+        For Artifact objects, use client.artifacts.list() instead.
+        """
         async with vcr_client() as client:
             mind_maps = await client.notes.list_mind_maps(READONLY_NOTEBOOK_ID)
         assert isinstance(mind_maps, list)
+        # Raw mind map data are nested lists, not Artifact objects
+        assert all(isinstance(mm, list) for mm in mind_maps)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -245,6 +266,7 @@ class TestNotesAPI:
                 content="This is a test note created by VCR recording.",
             )
         assert note is not None
+        assert isinstance(note, Note)
         assert note.id, "Note should have a non-empty ID"
         assert note.title == "VCR Test Note"
 
@@ -300,6 +322,7 @@ class TestArtifactsListAPI:
                 method = getattr(client.artifacts, method_name)
                 result = await method(READONLY_NOTEBOOK_ID)
                 assert isinstance(result, list)
+                assert all(isinstance(art, Artifact) for art in result)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -472,12 +495,16 @@ class TestArtifactsGenerateAPI:
     They use the mutable notebook to avoid polluting the read-only one.
     """
 
-    def _assert_generation_started(self, result: object, artifact_type: str) -> None:
+    def _assert_generation_started(self, result: GenerationStatus, artifact_type: str) -> None:
         """Assert that artifact generation started successfully."""
         assert result is not None, f"{artifact_type} generation returned None"
+        assert isinstance(result, GenerationStatus)
+        # Check for rate limiting
+        if result.is_rate_limited:
+            pytest.skip("Rate limited by API")
         assert result.task_id, f"{artifact_type} generation should have a non-empty task_id"
-        assert hasattr(result, "status"), (
-            f"{artifact_type} generation result should have status attribute"
+        assert result.status in ("pending", "in_progress"), (
+            f"Unexpected {artifact_type.lower()} status: {result.status}"
         )
 
     @pytest.mark.vcr
@@ -572,8 +599,9 @@ class TestChatAPI:
         assert result.answer is not None
         # References may or may not be present depending on the answer
         assert isinstance(result.references, list)
-        # If references exist, verify structure
+        # If references exist, verify structure and type
         for ref in result.references:
+            assert isinstance(ref, ChatReference)
             assert ref.source_id is not None
             assert ref.citation_number is not None
 
@@ -679,6 +707,7 @@ class TestSourcesAdditionalAPI:
                 str(test_file),
             )
         assert source is not None
+        assert isinstance(source, Source)
         assert source.id, "Source should have a non-empty ID"
         assert source.title, "Source should have a non-empty title"
 
@@ -701,6 +730,7 @@ class TestSourcesAdditionalAPI:
                 mime_type=DriveMimeType.GOOGLE_DOC.value,
             )
         assert source is not None
+        assert isinstance(source, Source)
         assert source.id is not None
         assert source.kind == SourceType.GOOGLE_DOCS
 
@@ -720,6 +750,7 @@ class TestSourcesAdditionalAPI:
                 url="https://www.youtube.com/watch?v=JMUxmLyrhSk",
             )
         assert source is not None
+        assert isinstance(source, Source)
         assert source.id is not None
         assert source.kind == SourceType.YOUTUBE
 
@@ -791,6 +822,7 @@ class TestSourcesAdditionalAPI:
             renamed = await client.sources.rename(
                 MUTABLE_NOTEBOOK_ID, source.id, "VCR Test Renamed Source"
             )
+            assert isinstance(renamed, Source)
             assert renamed.title == "VCR Test Renamed Source"
             # Restore
             await client.sources.rename(MUTABLE_NOTEBOOK_ID, source.id, original_title)
@@ -829,6 +861,7 @@ class TestNotebooksAdditionalAPI:
         async with vcr_client() as client:
             notebook = await client.notebooks.create("VCR Test Notebook")
         assert notebook is not None
+        assert isinstance(notebook, Notebook)
         assert notebook.title == "VCR Test Notebook"
         # Note: We don't delete it here to keep the cassette simple
         # A separate delete test will clean up
@@ -1362,6 +1395,7 @@ class TestSourcesGetAPI:
 
             source = await client.sources.get(READONLY_NOTEBOOK_ID, sources[0].id)
             assert source is not None
+            assert isinstance(source, Source)
             assert source.id == sources[0].id
 
     @pytest.mark.vcr
@@ -1394,6 +1428,7 @@ class TestNotesGetUpdateAPI:
 
             note = await client.notes.get(READONLY_NOTEBOOK_ID, notes[0].id)
             assert note is not None
+            assert isinstance(note, Note)
             assert note.id == notes[0].id
 
     @pytest.mark.vcr
@@ -1418,6 +1453,7 @@ class TestNotesGetUpdateAPI:
                 content="Original content for update test.",
             )
             assert note is not None
+            assert isinstance(note, Note)
 
             # Update it
             await client.notes.update(
@@ -1430,6 +1466,7 @@ class TestNotesGetUpdateAPI:
             # Verify the update
             updated = await client.notes.get(MUTABLE_NOTEBOOK_ID, note.id)
             assert updated is not None
+            assert isinstance(updated, Note)
             assert updated.title == "VCR Updated Title"
             assert updated.content == "Updated content for VCR test."
 
@@ -1454,6 +1491,7 @@ class TestArtifactsGetAPI:
 
             artifact = await client.artifacts.get(READONLY_NOTEBOOK_ID, artifacts[0].id)
             assert artifact is not None
+            assert isinstance(artifact, Artifact)
             assert artifact.id == artifacts[0].id
 
     @pytest.mark.vcr
@@ -1570,8 +1608,9 @@ class TestChatReferencesAPI:
             assert result.answer is not None
             assert result.conversation_id is not None
 
-            # If references exist, verify structure
+            # If references exist, verify structure and type
             for ref in result.references:
+                assert isinstance(ref, ChatReference)
                 assert ref.source_id is not None
                 assert ref.citation_number is not None
 
@@ -1593,6 +1632,7 @@ class TestChatReferencesAPI:
 
             # All reference source IDs should exist in the notebook
             for ref in result.references:
+                assert isinstance(ref, ChatReference)
                 assert ref.source_id in source_ids, (
                     f"Reference source_id {ref.source_id} not found in notebook"
                 )
@@ -1609,6 +1649,8 @@ class TestChatReferencesAPI:
             )
 
             if result.references:
+                # Verify all references are proper ChatReference objects
+                assert all(isinstance(ref, ChatReference) for ref in result.references)
                 citation_numbers = [ref.citation_number for ref in result.references]
                 # All citation numbers should be assigned
                 assert all(n is not None for n in citation_numbers)
