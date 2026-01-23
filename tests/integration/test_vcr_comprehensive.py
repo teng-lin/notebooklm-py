@@ -197,6 +197,28 @@ class TestSourcesAPI:
         # Title may be extracted from the page
         assert source.title is not None
 
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @notebooklm_vcr.use_cassette("sources_add_drive.yaml")
+    async def test_add_drive(self):
+        """Add a Google Drive document source.
+
+        Uses a public Google Doc for testing. The add_drive() function
+        uses single-wrapped params [source_data] (not double-wrapped).
+        """
+        async with vcr_client() as client:
+            source = await client.sources.add_drive(
+                MUTABLE_NOTEBOOK_ID,
+                file_id="1oAk_INJHbIPsIh49jgNqj3FESSGHZrzxFY7t05Lvvl0",
+                title="VCR Test Drive Doc",
+                mime_type="application/vnd.google-apps.document",
+                wait=False,  # Don't wait for processing during VCR recording
+            )
+        assert source is not None
+        assert source.id, "Expected non-empty source ID"
+        # Drive sources use the actual document title, not the passed title
+        assert source.title, "Expected non-empty source title"
+
 
 # =============================================================================
 # Notes API
