@@ -1954,6 +1954,9 @@ class ArtifactsAPI:
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
+        # Use temp file to avoid leaving corrupted partial files on failure
+        temp_file = output_file.with_suffix(output_file.suffix + ".tmp")
+
         # Load cookies with domain info for cross-domain redirect handling
         cookies = load_httpx_cookies()
 
@@ -1962,33 +1965,40 @@ class ArtifactsAPI:
         # detecting network failures quickly
         timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
 
-        # Can't combine these context managers - client.stream() is a coroutine
-        # that depends on client being initialized first
-        async with httpx.AsyncClient(  # noqa: SIM117
-            cookies=cookies,
-            follow_redirects=True,
-            timeout=timeout,
-        ) as client:
-            async with client.stream("GET", url) as response:
-                response.raise_for_status()
+        try:
+            # Nested context managers required: client.stream() returns an async
+            # context manager that must run within the client's scope
+            async with httpx.AsyncClient(  # noqa: SIM117
+                cookies=cookies,
+                follow_redirects=True,
+                timeout=timeout,
+            ) as client:
+                async with client.stream("GET", url) as response:
+                    response.raise_for_status()
 
-                content_type = response.headers.get("content-type", "")
-                if "text/html" in content_type:
-                    raise ArtifactDownloadError(
-                        "media",
-                        details="Download failed: received HTML instead of media file. "
-                        "Authentication may have expired. Run 'notebooklm login'.",
-                    )
+                    content_type = response.headers.get("content-type", "")
+                    if "text/html" in content_type:
+                        raise ArtifactDownloadError(
+                            "media",
+                            details="Download failed: received HTML instead of media file. "
+                            "Authentication may have expired. Run 'notebooklm login'.",
+                        )
 
-                # Stream to file in chunks to handle large files efficiently
-                total_bytes = 0
-                with open(output_file, "wb") as f:
-                    async for chunk in response.aiter_bytes(chunk_size=65536):
-                        f.write(chunk)
-                        total_bytes += len(chunk)
+                    # Stream to file in chunks to handle large files efficiently
+                    total_bytes = 0
+                    with open(temp_file, "wb") as f:
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                            f.write(chunk)
+                            total_bytes += len(chunk)
 
-                logger.debug("Downloaded %s (%d bytes)", url[:60], total_bytes)
-                return output_path
+                    # Only move to final location on success
+                    temp_file.rename(output_file)
+                    logger.debug("Downloaded %s (%d bytes)", url[:60], total_bytes)
+                    return output_path
+        except Exception:
+            # Clean up partial temp file on any failure
+            temp_file.unlink(missing_ok=True)
+            raise
 
     def _parse_generation_result(self, result: Any) -> GenerationStatus:
         """Parse generation API result into GenerationStatus.
