@@ -1935,7 +1935,11 @@ class ArtifactsAPI:
         return downloaded
 
     async def _download_url(self, url: str, output_path: str) -> str:
-        """Download a file from URL using httpx with proper cookie handling.
+        """Download a file from URL using streaming with proper cookie handling.
+
+        Uses streaming download to handle large files (audio/video) without
+        loading entire file into memory, and with per-chunk timeouts instead
+        of a single timeout for the entire download.
 
         Args:
             url: URL to download from.
@@ -1945,7 +1949,7 @@ class ArtifactsAPI:
             The output path on success.
 
         Raises:
-            ValueError: If download fails or authentication expired.
+            ArtifactDownloadError: If download fails or authentication expired.
         """
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1953,12 +1957,19 @@ class ArtifactsAPI:
         # Load cookies with domain info for cross-domain redirect handling
         cookies = load_httpx_cookies()
 
-        async with httpx.AsyncClient(
-            cookies=cookies,
-            follow_redirects=True,
-            timeout=60.0,
-        ) as client:
-            response = await client.get(url)
+        # Use granular timeouts: 10s to connect, 30s per chunk read/write
+        # This allows large files to download without timeout while still
+        # detecting network failures quickly
+        timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
+
+        async with (
+            httpx.AsyncClient(
+                cookies=cookies,
+                follow_redirects=True,
+                timeout=timeout,
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
             response.raise_for_status()
 
             content_type = response.headers.get("content-type", "")
@@ -1969,8 +1980,14 @@ class ArtifactsAPI:
                     "Authentication may have expired. Run 'notebooklm login'.",
                 )
 
-            output_file.write_bytes(response.content)
-            logger.debug("Downloaded %s (%d bytes)", url[:60], len(response.content))
+            # Stream to file in chunks to handle large files efficiently
+            total_bytes = 0
+            with open(output_file, "wb") as f:
+                async for chunk in response.aiter_bytes(chunk_size=65536):
+                    f.write(chunk)
+                    total_bytes += len(chunk)
+
+            logger.debug("Downloaded %s (%d bytes)", url[:60], total_bytes)
             return output_path
 
     def _parse_generation_result(self, result: Any) -> GenerationStatus:
