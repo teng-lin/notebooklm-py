@@ -1261,3 +1261,152 @@ class TestSourcesPolling:
             )
             assert len(ready_sources) == 2
             assert all(s.is_ready for s in ready_sources)
+
+
+# =============================================================================
+# Source Selection Tests (chat and artifact generation with source_ids)
+# =============================================================================
+
+
+class TestChatSourceSelection:
+    """VCR tests for chat.ask() with source_ids parameter.
+
+    These tests verify that source selection works correctly when asking
+    questions with a subset of sources.
+    """
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("chat_ask_with_source_ids.yaml")
+    @notebooklm_vcr.use_cassette("chat_ask_with_source_ids.yaml")
+    async def test_ask_with_single_source(self):
+        """Test asking a question using only one source."""
+        async with vcr_client() as client:
+            # Get sources from the notebook
+            sources = await client.sources.list(READONLY_NOTEBOOK_ID)
+            if len(sources) < 1:
+                pytest.skip("No sources available for source selection test")
+
+            # Ask using only the first source
+            result = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "What is this source about?",
+                source_ids=[sources[0].id],
+            )
+            assert result.answer is not None
+            assert len(result.answer) > 10
+            assert result.conversation_id is not None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("chat_ask_with_multiple_source_ids.yaml")
+    @notebooklm_vcr.use_cassette("chat_ask_with_multiple_source_ids.yaml")
+    async def test_ask_with_multiple_sources(self):
+        """Test asking a question using multiple sources."""
+        async with vcr_client() as client:
+            sources = await client.sources.list(READONLY_NOTEBOOK_ID)
+            if len(sources) < 2:
+                pytest.skip("Need at least 2 sources for multi-source test")
+
+            # Ask using first two sources
+            source_ids = [sources[0].id, sources[1].id]
+            result = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "Summarize the key points from these sources.",
+                source_ids=source_ids,
+            )
+            assert result.answer is not None
+            assert len(result.answer) > 10
+            assert result.conversation_id is not None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("chat_follow_up_different_sources.yaml")
+    @notebooklm_vcr.use_cassette("chat_follow_up_different_sources.yaml")
+    async def test_follow_up_with_different_sources(self):
+        """Test that follow-up can use different source selection."""
+        async with vcr_client() as client:
+            sources = await client.sources.list(READONLY_NOTEBOOK_ID)
+            if len(sources) < 2:
+                pytest.skip("Need at least 2 sources for follow-up test")
+
+            # First question with first source
+            result1 = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "What is covered here?",
+                source_ids=[sources[0].id],
+            )
+            assert result1.answer is not None
+            assert result1.conversation_id is not None
+
+            # Follow-up using second source
+            result2 = await client.chat.ask(
+                READONLY_NOTEBOOK_ID,
+                "What about this topic?",
+                source_ids=[sources[1].id],
+                conversation_id=result1.conversation_id,
+            )
+            assert result2.answer is not None
+            assert result2.is_follow_up is True
+
+
+class TestArtifactSourceSelection:
+    """VCR tests for artifact generation with source_ids parameter.
+
+    These tests verify that artifacts can be generated using a subset of sources.
+    """
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_generate_report_with_source_ids.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_generate_report_with_source_ids.yaml")
+    async def test_generate_report_with_single_source(self):
+        """Test report generation using only one source."""
+        async with vcr_client() as client:
+            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
+            if len(sources) < 1:
+                pytest.skip("No sources available")
+
+            result = await client.artifacts.generate_report(
+                MUTABLE_NOTEBOOK_ID,
+                source_ids=[sources[0].id],
+            )
+            assert result is not None
+            assert result.task_id is not None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_generate_quiz_with_source_ids.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_generate_quiz_with_source_ids.yaml")
+    async def test_generate_quiz_with_source_subset(self):
+        """Test quiz generation using a subset of sources."""
+        async with vcr_client() as client:
+            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
+            if len(sources) < 2:
+                pytest.skip("Need at least 2 sources")
+
+            source_ids = [sources[0].id, sources[1].id]
+            result = await client.artifacts.generate_quiz(
+                MUTABLE_NOTEBOOK_ID,
+                source_ids=source_ids,
+            )
+            assert result is not None
+            assert result.task_id is not None
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_generate_flashcards_with_source_ids.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_generate_flashcards_with_source_ids.yaml")
+    async def test_generate_flashcards_with_single_source(self):
+        """Test flashcard generation using only one source."""
+        async with vcr_client() as client:
+            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
+            if len(sources) < 1:
+                pytest.skip("No sources available")
+
+            result = await client.artifacts.generate_flashcards(
+                MUTABLE_NOTEBOOK_ID,
+                source_ids=[sources[0].id],
+            )
+            assert result is not None
+            assert result.task_id is not None
