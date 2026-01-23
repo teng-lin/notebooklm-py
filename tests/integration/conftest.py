@@ -7,7 +7,9 @@ are inherited from tests/conftest.py.
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
+import httpx
 import pytest
 
 from notebooklm.auth import AuthTokens
@@ -82,3 +84,37 @@ def auth_tokens():
         csrf_token="test_csrf_token",
         session_id="test_session_id",
     )
+
+
+def _mock_httpx_cookies() -> httpx.Cookies:
+    """Create mock httpx.Cookies for VCR replay mode.
+
+    This is used to patch load_httpx_cookies() during VCR replay so that
+    binary download tests don't try to load auth from storage.
+    """
+    cookies = httpx.Cookies()
+    for name in ("SID", "HSID", "SSID", "APISID", "SAPISID"):
+        cookies.set(name, f"mock_{name.lower()}", domain=".google.com")
+    return cookies
+
+
+@pytest.fixture(autouse=True)
+def mock_httpx_cookies_for_vcr():
+    """Automatically mock load_httpx_cookies() during VCR replay mode.
+
+    Binary download tests use _download_url() which calls load_httpx_cookies()
+    directly. In VCR replay mode, we need to mock this to avoid trying to
+    load auth from storage (which doesn't exist in CI).
+
+    In record mode, we use real cookies so downloads are authenticated.
+    """
+    if _vcr_record_mode:
+        # In record mode, use real auth
+        yield
+    else:
+        # In replay mode, mock the cookies
+        with patch(
+            "notebooklm._artifacts.load_httpx_cookies",
+            return_value=_mock_httpx_cookies(),
+        ):
+            yield
