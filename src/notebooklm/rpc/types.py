@@ -93,17 +93,12 @@ class ArtifactTypeCode(int, Enum):
         2  # Includes: Briefing Doc, Study Guide, Blog Post, White Paper, Research Proposal, etc.
     )
     VIDEO = 3
-    QUIZ = 4  # Also used for flashcards
-    QUIZ_FLASHCARD = 4  # Alias for backward compatibility
+    QUIZ = 4  # Also used for flashcards (distinguished by variant)
     MIND_MAP = 5
     # Note: Type 6 appears unused in current API
     INFOGRAPHIC = 7
     SLIDE_DECK = 8
     DATA_TABLE = 9
-
-
-# Deprecated alias for backward compatibility
-StudioContentType = ArtifactTypeCode
 
 
 class ArtifactStatus(int, Enum):

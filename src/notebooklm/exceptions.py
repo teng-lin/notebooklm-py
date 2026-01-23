@@ -137,31 +137,6 @@ class RPCError(NotebookLMError):
         self.rpc_code = rpc_code
         self.found_ids = found_ids or []
 
-    # Backward compatibility aliases
-    @property
-    def rpc_id(self) -> str | None:
-        """Alias for method_id (deprecated, use method_id instead)."""
-        import warnings
-
-        warnings.warn(
-            "The 'rpc_id' attribute is deprecated, use 'method_id' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.method_id
-
-    @property
-    def code(self) -> str | int | None:
-        """Alias for rpc_code (deprecated, use rpc_code instead)."""
-        import warnings
-
-        warnings.warn(
-            "The 'code' attribute is deprecated, use 'rpc_code' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.rpc_code
-
 
 class DecodingError(RPCError):
     """Failed to parse RPC response structure.

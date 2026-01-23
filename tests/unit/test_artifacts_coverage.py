@@ -4,7 +4,6 @@ These tests target specific uncovered lines identified by coverage analysis.
 """
 
 import asyncio
-import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -332,43 +331,6 @@ class TestParseGenerationResult:
 
 # =============================================================================
 # TIER 2: Deprecation warning test (lines 1127-1135)
-# =============================================================================
-
-
-class TestDeprecationWarnings:
-    """Test deprecation warnings."""
-
-    @pytest.mark.asyncio
-    async def test_poll_interval_deprecation_warning(self, mock_artifacts_api):
-        """Test that poll_interval parameter triggers deprecation warning."""
-        api, mock_core = mock_artifacts_api
-
-        # Return completed immediately via LIST_ARTIFACTS format
-        mock_core.rpc_call.return_value = [
-            [
-                [
-                    "task_123",
-                    "Title",
-                    2,  # REPORT type (no URL check needed)
-                    None,
-                    3,  # COMPLETED status
-                ]
-            ]
-        ]
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            await api.wait_for_completion(
-                "nb_123",
-                "task_123",
-                poll_interval=5.0,  # Deprecated parameter
-            )
-
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "poll_interval is deprecated" in str(w[0].message)
-
-
 # =============================================================================
 # MEDIA READINESS TESTS (Issue #21 fix)
 # =============================================================================

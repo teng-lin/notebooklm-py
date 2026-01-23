@@ -37,7 +37,6 @@ from .types import (
     RPCMethod,
     SlideDeckFormat,
     SlideDeckLength,
-    StudioContentType,  # Deprecated alias for ArtifactTypeCode
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
@@ -49,7 +48,6 @@ __all__ = [
     "QUERY_URL",
     "UPLOAD_URL",
     "ArtifactTypeCode",
-    "StudioContentType",  # Deprecated alias
     "ArtifactStatus",
     "artifact_status_to_str",
     "AudioFormat",

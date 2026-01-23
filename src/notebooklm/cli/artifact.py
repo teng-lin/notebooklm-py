@@ -357,7 +357,7 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
                 status = await client.artifacts.wait_for_completion(
                     nb_id,
                     resolved_id,
-                    poll_interval=float(interval),
+                    initial_interval=float(interval),
                     timeout=float(timeout),
                 )
 

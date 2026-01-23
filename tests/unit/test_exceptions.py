@@ -104,34 +104,10 @@ class TestRPCErrorAttributes:
         e = RPCError("Failed", method_id="abc123")
         assert e.method_id == "abc123"
 
-    def test_rpc_error_backward_compat_rpc_id(self):
-        """RPCError supports backward-compatible rpc_id alias with deprecation warning."""
-        import warnings
-
-        e = RPCError("Failed", method_id="abc123")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            assert e.rpc_id == "abc123"  # Alias
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "rpc_id" in str(w[0].message)
-
     def test_rpc_error_stores_rpc_code(self):
         """RPCError stores rpc_code attribute."""
         e = RPCError("Failed", rpc_code=404)
         assert e.rpc_code == 404
-
-    def test_rpc_error_backward_compat_code(self):
-        """RPCError supports backward-compatible code alias with deprecation warning."""
-        import warnings
-
-        e = RPCError("Failed", rpc_code="NOT_FOUND")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            assert e.code == "NOT_FOUND"  # Alias
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "code" in str(w[0].message)
 
     def test_rpc_error_truncates_raw_response(self):
         """RPCError truncates raw_response to 500 chars."""

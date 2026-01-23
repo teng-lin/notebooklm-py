@@ -613,7 +613,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                4,  # ArtifactTypeCode.QUIZ_FLASHCARD
+                4,  # ArtifactTypeCode.QUIZ
                 source_ids_triple,
                 None,
                 None,
@@ -670,7 +670,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                4,  # ArtifactTypeCode.QUIZ_FLASHCARD
+                4,  # ArtifactTypeCode.QUIZ
                 source_ids_triple,
                 None,
                 None,
@@ -1618,7 +1618,6 @@ class ArtifactsAPI:
         initial_interval: float = 2.0,
         max_interval: float = 10.0,
         timeout: float = 300.0,
-        poll_interval: float | None = None,  # Deprecated, use initial_interval
     ) -> GenerationStatus:
         """Wait for a generation task to complete.
 
@@ -1630,7 +1629,6 @@ class ArtifactsAPI:
             initial_interval: Initial seconds between status checks.
             max_interval: Maximum seconds between status checks.
             timeout: Maximum seconds to wait.
-            poll_interval: Deprecated. Use initial_interval instead.
 
         Returns:
             Final GenerationStatus.
@@ -1638,17 +1636,6 @@ class ArtifactsAPI:
         Raises:
             TimeoutError: If task doesn't complete within timeout.
         """
-        # Backward compatibility: poll_interval overrides initial_interval
-        if poll_interval is not None:
-            import warnings
-
-            warnings.warn(
-                "poll_interval is deprecated, use initial_interval instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            initial_interval = poll_interval
-
         start_time = asyncio.get_running_loop().time()
         current_interval = initial_interval
 

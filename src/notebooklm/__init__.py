@@ -199,29 +199,4 @@ __all__ = [
     "ShareAccess",
     "ShareViewLevel",
     "SharePermission",
-    # Deprecated (will be removed in v0.4.0)
-    "StudioContentType",
 ]
-
-
-def __getattr__(name: str):
-    """Emit deprecation warnings for deprecated module-level names.
-
-    This allows us to provide backward-compatible imports with warnings.
-    Uses globals() caching to avoid duplicate warnings on repeated access.
-    """
-    import warnings
-
-    if name == "StudioContentType":
-        from .rpc.types import ArtifactTypeCode
-
-        warnings.warn(
-            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.4.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Cache to prevent duplicate warnings on repeated access
-        globals()[name] = ArtifactTypeCode
-        return ArtifactTypeCode
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
