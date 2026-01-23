@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-23
+
+### Fixed
+- **Windows CLI hanging** - Fixed asyncio ProactorEventLoop incompatibility causing CLI to hang on Windows (#79)
+- **Unicode encoding errors** - Fixed encoding issues on non-English Windows systems (#80)
+- **Streaming downloads** - Downloads now use streaming with temp files to prevent corrupted partial downloads (#82)
+- **Partial ID resolution** - All CLI commands now support partial ID matching for notebooks, sources, and artifacts (#84)
+- **Source operations** - Fixed empty array handling and `add_drive` nesting (#73)
+- **Guide response parsing** - Fixed 3-level nesting in `get_guide` responses (#72)
+- **RPC health check** - Handle null response in health check scripts (#71)
+- **Script cleanup** - Ensure temp notebook cleanup on failure or interrupt
+
+### Infrastructure
+- Added develop branch to nightly E2E tests with staggered schedule
+
 ## [0.3.0] - 2026-01-21
 
 ### Added
@@ -255,7 +270,8 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.1.4...v0.2.0
