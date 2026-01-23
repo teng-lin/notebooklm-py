@@ -364,26 +364,32 @@ class TestDownloadUrl:
 
     @pytest.mark.asyncio
     async def test_download_url_direct(self, mock_artifacts_api):
-        """Test direct URL download (not Google content domain)."""
+        """Test direct URL download using streaming."""
         api, mock_core = mock_artifacts_api
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "file.mp4")
 
-            # Create a mock httpx module
             import httpx as real_httpx
+
+            # Mock streaming response with aiter_bytes
+            content = b"fake video content"
+
+            async def mock_aiter_bytes(chunk_size=8192):
+                yield content
 
             mock_response = MagicMock()
             mock_response.headers = {"content-type": "video/mp4"}
-            mock_response.content = b"fake video content"
             mock_response.raise_for_status = MagicMock()
+            mock_response.aiter_bytes = mock_aiter_bytes
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
 
             mock_client = AsyncMock()
-            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.stream = MagicMock(return_value=mock_response)
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=None)
 
-            # Mock load_httpx_cookies to avoid requiring real auth files
             mock_cookies = MagicMock()
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
@@ -392,6 +398,9 @@ class TestDownloadUrl:
                 result = await api._download_url("https://other.example.com/file.mp4", output_path)
 
             assert result == output_path
+            # Verify file was written with streaming content
+            with open(output_path, "rb") as f:
+                assert f.read() == content
 
 
 class TestDownloadReport:
