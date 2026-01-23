@@ -42,6 +42,38 @@ def mock_fetch_tokens():
         yield mock
 
 
+class MockNotebook:
+    """Mock notebook object for partial ID resolution tests."""
+
+    def __init__(self, id: str, title: str = "Mock Notebook"):
+        self.id = id
+        self.title = title
+
+
+class MockSource:
+    """Mock source object for partial ID resolution tests."""
+
+    def __init__(self, id: str, title: str = "Mock Source"):
+        self.id = id
+        self.title = title
+
+
+class MockArtifact:
+    """Mock artifact object for partial ID resolution tests."""
+
+    def __init__(self, id: str, title: str = "Mock Artifact"):
+        self.id = id
+        self.title = title
+
+
+class MockNote:
+    """Mock note object for partial ID resolution tests."""
+
+    def __init__(self, id: str, title: str = "Mock Note"):
+        self.id = id
+        self.title = title
+
+
 def create_mock_client():
     """Helper to create a properly configured mock client.
 
@@ -51,6 +83,10 @@ def create_mock_client():
     IMPORTANT: The mock has pre-created namespace objects (artifacts, sources,
     notebooks, chat, research, notes) to match NotebookLMClient's structure.
     Always use client.artifacts.method(), not client.method() directly.
+
+    The mock includes default implementations for list methods that support
+    partial ID resolution. Common test IDs (nb_*, src_*, art_*, note_*) will
+    be matched by the mock notebooks/sources/artifacts/notes list.
 
     Example:
         mock_client = create_mock_client()
@@ -71,6 +107,50 @@ def create_mock_client():
     mock_client.research = MagicMock()
     mock_client.notes = MagicMock()
     mock_client.sharing = MagicMock()
+
+    # Default mocks for partial ID resolution
+    # These return mock objects that match common test ID patterns (nb_*, src_*, etc.)
+    # The pattern ensures that any ID starting with "nb_" will match a notebook,
+    # any ID starting with "src_" will match a source, etc.
+    def make_notebook_list():
+        """Return notebook list that matches common test IDs."""
+        return [
+            MockNotebook("nb_123", "Test Notebook"),
+            MockNotebook("nb_456", "Another Notebook"),
+            MockNotebook("notebook_test", "Notebook Test"),
+        ]
+
+    def make_source_list(notebook_id):
+        """Return source list that matches common test IDs."""
+        return [
+            MockSource("src_1", "Source One"),
+            MockSource("src_2", "Source Two"),
+            MockSource("src_001", "Source 001"),
+            MockSource("src_002", "Source 002"),
+            MockSource("src_new", "New Source"),
+            MockSource("source_test", "Source Test"),
+        ]
+
+    def make_artifact_list(notebook_id):
+        """Return artifact list that matches common test IDs."""
+        return [
+            MockArtifact("art_1", "Artifact One"),
+            MockArtifact("art_2", "Artifact Two"),
+            MockArtifact("artifact_test", "Artifact Test"),
+        ]
+
+    def make_note_list(notebook_id):
+        """Return note list that matches common test IDs."""
+        return [
+            MockNote("note_1", "Note One"),
+            MockNote("note_2", "Note Two"),
+            MockNote("note_test", "Note Test"),
+        ]
+
+    mock_client.notebooks.list = AsyncMock(side_effect=make_notebook_list)
+    mock_client.sources.list = AsyncMock(side_effect=make_source_list)
+    mock_client.artifacts.list = AsyncMock(side_effect=make_artifact_list)
+    mock_client.notes.list = AsyncMock(side_effect=make_note_list)
 
     return mock_client
 

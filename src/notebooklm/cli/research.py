@@ -15,6 +15,7 @@ from .helpers import (
     display_research_sources,
     json_output_response,
     require_notebook,
+    resolve_notebook_id,
     with_client,
 )
 
@@ -65,7 +66,8 @@ def research_status(ctx, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            status = await client.research.poll(nb_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            status = await client.research.poll(nb_id_resolved)
 
             if json_output:
                 json_output_response(status)
@@ -135,13 +137,14 @@ def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, 
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             max_iterations = max(1, timeout // interval)
             status = None
             task_id = None
 
             with console.status("Waiting for research to complete..."):
                 for _ in range(max_iterations):
-                    status = await client.research.poll(nb_id)
+                    status = await client.research.poll(nb_id_resolved)
                     status_val = status.get("status", "unknown")
 
                     if status_val == "completed":
@@ -178,7 +181,9 @@ def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, 
                     "sources": sources,
                 }
                 if import_all and sources and task_id:
-                    imported = await client.research.import_sources(nb_id, task_id, sources)
+                    imported = await client.research.import_sources(
+                        nb_id_resolved, task_id, sources
+                    )
                     result["imported"] = len(imported)
                     result["imported_sources"] = imported
                 json_output_response(result)
@@ -188,7 +193,9 @@ def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, 
 
                 if import_all and sources and task_id:
                     with console.status("Importing sources..."):
-                        imported = await client.research.import_sources(nb_id, task_id, sources)
+                        imported = await client.research.import_sources(
+                            nb_id_resolved, task_id, sources
+                        )
                     console.print(f"[green]Imported {len(imported)} sources[/green]")
 
     return _run()

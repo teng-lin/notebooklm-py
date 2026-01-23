@@ -29,6 +29,7 @@ from .helpers import (
     get_source_type_display,
     json_output_response,
     require_notebook,
+    resolve_notebook_id,
     resolve_source_id,
     with_client,
 )
@@ -74,14 +75,15 @@ def source_list(ctx, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            sources = await client.sources.list(nb_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            sources = await client.sources.list(nb_id_resolved)
             nb = None
             if json_output:
-                nb = await client.notebooks.get(nb_id)
+                nb = await client.notebooks.get(nb_id_resolved)
 
             if json_output:
                 data = {
-                    "notebook_id": nb_id,
+                    "notebook_id": nb_id_resolved,
                     "notebook_title": nb.title if nb else None,
                     "sources": [
                         {
@@ -101,7 +103,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                 json_output_response(data)
                 return
 
-            table = Table(title=f"Sources in {nb_id}")
+            table = Table(title=f"Sources in {nb_id_resolved}")
             table.add_column("ID", style="cyan")
             table.add_column("Title", style="green")
             table.add_column("Type")
@@ -180,14 +182,15 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             if detected_type == "url" or detected_type == "youtube":
-                src = await client.sources.add_url(nb_id, content)
+                src = await client.sources.add_url(nb_id_resolved, content)
             elif detected_type == "text":
                 text_content = file_content if file_content is not None else content
                 text_title = file_title or "Untitled"
-                src = await client.sources.add_text(nb_id, text_title, text_content)
+                src = await client.sources.add_text(nb_id_resolved, text_title, text_content)
             elif detected_type == "file":
-                src = await client.sources.add_file(nb_id, content, mime_type)
+                src = await client.sources.add_file(nb_id_resolved, content, mime_type)
 
             if json_output:
                 data = {
@@ -228,9 +231,10 @@ def source_get(ctx, source_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             # Resolve partial ID to full ID
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
-            src = await client.sources.get(nb_id, resolved_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
+            src = await client.sources.get(nb_id_resolved, resolved_id)
             if src:
                 console.print(f"[bold cyan]Source:[/bold cyan] {src.id}")
                 console.print(f"[bold]Title:[/bold] {src.title}")
@@ -267,13 +271,14 @@ def source_delete(ctx, source_id, notebook_id, yes, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             # Resolve partial ID to full ID
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
 
             if not yes and not click.confirm(f"Delete source {resolved_id}?"):
                 return
 
-            success = await client.sources.delete(nb_id, resolved_id)
+            success = await client.sources.delete(nb_id_resolved, resolved_id)
             if success:
                 console.print(f"[green]Deleted source:[/green] {resolved_id}")
             else:
@@ -302,9 +307,10 @@ def source_rename(ctx, source_id, new_title, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             # Resolve partial ID to full ID
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
-            src = await client.sources.rename(nb_id, resolved_id, new_title)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
+            src = await client.sources.rename(nb_id_resolved, resolved_id, new_title)
             console.print(f"[green]Renamed source:[/green] {src.id}")
             console.print(f"[bold]New title:[/bold] {src.title}")
 
@@ -330,10 +336,11 @@ def source_refresh(ctx, source_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             # Resolve partial ID to full ID
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
             with console.status("Refreshing source..."):
-                src = await client.sources.refresh(nb_id, resolved_id)
+                src = await client.sources.refresh(nb_id_resolved, resolved_id)
 
             if src and src is not True:
                 console.print(f"[green]Source refreshed:[/green] {src.id}")
@@ -378,8 +385,9 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             with console.status("Adding Drive source..."):
-                src = await client.sources.add_drive(nb_id, file_id, title, mime)
+                src = await client.sources.add_drive(nb_id_resolved, file_id, title, mime)
 
             console.print(f"[green]Added Drive source:[/green] {src.id}")
             console.print(f"[bold]Title:[/bold] {src.title}")
@@ -433,8 +441,9 @@ def source_add_research(
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             console.print(f"[yellow]Starting {mode} research on {search_source}...[/yellow]")
-            result = await client.research.start(nb_id, query, search_source, mode)
+            result = await client.research.start(nb_id_resolved, query, search_source, mode)
             if not result:
                 console.print("[red]Research failed to start[/red]")
                 raise SystemExit(1)
@@ -452,7 +461,7 @@ def source_add_research(
 
             status = None
             for _ in range(60):
-                status = await client.research.poll(nb_id)
+                status = await client.research.poll(nb_id_resolved)
                 if status.get("status") == "completed":
                     break
                 elif status.get("status") == "no_research":
@@ -468,7 +477,9 @@ def source_add_research(
                 display_research_sources(sources)
 
                 if import_all and sources and task_id:
-                    imported = await client.research.import_sources(nb_id, task_id, sources)
+                    imported = await client.research.import_sources(
+                        nb_id_resolved, task_id, sources
+                    )
                     console.print(f"[green]Imported {len(imported)} sources[/green]")
             else:
                 console.print(f"[yellow]Status: {status.get('status', 'unknown')}[/yellow]")
@@ -506,10 +517,11 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
 
             with console.status("Fetching fulltext content..."):
-                fulltext = await client.sources.get_fulltext(nb_id, resolved_id)
+                fulltext = await client.sources.get_fulltext(nb_id_resolved, resolved_id)
 
             if json_output:
                 from dataclasses import asdict
@@ -569,10 +581,11 @@ def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
 
             with console.status("Generating source guide..."):
-                guide = await client.sources.get_guide(nb_id, resolved_id)
+                guide = await client.sources.get_guide(nb_id_resolved, resolved_id)
 
             if json_output:
                 data = {
@@ -628,8 +641,9 @@ def source_stale(ctx, source_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
-            is_fresh = await client.sources.check_freshness(nb_id, resolved_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
+            is_fresh = await client.sources.check_freshness(nb_id_resolved, resolved_id)
 
             if is_fresh:
                 console.print("[green]✓ Source is fresh[/green]")
@@ -692,14 +706,15 @@ def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
 
             if not json_output:
                 console.print(f"[dim]Waiting for source {resolved_id}...[/dim]")
 
             try:
                 source = await client.sources.wait_until_ready(
-                    nb_id,
+                    nb_id_resolved,
                     resolved_id,
                     timeout=float(timeout),
                 )

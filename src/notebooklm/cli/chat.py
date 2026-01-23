@@ -18,6 +18,8 @@ from .helpers import (
     get_current_conversation,
     json_output_response,
     require_notebook,
+    resolve_notebook_id,
+    resolve_source_id,
     set_current_conversation,
     with_client,
 )
@@ -78,6 +80,7 @@ def register_chat_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
+                nb_id_resolved = await resolve_notebook_id(client, nb_id)
                 effective_conv_id = None
                 if new_conversation:
                     if not json_output:
@@ -88,7 +91,7 @@ def register_chat_commands(cli):
                     effective_conv_id = get_current_conversation()
                     if not effective_conv_id:
                         try:
-                            history = await client.chat.get_history(nb_id, limit=1)
+                            history = await client.chat.get_history(nb_id_resolved, limit=1)
                             if history and history[0]:
                                 last_conv = history[0][-1]
                                 effective_conv_id = (
@@ -110,10 +113,14 @@ def register_chat_commands(cli):
                                     "[dim]Starting new conversation (history unavailable)[/dim]"
                                 )
 
-                # Convert source_ids tuple to list, or None if empty
-                sources = list(source_ids) if source_ids else None
+                # Resolve partial source IDs if provided
+                sources = None
+                if source_ids:
+                    sources = []
+                    for sid in source_ids:
+                        sources.append(await resolve_source_id(client, nb_id_resolved, sid))
                 result = await client.chat.ask(
-                    nb_id, question, source_ids=sources, conversation_id=effective_conv_id
+                    nb_id_resolved, question, source_ids=sources, conversation_id=effective_conv_id
                 )
 
                 if result.conversation_id:
@@ -184,6 +191,7 @@ def register_chat_commands(cli):
             from ..rpc import ChatGoal, ChatResponseLength
 
             async with NotebookLMClient(client_auth) as client:
+                nb_id_resolved = await resolve_notebook_id(client, nb_id)
                 if chat_mode:
                     mode_map = {
                         "default": ChatMode.DEFAULT,
@@ -191,7 +199,7 @@ def register_chat_commands(cli):
                         "concise": ChatMode.CONCISE,
                         "detailed": ChatMode.DETAILED,
                     }
-                    await client.chat.set_mode(nb_id, mode_map[chat_mode])
+                    await client.chat.set_mode(nb_id_resolved, mode_map[chat_mode])
                     console.print(f"[green]Chat mode set to: {chat_mode}[/green]")
                     return
 
@@ -206,7 +214,7 @@ def register_chat_commands(cli):
                     length = length_map[response_length]
 
                 await client.chat.configure(
-                    nb_id, goal=goal, response_length=length, custom_prompt=persona
+                    nb_id_resolved, goal=goal, response_length=length, custom_prompt=persona
                 )
 
                 parts = []
@@ -259,7 +267,8 @@ def register_chat_commands(cli):
                     return
 
                 nb_id = require_notebook(notebook_id)
-                history = await client.chat.get_history(nb_id, limit=limit)
+                nb_id_resolved = await resolve_notebook_id(client, nb_id)
+                history = await client.chat.get_history(nb_id_resolved, limit=limit)
 
                 if history:
                     console.print("[bold cyan]Conversation History:[/bold cyan]")

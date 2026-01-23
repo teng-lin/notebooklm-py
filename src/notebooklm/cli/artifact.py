@@ -25,6 +25,7 @@ from .helpers import (
     json_output_response,
     require_notebook,
     resolve_artifact_id,
+    resolve_notebook_id,
     with_client,
 )
 
@@ -88,16 +89,17 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
             # artifacts.list() already includes mind maps from notes system
-            artifacts = await client.artifacts.list(nb_id, artifact_type=type_filter)
+            artifacts = await client.artifacts.list(nb_id_resolved, artifact_type=type_filter)
 
             nb = None
             if json_output:
-                nb = await client.notebooks.get(nb_id)
+                nb = await client.notebooks.get(nb_id_resolved)
 
             if json_output:
                 data = {
-                    "notebook_id": nb_id,
+                    "notebook_id": nb_id_resolved,
                     "notebook_title": nb.title if nb else None,
                     "artifacts": [
                         {
@@ -121,7 +123,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                 console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
                 return
 
-            table = Table(title=f"Artifacts in {nb_id}")
+            table = Table(title=f"Artifacts in {nb_id_resolved}")
             table.add_column("ID", style="cyan")
             table.add_column("Title", style="green")
             table.add_column("Type")
@@ -157,8 +159,9 @@ def artifact_get(ctx, artifact_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
-            art = await client.artifacts.get(nb_id, resolved_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
+            art = await client.artifacts.get(nb_id_resolved, resolved_id)
             if art:
                 console.print(f"[bold cyan]Artifact:[/bold cyan] {art.id}")
                 console.print(f"[bold]Title:[/bold] {art.title}")
@@ -194,15 +197,16 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
 
             # Check if this is a mind map (stored with notes, not artifacts)
-            mind_maps = await client.notes.list_mind_maps(nb_id)
+            mind_maps = await client.notes.list_mind_maps(nb_id_resolved)
             for mm in mind_maps:
                 if mm[0] == resolved_id:
                     raise click.ClickException("Mind maps cannot be renamed")
 
-            await client.artifacts.rename(nb_id, resolved_id, new_title)
+            await client.artifacts.rename(nb_id_resolved, resolved_id, new_title)
             # The rename API returns None; if no exception was raised, the operation succeeded.
             # We display the requested new_title as confirmation.
             console.print(f"[green]Renamed artifact:[/green] {resolved_id}")
@@ -231,23 +235,24 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
 
             if not yes and not click.confirm(f"Delete artifact {resolved_id}?"):
                 return
 
             # Check if this is a mind map (stored with notes)
-            mind_maps = await client.notes.list_mind_maps(nb_id)
+            mind_maps = await client.notes.list_mind_maps(nb_id_resolved)
             for mm in mind_maps:
                 if mm[0] == resolved_id:
-                    await client.notes.delete(nb_id, resolved_id)
+                    await client.notes.delete(nb_id_resolved, resolved_id)
                     console.print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}")
                     console.print(
                         "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]"
                     )
                     return
 
-            await client.artifacts.delete(nb_id, resolved_id)
+            await client.artifacts.delete(nb_id_resolved, resolved_id)
             console.print(f"[green]Deleted artifact:[/green] {resolved_id}")
 
     return _run()
@@ -274,12 +279,13 @@ def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_au
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
             # Convert export_type string to ExportType enum
             export_type_enum = ExportType.SHEETS if export_type == "sheets" else ExportType.DOCS
             # Pass None for content - backend retrieves content from artifact_id
             result = await client.artifacts.export(
-                nb_id, resolved_id, None, title, export_type_enum
+                nb_id_resolved, resolved_id, None, title, export_type_enum
             )
             if result:
                 console.print(f"[green]Exported to Google {export_type.title()}[/green]")
@@ -306,7 +312,8 @@ def artifact_poll(ctx, task_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            status = await client.artifacts.poll_status(nb_id, task_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            status = await client.artifacts.poll_status(nb_id_resolved, task_id)
             console.print("[bold cyan]Task Status:[/bold cyan]")
             console.print(status)
 
@@ -351,11 +358,12 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
 
             try:
                 status = await client.artifacts.wait_for_completion(
-                    nb_id,
+                    nb_id_resolved,
                     resolved_id,
                     poll_interval=float(interval),
                     timeout=float(timeout),
@@ -412,7 +420,8 @@ def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            suggestions = await client.artifacts.suggest_reports(nb_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            suggestions = await client.artifacts.suggest_reports(nb_id_resolved)
 
             if not suggestions:
                 console.print("[yellow]No suggestions available[/yellow]")

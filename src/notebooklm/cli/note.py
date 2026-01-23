@@ -18,6 +18,7 @@ from .helpers import (
     console,
     require_notebook,
     resolve_note_id,
+    resolve_notebook_id,
     with_client,
 )
 
@@ -57,13 +58,14 @@ def note_list(ctx, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            notes = await client.notes.list(nb_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            notes = await client.notes.list(nb_id_resolved)
 
             if not notes:
                 console.print("[yellow]No notes found[/yellow]")
                 return
 
-            table = Table(title=f"Notes in {nb_id}")
+            table = Table(title=f"Notes in {nb_id_resolved}")
             table.add_column("ID", style="cyan")
             table.add_column("Title", style="green")
             table.add_column("Preview", style="dim", max_width=50)
@@ -106,7 +108,8 @@ def note_create(ctx, content, notebook_id, title, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            result = await client.notes.create(nb_id, title, content)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            result = await client.notes.create(nb_id_resolved, title, content)
 
             if result:
                 console.print("[green]Note created[/green]")
@@ -136,8 +139,9 @@ def note_get(ctx, note_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
-            n = await client.notes.get(nb_id, resolved_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
+            n = await client.notes.get(nb_id_resolved, resolved_id)
 
             if n and isinstance(n, Note):
                 console.print(f"[bold cyan]ID:[/bold cyan] {n.id}")
@@ -174,8 +178,9 @@ def note_save(ctx, note_id, notebook_id, title, content, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
-            await client.notes.update(nb_id, resolved_id, content=content, title=title)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
+            await client.notes.update(nb_id_resolved, resolved_id, content=content, title=title)
             console.print(f"[green]Note updated:[/green] {resolved_id}")
 
     return _run()
@@ -201,14 +206,17 @@ def note_rename(ctx, note_id, new_title, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
             # Get current note to preserve content
-            n = await client.notes.get(nb_id, resolved_id)
+            n = await client.notes.get(nb_id_resolved, resolved_id)
             if not n or not isinstance(n, Note):
                 console.print("[yellow]Note not found[/yellow]")
                 return
 
-            await client.notes.update(nb_id, resolved_id, content=n.content or "", title=new_title)
+            await client.notes.update(
+                nb_id_resolved, resolved_id, content=n.content or "", title=new_title
+            )
             console.print(f"[green]Note renamed:[/green] {new_title}")
 
     return _run()
@@ -234,12 +242,13 @@ def note_delete(ctx, note_id, notebook_id, yes, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
 
             if not yes and not click.confirm(f"Delete note {resolved_id}?"):
                 return
 
-            await client.notes.delete(nb_id, resolved_id)
+            await client.notes.delete(nb_id_resolved, resolved_id)
             console.print(f"[green]Deleted note:[/green] {resolved_id}")
 
     return _run()
