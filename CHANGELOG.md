@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+**BREAKING CHANGE**: The following deprecated APIs have been removed. Update your code using the migration guide below.
+
+| Removed | Replacement |
+|---------|-------------|
+| `Source.source_type` | `Source.kind` (returns `SourceType` enum) |
+| `SourceFulltext.source_type` | `SourceFulltext.kind` (returns `SourceType` enum) |
+| `Artifact.artifact_type` | `Artifact.kind` (returns `ArtifactType` enum) |
+| `Artifact.variant` | `Artifact.kind`, `.is_quiz`, `.is_flashcards` |
+| `RPCError.rpc_id` | `RPCError.method_id` |
+| `RPCError.code` | `RPCError.rpc_code` |
+| `StudioContentType` | `ArtifactType` |
+| `ArtifactTypeCode.QUIZ_FLASHCARD` | `ArtifactTypeCode.QUIZ` |
+| `wait_for_completion(poll_interval=...)` | `wait_for_completion(initial_interval=...)` |
+
+See [Migration Guide](docs/stability.md#migrating-from-v03x-to-v040) for upgrade instructions.
+
 ## [0.3.0] - 2026-01-21
 
 ### Added

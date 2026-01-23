@@ -424,6 +424,15 @@ class Source:
         """Check if source processing failed (status=ERROR)."""
         return self.status == SourceStatus.ERROR
 
+    def __getattr__(self, name: str):
+        """Provide helpful error messages for removed attributes."""
+        if name == "source_type":
+            raise AttributeError(
+                "Source.source_type was removed in v0.4.0. "
+                "Use Source.kind instead (returns SourceType enum)."
+            )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> "Source":
         """Parse source data from various API response formats.
@@ -566,6 +575,15 @@ class SourceFulltext:
 
         return matches
 
+    def __getattr__(self, name: str):
+        """Provide helpful error messages for removed attributes."""
+        if name == "source_type":
+            raise AttributeError(
+                "SourceFulltext.source_type was removed in v0.4.0. "
+                "Use SourceFulltext.kind instead (returns SourceType enum)."
+            )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
 
 # =============================================================================
 # Artifact Types
@@ -611,6 +629,20 @@ class Artifact:
             unrecognized type codes (with a warning on first occurrence).
         """
         return _map_artifact_kind(self._artifact_type, self._variant)
+
+    def __getattr__(self, name: str):
+        """Provide helpful error messages for removed attributes."""
+        if name == "artifact_type":
+            raise AttributeError(
+                "Artifact.artifact_type was removed in v0.4.0. "
+                "Use Artifact.kind instead (returns ArtifactType enum)."
+            )
+        if name == "variant":
+            raise AttributeError(
+                "Artifact.variant was removed in v0.4.0. "
+                "Use Artifact.kind, .is_quiz, or .is_flashcards instead."
+            )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> "Artifact":

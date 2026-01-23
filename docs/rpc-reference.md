@@ -558,7 +558,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        4,                            # [2]: ArtifactTypeCode.QUIZ_FLASHCARD
+        4,                            # [2]: ArtifactTypeCode.QUIZ
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]
@@ -593,7 +593,7 @@ params = [
     [
         None,                         # [0]
         None,                         # [1]
-        4,                            # [2]: ArtifactTypeCode.QUIZ_FLASHCARD
+        4,                            # [2]: ArtifactTypeCode.QUIZ
         source_ids_triple,            # [3]
         None,                         # [4]
         None,                         # [5]

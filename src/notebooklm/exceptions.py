@@ -137,6 +137,18 @@ class RPCError(NotebookLMError):
         self.rpc_code = rpc_code
         self.found_ids = found_ids or []
 
+    def __getattr__(self, name: str):
+        """Provide helpful error messages for removed attributes."""
+        if name == "rpc_id":
+            raise AttributeError(
+                "RPCError.rpc_id was removed in v0.4.0. Use RPCError.method_id instead."
+            )
+        if name == "code":
+            raise AttributeError(
+                "RPCError.code was removed in v0.4.0. Use RPCError.rpc_code instead."
+            )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
 
 class DecodingError(RPCError):
     """Failed to parse RPC response structure.

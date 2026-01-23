@@ -469,7 +469,7 @@ final = await client.artifacts.wait_for_completion(
     nb_id,
     status.task_id,
     timeout=300,      # Max wait time in seconds
-    poll_interval=5   # Seconds between polls
+    initial_interval=5   # Initial seconds between polls (uses exponential backoff)
 )
 
 if final.is_complete:

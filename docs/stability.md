@@ -111,22 +111,30 @@ from notebooklm.rpc import RPCMethod, encode_rpc_request
 
 ### Currently Deprecated
 
-The following are deprecated and will be removed in **v0.4.0**:
-
-| Deprecated | Replacement | Notes |
-|------------|-------------|-------|
-| `Source.source_type` | `Source.kind` | Returns `SourceType` str enum |
-| `Artifact.artifact_type` | `Artifact.kind` | Returns `ArtifactType` str enum |
-| `Artifact.variant` | `Artifact.kind` | Use `.is_quiz` / `.is_flashcards` |
-| `SourceFulltext.source_type` | `SourceFulltext.kind` | Returns `SourceType` str enum |
-| `StudioContentType` | `ArtifactType` | Str enum for user-facing code |
+No APIs are currently deprecated.
 
 ## Migration Guides
 
+### Migrating from v0.3.x to v0.4.0
+
+Version 0.4.0 **removes** the deprecated APIs that were introduced in v0.3.0. If you're upgrading from v0.3.x, update your code using the table below:
+
+| Removed | Replacement | Notes |
+|---------|-------------|-------|
+| `Source.source_type` | `Source.kind` | Returns `SourceType` str enum |
+| `SourceFulltext.source_type` | `SourceFulltext.kind` | Returns `SourceType` str enum |
+| `Artifact.artifact_type` | `Artifact.kind` | Returns `ArtifactType` str enum |
+| `Artifact.variant` | `Artifact.kind` | Use `.is_quiz` / `.is_flashcards` |
+| `StudioContentType` | `ArtifactType` | Str enum for user-facing code |
+| `ArtifactTypeCode.QUIZ_FLASHCARD` | `ArtifactTypeCode.QUIZ` | Internal enum alias |
+| `RPCError.rpc_id` | `RPCError.method_id` | Exception attribute |
+| `RPCError.code` | `RPCError.rpc_code` | Exception attribute |
+| `wait_for_completion(poll_interval=...)` | `wait_for_completion(initial_interval=...)` | Parameter renamed |
+
 ### Migrating from v0.2.x to v0.3.0
 
-Version 0.3.0 introduces **deprecated** attributes that emit `DeprecationWarning` when accessed.
-These will be removed in v0.4.0. Update your code now to avoid breakage.
+Version 0.3.0 introduced the `.kind` property as the recommended way to access type information.
+The following examples show the migration patterns (these old APIs are now removed in v0.4.0).
 
 #### 1. `Source.source_type` → `Source.kind`
 
