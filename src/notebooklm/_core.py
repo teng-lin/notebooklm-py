@@ -31,8 +31,9 @@ logger = logging.getLogger(__name__)
 # Maximum number of conversations to cache (FIFO eviction)
 MAX_CONVERSATION_CACHE_SIZE = 100
 
-# Default HTTP timeout in seconds
+# Default HTTP timeouts in seconds
 DEFAULT_TIMEOUT = 30.0
+DEFAULT_CONNECT_TIMEOUT = 10.0  # Connection establishment timeout
 
 # Auth error detection patterns (case-insensitive)
 AUTH_ERROR_PATTERNS = (
@@ -91,6 +92,7 @@ class ClientCore:
         self,
         auth: AuthTokens,
         timeout: float = DEFAULT_TIMEOUT,
+        connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
         refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
         refresh_retry_delay: float = 0.2,
     ):
@@ -99,12 +101,16 @@ class ClientCore:
         Args:
             auth: Authentication tokens from browser login.
             timeout: HTTP request timeout in seconds. Defaults to 30 seconds.
+                This applies to read/write operations after connection is established.
+            connect_timeout: Connection establishment timeout in seconds. Defaults to 10 seconds.
+                A shorter connect timeout helps detect network issues faster.
             refresh_callback: Optional async callback to refresh auth tokens on failure.
                 If provided, rpc_call will automatically retry once after refreshing.
             refresh_retry_delay: Delay in seconds before retrying after refresh.
         """
         self.auth = auth
         self._timeout = timeout
+        self._connect_timeout = connect_timeout
         self._refresh_callback = refresh_callback
         self._refresh_retry_delay = refresh_retry_delay
         self._refresh_lock: asyncio.Lock | None = asyncio.Lock() if refresh_callback else None
@@ -121,12 +127,20 @@ class ClientCore:
         Called automatically by NotebookLMClient.__aenter__.
         """
         if self._http_client is None:
+            # Use granular timeouts: shorter connect timeout helps detect network issues
+            # faster, while longer read/write timeouts accommodate slow responses
+            timeout = httpx.Timeout(
+                connect=self._connect_timeout,
+                read=self._timeout,
+                write=self._timeout,
+                pool=self._timeout,
+            )
             self._http_client = httpx.AsyncClient(
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
                     "Cookie": self.auth.cookie_header,
                 },
-                timeout=self._timeout,
+                timeout=timeout,
             )
 
     async def close(self) -> None:

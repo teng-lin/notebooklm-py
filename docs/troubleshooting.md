@@ -259,6 +259,37 @@ playwright install chromium
 
 ### Windows
 
+**CLI hangs indefinitely (issue #75):**
+
+On certain Windows environments (particularly when running inside Sandboxie or similar sandboxing software), the CLI may hang indefinitely at startup. This is caused by the default `ProactorEventLoop` blocking at the IOCP (I/O Completion Ports) layer.
+
+**Symptoms:**
+- CLI starts but never responds
+- Process appears frozen with no output
+- Happens consistently in sandboxed environments
+
+**Solution:** The library automatically sets `WindowsSelectorEventLoopPolicy` at CLI startup to avoid this issue. If you're using the Python API directly and encounter hanging, add this before any async code:
+
+```python
+import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+```
+
+**Unicode encoding errors on non-English Windows (issue #75, #80):**
+
+Windows systems with non-English locales (Chinese cp950, Japanese cp932, etc.) may fail with `UnicodeEncodeError` when outputting Unicode characters like checkmarks (✓) or emojis.
+
+**Symptoms:**
+- `UnicodeEncodeError: 'cp950' codec can't encode character`
+- Error occurs when printing status output with Rich tables
+
+**Solution:** The library automatically sets `PYTHONUTF8=1` at CLI startup. For Python API usage, either:
+1. Set `PYTHONUTF8=1` environment variable before running
+2. Run Python with `-X utf8` flag: `python -X utf8 your_script.py`
+
 **Path issues:**
 - Use forward slashes or raw strings: `r"C:\path\to\file"`
 - Ensure `~` expansion works: use `Path.home()` in Python

@@ -41,6 +41,7 @@ dev = [
     "pytest-httpx>=0.30.0",
     "pytest-cov>=4.0.0",
     "pytest-rerunfailures>=14.0",
+    "pytest-timeout>=2.3.0",
     "python-dotenv>=1.0.0",
     "mypy>=1.0.0",
     "ruff>=0.4.0",
@@ -86,6 +87,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--ignore=tests/e2e"
+# Global timeout prevents tests from hanging indefinitely (CI safety net)
+# Individual tests can override with @pytest.mark.timeout(seconds)
+timeout = 60
 markers = [
     "e2e: end-to-end tests requiring authentication (run with pytest tests/e2e -m e2e)",
     "variants: parameter variant tests (skip to save quota)",
