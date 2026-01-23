@@ -1079,3 +1079,185 @@ class TestResearchAPI:
         assert result is not None
         assert "task_id" in result
         assert result["mode"] == "deep"
+
+
+# =============================================================================
+# Artifacts API - Binary Downloads (audio, video, infographic, slide_deck)
+# =============================================================================
+
+
+# Magic bytes for file type verification
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+PDF_MAGIC = b"%PDF"
+MP4_FTYP = b"ftyp"  # At offset 4
+
+
+def is_png(path: str) -> bool:
+    """Check if file is a valid PNG by magic bytes."""
+    with open(path, "rb") as f:
+        return f.read(8) == PNG_MAGIC
+
+
+def is_pdf(path: str) -> bool:
+    """Check if file is a valid PDF by magic bytes."""
+    with open(path, "rb") as f:
+        return f.read(4) == PDF_MAGIC
+
+
+def is_mp4(path: str) -> bool:
+    """Check if file is a valid MP4 by magic bytes."""
+    with open(path, "rb") as f:
+        header = f.read(12)
+        # MP4 has 'ftyp' at offset 4
+        return len(header) >= 8 and header[4:8] == MP4_FTYP
+
+
+class TestArtifactsBinaryDownloads:
+    """VCR tests for binary artifact downloads (audio, video, infographic, slide deck).
+
+    These tests record actual binary downloads to cassettes.
+    """
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_download_audio.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_download_audio.yaml")
+    async def test_download_audio(self, tmp_path):
+        """Download an audio artifact (MP4 format)."""
+        from notebooklm.exceptions import ArtifactNotReadyError
+
+        async with vcr_client() as client:
+            output_path = tmp_path / "audio.mp4"
+            try:
+                path = await client.artifacts.download_audio(READONLY_NOTEBOOK_ID, str(output_path))
+                assert os.path.exists(path)
+                assert os.path.getsize(path) > 0
+                assert is_mp4(path), "Downloaded audio should be MP4 format"
+            except ArtifactNotReadyError:
+                pytest.skip("No completed audio artifact available")
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_download_video.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_download_video.yaml")
+    async def test_download_video(self, tmp_path):
+        """Download a video artifact (MP4 format)."""
+        from notebooklm.exceptions import ArtifactNotReadyError
+
+        async with vcr_client() as client:
+            output_path = tmp_path / "video.mp4"
+            try:
+                path = await client.artifacts.download_video(READONLY_NOTEBOOK_ID, str(output_path))
+                assert os.path.exists(path)
+                assert os.path.getsize(path) > 0
+                assert is_mp4(path), "Downloaded video should be MP4 format"
+            except ArtifactNotReadyError:
+                pytest.skip("No completed video artifact available")
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_download_infographic.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_download_infographic.yaml")
+    async def test_download_infographic(self, tmp_path):
+        """Download an infographic artifact (PNG format)."""
+        from notebooklm.exceptions import ArtifactNotReadyError
+
+        async with vcr_client() as client:
+            output_path = tmp_path / "infographic.png"
+            try:
+                path = await client.artifacts.download_infographic(
+                    READONLY_NOTEBOOK_ID, str(output_path)
+                )
+                assert os.path.exists(path)
+                assert os.path.getsize(path) > 0
+                assert is_png(path), "Downloaded infographic should be PNG format"
+            except ArtifactNotReadyError:
+                pytest.skip("No completed infographic artifact available")
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("artifacts_download_slide_deck.yaml")
+    @notebooklm_vcr.use_cassette("artifacts_download_slide_deck.yaml")
+    async def test_download_slide_deck(self, tmp_path):
+        """Download a slide deck artifact (PDF format)."""
+        from notebooklm.exceptions import ArtifactNotReadyError
+
+        async with vcr_client() as client:
+            output_path = tmp_path / "slides.pdf"
+            try:
+                path = await client.artifacts.download_slide_deck(
+                    READONLY_NOTEBOOK_ID, str(output_path)
+                )
+                assert os.path.exists(path)
+                assert os.path.getsize(path) > 0
+                assert is_pdf(path), "Downloaded slide deck should be PDF format"
+            except ArtifactNotReadyError:
+                pytest.skip("No completed slide deck artifact available")
+
+
+# =============================================================================
+# Sources API - Readiness Polling
+# =============================================================================
+
+
+class TestSourcesPolling:
+    """VCR tests for source readiness polling.
+
+    These tests verify wait_until_ready and wait_for_sources methods.
+    Note: Polling tests require multiple HTTP requests recorded in sequence.
+    """
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("sources_wait_until_ready.yaml")
+    @notebooklm_vcr.use_cassette("sources_wait_until_ready.yaml")
+    async def test_wait_until_ready(self):
+        """Test waiting for a single source to become ready."""
+        async with vcr_client() as client:
+            # Add a text source (fast to process)
+            source = await client.sources.add_text(
+                MUTABLE_NOTEBOOK_ID,
+                title="VCR Wait Test Source",
+                content="This is test content for the wait_until_ready test. " * 20,
+            )
+            assert source is not None
+            assert source.id is not None
+
+            # Wait for it to be ready
+            ready_source = await client.sources.wait_until_ready(
+                MUTABLE_NOTEBOOK_ID,
+                source.id,
+                timeout=60.0,
+            )
+            assert ready_source.is_ready, "Source should be ready after wait"
+            assert ready_source.id == source.id
+
+    @pytest.mark.vcr
+    @pytest.mark.asyncio
+    @requires_cassette("sources_wait_for_sources.yaml")
+    @notebooklm_vcr.use_cassette("sources_wait_for_sources.yaml")
+    async def test_wait_for_sources(self):
+        """Test waiting for multiple sources to become ready in parallel."""
+        async with vcr_client() as client:
+            # Add multiple text sources
+            source1 = await client.sources.add_text(
+                MUTABLE_NOTEBOOK_ID,
+                title="VCR Batch Wait Test 1",
+                content="First batch test content for parallel wait. " * 20,
+            )
+            source2 = await client.sources.add_text(
+                MUTABLE_NOTEBOOK_ID,
+                title="VCR Batch Wait Test 2",
+                content="Second batch test content for parallel wait. " * 20,
+            )
+            assert source1.id is not None
+            assert source2.id is not None
+
+            # Wait for all to be ready
+            ready_sources = await client.sources.wait_for_sources(
+                MUTABLE_NOTEBOOK_ID,
+                [source1.id, source2.id],
+                timeout=60.0,
+            )
+            assert len(ready_sources) == 2
+            assert all(s.is_ready for s in ready_sources)
