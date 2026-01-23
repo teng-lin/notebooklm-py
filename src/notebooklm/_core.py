@@ -515,7 +515,7 @@ class ClientCore:
                                 sid = first[0]
                                 if isinstance(sid, str):
                                     source_ids.append(sid)
-        except (IndexError, TypeError):
-            pass
+        except (IndexError, TypeError) as e:
+            logger.debug("Failed to parse source IDs from notebook %s: %s", notebook_id, e)
 
         return source_ids
