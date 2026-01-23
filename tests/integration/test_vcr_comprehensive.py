@@ -1092,24 +1092,39 @@ PDF_MAGIC = b"%PDF"
 MP4_FTYP = b"ftyp"  # At offset 4
 
 
-def is_png(path: str) -> bool:
-    """Check if file is a valid PNG by magic bytes."""
+def check_file_magic(path: str, file_type: str) -> bool:
+    """Check if file matches expected magic bytes for the given type."""
     with open(path, "rb") as f:
-        return f.read(8) == PNG_MAGIC
+        if file_type == "mp4":
+            header = f.read(12)
+            return len(header) >= 8 and header[4:8] == MP4_FTYP
+        elif file_type == "png":
+            return f.read(8) == PNG_MAGIC
+        elif file_type == "pdf":
+            return f.read(4) == PDF_MAGIC
+        else:
+            raise ValueError(f"Unknown file type: {file_type}")
 
 
-def is_pdf(path: str) -> bool:
-    """Check if file is a valid PDF by magic bytes."""
-    with open(path, "rb") as f:
-        return f.read(4) == PDF_MAGIC
-
-
-def is_mp4(path: str) -> bool:
-    """Check if file is a valid MP4 by magic bytes."""
-    with open(path, "rb") as f:
-        header = f.read(12)
-        # MP4 has 'ftyp' at offset 4
-        return len(header) >= 8 and header[4:8] == MP4_FTYP
+# Binary download test configurations: (method, cassette, filename, file_type, description)
+BINARY_DOWNLOAD_TESTS = [
+    ("download_audio", "artifacts_download_audio.yaml", "audio.mp4", "mp4", "audio"),
+    ("download_video", "artifacts_download_video.yaml", "video.mp4", "mp4", "video"),
+    (
+        "download_infographic",
+        "artifacts_download_infographic.yaml",
+        "infographic.png",
+        "png",
+        "infographic",
+    ),
+    (
+        "download_slide_deck",
+        "artifacts_download_slide_deck.yaml",
+        "slides.pdf",
+        "pdf",
+        "slide deck",
+    ),
+]
 
 
 class TestArtifactsBinaryDownloads:
@@ -1120,79 +1135,32 @@ class TestArtifactsBinaryDownloads:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("artifacts_download_audio.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_download_audio.yaml")
-    async def test_download_audio(self, tmp_path):
-        """Download an audio artifact (MP4 format)."""
+    @pytest.mark.parametrize(
+        "method_name,cassette,filename,file_type,description", BINARY_DOWNLOAD_TESTS
+    )
+    async def test_binary_download(
+        self, tmp_path, method_name, cassette, filename, file_type, description
+    ):
+        """Download a binary artifact and verify file format."""
         from notebooklm.exceptions import ArtifactNotReadyError
 
-        async with vcr_client() as client:
-            output_path = tmp_path / "audio.mp4"
-            try:
-                path = await client.artifacts.download_audio(READONLY_NOTEBOOK_ID, str(output_path))
-                assert os.path.exists(path)
-                assert os.path.getsize(path) > 0
-                assert is_mp4(path), "Downloaded audio should be MP4 format"
-            except ArtifactNotReadyError:
-                pytest.skip("No completed audio artifact available")
+        cassette_path = Path(__file__).parent.parent / "cassettes" / cassette
+        if not cassette_path.exists():
+            pytest.skip(f"Cassette {cassette} not available")
 
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @requires_cassette("artifacts_download_video.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_download_video.yaml")
-    async def test_download_video(self, tmp_path):
-        """Download a video artifact (MP4 format)."""
-        from notebooklm.exceptions import ArtifactNotReadyError
-
-        async with vcr_client() as client:
-            output_path = tmp_path / "video.mp4"
-            try:
-                path = await client.artifacts.download_video(READONLY_NOTEBOOK_ID, str(output_path))
-                assert os.path.exists(path)
-                assert os.path.getsize(path) > 0
-                assert is_mp4(path), "Downloaded video should be MP4 format"
-            except ArtifactNotReadyError:
-                pytest.skip("No completed video artifact available")
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @requires_cassette("artifacts_download_infographic.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_download_infographic.yaml")
-    async def test_download_infographic(self, tmp_path):
-        """Download an infographic artifact (PNG format)."""
-        from notebooklm.exceptions import ArtifactNotReadyError
-
-        async with vcr_client() as client:
-            output_path = tmp_path / "infographic.png"
-            try:
-                path = await client.artifacts.download_infographic(
-                    READONLY_NOTEBOOK_ID, str(output_path)
-                )
-                assert os.path.exists(path)
-                assert os.path.getsize(path) > 0
-                assert is_png(path), "Downloaded infographic should be PNG format"
-            except ArtifactNotReadyError:
-                pytest.skip("No completed infographic artifact available")
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @requires_cassette("artifacts_download_slide_deck.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_download_slide_deck.yaml")
-    async def test_download_slide_deck(self, tmp_path):
-        """Download a slide deck artifact (PDF format)."""
-        from notebooklm.exceptions import ArtifactNotReadyError
-
-        async with vcr_client() as client:
-            output_path = tmp_path / "slides.pdf"
-            try:
-                path = await client.artifacts.download_slide_deck(
-                    READONLY_NOTEBOOK_ID, str(output_path)
-                )
-                assert os.path.exists(path)
-                assert os.path.getsize(path) > 0
-                assert is_pdf(path), "Downloaded slide deck should be PDF format"
-            except ArtifactNotReadyError:
-                pytest.skip("No completed slide deck artifact available")
+        with notebooklm_vcr.use_cassette(cassette):
+            async with vcr_client() as client:
+                output_path = tmp_path / filename
+                try:
+                    method = getattr(client.artifacts, method_name)
+                    path = await method(READONLY_NOTEBOOK_ID, str(output_path))
+                    assert os.path.exists(path)
+                    assert os.path.getsize(path) > 0
+                    assert check_file_magic(path, file_type), (
+                        f"Downloaded {description} should be {file_type.upper()} format"
+                    )
+                except ArtifactNotReadyError:
+                    pytest.skip(f"No completed {description} artifact available")
 
 
 # =============================================================================
@@ -1350,6 +1318,15 @@ class TestChatSourceSelection:
             assert result2.is_follow_up is True
 
 
+# Artifact generation with source selection test configurations
+# (method_name, cassette, min_sources, description)
+ARTIFACT_SOURCE_SELECTION_TESTS = [
+    ("generate_report", "artifacts_generate_report_with_source_ids.yaml", 1, "report"),
+    ("generate_quiz", "artifacts_generate_quiz_with_source_ids.yaml", 2, "quiz"),
+    ("generate_flashcards", "artifacts_generate_flashcards_with_source_ids.yaml", 1, "flashcards"),
+]
+
+
 class TestArtifactSourceSelection:
     """VCR tests for artifact generation with source_ids parameter.
 
@@ -1358,55 +1335,26 @@ class TestArtifactSourceSelection:
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
-    @requires_cassette("artifacts_generate_report_with_source_ids.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_generate_report_with_source_ids.yaml")
-    async def test_generate_report_with_single_source(self):
-        """Test report generation using only one source."""
-        async with vcr_client() as client:
-            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
-            if len(sources) < 1:
-                pytest.skip("No sources available")
+    @pytest.mark.parametrize(
+        "method_name,cassette,min_sources,description", ARTIFACT_SOURCE_SELECTION_TESTS
+    )
+    async def test_generate_with_source_selection(
+        self, method_name, cassette, min_sources, description
+    ):
+        """Test artifact generation using a subset of sources."""
+        cassette_path = Path(__file__).parent.parent / "cassettes" / cassette
+        if not cassette_path.exists():
+            pytest.skip(f"Cassette {cassette} not available")
 
-            result = await client.artifacts.generate_report(
-                MUTABLE_NOTEBOOK_ID,
-                source_ids=[sources[0].id],
-            )
-            assert result is not None
-            assert result.task_id is not None
+        with notebooklm_vcr.use_cassette(cassette):
+            async with vcr_client() as client:
+                sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
+                if len(sources) < min_sources:
+                    pytest.skip(f"Need at least {min_sources} source(s) for {description} test")
 
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @requires_cassette("artifacts_generate_quiz_with_source_ids.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_generate_quiz_with_source_ids.yaml")
-    async def test_generate_quiz_with_source_subset(self):
-        """Test quiz generation using a subset of sources."""
-        async with vcr_client() as client:
-            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
-            if len(sources) < 2:
-                pytest.skip("Need at least 2 sources")
+                source_ids = [s.id for s in sources[:min_sources]]
+                method = getattr(client.artifacts, method_name)
+                result = await method(MUTABLE_NOTEBOOK_ID, source_ids=source_ids)
 
-            source_ids = [sources[0].id, sources[1].id]
-            result = await client.artifacts.generate_quiz(
-                MUTABLE_NOTEBOOK_ID,
-                source_ids=source_ids,
-            )
-            assert result is not None
-            assert result.task_id is not None
-
-    @pytest.mark.vcr
-    @pytest.mark.asyncio
-    @requires_cassette("artifacts_generate_flashcards_with_source_ids.yaml")
-    @notebooklm_vcr.use_cassette("artifacts_generate_flashcards_with_source_ids.yaml")
-    async def test_generate_flashcards_with_single_source(self):
-        """Test flashcard generation using only one source."""
-        async with vcr_client() as client:
-            sources = await client.sources.list(MUTABLE_NOTEBOOK_ID)
-            if len(sources) < 1:
-                pytest.skip("No sources available")
-
-            result = await client.artifacts.generate_flashcards(
-                MUTABLE_NOTEBOOK_ID,
-                source_ids=[sources[0].id],
-            )
-            assert result is not None
-            assert result.task_id is not None
+                assert result is not None
+                assert result.task_id is not None
