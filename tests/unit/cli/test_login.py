@@ -15,6 +15,9 @@ SESSION_MODULE = "notebooklm.cli.session"
 # Permission tests only work on Unix-like systems
 unix_only = pytest.mark.skipif(sys.platform == "win32", reason="Unix permissions")
 
+# Test URL for "wrong page" scenarios (not notebooklm.google.com)
+GOOGLE_SIGNIN_URL = "https://accounts.google.com/signin"
+
 
 def make_subprocess_result(stdout: str, returncode: int = 0) -> MagicMock:
     """Create a mock subprocess result."""
@@ -193,9 +196,7 @@ class TestLoginCommand:
 
     def test_login_wrong_url_user_confirms(self, runner, tmp_path):
         """Test login at wrong URL but user confirms to save anyway."""
-        mock_pw, mock_context, _ = create_playwright_mocks(
-            page_url="https://accounts.google.com/signin"
-        )
+        mock_pw, mock_context, _ = create_playwright_mocks(page_url=GOOGLE_SIGNIN_URL)
         storage_file = tmp_path / "storage.json"
 
         with patch_playwright_login(mock_pw, tmp_path / "profile", confirm_value=True):
@@ -203,16 +204,14 @@ class TestLoginCommand:
 
         assert result.exit_code == 0
         assert "Warning" in result.output
-        # Verify the warning message shows the current URL domain
-        output_lower = result.output.lower()
-        assert "accounts.google.com" in output_lower or "google" in output_lower
+        # Verify the warning shows the non-notebooklm URL (domain extracted from constant)
+        expected_domain = GOOGLE_SIGNIN_URL.split("//")[1].split("/")[0]
+        assert expected_domain in result.output
         mock_context.storage_state.assert_called_once_with(path=str(storage_file))
 
     def test_login_wrong_url_user_cancels(self, runner, tmp_path):
         """Test login at wrong URL and user cancels."""
-        mock_pw, mock_context, _ = create_playwright_mocks(
-            page_url="https://accounts.google.com/signin"
-        )
+        mock_pw, mock_context, _ = create_playwright_mocks(page_url=GOOGLE_SIGNIN_URL)
         storage_file = tmp_path / "storage.json"
 
         with patch_playwright_login(mock_pw, tmp_path / "profile", confirm_value=False):
