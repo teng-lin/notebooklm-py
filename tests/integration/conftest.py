@@ -113,8 +113,9 @@ def mock_httpx_cookies_for_vcr():
         yield
     else:
         # In replay mode, mock the cookies
+        # After refactoring, load_httpx_cookies is imported in _artifact_download
         with patch(
-            "notebooklm._artifacts.load_httpx_cookies",
+            "notebooklm._artifact_download.load_httpx_cookies",
             return_value=_mock_httpx_cookies(),
         ):
             yield
