@@ -1,5 +1,6 @@
 """E2E test fixtures and configuration."""
 
+import logging
 import os
 import warnings
 from collections.abc import AsyncGenerator
@@ -115,7 +116,7 @@ def pytest_runtest_teardown(item, nextitem):
     import time
 
     # Only add delay for generation tests
-    if "test_generation.py" not in str(item.fspath):
+    if item.fspath.name != "test_generation.py":
         return
 
     # Only add delay if using generation_notebook_id fixture
@@ -127,6 +128,9 @@ def pytest_runtest_teardown(item, nextitem):
         return
 
     # Add delay to spread out API calls
+    logging.info(
+        "Delaying %ss between generation tests to avoid rate limiting", GENERATION_TEST_DELAY
+    )
     time.sleep(GENERATION_TEST_DELAY)
 
 
