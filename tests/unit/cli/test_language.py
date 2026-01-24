@@ -5,18 +5,12 @@ import json
 from unittest.mock import patch
 
 import pytest
-from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 
 # Import the module explicitly to avoid confusion with the Click group
 # (notebooklm.cli exports 'language' as a Click Group, which shadows the module)
 language_module = importlib.import_module("notebooklm.cli.language")
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
 
 
 @pytest.fixture

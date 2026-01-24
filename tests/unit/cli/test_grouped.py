@@ -1,14 +1,6 @@
 """Tests for SectionedGroup CLI help formatting."""
 
-import pytest
-from click.testing import CliRunner
-
 from notebooklm.notebooklm_cli import cli
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
 
 
 class TestSectionedHelp:

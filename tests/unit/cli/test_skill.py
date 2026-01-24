@@ -2,20 +2,12 @@
 
 from unittest.mock import patch
 
-import pytest
-from click.testing import CliRunner
-
 from notebooklm.notebooklm_cli import cli
 
 from .conftest import get_cli_module
 
 # Get the actual skill module (not the click group that shadows it)
 skill_module = get_cli_module("skill")
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
 
 
 class TestSkillInstall:
