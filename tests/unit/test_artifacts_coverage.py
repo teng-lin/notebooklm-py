@@ -49,7 +49,7 @@ class TestDownloadUrlsBatch:
         mock_response.raise_for_status = MagicMock()
 
         with (
-            patch("notebooklm._artifacts.load_httpx_cookies", return_value={}),
+            patch("notebooklm._artifact_download.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -63,7 +63,7 @@ class TestDownloadUrlsBatch:
                 ("https://example.com/file2.mp4", str(tmp_path / "file2.mp4")),
             ]
 
-            result = await api._download_urls_batch(urls_and_paths)
+            result = await api._downloader._download_urls_batch(urls_and_paths)
 
         assert len(result) == 2
         assert str(tmp_path / "file1.mp4") in result
@@ -81,7 +81,7 @@ class TestDownloadUrlsBatch:
         mock_response.raise_for_status = MagicMock()
 
         with (
-            patch("notebooklm._artifacts.load_httpx_cookies", return_value={}),
+            patch("notebooklm._artifact_download.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -96,7 +96,7 @@ class TestDownloadUrlsBatch:
 
             # HTML response should raise ArtifactDownloadError
             with pytest.raises(ArtifactDownloadError, match="Received HTML instead of media"):
-                await api._download_urls_batch(urls_and_paths)
+                await api._downloader._download_urls_batch(urls_and_paths)
 
     @pytest.mark.asyncio
     async def test_batch_download_partial_failure(self, mock_artifacts_api, tmp_path):
@@ -109,7 +109,7 @@ class TestDownloadUrlsBatch:
         success_response.raise_for_status = MagicMock()
 
         with (
-            patch("notebooklm._artifacts.load_httpx_cookies", return_value={}),
+            patch("notebooklm._artifact_download.load_httpx_cookies", return_value={}),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             mock_client = AsyncMock()
@@ -123,7 +123,7 @@ class TestDownloadUrlsBatch:
                 ("https://example.com/file2.mp4", str(tmp_path / "file2.mp4")),
             ]
 
-            result = await api._download_urls_batch(urls_and_paths)
+            result = await api._downloader._download_urls_batch(urls_and_paths)
 
         # Only first file should succeed
         assert len(result) == 1
@@ -284,7 +284,7 @@ class TestParseGenerationResult:
         """Test parsing None result returns failed status."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result(None)
+        result = api._generator._parse_generation_result(None)
 
         assert result.status == "failed"
         assert result.task_id == ""
@@ -294,7 +294,7 @@ class TestParseGenerationResult:
         """Test parsing empty list returns failed status."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([])
+        result = api._generator._parse_generation_result([])
 
         assert result.status == "failed"
         assert result.task_id == ""
@@ -305,7 +305,7 @@ class TestParseGenerationResult:
         api, _ = mock_artifacts_api
 
         # Valid result with status code 1 (in_progress)
-        result = api._parse_generation_result([["artifact_001", "Title", 1, None, 1]])
+        result = api._generator._parse_generation_result([["artifact_001", "Title", 1, None, 1]])
 
         assert result.task_id == "artifact_001"
         assert result.status == "in_progress"
@@ -314,7 +314,7 @@ class TestParseGenerationResult:
         """Test parsing valid completed status (code 3)."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([["artifact_002", "Title", 1, None, 3]])
+        result = api._generator._parse_generation_result([["artifact_002", "Title", 1, None, 3]])
 
         assert result.task_id == "artifact_002"
         assert result.status == "completed"
@@ -323,7 +323,7 @@ class TestParseGenerationResult:
         """Test parsing unknown status code returns unknown."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([["artifact_003", "Title", 1, None, 99]])
+        result = api._generator._parse_generation_result([["artifact_003", "Title", 1, None, 99]])
 
         assert result.task_id == "artifact_003"
         assert result.status == "unknown"  # Unknown codes return "unknown"
