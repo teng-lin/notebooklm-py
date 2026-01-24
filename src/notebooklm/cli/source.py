@@ -30,6 +30,7 @@ from .helpers import (
     json_output_response,
     output_result,
     require_notebook,
+    resolve_notebook_id,
     resolve_source_id,
     should_confirm,
     with_client,
@@ -77,14 +78,31 @@ def source_list(ctx, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            sources = await client.sources.list(nb_id)
-            nb = None
-            if json_output:
-                nb = await client.notebooks.get(nb_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            sources = await client.sources.list(resolved_nb_id)
+            # Only fetch notebook details for JSON output
+            nb = await client.notebooks.get(resolved_nb_id) if json_output else None
 
-            if json_output:
-                data = {
-                    "notebook_id": nb_id,
+            def render():
+                table = Table(title=f"Sources in {resolved_nb_id}")
+                table.add_column("ID", style="cyan")
+                table.add_column("Title", style="green")
+                table.add_column("Type")
+                table.add_column("Created", style="dim")
+                table.add_column("Status", style="yellow")
+
+                for src in sources:
+                    type_display = get_source_type_display(src.kind)
+                    created = src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
+                    status = source_status_to_str(src.status)
+                    table.add_row(src.id, src.title or "-", type_display, created, status)
+
+                console.print(table)
+
+            output_result(
+                json_output,
+                {
+                    "notebook_id": resolved_nb_id,
                     "notebook_title": nb.title if nb else None,
                     "sources": [
                         {
@@ -100,24 +118,9 @@ def source_list(ctx, notebook_id, json_output, client_auth):
                         for i, src in enumerate(sources, 1)
                     ],
                     "count": len(sources),
-                }
-                json_output_response(data)
-                return
-
-            table = Table(title=f"Sources in {nb_id}")
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Type")
-            table.add_column("Created", style="dim")
-            table.add_column("Status", style="yellow")
-
-            for src in sources:
-                type_display = get_source_type_display(src.kind)
-                created = src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
-                status = source_status_to_str(src.status)
-                table.add_row(src.id, src.title or "-", type_display, created, status)
-
-            console.print(table)
+                },
+                render,
+            )
 
     return _run()
 
@@ -270,30 +273,27 @@ def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            # Resolve partial ID to full ID
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, resolved_nb_id, source_id)
 
             if should_confirm(yes, json_output) and not click.confirm(
                 f"Delete source {resolved_id}?"
             ):
                 return
 
-            success = await client.sources.delete(nb_id, resolved_id)
+            success = await client.sources.delete(resolved_nb_id, resolved_id)
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "source_id": resolved_id,
-                        "deleted": success,
-                    }
-                )
-                return
+            def render():
+                if success:
+                    console.print(f"[green]Deleted source:[/green] {resolved_id}")
+                else:
+                    console.print("[yellow]Delete may have failed[/yellow]")
 
-            if success:
-                console.print(f"[green]Deleted source:[/green] {resolved_id}")
-            else:
-                console.print("[yellow]Delete may have failed[/yellow]")
+            output_result(
+                json_output,
+                {"notebook_id": resolved_nb_id, "source_id": resolved_id, "deleted": success},
+                render,
+            )
 
     return _run()
 
@@ -319,8 +319,9 @@ def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_au
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
-            src = await client.sources.rename(nb_id, resolved_id, new_title)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, resolved_nb_id, source_id)
+            src = await client.sources.rename(resolved_nb_id, resolved_id, new_title)
 
             def render():
                 console.print(f"[green]Renamed source:[/green] {src.id}")
@@ -328,7 +329,7 @@ def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_au
 
             output_result(
                 json_output,
-                {"notebook_id": nb_id, "source_id": src.id, "new_title": src.title},
+                {"notebook_id": resolved_nb_id, "source_id": src.id, "new_title": src.title},
                 render,
             )
 
@@ -355,13 +356,13 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            # Resolve partial ID to full ID
-            resolved_id = await resolve_source_id(client, nb_id, source_id)
-            src = await client.sources.refresh(nb_id, resolved_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_source_id(client, resolved_nb_id, source_id)
+            src = await client.sources.refresh(resolved_nb_id, resolved_id)
 
             if json_output:
-                data = {
-                    "notebook_id": nb_id,
+                data: dict = {
+                    "notebook_id": resolved_nb_id,
                     "source_id": resolved_id,
                     "refreshed": bool(src),
                 }

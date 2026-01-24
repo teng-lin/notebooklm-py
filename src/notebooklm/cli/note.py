@@ -20,10 +20,28 @@ from .helpers import (
     output_result,
     require_notebook,
     resolve_note_id,
+    resolve_notebook_id,
     should_confirm,
     with_client,
 )
 from .options import json_option
+
+
+def _note_preview(content: str | None, max_len: int = 50) -> str:
+    """Generate a preview string from note content.
+
+    Args:
+        content: The note content (may be None or empty)
+        max_len: Maximum preview length before truncation
+
+    Returns:
+        Truncated preview with "..." suffix if needed, or empty string
+    """
+    if not content:
+        return ""
+    if len(content) > max_len:
+        return content[:max_len] + "..."
+    return content
 
 
 @click.group()
@@ -62,51 +80,42 @@ def note_list(ctx, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            notes = await client.notes.list(nb_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            notes = await client.notes.list(resolved_nb_id)
+            # Filter to Note instances once
+            note_items = [n for n in notes if isinstance(n, Note)]
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "notes": [
-                            {
-                                "id": n.id,
-                                "title": n.title or "Untitled",
-                                "preview": (
-                                    n.content[:50] + "..."
-                                    if len(n.content or "") > 50
-                                    else n.content
-                                )
-                                if n.content
-                                else "",
-                            }
-                            for n in notes
-                            if isinstance(n, Note)
-                        ],
-                        "count": len(notes),
-                    }
-                )
-                return
+            def render():
+                if not note_items:
+                    console.print("[yellow]No notes found[/yellow]")
+                    return
 
-            if not notes:
-                console.print("[yellow]No notes found[/yellow]")
-                return
+                table = Table(title=f"Notes in {resolved_nb_id}")
+                table.add_column("ID", style="cyan")
+                table.add_column("Title", style="green")
+                table.add_column("Preview", style="dim", max_width=50)
 
-            table = Table(title=f"Notes in {nb_id}")
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Preview", style="dim", max_width=50)
+                for n in note_items:
+                    table.add_row(n.id, n.title or "Untitled", _note_preview(n.content))
 
-            for n in notes:
-                if isinstance(n, Note):
-                    preview = n.content[:50] if n.content else ""
-                    table.add_row(
-                        n.id,
-                        n.title or "Untitled",
-                        preview + "..." if len(n.content or "") > 50 else preview,
-                    )
+                console.print(table)
 
-            console.print(table)
+            output_result(
+                json_output,
+                {
+                    "notebook_id": resolved_nb_id,
+                    "notes": [
+                        {
+                            "id": n.id,
+                            "title": n.title or "Untitled",
+                            "preview": _note_preview(n.content),
+                        }
+                        for n in note_items
+                    ],
+                    "count": len(note_items),
+                },
+                render,
+            )
 
     return _run()
 
@@ -136,24 +145,26 @@ def note_create(ctx, content, notebook_id, title, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            result = await client.notes.create(nb_id, title, content)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            result = await client.notes.create(resolved_nb_id, title, content)
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "note_id": result if isinstance(result, str) else None,
-                        "title": title,
-                        "created": bool(result),
-                    }
-                )
-                return
+            def render():
+                if result:
+                    console.print("[green]Note created[/green]")
+                    console.print(result)
+                else:
+                    console.print("[yellow]Creation may have failed[/yellow]")
 
-            if result:
-                console.print("[green]Note created[/green]")
-                console.print(result)
-            else:
-                console.print("[yellow]Creation may have failed[/yellow]")
+            output_result(
+                json_output,
+                {
+                    "notebook_id": resolved_nb_id,
+                    "note_id": result if isinstance(result, str) else None,
+                    "title": title,
+                    "created": bool(result),
+                },
+                render,
+            )
 
     return _run()
 
@@ -178,14 +189,15 @@ def note_get(ctx, note_id, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
-            n = await client.notes.get(nb_id, resolved_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, resolved_nb_id, note_id)
+            n = await client.notes.get(resolved_nb_id, resolved_id)
 
             if json_output:
                 if n and isinstance(n, Note):
                     json_output_response(
                         {
-                            "notebook_id": nb_id,
+                            "notebook_id": resolved_nb_id,
                             "note_id": n.id,
                             "title": n.title or "Untitled",
                             "content": n.content or "",
@@ -194,7 +206,7 @@ def note_get(ctx, note_id, notebook_id, json_output, client_auth):
                 else:
                     json_output_response(
                         {
-                            "notebook_id": nb_id,
+                            "notebook_id": resolved_nb_id,
                             "note_id": resolved_id,
                             "error": "Note not found",
                         }
@@ -240,13 +252,14 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
-            await client.notes.update(nb_id, resolved_id, content=content, title=title)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, resolved_nb_id, note_id)
+            await client.notes.update(resolved_nb_id, resolved_id, content=content, title=title)
 
             output_result(
                 json_output,
                 {
-                    "notebook_id": nb_id,
+                    "notebook_id": resolved_nb_id,
                     "note_id": resolved_id,
                     "updated": True,
                     "new_title": title,
@@ -279,22 +292,29 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, resolved_nb_id, note_id)
             # Get current note to preserve content
-            n = await client.notes.get(nb_id, resolved_id)
+            n = await client.notes.get(resolved_nb_id, resolved_id)
             if not n or not isinstance(n, Note):
                 output_result(
                     json_output,
-                    {"notebook_id": nb_id, "note_id": resolved_id, "error": "Note not found"},
+                    {
+                        "notebook_id": resolved_nb_id,
+                        "note_id": resolved_id,
+                        "error": "Note not found",
+                    },
                     lambda: console.print("[yellow]Note not found[/yellow]"),
                 )
                 return
 
-            await client.notes.update(nb_id, resolved_id, content=n.content or "", title=new_title)
+            await client.notes.update(
+                resolved_nb_id, resolved_id, content=n.content or "", title=new_title
+            )
 
             output_result(
                 json_output,
-                {"notebook_id": nb_id, "note_id": resolved_id, "new_title": new_title},
+                {"notebook_id": resolved_nb_id, "note_id": resolved_id, "new_title": new_title},
                 lambda: console.print(f"[green]Note renamed:[/green] {new_title}"),
             )
 
@@ -322,18 +342,19 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_note_id(client, nb_id, note_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_note_id(client, resolved_nb_id, note_id)
 
             if should_confirm(yes, json_output) and not click.confirm(
                 f"Delete note {resolved_id}?"
             ):
                 return
 
-            await client.notes.delete(nb_id, resolved_id)
+            await client.notes.delete(resolved_nb_id, resolved_id)
 
             output_result(
                 json_output,
-                {"notebook_id": nb_id, "note_id": resolved_id, "deleted": True},
+                {"notebook_id": resolved_nb_id, "note_id": resolved_id, "deleted": True},
                 lambda: console.print(f"[green]Deleted note:[/green] {resolved_id}"),
             )
 

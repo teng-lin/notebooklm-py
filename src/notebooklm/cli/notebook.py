@@ -130,23 +130,22 @@ def register_notebook_commands(cli):
                     return
 
                 success = await client.notebooks.delete(resolved_id)
-                if json_output:
-                    json_output_response(
-                        {
-                            "notebook_id": resolved_id,
-                            "deleted": success,
-                        }
-                    )
-                    return
 
-                if success:
-                    console.print(f"[green]Deleted notebook:[/green] {resolved_id}")
-                    # Clear context if we deleted the current notebook
-                    if get_current_notebook() == resolved_id:
-                        clear_context()
-                        console.print("[dim]Cleared current notebook context[/dim]")
-                else:
-                    console.print("[yellow]Delete may have failed[/yellow]")
+                def render():
+                    if success:
+                        console.print(f"[green]Deleted notebook:[/green] {resolved_id}")
+                        # Clear context if we deleted the current notebook
+                        if get_current_notebook() == resolved_id:
+                            clear_context()
+                            console.print("[dim]Cleared current notebook context[/dim]")
+                    else:
+                        console.print("[yellow]Delete may have failed[/yellow]")
+
+                output_result(
+                    json_output,
+                    {"notebook_id": resolved_id, "deleted": success},
+                    render,
+                )
 
         return _run()
 

@@ -25,6 +25,7 @@ from .helpers import (
     json_output_response,
     require_notebook,
     resolve_artifact_id,
+    resolve_notebook_id,
     should_confirm,
     with_client,
 )
@@ -90,16 +91,17 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
             # artifacts.list() already includes mind maps from notes system
-            artifacts = await client.artifacts.list(nb_id, artifact_type=type_filter)
+            artifacts = await client.artifacts.list(resolved_nb_id, artifact_type=type_filter)
 
             nb = None
             if json_output:
-                nb = await client.notebooks.get(nb_id)
+                nb = await client.notebooks.get(resolved_nb_id)
 
             if json_output:
                 data = {
-                    "notebook_id": nb_id,
+                    "notebook_id": resolved_nb_id,
                     "notebook_title": nb.title if nb else None,
                     "artifacts": [
                         {
@@ -123,7 +125,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                 console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
                 return
 
-            table = Table(title=f"Artifacts in {nb_id}")
+            table = Table(title=f"Artifacts in {resolved_nb_id}")
             table.add_column("ID", style="cyan")
             table.add_column("Title", style="green")
             table.add_column("Type")
@@ -234,7 +236,8 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, resolved_nb_id, artifact_id)
 
             if should_confirm(yes, json_output) and not click.confirm(
                 f"Delete artifact {resolved_id}?"
@@ -242,14 +245,15 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
                 return
 
             # Check if this is a mind map (stored with notes)
-            mind_maps = await client.notes.list_mind_maps(nb_id)
+            mind_maps = await client.notes.list_mind_maps(resolved_nb_id)
             for mm in mind_maps:
                 if mm[0] == resolved_id:
-                    await client.notes.delete(nb_id, resolved_id)
+                    await client.notes.delete(resolved_nb_id, resolved_id)
 
                     if json_output:
                         json_output_response(
                             {
+                                "notebook_id": resolved_nb_id,
                                 "artifact_id": resolved_id,
                                 "type": "mind_map",
                                 "deleted": True,
@@ -263,11 +267,12 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
                     )
                     return
 
-            await client.artifacts.delete(nb_id, resolved_id)
+            await client.artifacts.delete(resolved_nb_id, resolved_id)
 
             if json_output:
                 json_output_response(
                     {
+                        "notebook_id": resolved_nb_id,
                         "artifact_id": resolved_id,
                         "deleted": True,
                     }
