@@ -48,7 +48,7 @@ MUTABLE_NOTEBOOK_ID = os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID", "")
 
 
 # =============================================================================
-# Helper for reducing boilerplate
+# Helpers for reducing boilerplate
 # =============================================================================
 
 
@@ -58,6 +58,22 @@ async def vcr_client():
     auth = await get_vcr_auth()
     async with NotebookLMClient(auth) as client:
         yield client
+
+
+def assert_list_of_type(items: list, item_type: type, description: str = "") -> None:
+    """Assert that all items in a list are of the expected type."""
+    assert isinstance(items, list), f"Expected list{', ' + description if description else ''}"
+    assert all(isinstance(item, item_type) for item in items), (
+        f"All items should be {item_type.__name__}"
+    )
+
+
+def assert_references(references: list) -> None:
+    """Assert that all references are valid ChatReference objects with required fields."""
+    for ref in references:
+        assert isinstance(ref, ChatReference)
+        assert ref.source_id is not None
+        assert ref.citation_number is not None
 
 
 # =============================================================================
@@ -75,8 +91,7 @@ class TestNotebooksAPI:
         """List all notebooks."""
         async with vcr_client() as client:
             notebooks = await client.notebooks.list()
-        assert isinstance(notebooks, list)
-        assert all(isinstance(nb, Notebook) for nb in notebooks)
+        assert_list_of_type(notebooks, Notebook)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -153,8 +168,7 @@ class TestSourcesAPI:
         """List sources in a notebook."""
         async with vcr_client() as client:
             sources = await client.sources.list(READONLY_NOTEBOOK_ID)
-        assert isinstance(sources, list)
-        assert all(isinstance(src, Source) for src in sources)
+        assert_list_of_type(sources, Source)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -236,8 +250,7 @@ class TestNotesAPI:
         """List notes in a notebook."""
         async with vcr_client() as client:
             notes = await client.notes.list(READONLY_NOTEBOOK_ID)
-        assert isinstance(notes, list)
-        assert all(isinstance(note, Note) for note in notes)
+        assert_list_of_type(notes, Note)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -321,8 +334,7 @@ class TestArtifactsListAPI:
             async with vcr_client() as client:
                 method = getattr(client.artifacts, method_name)
                 result = await method(READONLY_NOTEBOOK_ID)
-                assert isinstance(result, list)
-                assert all(isinstance(art, Artifact) for art in result)
+                assert_list_of_type(result, Artifact)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -599,11 +611,7 @@ class TestChatAPI:
         assert result.answer is not None
         # References may or may not be present depending on the answer
         assert isinstance(result.references, list)
-        # If references exist, verify structure and type
-        for ref in result.references:
-            assert isinstance(ref, ChatReference)
-            assert ref.source_id is not None
-            assert ref.citation_number is not None
+        assert_references(result.references)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -1608,11 +1616,7 @@ class TestChatReferencesAPI:
             assert result.answer is not None
             assert result.conversation_id is not None
 
-            # If references exist, verify structure and type
-            for ref in result.references:
-                assert isinstance(ref, ChatReference)
-                assert ref.source_id is not None
-                assert ref.citation_number is not None
+            assert_references(result.references)
 
     @pytest.mark.vcr
     @pytest.mark.asyncio
@@ -1630,7 +1634,7 @@ class TestChatReferencesAPI:
                 "Explain the main concepts with references to sources.",
             )
 
-            # All reference source IDs should exist in the notebook
+            # Verify type and that all reference source IDs exist in the notebook
             for ref in result.references:
                 assert isinstance(ref, ChatReference)
                 assert ref.source_id in source_ids, (
@@ -1649,10 +1653,7 @@ class TestChatReferencesAPI:
             )
 
             if result.references:
-                # Verify all references are proper ChatReference objects
-                assert all(isinstance(ref, ChatReference) for ref in result.references)
+                assert_list_of_type(result.references, ChatReference)
                 citation_numbers = [ref.citation_number for ref in result.references]
-                # All citation numbers should be assigned
-                assert all(n is not None for n in citation_numbers)
                 # Should be sequential starting from 1
                 assert citation_numbers == list(range(1, len(citation_numbers) + 1))
