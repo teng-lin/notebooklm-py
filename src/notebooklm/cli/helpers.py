@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING
 
@@ -451,6 +452,26 @@ def with_client(f):
 def json_output_response(data: dict) -> None:
     """Print JSON response (no colors for machine parsing)."""
     click.echo(json.dumps(data, indent=2, default=str))
+
+
+def output_result(json_output: bool, data: dict, render: Callable[[], None]) -> None:
+    """Output as JSON or render text.
+
+    Eliminates the common pattern of:
+        if json_output:
+            json_output_response(data)
+            return
+        # ... render text
+
+    Args:
+        json_output: Whether to output JSON (True) or text (False)
+        data: Dictionary to output as JSON when json_output=True
+        render: Callable that renders text output when json_output=False
+    """
+    if json_output:
+        json_output_response(data)
+    else:
+        render()
 
 
 def should_confirm(yes: bool, json_output: bool) -> bool:

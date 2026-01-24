@@ -28,6 +28,7 @@ from .helpers import (
     display_research_sources,
     get_source_type_display,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_source_id,
     should_confirm,
@@ -191,19 +192,18 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
             elif detected_type == "file":
                 src = await client.sources.add_file(nb_id, content, mime_type)
 
-            if json_output:
-                data = {
+            output_result(
+                json_output,
+                {
                     "source": {
                         "id": src.id,
                         "title": src.title,
                         "type": str(src.kind),
                         "url": src.url,
                     }
-                }
-                json_output_response(data)
-                return
-
-            console.print(f"[green]Added source:[/green] {src.id}")
+                },
+                lambda: console.print(f"[green]Added source:[/green] {src.id}"),
+            )
 
     if json_output:
         return _run()
@@ -319,22 +319,18 @@ def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_au
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            # Resolve partial ID to full ID
             resolved_id = await resolve_source_id(client, nb_id, source_id)
             src = await client.sources.rename(nb_id, resolved_id, new_title)
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "source_id": src.id,
-                        "new_title": src.title,
-                    }
-                )
-                return
+            def render():
+                console.print(f"[green]Renamed source:[/green] {src.id}")
+                console.print(f"[bold]New title:[/bold] {src.title}")
 
-            console.print(f"[green]Renamed source:[/green] {src.id}")
-            console.print(f"[bold]New title:[/bold] {src.title}")
+            output_result(
+                json_output,
+                {"notebook_id": nb_id, "source_id": src.id, "new_title": src.title},
+                render,
+            )
 
     return _run()
 

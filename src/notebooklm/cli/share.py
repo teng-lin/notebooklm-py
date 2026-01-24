@@ -17,6 +17,7 @@ from ..types import SharePermission, ShareViewLevel
 from .helpers import (
     console,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_notebook_id,
     should_confirm,
@@ -230,16 +231,12 @@ def share_view_level(ctx, level, notebook_id, json_output, client_auth):
             resolved_id = await resolve_notebook_id(client, nb_id)
             status = await client.sharing.set_view_level(resolved_id, view_level)
 
-            if json_output:
-                data = {
-                    "notebook_id": resolved_id,
-                    "view_level": status.view_level.name.lower(),
-                }
-                json_output_response(data)
-                return
-
-            console.print(
-                f"[green]View level set to:[/green] {_view_level_display(status.view_level)}"
+            output_result(
+                json_output,
+                {"notebook_id": resolved_id, "view_level": status.view_level.name.lower()},
+                lambda: console.print(
+                    f"[green]View level set to:[/green] {_view_level_display(status.view_level)}"
+                ),
             )
 
     return _run()
@@ -345,16 +342,17 @@ def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
             resolved_id = await resolve_notebook_id(client, nb_id)
             await client.sharing.update_user(resolved_id, email, perm)
 
-            if json_output:
-                data = {
+            output_result(
+                json_output,
+                {
                     "notebook_id": resolved_id,
                     "updated_user": email,
                     "permission": permission.lower(),
-                }
-                json_output_response(data)
-                return
-
-            console.print(f"[green]Updated {email}[/green] to {_permission_name(perm)}")
+                },
+                lambda: console.print(
+                    f"[green]Updated {email}[/green] to {_permission_name(perm)}"
+                ),
+            )
 
     return _run()
 
@@ -393,14 +391,10 @@ def share_remove(ctx, email, notebook_id, yes, json_output, client_auth):
 
             await client.sharing.remove_user(resolved_id, email)
 
-            if json_output:
-                data = {
-                    "notebook_id": resolved_id,
-                    "removed_user": email,
-                }
-                json_output_response(data)
-                return
-
-            console.print(f"[green]Removed access for {email}[/green]")
+            output_result(
+                json_output,
+                {"notebook_id": resolved_id, "removed_user": email},
+                lambda: console.print(f"[green]Removed access for {email}[/green]"),
+            )
 
     return _run()

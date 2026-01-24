@@ -19,6 +19,7 @@ from .helpers import (
     console,
     get_current_notebook,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_notebook_id,
     should_confirm,
@@ -40,8 +41,23 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 notebooks = await client.notebooks.list()
 
-                if json_output:
-                    data = {
+                def render():
+                    table = Table(title="Notebooks")
+                    table.add_column("ID", style="cyan")
+                    table.add_column("Title", style="green")
+                    table.add_column("Owner")
+                    table.add_column("Created", style="dim")
+
+                    for nb in notebooks:
+                        created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
+                        owner_status = "Owner" if nb.is_owner else "Shared"
+                        table.add_row(nb.id, nb.title, owner_status, created)
+
+                    console.print(table)
+
+                output_result(
+                    json_output,
+                    {
                         "notebooks": [
                             {
                                 "index": i,
@@ -53,22 +69,9 @@ def register_notebook_commands(cli):
                             for i, nb in enumerate(notebooks, 1)
                         ],
                         "count": len(notebooks),
-                    }
-                    json_output_response(data)
-                    return
-
-                table = Table(title="Notebooks")
-                table.add_column("ID", style="cyan")
-                table.add_column("Title", style="green")
-                table.add_column("Owner")
-                table.add_column("Created", style="dim")
-
-                for nb in notebooks:
-                    created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
-                    owner_status = "Owner" if nb.is_owner else "Shared"
-                    table.add_row(nb.id, nb.title, owner_status, created)
-
-                console.print(table)
+                    },
+                    render,
+                )
 
         return _run()
 
@@ -83,18 +86,17 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 nb = await client.notebooks.create(title)
 
-                if json_output:
-                    data = {
+                output_result(
+                    json_output,
+                    {
                         "notebook": {
                             "id": nb.id,
                             "title": nb.title,
                             "created_at": nb.created_at.isoformat() if nb.created_at else None,
                         }
-                    }
-                    json_output_response(data)
-                    return
-
-                console.print(f"[green]Created notebook:[/green] {nb.id} - {nb.title}")
+                    },
+                    lambda: console.print(f"[green]Created notebook:[/green] {nb.id} - {nb.title}"),
+                )
 
         return _run()
 
@@ -171,17 +173,15 @@ def register_notebook_commands(cli):
                 resolved_id = await resolve_notebook_id(client, notebook_id)
                 await client.notebooks.rename(resolved_id, new_title)
 
-                if json_output:
-                    json_output_response(
-                        {
-                            "notebook_id": resolved_id,
-                            "new_title": new_title,
-                        }
-                    )
-                    return
+                def render():
+                    console.print(f"[green]Renamed notebook:[/green] {resolved_id}")
+                    console.print(f"[bold]New title:[/bold] {new_title}")
 
-                console.print(f"[green]Renamed notebook:[/green] {resolved_id}")
-                console.print(f"[bold]New title:[/bold] {new_title}")
+                output_result(
+                    json_output,
+                    {"notebook_id": resolved_id, "new_title": new_title},
+                    render,
+                )
 
         return _run()
 

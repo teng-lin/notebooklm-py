@@ -17,6 +17,7 @@ from ..types import Note
 from .helpers import (
     console,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_note_id,
     should_confirm,
@@ -242,19 +243,17 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
             resolved_id = await resolve_note_id(client, nb_id, note_id)
             await client.notes.update(nb_id, resolved_id, content=content, title=title)
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "note_id": resolved_id,
-                        "updated": True,
-                        "new_title": title,
-                        "new_content": content,
-                    }
-                )
-                return
-
-            console.print(f"[green]Note updated:[/green] {resolved_id}")
+            output_result(
+                json_output,
+                {
+                    "notebook_id": nb_id,
+                    "note_id": resolved_id,
+                    "updated": True,
+                    "new_title": title,
+                    "new_content": content,
+                },
+                lambda: console.print(f"[green]Note updated:[/green] {resolved_id}"),
+            )
 
     return _run()
 
@@ -284,31 +283,20 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
             # Get current note to preserve content
             n = await client.notes.get(nb_id, resolved_id)
             if not n or not isinstance(n, Note):
-                if json_output:
-                    json_output_response(
-                        {
-                            "notebook_id": nb_id,
-                            "note_id": resolved_id,
-                            "error": "Note not found",
-                        }
-                    )
-                else:
-                    console.print("[yellow]Note not found[/yellow]")
+                output_result(
+                    json_output,
+                    {"notebook_id": nb_id, "note_id": resolved_id, "error": "Note not found"},
+                    lambda: console.print("[yellow]Note not found[/yellow]"),
+                )
                 return
 
             await client.notes.update(nb_id, resolved_id, content=n.content or "", title=new_title)
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "note_id": resolved_id,
-                        "new_title": new_title,
-                    }
-                )
-                return
-
-            console.print(f"[green]Note renamed:[/green] {new_title}")
+            output_result(
+                json_output,
+                {"notebook_id": nb_id, "note_id": resolved_id, "new_title": new_title},
+                lambda: console.print(f"[green]Note renamed:[/green] {new_title}"),
+            )
 
     return _run()
 
@@ -343,16 +331,10 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
 
             await client.notes.delete(nb_id, resolved_id)
 
-            if json_output:
-                json_output_response(
-                    {
-                        "notebook_id": nb_id,
-                        "note_id": resolved_id,
-                        "deleted": True,
-                    }
-                )
-                return
-
-            console.print(f"[green]Deleted note:[/green] {resolved_id}")
+            output_result(
+                json_output,
+                {"notebook_id": nb_id, "note_id": resolved_id, "deleted": True},
+                lambda: console.print(f"[green]Deleted note:[/green] {resolved_id}"),
+            )
 
     return _run()
