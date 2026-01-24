@@ -22,7 +22,7 @@ from rich.table import Table
 
 from .._url_utils import is_youtube_url
 from ..client import NotebookLMClient
-from ..types import source_status_to_str
+from ..types import Source, source_status_to_str
 from .helpers import (
     console,
     display_research_sources,
@@ -208,10 +208,10 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                 lambda: console.print(f"[green]Added source:[/green] {src.id}"),
             )
 
-    if json_output:
-        return _run()
-    with console.status(f"Adding {detected_type} source..."):
-        return _run()
+    if not json_output:
+        with console.status(f"Adding {detected_type} source..."):
+            return _run()
+    return _run()
 
 
 @source.command("get")
@@ -361,30 +361,29 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
             src = await client.sources.refresh(resolved_nb_id, resolved_id)
 
             # src can be: Source object, True (boolean), or None
-            # Use hasattr for type narrowing since src could be bool or Source
-            if json_output:
-                data: dict = {
-                    "notebook_id": resolved_nb_id,
-                    "source_id": resolved_id,
-                    "refreshed": bool(src),
-                }
-                if hasattr(src, "title"):
-                    data["title"] = src.title
-                json_output_response(data)
-                return
+            data: dict = {
+                "notebook_id": resolved_nb_id,
+                "source_id": resolved_id,
+                "refreshed": bool(src),
+            }
+            if isinstance(src, Source):
+                data["title"] = src.title
 
-            if hasattr(src, "id") and hasattr(src, "title"):
-                console.print(f"[green]Source refreshed:[/green] {src.id}")
-                console.print(f"[bold]Title:[/bold] {src.title}")
-            elif src is True:
-                console.print(f"[green]Source refreshed:[/green] {resolved_id}")
-            else:
-                console.print("[yellow]Refresh returned no result[/yellow]")
+            def render():
+                if isinstance(src, Source):
+                    console.print(f"[green]Source refreshed:[/green] {src.id}")
+                    console.print(f"[bold]Title:[/bold] {src.title}")
+                elif src is True:
+                    console.print(f"[green]Source refreshed:[/green] {resolved_id}")
+                else:
+                    console.print("[yellow]Refresh returned no result[/yellow]")
 
-    if json_output:
-        return _run()
-    with console.status("Refreshing source..."):
-        return _run()
+            output_result(json_output, data, render)
+
+    if not json_output:
+        with console.status("Refreshing source..."):
+            return _run()
+    return _run()
 
 
 @source.command("add-drive")

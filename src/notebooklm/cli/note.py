@@ -16,6 +16,7 @@ from ..client import NotebookLMClient
 from ..types import Note
 from .helpers import (
     console,
+    json_error_response,
     json_output_response,
     output_result,
     require_notebook,
@@ -243,7 +244,7 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
     """
     if not title and not content:
         if json_output:
-            json_output_response({"error": "Provide --title and/or --content"})
+            json_error_response("VALIDATION_ERROR", "Provide --title and/or --content")
             raise SystemExit(1)
         raise click.ClickException("Provide --title and/or --content")
 
