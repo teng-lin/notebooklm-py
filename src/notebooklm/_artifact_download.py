@@ -40,6 +40,61 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _filter_completed_artifacts(
+    artifacts_data: builtins.list[Any],
+    type_code: ArtifactTypeCode,
+    min_length: int = 5,
+) -> builtins.list[Any]:
+    """Filter artifacts by type and completed status.
+
+    Args:
+        artifacts_data: Raw artifact data from API.
+        type_code: The artifact type to filter for.
+        min_length: Minimum required list length for valid artifacts.
+
+    Returns:
+        List of matching artifact data.
+    """
+    return [
+        a
+        for a in artifacts_data
+        if isinstance(a, list)
+        and len(a) > min_length
+        and a[2] == type_code
+        and a[4] == ArtifactStatus.COMPLETED
+    ]
+
+
+def _select_by_id_or_first(
+    candidates: builtins.list[Any],
+    artifact_id: str | None,
+    artifact_type: str,
+) -> Any:
+    """Select an artifact by ID or return the first available.
+
+    Args:
+        candidates: List of candidate artifacts.
+        artifact_id: Specific artifact ID to select, or None for first.
+        artifact_type: Type name for error messages.
+
+    Returns:
+        Selected artifact data.
+
+    Raises:
+        ArtifactNotReadyError: If artifact not found or no candidates.
+    """
+    if artifact_id:
+        artifact = next((a for a in candidates if a[0] == artifact_id), None)
+        if not artifact:
+            raise ArtifactNotReadyError(artifact_type, artifact_id=artifact_id)
+        return artifact
+
+    if not candidates:
+        raise ArtifactNotReadyError(artifact_type)
+
+    return candidates[0]
+
+
 class ArtifactDownloader:
     """Handles artifact download operations.
 
@@ -99,26 +154,8 @@ class ArtifactDownloader:
             The output path.
         """
         artifacts_data = await self._list_raw(notebook_id)
-
-        # Filter for completed audio artifacts
-        audio_candidates = [
-            a
-            for a in artifacts_data
-            if isinstance(a, list)
-            and len(a) > 4
-            and a[2] == ArtifactTypeCode.AUDIO
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        if artifact_id:
-            audio_art = next((a for a in audio_candidates if a[0] == artifact_id), None)
-            if not audio_art:
-                raise ArtifactNotReadyError("audio", artifact_id=artifact_id)
-        else:
-            audio_art = audio_candidates[0] if audio_candidates else None
-
-        if not audio_art:
-            raise ArtifactNotReadyError("audio")
+        candidates = _filter_completed_artifacts(artifacts_data, ArtifactTypeCode.AUDIO)
+        audio_art = _select_by_id_or_first(candidates, artifact_id, "audio")
 
         # Extract URL from metadata[6][5]
         try:
@@ -178,26 +215,8 @@ class ArtifactDownloader:
             The output path.
         """
         artifacts_data = await self._list_raw(notebook_id)
-
-        # Filter for completed video artifacts
-        video_candidates = [
-            a
-            for a in artifacts_data
-            if isinstance(a, list)
-            and len(a) > 4
-            and a[2] == ArtifactTypeCode.VIDEO
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        if artifact_id:
-            video_art = next((v for v in video_candidates if v[0] == artifact_id), None)
-            if not video_art:
-                raise ArtifactNotReadyError("video", artifact_id=artifact_id)
-        else:
-            video_art = video_candidates[0] if video_candidates else None
-
-        if not video_art:
-            raise ArtifactNotReadyError("video_overview")
+        candidates = _filter_completed_artifacts(artifacts_data, ArtifactTypeCode.VIDEO)
+        video_art = _select_by_id_or_first(candidates, artifact_id, "video")
 
         # Extract URL from metadata[8]
         try:
@@ -258,26 +277,8 @@ class ArtifactDownloader:
             The output path.
         """
         artifacts_data = await self._list_raw(notebook_id)
-
-        # Filter for completed infographic artifacts
-        info_candidates = [
-            a
-            for a in artifacts_data
-            if isinstance(a, list)
-            and len(a) > 4
-            and a[2] == ArtifactTypeCode.INFOGRAPHIC
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        if artifact_id:
-            info_art = next((i for i in info_candidates if i[0] == artifact_id), None)
-            if not info_art:
-                raise ArtifactNotReadyError("infographic", artifact_id=artifact_id)
-        else:
-            info_art = info_candidates[0] if info_candidates else None
-
-        if not info_art:
-            raise ArtifactNotReadyError("infographic")
+        candidates = _filter_completed_artifacts(artifacts_data, ArtifactTypeCode.INFOGRAPHIC)
+        info_art = _select_by_id_or_first(candidates, artifact_id, "infographic")
 
         # Extract URL from metadata
         try:
@@ -322,26 +323,8 @@ class ArtifactDownloader:
             The output path.
         """
         artifacts_data = await self._list_raw(notebook_id)
-
-        # Filter for completed slide deck artifacts
-        slide_candidates = [
-            a
-            for a in artifacts_data
-            if isinstance(a, list)
-            and len(a) > 4
-            and a[2] == ArtifactTypeCode.SLIDE_DECK
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        if artifact_id:
-            slide_art = next((s for s in slide_candidates if s[0] == artifact_id), None)
-            if not slide_art:
-                raise ArtifactNotReadyError("slide_deck", artifact_id=artifact_id)
-        else:
-            slide_art = slide_candidates[0] if slide_candidates else None
-
-        if not slide_art:
-            raise ArtifactNotReadyError("slide_deck")
+        candidates = _filter_completed_artifacts(artifacts_data, ArtifactTypeCode.SLIDE_DECK)
+        slide_art = _select_by_id_or_first(candidates, artifact_id, "slide_deck")
 
         # Extract PDF URL from metadata at index 16, position 3
         # Structure: artifact[16] = [config, title, slides_list, pdf_url]
@@ -385,17 +368,10 @@ class ArtifactDownloader:
             The output path where the file was saved.
         """
         artifacts_data = await self._list_raw(notebook_id)
-
-        report_candidates = [
-            a
-            for a in artifacts_data
-            if isinstance(a, list)
-            and len(a) > 7
-            and a[2] == ArtifactTypeCode.REPORT
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        report_art = self._select_artifact(report_candidates, artifact_id, "Report", "report")
+        candidates = _filter_completed_artifacts(
+            artifacts_data, ArtifactTypeCode.REPORT, min_length=7
+        )
+        report_art = _select_by_id_or_first(candidates, artifact_id, "report")
 
         try:
             content_wrapper = report_art[7]
@@ -481,17 +457,10 @@ class ArtifactDownloader:
             The output path where the file was saved.
         """
         artifacts_data = await self._list_raw(notebook_id)
-
-        table_candidates = [
-            a
-            for a in artifacts_data
-            if isinstance(a, list)
-            and len(a) > 18
-            and a[2] == ArtifactTypeCode.DATA_TABLE
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        table_art = self._select_artifact(table_candidates, artifact_id, "Data table", "data table")
+        candidates = _filter_completed_artifacts(
+            artifacts_data, ArtifactTypeCode.DATA_TABLE, min_length=18
+        )
+        table_art = _select_by_id_or_first(candidates, artifact_id, "data_table")
 
         try:
             raw_data = table_art[18]
@@ -703,47 +672,6 @@ class ArtifactDownloader:
             return _format_flashcards_markdown(title, cards)
         normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
         return json.dumps({"title": title, "cards": normalized}, indent=2)
-
-    def _select_artifact(
-        self,
-        candidates: builtins.list[Any],
-        artifact_id: str | None,
-        type_name: str,
-        type_name_lower: str,
-    ) -> Any:
-        """Select an artifact from candidates by ID or return first available.
-
-        Args:
-            candidates: List of candidate artifacts.
-            artifact_id: Specific artifact ID to select, or None for first.
-            type_name: Display name for error messages (e.g., "Report").
-            type_name_lower: Lowercase name for error messages (e.g., "report").
-
-        Returns:
-            Selected artifact data.
-
-        Raises:
-            ValueError: If artifact not found or no candidates available.
-        """
-        if artifact_id:
-            artifact = next((a for a in candidates if a[0] == artifact_id), None)
-            if not artifact:
-                raise ArtifactNotReadyError(
-                    type_name.lower().replace(" ", "_"), artifact_id=artifact_id
-                )
-            return artifact
-
-        if not candidates:
-            raise ArtifactNotReadyError(type_name_lower)
-
-        # Sort by creation timestamp (descending) to get the latest.
-        # Timestamp is at index 15, position 0.
-        candidates.sort(
-            key=lambda a: a[15][0] if len(a) > 15 and isinstance(a[15], list) and a[15] else 0,
-            reverse=True,
-        )
-
-        return candidates[0]
 
     async def _download_url(self, url: str, output_path: str) -> str:
         """Download a file from URL using httpx with proper cookie handling.

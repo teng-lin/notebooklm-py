@@ -8,6 +8,7 @@ Infographics, Slide Decks, Data Tables, and Mind Maps.
 import builtins
 import json
 import logging
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from ._core import ClientCore
@@ -33,6 +34,28 @@ if TYPE_CHECKING:
     from ._notes import NotesAPI
 
 logger = logging.getLogger(__name__)
+
+
+def _get_enum_value(enum_val: Enum | None) -> Any:
+    """Extract the value from an enum or return None."""
+    return enum_val.value if enum_val else None
+
+
+def _prepare_source_ids(
+    source_ids: builtins.list[str] | None,
+) -> tuple[builtins.list[builtins.list[builtins.list[str]]], builtins.list[builtins.list[str]]]:
+    """Prepare source IDs in triple and double nested formats.
+
+    Many RPC calls require source IDs in both [[[id]]] and [[id]] formats.
+
+    Returns:
+        Tuple of (triple_nested, double_nested) source ID lists.
+    """
+    if not source_ids:
+        return [], []
+    triple = [[[sid]] for sid in source_ids]
+    double = [[sid] for sid in source_ids]
+    return triple, double
 
 
 class ArtifactGenerator:
@@ -81,11 +104,7 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
-
-        format_code = audio_format.value if audio_format else None
-        length_code = audio_length.value if audio_length else None
+        source_ids_triple, source_ids_double = _prepare_source_ids(source_ids)
 
         params = [
             [2],
@@ -101,12 +120,12 @@ class ArtifactGenerator:
                     None,
                     [
                         instructions,
-                        length_code,
+                        _get_enum_value(audio_length),
                         None,
                         source_ids_double,
                         language,
                         None,
-                        format_code,
+                        _get_enum_value(audio_format),
                     ],
                 ],
             ],
@@ -138,11 +157,7 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
-
-        format_code = video_format.value if video_format else None
-        style_code = video_style.value if video_style else None
+        source_ids_triple, source_ids_double = _prepare_source_ids(source_ids)
 
         params = [
             [2],
@@ -164,8 +179,8 @@ class ArtifactGenerator:
                         language,
                         instructions,
                         None,
-                        format_code,
-                        style_code,
+                        _get_enum_value(video_format),
+                        _get_enum_value(video_style),
                     ],
                 ],
             ],
@@ -195,45 +210,8 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        format_configs = {
-            ReportFormat.BRIEFING_DOC: {
-                "title": "Briefing Doc",
-                "description": "Key insights and important quotes",
-                "prompt": (
-                    "Create a comprehensive briefing document that includes an "
-                    "Executive Summary, detailed analysis of key themes, important "
-                    "quotes with context, and actionable insights."
-                ),
-            },
-            ReportFormat.STUDY_GUIDE: {
-                "title": "Study Guide",
-                "description": "Short-answer quiz, essay questions, glossary",
-                "prompt": (
-                    "Create a comprehensive study guide that includes key concepts, "
-                    "short-answer practice questions, essay prompts for deeper "
-                    "exploration, and a glossary of important terms."
-                ),
-            },
-            ReportFormat.BLOG_POST: {
-                "title": "Blog Post",
-                "description": "Insightful takeaways in readable article format",
-                "prompt": (
-                    "Write an engaging blog post that presents the key insights "
-                    "in an accessible, reader-friendly format. Include an attention-"
-                    "grabbing introduction, well-organized sections, and a compelling "
-                    "conclusion with takeaways."
-                ),
-            },
-            ReportFormat.CUSTOM: {
-                "title": "Custom Report",
-                "description": "Custom format",
-                "prompt": custom_prompt or "Create a report based on the provided sources.",
-            },
-        }
-
-        config = format_configs[report_format]
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
+        config = self._get_report_config(report_format, custom_prompt)
+        source_ids_triple, source_ids_double = _prepare_source_ids(source_ids)
 
         params = [
             [2],
@@ -308,42 +286,14 @@ class ArtifactGenerator:
         Returns:
             GenerationStatus with task_id for polling.
         """
-        if source_ids is None:
-            source_ids = await self._core.get_source_ids(notebook_id)
-
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        quantity_code = quantity.value if quantity else None
-        difficulty_code = difficulty.value if difficulty else None
-
-        params = [
-            [2],
+        return await self._generate_quiz_or_flashcards(
             notebook_id,
-            [
-                None,
-                None,
-                4,  # ArtifactTypeCode.QUIZ
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    [
-                        2,  # Variant: quiz
-                        None,
-                        instructions,
-                        None,
-                        None,
-                        None,
-                        None,
-                        [quantity_code, difficulty_code],
-                    ],
-                ],
-            ],
-        ]
-        return await self._call_generate(notebook_id, params)
+            source_ids,
+            instructions,
+            quantity,
+            difficulty,
+            variant=2,  # Quiz variant
+        )
 
     async def generate_flashcards(
         self,
@@ -365,41 +315,14 @@ class ArtifactGenerator:
         Returns:
             GenerationStatus with task_id for polling.
         """
-        if source_ids is None:
-            source_ids = await self._core.get_source_ids(notebook_id)
-
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        quantity_code = quantity.value if quantity else None
-        difficulty_code = difficulty.value if difficulty else None
-
-        params = [
-            [2],
+        return await self._generate_quiz_or_flashcards(
             notebook_id,
-            [
-                None,
-                None,
-                4,  # ArtifactTypeCode.QUIZ
-                source_ids_triple,
-                None,
-                None,
-                None,
-                None,
-                None,
-                [
-                    None,
-                    [
-                        1,  # Variant: flashcards
-                        None,
-                        instructions,
-                        None,
-                        None,
-                        None,
-                        [difficulty_code, quantity_code],
-                    ],
-                ],
-            ],
-        ]
-        return await self._call_generate(notebook_id, params)
+            source_ids,
+            instructions,
+            quantity,
+            difficulty,
+            variant=1,  # Flashcards variant
+        )
 
     async def generate_infographic(
         self,
@@ -426,9 +349,7 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        orientation_code = orientation.value if orientation else None
-        detail_code = detail_level.value if detail_level else None
+        source_ids_triple, _ = _prepare_source_ids(source_ids)
 
         params = [
             [2],
@@ -448,7 +369,15 @@ class ArtifactGenerator:
                 None,
                 None,
                 None,
-                [[instructions, language, None, orientation_code, detail_code]],
+                [
+                    [
+                        instructions,
+                        language,
+                        None,
+                        _get_enum_value(orientation),
+                        _get_enum_value(detail_level),
+                    ]
+                ],
             ],
         ]
         return await self._call_generate(notebook_id, params)
@@ -478,9 +407,7 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        format_code = slide_format.value if slide_format else None
-        length_code = slide_length.value if slide_length else None
+        source_ids_triple, _ = _prepare_source_ids(source_ids)
 
         params = [
             [2],
@@ -502,7 +429,14 @@ class ArtifactGenerator:
                 None,
                 None,
                 None,
-                [[instructions, language, format_code, length_code]],
+                [
+                    [
+                        instructions,
+                        language,
+                        _get_enum_value(slide_format),
+                        _get_enum_value(slide_length),
+                    ]
+                ],
             ],
         ]
         return await self._call_generate(notebook_id, params)
@@ -528,7 +462,7 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple, _ = _prepare_source_ids(source_ids)
 
         params = [
             [2],
@@ -577,10 +511,10 @@ class ArtifactGenerator:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_nested = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple, _ = _prepare_source_ids(source_ids)
 
         params = [
-            source_ids_nested,
+            source_ids_triple,
             None,
             None,
             None,
@@ -597,42 +531,153 @@ class ArtifactGenerator:
             allow_null=True,
         )
 
-        if result and isinstance(result, list) and len(result) > 0:
-            inner = result[0]
-            if isinstance(inner, list) and len(inner) > 0:
-                mind_map_json = inner[0]
+        return await self._parse_mind_map_result(result, notebook_id)
 
-                # Parse the mind map JSON
-                if isinstance(mind_map_json, str):
-                    try:
-                        mind_map_data = json.loads(mind_map_json)
-                    except json.JSONDecodeError:
-                        mind_map_data = mind_map_json
-                        mind_map_json = str(mind_map_json)
-                else:
-                    mind_map_data = mind_map_json
-                    mind_map_json = json.dumps(mind_map_json)
+    async def _parse_mind_map_result(self, result: Any, notebook_id: str) -> dict[str, Any]:
+        """Parse mind map RPC result and persist to notes."""
+        if not result or not isinstance(result, list) or len(result) == 0:
+            return {"mind_map": None, "note_id": None}
 
-                # Extract title from mind map data
-                title = "Mind Map"
-                if isinstance(mind_map_data, dict) and "name" in mind_map_data:
-                    title = mind_map_data["name"]
+        inner = result[0]
+        if not isinstance(inner, list) or len(inner) == 0:
+            return {"mind_map": None, "note_id": None}
 
-                # The GENERATE_MIND_MAP RPC generates content but does NOT persist it.
-                # We must explicitly create a note to save the mind map.
-                note = await self._notes.create(notebook_id, title=title, content=mind_map_json)
-                note_id = note.id if note else None
+        mind_map_json = inner[0]
 
-                return {
-                    "mind_map": mind_map_data,
-                    "note_id": note_id,
-                }
+        # Parse the mind map JSON
+        if isinstance(mind_map_json, str):
+            try:
+                mind_map_data = json.loads(mind_map_json)
+            except json.JSONDecodeError:
+                mind_map_data = mind_map_json
+                mind_map_json = str(mind_map_json)
+        else:
+            mind_map_data = mind_map_json
+            mind_map_json = json.dumps(mind_map_json)
 
-        return {"mind_map": None, "note_id": None}
+        # Extract title from mind map data
+        title = "Mind Map"
+        if isinstance(mind_map_data, dict) and "name" in mind_map_data:
+            title = mind_map_data["name"]
+
+        # The GENERATE_MIND_MAP RPC generates content but does NOT persist it.
+        # We must explicitly create a note to save the mind map.
+        note = await self._notes.create(notebook_id, title=title, content=mind_map_json)
+        note_id = note.id if note else None
+
+        return {
+            "mind_map": mind_map_data,
+            "note_id": note_id,
+        }
 
     # =========================================================================
     # Private Helpers
     # =========================================================================
+
+    def _get_report_config(
+        self, report_format: ReportFormat, custom_prompt: str | None
+    ) -> dict[str, str]:
+        """Get configuration for a report format."""
+        configs = {
+            ReportFormat.BRIEFING_DOC: {
+                "title": "Briefing Doc",
+                "description": "Key insights and important quotes",
+                "prompt": (
+                    "Create a comprehensive briefing document that includes an "
+                    "Executive Summary, detailed analysis of key themes, important "
+                    "quotes with context, and actionable insights."
+                ),
+            },
+            ReportFormat.STUDY_GUIDE: {
+                "title": "Study Guide",
+                "description": "Short-answer quiz, essay questions, glossary",
+                "prompt": (
+                    "Create a comprehensive study guide that includes key concepts, "
+                    "short-answer practice questions, essay prompts for deeper "
+                    "exploration, and a glossary of important terms."
+                ),
+            },
+            ReportFormat.BLOG_POST: {
+                "title": "Blog Post",
+                "description": "Insightful takeaways in readable article format",
+                "prompt": (
+                    "Write an engaging blog post that presents the key insights "
+                    "in an accessible, reader-friendly format. Include an attention-"
+                    "grabbing introduction, well-organized sections, and a compelling "
+                    "conclusion with takeaways."
+                ),
+            },
+            ReportFormat.CUSTOM: {
+                "title": "Custom Report",
+                "description": "Custom format",
+                "prompt": custom_prompt or "Create a report based on the provided sources.",
+            },
+        }
+        return configs[report_format]
+
+    async def _generate_quiz_or_flashcards(
+        self,
+        notebook_id: str,
+        source_ids: builtins.list[str] | None,
+        instructions: str | None,
+        quantity: QuizQuantity | None,
+        difficulty: QuizDifficulty | None,
+        variant: int,
+    ) -> GenerationStatus:
+        """Generate quiz or flashcards (shared implementation).
+
+        Args:
+            notebook_id: The notebook ID.
+            source_ids: Source IDs to include.
+            instructions: Custom instructions.
+            quantity: Number of items.
+            difficulty: Difficulty level.
+            variant: 1 for flashcards, 2 for quiz.
+
+        Returns:
+            GenerationStatus with task_id for polling.
+        """
+        if source_ids is None:
+            source_ids = await self._core.get_source_ids(notebook_id)
+
+        source_ids_triple, _ = _prepare_source_ids(source_ids)
+        quantity_code = _get_enum_value(quantity)
+        difficulty_code = _get_enum_value(difficulty)
+
+        # Quiz uses [quantity, difficulty], flashcards uses [difficulty, quantity]
+        if variant == 2:
+            options = [quantity_code, difficulty_code]
+            inner_options: builtins.list[Any] = [
+                variant,
+                None,
+                instructions,
+                None,
+                None,
+                None,
+                None,
+                options,
+            ]
+        else:
+            options = [difficulty_code, quantity_code]
+            inner_options = [variant, None, instructions, None, None, None, options]
+
+        params = [
+            [2],
+            notebook_id,
+            [
+                None,
+                None,
+                4,  # ArtifactTypeCode.QUIZ (shared for quiz/flashcards)
+                source_ids_triple,
+                None,
+                None,
+                None,
+                None,
+                None,
+                [None, inner_options],
+            ],
+        ]
+        return await self._call_generate(notebook_id, params)
 
     async def _call_generate(
         self, notebook_id: str, params: builtins.list[Any]
