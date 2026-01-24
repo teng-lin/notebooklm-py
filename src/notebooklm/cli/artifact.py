@@ -25,6 +25,7 @@ from .helpers import (
     require_notebook,
     resolve_artifact_id,
     resolve_notebook_id,
+    resolve_notebook_id_with_title,
     should_confirm,
     with_client,
 )
@@ -90,12 +91,10 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            # Use optimized resolver that returns title without extra API call
+            resolved_nb_id, nb_title = await resolve_notebook_id_with_title(client, nb_id)
             # artifacts.list() already includes mind maps from notes system
             artifacts = await client.artifacts.list(resolved_nb_id, artifact_type=type_filter)
-
-            # Only fetch notebook details for JSON output
-            nb = await client.notebooks.get(resolved_nb_id) if json_output else None
 
             def render():
                 if not artifacts:
@@ -120,7 +119,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                 json_output,
                 {
                     "notebook_id": resolved_nb_id,
-                    "notebook_title": nb.title if nb else None,
+                    "notebook_title": nb_title,
                     "artifacts": [
                         {
                             "index": i,

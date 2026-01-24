@@ -295,6 +295,44 @@ async def resolve_notebook_id(client, partial_id: str) -> str:
     )
 
 
+async def resolve_notebook_id_with_title(client, partial_id: str) -> tuple[str, str | None]:
+    """Resolve partial notebook ID and return (full_id, title).
+
+    Use this instead of resolve_notebook_id + notebooks.get when you need
+    the notebook title. Avoids an extra API call by extracting the title
+    from the list response used for ID resolution.
+    """
+    partial_id = validate_id(partial_id, "notebook")
+
+    # For long IDs, we still need to fetch to get title
+    if len(partial_id) >= 20:
+        nb = await client.notebooks.get(partial_id)
+        return partial_id, nb.title if nb else None
+
+    notebooks = await client.notebooks.list()
+    matches = [nb for nb in notebooks if nb.id.lower().startswith(partial_id.lower())]
+
+    if len(matches) == 1:
+        if matches[0].id != partial_id:
+            title = matches[0].title or "(untitled)"
+            console.print(f"[dim]Matched: {matches[0].id[:12]}... ({title})[/dim]")
+        return matches[0].id, matches[0].title
+    elif len(matches) == 0:
+        raise click.ClickException(
+            f"No notebook found starting with '{partial_id}'. "
+            "Run 'notebooklm list' to see available notebooks."
+        )
+    else:
+        lines = [f"Ambiguous ID '{partial_id}' matches {len(matches)} notebooks:"]
+        for nb in matches[:5]:
+            title = nb.title or "(untitled)"
+            lines.append(f"  {nb.id[:12]}... {title}")
+        if len(matches) > 5:
+            lines.append(f"  ... and {len(matches) - 5} more")
+        lines.append("\nSpecify more characters to narrow down.")
+        raise click.ClickException("\n".join(lines))
+
+
 async def resolve_source_id(client, notebook_id: str, partial_id: str) -> str:
     """Resolve partial source ID to full ID."""
     return await _resolve_partial_id(
