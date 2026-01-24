@@ -140,9 +140,26 @@ def set_current_notebook(
     is_owner: bool | None = None,
     created_at: str | None = None,
 ):
-    """Set the current notebook context."""
+    """Set the current notebook context.
+
+    If switching to a different notebook, the cached conversation_id is cleared
+    since conversations are notebook-specific.
+    """
     context_file = get_context_path()
     context_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Check if switching notebooks - if so, don't preserve conversation_id
+    existing_notebook = get_current_notebook()
+    preserve_conversation = existing_notebook == notebook_id
+
+    # Read existing data to preserve conversation_id if same notebook
+    existing_data: dict = {}
+    if preserve_conversation and context_file.exists():
+        try:
+            existing_data = json.loads(context_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pass
+
     data: dict[str, str | bool] = {"notebook_id": notebook_id}
     if title:
         data["title"] = title
@@ -150,6 +167,11 @@ def set_current_notebook(
         data["is_owner"] = is_owner
     if created_at:
         data["created_at"] = created_at
+
+    # Preserve conversation_id only if staying in same notebook
+    if preserve_conversation and "conversation_id" in existing_data:
+        data["conversation_id"] = existing_data["conversation_id"]
+
     context_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 

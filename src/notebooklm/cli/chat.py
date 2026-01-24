@@ -16,6 +16,7 @@ from ..types import ChatMode
 from .helpers import (
     console,
     get_current_conversation,
+    get_current_notebook,
     json_output_response,
     require_notebook,
     resolve_notebook_id,
@@ -25,6 +26,63 @@ from .helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _determine_conversation_id(
+    *,
+    new_conversation: bool,
+    explicit_conversation_id: str | None,
+    explicit_notebook_id: str | None,
+    resolved_notebook_id: str,
+    json_output: bool,
+) -> str | None:
+    """Determine which conversation ID to use for the ask command.
+
+    Returns None if a new conversation should be started, otherwise returns
+    the conversation ID to continue.
+    """
+    if new_conversation:
+        if not json_output:
+            console.print("[dim]Starting new conversation...[/dim]")
+        return None
+
+    if explicit_conversation_id:
+        return explicit_conversation_id
+
+    # Check if user switched notebooks via --notebook flag
+    cached_notebook = get_current_notebook()
+    if explicit_notebook_id and cached_notebook and resolved_notebook_id != cached_notebook:
+        if not json_output:
+            console.print("[dim]Different notebook specified, starting new conversation...[/dim]")
+        return None
+
+    return get_current_conversation()
+
+
+async def _get_latest_conversation_from_history(
+    client, notebook_id: str, json_output: bool
+) -> str | None:
+    """Fetch the most recent conversation ID from notebook history.
+
+    Returns None if history is unavailable or empty.
+    """
+    try:
+        history = await client.chat.get_history(notebook_id, limit=1)
+        if history and history[0]:
+            last_conv = history[0][-1]
+            conv_id = last_conv[0] if isinstance(last_conv, list) else str(last_conv)
+            if not json_output:
+                console.print(f"[dim]Continuing conversation {conv_id[:8]}...[/dim]")
+            return conv_id
+    except Exception as e:
+        logger.debug(
+            "Failed to fetch conversation history (%s): %s",
+            type(e).__name__,
+            e,
+        )
+        if not json_output:
+            console.print("[dim]Starting new conversation (history unavailable)[/dim]")
+    return None
 
 
 def register_chat_commands(cli):
@@ -81,37 +139,19 @@ def register_chat_commands(cli):
         async def _run():
             async with NotebookLMClient(client_auth) as client:
                 nb_id_resolved = await resolve_notebook_id(client, nb_id)
-                effective_conv_id = None
-                if new_conversation:
-                    if not json_output:
-                        console.print("[dim]Starting new conversation...[/dim]")
-                elif conversation_id:
-                    effective_conv_id = conversation_id
-                else:
-                    effective_conv_id = get_current_conversation()
-                    if not effective_conv_id:
-                        try:
-                            history = await client.chat.get_history(nb_id_resolved, limit=1)
-                            if history and history[0]:
-                                last_conv = history[0][-1]
-                                effective_conv_id = (
-                                    last_conv[0] if isinstance(last_conv, list) else str(last_conv)
-                                )
-                                if not json_output:
-                                    console.print(
-                                        f"[dim]Continuing conversation {effective_conv_id[:8]}...[/dim]"
-                                    )
-                        except Exception as e:
-                            # Log error but continue - history fetch is optional
-                            logger.debug(
-                                "Failed to fetch conversation history (%s): %s",
-                                type(e).__name__,
-                                e,
-                            )
-                            if not json_output:
-                                console.print(
-                                    "[dim]Starting new conversation (history unavailable)[/dim]"
-                                )
+                effective_conv_id = _determine_conversation_id(
+                    new_conversation=new_conversation,
+                    explicit_conversation_id=conversation_id,
+                    explicit_notebook_id=notebook_id,
+                    resolved_notebook_id=nb_id_resolved,
+                    json_output=json_output,
+                )
+
+                # If no conversation ID yet, try to get the most recent one from history
+                if effective_conv_id is None and not new_conversation:
+                    effective_conv_id = await _get_latest_conversation_from_history(
+                        client, nb_id_resolved, json_output
+                    )
 
                 sources = await resolve_source_ids(client, nb_id_resolved, source_ids)
                 result = await client.chat.ask(
