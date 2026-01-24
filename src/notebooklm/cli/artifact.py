@@ -25,8 +25,10 @@ from .helpers import (
     json_output_response,
     require_notebook,
     resolve_artifact_id,
+    should_confirm,
     with_client,
 )
+from .options import json_option
 
 
 @click.group()
@@ -79,7 +81,7 @@ def artifact():
     default="all",
     help="Filter by type",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
     """List artifacts in a notebook."""
@@ -221,8 +223,9 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@json_option
 @with_client
-def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
+def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth):
     """Delete an artifact.
 
     ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -233,7 +236,9 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
         async with NotebookLMClient(client_auth) as client:
             resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
 
-            if not yes and not click.confirm(f"Delete artifact {resolved_id}?"):
+            if should_confirm(yes, json_output) and not click.confirm(
+                f"Delete artifact {resolved_id}?"
+            ):
                 return
 
             # Check if this is a mind map (stored with notes)
@@ -241,6 +246,17 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
             for mm in mind_maps:
                 if mm[0] == resolved_id:
                     await client.notes.delete(nb_id, resolved_id)
+
+                    if json_output:
+                        json_output_response(
+                            {
+                                "artifact_id": resolved_id,
+                                "type": "mind_map",
+                                "deleted": True,
+                            }
+                        )
+                        return
+
                     console.print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}")
                     console.print(
                         "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]"
@@ -248,6 +264,16 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
                     return
 
             await client.artifacts.delete(nb_id, resolved_id)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "artifact_id": resolved_id,
+                        "deleted": True,
+                    }
+                )
+                return
+
             console.print(f"[green]Deleted artifact:[/green] {resolved_id}")
 
     return _run()
@@ -334,7 +360,7 @@ def artifact_poll(ctx, task_id, notebook_id, client_auth):
     type=int,
     help="Seconds between status checks (default: 2)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output, client_auth):
     """Wait for artifact generation to complete.
@@ -404,7 +430,7 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output JSON format")
+@json_option
 @with_client
 def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
     """Get AI-suggested report topics based on notebook content."""

@@ -17,6 +17,7 @@ from .helpers import (
     require_notebook,
     with_client,
 )
+from .options import json_option
 
 
 @click.group()
@@ -49,7 +50,7 @@ def research():
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def research_status(ctx, notebook_id, json_output, client_auth):
     """Check research status for the current notebook.
@@ -117,7 +118,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
     help="Seconds between status checks (default: 5)",
 )
 @click.option("--import-all", is_flag=True, help="Import all found sources when done")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, client_auth):
     """Wait for research to complete.

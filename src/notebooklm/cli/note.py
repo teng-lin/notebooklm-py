@@ -16,10 +16,13 @@ from ..client import NotebookLMClient
 from ..types import Note
 from .helpers import (
     console,
+    json_output_response,
     require_notebook,
     resolve_note_id,
+    should_confirm,
     with_client,
 )
+from .options import json_option
 
 
 @click.group()
@@ -50,14 +53,39 @@ def note():
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@json_option
 @with_client
-def note_list(ctx, notebook_id, client_auth):
+def note_list(ctx, notebook_id, json_output, client_auth):
     """List all notes in a notebook."""
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             notes = await client.notes.list(nb_id)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "notes": [
+                            {
+                                "id": n.id,
+                                "title": n.title or "Untitled",
+                                "preview": (
+                                    n.content[:50] + "..."
+                                    if len(n.content or "") > 50
+                                    else n.content
+                                )
+                                if n.content
+                                else "",
+                            }
+                            for n in notes
+                            if isinstance(n, Note)
+                        ],
+                        "count": len(notes),
+                    }
+                )
+                return
 
             if not notes:
                 console.print("[yellow]No notes found[/yellow]")
@@ -92,8 +120,9 @@ def note_list(ctx, notebook_id, client_auth):
     help="Notebook ID (uses current if not set)",
 )
 @click.option("-t", "--title", default="New Note", help="Note title")
+@json_option
 @with_client
-def note_create(ctx, content, notebook_id, title, client_auth):
+def note_create(ctx, content, notebook_id, title, json_output, client_auth):
     """Create a new note.
 
     \b
@@ -107,6 +136,17 @@ def note_create(ctx, content, notebook_id, title, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             result = await client.notes.create(nb_id, title, content)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "note_id": result if isinstance(result, str) else None,
+                        "title": title,
+                        "created": bool(result),
+                    }
+                )
+                return
 
             if result:
                 console.print("[green]Note created[/green]")
@@ -126,8 +166,9 @@ def note_create(ctx, content, notebook_id, title, client_auth):
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@json_option
 @with_client
-def note_get(ctx, note_id, notebook_id, client_auth):
+def note_get(ctx, note_id, notebook_id, json_output, client_auth):
     """Get note content.
 
     NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -138,6 +179,26 @@ def note_get(ctx, note_id, notebook_id, client_auth):
         async with NotebookLMClient(client_auth) as client:
             resolved_id = await resolve_note_id(client, nb_id, note_id)
             n = await client.notes.get(nb_id, resolved_id)
+
+            if json_output:
+                if n and isinstance(n, Note):
+                    json_output_response(
+                        {
+                            "notebook_id": nb_id,
+                            "note_id": n.id,
+                            "title": n.title or "Untitled",
+                            "content": n.content or "",
+                        }
+                    )
+                else:
+                    json_output_response(
+                        {
+                            "notebook_id": nb_id,
+                            "note_id": resolved_id,
+                            "error": "Note not found",
+                        }
+                    )
+                return
 
             if n and isinstance(n, Note):
                 console.print(f"[bold cyan]ID:[/bold cyan] {n.id}")
@@ -160,14 +221,18 @@ def note_get(ctx, note_id, notebook_id, client_auth):
 )
 @click.option("--title", help="New title")
 @click.option("--content", help="New content")
+@json_option
 @with_client
-def note_save(ctx, note_id, notebook_id, title, content, client_auth):
+def note_save(ctx, note_id, notebook_id, title, content, json_output, client_auth):
     """Update note content.
 
     NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
     """
     if not title and not content:
-        console.print("[yellow]Provide --title and/or --content[/yellow]")
+        if json_output:
+            json_output_response({"error": "Provide --title and/or --content"})
+        else:
+            console.print("[yellow]Provide --title and/or --content[/yellow]")
         return
 
     nb_id = require_notebook(notebook_id)
@@ -176,6 +241,19 @@ def note_save(ctx, note_id, notebook_id, title, content, client_auth):
         async with NotebookLMClient(client_auth) as client:
             resolved_id = await resolve_note_id(client, nb_id, note_id)
             await client.notes.update(nb_id, resolved_id, content=content, title=title)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "note_id": resolved_id,
+                        "updated": True,
+                        "new_title": title,
+                        "new_content": content,
+                    }
+                )
+                return
+
             console.print(f"[green]Note updated:[/green] {resolved_id}")
 
     return _run()
@@ -191,8 +269,9 @@ def note_save(ctx, note_id, notebook_id, title, content, client_auth):
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@json_option
 @with_client
-def note_rename(ctx, note_id, new_title, notebook_id, client_auth):
+def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
     """Rename a note.
 
     NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -205,10 +284,30 @@ def note_rename(ctx, note_id, new_title, notebook_id, client_auth):
             # Get current note to preserve content
             n = await client.notes.get(nb_id, resolved_id)
             if not n or not isinstance(n, Note):
-                console.print("[yellow]Note not found[/yellow]")
+                if json_output:
+                    json_output_response(
+                        {
+                            "notebook_id": nb_id,
+                            "note_id": resolved_id,
+                            "error": "Note not found",
+                        }
+                    )
+                else:
+                    console.print("[yellow]Note not found[/yellow]")
                 return
 
             await client.notes.update(nb_id, resolved_id, content=n.content or "", title=new_title)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "note_id": resolved_id,
+                        "new_title": new_title,
+                    }
+                )
+                return
+
             console.print(f"[green]Note renamed:[/green] {new_title}")
 
     return _run()
@@ -224,8 +323,9 @@ def note_rename(ctx, note_id, new_title, notebook_id, client_auth):
     help="Notebook ID (uses current if not set)",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@json_option
 @with_client
-def note_delete(ctx, note_id, notebook_id, yes, client_auth):
+def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
     """Delete a note.
 
     NOTE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -236,10 +336,23 @@ def note_delete(ctx, note_id, notebook_id, yes, client_auth):
         async with NotebookLMClient(client_auth) as client:
             resolved_id = await resolve_note_id(client, nb_id, note_id)
 
-            if not yes and not click.confirm(f"Delete note {resolved_id}?"):
+            if should_confirm(yes, json_output) and not click.confirm(
+                f"Delete note {resolved_id}?"
+            ):
                 return
 
             await client.notes.delete(nb_id, resolved_id)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "note_id": resolved_id,
+                        "deleted": True,
+                    }
+                )
+                return
+
             console.print(f"[green]Deleted note:[/green] {resolved_id}")
 
     return _run()

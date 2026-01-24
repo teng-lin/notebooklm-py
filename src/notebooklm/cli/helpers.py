@@ -453,6 +453,21 @@ def json_output_response(data: dict) -> None:
     click.echo(json.dumps(data, indent=2, default=str))
 
 
+def should_confirm(yes: bool, json_output: bool) -> bool:
+    """Check if confirmation should be requested.
+
+    Used before destructive operations like delete.
+
+    Args:
+        yes: Whether --yes flag was passed (skip confirmation)
+        json_output: Whether JSON output mode is active (skip confirmation)
+
+    Returns:
+        True if confirmation should be requested, False to skip
+    """
+    return not yes and not json_output
+
+
 def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
     """Print JSON error and exit (no colors for machine parsing).
 

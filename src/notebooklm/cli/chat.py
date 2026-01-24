@@ -21,6 +21,7 @@ from .helpers import (
     set_current_conversation,
     with_client,
 )
+from .options import json_option
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,7 @@ def register_chat_commands(cli):
         multiple=True,
         help="Limit to specific source IDs (can be repeated)",
     )
-    @click.option(
-        "--json", "json_output", is_flag=True, help="Output as JSON (includes references)"
-    )
+    @json_option
     @with_client
     def ask_cmd(
         ctx,

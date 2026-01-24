@@ -31,6 +31,7 @@ from .helpers import (
     require_notebook,
     run_async,
 )
+from .options import json_option
 
 
 async def _get_auth_from_context(ctx) -> AuthTokens:
@@ -95,7 +96,7 @@ STANDARD_DOWNLOAD_OPTIONS = [
     click.option("--all", "download_all", is_flag=True, help="Download all artifacts"),
     click.option("--name", help="Filter by artifact title (fuzzy match)"),
     click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID"),
-    click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text"),
+    json_option,
     click.option("--dry-run", is_flag=True, help="Preview without downloading"),
     click.option("--force", is_flag=True, help="Overwrite existing files"),
     click.option("--no-clobber", is_flag=True, help="Skip if file exists"),
@@ -840,11 +841,8 @@ def _run_uuid_download(
 
 def _count_results_by_status(results: list[dict]) -> dict[str, int]:
     """Count results grouped by status field."""
-    counts: dict[str, int] = {}
-    for r in results:
-        status = r.get("status", "unknown")
-        counts[status] = counts.get(status, 0) + 1
-    return counts
+    grouped = _group_results_by_status(results)
+    return {status: len(items) for status, items in grouped.items()}
 
 
 # =============================================================================

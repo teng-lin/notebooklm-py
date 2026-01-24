@@ -30,8 +30,10 @@ from .helpers import (
     json_output_response,
     require_notebook,
     resolve_source_id,
+    should_confirm,
     with_client,
 )
+from .options import json_option
 
 
 @click.group()
@@ -66,7 +68,7 @@ def source():
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def source_list(ctx, notebook_id, json_output, client_auth):
     """List all sources in a notebook."""
@@ -137,7 +139,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
 )
 @click.option("--title", help="Title for text sources")
 @click.option("--mime-type", help="MIME type for file sources")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_output, client_auth):
     """Add a source to a notebook.
@@ -203,10 +205,10 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
 
             console.print(f"[green]Added source:[/green] {src.id}")
 
-    if not json_output:
-        with console.status(f"Adding {detected_type} source..."):
-            return _run()
-    return _run()
+    if json_output:
+        return _run()
+    with console.status(f"Adding {detected_type} source..."):
+        return _run()
 
 
 @source.command("get")
@@ -257,8 +259,9 @@ def source_get(ctx, source_id, notebook_id, client_auth):
     help="Notebook ID (uses current if not set)",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@json_option
 @with_client
-def source_delete(ctx, source_id, notebook_id, yes, client_auth):
+def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
     """Delete a source.
 
     SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -270,10 +273,23 @@ def source_delete(ctx, source_id, notebook_id, yes, client_auth):
             # Resolve partial ID to full ID
             resolved_id = await resolve_source_id(client, nb_id, source_id)
 
-            if not yes and not click.confirm(f"Delete source {resolved_id}?"):
+            if should_confirm(yes, json_output) and not click.confirm(
+                f"Delete source {resolved_id}?"
+            ):
                 return
 
             success = await client.sources.delete(nb_id, resolved_id)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "source_id": resolved_id,
+                        "deleted": success,
+                    }
+                )
+                return
+
             if success:
                 console.print(f"[green]Deleted source:[/green] {resolved_id}")
             else:
@@ -292,8 +308,9 @@ def source_delete(ctx, source_id, notebook_id, yes, client_auth):
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@json_option
 @with_client
-def source_rename(ctx, source_id, new_title, notebook_id, client_auth):
+def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_auth):
     """Rename a source.
 
     SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -305,6 +322,17 @@ def source_rename(ctx, source_id, new_title, notebook_id, client_auth):
             # Resolve partial ID to full ID
             resolved_id = await resolve_source_id(client, nb_id, source_id)
             src = await client.sources.rename(nb_id, resolved_id, new_title)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": nb_id,
+                        "source_id": src.id,
+                        "new_title": src.title,
+                    }
+                )
+                return
+
             console.print(f"[green]Renamed source:[/green] {src.id}")
             console.print(f"[bold]New title:[/bold] {src.title}")
 
@@ -320,8 +348,9 @@ def source_rename(ctx, source_id, new_title, notebook_id, client_auth):
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@json_option
 @with_client
-def source_refresh(ctx, source_id, notebook_id, client_auth):
+def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
     """Refresh a URL/Drive source.
 
     SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -332,8 +361,18 @@ def source_refresh(ctx, source_id, notebook_id, client_auth):
         async with NotebookLMClient(client_auth) as client:
             # Resolve partial ID to full ID
             resolved_id = await resolve_source_id(client, nb_id, source_id)
-            with console.status("Refreshing source..."):
-                src = await client.sources.refresh(nb_id, resolved_id)
+            src = await client.sources.refresh(nb_id, resolved_id)
+
+            if json_output:
+                data = {
+                    "notebook_id": nb_id,
+                    "source_id": resolved_id,
+                    "refreshed": bool(src),
+                }
+                if src and src is not True:
+                    data["title"] = src.title
+                json_output_response(data)
+                return
 
             if src and src is not True:
                 console.print(f"[green]Source refreshed:[/green] {src.id}")
@@ -343,7 +382,10 @@ def source_refresh(ctx, source_id, notebook_id, client_auth):
             else:
                 console.print("[yellow]Refresh returned no result[/yellow]")
 
-    return _run()
+    if json_output:
+        return _run()
+    with console.status("Refreshing source..."):
+        return _run()
 
 
 @source.command("add-drive")
@@ -485,7 +527,7 @@ def source_add_research(
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @click.option("--output", "-o", type=click.Path(), help="Write content to file")
 @with_client
 def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_auth):
@@ -550,7 +592,7 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def source_guide(ctx, source_id, notebook_id, json_output, client_auth):
     """Get AI-generated source summary and keywords.
@@ -657,7 +699,7 @@ def source_stale(ctx, source_id, notebook_id, client_auth):
     type=int,
     help="Maximum seconds to wait (default: 120)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def source_wait(ctx, source_id, notebook_id, timeout, json_output, client_auth):
     """Wait for a source to finish processing.
