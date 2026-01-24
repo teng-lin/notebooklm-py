@@ -70,8 +70,8 @@ def assert_list_of_type(items: list, item_type: type, description: str = "") -> 
 
 def assert_references(references: list) -> None:
     """Assert that all references are valid ChatReference objects with required fields."""
+    assert_list_of_type(references, ChatReference, "of references")
     for ref in references:
-        assert isinstance(ref, ChatReference)
         assert ref.source_id is not None
         assert ref.citation_number is not None
 
@@ -1635,8 +1635,8 @@ class TestChatReferencesAPI:
             )
 
             # Verify type and that all reference source IDs exist in the notebook
+            assert_list_of_type(result.references, ChatReference)
             for ref in result.references:
-                assert isinstance(ref, ChatReference)
                 assert ref.source_id in source_ids, (
                     f"Reference source_id {ref.source_id} not found in notebook"
                 )
@@ -1653,7 +1653,7 @@ class TestChatReferencesAPI:
             )
 
             if result.references:
-                assert_list_of_type(result.references, ChatReference)
+                assert_references(result.references)
                 citation_numbers = [ref.citation_number for ref in result.references]
                 # Should be sequential starting from 1
                 assert citation_numbers == list(range(1, len(citation_numbers) + 1))
