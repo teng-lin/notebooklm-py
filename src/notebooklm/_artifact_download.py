@@ -695,7 +695,7 @@ class ArtifactDownloader:
         async with httpx.AsyncClient(
             cookies=cookies,
             follow_redirects=True,
-            timeout=60.0,
+            timeout=httpx.Timeout(10.0, read=60.0),
         ) as client:
             response = await client.get(url)
             response.raise_for_status()
@@ -715,7 +715,7 @@ class ArtifactDownloader:
     async def _download_urls_batch(
         self, urls_and_paths: builtins.list[tuple[str, str]]
     ) -> builtins.list[str]:
-        """Download multiple files using httpx with proper cookie handling.
+        """Download multiple files concurrently using httpx with proper cookie handling.
 
         Args:
             urls_and_paths: List of (url, output_path) tuples.
@@ -723,34 +723,37 @@ class ArtifactDownloader:
         Returns:
             List of successfully downloaded output paths.
         """
-        downloaded: list[str] = []
-
-        # Load cookies with domain info for cross-domain redirect handling
         cookies = load_httpx_cookies()
+
+        async def _download_one(
+            client: httpx.AsyncClient, url: str, output_path: str
+        ) -> str | None:
+            """Helper to download a single file and handle errors."""
+            try:
+                response = await client.get(url)
+                response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "")
+                if "text/html" in content_type:
+                    raise ArtifactDownloadError(
+                        "media", details="Received HTML instead of media file"
+                    )
+
+                output_file = Path(output_path)
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                output_file.write_bytes(response.content)
+                logger.debug("Downloaded %s (%d bytes)", url[:60], len(response.content))
+                return output_path
+            except (httpx.HTTPError, ValueError) as e:
+                logger.warning("Download failed for %s: %s", url[:60], e)
+                return None
 
         async with httpx.AsyncClient(
             cookies=cookies,
             follow_redirects=True,
-            timeout=60.0,
+            timeout=httpx.Timeout(10.0, read=60.0),
         ) as client:
-            for url, output_path in urls_and_paths:
-                try:
-                    response = await client.get(url)
-                    response.raise_for_status()
+            tasks = [_download_one(client, url, path) for url, path in urls_and_paths]
+            results = await asyncio.gather(*tasks)
 
-                    content_type = response.headers.get("content-type", "")
-                    if "text/html" in content_type:
-                        raise ArtifactDownloadError(
-                            "media", details="Received HTML instead of media file"
-                        )
-
-                    output_file = Path(output_path)
-                    output_file.parent.mkdir(parents=True, exist_ok=True)
-                    output_file.write_bytes(response.content)
-                    downloaded.append(output_path)
-                    logger.debug("Downloaded %s (%d bytes)", url[:60], len(response.content))
-
-                except (httpx.HTTPError, ValueError) as e:
-                    logger.warning("Download failed for %s: %s", url[:60], e)
-
-        return downloaded
+        return [path for path in results if path is not None]
