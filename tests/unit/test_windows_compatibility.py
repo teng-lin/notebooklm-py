@@ -20,6 +20,45 @@ import pytest
 from notebooklm.cli.session import _windows_playwright_event_loop
 
 
+class TestPlaywrightSmokeTest:
+    """Smoke tests that actually invoke Playwright to catch real integration issues.
+
+    These tests verify that Playwright can be initialized with our event loop
+    configuration. They caught issue #89 (Windows Python 3.12 login failure).
+    """
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only smoke test")
+    def test_playwright_initializes_with_context_manager(self):
+        """Verify sync_playwright() works on Windows with our event loop fix.
+
+        This is a regression test for #89. Without _windows_playwright_event_loop(),
+        sync_playwright() raises NotImplementedError on Windows because
+        WindowsSelectorEventLoopPolicy doesn't support subprocess spawning.
+        """
+        from playwright.sync_api import sync_playwright
+
+        # This would fail without the context manager fix
+        with _windows_playwright_event_loop(), sync_playwright() as p:
+            # Just verify Playwright initializes - don't launch a browser
+            assert p.chromium is not None
+            assert p.firefox is not None
+            assert p.webkit is not None
+
+    def test_playwright_initializes_on_non_windows(self):
+        """Verify Playwright works normally on non-Windows platforms.
+
+        The context manager should be a no-op, and Playwright should work.
+        """
+        if sys.platform == "win32":
+            pytest.skip("Non-Windows test")
+
+        from playwright.sync_api import sync_playwright
+
+        # Context manager is no-op on non-Windows, Playwright should still work
+        with _windows_playwright_event_loop(), sync_playwright() as p:
+            assert p.chromium is not None
+
+
 class TestPlaywrightEventLoopFix:
     """Regression tests for Playwright event loop fix (#89).
 
