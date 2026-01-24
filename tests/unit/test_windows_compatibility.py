@@ -10,10 +10,14 @@ Related issues:
 - #89: notebooklm login fails on Windows with Python 3.12 (Playwright subprocess)
 """
 
+import asyncio
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
+
+from notebooklm.cli.session import _windows_playwright_event_loop
 
 
 class TestPlaywrightEventLoopFix:
@@ -27,17 +31,10 @@ class TestPlaywrightEventLoopFix:
 
     def test_context_manager_exists(self):
         """Verify the context manager exists and is importable."""
-        from notebooklm.cli.session import _windows_playwright_event_loop
-
         assert callable(_windows_playwright_event_loop)
 
     def test_context_manager_is_noop_on_non_windows(self):
         """Verify context manager is a no-op on non-Windows platforms."""
-        import asyncio
-        from unittest.mock import patch
-
-        from notebooklm.cli.session import _windows_playwright_event_loop
-
         # Mock sys.platform to non-Windows
         with patch("notebooklm.cli.session.sys.platform", "linux"):
             original_policy = asyncio.get_event_loop_policy()
@@ -49,10 +46,6 @@ class TestPlaywrightEventLoopFix:
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
     def test_context_manager_restores_policy_on_windows(self):
         """Verify context manager switches to default policy and restores on exit."""
-        import asyncio
-
-        from notebooklm.cli.session import _windows_playwright_event_loop
-
         # Ensure we start with SelectorEventLoopPolicy
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -72,10 +65,6 @@ class TestPlaywrightEventLoopFix:
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
     def test_context_manager_restores_on_exception(self):
         """Verify policy is restored even if an exception occurs."""
-        import asyncio
-
-        from notebooklm.cli.session import _windows_playwright_event_loop
-
         # Ensure we start with SelectorEventLoopPolicy
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
