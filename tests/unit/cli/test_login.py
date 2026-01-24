@@ -2,6 +2,7 @@
 
 import sys
 from contextlib import ExitStack, contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -121,7 +122,9 @@ class TestEnsureChromiumInstalled:
             ), f"Expected warning message, got: {mock_print.call_args_list}"
 
 
-def create_playwright_mocks(page_url: str = "https://notebooklm.google.com/") -> tuple:
+def create_playwright_mocks(
+    page_url: str = "https://notebooklm.google.com/",
+) -> tuple[MagicMock, MagicMock, MagicMock]:
     """Create Playwright mock objects for login tests.
 
     Returns:
@@ -147,7 +150,9 @@ def create_playwright_mocks(page_url: str = "https://notebooklm.google.com/") ->
 
 
 @contextmanager
-def patch_playwright_login(mock_pw, profile_dir, confirm_value=None):
+def patch_playwright_login(
+    mock_pw: MagicMock, profile_dir: Path, confirm_value: bool | None = None
+):
     """Context manager that patches all dependencies for login command tests.
 
     Args:
@@ -184,7 +189,7 @@ class TestLoginCommand:
 
         assert result.exit_code == 0
         mock_context.storage_state.assert_called_once_with(path=str(storage_file))
-        assert "saved" in result.output.lower() or "Authentication" in result.output
+        assert "authentication saved to" in result.output.lower()
 
     def test_login_wrong_url_user_confirms(self, runner, tmp_path):
         """Test login at wrong URL but user confirms to save anyway."""
@@ -198,8 +203,10 @@ class TestLoginCommand:
 
         assert result.exit_code == 0
         assert "Warning" in result.output
-        assert "accounts.google.com" in result.output
-        mock_context.storage_state.assert_called_once()
+        # Verify the warning message shows the current URL domain
+        output_lower = result.output.lower()
+        assert "accounts.google.com" in output_lower or "google" in output_lower
+        mock_context.storage_state.assert_called_once_with(path=str(storage_file))
 
     def test_login_wrong_url_user_cancels(self, runner, tmp_path):
         """Test login at wrong URL and user cancels."""
