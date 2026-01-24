@@ -19,17 +19,20 @@ from .helpers import (
     console,
     get_current_notebook,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_notebook_id,
+    should_confirm,
     with_client,
 )
+from .options import json_option
 
 
 def register_notebook_commands(cli):
     """Register notebook commands on the main CLI group."""
 
     @cli.command("list")
-    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    @json_option
     @with_client
     def list_cmd(ctx, json_output, client_auth):
         """List all notebooks."""
@@ -38,8 +41,23 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 notebooks = await client.notebooks.list()
 
-                if json_output:
-                    data = {
+                def render():
+                    table = Table(title="Notebooks")
+                    table.add_column("ID", style="cyan")
+                    table.add_column("Title", style="green")
+                    table.add_column("Owner")
+                    table.add_column("Created", style="dim")
+
+                    for nb in notebooks:
+                        created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
+                        owner_status = "Owner" if nb.is_owner else "Shared"
+                        table.add_row(nb.id, nb.title, owner_status, created)
+
+                    console.print(table)
+
+                output_result(
+                    json_output,
+                    {
                         "notebooks": [
                             {
                                 "index": i,
@@ -51,28 +69,15 @@ def register_notebook_commands(cli):
                             for i, nb in enumerate(notebooks, 1)
                         ],
                         "count": len(notebooks),
-                    }
-                    json_output_response(data)
-                    return
-
-                table = Table(title="Notebooks")
-                table.add_column("ID", style="cyan")
-                table.add_column("Title", style="green")
-                table.add_column("Owner")
-                table.add_column("Created", style="dim")
-
-                for nb in notebooks:
-                    created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
-                    owner_status = "Owner" if nb.is_owner else "Shared"
-                    table.add_row(nb.id, nb.title, owner_status, created)
-
-                console.print(table)
+                    },
+                    render,
+                )
 
         return _run()
 
     @cli.command("create")
     @click.argument("title")
-    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    @json_option
     @with_client
     def create_cmd(ctx, title, json_output, client_auth):
         """Create a new notebook."""
@@ -81,18 +86,17 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 nb = await client.notebooks.create(title)
 
-                if json_output:
-                    data = {
+                output_result(
+                    json_output,
+                    {
                         "notebook": {
                             "id": nb.id,
                             "title": nb.title,
                             "created_at": nb.created_at.isoformat() if nb.created_at else None,
                         }
-                    }
-                    json_output_response(data)
-                    return
-
-                console.print(f"[green]Created notebook:[/green] {nb.id} - {nb.title}")
+                    },
+                    lambda: console.print(f"[green]Created notebook:[/green] {nb.id} - {nb.title}"),
+                )
 
         return _run()
 
@@ -105,8 +109,9 @@ def register_notebook_commands(cli):
         help="Notebook ID (uses current if not set). Supports partial IDs.",
     )
     @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+    @json_option
     @with_client
-    def delete_cmd(ctx, notebook_id, yes, client_auth):
+    def delete_cmd(ctx, notebook_id, yes, json_output, client_auth):
         """Delete a notebook.
 
         Supports partial IDs - 'notebooklm delete -n abc' matches 'abc123...'
@@ -119,18 +124,32 @@ def register_notebook_commands(cli):
                 resolved_id = await resolve_notebook_id(client, notebook_id)
 
                 # Confirm after resolution so user sees the full ID
-                if not yes and not click.confirm(f"Delete notebook {resolved_id}?"):
+                if should_confirm(yes, json_output) and not click.confirm(
+                    f"Delete notebook {resolved_id}?"
+                ):
                     return
 
                 success = await client.notebooks.delete(resolved_id)
-                if success:
-                    console.print(f"[green]Deleted notebook:[/green] {resolved_id}")
-                    # Clear context if we deleted the current notebook
-                    if get_current_notebook() == resolved_id:
-                        clear_context()
-                        console.print("[dim]Cleared current notebook context[/dim]")
-                else:
-                    console.print("[yellow]Delete may have failed[/yellow]")
+
+                # Clear context regardless of output mode (side effect must happen)
+                context_cleared = False
+                if success and get_current_notebook() == resolved_id:
+                    clear_context()
+                    context_cleared = True
+
+                def render():
+                    if success:
+                        console.print(f"[green]Deleted notebook:[/green] {resolved_id}")
+                        if context_cleared:
+                            console.print("[dim]Cleared current notebook context[/dim]")
+                    else:
+                        console.print("[yellow]Delete may have failed[/yellow]")
+
+                output_result(
+                    json_output,
+                    {"notebook_id": resolved_id, "deleted": success},
+                    render,
+                )
 
         return _run()
 
@@ -143,8 +162,9 @@ def register_notebook_commands(cli):
         default=None,
         help="Notebook ID (uses current if not set). Supports partial IDs.",
     )
+    @json_option
     @with_client
-    def rename_cmd(ctx, new_title, notebook_id, client_auth):
+    def rename_cmd(ctx, new_title, notebook_id, json_output, client_auth):
         """Rename a notebook.
 
         NOTEBOOK_ID supports partial matching (e.g., 'abc' matches 'abc123...').
@@ -155,8 +175,16 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 resolved_id = await resolve_notebook_id(client, notebook_id)
                 await client.notebooks.rename(resolved_id, new_title)
-                console.print(f"[green]Renamed notebook:[/green] {resolved_id}")
-                console.print(f"[bold]New title:[/bold] {new_title}")
+
+                def render():
+                    console.print(f"[green]Renamed notebook:[/green] {resolved_id}")
+                    console.print(f"[bold]New title:[/bold] {new_title}")
+
+                output_result(
+                    json_output,
+                    {"notebook_id": resolved_id, "new_title": new_title},
+                    render,
+                )
 
         return _run()
 
@@ -169,8 +197,9 @@ def register_notebook_commands(cli):
         help="Notebook ID (uses current if not set). Supports partial IDs.",
     )
     @click.option("--topics", is_flag=True, help="Include suggested topics")
+    @json_option
     @with_client
-    def summary_cmd(ctx, notebook_id, topics, client_auth):
+    def summary_cmd(ctx, notebook_id, topics, json_output, client_auth):
         """Get notebook summary with AI-generated insights.
 
         NOTEBOOK_ID supports partial matching (e.g., 'abc' matches 'abc123...').
@@ -186,6 +215,20 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 resolved_id = await resolve_notebook_id(client, notebook_id)
                 description = await client.notebooks.get_description(resolved_id)
+
+                if json_output:
+                    data: dict = {
+                        "notebook_id": resolved_id,
+                        "summary": description.summary if description else None,
+                    }
+                    if topics and description and description.suggested_topics:
+                        data["suggested_topics"] = [
+                            {"index": i, "question": t.question}
+                            for i, t in enumerate(description.suggested_topics, 1)
+                        ]
+                    json_output_response(data)
+                    return
+
                 if description and description.summary:
                     console.print("[bold cyan]Summary:[/bold cyan]")
                     console.print(description.summary)

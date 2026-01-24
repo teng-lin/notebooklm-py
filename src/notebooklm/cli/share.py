@@ -17,10 +17,13 @@ from ..types import SharePermission, ShareViewLevel
 from .helpers import (
     console,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_notebook_id,
+    should_confirm,
     with_client,
 )
+from .options import json_option
 
 
 def _permission_name(perm: SharePermission) -> str:
@@ -77,7 +80,7 @@ def share():
     default=None,
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def share_status(ctx, notebook_id, json_output, client_auth):
     """Show sharing status and shared users.
@@ -154,7 +157,7 @@ def share_status(ctx, notebook_id, json_output, client_auth):
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
 @click.option("--enable/--disable", default=True, help="Enable or disable public sharing")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def share_public(ctx, notebook_id, enable, json_output, client_auth):
     """Enable or disable public link sharing.
@@ -203,7 +206,7 @@ def share_public(ctx, notebook_id, enable, json_output, client_auth):
     default=None,
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def share_view_level(ctx, level, notebook_id, json_output, client_auth):
     """Set what viewers can access.
@@ -228,16 +231,12 @@ def share_view_level(ctx, level, notebook_id, json_output, client_auth):
             resolved_id = await resolve_notebook_id(client, nb_id)
             status = await client.sharing.set_view_level(resolved_id, view_level)
 
-            if json_output:
-                data = {
-                    "notebook_id": resolved_id,
-                    "view_level": status.view_level.name.lower(),
-                }
-                json_output_response(data)
-                return
-
-            console.print(
-                f"[green]View level set to:[/green] {_view_level_display(status.view_level)}"
+            output_result(
+                json_output,
+                {"notebook_id": resolved_id, "view_level": status.view_level.name.lower()},
+                lambda: console.print(
+                    f"[green]View level set to:[/green] {_view_level_display(status.view_level)}"
+                ),
             )
 
     return _run()
@@ -261,7 +260,7 @@ def share_view_level(ctx, level, notebook_id, json_output, client_auth):
 )
 @click.option("--no-notify", is_flag=True, help="Don't send email notification")
 @click.option("--message", "-m", default="", help="Welcome message for the user")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def share_add(ctx, email, notebook_id, permission, no_notify, message, json_output, client_auth):
     """Share notebook with a user.
@@ -323,7 +322,7 @@ def share_add(ctx, email, notebook_id, permission, no_notify, message, json_outp
     required=True,
     help="New permission level",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
     """Update a user's permission level.
@@ -343,16 +342,17 @@ def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
             resolved_id = await resolve_notebook_id(client, nb_id)
             await client.sharing.update_user(resolved_id, email, perm)
 
-            if json_output:
-                data = {
+            output_result(
+                json_output,
+                {
                     "notebook_id": resolved_id,
                     "updated_user": email,
                     "permission": permission.lower(),
-                }
-                json_output_response(data)
-                return
-
-            console.print(f"[green]Updated {email}[/green] to {_permission_name(perm)}")
+                },
+                lambda: console.print(
+                    f"[green]Updated {email}[/green] to {_permission_name(perm)}"
+                ),
+            )
 
     return _run()
 
@@ -367,7 +367,7 @@ def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def share_remove(ctx, email, notebook_id, yes, json_output, client_auth):
     """Remove a user's access to the notebook.
@@ -384,20 +384,17 @@ def share_remove(ctx, email, notebook_id, yes, json_output, client_auth):
             resolved_id = await resolve_notebook_id(client, nb_id)
 
             # Confirm after resolution so user sees context
-            if not yes and not json_output:
-                if not click.confirm(f"Remove access for {email}?"):
-                    return
+            if should_confirm(yes, json_output) and not click.confirm(
+                f"Remove access for {email}?"
+            ):
+                return
 
             await client.sharing.remove_user(resolved_id, email)
 
-            if json_output:
-                data = {
-                    "notebook_id": resolved_id,
-                    "removed_user": email,
-                }
-                json_output_response(data)
-                return
-
-            console.print(f"[green]Removed access for {email}[/green]")
+            output_result(
+                json_output,
+                {"notebook_id": resolved_id, "removed_user": email},
+                lambda: console.print(f"[green]Removed access for {email}[/green]"),
+            )
 
     return _run()

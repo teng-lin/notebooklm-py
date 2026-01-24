@@ -72,6 +72,12 @@ def create_mock_client():
     mock_client.notes = MagicMock()
     mock_client.sharing = MagicMock()
 
+    # Default mock for notebooks.list to support resolve_notebook_id
+    # Tests using partial IDs (< 20 chars like "nb_123") trigger ID resolution
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[MagicMock(id="nb_123", title="Test Notebook")]
+    )
+
     return mock_client
 
 

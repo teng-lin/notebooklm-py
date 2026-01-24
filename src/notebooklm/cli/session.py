@@ -34,6 +34,18 @@ from .helpers import (
     run_async,
     set_current_notebook,
 )
+from .options import json_option
+
+
+def _display_notebook_context(nb_id: str, title: str, owner: str, created: str) -> None:
+    """Display notebook context in a table."""
+    table = Table()
+    table.add_column("ID", style="cyan")
+    table.add_column("Title", style="green")
+    table.add_column("Owner")
+    table.add_column("Created", style="dim")
+    table.add_row(nb_id, title, owner, created)
+    console.print(table)
 
 
 def _ensure_chromium_installed() -> None:
@@ -198,42 +210,21 @@ def register_session_commands(cli):
             created_str = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else None
             set_current_notebook(resolved_id, nb.title, nb.is_owner, created_str)
 
-            table = Table()
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Owner")
-            table.add_column("Created", style="dim")
-
-            created = created_str or "-"
             owner_status = "Owner" if nb.is_owner else "Shared"
-            table.add_row(nb.id, nb.title, owner_status, created)
-
-            console.print(table)
+            _display_notebook_context(nb.id, nb.title, owner_status, created_str or "-")
 
         except FileNotFoundError:
             set_current_notebook(notebook_id)
-            table = Table()
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Owner")
-            table.add_column("Created", style="dim")
-            table.add_row(notebook_id, "-", "-", "-")
-            console.print(table)
+            _display_notebook_context(notebook_id, "-", "-", "-")
         except click.ClickException:
             # Re-raise click exceptions (from resolve_notebook_id)
             raise
         except Exception as e:
             set_current_notebook(notebook_id)
-            table = Table()
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Owner")
-            table.add_column("Created", style="dim")
-            table.add_row(notebook_id, f"Warning: {str(e)}", "-", "-")
-            console.print(table)
+            _display_notebook_context(notebook_id, f"Warning: {str(e)}", "-", "-")
 
     @cli.command("status")
-    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    @json_option
     @click.option("--paths", "show_paths", is_flag=True, help="Show resolved file paths")
     def status(json_output, show_paths):
         """Show current context (active notebook and conversation).
@@ -357,7 +348,7 @@ def register_session_commands(cli):
     @click.option(
         "--test", "test_fetch", is_flag=True, help="Test token fetch (makes network request)"
     )
-    @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+    @json_option
     def auth_check(test_fetch, json_output):
         """Check authentication status and diagnose issues.
 

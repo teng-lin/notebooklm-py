@@ -11,8 +11,6 @@ Commands:
     suggestions Get AI-suggested report topics
 """
 
-import json
-
 import click
 from rich.table import Table
 
@@ -23,10 +21,15 @@ from .helpers import (
     console,
     get_artifact_type_display,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_artifact_id,
+    resolve_notebook_id,
+    resolve_notebook_id_with_title,
+    should_confirm,
     with_client,
 )
+from .options import json_option
 
 
 @click.group()
@@ -79,7 +82,7 @@ def artifact():
     default="all",
     help="Filter by type",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
     """List artifacts in a notebook."""
@@ -88,17 +91,35 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
+            # Use optimized resolver that returns title without extra API call
+            resolved_nb_id, nb_title = await resolve_notebook_id_with_title(client, nb_id)
             # artifacts.list() already includes mind maps from notes system
-            artifacts = await client.artifacts.list(nb_id, artifact_type=type_filter)
+            artifacts = await client.artifacts.list(resolved_nb_id, artifact_type=type_filter)
 
-            nb = None
-            if json_output:
-                nb = await client.notebooks.get(nb_id)
+            def render():
+                if not artifacts:
+                    console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
+                    return
 
-            if json_output:
-                data = {
-                    "notebook_id": nb_id,
-                    "notebook_title": nb.title if nb else None,
+                table = Table(title=f"Artifacts in {resolved_nb_id}")
+                table.add_column("ID", style="cyan")
+                table.add_column("Title", style="green")
+                table.add_column("Type")
+                table.add_column("Created", style="dim")
+                table.add_column("Status", style="yellow")
+
+                for art in artifacts:
+                    type_display = get_artifact_type_display(art)
+                    created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
+                    table.add_row(art.id, art.title, type_display, created, art.status_str)
+
+                console.print(table)
+
+            output_result(
+                json_output,
+                {
+                    "notebook_id": resolved_nb_id,
+                    "notebook_title": nb_title,
                     "artifacts": [
                         {
                             "index": i,
@@ -113,27 +134,9 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                         for i, art in enumerate(artifacts, 1)
                     ],
                     "count": len(artifacts),
-                }
-                json_output_response(data)
-                return
-
-            if not artifacts:
-                console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
-                return
-
-            table = Table(title=f"Artifacts in {nb_id}")
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Type")
-            table.add_column("Created", style="dim")
-            table.add_column("Status", style="yellow")
-
-            for art in artifacts:
-                type_display = get_artifact_type_display(art)
-                created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
-                table.add_row(art.id, art.title, type_display, created, art.status_str)
-
-            console.print(table)
+                },
+                render,
+            )
 
     return _run()
 
@@ -221,8 +224,9 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
     help="Notebook ID (uses current if not set). Supports partial IDs.",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@json_option
 @with_client
-def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
+def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth):
     """Delete an artifact.
 
     ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -231,23 +235,49 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            resolved_id = await resolve_artifact_id(client, nb_id, artifact_id)
+            resolved_nb_id = await resolve_notebook_id(client, nb_id)
+            resolved_id = await resolve_artifact_id(client, resolved_nb_id, artifact_id)
 
-            if not yes and not click.confirm(f"Delete artifact {resolved_id}?"):
+            if should_confirm(yes, json_output) and not click.confirm(
+                f"Delete artifact {resolved_id}?"
+            ):
                 return
 
             # Check if this is a mind map (stored with notes)
-            mind_maps = await client.notes.list_mind_maps(nb_id)
+            mind_maps = await client.notes.list_mind_maps(resolved_nb_id)
             for mm in mind_maps:
                 if mm[0] == resolved_id:
-                    await client.notes.delete(nb_id, resolved_id)
+                    await client.notes.delete(resolved_nb_id, resolved_id)
+
+                    if json_output:
+                        json_output_response(
+                            {
+                                "notebook_id": resolved_nb_id,
+                                "artifact_id": resolved_id,
+                                "type": "mind_map",
+                                "deleted": True,
+                            }
+                        )
+                        return
+
                     console.print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}")
                     console.print(
                         "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]"
                     )
                     return
 
-            await client.artifacts.delete(nb_id, resolved_id)
+            await client.artifacts.delete(resolved_nb_id, resolved_id)
+
+            if json_output:
+                json_output_response(
+                    {
+                        "notebook_id": resolved_nb_id,
+                        "artifact_id": resolved_id,
+                        "deleted": True,
+                    }
+                )
+                return
+
             console.print(f"[green]Deleted artifact:[/green] {resolved_id}")
 
     return _run()
@@ -334,7 +364,7 @@ def artifact_poll(ctx, task_id, notebook_id, client_auth):
     type=int,
     help="Seconds between status checks (default: 2)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@json_option
 @with_client
 def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output, client_auth):
     """Wait for artifact generation to complete.
@@ -404,7 +434,7 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--json", "json_output", is_flag=True, help="Output JSON format")
+@json_option
 @with_client
 def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
     """Get AI-suggested report topics based on notebook content."""
@@ -419,11 +449,15 @@ def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
                 return
 
             if json_output:
-                data = [
-                    {"title": s.title, "description": s.description, "prompt": s.prompt}
-                    for s in suggestions
-                ]
-                console.print(json.dumps(data, indent=2))
+                json_output_response(
+                    {
+                        "suggestions": [
+                            {"title": s.title, "description": s.description, "prompt": s.prompt}
+                            for s in suggestions
+                        ],
+                        "count": len(suggestions),
+                    }
+                )
                 return
 
             table = Table(title="Suggested Reports")

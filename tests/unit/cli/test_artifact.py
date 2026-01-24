@@ -521,8 +521,9 @@ class TestArtifactSuggestions:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
-            assert len(data) == 1
-            assert data[0]["title"] == "Topic 1"
+            assert data["count"] == 1
+            assert len(data["suggestions"]) == 1
+            assert data["suggestions"][0]["title"] == "Topic 1"
 
 
 # =============================================================================
