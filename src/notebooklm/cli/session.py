@@ -272,7 +272,7 @@ def register_session_commands(cli):
 
         if notebook_id:
             try:
-                data = json.loads(context_file.read_text())
+                data = json.loads(context_file.read_text(encoding="utf-8"))
                 title = data.get("title", "-")
                 is_owner = data.get("is_owner", True)
                 created_at = data.get("created_at", "-")
@@ -425,7 +425,7 @@ def register_session_commands(cli):
             if has_env_var:
                 storage_state = json.loads(os.environ["NOTEBOOKLM_AUTH_JSON"])
             else:
-                storage_state = json.loads(storage_path.read_text())
+                storage_state = json.loads(storage_path.read_text(encoding="utf-8"))
             checks["json_valid"] = True
         except json.JSONDecodeError as e:
             details["error"] = f"Invalid JSON: {e}"

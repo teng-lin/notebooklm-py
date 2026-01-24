@@ -128,7 +128,7 @@ def get_current_notebook() -> str | None:
     if not context_file.exists():
         return None
     try:
-        data = json.loads(context_file.read_text())
+        data = json.loads(context_file.read_text(encoding="utf-8"))
         return data.get("notebook_id")
     except (OSError, json.JSONDecodeError):
         return None
@@ -150,7 +150,7 @@ def set_current_notebook(
         data["is_owner"] = is_owner
     if created_at:
         data["created_at"] = created_at
-    context_file.write_text(json.dumps(data, indent=2))
+    context_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def clear_context():
@@ -166,7 +166,7 @@ def get_current_conversation() -> str | None:
     if not context_file.exists():
         return None
     try:
-        data = json.loads(context_file.read_text())
+        data = json.loads(context_file.read_text(encoding="utf-8"))
         return data.get("conversation_id")
     except (OSError, json.JSONDecodeError):
         return None
@@ -178,12 +178,12 @@ def set_current_conversation(conversation_id: str | None):
     if not context_file.exists():
         return
     try:
-        data = json.loads(context_file.read_text())
+        data = json.loads(context_file.read_text(encoding="utf-8"))
         if conversation_id:
             data["conversation_id"] = conversation_id
         elif "conversation_id" in data:
             del data["conversation_id"]
-        context_file.write_text(json.dumps(data, indent=2))
+        context_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except (OSError, json.JSONDecodeError):
         pass
 

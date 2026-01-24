@@ -21,7 +21,7 @@ def get_skill_source_content() -> str | None:
     """Read the skill source file from package data."""
     try:
         # Python 3.9+ way to read package data (use / operator for path traversal)
-        return (resources.files("notebooklm") / "data" / "SKILL.md").read_text()
+        return (resources.files("notebooklm") / "data" / "SKILL.md").read_text(encoding="utf-8")
     except (FileNotFoundError, TypeError):
         return None
 
@@ -41,7 +41,7 @@ def get_skill_version(skill_path: Path) -> str | None:
     if not skill_path.exists():
         return None
 
-    with open(skill_path) as f:
+    with open(skill_path, encoding="utf-8") as f:
         content = f.read(500)  # Read first 500 chars
 
     match = re.search(r"notebooklm-py v([\d.]+)", content)
@@ -87,7 +87,7 @@ def install():
         content = version_comment + content
 
     # Write to destination
-    with open(SKILL_DEST, "w") as f:
+    with open(SKILL_DEST, "w", encoding="utf-8") as f:
         f.write(content)
 
     console.print(f"[green]Installed[/green] NotebookLM skill to {SKILL_DEST}")
@@ -147,7 +147,7 @@ def show():
         console.print("Run [cyan]notebooklm skill install[/cyan] first.")
         return
 
-    with open(SKILL_DEST) as f:
+    with open(SKILL_DEST, encoding="utf-8") as f:
         content = f.read()
 
     console.print(content)

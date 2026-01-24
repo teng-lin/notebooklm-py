@@ -431,7 +431,7 @@ def _load_storage_state(path: Path | None = None) -> dict[str, Any]:
             raise FileNotFoundError(
                 f"Storage file not found: {path}\nRun 'notebooklm login' to authenticate first."
             )
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     # 2. Check for inline JSON env var (CI-friendly, no file writes needed)
     # Note: Use 'in' check instead of walrus to catch empty string case
@@ -466,7 +466,7 @@ def _load_storage_state(path: Path | None = None) -> dict[str, Any]:
             f"Storage file not found: {storage_path}\nRun 'notebooklm login' to authenticate first."
         )
 
-    return json.loads(storage_path.read_text())
+    return json.loads(storage_path.read_text(encoding="utf-8"))
 
 
 def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
