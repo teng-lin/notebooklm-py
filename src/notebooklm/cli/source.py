@@ -186,7 +186,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            if detected_type == "url" or detected_type == "youtube":
+            if detected_type in ("url", "youtube"):
                 src = await client.sources.add_url(nb_id, content)
             elif detected_type == "text":
                 text_content = file_content if file_content is not None else content
@@ -360,18 +360,20 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
             resolved_id = await resolve_source_id(client, resolved_nb_id, source_id)
             src = await client.sources.refresh(resolved_nb_id, resolved_id)
 
+            # src can be: Source object, True (boolean), or None
+            # Use hasattr for type narrowing since src could be bool or Source
             if json_output:
                 data: dict = {
                     "notebook_id": resolved_nb_id,
                     "source_id": resolved_id,
                     "refreshed": bool(src),
                 }
-                if src and src is not True:
+                if hasattr(src, "title"):
                     data["title"] = src.title
                 json_output_response(data)
                 return
 
-            if src and src is not True:
+            if hasattr(src, "id") and hasattr(src, "title"):
                 console.print(f"[green]Source refreshed:[/green] {src.id}")
                 console.print(f"[bold]Title:[/bold] {src.title}")
             elif src is True:

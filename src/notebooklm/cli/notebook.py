@@ -131,12 +131,16 @@ def register_notebook_commands(cli):
 
                 success = await client.notebooks.delete(resolved_id)
 
+                # Clear context regardless of output mode (side effect must happen)
+                context_cleared = False
+                if success and get_current_notebook() == resolved_id:
+                    clear_context()
+                    context_cleared = True
+
                 def render():
                     if success:
                         console.print(f"[green]Deleted notebook:[/green] {resolved_id}")
-                        # Clear context if we deleted the current notebook
-                        if get_current_notebook() == resolved_id:
-                            clear_context()
+                        if context_cleared:
                             console.print("[dim]Cleared current notebook context[/dim]")
                     else:
                         console.print("[yellow]Delete may have failed[/yellow]")

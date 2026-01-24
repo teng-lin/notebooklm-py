@@ -244,9 +244,8 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
     if not title and not content:
         if json_output:
             json_output_response({"error": "Provide --title and/or --content"})
-        else:
-            console.print("[yellow]Provide --title and/or --content[/yellow]")
-        return
+            raise SystemExit(1)
+        raise click.ClickException("Provide --title and/or --content")
 
     nb_id = require_notebook(notebook_id)
 

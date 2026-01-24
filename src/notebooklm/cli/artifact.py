@@ -11,8 +11,6 @@ Commands:
     suggestions Get AI-suggested report topics
 """
 
-import json
-
 import click
 from rich.table import Table
 
@@ -23,6 +21,7 @@ from .helpers import (
     console,
     get_artifact_type_display,
     json_output_response,
+    output_result,
     require_notebook,
     resolve_artifact_id,
     resolve_notebook_id,
@@ -95,12 +94,31 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
             # artifacts.list() already includes mind maps from notes system
             artifacts = await client.artifacts.list(resolved_nb_id, artifact_type=type_filter)
 
-            nb = None
-            if json_output:
-                nb = await client.notebooks.get(resolved_nb_id)
+            # Only fetch notebook details for JSON output
+            nb = await client.notebooks.get(resolved_nb_id) if json_output else None
 
-            if json_output:
-                data = {
+            def render():
+                if not artifacts:
+                    console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
+                    return
+
+                table = Table(title=f"Artifacts in {resolved_nb_id}")
+                table.add_column("ID", style="cyan")
+                table.add_column("Title", style="green")
+                table.add_column("Type")
+                table.add_column("Created", style="dim")
+                table.add_column("Status", style="yellow")
+
+                for art in artifacts:
+                    type_display = get_artifact_type_display(art)
+                    created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
+                    table.add_row(art.id, art.title, type_display, created, art.status_str)
+
+                console.print(table)
+
+            output_result(
+                json_output,
+                {
                     "notebook_id": resolved_nb_id,
                     "notebook_title": nb.title if nb else None,
                     "artifacts": [
@@ -117,27 +135,9 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
                         for i, art in enumerate(artifacts, 1)
                     ],
                     "count": len(artifacts),
-                }
-                json_output_response(data)
-                return
-
-            if not artifacts:
-                console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
-                return
-
-            table = Table(title=f"Artifacts in {resolved_nb_id}")
-            table.add_column("ID", style="cyan")
-            table.add_column("Title", style="green")
-            table.add_column("Type")
-            table.add_column("Created", style="dim")
-            table.add_column("Status", style="yellow")
-
-            for art in artifacts:
-                type_display = get_artifact_type_display(art)
-                created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
-                table.add_row(art.id, art.title, type_display, created, art.status_str)
-
-            console.print(table)
+                },
+                render,
+            )
 
     return _run()
 
@@ -450,11 +450,15 @@ def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
                 return
 
             if json_output:
-                data = [
-                    {"title": s.title, "description": s.description, "prompt": s.prompt}
-                    for s in suggestions
-                ]
-                console.print(json.dumps(data, indent=2))
+                json_output_response(
+                    {
+                        "suggestions": [
+                            {"title": s.title, "description": s.description, "prompt": s.prompt}
+                            for s in suggestions
+                        ],
+                        "count": len(suggestions),
+                    }
+                )
                 return
 
             table = Table(title="Suggested Reports")
