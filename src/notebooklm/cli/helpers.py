@@ -148,17 +148,13 @@ def set_current_notebook(
     context_file = get_context_path()
     context_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Check if switching notebooks - if so, don't preserve conversation_id
-    existing_notebook = get_current_notebook()
-    preserve_conversation = existing_notebook == notebook_id
-
-    # Read existing data to preserve conversation_id if same notebook
-    existing_data: dict = {}
-    if preserve_conversation and context_file.exists():
+    # Read existing context if available
+    current_context: dict = {}
+    if context_file.exists():
         try:
-            existing_data = json.loads(context_file.read_text(encoding="utf-8"))
+            current_context = json.loads(context_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            pass
+            pass  # Start with fresh context if file is corrupt
 
     data: dict[str, str | bool] = {"notebook_id": notebook_id}
     if title:
@@ -168,9 +164,9 @@ def set_current_notebook(
     if created_at:
         data["created_at"] = created_at
 
-    # Preserve conversation_id only if staying in same notebook
-    if preserve_conversation and "conversation_id" in existing_data:
-        data["conversation_id"] = existing_data["conversation_id"]
+    # Preserve conversation_id only if staying in the same notebook
+    if current_context.get("notebook_id") == notebook_id and "conversation_id" in current_context:
+        data["conversation_id"] = current_context["conversation_id"]
 
     context_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
