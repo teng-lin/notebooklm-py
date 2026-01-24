@@ -2,9 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from click.testing import CliRunner
-
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Note
 
@@ -19,24 +16,6 @@ def make_note(id: str, title: str, content: str, notebook_id: str = "nb_123") ->
         title=title,
         content=content,
     )
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
-
-
-@pytest.fixture
-def mock_auth():
-    with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock:
-        mock.return_value = {
-            "SID": "test",
-            "HSID": "test",
-            "SSID": "test",
-            "APISID": "test",
-            "SAPISID": "test",
-        }
-        yield mock
 
 
 # =============================================================================

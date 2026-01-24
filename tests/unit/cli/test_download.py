@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Artifact
@@ -27,11 +26,6 @@ def make_artifact(
         status=status,
         created_at=created_at or datetime.fromtimestamp(1234567890),
     )
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
 
 
 @pytest.fixture

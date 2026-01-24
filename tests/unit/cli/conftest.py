@@ -204,7 +204,14 @@ def patch_main_cli_client():
 
 @pytest.fixture
 def mock_context_file(tmp_path):
-    """Provide a temporary context file for testing context commands."""
+    """Provide a temporary context file for testing context commands.
+
+    Patches get_context_path in both helpers and session modules since both
+    import the function directly and need consistent behavior.
+    """
     context_file = tmp_path / "context.json"
-    with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+    with (
+        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.session.get_context_path", return_value=context_file),
+    ):
         yield context_file

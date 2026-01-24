@@ -6,42 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 import click
 import pytest
-from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
 
 from .conftest import create_mock_client, patch_main_cli_client
-
-
-@pytest.fixture
-def runner():
-    return CliRunner()
-
-
-@pytest.fixture
-def mock_auth():
-    with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock:
-        mock.return_value = {
-            "SID": "test",
-            "HSID": "test",
-            "SSID": "test",
-            "APISID": "test",
-            "SAPISID": "test",
-        }
-        yield mock
-
-
-@pytest.fixture
-def mock_context_file(tmp_path):
-    """Provide a temporary context file for testing context commands."""
-    context_file = tmp_path / "context.json"
-    with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.session.get_context_path", return_value=context_file),
-    ):
-        yield context_file
-
 
 # =============================================================================
 # LOGIN COMMAND TESTS
