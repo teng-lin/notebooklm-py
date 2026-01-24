@@ -34,6 +34,10 @@ SOURCE_PROCESSING_DELAY = 2.0  # Delay for source processing
 POLL_INTERVAL = 2.0  # Interval between poll attempts
 POLL_TIMEOUT = 60.0  # Max time to wait for operations
 
+# Rate limiting delay between generation tests (seconds)
+# Helps avoid API rate limits when running multiple generation tests
+GENERATION_TEST_DELAY = 15.0
+
 
 def assert_generation_started(result, artifact_type: str = "Artifact") -> None:
     """Assert that artifact generation started successfully.
@@ -99,6 +103,31 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "variants" in [m.name for m in item.iter_markers()]:
             item.add_marker(skip_variants)
+
+
+def pytest_runtest_teardown(item, nextitem):
+    """Add delay after generation tests to avoid API rate limits.
+
+    This hook runs after each test. If the test is in test_generation.py
+    and uses the generation_notebook_id fixture, add a delay before the
+    next test starts.
+    """
+    import time
+
+    # Only add delay for generation tests
+    if "test_generation.py" not in str(item.fspath):
+        return
+
+    # Only add delay if using generation_notebook_id fixture
+    if "generation_notebook_id" not in item.fixturenames:
+        return
+
+    # Only add delay if there's a next test (avoid delay at the end)
+    if nextitem is None:
+        return
+
+    # Add delay to spread out API calls
+    time.sleep(GENERATION_TEST_DELAY)
 
 
 # =============================================================================
