@@ -224,7 +224,9 @@ class TestLoginCommand:
 
         assert result.exit_code == 0
         mock_context.storage_state.assert_called_once_with(path=str(custom_storage))
-        assert "my_storage.json" in result.output
+        # Check filename in output (may be line-wrapped in narrow terminals)
+        output_no_newlines = result.output.replace("\n", "")
+        assert "my_storage.json" in output_no_newlines
 
     @unix_only
     def test_login_creates_parent_directories(self, runner, tmp_path):
