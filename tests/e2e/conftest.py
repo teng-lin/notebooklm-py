@@ -116,7 +116,7 @@ def pytest_runtest_teardown(item, nextitem):
     import time
 
     # Only add delay for generation tests
-    if item.fspath.name != "test_generation.py":
+    if item.path.name != "test_generation.py":
         return
 
     # Only add delay if using generation_notebook_id fixture
