@@ -110,6 +110,13 @@ class DownloadGroup(click.Group):
         if args and args[0] in self.commands:
             return super().parse_args(ctx, args)
 
+        # Build set of option names that take a value from the group's params.
+        # This makes it robust to adding new options to the group.
+        value_opts = set()
+        for param in self.params:
+            if isinstance(param, click.Option) and not param.is_flag:
+                value_opts.update(param.opts)
+
         # Otherwise, treat remaining positional args as artifact IDs
         # Extract options first, then positional args
         artifact_ids = []
@@ -120,8 +127,9 @@ class DownloadGroup(click.Group):
             if arg.startswith("-"):
                 # It's an option
                 remaining_args.append(arg)
-                # Check if this option takes a value
-                if arg in ("-o", "--output", "-n", "--notebook") and i + 1 < len(args):
+                # Check if this option takes a value and the next arg is not an option.
+                # This prevents consuming another flag (e.g., --force) as a value.
+                if arg in value_opts and i + 1 < len(args) and not args[i + 1].startswith("-"):
                     i += 1
                     remaining_args.append(args[i])
             else:
