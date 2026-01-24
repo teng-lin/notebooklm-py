@@ -153,6 +153,8 @@ Before starting workflows, verify the CLI is ready:
 | Download quiz (markdown) | `notebooklm download quiz --format markdown quiz.md` |
 | Download flashcards | `notebooklm download flashcards cards.json` |
 | Download flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
+| Download by UUID | `notebooklm download abc123 def456` |
+| Download by UUID (with options) | `notebooklm download abc123 -o ./downloads/ --dry-run` |
 | Delete notebook | `notebooklm notebook delete <id>` |
 | List languages | `notebooklm language list` |
 | Get language | `notebooklm language get` |
@@ -160,7 +162,7 @@ Before starting workflows, verify the CLI is ready:
 
 **Parallel safety:** Use explicit notebook IDs in parallel workflows. Commands supporting `-n` shorthand: `artifact wait`, `source wait`, `research wait/status`, `download *`. Download commands also support `-a/--artifact`. Other commands use `--notebook`. For chat, use `--new` to start fresh conversations (avoids conversation ID conflicts).
 
-**Partial IDs:** Use first 6+ characters of UUIDs. Must be unique prefix (fails if ambiguous). Works for: `use`, `delete`, `wait` commands. For automation, prefer full UUIDs to avoid ambiguity.
+**Partial IDs:** Use first 6+ characters of UUIDs. Must be unique prefix (fails if ambiguous). Works for: `use`, `delete`, `wait`, `download <uuid>` commands. For automation, prefer full UUIDs to avoid ambiguity.
 
 ## Command Output Formats
 
@@ -232,6 +234,7 @@ These capabilities are available via CLI but not in NotebookLM's web interface:
 
 | Feature | Command | Description |
 |---------|---------|-------------|
+| **Download by UUID** | `download <uuid> [uuid2...]` | Download artifacts directly by ID with auto-detected type |
 | **Batch downloads** | `download <type> --all` | Download all artifacts of a type at once |
 | **Quiz/Flashcard export** | `download quiz --format json` | Export as JSON, Markdown, or HTML (web UI only shows interactive view) |
 | **Mind map extraction** | `download mind-map` | Export hierarchical JSON for visualization tools |
