@@ -10,6 +10,9 @@ Commands:
     data-table   Download data table as CSV
     quiz         Download quiz questions
     flashcards   Download flashcard deck
+
+Also supports downloading by artifact UUID:
+    notebooklm download <uuid1> [uuid2] ...
 """
 
 import json
@@ -28,6 +31,14 @@ from .helpers import (
     require_notebook,
     run_async,
 )
+
+
+async def _get_auth_from_context(ctx) -> AuthTokens:
+    """Get authentication tokens from CLI context."""
+    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    cookies = load_auth_from_storage(storage_path)
+    csrf, session_id = await fetch_tokens(cookies)
+    return AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
 
 
 class ArtifactConfig(TypedDict):
@@ -61,22 +72,112 @@ ARTIFACT_CONFIGS: dict[str, ArtifactConfig] = {
     },
 }
 
+# Complete type mapping for UUID downloads (includes quiz/flashcards)
+# Maps ArtifactType -> (download_method_name, extension, cli_type_name)
+ARTIFACT_TYPE_DOWNLOAD_MAP: dict[ArtifactType, tuple[str, str, str]] = {
+    ArtifactType.AUDIO: ("download_audio", ".mp3", "audio"),
+    ArtifactType.VIDEO: ("download_video", ".mp4", "video"),
+    ArtifactType.SLIDE_DECK: ("download_slide_deck", ".pdf", "slide-deck"),
+    ArtifactType.INFOGRAPHIC: ("download_infographic", ".png", "infographic"),
+    ArtifactType.REPORT: ("download_report", ".md", "report"),
+    ArtifactType.MIND_MAP: ("download_mind_map", ".json", "mind-map"),
+    ArtifactType.DATA_TABLE: ("download_data_table", ".csv", "data-table"),
+    ArtifactType.QUIZ: ("download_quiz", ".json", "quiz"),
+    ArtifactType.FLASHCARDS: ("download_flashcards", ".json", "flashcards"),
+}
 
-@click.group()
-def download():
+# Shared options for standard artifact download commands
+STANDARD_DOWNLOAD_OPTIONS = [
+    click.argument("output_path", required=False, type=click.Path()),
+    click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)"),
+    click.option("--latest", is_flag=True, help="Download latest (default behavior)"),
+    click.option("--earliest", is_flag=True, help="Download earliest"),
+    click.option("--all", "download_all", is_flag=True, help="Download all artifacts"),
+    click.option("--name", help="Filter by artifact title (fuzzy match)"),
+    click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID"),
+    click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text"),
+    click.option("--dry-run", is_flag=True, help="Preview without downloading"),
+    click.option("--force", is_flag=True, help="Overwrite existing files"),
+    click.option("--no-clobber", is_flag=True, help="Skip if file exists"),
+]
+
+
+class DownloadGroup(click.Group):
+    """Custom group that handles both subcommands and direct UUID arguments."""
+
+    def parse_args(self, ctx, args):
+        # Check if first arg looks like a subcommand
+        if args and args[0] in self.commands:
+            return super().parse_args(ctx, args)
+
+        # Otherwise, treat remaining positional args as artifact IDs
+        # Extract options first, then positional args
+        artifact_ids = []
+        remaining_args = []
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg.startswith("-"):
+                # It's an option
+                remaining_args.append(arg)
+                # Check if this option takes a value
+                if arg in ("-o", "--output", "-n", "--notebook") and i + 1 < len(args):
+                    i += 1
+                    remaining_args.append(args[i])
+            else:
+                # Positional argument - treat as artifact ID
+                artifact_ids.append(arg)
+            i += 1
+
+        # Store artifact_ids for later use
+        ctx.ensure_object(dict)
+        ctx.obj["_artifact_ids"] = tuple(artifact_ids)
+
+        # Parse remaining args (options only)
+        return super().parse_args(ctx, remaining_args)
+
+
+@click.group(cls=DownloadGroup, invoke_without_command=True)
+@click.option("-o", "--output", type=click.Path(), help="Output directory (for UUID mode)")
+@click.option("-n", "--notebook", "group_notebook", help="Notebook ID (for UUID mode)")
+@click.option("--json", "group_json", is_flag=True, help="Output JSON (for UUID mode)")
+@click.option("--dry-run", "group_dry_run", is_flag=True, help="Preview (for UUID mode)")
+@click.option("--force", "group_force", is_flag=True, help="Overwrite (for UUID mode)")
+@click.option(
+    "--no-clobber", "group_no_clobber", is_flag=True, help="Skip if exists (for UUID mode)"
+)
+@click.pass_context
+def download(ctx, output, group_notebook, group_json, group_dry_run, group_force, group_no_clobber):
     """Download generated content.
 
     \b
-    Types:
-      audio        Download audio file
-      video        Download video file
-      slide-deck   Download slide deck PDF
-      infographic  Download infographic image
-      report       Download report as markdown
-      mind-map     Download mind map as JSON
-      data-table   Download data table as CSV
+    Download by type:
+      notebooklm download audio
+      notebooklm download video --all
+      notebooklm download slide-deck my-slides.pdf
+
+    \b
+    Download by UUID (auto-detects type):
+      notebooklm download <uuid1> [uuid2] ...
+      notebooklm download <uuid> -o ./downloads/
     """
-    pass
+    if ctx.invoked_subcommand is None:
+        # Check for artifact IDs from custom parsing
+        artifact_ids = ctx.obj.get("_artifact_ids", ())
+        if not artifact_ids:
+            click.echo(ctx.get_help())
+            return
+        # Handle UUID download mode
+        _run_uuid_download(
+            ctx,
+            artifact_ids,
+            output,
+            group_notebook,
+            group_json,
+            group_dry_run,
+            group_force,
+            group_no_clobber,
+        )
 
 
 async def _download_artifacts_generic(
@@ -134,10 +235,7 @@ async def _download_artifacts_generic(
 
     # Get notebook and auth
     nb_id = require_notebook(notebook)
-    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = await fetch_tokens(cookies)
-    auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    auth = await _get_auth_from_context(ctx)
 
     async def _download() -> dict[str, Any]:
         async with NotebookLMClient(auth) as client:
@@ -430,153 +528,6 @@ def _display_download_result(result: dict, artifact_type: str) -> None:
         )
 
 
-@download.command("audio")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_audio(ctx, **kwargs):
-    """Download audio overview(s) to file.
-
-    \b
-    Examples:
-      # Download latest audio to default filename
-      notebooklm download audio
-
-      # Download to specific path
-      notebooklm download audio my-podcast.mp3
-
-      # Download all audio files to directory
-      notebooklm download audio --all ./audio/
-
-      # Download specific artifact by name
-      notebooklm download audio --name "chapter 3"
-
-      # Preview without downloading
-      notebooklm download audio --all --dry-run
-    """
-    _run_artifact_download(ctx, "audio", **kwargs)
-
-
-@download.command("video")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_video(ctx, **kwargs):
-    """Download video overview(s) to file.
-
-    \b
-    Examples:
-      # Download latest video to default filename
-      notebooklm download video
-
-      # Download to specific path
-      notebooklm download video my-video.mp4
-
-      # Download all video files to directory
-      notebooklm download video --all ./video/
-
-      # Download specific artifact by name
-      notebooklm download video --name "chapter 3"
-
-      # Preview without downloading
-      notebooklm download video --all --dry-run
-    """
-    _run_artifact_download(ctx, "video", **kwargs)
-
-
-@download.command("slide-deck")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_slide_deck(ctx, **kwargs):
-    """Download slide deck(s) as PDF files.
-
-    \b
-    Examples:
-      # Download latest slide deck to default filename
-      notebooklm download slide-deck
-
-      # Download to specific path
-      notebooklm download slide-deck my-slides.pdf
-
-      # Download all slide decks to directory
-      notebooklm download slide-deck --all ./slides/
-
-      # Download specific artifact by name
-      notebooklm download slide-deck --name "chapter 3"
-
-      # Preview without downloading
-      notebooklm download slide-deck --all --dry-run
-    """
-    _run_artifact_download(ctx, "slide-deck", **kwargs)
-
-
-@download.command("infographic")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_infographic(ctx, **kwargs):
-    """Download infographic(s) to file.
-
-    \b
-    Examples:
-      # Download latest infographic to default filename
-      notebooklm download infographic
-
-      # Download to specific path
-      notebooklm download infographic my-infographic.png
-
-      # Download all infographic files to directory
-      notebooklm download infographic --all ./infographic/
-
-      # Download specific artifact by name
-      notebooklm download infographic --name "chapter 3"
-
-      # Preview without downloading
-      notebooklm download infographic --all --dry-run
-    """
-    _run_artifact_download(ctx, "infographic", **kwargs)
-
-
-FORMAT_EXTENSIONS = {"json": ".json", "markdown": ".md", "html": ".html"}
-
-
 def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
     """Execute download for a specific artifact type.
 
@@ -609,112 +560,346 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
         handle_error(e)
 
 
-@download.command("report")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_report(ctx, **kwargs):
-    """Download report(s) as markdown files.
+# =============================================================================
+# UUID-BASED DOWNLOAD
+# =============================================================================
 
-    \b
+
+async def _download_by_uuids(
+    ctx,
+    artifact_ids: tuple[str, ...],
+    output_dir: str | None,
+    notebook: str | None,
+    json_output: bool,
+    dry_run: bool,
+    force: bool,
+    no_clobber: bool,
+) -> dict:
+    """Download artifacts by UUID with auto-detected types."""
+    if force and no_clobber:
+        raise click.UsageError("Cannot specify both --force and --no-clobber")
+
+    nb_id = require_notebook(notebook)
+    auth = await _get_auth_from_context(ctx)
+
+    async with NotebookLMClient(auth) as client:
+        # Fetch all artifacts to resolve IDs and get types
+        all_artifacts = await client.artifacts.list(nb_id)
+        artifact_map = {a.id: a for a in all_artifacts if isinstance(a, Artifact)}
+
+        # Resolve each ID (support partial matching)
+        resolved: list[Artifact] = []
+        not_found: list[str] = []
+        for partial_id in artifact_ids:
+            # Skip empty IDs (would match everything via startswith(""))
+            if not partial_id or not partial_id.strip():
+                not_found.append(partial_id or "(empty)")
+                continue
+            matches = [a for aid, a in artifact_map.items() if aid.startswith(partial_id)]
+            if len(matches) == 0:
+                not_found.append(partial_id)
+            elif len(matches) > 1:
+                match_ids = [m.id[:8] for m in matches]
+                raise click.UsageError(
+                    f"Ambiguous ID '{partial_id}', matches: {', '.join(match_ids)}"
+                )
+            else:
+                resolved.append(matches[0])
+
+        if not resolved:
+            return {"error": "No artifacts found matching provided IDs", "not_found": not_found}
+
+        # Determine output directory
+        out_path = Path(output_dir) if output_dir else Path.cwd()
+
+        if dry_run:
+            artifacts_preview = []
+            for a in resolved:
+                info = ARTIFACT_TYPE_DOWNLOAD_MAP.get(a.kind, (None, ".bin", "unknown"))
+                artifacts_preview.append(
+                    {
+                        "id": a.id,
+                        "title": a.title,
+                        "type": info[2],
+                        "extension": info[1],
+                    }
+                )
+            return {
+                "dry_run": True,
+                "output_dir": str(out_path),
+                "artifacts": artifacts_preview,
+                "not_found": not_found,
+            }
+
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        # Download each artifact
+        results: list[dict[str, Any]] = []
+        existing_names: set[str] = set()
+
+        for artifact in resolved:
+            type_info = ARTIFACT_TYPE_DOWNLOAD_MAP.get(artifact.kind)
+            if not type_info:
+                results.append(
+                    {
+                        "id": artifact.id,
+                        "title": artifact.title,
+                        "status": "failed",
+                        "error": f"Unknown artifact type: {artifact.kind}",
+                    }
+                )
+                continue
+
+            method_name, extension, type_name = type_info
+
+            # Check if artifact is completed
+            if not artifact.is_completed:
+                results.append(
+                    {
+                        "id": artifact.id,
+                        "title": artifact.title,
+                        "type": type_name,
+                        "status": "skipped",
+                        "reason": "still generating",
+                    }
+                )
+                continue
+
+            # Generate filename
+            filename = artifact_title_to_filename(artifact.title, extension, existing_names)
+            existing_names.add(filename)
+            file_path = out_path / filename
+
+            # Handle file conflicts
+            if file_path.exists():
+                if no_clobber:
+                    results.append(
+                        {
+                            "id": artifact.id,
+                            "title": artifact.title,
+                            "type": type_name,
+                            "status": "skipped",
+                            "reason": "file exists",
+                            "path": str(file_path),
+                        }
+                    )
+                    continue
+                elif not force:
+                    # Auto-rename
+                    counter = 2
+                    base = file_path.stem
+                    while file_path.exists():
+                        file_path = out_path / f"{base} ({counter}){extension}"
+                        counter += 1
+
+            # Get download method and execute
+            try:
+                download_fn = getattr(client.artifacts, method_name)
+                # Quiz/flashcards need output_format param - default to json
+                if artifact.kind in (ArtifactType.QUIZ, ArtifactType.FLASHCARDS):
+                    await download_fn(
+                        nb_id, str(file_path), artifact_id=artifact.id, output_format="json"
+                    )
+                else:
+                    await download_fn(nb_id, str(file_path), artifact_id=artifact.id)
+
+                results.append(
+                    {
+                        "id": artifact.id,
+                        "title": artifact.title,
+                        "type": type_name,
+                        "status": "downloaded",
+                        "path": str(file_path),
+                    }
+                )
+            except Exception as e:
+                results.append(
+                    {
+                        "id": artifact.id,
+                        "title": artifact.title,
+                        "type": type_name,
+                        "status": "failed",
+                        "error": str(e),
+                    }
+                )
+
+        return {
+            "output_dir": str(out_path),
+            "results": results,
+            "not_found": not_found,
+        }
+
+
+def _display_uuid_download_result(result: dict) -> None:
+    """Display UUID download results."""
+    if "error" in result:
+        console.print(f"[red]Error:[/red] {result['error']}")
+        if result.get("not_found"):
+            console.print(f"[dim]Not found: {', '.join(result['not_found'])}[/dim]")
+        return
+
+    if result.get("dry_run"):
+        console.print(
+            f"[yellow]DRY RUN:[/yellow] Would download {len(result['artifacts'])} "
+            f"artifacts to: {result['output_dir']}"
+        )
+        for art in result["artifacts"]:
+            console.print(f"  {art['title']}{art['extension']} ({art['type']})")
+        if result.get("not_found"):
+            console.print(f"\n[yellow]Not found:[/yellow] {', '.join(result['not_found'])}")
+        return
+
+    # Group results by status
+    results_by_status = _group_results_by_status(result["results"])
+    downloaded = results_by_status.get("downloaded", [])
+    skipped = results_by_status.get("skipped", [])
+    failed = results_by_status.get("failed", [])
+
+    console.print(f"[bold]Downloaded to:[/bold] {result['output_dir']}")
+
+    if downloaded:
+        console.print("\n[green]Downloaded:[/green]")
+        for r in downloaded:
+            console.print(f"  [green]\u2713[/green] {Path(r['path']).name} ({r['type']})")
+
+    if skipped:
+        console.print("\n[yellow]Skipped:[/yellow]")
+        for r in skipped:
+            console.print(f"  [yellow]\u26a0[/yellow] {r['title']}: {r.get('reason', 'unknown')}")
+
+    if failed:
+        console.print("\n[red]Failed:[/red]")
+        for r in failed:
+            console.print(f"  [red]\u2717[/red] {r['title']}: {r.get('error', 'unknown')}")
+
+    not_found = result.get("not_found", [])
+    if not_found:
+        console.print(f"\n[red]Not found:[/red] {', '.join(not_found)}")
+
+    # Summary line
+    total_failed = len(failed) + len(not_found)
+    console.print(
+        f"\n[dim]Downloaded: {len(downloaded)}, Skipped: {len(skipped)}, "
+        f"Failed: {total_failed}[/dim]"
+    )
+
+
+def _group_results_by_status(results: list[dict]) -> dict[str, list[dict]]:
+    """Group results by their status field."""
+    grouped: dict[str, list[dict]] = {}
+    for r in results:
+        status = r.get("status", "unknown")
+        if status not in grouped:
+            grouped[status] = []
+        grouped[status].append(r)
+    return grouped
+
+
+def _run_uuid_download(
+    ctx, artifact_ids, output, notebook, json_output, dry_run, force, no_clobber
+) -> None:
+    """Execute UUID-based download."""
+    try:
+        result = run_async(
+            _download_by_uuids(
+                ctx, artifact_ids, output, notebook, json_output, dry_run, force, no_clobber
+            )
+        )
+
+        if json_output:
+            click.echo(json.dumps(result, indent=2))
+            return
+
+        _display_uuid_download_result(result)
+
+        # Exit with error if complete failure
+        if "error" in result:
+            raise SystemExit(1)
+
+        # Count outcomes from results
+        results = result.get("results", [])
+        status_counts = _count_results_by_status(results)
+        status_counts["not_found"] = len(result.get("not_found", []))
+
+        # Exit with error only if nothing succeeded
+        total_failed = status_counts.get("failed", 0) + status_counts.get("not_found", 0)
+        if total_failed > 0 and status_counts.get("downloaded", 0) == 0:
+            raise SystemExit(1)
+
+    except Exception as e:
+        handle_error(e)
+
+
+def _count_results_by_status(results: list[dict]) -> dict[str, int]:
+    """Count results grouped by status field."""
+    counts: dict[str, int] = {}
+    for r in results:
+        status = r.get("status", "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+# =============================================================================
+# DYNAMIC COMMAND REGISTRATION
+# =============================================================================
+
+
+def _make_download_docstring(artifact_type: str, config: ArtifactConfig) -> str:
+    """Generate docstring for a download command."""
+    ext = config["extension"]
+    return f"""Download {artifact_type} file(s).
+
+    \\b
     Examples:
-      # Download latest report to default filename
-      notebooklm download report
+      # Download latest {artifact_type} to default filename
+      notebooklm download {artifact_type}
 
       # Download to specific path
-      notebooklm download report my-report.md
+      notebooklm download {artifact_type} my-file{ext}
 
-      # Download all reports to directory
-      notebooklm download report --all ./reports/
-
-      # Download specific artifact by name
-      notebooklm download report --name "chapter 3"
-
-      # Preview without downloading
-      notebooklm download report --all --dry-run
-    """
-    _run_artifact_download(ctx, "report", **kwargs)
-
-
-@download.command("mind-map")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_mind_map(ctx, **kwargs):
-    """Download mind map(s) as JSON files.
-
-    \b
-    Examples:
-      # Download latest mind map to default filename
-      notebooklm download mind-map
-
-      # Download to specific path
-      notebooklm download mind-map my-mindmap.json
-
-      # Download all mind maps to directory
-      notebooklm download mind-map --all ./mind-maps/
+      # Download all {artifact_type} files to directory
+      notebooklm download {artifact_type} --all ./output/
 
       # Download specific artifact by name
-      notebooklm download mind-map --name "chapter 3"
+      notebooklm download {artifact_type} --name "chapter 3"
 
       # Preview without downloading
-      notebooklm download mind-map --all --dry-run
+      notebooklm download {artifact_type} --all --dry-run
     """
-    _run_artifact_download(ctx, "mind-map", **kwargs)
 
 
-@download.command("data-table")
-@click.argument("output_path", required=False, type=click.Path())
-@click.option("-n", "--notebook", help="Notebook ID (uses current context if not set)")
-@click.option("--latest", is_flag=True, help="Download latest (default behavior)")
-@click.option("--earliest", is_flag=True, help="Download earliest")
-@click.option("--all", "download_all", is_flag=True, help="Download all artifacts")
-@click.option("--name", help="Filter by artifact title (fuzzy match)")
-@click.option("-a", "--artifact", "artifact_id", help="Select by artifact ID")
-@click.option("--json", "json_output", is_flag=True, help="Output JSON instead of text")
-@click.option("--dry-run", is_flag=True, help="Preview without downloading")
-@click.option("--force", is_flag=True, help="Overwrite existing files")
-@click.option("--no-clobber", is_flag=True, help="Skip if file exists")
-@click.pass_context
-def download_data_table(ctx, **kwargs):
-    """Download data table(s) as CSV files.
+def _register_download_commands():
+    """Register download subcommands for all artifact types in ARTIFACT_CONFIGS."""
+    for artifact_type, _config in ARTIFACT_CONFIGS.items():
+        # Create handler with closure to capture artifact_type
+        def make_handler(atype: str):
+            def handler(ctx, **kwargs):
+                _run_artifact_download(ctx, atype, **kwargs)
 
-    \b
-    Examples:
-      # Download latest data table to default filename
-      notebooklm download data-table
+            handler.__name__ = f"download_{atype.replace('-', '_')}"
+            handler.__doc__ = _make_download_docstring(atype, ARTIFACT_CONFIGS[atype])
+            return handler
 
-      # Download to specific path
-      notebooklm download data-table my-data.csv
+        cmd = make_handler(artifact_type)
 
-      # Download all data tables to directory
-      notebooklm download data-table --all ./data-tables/
+        # Apply options in reverse order (decorators are applied bottom-up)
+        for opt in reversed(STANDARD_DOWNLOAD_OPTIONS):
+            cmd = opt(cmd)
+        cmd = click.pass_context(cmd)
 
-      # Download specific artifact by name
-      notebooklm download data-table --name "chapter 3"
+        # Register with the download group
+        download.add_command(click.command(artifact_type)(cmd))
 
-      # Preview without downloading
-      notebooklm download data-table --all --dry-run
-    """
-    _run_artifact_download(ctx, "data-table", **kwargs)
+
+# Register all standard download commands
+_register_download_commands()
+
+
+# =============================================================================
+# QUIZ AND FLASHCARDS (different options pattern)
+# =============================================================================
+
+FORMAT_EXTENSIONS = {"json": ".json", "markdown": ".md", "html": ".html"}
 
 
 async def _download_interactive(
@@ -739,11 +924,7 @@ async def _download_interactive(
         Path to downloaded file.
     """
     nb_id = require_notebook(notebook)
-    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    cookies = load_auth_from_storage(storage_path)
-
-    csrf, session_id = await fetch_tokens(cookies)
-    auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    auth = await _get_auth_from_context(ctx)
 
     async with NotebookLMClient(auth) as client:
         ext = FORMAT_EXTENSIONS[output_format]

@@ -80,10 +80,10 @@ def select_artifact(
     if earliest:
         selected = min(filtered, key=lambda a: a["created_at"])
         return selected, f"earliest of {count} artifacts"
-    else:
-        # Default to latest (latest=True by default)
-        selected = max(filtered, key=lambda a: a["created_at"])
-        return selected, f"latest of {count} artifacts"
+
+    # Default to latest
+    selected = max(filtered, key=lambda a: a["created_at"])
+    return selected, f"latest of {count} artifacts"
 
 
 def artifact_title_to_filename(

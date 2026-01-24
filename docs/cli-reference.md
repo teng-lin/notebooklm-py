@@ -138,7 +138,35 @@ All generate commands support:
 | `wait <id>` | Artifact ID | `--timeout`, `--interval` | `artifact wait art123` |
 | `suggestions` | - | `-s/--source`, `--json` | `artifact suggestions` |
 
-### Download Commands (`notebooklm download <type>`)
+### Download Commands (`notebooklm download`)
+
+Download supports two modes: **by type** (subcommand) or **by UUID** (direct arguments).
+
+#### Download by UUID
+
+```bash
+# Download artifacts directly by UUID (auto-detects type)
+notebooklm download <uuid1> [uuid2] [uuid3] ...
+
+# Options for UUID mode
+notebooklm download abc123 def456 -o ./downloads/  # Output directory
+notebooklm download abc123 --dry-run               # Preview without downloading
+notebooklm download abc123 --json                  # JSON output
+notebooklm download abc12 --force                  # Partial ID + overwrite existing
+```
+
+| Option | Description |
+|--------|-------------|
+| `-o, --output` | Output directory (default: current directory) |
+| `-n, --notebook` | Notebook ID (uses current context if not set) |
+| `--json` | JSON output |
+| `--dry-run` | Preview without downloading |
+| `--force` | Overwrite existing files |
+| `--no-clobber` | Skip if file exists |
+
+**Partial ID matching**: Use the first few characters of a UUID (e.g., `abc12` instead of `abc123def456...`).
+
+#### Download by Type
 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
