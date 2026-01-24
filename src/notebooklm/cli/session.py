@@ -7,9 +7,13 @@ Commands:
     clear   Clear current notebook context
 """
 
+import asyncio
 import json
 import os
 import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +38,40 @@ from .helpers import (
     run_async,
     set_current_notebook,
 )
+
+
+@contextmanager
+def _windows_playwright_event_loop() -> Iterator[None]:
+    """Temporarily restore default event loop policy for Playwright on Windows.
+
+    Playwright's sync API uses subprocess to spawn the browser, which requires
+    ProactorEventLoop on Windows. However, we set WindowsSelectorEventLoopPolicy
+    globally to fix CLI hanging issues (#79). This context manager temporarily
+    restores the default policy for Playwright, then switches back.
+
+    On non-Windows platforms, this is a no-op.
+
+    Yields:
+        None
+
+    Example:
+        with _windows_playwright_event_loop():
+            with sync_playwright() as p:
+                # Browser operations work on Windows
+                ...
+    """
+    if sys.platform != "win32":
+        yield
+        return
+
+    # Save current policy and restore default (ProactorEventLoop) for Playwright
+    original_policy = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+    try:
+        yield
+    finally:
+        # Restore WindowsSelectorEventLoopPolicy for other async operations
+        asyncio.set_event_loop_policy(original_policy)
 
 
 def _ensure_chromium_installed() -> None:
@@ -130,7 +168,9 @@ def register_session_commands(cli):
         console.print("[yellow]Opening browser for Google login...[/yellow]")
         console.print(f"[dim]Using persistent profile: {browser_profile}[/dim]")
 
-        with sync_playwright() as p:
+        # Use context manager to restore ProactorEventLoop for Playwright on Windows
+        # (fixes #89: NotImplementedError on Windows Python 3.12)
+        with _windows_playwright_event_loop(), sync_playwright() as p:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(browser_profile),
                 headless=False,

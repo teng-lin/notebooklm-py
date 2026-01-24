@@ -7,12 +7,86 @@ Related issues:
 - #75: CLI hangs indefinitely on Windows (asyncio ProactorEventLoop)
 - #79: Fix Windows CLI hanging due to asyncio ProactorEventLoop
 - #80: Fix Unicode encoding errors on non-English Windows systems
+- #89: notebooklm login fails on Windows with Python 3.12 (Playwright subprocess)
 """
 
 import os
 import sys
 
 import pytest
+
+
+class TestPlaywrightEventLoopFix:
+    """Regression tests for Playwright event loop fix (#89).
+
+    Playwright's sync API requires ProactorEventLoop on Windows to spawn browser
+    subprocesses. However, we use WindowsSelectorEventLoopPolicy globally to fix
+    CLI hanging (#79). The _windows_playwright_event_loop() context manager
+    temporarily restores the default policy for Playwright.
+    """
+
+    def test_context_manager_exists(self):
+        """Verify the context manager exists and is importable."""
+        from notebooklm.cli.session import _windows_playwright_event_loop
+
+        assert callable(_windows_playwright_event_loop)
+
+    def test_context_manager_is_noop_on_non_windows(self):
+        """Verify context manager is a no-op on non-Windows platforms."""
+        import asyncio
+        from unittest.mock import patch
+
+        from notebooklm.cli.session import _windows_playwright_event_loop
+
+        # Mock sys.platform to non-Windows
+        with patch("notebooklm.cli.session.sys.platform", "linux"):
+            original_policy = asyncio.get_event_loop_policy()
+            with _windows_playwright_event_loop():
+                # Policy should remain unchanged on non-Windows
+                current_policy = asyncio.get_event_loop_policy()
+                assert current_policy is original_policy
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
+    def test_context_manager_restores_policy_on_windows(self):
+        """Verify context manager switches to default policy and restores on exit."""
+        import asyncio
+
+        from notebooklm.cli.session import _windows_playwright_event_loop
+
+        # Ensure we start with SelectorEventLoopPolicy
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+        with _windows_playwright_event_loop():
+            inside_policy = asyncio.get_event_loop_policy()
+            # Inside the context, should be default (ProactorEventLoop) policy
+            assert not isinstance(inside_policy, asyncio.WindowsSelectorEventLoopPolicy), (
+                "Context manager should switch to default policy for Playwright"
+            )
+
+        # After exit, should restore original policy
+        restored_policy = asyncio.get_event_loop_policy()
+        assert isinstance(restored_policy, asyncio.WindowsSelectorEventLoopPolicy), (
+            "Context manager should restore WindowsSelectorEventLoopPolicy after Playwright"
+        )
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
+    def test_context_manager_restores_on_exception(self):
+        """Verify policy is restored even if an exception occurs."""
+        import asyncio
+
+        from notebooklm.cli.session import _windows_playwright_event_loop
+
+        # Ensure we start with SelectorEventLoopPolicy
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+        with pytest.raises(ValueError), _windows_playwright_event_loop():
+            raise ValueError("Test exception")
+
+        # Policy should be restored despite exception
+        restored_policy = asyncio.get_event_loop_policy()
+        assert isinstance(restored_policy, asyncio.WindowsSelectorEventLoopPolicy), (
+            "Context manager should restore policy even on exception"
+        )
 
 
 class TestWindowsEventLoopPolicy:
