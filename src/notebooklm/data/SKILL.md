@@ -298,7 +298,7 @@ When user wants full automation (generate and download when ready):
    ```
 3. `notebooklm source list` to verify
 
-**Source limits:** Max 50 sources per notebook
+**Source limits:** Varies by plan—Standard: 50, Plus: 100, Pro: 300, Ultra: 600 sources per notebook. See [NotebookLM plans](https://support.google.com/notebooklm/answer/16213268) for details. The CLI does not enforce these limits; they are applied by your NotebookLM account.
 **Supported types:** PDFs, YouTube URLs, web URLs, Google Docs, text files, Markdown, Word docs, audio files, video files, images
 
 ### Bulk Import with Source Waiting (Subagent Pattern)
