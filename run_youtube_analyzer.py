@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from notebooklm.extensions import YouTubeAnalyzer
 from notebooklm.extensions.config import OUTPUT_DIR, VIDEO_LIST_CSV
-from notebooklm.extensions.messages import ENTRY_MESSAGES, get_entry_message as msg
+from notebooklm.extensions.messages import ENTRY_MESSAGES
+from notebooklm.extensions.messages import get_entry_message as msg
 
 
 def choose_language() -> str:

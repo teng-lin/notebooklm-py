@@ -9,7 +9,6 @@ import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # Windows + Python 3.12 compatibility fix
 if sys.platform == "win32" and sys.version_info >= (3, 12):
@@ -78,7 +77,7 @@ async def wait_with_progress(seconds: int, reason: str, lang: str = "en"):
 class YouTubeAnalyzer:
     """YouTube Video Analyzer"""
 
-    def __init__(self, progress_csv: Optional[Path] = None, output_dir: Optional[Path] = None):
+    def __init__(self, progress_csv: Path | None = None, output_dir: Path | None = None):
         """
         Initialize analyzer
 
@@ -91,8 +90,8 @@ class YouTubeAnalyzer:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.progress_manager = ProgressManager(self.progress_csv)
-        self.client: Optional[NotebookLMClient] = None
-        self.notebooks: Dict[str, str] = {}  # channel_name -> notebook_id
+        self.client: NotebookLMClient | None = None
+        self.notebooks: dict[str, str] = {}  # channel_name -> notebook_id
         self.ui_lang: str = "en"  # UI language
         self.output_langs: list = ["cn", "jp"]  # Output languages
 
@@ -168,7 +167,7 @@ class YouTubeAnalyzer:
         logger.info(f"Notebook created: {nb.id}")
         return nb.id
 
-    async def add_video_to_notebook(self, notebook_id: str, video: Dict) -> bool:
+    async def add_video_to_notebook(self, notebook_id: str, video: dict) -> bool:
         """
         Add video to Notebook
 
@@ -198,8 +197,8 @@ class YouTubeAnalyzer:
             return False
 
     async def analyze_video(
-        self, notebook_id: str, video: Dict, language: str = "cn"
-    ) -> Optional[str]:
+        self, notebook_id: str, video: dict, language: str = "cn"
+    ) -> str | None:
         """
         Analyze a single video and generate content
 
@@ -269,7 +268,7 @@ Please generate a reading version of this video according to the following requi
             logger.error(f"{lang_name} analysis failed: {e}")
             return None
 
-    async def process_channel(self, channel_name: str, videos: List[Dict]):
+    async def process_channel(self, channel_name: str, videos: list[dict]):
         """
         Process all videos for a single channel
 
@@ -289,7 +288,7 @@ Please generate a reading version of this video according to the following requi
         print("\n")
 
         # Create/get Notebook
-        logger.info(f"Creating/getting Notebook...")
+        logger.info("Creating/getting Notebook...")
         notebook_id = await self.create_or_get_notebook(channel_name)
         logger.info(f"Notebook ID: {notebook_id}\n")
 
@@ -298,7 +297,7 @@ Please generate a reading version of this video according to the following requi
         pending_count = len(videos_to_process)
         processed = 0
 
-        for i, video in enumerate(videos, 1):
+        for _i, video in enumerate(videos, 1):
             if video.get("status") == "completed":
                 print(f"⏭️  {ui_msg(lang, 'skip_completed')}: {video['youtube_title']}\n")
                 continue
