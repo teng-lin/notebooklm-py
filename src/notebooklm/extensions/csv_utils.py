@@ -24,12 +24,12 @@ class ProgressManager:
         """
         self.csv_path = Path(csv_path)
         self.fieldnames = [
-            'channel_name',
-            'youtube_id',
-            'youtube_title',
-            'uptime',
-            'status',
-            'output_file'
+            "channel_name",
+            "youtube_id",
+            "youtube_title",
+            "uptime",
+            "status",
+            "output_file",
         ]
 
         # 确保 CSV 文件存在
@@ -39,7 +39,7 @@ class ProgressManager:
     def _create_empty_csv(self):
         """Create empty CSV file"""
         self.csv_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+        with open(self.csv_path, "w", encoding="utf-8-sig", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=self.fieldnames)
             writer.writeheader()
         logger.info(f"Created new CSV file: {self.csv_path}")
@@ -53,7 +53,7 @@ class ProgressManager:
         """
         videos = []
         try:
-            with open(self.csv_path, encoding='utf-8-sig', newline='') as f:
+            with open(self.csv_path, encoding="utf-8-sig", newline="") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     videos.append(row)
@@ -74,7 +74,7 @@ class ProgressManager:
             List of videos with matching status
         """
         all_videos = self.read_all()
-        filtered = [v for v in all_videos if v.get('status') == status]
+        filtered = [v for v in all_videos if v.get("status") == status]
         logger.info(f"Found {len(filtered)} records with status '{status}'")
         return filtered
 
@@ -82,7 +82,7 @@ class ProgressManager:
         """Get pending videos (including pending, failed, and empty status)"""
         all_videos = self.read_all()
         # Get all videos with non-completed status
-        pending = [v for v in all_videos if v.get('status') != 'completed']
+        pending = [v for v in all_videos if v.get("status") != "completed"]
         logger.info(f"Found {len(pending)} pending records (non-completed status)")
         return pending
 
@@ -101,7 +101,7 @@ class ProgressManager:
 
         grouped = defaultdict(list)
         for video in videos:
-            channel = video.get('channel_name', 'unknown')
+            channel = video.get("channel_name", "unknown")
             grouped[channel].append(video)
 
         logger.info(f"Videos grouped by {len(grouped)} channels")
@@ -120,10 +120,10 @@ class ProgressManager:
         updated = False
 
         for video in videos:
-            if video['youtube_id'] == youtube_id:
-                video['status'] = status
+            if video["youtube_id"] == youtube_id:
+                video["status"] = status
                 if output_file:
-                    video['output_file'] = output_file
+                    video["output_file"] = output_file
                 updated = True
                 logger.info(f"Updated video {youtube_id} status to '{status}'")
                 break
@@ -141,7 +141,7 @@ class ProgressManager:
             videos: List of video records
         """
         try:
-            with open(self.csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+            with open(self.csv_path, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=self.fieldnames)
                 writer.writeheader()
                 writer.writerows(videos)
@@ -150,8 +150,14 @@ class ProgressManager:
             logger.error(f"Failed to write CSV file: {e}")
             raise
 
-    def add_video(self, channel_name: str, youtube_id: str, youtube_title: str,
-                  uptime: str, status: str = "pending"):
+    def add_video(
+        self,
+        channel_name: str,
+        youtube_id: str,
+        youtube_title: str,
+        uptime: str,
+        status: str = "pending",
+    ):
         """
         Add new video record
 
@@ -165,18 +171,18 @@ class ProgressManager:
         videos = self.read_all()
 
         # Check if already exists
-        existing_ids = [v['youtube_id'] for v in videos]
+        existing_ids = [v["youtube_id"] for v in videos]
         if youtube_id in existing_ids:
             logger.warning(f"Video {youtube_id} already exists, skipping")
             return
 
         new_video = {
-            'channel_name': channel_name,
-            'youtube_id': youtube_id,
-            'youtube_title': youtube_title,
-            'uptime': uptime,
-            'status': status,
-            'output_file': ''
+            "channel_name": channel_name,
+            "youtube_id": youtube_id,
+            "youtube_title": youtube_title,
+            "uptime": uptime,
+            "status": status,
+            "output_file": "",
         }
 
         videos.append(new_video)
@@ -194,8 +200,8 @@ class ProgressManager:
         stats = defaultdict(int)
 
         for video in videos:
-            status = video.get('status', 'unknown')
+            status = video.get("status", "unknown")
             stats[status] += 1
 
-        stats['total'] = len(videos)
+        stats["total"] = len(videos)
         return dict(stats)

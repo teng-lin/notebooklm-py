@@ -1,12 +1,13 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 YouTube 视频分析器 - 主程序入口
 """
+
 import asyncio
 import sys
 
 # 修复 Windows + Python 3.12 兼容性
-if sys.platform == 'win32' and sys.version_info >= (3, 12):
+if sys.platform == "win32" and sys.version_info >= (3, 12):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # ⚠️ 使用相对导入
@@ -29,6 +30,7 @@ async def main():
 
     print("\n✅ 所有任务完成！")
 
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
@@ -38,5 +40,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n\n❌ 错误: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

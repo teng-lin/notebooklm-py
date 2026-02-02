@@ -25,7 +25,7 @@ def sanitize_filename(title: str, max_length: int = 100) -> str:
     """
     # 移除或替换 Windows 文件名非法字符
     illegal_chars = r'[<>:"/\\|?*]'
-    cleaned = re.sub(illegal_chars, '_', title)
+    cleaned = re.sub(illegal_chars, "_", title)
 
     # 移除前后空格
     cleaned = cleaned.strip()
@@ -54,20 +54,20 @@ def format_markdown(video_info: dict, content: str) -> str:
         格式化后的 Markdown 文本
     """
     # 构建 YouTube URL
-    youtube_id = video_info.get('youtube_id', '')
+    youtube_id = video_info.get("youtube_id", "")
     youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
 
     # 获取频道名称
-    channel_name = video_info.get('channel_name', 'Unknown')
+    channel_name = video_info.get("channel_name", "Unknown")
 
     # 获取标题
-    title = video_info.get('youtube_title', 'Untitled')
+    title = video_info.get("youtube_title", "Untitled")
 
     # 获取上传日期
-    uptime = video_info.get('uptime', '')
+    uptime = video_info.get("uptime", "")
 
     # 生成时间
-    generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # 构建 Markdown 文档
     markdown = f"""---
@@ -113,7 +113,7 @@ def save_markdown(output_path: Path, video_info: dict, content: str):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 写入文件
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(formatted_content)
 
         logger.info(f"保存 Markdown 文件: {output_path}")
@@ -155,11 +155,10 @@ def read_markdown(file_path: Path) -> str:
         文件内容
     """
     try:
-        with open(file_path, encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             content = f.read()
         logger.debug(f"读取文件: {file_path}")
         return content
     except Exception as e:
         logger.error(f"读取文件失败: {e}")
         raise
-

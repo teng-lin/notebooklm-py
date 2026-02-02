@@ -11,31 +11,33 @@ from pathlib import Path
 # These can be overridden by environment variables
 
 # Output directory (default: ./output relative to where script is run)
-OUTPUT_DIR = Path(os.getenv('YOUTUBE_OUTPUT_DIR', './output'))
+OUTPUT_DIR = Path(os.getenv("YOUTUBE_OUTPUT_DIR", "./output"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # CSV video list file path (serves as both input and output)
 # User adds videos here, script updates status
-VIDEO_LIST_CSV = Path(os.getenv('YOUTUBE_VIDEO_LIST_CSV', str(OUTPUT_DIR / 'video_list.csv')))
+VIDEO_LIST_CSV = Path(os.getenv("YOUTUBE_VIDEO_LIST_CSV", str(OUTPUT_DIR / "video_list.csv")))
 
 # Backward compatibility alias
 PROGRESS_CSV = VIDEO_LIST_CSV
 
 # ===== Logging Configuration =====
-LOG_LEVEL = os.getenv('YOUTUBE_LOG_LEVEL', 'INFO')
+LOG_LEVEL = os.getenv("YOUTUBE_LOG_LEVEL", "INFO")
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 
 # ===== Retry Configuration =====
-MAX_RETRIES = int(os.getenv('YOUTUBE_MAX_RETRIES', '3'))
-RETRY_DELAY = int(os.getenv('YOUTUBE_RETRY_DELAY', '5'))
+MAX_RETRIES = int(os.getenv("YOUTUBE_MAX_RETRIES", "3"))
+RETRY_DELAY = int(os.getenv("YOUTUBE_RETRY_DELAY", "5"))
 
 # ===== API Configuration =====
-WAIT_FOR_SOURCE_PROCESSING = os.getenv('WAIT_FOR_SOURCE_PROCESSING', 'true').lower() == 'true'
+WAIT_FOR_SOURCE_PROCESSING = os.getenv("WAIT_FOR_SOURCE_PROCESSING", "true").lower() == "true"
 
 # ===== Batch Processing Configuration =====
 # Delay between video processing (seconds)
 # Give NotebookLM enough time to complete transcription, avoid API limits
-VIDEO_PROCESSING_DELAY = int(os.getenv('VIDEO_PROCESSING_DELAY', '300'))  # 5 minutes, suitable for free accounts
+VIDEO_PROCESSING_DELAY = int(
+    os.getenv("VIDEO_PROCESSING_DELAY", "300")
+)  # 5 minutes, suitable for free accounts
 
 # ===== Analysis Prompts =====
 
