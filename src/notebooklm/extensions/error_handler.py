@@ -17,13 +17,11 @@ logger = logging.getLogger(__name__)
 
 class RetryableError(Exception):
     """可重试的错误"""
-
     pass
 
 
 class NonRetryableError(Exception):
     """不可重试的错误"""
-
     pass
 
 
@@ -50,15 +48,11 @@ def is_retryable_error(error: Exception) -> bool:
     # 尝试检查 httpx 错误（如果安装了）
     try:
         import httpx
-
-        if isinstance(
-            error,
-            (
-                httpx.NetworkError,
-                httpx.TimeoutException,
-                httpx.ConnectError,
-            ),
-        ):
+        if isinstance(error, (
+            httpx.NetworkError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+        )):
             return True
 
         # HTTP 5xx 错误可以重试
@@ -83,7 +77,6 @@ def retry_on_error(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY):
         max_retries: 最大重试次数
         delay: 重试延迟（秒）
     """
-
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
@@ -103,8 +96,10 @@ def retry_on_error(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY):
 
                     # 如果还有重试机会
                     if attempt < max_retries:
-                        wait_time = delay * (2**attempt)  # 指数退避
-                        logger.warning(f"操作失败 (尝试 {attempt + 1}/{max_retries + 1}): {e}")
+                        wait_time = delay * (2 ** attempt)  # 指数退避
+                        logger.warning(
+                            f"操作失败 (尝试 {attempt + 1}/{max_retries + 1}): {e}"
+                        )
                         logger.info(f"等待 {wait_time:.1f} 秒后重试...")
                         await asyncio.sleep(wait_time)
                     else:
@@ -114,7 +109,6 @@ def retry_on_error(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY):
             raise last_exception
 
         return wrapper
-
     return decorator
 
 
@@ -152,7 +146,7 @@ class ErrorLogger:
             log_file: 日志文件路径（可选）
         """
         self.log_file = log_file
-        self.errors = []
+        self.errors: list[dict] = []
 
     def log_error(self, context: str, error: Exception, video_info: dict | None = None):
         """
@@ -164,10 +158,10 @@ class ErrorLogger:
             video_info: 视频信息（可选）
         """
         error_record = {
-            "context": context,
-            "error_type": type(error).__name__,
-            "error_message": str(error),
-            "video_info": video_info,
+            'context': context,
+            'error_type': type(error).__name__,
+            'error_message': str(error),
+            'video_info': video_info
         }
 
         self.errors.append(error_record)
@@ -182,7 +176,7 @@ class ErrorLogger:
         # 如果指定了日志文件，追加写入
         if self.log_file:
             try:
-                with open(self.log_file, "a", encoding="utf-8") as f:
+                with open(self.log_file, 'a', encoding='utf-8') as f:
                     f.write(f"{log_message}\n")
             except Exception as e:
                 logger.error(f"写入错误日志文件失败: {e}")
@@ -195,13 +189,17 @@ class ErrorLogger:
             错误统计字典
         """
         if not self.errors:
-            return {"total_errors": 0}
+            return {'total_errors': 0}
 
-        summary = {"total_errors": len(self.errors), "error_types": {}}
+        summary = {
+            'total_errors': len(self.errors),
+            'error_types': {}
+        }
 
         for error in self.errors:
-            error_type = error["error_type"]
-            summary["error_types"][error_type] = summary["error_types"].get(error_type, 0) + 1
+            error_type = error['error_type']
+            summary['error_types'][error_type] = \
+                summary['error_types'].get(error_type, 0) + 1
 
         return summary
 
@@ -209,14 +207,14 @@ class ErrorLogger:
         """打印错误摘要"""
         summary = self.get_error_summary()
 
-        if summary["total_errors"] == 0:
+        if summary['total_errors'] == 0:
             logger.info("✅ 没有错误发生")
             return
 
         logger.info("\n错误摘要:")
         logger.info(f"  总错误数: {summary['total_errors']}")
         logger.info("  错误类型分布:")
-        for error_type, count in summary["error_types"].items():
+        for error_type, count in summary['error_types'].items():
             logger.info(f"    - {error_type}: {count}")
 
 
