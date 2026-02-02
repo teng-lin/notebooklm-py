@@ -1,0 +1,19 @@
+# YouTube Video List Template / 视频列表模板 / 動画リストテンプレート
+# 
+# Instructions / 使用说明 / 使用方法:
+#   1. Copy this file to: output/progress.csv
+#   2. Add your videos below the header line
+#   3. Run: python run_youtube_analyzer.py
+#
+# Columns / 列说明 / カラム説明:
+#   - channel_name: YouTube channel name (videos with same channel go to same Notebook)
+#   - youtube_id: Video ID from URL (e.g., https://www.youtube.com/watch?v=VIDEO_ID)
+#   - youtube_title: Video title
+#   - uptime: Upload date (YYYY/MM/DD)
+#   - status: Leave empty for new videos (script will update: pending/processing/completed/failed)
+#   - output_file: Leave empty (script will update with generated filenames)
+#
+channel_name,youtube_id,youtube_title,uptime,status,output_file
+Example Channel,dQw4w9WgXcQ,Example Video Title,2024/01/15,,
+PIVOT 公式チャンネル,DTCwUOd08-I,Copilot活用術 vol.1,2024/07/26,,
+SEOならミエルカチャンネル,QtXayDz9ALc,SEOとは何か？SEO対策を始める前に必ず理解すべき本質,2026/01/14,,
