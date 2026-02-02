@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 YouTube 视频分析器 - 运行脚本
 Run this script from the repository root directory.
@@ -7,10 +6,9 @@ Run this script from the repository root directory.
 Usage:
     python run_youtube_analyzer.py
 """
-import sys
 import asyncio
 import io
-import logging
+import sys
 
 # Windows 终端 UTF-8 编码修复（解决日文乱码）
 if sys.platform == 'win32':
@@ -30,8 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from notebooklm.extensions import YouTubeAnalyzer
-from notebooklm.extensions.config import VIDEO_LIST_CSV, OUTPUT_DIR
-
+from notebooklm.extensions.config import OUTPUT_DIR, VIDEO_LIST_CSV
 
 # =============================================================================
 # 多语言界面支持 / Multi-language UI / 多言語UIサポート
@@ -131,18 +128,11 @@ def choose_language() -> str:
     print(MESSAGES['en']['choose_language'])
     print(MESSAGES['en']['language_options'])
     print("=" * 60)
-    
+
+    choice_map = {'1': 'en', '2': 'ja', '3': 'zh'}
     try:
         choice = input(MESSAGES['en']['enter_choice']).strip()
-        if choice == '1':
-            return 'en'
-        elif choice == '2':
-            return 'ja'
-        elif choice == '3':
-            return 'zh'
-        else:
-            # 默认英文
-            return 'en'
+        return choice_map.get(choice, 'en')
     except (EOFError, KeyboardInterrupt):
         return 'en'
 
@@ -170,35 +160,35 @@ def choose_output_languages(ui_lang: str) -> list:
         'zh': 'cn',  # 中文界面 -> 中文输出
         'en': 'en'   # 英语界面 -> 英文输出
     }
-    
+
     # 输出语言名称
     lang_names = {
         'en': msg(ui_lang, 'english'),
         'jp': msg(ui_lang, 'japanese'),
         'cn': msg(ui_lang, 'chinese'),
     }
-    
+
     # 询问提示映射
     add_prompts = {
         'en': 'add_english',
         'jp': 'add_japanese',
         'cn': 'add_chinese',
     }
-    
+
     print("\n" + "=" * 60)
     print(f"📝 {msg(ui_lang, 'output_lang_prompt')}")
     print("=" * 60)
-    
+
     output_langs = []
-    
+
     # 默认语言
     default_lang = lang_map[ui_lang]
     output_langs.append(default_lang)
     print(f"   {msg(ui_lang, 'default_output')}: {lang_names[default_lang]}")
-    
+
     # 其他可选语言（排除默认语言）
-    other_langs = [l for l in ['en', 'jp', 'cn'] if l != default_lang]
-    
+    other_langs = [lang for lang in ['en', 'jp', 'cn'] if lang != default_lang]
+
     # 逐个询问是否添加其他语言
     for other_lang in other_langs:
         try:
@@ -207,12 +197,12 @@ def choose_output_languages(ui_lang: str) -> list:
                 output_langs.append(other_lang)
         except (EOFError, KeyboardInterrupt):
             pass
-    
+
     # 显示最终选择
-    selected_names = [lang_names[l] for l in output_langs]
+    selected_names = [lang_names[lang] for lang in output_langs]
     print(f"✅ {msg(ui_lang, 'output_langs_selected')}: {', '.join(selected_names)}")
     print("=" * 60)
-    
+
     return output_langs
 
 
@@ -220,40 +210,40 @@ async def main():
     """主函数"""
     # 选择界面语言
     lang = choose_language()
-    
+
     print("\n" + "=" * 60)
     print(f"🚀 {msg(lang, 'title')}")
     print("=" * 60)
     print(f"📊 {msg(lang, 'progress_file')}: {VIDEO_LIST_CSV}")
     print(f"📁 {msg(lang, 'output_dir')}: {OUTPUT_DIR}")
     print("=" * 60)
-    
+
     # 选择输出语言
     output_langs = choose_output_languages(lang)
-    
+
     # 显示连接提示
     print("\n" + "=" * 60)
     print(f"🔗 {msg(lang, 'connecting')}")
     print("=" * 60)
-    
+
     async with YouTubeAnalyzer() as analyzer:
         # 显示待处理视频
         pending = analyzer.progress_manager.get_pending_videos()
         print(f"\n📋 {msg(lang, 'pending_videos')}: {len(pending)}")
-        
+
         if pending:
             print(f"\n{msg(lang, 'first_n_videos', n=min(5, len(pending)))}")
             for i, v in enumerate(pending[:5], 1):
                 title = v.get('youtube_title', 'Unknown')[:40]
                 channel = v.get('channel_name', 'Unknown')
                 print(f"  {i}. [{channel}] {title}...")
-        
+
         print("\n" + "=" * 60)
         print(f"🚀 {msg(lang, 'starting')}")
         print("=" * 60 + "\n")
-        
+
         await analyzer.run(ui_lang=lang, output_langs=output_langs)
-    
+
     print("\n" + "=" * 60)
     print(f"✅ {msg(lang, 'completed')}")
     print("=" * 60)

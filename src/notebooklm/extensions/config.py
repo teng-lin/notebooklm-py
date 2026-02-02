@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 YouTube Analyzer Configuration
 改进版配置 - 减少 AI 幻觉，更忠实原文
