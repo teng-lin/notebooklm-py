@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 文件处理工具
 包括文件名清理和 Markdown 格式化
