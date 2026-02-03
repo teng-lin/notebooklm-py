@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Windows + Python 3.12 compatibility fix
-if sys.platform == 'win32' and sys.version_info >= (3, 12):
+if sys.platform == "win32" and sys.version_info >= (3, 12):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from notebooklm import NotebookLMClient
@@ -32,14 +32,11 @@ from .file_utils import generate_output_filename, save_markdown
 from .messages import get_ui_message as ui_msg
 
 # Configure logging (keep logs in English for technical purposes)
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format=LOG_FORMAT
-)
+logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 
-async def wait_with_progress(seconds: int, reason: str, lang: str = 'en'):
+async def wait_with_progress(seconds: int, reason: str, lang: str = "en"):
     """
     Wait function with progress display
 
@@ -50,11 +47,13 @@ async def wait_with_progress(seconds: int, reason: str, lang: str = 'en'):
     """
     end_time = datetime.now() + timedelta(seconds=seconds)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"⏳ {reason}")
-    print(f"⏱️  {ui_msg(lang, 'wait_time')}: {seconds} {ui_msg(lang, 'seconds')} ({seconds//60} {ui_msg(lang, 'minutes')})")
+    print(
+        f"⏱️  {ui_msg(lang, 'wait_time')}: {seconds} {ui_msg(lang, 'seconds')} ({seconds // 60} {ui_msg(lang, 'minutes')})"
+    )
     print(f"🕐 {ui_msg(lang, 'finish_time')}: {end_time.strftime('%H:%M:%S')}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     remaining = seconds
     interval = 30
@@ -68,7 +67,9 @@ async def wait_with_progress(seconds: int, reason: str, lang: str = 'en'):
             remaining -= interval
             mins = remaining // 60
             secs = remaining % 60
-            print(f"⏳ {ui_msg(lang, 'remaining')}: {mins} {ui_msg(lang, 'min')} {secs} {ui_msg(lang, 'sec')} ({remaining} {ui_msg(lang, 'seconds')})")
+            print(
+                f"⏳ {ui_msg(lang, 'remaining')}: {mins} {ui_msg(lang, 'min')} {secs} {ui_msg(lang, 'sec')} ({remaining} {ui_msg(lang, 'seconds')})"
+            )
 
     print(f"✅ {ui_msg(lang, 'wait_complete')}\n")
 
@@ -91,8 +92,8 @@ class YouTubeAnalyzer:
         self.progress_manager = ProgressManager(self.progress_csv)
         self.client: NotebookLMClient | None = None
         self.notebooks: dict[str, str] = {}  # channel_name -> notebook_id
-        self.ui_lang: str = 'en'  # UI language
-        self.output_langs: list = ['cn', 'jp']  # Output languages
+        self.ui_lang: str = "en"  # UI language
+        self.output_langs: list = ["cn", "jp"]  # Output languages
 
     async def __aenter__(self):
         """Async context manager entry"""
@@ -120,7 +121,7 @@ class YouTubeAnalyzer:
             prefix = "YouTube 分析: "
             for nb in existing_notebooks:
                 if nb.title and nb.title.startswith(prefix):
-                    channel_name = nb.title[len(prefix):]
+                    channel_name = nb.title[len(prefix) :]
                     self.notebooks[channel_name] = nb.id
                     logger.info(f"  Found existing Notebook: {channel_name} -> {nb.id}")
 
@@ -180,7 +181,7 @@ class YouTubeAnalyzer:
             Success status
         """
         assert self.client is not None
-        youtube_id = video['youtube_id']
+        youtube_id = video["youtube_id"]
         youtube_url = f"https://www.youtube.com/watch?v={youtube_id}"
 
         try:
@@ -188,9 +189,7 @@ class YouTubeAnalyzer:
             logger.info(f"  URL: {youtube_url}")
 
             await self.client.sources.add_url(
-                notebook_id,
-                youtube_url,
-                wait=WAIT_FOR_SOURCE_PROCESSING
+                notebook_id, youtube_url, wait=WAIT_FOR_SOURCE_PROCESSING
             )
 
             logger.info(f"Video added: {youtube_id}")
@@ -220,10 +219,10 @@ class YouTubeAnalyzer:
         title_prefix = youtube_title[:30]
 
         # Select prompt and language name
-        if language == 'en':
+        if language == "en":
             prompt = ANALYSIS_PROMPT_EN
             lang_name = "English"
-        elif language == 'jp':
+        elif language == "jp":
             prompt = ANALYSIS_PROMPT_JP
             lang_name = "Japanese"
         else:  # cn
@@ -232,7 +231,7 @@ class YouTubeAnalyzer:
 
         try:
             # Build question - explicitly specify the video source to analyze
-            if language == 'en':
+            if language == "en":
                 question = f"""**Important: Please analyze ONLY based on the transcript content of the source named "{youtube_title}".**
 **If there are multiple video sources in this Notebook, ignore others and only analyze the video whose title starts with "{title_prefix}".**
 
@@ -240,7 +239,7 @@ Please generate a reading version of this video according to the following requi
 
 {prompt}
 """
-            elif language == 'jp':
+            elif language == "jp":
                 question = f"""**重要：source 名が「{youtube_title}」の動画の書き起こし内容のみに基づいて分析してください。**
 **Notebook に複数の動画 source がある場合は、他の source を無視し、タイトルの最初の30文字が「{title_prefix}」の動画のみを分析してください。**
 
@@ -264,7 +263,9 @@ Please generate a reading version of this video according to the following requi
             # Get analysis result
             result = await self.client.chat.ask(notebook_id, question)
 
-            logger.info(f"{lang_name} analysis complete, content length: {len(result.answer)} chars")
+            logger.info(
+                f"{lang_name} analysis complete, content length: {len(result.answer)} chars"
+            )
             return result.answer
 
         except Exception as e:
@@ -282,12 +283,12 @@ Please generate a reading version of this video according to the following requi
         lang = self.ui_lang
 
         print("\n")
-        print("="*60)
+        print("=" * 60)
         print(f"📺 {ui_msg(lang, 'processing_channel')}: {channel_name}")
-        print("="*60)
+        print("=" * 60)
         print(f"📹 {ui_msg(lang, 'videos_to_process')}: {len(videos)}")
         print(f"🕐 {ui_msg(lang, 'start_time')}: {datetime.now().strftime('%H:%M:%S')}")
-        print("="*60)
+        print("=" * 60)
         print("\n")
 
         # Create/get Notebook
@@ -296,24 +297,24 @@ Please generate a reading version of this video according to the following requi
         logger.info(f"Notebook ID: {notebook_id}\n")
 
         # Process videos: add → analyze → wait
-        videos_to_process = [v for v in videos if v.get('status') != 'completed']
+        videos_to_process = [v for v in videos if v.get("status") != "completed"]
         pending_count = len(videos_to_process)
         processed = 0
 
         for _i, video in enumerate(videos, 1):
-            if video.get('status') == 'completed':
+            if video.get("status") == "completed":
                 print(f"⏭️  {ui_msg(lang, 'skip_completed')}: {video['youtube_title']}\n")
                 continue
 
             processed += 1
 
-            print("="*60)
+            print("=" * 60)
             print(f"🎬 {ui_msg(lang, 'video')} [{processed}/{pending_count}]")
-            print("="*60)
+            print("=" * 60)
             print(f"📝 {ui_msg(lang, 'title')}: {video['youtube_title']}")
             print(f"🆔 {ui_msg(lang, 'id')}: {video['youtube_id']}")
             print(f"📅 {ui_msg(lang, 'upload_date')}: {video['uptime']}")
-            print("="*60)
+            print("=" * 60)
             print()
 
             # Step 1: Add video to Notebook
@@ -322,7 +323,7 @@ Please generate a reading version of this video according to the following requi
 
             if not success:
                 print(f"❌ {ui_msg(lang, 'add_failed')}\n")
-                self.progress_manager.update_status(video['youtube_id'], 'failed')
+                self.progress_manager.update_status(video["youtube_id"], "failed")
                 continue
 
             print(f"✅ {ui_msg(lang, 'video_added')}\n")
@@ -332,22 +333,21 @@ Please generate a reading version of this video according to the following requi
             print(f"⏳ {ui_msg(lang, 'analyzing_wait')}")
 
             # Update status to processing
-            self.progress_manager.update_status(video['youtube_id'], 'processing')
+            self.progress_manager.update_status(video["youtube_id"], "processing")
 
             # Generate base filename
-            base_filename = generate_output_filename(
-                channel_name,
-                video['youtube_title']
-            ).replace('.md', '')
+            base_filename = generate_output_filename(channel_name, video["youtube_title"]).replace(
+                ".md", ""
+            )
 
             success_count = 0
             output_files = []
             expected_count = len(self.output_langs)
 
             # Generate output based on selected languages
-            if 'en' in self.output_langs:
+            if "en" in self.output_langs:
                 print(f"  📝 {ui_msg(lang, 'generating_en')}")
-                content_en = await self.analyze_video(notebook_id, video, 'en')
+                content_en = await self.analyze_video(notebook_id, video, "en")
                 if content_en:
                     output_filename_en = f"{base_filename}_en.md"
                     output_path_en = self.output_dir / output_filename_en
@@ -361,9 +361,9 @@ Please generate a reading version of this video according to the following requi
                 else:
                     print(f"  ❌ {ui_msg(lang, 'en_failed')}")
 
-            if 'jp' in self.output_langs:
+            if "jp" in self.output_langs:
                 print(f"  📝 {ui_msg(lang, 'generating_jp')}")
-                content_jp = await self.analyze_video(notebook_id, video, 'jp')
+                content_jp = await self.analyze_video(notebook_id, video, "jp")
                 if content_jp:
                     output_filename_jp = f"{base_filename}_jp.md"
                     output_path_jp = self.output_dir / output_filename_jp
@@ -377,9 +377,9 @@ Please generate a reading version of this video according to the following requi
                 else:
                     print(f"  ❌ {ui_msg(lang, 'jp_failed')}")
 
-            if 'cn' in self.output_langs:
+            if "cn" in self.output_langs:
                 print(f"  📝 {ui_msg(lang, 'generating_cn')}")
-                content_cn = await self.analyze_video(notebook_id, video, 'cn')
+                content_cn = await self.analyze_video(notebook_id, video, "cn")
                 if content_cn:
                     output_filename_cn = f"{base_filename}_cn.md"
                     output_path_cn = self.output_dir / output_filename_cn
@@ -396,13 +396,13 @@ Please generate a reading version of this video according to the following requi
             # Update status based on success count
             if success_count == expected_count:
                 self.progress_manager.update_status(
-                    video['youtube_id'],
-                    'completed',
-                    ', '.join(output_files)
+                    video["youtube_id"], "completed", ", ".join(output_files)
                 )
                 print(f"\n✅ {ui_msg(lang, 'video_complete')}")
                 print(f"📁 {ui_msg(lang, 'files')}: {', '.join(output_files)}")
-                print(f"📊 {ui_msg(lang, 'progress')}: {processed}/{pending_count} {ui_msg(lang, 'completed')}\n")
+                print(
+                    f"📊 {ui_msg(lang, 'progress')}: {processed}/{pending_count} {ui_msg(lang, 'completed')}\n"
+                )
 
                 # Step 3: Wait before next video
                 if processed < pending_count:
@@ -410,15 +410,15 @@ Please generate a reading version of this video according to the following requi
                     await wait_with_progress(
                         VIDEO_PROCESSING_DELAY,
                         f"{ui_msg(lang, 'wait_next')} ({processed}/{pending_count} {ui_msg(lang, 'completed')})",
-                        lang
+                        lang,
                     )
                 else:
                     print(f"🎉 {ui_msg(lang, 'all_done')}\n")
             elif success_count > 0:
                 self.progress_manager.update_status(
-                    video['youtube_id'],
-                    'partial' if expected_count > 1 else 'completed',
-                    ', '.join(output_files)
+                    video["youtube_id"],
+                    "partial" if expected_count > 1 else "completed",
+                    ", ".join(output_files),
                 )
                 if expected_count > 1:
                     print(f"\n⚠️ {ui_msg(lang, 'partial_complete')}")
@@ -426,13 +426,13 @@ Please generate a reading version of this video according to the following requi
                     print(f"\n✅ {ui_msg(lang, 'video_complete')}")
                 print(f"📁 {ui_msg(lang, 'files')}: {', '.join(output_files)}")
             else:
-                self.progress_manager.update_status(video['youtube_id'], 'failed')
+                self.progress_manager.update_status(video["youtube_id"], "failed")
                 print(f"\n❌ {ui_msg(lang, 'video_failed')}")
 
         print("\n")
-        print("="*60)
+        print("=" * 60)
         print(f"✅ {ui_msg(lang, 'channel_complete')} '{channel_name}'")
-        print("="*60)
+        print("=" * 60)
         print("\n")
 
     async def run(self, ui_lang: str = "en", output_langs: list | None = None):
@@ -449,11 +449,11 @@ Please generate a reading version of this video according to the following requi
         start_time = datetime.now()
 
         print("\n")
-        print("="*60)
+        print("=" * 60)
         print(f"🚀 {ui_msg(lang, 'system_start')}")
-        print("="*60)
+        print("=" * 60)
         print(f"🕐 {ui_msg(lang, 'start_time')}: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*60)
+        print("=" * 60)
 
         # Get pending videos
         pending_videos = self.progress_manager.get_pending_videos()
@@ -486,7 +486,7 @@ Please generate a reading version of this video according to the following requi
         print(f"   - {ui_msg(lang, 'tip1')} ☕")
         print(f"   - {ui_msg(lang, 'tip2')}")
         print(f"   - {ui_msg(lang, 'tip3')}")
-        print("="*60)
+        print("=" * 60)
         print("\n")
 
         # Process channels
@@ -504,13 +504,15 @@ Please generate a reading version of this video according to the following requi
         duration_secs = int(duration.total_seconds() % 60)
 
         print("\n")
-        print("="*60)
+        print("=" * 60)
         print(f"🎉 {ui_msg(lang, 'processing_complete')}")
-        print("="*60)
+        print("=" * 60)
         print(f"🕐 {ui_msg(lang, 'start_time')}: {start_time.strftime('%H:%M:%S')}")
         print(f"🕐 {ui_msg(lang, 'end_time')}: {end_time.strftime('%H:%M:%S')}")
-        print(f"⏱️  {ui_msg(lang, 'total_duration')}: {duration_mins} {ui_msg(lang, 'min')} {duration_secs} {ui_msg(lang, 'sec')}")
-        print("="*60)
+        print(
+            f"⏱️  {ui_msg(lang, 'total_duration')}: {duration_mins} {ui_msg(lang, 'min')} {duration_secs} {ui_msg(lang, 'sec')}"
+        )
+        print("=" * 60)
 
         print(f"\n📊 {ui_msg(lang, 'processing_stats')}:")
         stats = self.progress_manager.get_statistics()
@@ -525,22 +527,5 @@ Please generate a reading version of this video according to the following requi
         print(f"   1. {ui_msg(lang, 'next1')}")
         print(f"   2. {ui_msg(lang, 'next2')}")
         print(f"   3. {ui_msg(lang, 'next3')}")
-        print("="*60)
+        print("=" * 60)
         print("\n")
-
-
-async def main():
-    """Main function"""
-    try:
-        async with YouTubeAnalyzer() as analyzer:
-            await analyzer.run()
-    except Exception as e:
-        logger.error(f"Program error: {e}", exc_info=True)
-        return 1
-
-    return 0
-
-
-if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
