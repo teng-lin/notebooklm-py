@@ -197,7 +197,7 @@ class ProgressManager:
             Status statistics dictionary
         """
         videos = self.read_all()
-        stats = defaultdict(int)
+        stats: defaultdict[str, int] = defaultdict(int)
 
         for video in videos:
             status = video.get("status", "unknown")

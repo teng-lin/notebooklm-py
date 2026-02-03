@@ -87,7 +87,7 @@ def retry_on_error(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY):
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
-            last_exception = None
+            last_exception: Exception | None = None
 
             for attempt in range(max_retries + 1):
                 try:
@@ -111,6 +111,7 @@ def retry_on_error(max_retries: int = MAX_RETRIES, delay: float = RETRY_DELAY):
                         logger.error(f"达到最大重试次数 ({max_retries})")
 
             # 所有重试都失败
+            assert last_exception is not None
             raise last_exception
 
         return wrapper
@@ -195,15 +196,15 @@ class ErrorLogger:
             错误统计字典
         """
         if not self.errors:
-            return {"total_errors": 0}
+            return {"total_errors": 0, "error_types": {}}
 
-        summary = {"total_errors": len(self.errors), "error_types": {}}
+        error_types: dict[str, int] = {}
 
         for error in self.errors:
             error_type = error["error_type"]
-            summary["error_types"][error_type] = summary["error_types"].get(error_type, 0) + 1
+            error_types[error_type] = error_types.get(error_type, 0) + 1
 
-        return summary
+        return {"total_errors": len(self.errors), "error_types": error_types}
 
     def print_summary(self):
         """打印错误摘要"""
