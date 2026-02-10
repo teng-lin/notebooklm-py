@@ -274,12 +274,16 @@ async def _resolve_partial_id(
     # Validate and normalize the ID
     partial_id = validate_id(partial_id, entity_name)
 
-    # Skip resolution for IDs that look complete (20+ chars)
-    if len(partial_id) >= 20:
+    # Skip resolution for IDs that look complete (50+ chars)
+    if len(partial_id) >= 50:
         return partial_id
 
     items = await list_fn()
     matches = [item for item in items if item.id.lower().startswith(partial_id.lower())]
+    
+    # Do a match based on title if ther is no match on UUID:
+    if len(matches) == 0:
+        matches = [item for item in items if item.title.lower().startswith(partial_id.lower())]
 
     if len(matches) == 1:
         if matches[0].id != partial_id:
