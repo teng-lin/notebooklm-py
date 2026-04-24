@@ -31,9 +31,10 @@ import json
 import logging
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 import httpx
 
@@ -41,6 +42,11 @@ from ._url_utils import contains_google_auth_redirect, is_google_auth_redirect
 from .paths import get_storage_path
 
 logger = logging.getLogger(__name__)
+
+CookieKey: TypeAlias = tuple[str, str]
+DomainCookieMap: TypeAlias = dict[CookieKey, str]
+FlatCookieMap: TypeAlias = dict[str, str]
+CookieInput: TypeAlias = DomainCookieMap | FlatCookieMap
 
 # Minimum required cookies (must have at least SID for basic auth)
 MINIMUM_REQUIRED_COOKIES = {"SID"}
@@ -53,6 +59,7 @@ ALLOWED_COOKIE_DOMAINS = {
     ".notebooklm.google.com",
     "notebooklm.google.com",
     ".googleusercontent.com",
+    "accounts.google.com",  # Required for token refresh redirects
 }
 
 # Regional Google ccTLDs where Google may set auth cookies
@@ -148,14 +155,26 @@ class AuthTokens:
     """Authentication tokens for NotebookLM API.
 
     Attributes:
-        cookies: Dict of required Google auth cookies
+        cookies: Dict of required Google auth cookies keyed by (name, domain)
         csrf_token: CSRF token (SNlM0e) extracted from page
         session_id: Session ID (FdrFJe) extracted from page
+        storage_path: Path to the storage_state.json file, if file-based auth was used
+        cookie_jar: Domain-preserving httpx.Cookies jar. Preferred over flat cookies dict
+            for HTTP operations as it retains original cookie domains (e.g.,
+            .googleusercontent.com vs .google.com).
     """
 
-    cookies: dict[str, str]
+    cookies: DomainCookieMap
     csrf_token: str
     session_id: str
+    storage_path: Path | None = None
+    cookie_jar: httpx.Cookies | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize legacy flat cookie mappings into domain-keyed mappings."""
+        self.cookies = normalize_cookie_map(self.cookies)
+        if self.cookie_jar is None:
+            self.cookie_jar = build_cookie_jar(cookies=self.cookies, storage_path=self.storage_path)
 
     @property
     def cookie_header(self) -> str:
@@ -164,7 +183,18 @@ class AuthTokens:
         Returns:
             Semicolon-separated cookie string (e.g., "SID=abc; HSID=def")
         """
-        return "; ".join(f"{k}={v}" for k, v in self.cookies.items())
+        return "; ".join(f"{k}={v}" for k, v in self.flat_cookies.items())
+
+    @property
+    def flat_cookies(self) -> FlatCookieMap:
+        """Return a legacy name→value cookie mapping.
+
+        When the same cookie name exists on multiple domains, the base
+        ``.google.com`` value wins for compatibility with the previous flat
+        representation. Domain-aware HTTP operations should use ``cookie_jar``
+        or ``cookies`` directly instead.
+        """
+        return flatten_cookie_map(self.cookies)
 
     @classmethod
     async def from_storage(
@@ -196,13 +226,56 @@ class AuthTokens:
             # Load from a specific profile
             auth = await AuthTokens.from_storage(profile="work")
         """
-        if path is None and profile is not None:
+        if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
             from .paths import get_storage_path
 
             path = get_storage_path(profile=profile)
-        cookies = load_auth_from_storage(path)
-        csrf_token, session_id = await fetch_tokens(cookies)
-        return cls(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+
+        storage_state = _load_storage_state(path)
+        cookies = extract_cookies_with_domains(storage_state)
+
+        # Build domain-preserving jar and use it for token fetch
+        jar = build_cookie_jar(cookies=cookies)
+        csrf_token, session_id = await _fetch_tokens_with_jar(jar)
+
+        # Persist any refreshed cookies from the token fetch
+        save_cookies_to_storage(jar, path)
+
+        return cls(
+            cookies=cookies,
+            csrf_token=csrf_token,
+            session_id=session_id,
+            storage_path=path,
+            cookie_jar=jar,
+        )
+
+
+def normalize_cookie_map(cookies: CookieInput | None) -> DomainCookieMap:
+    """Normalize flat or domain-aware cookie maps into (name, domain) keys."""
+    normalized: DomainCookieMap = {}
+    if not cookies:
+        return normalized
+
+    for key, value in cookies.items():
+        if isinstance(key, tuple):
+            name, domain = key
+        else:
+            name, domain = key, ".google.com"
+        if name:
+            normalized[(name, domain or ".google.com")] = value
+    return normalized
+
+
+def flatten_cookie_map(cookies: CookieInput | None) -> FlatCookieMap:
+    """Flatten domain-aware cookies for legacy raw Cookie header callers."""
+    flat: FlatCookieMap = {}
+
+    for (name, domain), value in normalize_cookie_map(cookies).items():
+        is_base_domain = domain == ".google.com"
+        if name not in flat or is_base_domain:
+            flat[name] = value
+
+    return flat
 
 
 def _is_google_domain(domain: str) -> bool:
@@ -670,14 +743,286 @@ def load_httpx_cookies(path: Path | None = None) -> "httpx.Cookies":
     return cookies
 
 
-async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
-    """Fetch CSRF token and session ID from NotebookLM homepage.
+def extract_cookies_with_domains(
+    storage_state: dict[str, Any],
+) -> DomainCookieMap:
+    """Extract Google cookies from storage state preserving original domains.
 
-    Makes an authenticated request to NotebookLM and extracts the required
-    tokens from the page HTML.
+    Unlike extract_cookies_from_storage() which returns a simple dict of
+    name->value, this function returns a dict of (name, domain)->value tuples
+    to preserve the original cookie domains. This is required for building
+    proper httpx.Cookies jars that handle cross-domain redirects correctly.
 
     Args:
-        cookies: Dict of Google auth cookies
+        storage_state: Parsed JSON from Playwright's storage state file.
+
+    Returns:
+        Dict mapping (cookie_name, domain) tuples to values.
+        Example: {("SID", ".google.com"): "abc123", ("HSID", ".google.com"): "def456"}
+
+    Raises:
+        ValueError: If required cookies (SID) are missing from storage state.
+    """
+    cookie_map: DomainCookieMap = {}
+
+    for cookie in storage_state.get("cookies", []):
+        domain = cookie.get("domain", "")
+        name = cookie.get("name")
+        value = cookie.get("value", "")
+
+        if not _is_allowed_auth_domain(domain) or not name or not value:
+            continue
+
+        key = (name, domain)
+        if key not in cookie_map:
+            cookie_map[key] = value
+
+    # Validate required cookies exist (any domain)
+    cookie_names = {name for name, _ in cookie_map}
+    missing = MINIMUM_REQUIRED_COOKIES - cookie_names
+    if missing:
+        raise ValueError(
+            f"Missing required cookies: {missing}\nRun 'notebooklm login' to authenticate."
+        )
+
+    return cookie_map
+
+
+def build_httpx_cookies_from_storage(path: Path | None = None) -> "httpx.Cookies":
+    """Build an httpx.Cookies jar with original domains preserved.
+
+    This function loads cookies from storage and creates a proper httpx.Cookies
+    jar with the original domains intact. This is critical for cross-domain
+    redirects (e.g., to accounts.google.com for token refresh) to work correctly.
+
+    Args:
+        path: Path to storage_state.json. If provided, takes precedence over env vars.
+
+    Returns:
+        httpx.Cookies jar with all cookies set to their original domains.
+
+    Raises:
+        FileNotFoundError: If storage file doesn't exist.
+        ValueError: If required cookies are missing or JSON is malformed.
+    """
+    storage_state = _load_storage_state(path)
+    cookie_map = extract_cookies_with_domains(storage_state)
+
+    cookies = httpx.Cookies()
+    for (name, domain), value in cookie_map.items():
+        cookies.set(name, value, domain=domain)
+
+    return cookies
+
+
+def build_cookie_jar(
+    cookies: CookieInput | None = None,
+    storage_path: Path | None = None,
+) -> httpx.Cookies:
+    """Build an httpx.Cookies jar with original domains preserved.
+
+    This is the SINGLE authoritative place to construct cookie jars.
+
+    Priority:
+    1. If storage_path exists, load from storage with original domains
+    2. Otherwise, use provided cookies while preserving domain keys. Legacy
+       flat mappings are assigned to .google.com for backward compatibility.
+
+    Args:
+        cookies: Domain-aware (name, domain) cookie dict, or legacy flat
+            name-to-value cookie dict.
+        storage_path: Path to storage_state.json with domain metadata.
+
+    Returns:
+        httpx.Cookies jar populated with auth cookies.
+    """
+    # If we have a storage file, use it for domain-accurate cookies
+    if storage_path and storage_path.exists():
+        return build_httpx_cookies_from_storage(storage_path)
+
+    jar = httpx.Cookies()
+    for (name, domain), value in normalize_cookie_map(cookies).items():
+        jar.set(name, value, domain=domain)
+    return jar
+
+
+def save_cookies_to_storage(cookie_jar: httpx.Cookies, path: Path | None = None) -> None:
+    """Save an updated httpx.Cookies jar back to Playwright storage_state.json.
+
+    This ensures that when Google issues short-lived token refreshes (e.g.
+    during 302 redirects to accounts.google.com), those updated cookies are
+    serialized back to disk so the session remains valid across CLI invocations.
+
+    If auth was loaded from an environment variable (no file), this is a no-op.
+
+    Args:
+        cookie_jar: The httpx.Cookies object containing the latest cookies.
+        path: Path to storage_state.json. If None, falls back to default.
+    """
+    if (
+        not path
+        and "NOTEBOOKLM_AUTH_JSON" in os.environ
+        and os.environ["NOTEBOOKLM_AUTH_JSON"].strip()
+    ):
+        logger.debug("Skipping cookie sync: Auth loaded from NOTEBOOKLM_AUTH_JSON env var")
+        return
+
+    if not path:
+        from .paths import get_storage_path
+
+        path = get_storage_path()
+
+    if not path.exists():
+        logger.debug("Skipping cookie sync: Storage file not found at %s", path)
+        return
+
+    try:
+        storage_data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Failed to read storage state for cookie sync: %s", e)
+        return
+
+    if not isinstance(storage_data, dict) or "cookies" not in storage_data:
+        return
+
+    cookies_by_key = {
+        (cookie.name, cookie.domain): cookie
+        for cookie in cookie_jar.jar
+        if cookie.name and cookie.domain and _is_allowed_cookie_domain(cookie.domain)
+    }
+
+    updated_count = 0
+    stored_keys: set[CookieKey] = set()
+    for stored_cookie in storage_data["cookies"]:
+        name = stored_cookie.get("name")
+        domain = stored_cookie.get("domain", "")
+        if not name or not domain:
+            continue
+
+        key = (name, domain)
+        stored_keys.update(_cookie_key_variants(key))
+        refreshed_cookie = _find_cookie_for_storage(cookies_by_key, key, stored_cookie.get("value"))
+        if refreshed_cookie is None:
+            continue
+
+        new_expires = refreshed_cookie.expires if refreshed_cookie.expires is not None else -1
+        changed = (
+            stored_cookie.get("value") != refreshed_cookie.value
+            or stored_cookie.get("expires") != new_expires
+        )
+        if changed:
+            stored_cookie["value"] = refreshed_cookie.value
+            stored_cookie["expires"] = new_expires
+            stored_cookie["path"] = refreshed_cookie.path or stored_cookie.get("path", "/")
+            stored_cookie["secure"] = refreshed_cookie.secure
+            stored_cookie["httpOnly"] = _cookie_is_http_only(refreshed_cookie)
+            updated_count += 1
+
+    for key, cookie in cookies_by_key.items():
+        if key in stored_keys:
+            continue
+        storage_data["cookies"].append(_cookie_to_storage_state(cookie))
+        updated_count += 1
+
+    if updated_count > 0:
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_file.write(json.dumps(storage_data, indent=2))
+                temp_path = Path(temp_file.name)
+            os.chmod(temp_path, 0o600)
+            temp_path.replace(path)
+            logger.debug("Successfully synced %d refreshed cookies to %s", updated_count, path)
+        except Exception as e:
+            logger.warning("Failed to write updated cookies to %s: %s", path, e)
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception as cleanup_err:
+                    logger.debug("Failed to clean up temp file %s: %s", temp_path, cleanup_err)
+
+
+def _cookie_is_http_only(cookie: Any) -> bool:
+    """Return whether an http.cookiejar.Cookie has the HttpOnly marker."""
+    try:
+        return bool(
+            cookie.has_nonstandard_attr("HttpOnly") or cookie.has_nonstandard_attr("httponly")
+        )
+    except AttributeError:
+        return False
+
+
+def _cookie_to_storage_state(cookie: Any) -> dict[str, Any]:
+    """Convert an http.cookiejar.Cookie to a Playwright storage_state cookie."""
+    return {
+        "name": cookie.name,
+        "value": cookie.value,
+        "domain": cookie.domain,
+        "path": cookie.path or "/",
+        "expires": cookie.expires if cookie.expires is not None else -1,
+        "httpOnly": _cookie_is_http_only(cookie),
+        "secure": cookie.secure,
+        "sameSite": "None",
+    }
+
+
+def _cookie_key_variants(key: CookieKey) -> set[CookieKey]:
+    """Return equivalent host/domain cookie keys for leading-dot domains."""
+    name, domain = key
+    variants = {key}
+    if domain.startswith("."):
+        variants.add((name, domain[1:]))
+    else:
+        variants.add((name, f".{domain}"))
+    return variants
+
+
+def _find_cookie_for_storage(
+    cookies_by_key: dict[CookieKey, Any], key: CookieKey, stored_value: str | None
+) -> Any | None:
+    """Find the best refreshed cookie for a stored cookie key.
+
+    http.cookiejar normalizes ``Domain=accounts.google.com`` to
+    ``.accounts.google.com``. If both the original host-only key and the
+    normalized domain key exist, prefer the value that differs from storage
+    because that is the refreshed Set-Cookie value.
+    """
+    candidates = [
+        cookie
+        for variant in _cookie_key_variants(key)
+        if (cookie := cookies_by_key.get(variant)) is not None
+    ]
+    if not candidates:
+        return None
+
+    for cookie in candidates:
+        if cookie.value != stored_value:
+            return cookie
+    return candidates[0]
+
+
+def _replace_cookie_jar(target: httpx.Cookies, source: httpx.Cookies) -> None:
+    """Replace target jar contents with source jar contents."""
+    target.jar.clear()
+    for cookie in source.jar:
+        target.jar.set_cookie(cookie)
+
+
+async def _fetch_tokens_with_jar(cookie_jar: httpx.Cookies) -> tuple[str, str]:
+    """Internal: fetch CSRF and session tokens using a pre-built cookie jar.
+
+    This is the single implementation for all token-fetch paths. All public
+    functions (fetch_tokens, fetch_tokens_with_domains) delegate to this.
+
+    Args:
+        cookie_jar: httpx.Cookies jar with auth cookies (domain-preserving or fallback).
 
     Returns:
         Tuple of (csrf_token, session_id)
@@ -687,12 +1032,10 @@ async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
         ValueError: If tokens cannot be extracted from response
     """
     logger.debug("Fetching CSRF and session tokens from NotebookLM")
-    cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(cookies=cookie_jar) as client:
         response = await client.get(
             "https://notebooklm.google.com/",
-            headers={"Cookie": cookie_header},
             follow_redirects=True,
             timeout=30.0,
         )
@@ -711,5 +1054,52 @@ async def fetch_tokens(cookies: dict[str, str]) -> tuple[str, str]:
         csrf = extract_csrf_from_html(response.text, final_url)
         session_id = extract_session_id_from_html(response.text, final_url)
 
+        # httpx copies the input Cookies object into the client. Copy any
+        # redirect Set-Cookie updates back to the caller's jar before it is
+        # persisted.
+        _replace_cookie_jar(cookie_jar, client.cookies)
+
         logger.debug("Authentication tokens obtained successfully")
         return csrf, session_id
+
+
+async def fetch_tokens(cookies: CookieInput) -> tuple[str, str]:
+    """Fetch tokens from flat cookie dict. For backward compatibility.
+
+    Prefer AuthTokens.from_storage() which preserves cookie domains.
+
+    Args:
+        cookies: Dict of Google auth cookies (name→value, no domain info).
+
+    Returns:
+        Tuple of (csrf_token, session_id)
+
+    Raises:
+        httpx.HTTPError: If request fails
+        ValueError: If tokens cannot be extracted from response
+    """
+    jar = build_cookie_jar(cookies=cookies)
+    return await _fetch_tokens_with_jar(jar)
+
+
+async def fetch_tokens_with_domains(path: Path | None = None) -> tuple[str, str]:
+    """Fetch tokens with domain-preserving cookies from storage.
+
+    Used by CLI helpers. Loads storage, builds jar, fetches tokens,
+    and persists any refreshed cookies back.
+
+    Args:
+        path: Path to storage_state.json. If provided, takes precedence over env vars.
+
+    Returns:
+        Tuple of (csrf_token, session_id)
+
+    Raises:
+        FileNotFoundError: If storage file doesn't exist.
+        httpx.HTTPError: If request fails.
+        ValueError: If tokens cannot be extracted from response.
+    """
+    jar = build_httpx_cookies_from_storage(path)
+    result = await _fetch_tokens_with_jar(jar)
+    save_cookies_to_storage(jar, path)
+    return result

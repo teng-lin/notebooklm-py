@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from .auth import AuthTokens
+from .auth import AuthTokens, build_cookie_jar, save_cookies_to_storage
 from .rpc import (
     BATCHEXECUTE_URL,
     AuthError,
@@ -128,6 +128,8 @@ class ClientCore:
         """Open the HTTP client connection.
 
         Called automatically by NotebookLMClient.__aenter__.
+        Uses httpx.Cookies jar to properly handle cross-domain redirects
+        (e.g., to accounts.google.com for auth token refresh).
         """
         if self._http_client is None:
             # Use granular timeouts: shorter connect timeout helps detect network issues
@@ -138,12 +140,19 @@ class ClientCore:
                 write=self._timeout,
                 pool=self._timeout,
             )
+            # Build cookies jar for cross-domain redirect support
+            # Use pre-built jar if available, otherwise build one
+            cookies = self.auth.cookie_jar or build_cookie_jar(
+                cookies=self.auth.cookies,
+                storage_path=self.auth.storage_path,
+            )
             self._http_client = httpx.AsyncClient(
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-                    "Cookie": self.auth.cookie_header,
                 },
+                cookies=cookies,
                 timeout=timeout,
+                follow_redirects=True,
             )
 
     async def close(self) -> None:
@@ -152,6 +161,8 @@ class ClientCore:
         Called automatically by NotebookLMClient.__aexit__.
         """
         if self._http_client:
+            # Sync any newly refreshed tokens back to disk so they survive CLI restarts
+            save_cookies_to_storage(self._http_client.cookies, self.auth.storage_path)
             await self._http_client.aclose()
             self._http_client = None
 
@@ -161,17 +172,22 @@ class ClientCore:
         return self._http_client is not None
 
     def update_auth_headers(self) -> None:
-        """Update HTTP client headers with current auth tokens.
+        """Refresh auth metadata without resetting the live cookie jar.
 
         Call this after modifying auth tokens (e.g., after refresh_auth())
         to ensure the HTTP client uses the updated credentials.
+
+        The httpx client's cookie jar is authoritative once the session is
+        open. Re-injecting startup cookies here can overwrite cookies refreshed
+        during redirects to accounts.google.com.
 
         Raises:
             RuntimeError: If client is not initialized.
         """
         if not self._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
-        self._http_client.headers["Cookie"] = self.auth.cookie_header
+
+        self.auth.cookie_jar = self._http_client.cookies
 
     def _build_url(self, rpc_method: RPCMethod, source_path: str = "/") -> str:
         """Build the batchexecute URL for an RPC call.

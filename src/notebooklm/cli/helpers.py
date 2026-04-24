@@ -22,11 +22,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from ..auth import (
-    AuthTokens,
-    fetch_tokens,
-    load_auth_from_storage,
-)
+from ..auth import AuthTokens, build_cookie_jar, load_auth_from_storage
 from ..exceptions import NetworkError, NotebookLimitError, RPCError, RPCTimeoutError
 from ..paths import get_context_path
 from ..types import ArtifactType
@@ -338,8 +334,14 @@ def get_client(ctx) -> tuple[dict, str, str]:
         FileNotFoundError: If auth storage not found
     """
     storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+
+    # Load from storage (which respects NOTEBOOKLM_AUTH_JSON if storage_path is None)
     cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = run_async(fetch_tokens(cookies))
+
+    from ..auth import fetch_tokens_with_domains
+
+    csrf, session_id = run_async(fetch_tokens_with_domains(storage_path))
+
     return cookies, csrf, session_id
 
 
@@ -353,7 +355,29 @@ def get_auth_tokens(ctx) -> AuthTokens:
         AuthTokens ready for client construction
     """
     cookies, csrf, session_id = get_client(ctx)
-    return AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    profile = ctx.obj.get("profile") if ctx.obj else None
+
+    resolved_storage_path = storage_path
+    if resolved_storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        from ..paths import get_storage_path
+
+        resolved_storage_path = get_storage_path(profile=profile)
+
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        from ..auth import build_httpx_cookies_from_storage
+
+        jar = build_httpx_cookies_from_storage(None)
+    else:
+        jar = build_cookie_jar(cookies=cookies, storage_path=resolved_storage_path)
+
+    return AuthTokens(
+        cookies=cookies,
+        csrf_token=csrf,
+        session_id=session_id,
+        storage_path=resolved_storage_path,
+        cookie_jar=jar,
+    )
 
 
 # =============================================================================

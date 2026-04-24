@@ -20,6 +20,7 @@ Example:
 """
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -156,7 +157,7 @@ class NotebookLMClient:
         # Always resolve the storage path so downstream cookie loading
         # (e.g. artifact downloads) uses the correct file, whether the
         # caller provided an explicit path, a named profile, or neither.
-        if storage_path is None:
+        if storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
             from .paths import get_storage_path
 
             storage_path = get_storage_path(profile)
@@ -204,5 +205,11 @@ class NotebookLMClient:
         # CRITICAL: Update the HTTP client headers with new auth tokens
         # Without this, the client continues using stale credentials
         self._core.update_auth_headers()
+
+        # Persist refreshed cookies back to disk so the next CLI invocation
+        # picks up the updated short-lived tokens (e.g., __Secure-1PSIDCC)
+        from .auth import save_cookies_to_storage
+
+        save_cookies_to_storage(http_client.cookies, self._core.auth.storage_path)
 
         return self._core.auth

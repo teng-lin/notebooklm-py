@@ -163,7 +163,9 @@ class TestNotebookCreate:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["create", "Test Notebook", "--json"])
 
@@ -183,7 +185,9 @@ class TestNotebookCreate:
             mock_client.notebooks.create = AsyncMock(side_effect=NotebookLimitError(499, limit=500))
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["create", "Test Notebook"])
 

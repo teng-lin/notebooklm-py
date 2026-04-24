@@ -31,10 +31,9 @@ if TYPE_CHECKING:
 from ..auth import (
     ALLOWED_COOKIE_DOMAINS,
     GOOGLE_REGIONAL_CCTLDS,
-    AuthTokens,
     convert_rookiepy_cookies_to_storage_state,
     extract_cookies_from_storage,
-    fetch_tokens,
+    fetch_tokens_with_domains,
 )
 from ..client import NotebookLMClient
 from ..paths import (
@@ -46,7 +45,7 @@ from ..paths import (
 from .helpers import (
     clear_context,
     console,
-    get_client,
+    get_auth_tokens,
     get_current_notebook,
     json_output_response,
     resolve_notebook_id,
@@ -60,6 +59,7 @@ logger = logging.getLogger(__name__)
 GOOGLE_ACCOUNTS_URL = "https://accounts.google.com/"
 NOTEBOOKLM_URL = "https://notebooklm.google.com/"
 NOTEBOOKLM_HOST = "notebooklm.google.com"
+fetch_tokens = fetch_tokens_with_domains
 
 # Retryable Playwright connection errors
 RETRYABLE_CONNECTION_ERRORS = ("ERR_CONNECTION_CLOSED", "ERR_CONNECTION_RESET")
@@ -204,7 +204,7 @@ def _login_with_browser_cookies(storage_path: Path, browser_name: str) -> None:
 
     storage_state = convert_rookiepy_cookies_to_storage_state(raw_cookies)
     try:
-        cookies = extract_cookies_from_storage(storage_state)  # validates SID is present
+        extract_cookies_from_storage(storage_state)  # validates SID is present
     except ValueError as e:
         console.print(
             "[red]No valid Google authentication cookies found.[/red]\n"
@@ -232,7 +232,7 @@ def _login_with_browser_cookies(storage_path: Path, browser_name: str) -> None:
 
     # Verify that cookies work — reuse cookies extracted above (no redundant disk read)
     try:
-        run_async(fetch_tokens(cookies))
+        run_async(fetch_tokens(storage_path))
         logger.info("Cookies verified successfully")
         console.print("[green]Cookies verified successfully.[/green]")
     except ValueError as e:
@@ -679,8 +679,7 @@ def register_session_commands(cli):
           notebooklm generate video "a fun explainer"  # Uses nb123
         """
         try:
-            cookies, csrf, session_id = get_client(ctx)
-            auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+            auth = get_auth_tokens(ctx)
 
             async def _get():
                 async with NotebookLMClient(auth) as client:
@@ -962,10 +961,7 @@ def register_session_commands(cli):
           notebooklm auth check --test    # Full validation with network test
           notebooklm auth check --json    # Machine-readable output
         """
-        from ..auth import (
-            extract_cookies_from_storage,
-            fetch_tokens,
-        )
+        from ..auth import extract_cookies_from_storage, fetch_tokens_with_domains
 
         storage_path = get_storage_path()
         has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
@@ -1043,7 +1039,8 @@ def register_session_commands(cli):
         # Check 4: Token fetch (optional)
         if test_fetch:
             try:
-                csrf, session_id = run_async(fetch_tokens(cookies))
+                token_path = None if has_env_var else storage_path
+                csrf, session_id = run_async(fetch_tokens_with_domains(token_path))
                 checks["token_fetch"] = True
                 details["csrf_length"] = len(csrf)
                 details["session_id_length"] = len(session_id)
