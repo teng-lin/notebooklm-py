@@ -49,10 +49,15 @@ dev = [
     "ruff==0.8.6",
     "vcrpy>=6.0.0",
 ]
-all = ["notebooklm-py[browser,dev]"]
+mcp = [
+    "mcp>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+all = ["notebooklm-py[browser,dev,mcp]"]
 
 [project.scripts]
 notebooklm = "notebooklm.notebooklm_cli:main"
+notebooklm-mcp = "notebooklm_mcp.__main__:main"
 
 [build-system]
 requires = ["hatchling", "hatch-fancy-pypi-readme"]
@@ -86,7 +91,7 @@ pattern = '\]\(SKILL\.md\)'
 replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/SKILL.md)'
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/notebooklm"]
+packages = ["src/notebooklm", "src/notebooklm_mcp"]
 force-include = {"SKILL.md" = "notebooklm/data/SKILL.md", "AGENTS.md" = "notebooklm/data/CODEX.md"}
 
 [tool.pytest.ini_options]
@@ -105,7 +110,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/notebooklm"]
+source = ["src/notebooklm", "src/notebooklm_mcp"]
 branch = true
 
 [tool.coverage.report]

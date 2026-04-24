@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **MCP server** (`src/notebooklm_mcp/`) — exposes NotebookLM capabilities to Claude Desktop,
+  Cursor, Copilot, and any MCP-compatible AI system via the Model Context Protocol.
+  - **9 tools**: `notebooklm_list_notebooks`, `notebooklm_create_notebook`,
+    `notebooklm_delete_notebook`, `notebooklm_add_source_url`, `notebooklm_add_source_text`,
+    `notebooklm_ask_chat`, `notebooklm_generate_audio_podcast` (multilingual, MP3 download),
+    `notebooklm_generate_quiz`, `notebooklm_generate_mind_map`
+  - **2 resources**: `notebook://{id}/metadata`, `notebook://{id}/sources/{source_id}`
+  - **1 prompt**: `notebooklm_deep_research` — end-to-end structured research workflow
+  - Singleton shared `NotebookLMClient` with lazy init, proper `__aenter__`/`__aexit__` lifecycle,
+    and graceful shutdown
+  - All logging to stderr only (stdout is reserved for the MCP/stdio protocol)
+  - Actionable error messages when auth is missing: instructs user to run `notebooklm login`
+  - New `mcp` optional-dependency group (`mcp>=1.0.0`, `python-dotenv>=1.0.0`)
+  - New `notebooklm-mcp` CLI entry point (`python -m notebooklm_mcp`)
+  - `docs/mcp-server.md` — full installation, Claude Desktop config, tool/resource/prompt reference
+
 ## [0.3.4] - 2026-03-12
 
 ### Added
