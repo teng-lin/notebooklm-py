@@ -64,12 +64,12 @@ def _fake_fulltext(content="Full text content here"):
 
 @pytest.fixture(autouse=True)
 def reset_client_singleton():
-    """Ensure _client_instance is None before and after every test."""
-    import notebooklm_mcp.server as srv
+    """Ensure the client singleton is clear before and after every test."""
+    from notebooklm_mcp.server import _reset_client_for_testing
 
-    srv._client_instance = None
+    _reset_client_for_testing()
     yield
-    srv._client_instance = None
+    _reset_client_for_testing()
 
 
 # ---------------------------------------------------------------------------
@@ -582,8 +582,14 @@ class TestDeepResearchPrompt:
         from notebooklm_mcp.server import notebooklm_deep_research
 
         result = notebooklm_deep_research(topic="AI safety", urls="https://a.com, https://b.com")
-        assert "https://a.com" in result
-        assert "https://b.com" in result
+        # Check URLs appear as individual bullet entries, not as arbitrary substrings
+        bullet_urls = [
+            ln.strip().lstrip("- ").strip()
+            for ln in result.splitlines()
+            if ln.strip().startswith("- http")
+        ]
+        assert "https://a.com" in bullet_urls
+        assert "https://b.com" in bullet_urls
 
     def test_prompt_has_all_steps(self):
         from notebooklm_mcp.server import notebooklm_deep_research
@@ -596,7 +602,13 @@ class TestDeepResearchPrompt:
         from notebooklm_mcp.server import notebooklm_deep_research
 
         result = notebooklm_deep_research(topic="topic", urls="https://only.com")
-        assert "https://only.com" in result
+        # Check the URL appears as a bullet entry
+        bullet_urls = [
+            ln.strip().lstrip("- ").strip()
+            for ln in result.splitlines()
+            if ln.strip().startswith("- http")
+        ]
+        assert "https://only.com" in bullet_urls
 
     def test_prompt_returns_string(self):
         from notebooklm_mcp.server import notebooklm_deep_research
@@ -634,10 +646,12 @@ class TestGetClientSingleton:
         assert call_count == 1
 
     async def test_runtime_error_when_notebooklm_not_installed(self):
-        import notebooklm_mcp.server as srv
+        from notebooklm_mcp.server import _reset_client_for_testing
 
+        _reset_client_for_testing()
         with patch.dict("sys.modules", {"notebooklm": None}):
-            srv._client_instance = None
+            import notebooklm_mcp.server as srv
+
             with pytest.raises(RuntimeError, match="notebooklm-py is not installed"):
                 await srv.get_client()
 
@@ -646,14 +660,15 @@ class TestGetClientSingleton:
 
         mock_client = MagicMock()
         mock_client.__aexit__ = AsyncMock(return_value=None)
+        # Set via the internal attribute (unavoidable for this specific test)
         srv._client_instance = mock_client
 
         await srv._shutdown_client()
         assert srv._client_instance is None
 
     async def test_shutdown_client_noop_when_none(self):
-        import notebooklm_mcp.server as srv
+        from notebooklm_mcp.server import _reset_client_for_testing, _shutdown_client
 
-        srv._client_instance = None
+        _reset_client_for_testing()
         # Must not raise
-        await srv._shutdown_client()
+        await _shutdown_client()

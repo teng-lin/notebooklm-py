@@ -98,6 +98,16 @@ async def _shutdown_client() -> None:
             _client_instance = None
 
 
+def _reset_client_for_testing() -> None:
+    """Reset the singleton client instance.
+
+    Intended for use in tests only. Allows test fixtures to clear the
+    singleton without directly accessing module internals.
+    """
+    global _client_instance
+    _client_instance = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -529,8 +539,8 @@ async def notebooklm_generate_quiz(
     finally:
         try:
             Path(tmp_path).unlink(missing_ok=True)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as cleanup_exc:  # noqa: BLE001
+            logger.debug("Failed to remove temp quiz file %s: %s", tmp_path, cleanup_exc)
 
 
 # ---------------------------------------------------------------------------
