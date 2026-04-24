@@ -46,7 +46,9 @@ class TestNotebookList:
             mock_client.notebooks.list = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["list"])
 
@@ -74,7 +76,9 @@ class TestNotebookList:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["list"])
 
@@ -97,7 +101,9 @@ class TestNotebookList:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["list", "--json"])
 
@@ -124,7 +130,9 @@ class TestNotebookCreate:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["create", "Test Notebook"])
 
@@ -141,7 +149,9 @@ class TestNotebookCreate:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["create", "Test Notebook", "--json"])
 
@@ -219,7 +229,9 @@ class TestNotebookDelete:
             mock_client.notebooks.delete = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
 
@@ -251,7 +263,9 @@ class TestNotebookDelete:
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
                 patch("notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"),
                 patch("notebooklm.cli.notebook.clear_context"),
-                patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["delete", "-n", "nb_to_delete", "-y"])
@@ -276,7 +290,9 @@ class TestNotebookDelete:
             mock_client.notebooks.delete = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["delete", "-n", "nb_123", "-y"])
 
@@ -307,7 +323,9 @@ class TestNotebookRename:
             mock_client.notebooks.rename = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["rename", "New Title", "-n", "nb_123"])
 
@@ -350,7 +368,9 @@ class TestNotebookSummary:
             mock_client.notebooks.get_description = AsyncMock(return_value=mock_desc)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["summary", "-n", "nb_123"])
 
@@ -380,7 +400,9 @@ class TestNotebookSummary:
             mock_client.notebooks.get_description = AsyncMock(return_value=mock_desc)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["summary", "-n", "nb_123", "--topics"])
 
@@ -405,7 +427,9 @@ class TestNotebookSummary:
             mock_client.notebooks.get_description = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["summary", "-n", "nb_123"])
 
@@ -426,7 +450,9 @@ class TestNotebookHistory:
             mock_client.chat.get_conversation_id = AsyncMock(return_value="conv_001")
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["history", "-n", "nb_123"])
 
@@ -440,7 +466,9 @@ class TestNotebookHistory:
             mock_client.chat.get_history = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["history", "-n", "nb_123"])
 
@@ -453,7 +481,9 @@ class TestNotebookHistory:
             mock_client.chat.clear_cache = MagicMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["history", "--clear"])
 
@@ -486,7 +516,9 @@ class TestNotebookAsk:
                     "notebooklm.cli.helpers.get_context_path",
                     return_value=Path("/nonexistent/context.json"),
                 ),
-                patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "What is this?"])
@@ -507,7 +539,9 @@ class TestNotebookAsk:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "-c", "conv_123", "Follow-up"])
 
@@ -527,7 +561,9 @@ class TestNotebookConfigure:
             mock_client.chat.set_mode = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["configure", "-n", "nb_123", "--mode", "learning-guide"]
@@ -542,7 +578,9 @@ class TestNotebookConfigure:
             mock_client.chat.configure = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["configure", "-n", "nb_123", "--persona", "Act as a tutor"]
@@ -558,7 +596,9 @@ class TestNotebookConfigure:
             mock_client.chat.configure = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["configure", "-n", "nb_123", "--response-length", "longer"]
@@ -583,7 +623,9 @@ class TestSourceAddResearch:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["source", "add-research", "AI research", "-n", "nb_123"]
@@ -598,7 +640,9 @@ class TestSourceAddResearch:
             mock_client.research.start = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["source", "add-research", "AI research", "-n", "nb_123"]
@@ -617,7 +661,9 @@ class TestSourceAddResearch:
             mock_client.research.import_sources = AsyncMock(return_value=[{"id": "src_1"}])
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["source", "add-research", "AI research", "-n", "nb_123", "--import-all"]
@@ -715,7 +761,9 @@ class TestNotebookMetadata:
 
             with (
                 patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_1"),
-                patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["metadata"])
@@ -751,7 +799,9 @@ class TestNotebookMetadata:
 
             with (
                 patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_1"),
-                patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["metadata", "--json"])
@@ -780,7 +830,9 @@ class TestNotebookMetadata:
 
             with (
                 patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_empty"),
-                patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["metadata"])
@@ -814,7 +866,9 @@ class TestNotebookMetadata:
 
             with (
                 patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_url"),
-                patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["metadata"])

@@ -781,7 +781,9 @@ class TestUseCommand:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -809,7 +811,9 @@ class TestUseCommand:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -850,7 +854,9 @@ class TestUseCommand:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -1172,7 +1178,9 @@ class TestAuthCheckCommand:
         }
         mock_storage_path.write_text(json.dumps(storage_data))
 
-        with patch("notebooklm.auth.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = ("csrf_token_abc", "session_id_xyz")
 
             result = runner.invoke(cli, ["auth", "check", "--test"])
@@ -1190,7 +1198,9 @@ class TestAuthCheckCommand:
         }
         mock_storage_path.write_text(json.dumps(storage_data))
 
-        with patch("notebooklm.auth.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.side_effect = ValueError("Authentication expired")
 
             result = runner.invoke(cli, ["auth", "check", "--test"])
@@ -1209,7 +1219,9 @@ class TestAuthCheckCommand:
         }
         mock_storage_path.write_text(json.dumps(storage_data))
 
-        with patch("notebooklm.auth.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+        with patch(
+            "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
             mock_fetch.return_value = ("csrf_12345", "sess_67890")
 
             result = runner.invoke(cli, ["auth", "check", "--test", "--json"])
@@ -1400,7 +1412,9 @@ class TestSessionEdgeCases:
             mock_client.notebooks.get = AsyncMock(side_effect=Exception("API Error: Rate limited"))
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch in session module where it's imported
@@ -1437,7 +1451,9 @@ class TestSessionEdgeCases:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 # Patch resolve_notebook_id to raise ClickException (e.g., ambiguous ID)

@@ -112,7 +112,7 @@ class TestFromStorage:
 
         client = await NotebookLMClient.from_storage(str(storage_file))
 
-        assert client.auth.cookies["SID"] == "test_sid"
+        assert client.auth.cookies[("SID", ".google.com")] == "test_sid"
         assert client.auth.csrf_token == "csrf_token_abc"
         assert client.auth.session_id == "session_id_xyz"
 
@@ -153,7 +153,7 @@ class TestFromStorage:
             httpx_mock.add_response(content=html.encode())
 
             client = await NotebookLMClient.from_storage()
-            assert client.auth.cookies["SID"] == "default_sid"
+            assert client.auth.cookies[("SID", ".google.com")] == "default_sid"
         except PermissionError:
             pytest.skip("Cannot write to default storage path")
         finally:

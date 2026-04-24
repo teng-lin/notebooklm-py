@@ -32,12 +32,21 @@ def mock_auth():
 
 @pytest.fixture
 def mock_fetch_tokens():
-    """Mock fetch_tokens for CLI commands.
+    """Mock fetch_tokens_with_domains for CLI commands.
 
-    After CLI refactoring, fetch_tokens is called via cli.helpers module.
-    Uses AsyncMock since fetch_tokens is an async function.
+    After cookie-jar refactoring, the CLI path uses fetch_tokens_with_domains
+    from auth module (via helpers.get_client). We also mock build_cookie_jar
+    to avoid reading storage files.
     """
-    with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock:
+    import httpx
+
+    mock_jar = httpx.Cookies()
+    mock_jar.set("SID", "test", domain=".google.com")
+
+    with (
+        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock,
+        patch("notebooklm.cli.helpers.build_cookie_jar", return_value=mock_jar),
+    ):
         mock.return_value = ("csrf_token", "session_id")
         yield mock
 

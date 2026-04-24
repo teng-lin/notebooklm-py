@@ -512,7 +512,9 @@ class TestWithClientDecorator:
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
@@ -561,7 +563,9 @@ class TestWithClientDecorator:
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
@@ -586,7 +590,9 @@ class TestWithClientDecorator:
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
@@ -610,7 +616,9 @@ class TestWithClientDecorator:
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd, ["--json"])
 
@@ -632,7 +640,9 @@ class TestGetClient:
 
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test_sid"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf_token", "session_id")
 
                 cookies, csrf, session = get_client(ctx)
@@ -647,7 +657,9 @@ class TestGetClient:
 
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 get_client(ctx)
@@ -662,12 +674,15 @@ class TestGetAuthTokens:
 
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
             mock_load.return_value = {"SID": "test_sid"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf_token", "session_id")
 
                 auth = get_auth_tokens(ctx)
 
-        assert auth.cookies == {"SID": "test_sid"}
+        assert auth.cookies == {("SID", ".google.com"): "test_sid"}
+        assert auth.flat_cookies == {"SID": "test_sid"}
         assert auth.csrf_token == "csrf_token"
         assert auth.session_id == "session_id"
 

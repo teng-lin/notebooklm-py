@@ -1,8 +1,10 @@
 """Tests for authentication module."""
 
 import json
+import os
 from pathlib import Path
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -13,8 +15,10 @@ from notebooklm.auth import (
     extract_csrf_from_html,
     extract_session_id_from_html,
     fetch_tokens,
+    fetch_tokens_with_domains,
     load_auth_from_storage,
     load_httpx_cookies,
+    save_cookies_to_storage,
 )
 
 
@@ -26,7 +30,11 @@ class TestAuthTokens:
             csrf_token="csrf123",
             session_id="sess456",
         )
-        assert tokens.cookies == {"SID": "abc", "HSID": "def"}
+        assert tokens.cookies == {
+            ("SID", ".google.com"): "abc",
+            ("HSID", ".google.com"): "def",
+        }
+        assert tokens.flat_cookies == {"SID": "abc", "HSID": "def"}
         assert tokens.csrf_token == "csrf123"
         assert tokens.session_id == "sess456"
 
@@ -655,18 +663,120 @@ class TestFetchTokens:
             await fetch_tokens(cookies)
 
     @pytest.mark.asyncio
-    async def test_fetch_tokens_includes_cookie_header(self, httpx_mock: HTTPXMock):
-        """Test that fetch_tokens includes cookie header."""
+    async def test_fetch_tokens_sends_cookies_on_account_redirect(self, httpx_mock: HTTPXMock):
+        """Redirected accounts.google.com requests receive matching domain cookies."""
         html = '"SNlM0e":"csrf" "FdrFJe":"sess"'
-        httpx_mock.add_response(content=html.encode())
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/start"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/start",
+            status_code=302,
+            headers={
+                "Location": "https://accounts.google.com/continue",
+                "Set-Cookie": "ACCOUNT_REFRESH=fresh; Domain=accounts.google.com; Path=/",
+            },
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/continue",
+            status_code=302,
+            headers={"Location": "https://notebooklm.google.com/"},
+        )
+        httpx_mock.add_response(url="https://notebooklm.google.com/", content=html.encode())
 
-        cookies = {"SID": "sid_value", "HSID": "hsid_value"}
+        cookies = {
+            ("SID", ".google.com"): "sid_value",
+            ("ACCOUNT_CHOOSER", "accounts.google.com"): "chooser_value",
+        }
         await fetch_tokens(cookies)
 
-        request = httpx_mock.get_request()
-        cookie_header = request.headers.get("cookie", "")
-        assert "SID=sid_value" in cookie_header
-        assert "HSID=hsid_value" in cookie_header
+        account_requests = [
+            request
+            for request in httpx_mock.get_requests()
+            if request.url.host == "accounts.google.com"
+        ]
+        assert len(account_requests) == 2
+
+        first_cookie_header = account_requests[0].headers.get("cookie", "")
+        assert "SID=sid_value" in first_cookie_header
+        assert "ACCOUNT_CHOOSER=chooser_value" in first_cookie_header
+
+        second_cookie_header = account_requests[1].headers.get("cookie", "")
+        assert "ACCOUNT_REFRESH=fresh" in second_cookie_header
+
+    @pytest.mark.asyncio
+    async def test_fetch_tokens_with_domains_persists_refreshed_accounts_cookie(
+        self, tmp_path, httpx_mock: HTTPXMock
+    ):
+        """Refreshed accounts.google.com cookies are written back to storage."""
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "sid_value", "domain": ".google.com"},
+                        {
+                            "name": "ACCOUNT_REFRESH",
+                            "value": "stale",
+                            "domain": "accounts.google.com",
+                            "path": "/",
+                            "expires": -1,
+                            "httpOnly": True,
+                            "secure": True,
+                            "sameSite": "None",
+                        },
+                    ]
+                }
+            )
+        )
+
+        html = '"SNlM0e":"csrf" "FdrFJe":"sess"'
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            status_code=302,
+            headers={"Location": "https://accounts.google.com/start"},
+        )
+        httpx_mock.add_response(
+            url="https://accounts.google.com/start",
+            status_code=302,
+            headers={
+                "Location": "https://notebooklm.google.com/",
+                "Set-Cookie": "ACCOUNT_REFRESH=fresh; Domain=accounts.google.com; Path=/",
+            },
+        )
+        httpx_mock.add_response(url="https://notebooklm.google.com/", content=html.encode())
+
+        await fetch_tokens_with_domains(storage_file)
+
+        storage_state = json.loads(storage_file.read_text())
+        account_cookie = next(
+            cookie
+            for cookie in storage_state["cookies"]
+            if cookie["name"] == "ACCOUNT_REFRESH" and cookie["domain"] == "accounts.google.com"
+        )
+        assert account_cookie["value"] == "fresh"
+
+    def test_save_cookies_to_storage_preserves_secure_permissions(self, tmp_path):
+        """Cookie sync keeps storage_state.json at 0o600 on POSIX."""
+        if os.name == "nt":
+            pytest.skip("POSIX permission bits are not meaningful on Windows")
+
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(
+            json.dumps({"cookies": [{"name": "SID", "value": "old", "domain": ".google.com"}]})
+        )
+        storage_file.chmod(0o600)
+
+        jar = httpx.Cookies()
+        jar.set("SID", "new", domain=".google.com")
+
+        save_cookies_to_storage(jar, storage_file)
+
+        assert storage_file.stat().st_mode & 0o777 == 0o600
+        storage_state = json.loads(storage_file.read_text())
+        assert storage_state["cookies"][0]["value"] == "new"
 
 
 class TestAuthTokensFromStorage:
@@ -690,7 +800,8 @@ class TestAuthTokensFromStorage:
 
         tokens = await AuthTokens.from_storage(storage_file)
 
-        assert tokens.cookies["SID"] == "sid"
+        assert tokens.cookies[("SID", ".google.com")] == "sid"
+        assert tokens.flat_cookies["SID"] == "sid"
         assert tokens.csrf_token == "csrf_token"
         assert tokens.session_id == "session_id"
 

@@ -66,7 +66,7 @@ def mock_auth_for_vcr():
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage", return_value=mock_cookies),
         patch(
-            "notebooklm.cli.helpers.fetch_tokens",
+            "notebooklm.auth.fetch_tokens_with_domains",
             return_value=("vcr_mock_csrf", "vcr_mock_session"),
         ),
     ):
