@@ -484,7 +484,12 @@ class TestIsMediaReady:
         assert api._is_media_ready(art, 1) is False
 
     def test_video_with_valid_url(self, mock_artifacts_api):
-        """Test video artifact with valid URL returns True."""
+        """Test video artifact with valid URL returns True.
+
+        Mirrors the structure parsed by ``download_video``: art[8] is a list of
+        variants, each variant a list of URL entries, each URL entry a list with
+        the URL string at index 0.
+        """
         api, _ = mock_artifacts_api
         art = [
             "artifact_id",
@@ -495,7 +500,8 @@ class TestIsMediaReady:
             None,
             None,
             None,
-            [["https://video.url/file.mp4", None, "video/mp4"]],  # art[8]
+            # art[8][i][0][0] holds the URL
+            [[["https://video.url/file.mp4", None, "video/mp4"]]],
         ]
         assert api._is_media_ready(art, 3) is True
 
@@ -519,6 +525,51 @@ class TestIsMediaReady:
         """Test video artifact with truncated structure returns False."""
         api, _ = mock_artifacts_api
         art = ["artifact_id", "title", 3, None, 3, None, None]  # Too short (no art[8])
+        assert api._is_media_ready(art, 3) is False
+
+    def test_video_pre_url_metadata_returns_false(self, mock_artifacts_api):
+        """Regression for issue #330: pre-URL metadata must not register as ready.
+
+        Before the URL is populated, the inner URL-entry list is empty (or
+        missing the URL string). The previous implementation passed this list
+        to ``_is_valid_media_url`` directly and got ``False`` by accident,
+        which masked the broken structural check. Verify the empty-inner-list
+        case explicitly.
+        """
+        api, _ = mock_artifacts_api
+        art = [
+            "artifact_id",
+            "title",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [[[]]],  # variant present, URL entry present, but URL not yet set
+        ]
+        assert api._is_media_ready(art, 3) is False
+
+    def test_video_legacy_two_level_shape_returns_false(self, mock_artifacts_api):
+        """Issue #330 regression: a 2-level art[8] (no URL-entry wrapper) is invalid.
+
+        The buggy implementation accidentally accepted this shape because
+        ``item[0]`` happened to be a string. The real API never returns this
+        shape, and accepting it would let ``wait_for_completion`` claim ready
+        on payloads that ``download_video`` cannot parse.
+        """
+        api, _ = mock_artifacts_api
+        art = [
+            "artifact_id",
+            "title",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [["https://video.url/file.mp4", None, "video/mp4"]],
+        ]
         assert api._is_media_ready(art, 3) is False
 
     def test_slide_deck_with_valid_url(self, mock_artifacts_api):

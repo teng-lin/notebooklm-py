@@ -2415,7 +2415,7 @@ class ArtifactsAPI:
         - art[2]: artifact_type (ArtifactTypeCode enum value)
         - art[4]: status_code (ArtifactStatus enum value)
         - art[6][5]: audio media URL list
-        - art[8]: video metadata containing URL list
+        - art[8][i][0][0]: video media URL (nested list of URL entries)
         - art[16][3]: slide deck PDF URL
 
         Args:
@@ -2439,12 +2439,16 @@ class ArtifactsAPI:
                 return False
 
             elif artifact_type == ArtifactTypeCode.VIDEO.value:
-                # Video URLs are in art[8] - check for any valid URL in the list
+                # Video URLs live at art[8][i][0][0] - mirror download_video's
+                # structure check so wait_for_completion and download agree.
                 if len(art) > 8 and isinstance(art[8], list):
                     return any(
-                        self._is_valid_media_url(item[0])
+                        isinstance(item, list)
+                        and len(item) > 0
+                        and isinstance(item[0], list)
+                        and len(item[0]) > 0
+                        and self._is_valid_media_url(item[0][0])
                         for item in art[8]
-                        if isinstance(item, list) and len(item) > 0
                     )
                 return False
 

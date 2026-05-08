@@ -2152,7 +2152,9 @@ class TestGetArtifactTypeNameAndIsMediaReady:
         build_rpc_response,
     ):
         """poll_status returns 'completed' for video when art[8] has valid URL."""
-        # Video artifact with art[8] containing a URL
+        # Video artifact with art[8] containing a URL.
+        # Real-API shape: art[8][i][0][0] holds the URL string (matches the
+        # structure parsed by download_video).
         video_artifact = [
             "video_task",
             "Video Overview",
@@ -2162,7 +2164,7 @@ class TestGetArtifactTypeNameAndIsMediaReady:
             None,
             None,
             None,
-            [["https://storage.googleapis.com/video.mp4"]],  # art[8]
+            [[["https://storage.googleapis.com/video.mp4"]]],  # art[8]
         ]
         response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[video_artifact]])
         httpx_mock.add_response(content=response.encode())
