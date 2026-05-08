@@ -2415,7 +2415,7 @@ class ArtifactsAPI:
         - art[2]: artifact_type (ArtifactTypeCode enum value)
         - art[4]: status_code (ArtifactStatus enum value)
         - art[6][5]: audio media URL list
-        - art[8][i][0][0]: video media URL (nested list of URL entries)
+        - art[8][i][0][0]: video media URL string (within nested variants and entries)
         - art[16][3]: slide deck PDF URL
 
         Args:
