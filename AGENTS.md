@@ -32,4 +32,10 @@ Put pure logic in `tests/unit/`, VCR-backed flows in `tests/integration/`, and a
 
 ## Commit, PR, and Agent Notes
 
-Follow the existing commit style: `feat(cli): ...`, `fix(cli): ...`, `refactor(test): ...`, `style: ...`. PRs should include a short summary, linked issue when relevant, and the commands run locally. For Codex or other parallel agents, prefer `--json`, pass explicit notebook IDs instead of relying on `notebooklm use`, and isolate concurrent runs with `NOTEBOOKLM_PROFILE=agent-<id>` (each profile gets its own context file under `~/.notebooklm/profiles/<name>/`); fall back to `NOTEBOOKLM_HOME=/tmp/agent-<id>` only when multiple home directories are required. In headless environments where Playwright login is impractical, authenticate via `notebooklm login --browser-cookies <browser>` (requires `pip install "notebooklm-py[cookies]"`).
+Follow the existing commit style: `feat(cli): ...`, `fix(cli): ...`, `refactor(test): ...`, `style: ...`. PRs should include a short summary, linked issue when relevant, and the commands run locally.
+
+For Codex or other parallel agents:
+
+- Prefer `--json` output and pass explicit notebook IDs instead of relying on `notebooklm use`.
+- Isolate concurrent runs with `NOTEBOOKLM_PROFILE=agent-<id>` so each agent gets its own context file under `~/.notebooklm/profiles/<name>/`. Fall back to `NOTEBOOKLM_HOME=/tmp/agent-<id>` only when separate home directories are required.
+- In headless environments where Playwright login is impractical, authenticate with `notebooklm login --browser-cookies <browser>` (requires `pip install "notebooklm-py[cookies]"`).
