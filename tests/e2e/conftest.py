@@ -6,7 +6,6 @@ import warnings
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-import httpx
 import pytest
 
 # Load .env file if python-dotenv is available
@@ -18,12 +17,7 @@ except ImportError:
     pass  # python-dotenv not installed, rely on shell environment
 
 from notebooklm import NotebookLMClient
-from notebooklm.auth import (
-    AuthTokens,
-    extract_csrf_from_html,
-    extract_session_id_from_html,
-    load_auth_from_storage,
-)
+from notebooklm.auth import AuthTokens, load_auth_from_storage
 from notebooklm.paths import get_home_dir
 
 # =============================================================================
@@ -144,35 +138,16 @@ def pytest_runtest_teardown(item, nextitem):
 
 
 @pytest.fixture(scope="session")
-def auth_cookies() -> dict[str, str]:
-    """Load auth cookies from storage (session-scoped)."""
-    return load_auth_from_storage()
-
-
-@pytest.fixture(scope="session")
-def auth_tokens(auth_cookies) -> AuthTokens:
-    """Fetch auth tokens synchronously (session-scoped)."""
+def auth_tokens() -> AuthTokens:
+    """Load domain-preserving auth tokens from storage (session-scoped)."""
     import asyncio
 
-    async def _fetch_tokens():
-        cookie_header = "; ".join(f"{k}={v}" for k, v in auth_cookies.items())
-        async with httpx.AsyncClient() as http:
-            resp = await http.get(
-                "https://notebooklm.google.com/",
-                headers={"Cookie": cookie_header},
-                follow_redirects=True,
-            )
-            resp.raise_for_status()
-            csrf = extract_csrf_from_html(resp.text)
-            session_id = extract_session_id_from_html(resp.text)
-        return AuthTokens(cookies=auth_cookies, csrf_token=csrf, session_id=session_id)
-
-    return asyncio.run(_fetch_tokens())
+    return asyncio.run(AuthTokens.from_storage())
 
 
 @pytest.fixture
 async def client(auth_tokens) -> AsyncGenerator[NotebookLMClient, None]:
-    async with NotebookLMClient(auth_tokens) as c:
+    async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as c:
         yield c
 
 
@@ -217,7 +192,7 @@ async def cleanup_notebooks(created_notebooks, auth_tokens):
     """Cleanup created notebooks after test."""
     yield
     if created_notebooks:
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as client:
             for nb_id in created_notebooks:
                 try:
                     await client.notebooks.delete(nb_id)
