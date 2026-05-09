@@ -50,7 +50,7 @@
 | Category | Capabilities |
 |----------|--------------|
 | **Notebooks** | Create, list, rename, delete |
-| **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, audio, video, images), Google Drive, pasted text; refresh, get guide/fulltext |
+| **Sources** | URLs, YouTube, files (PDF, text, Markdown, Word, EPUB, audio, video, images), Google Drive, pasted text; refresh, get guide/fulltext |
 | **Chat** | Questions, conversation history, custom personas |
 | **Research** | Web and Drive research agents (fast/deep modes) with auto-import |
 | **Sharing** | Public/private links, user permissions (viewer/editor), view level control |
@@ -83,6 +83,8 @@ These features are available via API/CLI but not exposed in NotebookLM's web int
 - **Save chat to notes** - Save Q&A answers or conversation history as notebook notes
 - **Source fulltext access** - Retrieve the indexed text content of any source
 - **Programmatic sharing** - Manage permissions without the UI
+- **Multi-account profiles** - Switch between Google accounts without re-authenticating
+- **Browser cookie import** - Reuse cookies from your existing browser session instead of driving Playwright
 
 ## Installation
 
@@ -93,6 +95,9 @@ pip install notebooklm-py
 # With browser login support (required for first-time setup)
 pip install "notebooklm-py[browser]"
 playwright install chromium
+
+# Optional: import cookies from your existing browser instead of running Playwright
+pip install "notebooklm-py[cookies]"
 ```
 
 If `playwright install chromium` fails with `TypeError: onExit is not a function`, see the Linux workaround in [Troubleshooting](docs/troubleshooting.md#linux).
@@ -122,6 +127,8 @@ pip install git+https://github.com/teng-lin/notebooklm-py@main
 notebooklm login
 # Or use Microsoft Edge (for orgs that require Edge for SSO)
 # notebooklm login --browser msedge
+# Or reuse cookies from an already-logged-in browser session
+# notebooklm login --browser-cookies chrome
 
 # 2. Create a notebook and add sources
 notebooklm create "My Research"
@@ -166,6 +173,8 @@ notebooklm metadata --json           # Export notebook metadata and sources
 notebooklm share status              # Inspect sharing state
 notebooklm source add-research "AI"  # Start web research and import sources
 notebooklm skill status              # Check local agent skill installation
+notebooklm profile list              # List all Google account profiles
+notebooklm profile use work          # Switch active account profile
 ```
 
 ### Python API

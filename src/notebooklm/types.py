@@ -574,10 +574,10 @@ class Source:
 
         .. deprecated:: 0.3.0
             Use the ``.kind`` property which returns a ``SourceType`` enum.
-            Will be removed in v0.4.0.
+            Will be removed in v0.5.0.
         """
         warnings.warn(
-            "Source.source_type is deprecated, use .kind instead. Will be removed in v0.4.0.",
+            "Source.source_type is deprecated, use .kind instead. Will be removed in v0.5.0.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -712,11 +712,11 @@ class SourceFulltext:
 
         .. deprecated:: 0.3.0
             Use the ``.kind`` property which returns a ``SourceType`` enum.
-            Will be removed in v0.4.0.
+            Will be removed in v0.5.0.
         """
         warnings.warn(
             "SourceFulltext.source_type is deprecated, use .kind instead. "
-            "Will be removed in v0.4.0.",
+            "Will be removed in v0.5.0.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -816,10 +816,10 @@ class Artifact:
 
         .. deprecated:: 0.3.0
             Use the ``.kind`` property which returns an ``ArtifactType`` enum.
-            Will be removed in v0.4.0.
+            Will be removed in v0.5.0.
         """
         warnings.warn(
-            "Artifact.artifact_type is deprecated, use .kind instead. Will be removed in v0.4.0.",
+            "Artifact.artifact_type is deprecated, use .kind instead. Will be removed in v0.5.0.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -833,11 +833,11 @@ class Artifact:
 
         .. deprecated:: 0.3.0
             Use ``.kind == ArtifactType.QUIZ`` or ``.is_quiz`` / ``.is_flashcards``.
-            Will be removed in v0.4.0.
+            Will be removed in v0.5.0.
         """
         warnings.warn(
             "Artifact.variant is deprecated. Use .kind, .is_quiz, or .is_flashcards instead. "
-            "Will be removed in v0.4.0.",
+            "Will be removed in v0.5.0.",
             DeprecationWarning,
             stacklevel=2,
         )

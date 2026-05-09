@@ -216,7 +216,7 @@ __all__ = [
     "ShareAccess",
     "ShareViewLevel",
     "SharePermission",
-    # Deprecated (will be removed in v0.4.0)
+    # Deprecated (will be removed in v0.5.0)
     "StudioContentType",
 ]
 
@@ -246,7 +246,7 @@ def __getattr__(name: str):
         from .rpc.types import ArtifactTypeCode
 
         warnings.warn(
-            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.4.0.",
+            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.5.0.",
             DeprecationWarning,
             stacklevel=2,
         )

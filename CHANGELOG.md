@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-09
+
+### Added
+- **Multi-account profiles** - Switch between Google accounts without re-authenticating (#227)
+  - `notebooklm profile create/list/use/rename/delete` commands
+  - Per-profile storage paths under `~/.notebooklm/profiles/<name>/`
+  - Implicit default profile preserved for backward compatibility
+- **Microsoft Edge SSO login** - `notebooklm login --browser msedge` for organizations that require Edge for SSO (#204)
+- **Browser cookie import** - Reuse cookies from your existing browser session without driving Playwright
+  - `notebooklm login --browser-cookies <browser>` (chrome, edge, firefox, safari, etc.)
+  - New `convert_rookiepy_cookies_to_storage_state()` Python helper
+  - Optional `[cookies]` extra installs `rookiepy` (`pip install "notebooklm-py[cookies]"`)
+- **EPUB source type** - Upload `.epub` files as notebook sources (#231)
+- **Agent skill installation** - Install the bundled NotebookLM skill into local AI agents (#206, #207)
+  - `notebooklm skill install` - Install into `~/.claude/skills/notebooklm` and `~/.agents/skills/notebooklm`
+  - `notebooklm skill status` - Check installation state
+  - `notebooklm agent show codex` / `notebooklm agent show claude` - Print bundled agent templates
+- **Mind map customization** - `client.artifacts.generate_mind_map()` now accepts `language` and `instructions` parameters (#252)
+- **`note list --json`** - Machine-readable note listings (#259)
+- **Bare status codes in decoder errors** - Decoder surfaces server status codes on null RPC results for clearer diagnostics (#114, #294)
+
+### Fixed
+- **Cross-domain cookie preservation** - Login storage state retains cookies across `google.com` and `notebooklm.google.com` subdomains, restoring sessions for regional domains
+- **NotebookLM subdomain cookies** - Subdomain cookies are no longer dropped during login (#334)
+- **Video artifact detection** - Correctly detect completed video media URLs in polling responses (#333)
+- **Research import on unavailable snapshots** - CLI gracefully handles missing source snapshots during research import (#335)
+- **Source import retry** - Filtered partial-import retry payloads and tightened verification to avoid false positives (#321, #327)
+- **Server-state verification on timeout** - Prevents duplicate inflation when source imports time out (#319)
+- **Playwright navigation interruption** - Handles updated Playwright behavior on already-authenticated sessions (#214, #322)
+- **Login subprocess on Windows** - Use `sys.executable` for Playwright subprocess calls (#279)
+- **Legacy Windows Unicode output** - Sanitized output streams for legacy Windows consoles (#324)
+- **Settings quota errors** - Use account limits when reporting create-quota failures (#328)
+- **Chat references** - Emit references only from the winning chunk to avoid >600-element duplication (#300, #310)
+- **Login retry mechanism** - Resolved race conditions and improved error handling on retry (#243)
+- **Quota detection during polling** - Detect quota / daily-limit failures during artifact polling (#240)
+- **Google account switching** - Fixed switching between Google accounts at login time (#246)
+- **YouTube URL extraction** - Extract YouTube URLs at deeply-nested response positions (#265)
+- **Bare-HTTP URL fallback** - Disabled brittle bare-HTTP fallback in `sources.list()` (#294)
+- **Logout context cleanup** - Clear the active notebook context on `notebooklm logout`
+- **Infographic URL extraction** - Aligned with download-path logic; added regression test (#229)
+- **Custom storage path for downloads** - Artifact downloads now respect custom auth storage paths (#235)
+- **Windows file permissions** - Skip Unix-only `0o600` calls on Windows and rely on Python 3.13+ ACL behavior (#225)
+- **TOCTOU protection** - Hardened directory creation in `session.py` (#225)
+
+### Changed
+- **`rookiepy` is an optional `[cookies]` extra** - Excluded from `[all]` to avoid Python 3.13+ install issues; install with `pip install "notebooklm-py[cookies]"`
+- **Login error detection** - Improved detection of missing browser binaries (e.g., `msedge` not installed)
+- **Skill installation paths** - Hardened to handle alternative `~/.claude` and `~/.agents` layouts
+- **`StudioContentType` deprecation extended** - Removal pushed from v0.4.0 to v0.5.0; existing imports continue to work with `DeprecationWarning`
+
+### Infrastructure
+- Pinned `ruff==0.8.6` in dev deps to match pre-commit configuration
+- Bumped `python-dotenv` (#299)
+- Bumped `pytest` in the `uv` group
+- Added contribution templates and PR quality guidelines for issues and PRs
+
 ## [0.3.4] - 2026-03-12
 
 ### Added
@@ -344,7 +400,8 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.1...v0.3.2
