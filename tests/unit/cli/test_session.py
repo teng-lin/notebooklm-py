@@ -1640,7 +1640,7 @@ class TestLoginBrowserCookies:
             patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
             patch(
-                "notebooklm.cli.session.fetch_tokens",
+                "notebooklm.cli.session.fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -1671,7 +1671,7 @@ class TestLoginBrowserCookies:
             patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
             patch(
-                "notebooklm.cli.session.fetch_tokens",
+                "notebooklm.cli.session.fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -1735,7 +1735,7 @@ class TestLoginBrowserCookies:
             patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
             patch(
-                "notebooklm.cli.session.fetch_tokens",
+                "notebooklm.cli.session.fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),

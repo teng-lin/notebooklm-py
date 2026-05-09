@@ -59,7 +59,6 @@ logger = logging.getLogger(__name__)
 GOOGLE_ACCOUNTS_URL = "https://accounts.google.com/"
 NOTEBOOKLM_URL = "https://notebooklm.google.com/"
 NOTEBOOKLM_HOST = "notebooklm.google.com"
-fetch_tokens = fetch_tokens_with_domains
 
 # Retryable Playwright connection errors
 RETRYABLE_CONNECTION_ERRORS = ("ERR_CONNECTION_CLOSED", "ERR_CONNECTION_RESET")
@@ -230,9 +229,9 @@ def _login_with_browser_cookies(storage_path: Path, browser_name: str) -> None:
 
     console.print(f"\n[green]Authentication saved to:[/green] {storage_path}")
 
-    # Verify that cookies work — reuse cookies extracted above (no redundant disk read)
+    # Verify that cookies work.
     try:
-        run_async(fetch_tokens(storage_path))
+        run_async(fetch_tokens_with_domains(storage_path))
         logger.info("Cookies verified successfully")
         console.print("[green]Cookies verified successfully.[/green]")
     except ValueError as e:

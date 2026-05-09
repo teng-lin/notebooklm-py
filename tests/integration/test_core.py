@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from notebooklm import NotebookLMClient
+from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._core import MAX_CONVERSATION_CACHE_SIZE, ClientCore, is_auth_error
 from notebooklm.rpc import (
     AuthError,
@@ -31,6 +31,29 @@ class TestClientInitialization:
         async with NotebookLMClient(auth_tokens) as client:
             assert client._core._http_client is not None  # client is open
         assert client._core._http_client is None  # closed after exit
+
+    @pytest.mark.asyncio
+    async def test_close_does_not_sync_in_memory_auth_to_default_storage(self):
+        auth = AuthTokens(cookies={"SID": "scratch"}, csrf_token="csrf", session_id="session")
+        core = ClientCore(auth)
+        await core.open()
+
+        with patch("notebooklm._core.save_cookies_to_storage") as mock_save:
+            await core.close()
+
+        mock_save.assert_not_called()
+        assert core._http_client is None
+
+    @pytest.mark.asyncio
+    async def test_close_closes_http_client_when_cookie_sync_fails(self, auth_tokens, tmp_path):
+        auth_tokens.storage_path = tmp_path / "storage_state.json"
+        core = ClientCore(auth_tokens)
+        await core.open()
+
+        with patch("notebooklm._core.save_cookies_to_storage", side_effect=RuntimeError("boom")):
+            await core.close()
+
+        assert core._http_client is None
 
     @pytest.mark.asyncio
     async def test_client_raises_if_not_initialized(self, auth_tokens):

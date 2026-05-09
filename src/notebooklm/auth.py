@@ -60,6 +60,7 @@ ALLOWED_COOKIE_DOMAINS = {
     "notebooklm.google.com",
     ".googleusercontent.com",
     "accounts.google.com",  # Required for token refresh redirects
+    ".accounts.google.com",  # http.cookiejar may normalize Domain=accounts.google.com
 }
 
 # Regional Google ccTLDs where Google may set auth cookies
@@ -857,7 +858,7 @@ def save_cookies_to_storage(cookie_jar: httpx.Cookies, path: Path | None = None)
 
     Args:
         cookie_jar: The httpx.Cookies object containing the latest cookies.
-        path: Path to storage_state.json. If None, falls back to default.
+        path: Path to storage_state.json. If None, cookie sync is skipped.
     """
     if (
         not path
@@ -868,9 +869,8 @@ def save_cookies_to_storage(cookie_jar: httpx.Cookies, path: Path | None = None)
         return
 
     if not path:
-        from .paths import get_storage_path
-
-        path = get_storage_path()
+        logger.debug("Skipping cookie sync: No storage file path available")
+        return
 
     if not path.exists():
         logger.debug("Skipping cookie sync: Storage file not found at %s", path)
@@ -1010,6 +1010,8 @@ def _find_cookie_for_storage(
 
 def _replace_cookie_jar(target: httpx.Cookies, source: httpx.Cookies) -> None:
     """Replace target jar contents with source jar contents."""
+    if target is source:
+        return
     target.jar.clear()
     for cookie in source.jar:
         target.jar.set_cookie(cookie)

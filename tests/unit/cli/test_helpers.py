@@ -4,6 +4,7 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 import notebooklm.cli._encoding as encoding_module
@@ -685,6 +686,33 @@ class TestGetAuthTokens:
         assert auth.flat_cookies == {"SID": "test_sid"}
         assert auth.csrf_token == "csrf_token"
         assert auth.session_id == "session_id"
+
+    def test_explicit_storage_path_overrides_auth_json_cookie_jar(self, tmp_path, monkeypatch):
+        storage_path = tmp_path / "storage_state.json"
+        ctx = MagicMock()
+        ctx.obj = {"storage_path": storage_path, "profile": None}
+        monkeypatch.setenv(
+            "NOTEBOOKLM_AUTH_JSON",
+            json.dumps({"cookies": [{"name": "SID", "value": "env", "domain": ".google.com"}]}),
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch("notebooklm.auth.build_httpx_cookies_from_storage") as mock_env_jar,
+            patch("notebooklm.cli.helpers.build_cookie_jar") as mock_build_jar,
+        ):
+            mock_load.return_value = {"SID": "file"}
+            mock_fetch.return_value = ("csrf", "session")
+            mock_build_jar.return_value = httpx.Cookies()
+
+            auth = get_auth_tokens(ctx)
+
+        mock_env_jar.assert_not_called()
+        mock_build_jar.assert_called_once_with(cookies={"SID": "file"}, storage_path=storage_path)
+        assert auth.storage_path == storage_path
 
 
 class TestRunAsync:

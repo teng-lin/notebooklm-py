@@ -12,6 +12,7 @@ from notebooklm.auth import (
     AuthTokens,
     convert_rookiepy_cookies_to_storage_state,
     extract_cookies_from_storage,
+    extract_cookies_with_domains,
     extract_csrf_from_html,
     extract_session_id_from_html,
     fetch_tokens,
@@ -758,6 +759,25 @@ class TestFetchTokens:
         )
         assert account_cookie["value"] == "fresh"
 
+    def test_appended_dot_accounts_cookie_round_trips(self, tmp_path):
+        """New accounts.google.com cookies keep their normalized cookiejar domain."""
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(
+            json.dumps({"cookies": [{"name": "SID", "value": "sid", "domain": ".google.com"}]})
+        )
+
+        jar = httpx.Cookies()
+        jar.set("SID", "sid", domain=".google.com")
+        jar.set("ACCOUNT_REFRESH", "fresh", domain=".accounts.google.com")
+
+        save_cookies_to_storage(jar, storage_file)
+
+        storage_state = json.loads(storage_file.read_text())
+        assert (
+            "ACCOUNT_REFRESH",
+            ".accounts.google.com",
+        ) in extract_cookies_with_domains(storage_state)
+
     def test_save_cookies_to_storage_preserves_secure_permissions(self, tmp_path):
         """Cookie sync keeps storage_state.json at 0o600 on POSIX."""
         if os.name == "nt":
@@ -827,6 +847,7 @@ class TestIsAllowedCookieDomain:
         assert _is_allowed_cookie_domain(".google.com") is True
         assert _is_allowed_cookie_domain("notebooklm.google.com") is True
         assert _is_allowed_cookie_domain(".googleusercontent.com") is True
+        assert _is_allowed_cookie_domain(".accounts.google.com") is True
 
     def test_accepts_valid_google_subdomains(self):
         """Test accepts legitimate Google subdomains."""

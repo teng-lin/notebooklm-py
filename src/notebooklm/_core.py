@@ -161,10 +161,15 @@ class ClientCore:
         Called automatically by NotebookLMClient.__aexit__.
         """
         if self._http_client:
-            # Sync any newly refreshed tokens back to disk so they survive CLI restarts
-            save_cookies_to_storage(self._http_client.cookies, self.auth.storage_path)
-            await self._http_client.aclose()
-            self._http_client = None
+            try:
+                # Sync refreshed cookies only when auth came from an explicit file.
+                if self.auth.storage_path is not None:
+                    save_cookies_to_storage(self._http_client.cookies, self.auth.storage_path)
+            except Exception as e:
+                logger.warning("Failed to sync refreshed cookies during close: %s", e)
+            finally:
+                await self._http_client.aclose()
+                self._http_client = None
 
     @property
     def is_open(self) -> bool:
