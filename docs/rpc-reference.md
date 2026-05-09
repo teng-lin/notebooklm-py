@@ -1,7 +1,7 @@
 # RPC & UI Reference
 
 **Status:** Active
-**Last Updated:** 2026-03-02
+**Last Updated:** 2026-05-09
 **Source of Truth:** `src/notebooklm/rpc/types.py`
 **Purpose:** Complete reference for RPC methods, UI selectors, and payload structures
 
@@ -22,14 +22,17 @@
 | `s0tc2d` | RENAME_NOTEBOOK | Rename, chat config, share access | `_notebooks.py`, `_chat.py` |
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
 | `izAoDd` | ADD_SOURCE | Add URL/text/YouTube source | `_sources.py` |
-| `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file | `_sources.py` |
+| `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_sources.py` |
+| `hizoJc` | GET_SOURCE | Get source detail / fulltext | `_sources.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
+| `qXyaNe` | DISCOVER_SOURCES | Discover sources from a query | `_research.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
-| `hPTbtc` | GET_CONVERSATION_ID | Get most recent conversation ID | `_chat.py` |
+| `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_artifacts.py` |
+| `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
@@ -67,6 +70,28 @@
 | 7 | Infographic | Infographic |
 | 8 | Slide Deck | Slide Deck |
 | 9 | Data Table | Data Table |
+
+### Source Type Codes (file uploads & sources)
+
+Internal integer codes returned by `GET_NOTEBOOK` / `LIST_SOURCES` and consumed by `Source.from_api_response()` (mapped to `SourceType` in `src/notebooklm/types.py`).
+
+| Code | `SourceType` | Used By |
+|------|--------------|---------|
+| 1 | `GOOGLE_DOCS` | Google Docs source |
+| 2 | `GOOGLE_SLIDES` | Google Slides source |
+| 3 | `PDF` | PDF upload |
+| 4 | `PASTED_TEXT` | Inline pasted text |
+| 5 | `WEB_PAGE` | Web URL source |
+| 8 | `MARKDOWN` | Markdown file |
+| 9 | `YOUTUBE` | YouTube URL |
+| 10 | `MEDIA` | Audio / video upload |
+| 11 | `DOCX` | Word document |
+| 13 | `IMAGE` | Image upload |
+| 14 | `GOOGLE_SPREADSHEET` | Google Sheets source |
+| 16 | `CSV` | CSV upload |
+| 17 | `EPUB` | EPUB upload (added in v0.4.0) |
+
+> Codes outside this map are surfaced as `SourceType.UNKNOWN` and emit `UnknownTypeWarning` on first occurrence so unmapped types don't crash callers.
 
 ---
 
@@ -397,7 +422,7 @@ params = [
 ]
 ```
 
-### RPC: GET_CONVERSATION_ID (hPTbtc)
+### RPC: GET_LAST_CONVERSATION_ID (hPTbtc)
 
 **Source:** `_chat.py::get_conversation_id()`
 
@@ -720,13 +745,19 @@ params = [
 
 ```python
 # RPC: GENERATE_MIND_MAP (yyryJe), NOT CREATE_ARTIFACT
+# Python signature:
+#   generate_mind_map(notebook_id, source_ids=None, language="en", instructions=None)
 params = [
     source_ids_nested,                            # 0: [[[sid]] for sid in source_ids]
     None,                                         # 1
     None,                                         # 2
     None,                                         # 3
     None,                                         # 4
-    ["interactive_mindmap", [["[CONTEXT]", ""]], ""],  # 5: Mind map command
+    [
+        "interactive_mindmap",                    # 5[0]: command name
+        [["[CONTEXT]", instructions or ""]],      # 5[1]: instructions (added in v0.4.0)
+        language,                                 # 5[2]: language code, e.g. "en" (added in v0.4.0)
+    ],
     None,                                         # 6
     [2, None, [1]],                               # 7: Fixed config
 ]
