@@ -96,7 +96,7 @@ pip install "notebooklm-py[cookies]"
 ```python
 import json
 import rookiepy
-from notebooklm import AuthTokens, NotebookLMClient
+from notebooklm import NotebookLMClient
 from notebooklm.auth import convert_rookiepy_cookies_to_storage_state
 
 # Pull Google cookies from Chrome (or .firefox(), .edge(), .safari(), .load() for auto-detect)
@@ -110,7 +110,7 @@ with open("/path/to/storage_state.json", "w") as f:
 client = await NotebookLMClient.from_storage("/path/to/storage_state.json")
 ```
 
-The helper always extracts the source browser's currently-active Google account on `google.com` / `notebooklm.google.com`. The CLI equivalent is `notebooklm login --browser-cookies <browser>`.
+The helper converts the cookie list returned by `rookiepy` into the storage-state format `NotebookLMClient.from_storage()` expects — the actual cookie extraction (and Google-account selection) happens in the `rookiepy.<browser>(...)` call. As a result, the storage state reflects whichever Google account is currently active in the source browser on `google.com` / `notebooklm.google.com`. The CLI equivalent is `notebooklm login --browser-cookies <browser>`.
 
 **Environment Variable Support:**
 

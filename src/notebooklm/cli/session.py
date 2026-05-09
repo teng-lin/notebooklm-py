@@ -413,7 +413,7 @@ def register_session_commands(cli):
         help=(
             "Read cookies from an installed browser instead of launching Playwright. "
             "Optionally specify browser: chrome, firefox, brave, edge, safari, arc, ... "
-            "Requires: pip install 'notebooklm[cookies]'"
+            "Requires: pip install 'notebooklm-py[cookies]'"
         ),
     )
     @click.option(
