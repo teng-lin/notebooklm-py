@@ -23,10 +23,8 @@
 | `WWINqb` | DELETE_NOTEBOOK | Delete a notebook | `_notebooks.py` |
 | `izAoDd` | ADD_SOURCE | Add URL/text/YouTube source | `_sources.py` |
 | `o4cbdc` | ADD_SOURCE_FILE | Register uploaded file (PDF, DOCX, EPUB, etc.) | `_sources.py` |
-| `hizoJc` | GET_SOURCE | Get source detail / fulltext | `_sources.py` |
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
-| `qXyaNe` | DISCOVER_SOURCES | Discover sources from a query | `_research.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
