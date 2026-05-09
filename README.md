@@ -179,7 +179,7 @@ notebooklm share status              # Inspect sharing state
 notebooklm source add-research "AI"  # Start web research and import sources
 notebooklm skill status              # Check local agent skill installation
 notebooklm profile list              # List all Google account profiles
-notebooklm profile use work          # Switch active account profile
+notebooklm profile switch work       # Switch active account profile
 ```
 
 ### Python API

@@ -40,6 +40,11 @@ We follow [Semantic Versioning](https://semver.org/) with modifications for our 
    - Breaking changes require a major version bump
    - Deprecated APIs are marked with `DeprecationWarning` and documented
 
+3. **0.x Pre-1.0 Semantics**
+   - Per [SemVer §4](https://semver.org/#spec-item-4), the project is currently in 0.x and the public API is not yet considered stable.
+   - **MINOR** releases (e.g. 0.4.0 → 0.5.0) **may remove** previously deprecated public APIs. Removal is preceded by at least one MINOR release of `DeprecationWarning` notice.
+   - Once the project reaches 1.0.0, breaking changes will require a **MAJOR** bump as described above.
+
 ## Public API Surface
 
 The following are considered **public API** and are subject to stability guarantees:
@@ -95,8 +100,8 @@ DriveMimeType, ExportType
 AuthTokens
 # (DEFAULT_STORAGE_PATH is deprecated; use notebooklm.paths.get_storage_path())
 
-# Helpers (cookies extra)
-convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"`
+# Helpers (cookies extra) - imported from notebooklm.auth
+notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"`
 ```
 
 ### Internal (May change without notice)
@@ -143,9 +148,9 @@ The following are deprecated and will be removed in **v0.5.0**:
 
 Version 0.4.0 is backward compatible with v0.3.x. Notable additions:
 
-- **Multi-account profiles** - Existing single-account setups continue to work as the implicit default profile. New accounts can be added via `notebooklm profile create <name>`.
+- **Multi-account profiles** - Existing single-account setups continue to work as the implicit default profile. Your existing `~/.notebooklm/storage_state.json` is auto-detected — no manual migration is required. New accounts can be added via `notebooklm profile create <name>`.
 - **`[cookies]` optional extra** - To reuse cookies from your existing browser, install with `pip install "notebooklm-py[cookies]"` (requires `rookiepy`).
-- **Deprecation removal deferred** - The deprecated attributes originally scheduled for v0.4.0 (`Source.source_type`, `Artifact.artifact_type`, `Artifact.variant`, `SourceFulltext.source_type`, `StudioContentType`) will now be removed in v0.5.0. They still emit `DeprecationWarning` — please migrate before v0.5.0.
+- **Deprecation removal deferred** - The deprecated attributes originally scheduled for v0.4.0 (`Source.source_type`, `Artifact.artifact_type`, `Artifact.variant`, `SourceFulltext.source_type`, `StudioContentType`, `DEFAULT_STORAGE_PATH`) will now be removed in v0.5.0. They still emit `DeprecationWarning` — please migrate before v0.5.0.
 
 ### Migrating from v0.2.x to v0.3.0
 

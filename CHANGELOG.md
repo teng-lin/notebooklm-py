@@ -11,9 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Multi-account profiles** - Switch between Google accounts without re-authenticating (#227)
-  - `notebooklm profile create/list/use/rename/delete` commands
+  - `notebooklm profile create/list/switch/rename/delete` commands
+  - Global `--profile` / `-p` flag and `NOTEBOOKLM_PROFILE` environment variable to scope any command to a profile
   - Per-profile storage paths under `~/.notebooklm/profiles/<name>/`
-  - Implicit default profile preserved for backward compatibility
+  - Implicit default profile preserved for backward compatibility; existing `~/.notebooklm/storage_state.json` is auto-detected as the default profile (no manual migration needed)
+- **`notebooklm doctor` diagnostic command** - `notebooklm doctor [--fix] [--json]` checks profile setup, auth, and migration status; reports actionable issues
 - **Microsoft Edge SSO login** - `notebooklm login --browser msedge` for organizations that require Edge for SSO (#204)
 - **Browser cookie import** - Reuse cookies from your existing browser session without driving Playwright
   - `notebooklm login --browser-cookies <browser>` (chrome, edge, firefox, safari, etc.)
@@ -56,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`rookiepy` is an optional `[cookies]` extra** - Excluded from `[all]` to avoid Python 3.13+ install issues; install with `pip install "notebooklm-py[cookies]"`
 - **Login error detection** - Improved detection of missing browser binaries (e.g., `msedge` not installed)
 - **Skill installation paths** - Hardened to handle alternative `~/.claude` and `~/.agents` layouts
-- **`StudioContentType` deprecation extended** - Removal pushed from v0.4.0 to v0.5.0; existing imports continue to work with `DeprecationWarning`
+- **Deprecation removal deferred to v0.5.0** - The deprecated APIs originally scheduled for removal in v0.4.0 — `StudioContentType`, `Source.source_type`, `SourceFulltext.source_type`, `Artifact.artifact_type`, `Artifact.variant`, and `DEFAULT_STORAGE_PATH` — continue to work and emit `DeprecationWarning`. Removal is now planned for v0.5.0 to give downstream users an extra release to migrate.
 
 ### Infrastructure
 - Pinned `ruff==0.8.6` in dev deps to match pre-commit configuration
@@ -212,8 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ARTIFACT_TYPE_DISPLAY`** - Unused constant replaced by `get_artifact_type_display()`
 
 ### Deprecated
-The following emit `DeprecationWarning` when accessed and will be removed in **v0.4.0**.
+The following emit `DeprecationWarning` when accessed and were originally scheduled for removal in v0.4.0.
 See [Migration Guide](docs/stability.md#migrating-from-v02x-to-v030) for upgrade instructions.
+
+> **Note:** Removal was subsequently deferred one release; see the [0.4.0] entry above. These names will now be removed in v0.5.0.
 
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` str enum)
 - **`Artifact.artifact_type`** - Use `.kind` property instead (returns `ArtifactType` str enum)
