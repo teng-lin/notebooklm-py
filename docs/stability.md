@@ -111,7 +111,7 @@ notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip insta
 notebooklm.rpc.*          # RPC protocol internals
 notebooklm._core.*        # Core infrastructure
 notebooklm._*.py          # All underscore-prefixed modules
-notebooklm.auth.*         # Auth internals (except AuthTokens)
+notebooklm.auth.*         # Auth internals (except AuthTokens and convert_rookiepy_cookies_to_storage_state)
 ```
 
 To use internal APIs, import them explicitly:
@@ -124,7 +124,7 @@ from notebooklm.rpc import RPCMethod, encode_rpc_request
 
 1. **Deprecation Notice**: Deprecated features emit `DeprecationWarning`
 2. **Documentation**: Deprecations are noted in docstrings and CHANGELOG
-3. **Removal Timeline**: Deprecated features are removed in the next major version
+3. **Removal Timeline**: Deprecated features are removed in the next major version. While the project is in 0.x, removal may instead occur in the next MINOR release after at least one MINOR cycle of `DeprecationWarning` (see "0.x Pre-1.0 Semantics" above).
 4. **Migration Guide**: Breaking changes include migration instructions
 
 ### Currently Deprecated
