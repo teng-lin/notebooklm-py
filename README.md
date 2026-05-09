@@ -129,6 +129,10 @@ notebooklm login
 # notebooklm login --browser msedge
 # Or reuse cookies from an already-logged-in browser session
 # notebooklm login --browser-cookies chrome
+# (combine with --profile to populate a specific profile;
+#  cookie import always uses the browser's active Google account
+#  for google.com domains, so switch accounts in the browser
+#  between runs to populate multiple profiles from one browser)
 
 # 2. Create a notebook and add sources
 notebooklm create "My Research"

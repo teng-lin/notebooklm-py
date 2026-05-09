@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `notebooklm login --browser-cookies <browser>` (chrome, edge, firefox, safari, etc.)
   - New `convert_rookiepy_cookies_to_storage_state()` Python helper
   - Optional `[cookies]` extra installs `rookiepy` (`pip install "notebooklm-py[cookies]"`)
+  - Honors the active profile: `notebooklm --profile <name> login --browser-cookies <browser>` writes to that profile's `storage_state.json`. Note that cookie extraction always pulls the source browser's currently-active Google account for `google.com` / `notebooklm.google.com` — to populate multiple profiles from the same browser, switch the active Google account in the browser between runs (or use a separate browser per profile).
 - **EPUB source type** - Upload `.epub` files as notebook sources (#231)
 - **Agent skill installation** - Install the bundled NotebookLM skill into local AI agents (#206, #207)
   - `notebooklm skill install` - Install into `~/.claude/skills/notebooklm` and `~/.agents/skills/notebooklm`
