@@ -725,44 +725,6 @@ class TestCookieAttributePreservation:
         # 0 is preserved as 0 — not collapsed to None (session) or -1.
         assert sid.expires == 0
 
-    def test_distinct_paths_for_same_name_domain_coexist(self, tmp_path):
-        """Two cookies with same name+domain but different paths are distinct.
-
-        Per RFC 6265 cookie identity is (name, domain, path). The dedup key
-        must include path so a path-scoped cookie does not silently suppress
-        the canonical ``/`` cookie.
-        """
-        state = {
-            "cookies": [
-                {
-                    "name": "SID",
-                    "value": "root-value",
-                    "domain": ".google.com",
-                    "path": "/",
-                    "expires": 1893456000,
-                    "httpOnly": True,
-                    "secure": True,
-                },
-                {
-                    "name": "SID",
-                    "value": "scoped-value",
-                    "domain": ".google.com",
-                    "path": "/u/0/",
-                    "expires": 1893456000,
-                    "httpOnly": True,
-                    "secure": True,
-                },
-            ]
-        }
-        storage_file = tmp_path / "storage_state.json"
-        storage_file.write_text(json.dumps(state))
-
-        jar = build_httpx_cookies_from_storage(storage_file)
-        root = self._find_cookie(jar, "SID", ".google.com", path="/")
-        scoped = self._find_cookie(jar, "SID", ".google.com", path="/u/0/")
-        assert root.value == "root-value"
-        assert scoped.value == "scoped-value"
-
 
 class TestExtractCSRFRedirect:
     """Test CSRF extraction redirect detection."""
@@ -1362,6 +1324,40 @@ class TestAuthTokensFromStorage:
         """Test raises error when storage file doesn't exist."""
         with pytest.raises(FileNotFoundError):
             await AuthTokens.from_storage(tmp_path / "nonexistent.json")
+
+    @pytest.mark.asyncio
+    async def test_from_storage_preserves_cookie_attributes(self, tmp_path, httpx_mock: HTTPXMock):
+        """``AuthTokens.from_storage`` builds the jar via the lossless loader.
+
+        The recommended programmatic entry point must not erode path/secure/
+        httpOnly on its way to the live jar — otherwise #365's fix only covers
+        the direct loaders. See review feedback on PR #368.
+        """
+        storage_file = tmp_path / "storage_state.json"
+        storage_state = {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": "sid",
+                    "domain": ".google.com",
+                    "path": "/u/0/",
+                    "expires": 1893456000,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+            ]
+        }
+        storage_file.write_text(json.dumps(storage_state))
+
+        html = '"SNlM0e":"csrf_token" "FdrFJe":"session_id"'
+        httpx_mock.add_response(content=html.encode())
+
+        tokens = await AuthTokens.from_storage(storage_file)
+
+        sid = next(c for c in tokens.cookie_jar.jar if c.name == "SID")
+        assert sid.path == "/u/0/"
+        assert sid.secure is True
+        assert sid.has_nonstandard_attr("HttpOnly")
 
 
 # =============================================================================

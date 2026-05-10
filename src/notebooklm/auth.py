@@ -273,11 +273,12 @@ class AuthTokens:
         if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
             path = get_storage_path(profile=profile)
 
-        storage_state = _load_storage_state(path)
-        cookies = extract_cookies_with_domains(storage_state)
-
-        # Build domain-preserving jar and use it for token fetch
-        jar = build_cookie_jar(cookies=cookies)
+        # Build the cookie jar via the lossless loader so path/secure/httpOnly
+        # survive into the live jar. The earlier
+        # extract_cookies_with_domains -> build_cookie_jar pipeline only carried
+        # (name, domain) -> value and dropped the same attributes the load
+        # paths in #365 fixed.
+        jar = build_httpx_cookies_from_storage(path)
         csrf_token, session_id, _ = await _fetch_tokens_with_refresh(jar, path, profile)
 
         # Persist any refreshed cookies from the token fetch
@@ -879,25 +880,25 @@ def build_httpx_cookies_from_storage(path: Path | None = None) -> "httpx.Cookies
     storage_state = _load_storage_state(path)
 
     cookies = httpx.Cookies()
-    # Per RFC 6265, cookie identity is (name, domain, path) — two cookies sharing
-    # name+domain but differing in path are legitimately distinct. Dedup must
-    # use the full triple so a path-scoped cookie cannot suppress a sibling
-    # cookie at "/". See #365.
-    seen_triples: set[tuple[str, str, str]] = set()
-    cookie_names: set[str] = set()
+    # Dedup by (name, domain) to stay symmetric with save_cookies_to_storage,
+    # which keys cookies_by_key on the same pair. Cookie identity per RFC 6265
+    # is (name, domain, path), but the save side cannot represent multiple
+    # path-scoped siblings yet — so the load side keeps a compatible model
+    # rather than constructing pairs that would silently collapse on save.
+    seen_keys: set[CookieKey] = set()
     for entry in storage_state.get("cookies", []):
         domain = entry.get("domain", "")
         name = entry.get("name")
         value = entry.get("value", "")
         if not _is_allowed_auth_domain(domain) or not name or not value:
             continue
-        triple = (name, domain, entry.get("path") or "/")
-        if triple in seen_triples:
+        key = (name, domain)
+        if key in seen_keys:
             continue
-        seen_triples.add(triple)
-        cookie_names.add(name)
+        seen_keys.add(key)
         cookies.jar.set_cookie(_storage_entry_to_cookie(entry))
 
+    cookie_names = {name for name, _ in seen_keys}
     missing = MINIMUM_REQUIRED_COOKIES - cookie_names
     if missing:
         raise ValueError(
