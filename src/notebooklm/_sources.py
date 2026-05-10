@@ -404,6 +404,7 @@ class SourcesAPI:
         notebook_id: str,
         file_path: str | Path,
         mime_type: str | None = None,
+        title: str | None = None,
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
@@ -413,11 +414,17 @@ class SourcesAPI:
         1. Register source intent with RPC → get SOURCE_ID
         2. Start upload session with SOURCE_ID (get upload URL)
         3. Stream upload file content (memory-efficient for large files)
+        4. Optionally rename the source if a custom ``title`` was supplied
+           (the file-add RPC has no title slot, so a follow-up
+           ``UPDATE_SOURCE`` is the only way to set one).
 
         Args:
             notebook_id: The notebook ID.
             file_path: Path to the file to upload.
             mime_type: MIME type of the file (not used in current implementation).
+            title: Optional display title. When provided and different from the
+                source filename, a rename is issued after upload so the source
+                appears with this title in the UI and API responses.
             wait: If True, wait for source to be ready before returning.
             wait_timeout: Maximum seconds to wait if wait=True (default: 120).
 
@@ -462,6 +469,29 @@ class SourcesAPI:
             title=filename,
             _type_code=None,  # Placeholder until processed
         )
+
+        # Step 4: Apply custom title if requested. The file-add RPC ignores any
+        # title hint, so a separate UPDATE_SOURCE call is the only way to honor
+        # the caller's intent.
+        if title is not None and title != filename:
+            try:
+                renamed = await self.rename(notebook_id, source_id, title)
+                # Preserve the placeholder _type_code so callers still know to
+                # poll for the real type once processing finishes.
+                source = Source(
+                    id=renamed.id,
+                    title=renamed.title,
+                    _type_code=source._type_code,
+                )
+            except Exception:
+                # Don't fail the whole upload if the rename fails — the file is
+                # already uploaded. Surface a warning so the caller can retry.
+                logger.warning(
+                    "Source %s uploaded but rename to %r failed; keeping default title %r",
+                    source_id,
+                    title,
+                    filename,
+                )
 
         if wait:
             return await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)

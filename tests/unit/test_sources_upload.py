@@ -436,6 +436,108 @@ class TestAddFile:
         assert result.id == "src_txt"
         assert result.title == "doc.txt"
 
+    @pytest.mark.asyncio
+    async def test_add_file_with_custom_title_renames_after_upload(
+        self, sources_api, mock_core, tmp_path
+    ):
+        """A non-null title that differs from the filename should trigger a rename
+        and surface in the returned Source (regression test for #313).
+        """
+        test_file = tmp_path / "boring-filename.md"
+        test_file.write_bytes(b"# content\n")
+
+        # First rpc_call serves the file registration; the second serves rename().
+        mock_core.rpc_call.side_effect = [
+            [[[["src_md"]]]],
+            [[[["src_md"], "Real Intended Title"]]],
+        ]
+
+        mock_start_response = MagicMock()
+        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_upload_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+            mock_client_cls.return_value = mock_client
+
+            result = await sources_api.add_file(
+                "nb_123", str(test_file), title="Real Intended Title"
+            )
+
+        assert result.id == "src_md"
+        assert result.title == "Real Intended Title"
+        # 1 register + 1 rename
+        assert mock_core.rpc_call.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_add_file_skips_rename_when_title_matches_filename(
+        self, sources_api, mock_core, tmp_path
+    ):
+        """If the caller passes a title equal to the on-disk filename, no rename
+        RPC should be issued — saves a round-trip and avoids no-op writes.
+        """
+        test_file = tmp_path / "report.pdf"
+        test_file.write_bytes(b"fake pdf content")
+
+        mock_core.rpc_call.return_value = [[[["src_pdf"]]]]
+
+        mock_start_response = MagicMock()
+        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_upload_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+            mock_client_cls.return_value = mock_client
+
+            result = await sources_api.add_file("nb_123", str(test_file), title="report.pdf")
+
+        assert result.id == "src_pdf"
+        assert result.title == "report.pdf"
+        # Only the registration call — no rename.
+        assert mock_core.rpc_call.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_add_file_rename_failure_keeps_upload(
+        self, sources_api, mock_core, tmp_path, caplog
+    ):
+        """A failing rename must not lose the already-uploaded file; the source
+        is returned with the default filename title and a warning is logged.
+        """
+        import logging
+
+        test_file = tmp_path / "doc.txt"
+        test_file.write_bytes(b"content")
+
+        # Registration succeeds; rename raises.
+        mock_core.rpc_call.side_effect = [
+            [[[["src_doc"]]]],
+            RuntimeError("rename rpc blew up"),
+        ]
+
+        mock_start_response = MagicMock()
+        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_upload_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+            mock_client_cls.return_value = mock_client
+
+            with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+                result = await sources_api.add_file("nb_123", str(test_file), title="Custom")
+
+        assert result.id == "src_doc"
+        assert result.title == "doc.txt"
+        assert any("rename to 'Custom' failed" in rec.message for rec in caplog.records)
+
 
 # =============================================================================
 # add_url() with YouTube detection tests

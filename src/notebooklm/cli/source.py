@@ -228,7 +228,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
     default=None,
     help="Source type (auto-detected if not specified)",
 )
-@click.option("--title", help="Title for text sources")
+@click.option("--title", help="Custom title for text and file sources")
 @click.option("--mime-type", help="MIME type for file sources")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
@@ -281,7 +281,9 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                 text_title = file_title or "Untitled"
                 src = await client.sources.add_text(nb_id_resolved, text_title, text_content)
             elif detected_type == "file":
-                src = await client.sources.add_file(nb_id_resolved, content, mime_type)
+                src = await client.sources.add_file(
+                    nb_id_resolved, content, mime_type, title=file_title
+                )
 
             if json_output:
                 data = {

@@ -1027,6 +1027,44 @@ class TestSourceAddAutoDetect:
             call_args = mock_client.sources.add_text.call_args
             assert call_args[0][1] == "Custom Title"  # title arg
 
+    def test_source_add_file_with_custom_title_passes_title_through(
+        self, runner, mock_auth, tmp_path
+    ):
+        """Regression test for #313: ``--title`` must reach add_file when the
+        argument is an existing file path (auto-detected as 'file').
+        """
+        test_file = tmp_path / "boring-filename.md"
+        test_file.write_text("# content\n")
+
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.add_file = AsyncMock(
+                return_value=Source(id="src_md", title="Real Intended Title")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "add",
+                        str(test_file),
+                        "--title",
+                        "Real Intended Title",
+                        "-n",
+                        "nb_123",
+                    ],
+                )
+
+            assert result.exit_code == 0
+            mock_client.sources.add_file.assert_called_once()
+            call_kwargs = mock_client.sources.add_file.call_args.kwargs
+            assert call_kwargs.get("title") == "Real Intended Title"
+
 
 # =============================================================================
 # SOURCE FULLTEXT TESTS
