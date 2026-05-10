@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._sources import SourcesAPI
+from notebooklm.exceptions import RPCError
 
 
 @pytest.fixture
@@ -514,10 +515,11 @@ class TestAddFile:
         test_file = tmp_path / "doc.txt"
         test_file.write_bytes(b"content")
 
-        # Registration succeeds; rename raises.
+        # Registration succeeds; rename raises a library-level RPC error
+        # (representative of what `self.rename` actually raises in the wild).
         mock_core.rpc_call.side_effect = [
             [[[["src_doc"]]]],
-            RuntimeError("rename rpc blew up"),
+            RPCError("rename rpc blew up"),
         ]
 
         mock_start_response = MagicMock()

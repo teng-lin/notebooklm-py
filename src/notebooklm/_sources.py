@@ -13,7 +13,7 @@ import httpx
 
 from ._core import ClientCore
 from ._url_utils import is_youtube_url
-from .exceptions import ValidationError
+from .exceptions import NetworkError, ValidationError
 from .rpc import UPLOAD_URL, RPCError, RPCMethod
 from .rpc.types import SourceStatus
 from .types import (
@@ -476,14 +476,12 @@ class SourcesAPI:
         if title is not None and title != filename:
             try:
                 renamed = await self.rename(notebook_id, source_id, title)
-                # Preserve the placeholder _type_code so callers still know to
-                # poll for the real type once processing finishes.
-                source = Source(
-                    id=renamed.id,
-                    title=renamed.title,
-                    _type_code=source._type_code,
-                )
-            except Exception:
+                # Keep any metadata UPDATE_SOURCE returned (created_at, url, ...) but
+                # force _type_code back to None — rename runs before processing finishes,
+                # so the real type still has to be polled later.
+                source = renamed
+                source._type_code = None
+            except (RPCError, NetworkError):
                 # Don't fail the whole upload if the rename fails — the file is
                 # already uploaded. Surface a warning so the caller can retry.
                 logger.warning(
