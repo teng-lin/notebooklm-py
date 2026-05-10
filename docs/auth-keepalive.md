@@ -588,6 +588,11 @@ convention) and persist them indefinitely. This means:
 
 #### 3.4.6 `__Host-` invariants are not enforced
 
+> **Mitigated in #365** as a side benefit of fixing §3.4.7. Faithful
+> `path`/`secure` preservation on load means `__Host-` cookies survive
+> the round-trip without losing the prefix-mandated attributes; the
+> remaining gap is `cookie.domain` normalization on the save side.
+
 `__Host-` prefix cookies (`__Host-GAPS`, `__Host-1PLSID`,
 `__Host-3PLSID`) **must** have empty `Domain` and `Path=/` per the
 prefix rule. `_cookie_to_storage_state` writes whatever
@@ -597,6 +602,11 @@ shape. Browsers and well-behaved cookie jars discard these on load;
 silent drops would manifest as occasional auth-flow flakes.
 
 #### 3.4.7 Load-side attribute loss (round-trip erosion)
+
+> **Resolved in #365.** Both load paths now construct a faithful
+> `http.cookiejar.Cookie` via the `_storage_entry_to_cookie` helper,
+> preserving `path`, `secure`, and `httpOnly` across load+save cycles.
+> The analysis below is retained for historical context.
 
 Every load path uses `cookies.set(name, value, domain=domain)` —
 `build_httpx_cookies_from_storage` (`auth.py:822`) and

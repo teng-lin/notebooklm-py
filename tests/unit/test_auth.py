@@ -18,6 +18,7 @@ from notebooklm.auth import (
     KEEPALIVE_ROTATE_URL,
     NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV,
     AuthTokens,
+    build_httpx_cookies_from_storage,
     convert_rookiepy_cookies_to_storage_state,
     extract_cookies_from_storage,
     extract_cookies_with_domains,
@@ -558,6 +559,209 @@ class TestLoadHttpxCookiesWithEnvVar:
         # Explicit path should win
         cookies = load_httpx_cookies(path=storage_file)
         assert cookies.get("SID", domain=".google.com") == "from_file"
+
+
+class TestCookieAttributePreservation:
+    """Round-trip preservation of path, secure, and httpOnly across load+save (#365)."""
+
+    @staticmethod
+    def _find_cookie(jar, name, domain, path=None):
+        for cookie in jar.jar:
+            if cookie.name == name and cookie.domain == domain:
+                if path is None or cookie.path == path:
+                    return cookie
+        raise AssertionError(f"cookie {name}@{domain} (path={path}) not in jar")
+
+    def _attr_storage_state(self):
+        """Storage state with explicit non-default attributes on every cookie."""
+        return {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": "sid-value",
+                    "domain": ".google.com",
+                    "path": "/u/0/",
+                    "expires": 1893456000,
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "None",
+                },
+                {
+                    "name": "__Host-GAPS",
+                    "value": "host-only-value",
+                    "domain": "accounts.google.com",
+                    "path": "/",
+                    "expires": -1,
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Strict",
+                },
+            ]
+        }
+
+    def test_load_httpx_cookies_preserves_attributes(self, tmp_path):
+        """``load_httpx_cookies`` should carry path/secure/httpOnly into the jar."""
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(self._attr_storage_state()))
+
+        jar = load_httpx_cookies(path=storage_file)
+
+        sid = self._find_cookie(jar, "SID", ".google.com")
+        assert sid.path == "/u/0/"
+        assert sid.secure is True
+        assert sid.has_nonstandard_attr("HttpOnly")
+
+        gaps = self._find_cookie(jar, "__Host-GAPS", "accounts.google.com")
+        assert gaps.path == "/"
+        assert gaps.secure is True
+        assert gaps.has_nonstandard_attr("HttpOnly")
+
+    def test_build_httpx_cookies_from_storage_preserves_attributes(self, tmp_path):
+        """``build_httpx_cookies_from_storage`` should preserve the same attrs."""
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(self._attr_storage_state()))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+
+        sid = self._find_cookie(jar, "SID", ".google.com")
+        assert sid.path == "/u/0/"
+        assert sid.secure is True
+        assert sid.has_nonstandard_attr("HttpOnly")
+
+        gaps = self._find_cookie(jar, "__Host-GAPS", "accounts.google.com")
+        assert gaps.path == "/"
+        assert gaps.secure is True
+        assert gaps.has_nonstandard_attr("HttpOnly")
+
+    def test_round_trip_with_value_change_preserves_attributes(self, tmp_path):
+        """Load → bump value → save → reload preserves path/secure/httpOnly.
+
+        Mutating the value forces ``save_cookies_to_storage`` into the
+        "changed" branch that overwrites stored attrs from the live jar — the
+        path that previously eroded attributes to defaults.
+        """
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(self._attr_storage_state()))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+        for cookie in jar.jar:
+            if cookie.name == "SID":
+                cookie.value = "rotated-sid"
+        save_cookies_to_storage(jar, storage_file)
+
+        on_disk = json.loads(storage_file.read_text())
+        sid_entry = next(c for c in on_disk["cookies"] if c["name"] == "SID")
+        assert sid_entry["path"] == "/u/0/"
+        assert sid_entry["secure"] is True
+        assert sid_entry["httpOnly"] is True
+
+        gaps_entry = next(c for c in on_disk["cookies"] if c["name"] == "__Host-GAPS")
+        assert gaps_entry["path"] == "/"
+        assert gaps_entry["secure"] is True
+        assert gaps_entry["httpOnly"] is True
+
+    def test_round_trip_without_value_change_preserves_attributes(self, tmp_path):
+        """Load → save (no mutation) → reload preserves attrs.
+
+        This is the silent-erosion path users hit on idle calls: nothing
+        changes, but the save side appends fresh entries from the in-memory
+        jar (auth.py:1095). Without the load-side fix, those appended entries
+        would carry default ``path=/``, ``secure=False``, ``httpOnly=False``.
+        """
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(self._attr_storage_state()))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+        save_cookies_to_storage(jar, storage_file)
+
+        reloaded = build_httpx_cookies_from_storage(storage_file)
+        sid = self._find_cookie(reloaded, "SID", ".google.com")
+        assert sid.path == "/u/0/"
+        assert sid.secure is True
+        assert sid.has_nonstandard_attr("HttpOnly")
+
+    def test_session_cookie_round_trips_as_minus_one(self, tmp_path):
+        """Session cookies (expires=-1) survive without becoming a real timestamp."""
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(self._attr_storage_state()))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+        gaps = self._find_cookie(jar, "__Host-GAPS", "accounts.google.com")
+        assert gaps.expires is None
+
+        for cookie in jar.jar:
+            if cookie.name == "__Host-GAPS":
+                cookie.value = "rotated-gaps"
+        save_cookies_to_storage(jar, storage_file)
+
+        on_disk = json.loads(storage_file.read_text())
+        gaps_entry = next(c for c in on_disk["cookies"] if c["name"] == "__Host-GAPS")
+        assert gaps_entry["expires"] == -1
+
+    def test_expires_zero_round_trips(self, tmp_path):
+        """``expires=0`` (Unix epoch) is a legitimate timestamp, not a sentinel.
+
+        Some Playwright variants emit ``0`` for cookies that expired at the
+        epoch. The load helper must distinguish ``0`` from ``-1`` / ``None``.
+        """
+        state = {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": "v",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": 0,
+                    "httpOnly": True,
+                    "secure": True,
+                }
+            ]
+        }
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(state))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+        sid = self._find_cookie(jar, "SID", ".google.com")
+        # 0 is preserved as 0 — not collapsed to None (session) or -1.
+        assert sid.expires == 0
+
+    def test_distinct_paths_for_same_name_domain_coexist(self, tmp_path):
+        """Two cookies with same name+domain but different paths are distinct.
+
+        Per RFC 6265 cookie identity is (name, domain, path). The dedup key
+        must include path so a path-scoped cookie does not silently suppress
+        the canonical ``/`` cookie.
+        """
+        state = {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": "root-value",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": 1893456000,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+                {
+                    "name": "SID",
+                    "value": "scoped-value",
+                    "domain": ".google.com",
+                    "path": "/u/0/",
+                    "expires": 1893456000,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+            ]
+        }
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(state))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+        root = self._find_cookie(jar, "SID", ".google.com", path="/")
+        scoped = self._find_cookie(jar, "SID", ".google.com", path="/u/0/")
+        assert root.value == "root-value"
+        assert scoped.value == "scoped-value"
 
 
 class TestExtractCSRFRedirect:
