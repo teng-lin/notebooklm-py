@@ -1,428 +1,428 @@
 ---
 name: notebooklm
-description: Complete API for Google NotebookLM - full programmatic access including features not in the web UI. Create notebooks, add sources, generate all artifact types, download in multiple formats. Activates on explicit /notebooklm or intent like "create a podcast about X"
+description: API completa para o Google NotebookLM - acesso programático total incluindo funcionalidades não disponíveis na interface web. Crie cadernos, adicione fontes, gere todos os tipos de artefatos, baixe em múltiplos formatos. Ativa com /notebooklm explícito ou intenções como "criar um podcast sobre X"
 ---
 
-# NotebookLM Automation
+# Automação do NotebookLM
 
-Complete programmatic access to Google NotebookLM—including capabilities not exposed in the web UI. Create notebooks, add sources (URLs, YouTube, PDFs, audio, video, images), chat with content, generate all artifact types, and download results in multiple formats.
+Acesso programático completo ao Google NotebookLM — incluindo funcionalidades não expostas na interface web. Crie cadernos, adicione fontes (URLs, YouTube, PDFs, áudio, vídeo, imagens), converse com o conteúdo, gere todos os tipos de artefatos e baixe os resultados em múltiplos formatos.
 
-## Installation
+## Instalação
 
-**From PyPI (Recommended):**
+**Via PyPI (Recomendado):**
 ```bash
 pip install notebooklm-py
 ```
 
-**From GitHub (use latest release tag, NOT main branch):**
+**Via GitHub (use a tag da versão mais recente, NÃO o branch main):**
 ```bash
-# Get the latest release tag (using curl)
+# Obter a tag da versão mais recente (usando curl)
 LATEST_TAG=$(curl -s https://api.github.com/repos/teng-lin/notebooklm-py/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
 pip install "git+https://github.com/teng-lin/notebooklm-py@${LATEST_TAG}"
 ```
 
-⚠️ **DO NOT install from main branch** (`pip install git+https://github.com/teng-lin/notebooklm-py`). The main branch may contain unreleased/unstable changes. Always use PyPI or a specific release tag, unless you are testing unreleased features.
+⚠️ **NÃO instale pelo branch main** (`pip install git+https://github.com/teng-lin/notebooklm-py`). O branch main pode conter alterações não lançadas/instáveis. Sempre use o PyPI ou uma tag de versão específica, a menos que esteja testando funcionalidades não lançadas.
 
-**Skill install methods:**
+**Métodos de instalação da skill:**
 
-- `notebooklm skill install` installs this skill into the supported local agent directories managed by the CLI.
-- `npx skills add teng-lin/notebooklm-py` installs this skill from the GitHub repository into compatible agent skill directories.
-- If you are already reading this file inside an agent skill directory, the skill is already installed. You only need the Python package and authentication below.
+- `notebooklm skill install` instala esta skill nos diretórios de agentes locais suportados, gerenciados pela CLI.
+- `npx skills add teng-lin/notebooklm-py` instala esta skill a partir do repositório GitHub nos diretórios de skills de agentes compatíveis.
+- Se você já estiver lendo este arquivo dentro de um diretório de skills de agente, a skill já está instalada. Você só precisa do pacote Python e da autenticação abaixo.
 
-**CLI-managed install:**
+**Instalação gerenciada pela CLI:**
 ```bash
 notebooklm skill install
 ```
 
-## Prerequisites
+## Pré-requisitos
 
-**IMPORTANT:** Before using any command, you MUST authenticate:
+**IMPORTANTE:** Antes de usar qualquer comando, você DEVE se autenticar:
 
 ```bash
-notebooklm login          # Opens browser for Google OAuth
-notebooklm list           # Verify authentication works
+notebooklm login          # Abre o navegador para OAuth do Google
+notebooklm list           # Verifica se a autenticação funciona
 ```
 
-If commands fail with authentication errors, re-run `notebooklm login`.
+Se os comandos falharem com erros de autenticação, execute novamente `notebooklm login`.
 
-### CI/CD, Multiple Accounts, and Parallel Agents
+### CI/CD, Múltiplas Contas e Agentes Paralelos
 
-For automated environments, multiple accounts, or parallel agent workflows:
+Para ambientes automatizados, múltiplas contas ou fluxos de agentes paralelos:
 
-| Variable | Purpose |
-|----------|---------|
-| `NOTEBOOKLM_HOME` | Custom config directory (default: `~/.notebooklm`) |
-| `NOTEBOOKLM_PROFILE` | Active profile name (default: `default`) |
-| `NOTEBOOKLM_AUTH_JSON` | Inline auth JSON - no file writes needed |
+| Variável | Finalidade |
+|----------|-----------|
+| `NOTEBOOKLM_HOME` | Diretório de configuração personalizado (padrão: `~/.notebooklm`) |
+| `NOTEBOOKLM_PROFILE` | Nome do perfil ativo (padrão: `default`) |
+| `NOTEBOOKLM_AUTH_JSON` | JSON de autenticação inline — sem necessidade de gravações em arquivo |
 
-**CI/CD setup:** Set `NOTEBOOKLM_AUTH_JSON` from a secret containing your `storage_state.json` contents.
+**Configuração CI/CD:** Defina `NOTEBOOKLM_AUTH_JSON` a partir de um segredo contendo o conteúdo do seu `storage_state.json`.
 
-**Multiple accounts:** Use named profiles (`notebooklm profile create work`, then `notebooklm -p work login`). Alternatively, use different `NOTEBOOKLM_HOME` directories per account.
+**Múltiplas contas:** Use perfis nomeados (`notebooklm profile create work`, depois `notebooklm -p work login`). Alternativamente, use diretórios `NOTEBOOKLM_HOME` diferentes por conta.
 
-**Parallel agents:** The CLI stores notebook context per profile (`~/.notebooklm/profiles/<profile>/context.json`, with a legacy fallback to `~/.notebooklm/context.json` for the implicit default profile). Multiple concurrent agents that share a profile and use `notebooklm use` can overwrite each other's context — use one of the isolation strategies below.
+**Agentes paralelos:** A CLI armazena o contexto do caderno por perfil (`~/.notebooklm/profiles/<profile>/context.json`, com fallback legado para `~/.notebooklm/context.json` para o perfil padrão implícito). Múltiplos agentes simultâneos que compartilham um perfil e usam `notebooklm use` podem sobrescrever o contexto uns dos outros — use uma das estratégias de isolamento abaixo.
 
-**Solutions for parallel workflows:**
-1. **Always use explicit notebook ID** (recommended): Pass `-n <notebook_id>` (for `wait`/`download` commands) or `--notebook <notebook_id>` (for others) instead of relying on `use`
-2. **Per-agent isolation via profiles:** `export NOTEBOOKLM_PROFILE=agent-$ID` (each profile gets its own context file)
-3. **Per-agent isolation via home:** Set unique `NOTEBOOKLM_HOME` per agent: `export NOTEBOOKLM_HOME=/tmp/agent-$ID`
-4. **Use full UUIDs:** Avoid partial IDs in automation (they can become ambiguous)
+**Soluções para fluxos paralelos:**
+1. **Sempre use ID de caderno explícito** (recomendado): Passe `-n <notebook_id>` (para comandos `wait`/`download`) ou `--notebook <notebook_id>` (para outros) em vez de depender de `use`
+2. **Isolamento por agente via perfis:** `export NOTEBOOKLM_PROFILE=agent-$ID` (cada perfil tem seu próprio arquivo de contexto)
+3. **Isolamento por agente via home:** Defina `NOTEBOOKLM_HOME` único por agente: `export NOTEBOOKLM_HOME=/tmp/agent-$ID`
+4. **Use UUIDs completos:** Evite IDs parciais em automação (podem se tornar ambíguos)
 
-## Agent Setup Verification
+## Verificação de Configuração do Agente
 
-Before starting workflows, verify the CLI is ready:
+Antes de iniciar fluxos de trabalho, verifique se a CLI está pronta:
 
-1. `notebooklm status` → Should show "Authenticated as: email@..."
-2. `notebooklm list --json` → Should return valid JSON (even if empty notebooks list)
-3. If either fails → Run `notebooklm login`
+1. `notebooklm status` → Deve mostrar "Authenticated as: email@..."
+2. `notebooklm list --json` → Deve retornar JSON válido (mesmo que a lista de cadernos esteja vazia)
+3. Se algum falhar → Execute `notebooklm login`
 
-## When This Skill Activates
+## Quando Esta Skill É Ativada
 
-**Explicit:** User says "/notebooklm", "use notebooklm", or mentions the tool by name
+**Explícito:** Usuário diz "/notebooklm", "use notebooklm", ou menciona a ferramenta pelo nome
 
-**Intent detection:** Recognize requests like:
-- "Create a podcast about [topic]"
-- "Summarize these URLs/documents"
-- "Generate a quiz from my research"
-- "Turn this into an audio overview"
-- "Create flashcards for studying"
-- "Generate a video explainer"
-- "Make an infographic"
-- "Create a mind map of the concepts"
-- "Download the quiz as markdown"
-- "Add these sources to NotebookLM"
+**Detecção de intenção:** Reconheça solicitações como:
+- "Crie um podcast sobre [tópico]"
+- "Resuma estas URLs/documentos"
+- "Gere um quiz a partir da minha pesquisa"
+- "Transforme isso em uma visão geral em áudio"
+- "Crie flashcards para estudar"
+- "Gere um vídeo explicativo"
+- "Faça um infográfico"
+- "Crie um mapa mental dos conceitos"
+- "Baixe o quiz em markdown"
+- "Adicione estas fontes ao NotebookLM"
 
-## Autonomy Rules
+## Regras de Autonomia
 
-**Run automatically (no confirmation):**
-- `notebooklm status` - check context
-- `notebooklm auth check` - diagnose auth issues
-- `notebooklm list` - list notebooks
-- `notebooklm source list` - list sources
-- `notebooklm artifact list` - list artifacts
-- `notebooklm language list` - list supported languages
-- `notebooklm language get` - get current language
-- `notebooklm language set` - set language (global setting)
-- `notebooklm artifact wait` - wait for artifact completion (in subagent context)
-- `notebooklm source wait` - wait for source processing (in subagent context)
-- `notebooklm research status` - check research status
-- `notebooklm research wait` - wait for research (in subagent context)
-- `notebooklm use <id>` - set context (⚠️ SINGLE-AGENT ONLY - use `-n` flag in parallel workflows)
-- `notebooklm create` - create notebook
-- `notebooklm ask "..."` - chat queries (without `--save-as-note`)
-- `notebooklm history` - display conversation history (read-only)
-- `notebooklm source add` - add sources
-- `notebooklm profile list` - list profiles
-- `notebooklm profile create` - create profile
-- `notebooklm profile switch` - switch active profile
-- `notebooklm doctor` - check environment health
+**Execute automaticamente (sem confirmação):**
+- `notebooklm status` - verificar contexto
+- `notebooklm auth check` - diagnosticar problemas de autenticação
+- `notebooklm list` - listar cadernos
+- `notebooklm source list` - listar fontes
+- `notebooklm artifact list` - listar artefatos
+- `notebooklm language list` - listar idiomas suportados
+- `notebooklm language get` - obter idioma atual
+- `notebooklm language set` - definir idioma (configuração global)
+- `notebooklm artifact wait` - aguardar conclusão do artefato (em contexto de subagente)
+- `notebooklm source wait` - aguardar processamento da fonte (em contexto de subagente)
+- `notebooklm research status` - verificar status da pesquisa
+- `notebooklm research wait` - aguardar pesquisa (em contexto de subagente)
+- `notebooklm use <id>` - definir contexto (⚠️ SOMENTE AGENTE ÚNICO - use flag `-n` em fluxos paralelos)
+- `notebooklm create` - criar caderno
+- `notebooklm ask "..."` - consultas de chat (sem `--save-as-note`)
+- `notebooklm history` - exibir histórico de conversa (somente leitura)
+- `notebooklm source add` - adicionar fontes
+- `notebooklm profile list` - listar perfis
+- `notebooklm profile create` - criar perfil
+- `notebooklm profile switch` - alternar perfil ativo
+- `notebooklm doctor` - verificar saúde do ambiente
 
-**Ask before running:**
-- `notebooklm delete` - destructive
-- `notebooklm generate *` - long-running, may fail
-- `notebooklm download *` - writes to filesystem
-- `notebooklm artifact wait` - long-running (when in main conversation)
-- `notebooklm source wait` - long-running (when in main conversation)
-- `notebooklm research wait` - long-running (when in main conversation)
-- `notebooklm ask "..." --save-as-note` - writes a note
-- `notebooklm history --save` - writes a note
+**Perguntar antes de executar:**
+- `notebooklm delete` - destrutivo
+- `notebooklm generate *` - longa duração, pode falhar
+- `notebooklm download *` - grava no sistema de arquivos
+- `notebooklm artifact wait` - longa duração (quando na conversa principal)
+- `notebooklm source wait` - longa duração (quando na conversa principal)
+- `notebooklm research wait` - longa duração (quando na conversa principal)
+- `notebooklm ask "..." --save-as-note` - grava uma nota
+- `notebooklm history --save` - grava uma nota
 
-## Quick Reference
+## Referência Rápida
 
-| Task | Command |
-|------|---------|
-| Authenticate | `notebooklm login` |
-| Diagnose auth issues | `notebooklm auth check` |
-| Diagnose auth (full) | `notebooklm auth check --test` |
-| List notebooks | `notebooklm list` |
-| Create notebook | `notebooklm create "Title"` |
-| Set context | `notebooklm use <notebook_id>` |
-| Show context | `notebooklm status` |
-| Add URL source | `notebooklm source add "https://..."` |
-| Add file | `notebooklm source add ./file.pdf` |
-| Add YouTube | `notebooklm source add "https://youtube.com/..."` |
-| List sources | `notebooklm source list` |
-| Delete source by ID | `notebooklm source delete <source_id>` |
-| Delete source by exact title | `notebooklm source delete-by-title "Exact Title"` |
-| Wait for source processing | `notebooklm source wait <source_id>` |
-| Web research (fast) | `notebooklm source add-research "query"` |
-| Web research (deep) | `notebooklm source add-research "query" --mode deep --no-wait` |
-| Check research status | `notebooklm research status` |
-| Wait for research | `notebooklm research wait --import-all` |
-| Chat | `notebooklm ask "question"` |
-| Chat (specific sources) | `notebooklm ask "question" -s src_id1 -s src_id2` |
-| Chat (with references) | `notebooklm ask "question" --json` |
-| Chat (save answer as note) | `notebooklm ask "question" --save-as-note` |
-| Chat (save with title) | `notebooklm ask "question" --save-as-note --note-title "Title"` |
-| Show conversation history | `notebooklm history` |
-| Save all history as note | `notebooklm history --save` |
-| Continue specific conversation | `notebooklm ask "question" -c <conversation_id>` |
-| Save history with title | `notebooklm history --save --note-title "My Research"` |
-| Get source fulltext | `notebooklm source fulltext <source_id>` |
-| Get source guide | `notebooklm source guide <source_id>` |
-| Generate podcast | `notebooklm generate audio "instructions"` |
-| Generate podcast (JSON) | `notebooklm generate audio --json` |
-| Generate podcast (specific sources) | `notebooklm generate audio -s src_id1 -s src_id2` |
-| Generate video | `notebooklm generate video "instructions"` |
-| Generate report | `notebooklm generate report --format briefing-doc` |
-| Generate report (append instructions) | `notebooklm generate report --format study-guide --append "Target audience: beginners"` |
-| Generate quiz | `notebooklm generate quiz` |
-| Revise a slide | `notebooklm generate revise-slide "prompt" --artifact <id> --slide 0` |
-| Check artifact status | `notebooklm artifact list` |
-| Wait for completion | `notebooklm artifact wait <artifact_id>` |
-| Download audio | `notebooklm download audio ./output.mp3` |
-| Download video | `notebooklm download video ./output.mp4` |
-| Download slide deck (PDF) | `notebooklm download slide-deck ./slides.pdf` |
-| Download slide deck (PPTX) | `notebooklm download slide-deck ./slides.pptx --format pptx` |
-| Download report | `notebooklm download report ./report.md` |
-| Download mind map | `notebooklm download mind-map ./map.json` |
-| Download data table | `notebooklm download data-table ./data.csv` |
-| Download quiz | `notebooklm download quiz quiz.json` |
-| Download quiz (markdown) | `notebooklm download quiz --format markdown quiz.md` |
-| Download flashcards | `notebooklm download flashcards cards.json` |
-| Download flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
-| Delete notebook | `notebooklm notebook delete <id>` |
-| List languages | `notebooklm language list` |
-| Get language | `notebooklm language get` |
-| Set language | `notebooklm language set zh_Hans` |
-| List profiles | `notebooklm profile list` |
-| Create profile | `notebooklm profile create work` |
-| Switch profile | `notebooklm profile switch work` |
-| Delete profile | `notebooklm profile delete old` |
-| Rename profile | `notebooklm profile rename old new` |
-| Use profile (one-off) | `notebooklm -p work list` |
-| Health check | `notebooklm doctor` |
-| Health check (auto-fix) | `notebooklm doctor --fix` |
+| Tarefa | Comando |
+|--------|---------|
+| Autenticar | `notebooklm login` |
+| Diagnosticar problemas de autenticação | `notebooklm auth check` |
+| Diagnóstico completo de autenticação | `notebooklm auth check --test` |
+| Listar cadernos | `notebooklm list` |
+| Criar caderno | `notebooklm create "Título"` |
+| Definir contexto | `notebooklm use <notebook_id>` |
+| Mostrar contexto | `notebooklm status` |
+| Adicionar fonte URL | `notebooklm source add "https://..."` |
+| Adicionar arquivo | `notebooklm source add ./arquivo.pdf` |
+| Adicionar YouTube | `notebooklm source add "https://youtube.com/..."` |
+| Listar fontes | `notebooklm source list` |
+| Excluir fonte por ID | `notebooklm source delete <source_id>` |
+| Excluir fonte por título exato | `notebooklm source delete-by-title "Título Exato"` |
+| Aguardar processamento da fonte | `notebooklm source wait <source_id>` |
+| Pesquisa web (rápida) | `notebooklm source add-research "consulta"` |
+| Pesquisa web (profunda) | `notebooklm source add-research "consulta" --mode deep --no-wait` |
+| Verificar status da pesquisa | `notebooklm research status` |
+| Aguardar pesquisa | `notebooklm research wait --import-all` |
+| Chat | `notebooklm ask "pergunta"` |
+| Chat (fontes específicas) | `notebooklm ask "pergunta" -s src_id1 -s src_id2` |
+| Chat (com referências) | `notebooklm ask "pergunta" --json` |
+| Chat (salvar resposta como nota) | `notebooklm ask "pergunta" --save-as-note` |
+| Chat (salvar com título) | `notebooklm ask "pergunta" --save-as-note --note-title "Título"` |
+| Mostrar histórico de conversa | `notebooklm history` |
+| Salvar todo histórico como nota | `notebooklm history --save` |
+| Continuar conversa específica | `notebooklm ask "pergunta" -c <conversation_id>` |
+| Salvar histórico com título | `notebooklm history --save --note-title "Minha Pesquisa"` |
+| Obter texto completo da fonte | `notebooklm source fulltext <source_id>` |
+| Obter guia da fonte | `notebooklm source guide <source_id>` |
+| Gerar podcast | `notebooklm generate audio "instruções"` |
+| Gerar podcast (JSON) | `notebooklm generate audio --json` |
+| Gerar podcast (fontes específicas) | `notebooklm generate audio -s src_id1 -s src_id2` |
+| Gerar vídeo | `notebooklm generate video "instruções"` |
+| Gerar relatório | `notebooklm generate report --format briefing-doc` |
+| Gerar relatório (instruções adicionais) | `notebooklm generate report --format study-guide --append "Público-alvo: iniciantes"` |
+| Gerar quiz | `notebooklm generate quiz` |
+| Revisar slide | `notebooklm generate revise-slide "prompt" --artifact <id> --slide 0` |
+| Verificar status do artefato | `notebooklm artifact list` |
+| Aguardar conclusão | `notebooklm artifact wait <artifact_id>` |
+| Baixar áudio | `notebooklm download audio ./saida.mp3` |
+| Baixar vídeo | `notebooklm download video ./saida.mp4` |
+| Baixar apresentação (PDF) | `notebooklm download slide-deck ./slides.pdf` |
+| Baixar apresentação (PPTX) | `notebooklm download slide-deck ./slides.pptx --format pptx` |
+| Baixar relatório | `notebooklm download report ./relatorio.md` |
+| Baixar mapa mental | `notebooklm download mind-map ./mapa.json` |
+| Baixar tabela de dados | `notebooklm download data-table ./dados.csv` |
+| Baixar quiz | `notebooklm download quiz quiz.json` |
+| Baixar quiz (markdown) | `notebooklm download quiz --format markdown quiz.md` |
+| Baixar flashcards | `notebooklm download flashcards cards.json` |
+| Baixar flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
+| Excluir caderno | `notebooklm notebook delete <id>` |
+| Listar idiomas | `notebooklm language list` |
+| Obter idioma | `notebooklm language get` |
+| Definir idioma | `notebooklm language set pt_BR` |
+| Listar perfis | `notebooklm profile list` |
+| Criar perfil | `notebooklm profile create trabalho` |
+| Alternar perfil | `notebooklm profile switch trabalho` |
+| Excluir perfil | `notebooklm profile delete antigo` |
+| Renomear perfil | `notebooklm profile rename antigo novo` |
+| Usar perfil (pontual) | `notebooklm -p trabalho list` |
+| Verificação de saúde | `notebooklm doctor` |
+| Verificação de saúde (autocorreção) | `notebooklm doctor --fix` |
 
-**Parallel safety:** Use explicit notebook IDs in parallel workflows. Commands supporting `-n` shorthand: `artifact wait`, `source wait`, `research wait/status`, `download *`. Download commands also support `-a/--artifact`. Other commands use `--notebook`. For chat, use `-c <conversation_id>` to target a specific conversation.
+**Segurança paralela:** Use IDs de caderno explícitos em fluxos paralelos. Comandos que suportam atalho `-n`: `artifact wait`, `source wait`, `research wait/status`, `download *`. Comandos de download também suportam `-a/--artifact`. Outros comandos usam `--notebook`. Para chat, use `-c <conversation_id>` para direcionar a uma conversa específica.
 
-**Partial IDs:** Use first 6+ characters of UUIDs. Must be unique prefix (fails if ambiguous). Works for ID-based commands such as `use`, `source delete`, and `wait`. For exact source-title deletion, use `source delete-by-title "Title"`. For automation, prefer full UUIDs to avoid ambiguity.
+**IDs parciais:** Use os primeiros 6+ caracteres dos UUIDs. Deve ser prefixo único (falha se ambíguo). Funciona para comandos baseados em ID como `use`, `source delete` e `wait`. Para exclusão por título exato de fonte, use `source delete-by-title "Título"`. Em automação, prefira UUIDs completos para evitar ambiguidade.
 
-## Command Output Formats
+## Formatos de Saída dos Comandos
 
-Commands with `--json` return structured data for parsing:
+Comandos com `--json` retornam dados estruturados para análise:
 
-**Create notebook:**
+**Criar caderno:**
 ```bash
-$ notebooklm create "Research" --json
-{"notebook": {"id": "abc123de-...", "title": "Research", "created_at": null}}
-# parse with: jq -r .notebook.id
+$ notebooklm create "Pesquisa" --json
+{"notebook": {"id": "abc123de-...", "title": "Pesquisa", "created_at": null}}
+# analisar com: jq -r .notebook.id
 ```
 
-**Add source:**
+**Adicionar fonte:**
 ```bash
-$ notebooklm source add "https://example.com" --json
-{"source": {"id": "def456...", "title": "Example", "type": "SourceType.WEB_PAGE", "url": "https://example.com"}}
-# parse with: jq -r .source.id
-# Note: no `status` field on add — use `source list --json` or `source wait` to check processing state.
+$ notebooklm source add "https://exemplo.com" --json
+{"source": {"id": "def456...", "title": "Exemplo", "type": "SourceType.WEB_PAGE", "url": "https://exemplo.com"}}
+# analisar com: jq -r .source.id
+# Nota: sem campo `status` ao adicionar — use `source list --json` ou `source wait` para verificar o estado de processamento.
 ```
 
-**Generate artifact:**
+**Gerar artefato:**
 ```bash
-$ notebooklm generate audio "Focus on key points" --json
+$ notebooklm generate audio "Foco nos pontos principais" --json
 {"task_id": "xyz789...", "status": "pending"}
-# When run with --wait, completed status also includes a `url` field.
+# Quando executado com --wait, o status concluído também inclui um campo `url`.
 ```
 
-**Chat with references:**
+**Chat com referências:**
 ```bash
-$ notebooklm ask "What is X?" --json
-{"answer": "X is... [1] [2]", "conversation_id": "...", "turn_number": 1, "is_follow_up": false, "references": [{"source_id": "abc123...", "citation_number": 1, "cited_text": "Relevant passage from source..."}, {"source_id": "def456...", "citation_number": 2, "cited_text": "Another passage..."}]}
+$ notebooklm ask "O que é X?" --json
+{"answer": "X é... [1] [2]", "conversation_id": "...", "turn_number": 1, "is_follow_up": false, "references": [{"source_id": "abc123...", "citation_number": 1, "cited_text": "Trecho relevante da fonte..."}, {"source_id": "def456...", "citation_number": 2, "cited_text": "Outro trecho..."}]}
 ```
 
-**Source fulltext (get indexed content):**
+**Texto completo da fonte (obter conteúdo indexado):**
 ```bash
 $ notebooklm source fulltext <source_id> --json
-{"source_id": "...", "title": "...", "content": "Full indexed text...", "_type_code": null, "url": null, "char_count": 12345}
+{"source_id": "...", "title": "...", "content": "Texto indexado completo...", "_type_code": null, "url": null, "char_count": 12345}
 ```
 
-**Understanding citations:** The `cited_text` in references is often a snippet or section header, not the full quoted passage. The `start_char`/`end_char` positions reference NotebookLM's internal chunked index, not the raw fulltext. Use `SourceFulltext.find_citation_context()` to locate citations:
+**Entendendo citações:** O `cited_text` nas referências frequentemente é um trecho ou cabeçalho de seção, não a passagem completa citada. As posições `start_char`/`end_char` referenciam o índice interno fragmentado do NotebookLM, não o texto bruto completo. Use `SourceFulltext.find_citation_context()` para localizar citações:
 ```python
 fulltext = await client.sources.get_fulltext(notebook_id, ref.source_id)
-matches = fulltext.find_citation_context(ref.cited_text)  # Returns list[(context, position)]
+matches = fulltext.find_citation_context(ref.cited_text)  # Retorna list[(context, position)]
 if matches:
-    context, pos = matches[0]  # First match; check len(matches) > 1 for duplicates
+    context, pos = matches[0]  # Primeira correspondência; verifique len(matches) > 1 para duplicatas
 ```
 
-**Extract IDs:** Singular endpoints wrap their result in an envelope —
-parse `.notebook.id` (from `create`), `.source.id` (from `source add`),
-or `.task_id` (from `generate *`). The chat `--json` references list uses
+**Extraindo IDs:** Endpoints singulares envolvem seu resultado em um envelope —
+analise `.notebook.id` (de `create`), `.source.id` (de `source add`),
+ou `.task_id` (de `generate *`). A lista de referências do chat `--json` usa
 `.references[].source_id`.
 
-## Generation Types
+## Tipos de Geração
 
-All generate commands support:
-- `-s, --source` to use specific source(s) instead of all sources
-- `--language` to set output language (defaults to configured language or 'en')
-- `--json` for machine-readable output (returns `task_id` and `status`)
-- `--retry N` to automatically retry on rate limits with exponential backoff
+Todos os comandos de geração suportam:
+- `-s, --source` para usar fonte(s) específica(s) em vez de todas as fontes
+- `--language` para definir o idioma de saída (padrão: idioma configurado ou 'en')
+- `--json` para saída legível por máquina (retorna `task_id` e `status`)
+- `--retry N` para tentar automaticamente novamente em limites de taxa com backoff exponencial
 
-| Type | Command | Options | Download |
-|------|---------|---------|----------|
+| Tipo | Comando | Opções | Download |
+|------|---------|--------|----------|
 | Podcast | `generate audio` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | .mp3 |
-| Video | `generate video` | `--format [explainer\|brief]`, `--style [auto\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]` | .mp4 |
-| Slide Deck | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` | .pdf / .pptx |
-| Slide Revision | `generate revise-slide "prompt" --artifact <id> --slide N` | `--wait`, `--notebook` | *(re-downloads parent deck)* |
-| Infographic | `generate infographic` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | .png |
-| Report | `generate report` | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append "extra instructions"` (¹) | .md |
-| Mind Map | `generate mind-map` | *(sync, instant)* | .json |
-| Data Table | `generate data-table` | description required | .csv |
+| Vídeo | `generate video` | `--format [explainer\|brief]`, `--style [auto\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]` | .mp4 |
+| Apresentação | `generate slide-deck` | `--format [detailed\|presenter]`, `--length [default\|short]` | .pdf / .pptx |
+| Revisão de Slide | `generate revise-slide "prompt" --artifact <id> --slide N` | `--wait`, `--notebook` | *(re-baixa o deck pai)* |
+| Infográfico | `generate infographic` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | .png |
+| Relatório | `generate report` | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append "instruções extras"` (¹) | .md |
+| Mapa Mental | `generate mind-map` | *(síncrono, instantâneo)* | .json |
+| Tabela de Dados | `generate data-table` | descrição obrigatória | .csv |
 | Quiz | `generate quiz` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | .json/.md/.html |
 | Flashcards | `generate flashcards` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | .json/.md/.html |
 
-¹ `--append` only customizes the built-in templates. With `--format custom`, pass the prompt as the positional `DESCRIPTION` argument (`notebooklm generate report "PROMPT" --format custom`); `--append` is silently ignored in that mode (the CLI prints a warning).
+¹ `--append` apenas personaliza os modelos integrados. Com `--format custom`, passe o prompt como argumento posicional `DESCRIPTION` (`notebooklm generate report "PROMPT" --format custom`); `--append` é silenciosamente ignorado nesse modo (a CLI exibe um aviso).
 
-## Features Beyond the Web UI
+## Funcionalidades Além da Interface Web
 
-These capabilities are available via CLI but not in NotebookLM's web interface:
+Estas capacidades estão disponíveis via CLI mas não na interface web do NotebookLM:
 
-| Feature | Command | Description |
-|---------|---------|-------------|
-| **Batch downloads** | `download <type> --all` | Download all artifacts of a type at once |
-| **Quiz/Flashcard export** | `download quiz --format json` | Export as JSON, Markdown, or HTML (web UI only shows interactive view) |
-| **Mind map extraction** | `download mind-map` | Export hierarchical JSON for visualization tools |
-| **Data table export** | `download data-table` | Download structured tables as CSV |
-| **Slide deck as PPTX** | `download slide-deck --format pptx` | Download slide deck as editable .pptx (web UI only offers PDF) |
-| **Slide revision** | `generate revise-slide "prompt" --artifact <id> --slide N` | Modify individual slides with a natural-language prompt |
-| **Report template append** | `generate report --format study-guide --append "..."` | Append custom instructions to built-in format templates without losing the format type |
-| **Source fulltext** | `source fulltext <id>` | Retrieve the indexed text content of any source |
-| **Save chat to note** | `ask "..." --save-as-note` / `history --save` | Save Q&A answers or conversation history as notebook notes |
-| **Programmatic sharing** | `share` commands | Manage sharing permissions without the UI |
+| Funcionalidade | Comando | Descrição |
+|----------------|---------|-----------|
+| **Downloads em lote** | `download <type> --all` | Baixa todos os artefatos de um tipo de uma vez |
+| **Exportação de Quiz/Flashcard** | `download quiz --format json` | Exporta como JSON, Markdown ou HTML (a interface web só mostra visualização interativa) |
+| **Extração de mapa mental** | `download mind-map` | Exporta JSON hierárquico para ferramentas de visualização |
+| **Exportação de tabela de dados** | `download data-table` | Baixa tabelas estruturadas como CSV |
+| **Apresentação como PPTX** | `download slide-deck --format pptx` | Baixa apresentação como .pptx editável (a interface web só oferece PDF) |
+| **Revisão de slide** | `generate revise-slide "prompt" --artifact <id> --slide N` | Modifica slides individuais com prompt em linguagem natural |
+| **Adição a modelo de relatório** | `generate report --format study-guide --append "..."` | Acrescenta instruções personalizadas a modelos de formato integrados sem perder o tipo de formato |
+| **Texto completo da fonte** | `source fulltext <id>` | Recupera o conteúdo de texto indexado de qualquer fonte |
+| **Salvar chat como nota** | `ask "..." --save-as-note` / `history --save` | Salva respostas de P&R ou histórico de conversa como notas do caderno |
+| **Compartilhamento programático** | comandos `share` | Gerencia permissões de compartilhamento sem a interface |
 
-## Common Workflows
+## Fluxos de Trabalho Comuns
 
-### Research to Podcast (Interactive)
-**Time:** 5-10 minutes total
+### Pesquisa para Podcast (Interativo)
+**Tempo:** 5 a 10 minutos no total
 
-1. `notebooklm create "Research: [topic]"` — *if fails: check auth with `notebooklm login`*
-2. `notebooklm source add` for each URL/document — *if one fails: log warning, continue with others*
-3. Wait for sources: `notebooklm source list --json` until all status=READY — *required before generation*
-4. `notebooklm generate audio "Focus on [specific angle]"` (confirm when asked) — *if rate limited: wait 5 min, retry once*
-5. Note the artifact ID returned
-6. Check `notebooklm artifact list` later for status
-7. `notebooklm download audio ./podcast.mp3` when complete (confirm when asked)
+1. `notebooklm create "Pesquisa: [tópico]"` — *se falhar: verifique autenticação com `notebooklm login`*
+2. `notebooklm source add` para cada URL/documento — *se um falhar: registre aviso, continue com os outros*
+3. Aguarde as fontes: `notebooklm source list --json` até que todas tenham status=READY — *necessário antes da geração*
+4. `notebooklm generate audio "Foque em [ângulo específico]"` (confirme quando solicitado) — *se limite de taxa: aguarde 5 min, tente novamente uma vez*
+5. Anote o ID do artefato retornado
+6. Verifique `notebooklm artifact list` mais tarde para o status
+7. `notebooklm download audio ./podcast.mp3` quando concluído (confirme quando solicitado)
 
-### Research to Podcast (Automated with Subagent)
-**Time:** 5-10 minutes, but continues in background
+### Pesquisa para Podcast (Automatizado com Subagente)
+**Tempo:** 5 a 10 minutos, mas continua em segundo plano
 
-When user wants full automation (generate and download when ready):
+Quando o usuário quiser automação completa (gerar e baixar quando pronto):
 
-1. Create notebook and add sources as usual
-2. Wait for sources to be ready (use `source wait` or check `source list --json`)
-3. Run `notebooklm generate audio "..." --json` → parse `artifact_id` from output
-4. **Spawn a background agent** using Task tool:
+1. Crie o caderno e adicione fontes normalmente
+2. Aguarde as fontes ficarem prontas (use `source wait` ou verifique `source list --json`)
+3. Execute `notebooklm generate audio "..." --json` → analise `artifact_id` da saída
+4. **Inicie um agente em segundo plano** usando a ferramenta Task:
    ```
    Task(
-     prompt="Wait for artifact {artifact_id} in notebook {notebook_id} to complete, then download.
+     prompt="Aguarde o artefato {artifact_id} no caderno {notebook_id} ser concluído, depois baixe.
              Use: notebooklm artifact wait {artifact_id} -n {notebook_id} --timeout 600
-             Then: notebooklm download audio ./podcast.mp3 -a {artifact_id} -n {notebook_id}",
+             Então: notebooklm download audio ./podcast.mp3 -a {artifact_id} -n {notebook_id}",
      subagent_type="general-purpose"
    )
    ```
-5. Main conversation continues while agent waits
+5. A conversa principal continua enquanto o agente aguarda
 
-**Error handling in subagent:**
-- If `artifact wait` returns exit code 2 (timeout): Report timeout, suggest checking `artifact list`
-- If download fails: Check if artifact status is COMPLETED first
+**Tratamento de erros no subagente:**
+- Se `artifact wait` retornar código de saída 2 (timeout): Reporte o timeout, sugira verificar `artifact list`
+- Se o download falhar: Verifique se o status do artefato é COMPLETED primeiro
 
-**Benefits:** Non-blocking, user can do other work, automatic download on completion
+**Benefícios:** Não bloqueante, o usuário pode fazer outras tarefas, download automático na conclusão
 
-### Document Analysis
-**Time:** 1-2 minutes
+### Análise de Documentos
+**Tempo:** 1 a 2 minutos
 
-1. `notebooklm create "Analysis: [project]"`
-2. `notebooklm source add ./doc.pdf` (or URLs)
-3. `notebooklm ask "Summarize the key points"`
-4. `notebooklm ask "What are the main arguments?"`
-5. Continue chatting as needed
+1. `notebooklm create "Análise: [projeto]"`
+2. `notebooklm source add ./doc.pdf` (ou URLs)
+3. `notebooklm ask "Resuma os pontos principais"`
+4. `notebooklm ask "Quais são os argumentos centrais?"`
+5. Continue conversando conforme necessário
 
-### Bulk Import
-**Time:** Varies by source count
+### Importação em Lote
+**Tempo:** Varia conforme o número de fontes
 
-1. `notebooklm create "Collection: [name]"`
-2. Add multiple sources:
+1. `notebooklm create "Coleção: [nome]"`
+2. Adicione múltiplas fontes:
    ```bash
    notebooklm source add "https://url1.com"
    notebooklm source add "https://url2.com"
-   notebooklm source add ./local-file.pdf
+   notebooklm source add ./arquivo-local.pdf
    ```
-3. `notebooklm source list` to verify
+3. `notebooklm source list` para verificar
 
-**Source limits:** Varies by plan—Standard: 50, Plus: 100, Pro: 300, Ultra: 600 sources per notebook. See [NotebookLM plans](https://support.google.com/notebooklm/answer/16213268) for details. The CLI does not enforce these limits; they are applied by your NotebookLM account.
-**Supported types:** PDFs, YouTube URLs, web URLs, Google Docs, text files, Markdown, Word docs, EPUB, audio files, video files, images
+**Limites de fontes:** Varia por plano — Standard: 50, Plus: 100, Pro: 300, Ultra: 600 fontes por caderno. Consulte os [planos do NotebookLM](https://support.google.com/notebooklm/answer/16213268) para detalhes. A CLI não aplica esses limites; eles são aplicados pela sua conta do NotebookLM.
+**Tipos suportados:** PDFs, URLs do YouTube, URLs da web, Google Docs, arquivos de texto, Markdown, documentos Word, EPUB, arquivos de áudio, arquivos de vídeo, imagens
 
-### Bulk Import with Source Waiting (Subagent Pattern)
-**Time:** Varies by source count
+### Importação em Lote com Espera de Fontes (Padrão Subagente)
+**Tempo:** Varia conforme o número de fontes
 
-When adding multiple sources and needing to wait for processing before chat/generation:
+Quando adicionar múltiplas fontes e precisar aguardar o processamento antes de chat/geração:
 
-1. Add sources with `--json` to capture IDs (parse with `jq -r .source.id`):
+1. Adicione fontes com `--json` para capturar IDs (analise com `jq -r .source.id`):
    ```bash
    notebooklm source add "https://url1.com" --json  # → {"source": {"id": "abc...", ...}}
    notebooklm source add "https://url2.com" --json  # → {"source": {"id": "def...", ...}}
    ```
-2. **Spawn a background agent** to wait for all sources:
+2. **Inicie um agente em segundo plano** para aguardar todas as fontes:
    ```
    Task(
-     prompt="Wait for sources {source_ids} in notebook {notebook_id} to be ready.
-             For each: notebooklm source wait {id} -n {notebook_id} --timeout 120
-             Report when all ready or if any fail.",
+     prompt="Aguarde as fontes {source_ids} no caderno {notebook_id} ficarem prontas.
+             Para cada uma: notebooklm source wait {id} -n {notebook_id} --timeout 120
+             Reporte quando todas estiverem prontas ou se alguma falhar.",
      subagent_type="general-purpose"
    )
    ```
-3. Main conversation continues while agent waits
-4. Once sources are ready, proceed with chat or generation
+3. A conversa principal continua enquanto o agente aguarda
+4. Assim que as fontes estiverem prontas, prossiga com chat ou geração
 
-**Why wait for sources?** Sources must be indexed before chat or generation. Takes 10-60 seconds per source.
+**Por que aguardar as fontes?** As fontes devem ser indexadas antes do chat ou geração. Leva de 10 a 60 segundos por fonte.
 
-### Deep Web Research (Subagent Pattern)
-**Time:** 2-5 minutes, runs in background
+### Pesquisa Web Profunda (Padrão Subagente)
+**Tempo:** 2 a 5 minutos, executa em segundo plano
 
-Deep research finds and analyzes web sources on a topic:
+A pesquisa profunda encontra e analisa fontes web sobre um tópico:
 
-1. Create notebook: `notebooklm create "Research: [topic]"`
-2. Start deep research (non-blocking):
+1. Crie caderno: `notebooklm create "Pesquisa: [tópico]"`
+2. Inicie pesquisa profunda (não bloqueante):
    ```bash
-   notebooklm source add-research "topic query" --mode deep --no-wait
+   notebooklm source add-research "consulta do tópico" --mode deep --no-wait
    ```
-3. **Spawn a background agent** to wait and import:
+3. **Inicie um agente em segundo plano** para aguardar e importar:
    ```
    Task(
-     prompt="Wait for research in notebook {notebook_id} to complete and import sources.
+     prompt="Aguarde a pesquisa no caderno {notebook_id} ser concluída e importe as fontes.
              Use: notebooklm research wait -n {notebook_id} --import-all --timeout 300
-             Report how many sources were imported.",
+             Reporte quantas fontes foram importadas.",
      subagent_type="general-purpose"
    )
    ```
-4. Main conversation continues while agent waits
-5. When agent completes, sources are imported automatically
+4. A conversa principal continua enquanto o agente aguarda
+5. Quando o agente concluir, as fontes são importadas automaticamente
 
-**Alternative (blocking):** For simple cases, omit `--no-wait`:
+**Alternativa (bloqueante):** Para casos simples, omita `--no-wait`:
 ```bash
-notebooklm source add-research "topic" --mode deep --import-all
-# Blocks for up to 5 minutes
+notebooklm source add-research "tópico" --mode deep --import-all
+# Bloqueia por até 5 minutos
 ```
 
-**When to use each mode:**
-- `--mode fast`: Specific topic, quick overview needed (5-10 sources, seconds)
-- `--mode deep`: Broad topic, comprehensive analysis needed (20+ sources, 2-5 min)
+**Quando usar cada modo:**
+- `--mode fast`: Tópico específico, visão geral rápida necessária (5 a 10 fontes, segundos)
+- `--mode deep`: Tópico amplo, análise abrangente necessária (20+ fontes, 2 a 5 min)
 
-**Research sources:**
-- `--from web`: Search the web (default)
-- `--from drive`: Search Google Drive
+**Fontes de pesquisa:**
+- `--from web`: Pesquisa na web (padrão)
+- `--from drive`: Pesquisa no Google Drive
 
-## Output Style
+## Estilo de Saída
 
-**Progress updates:** Brief status for each step
-- "Creating notebook 'Research: AI'..."
-- "Adding source: https://example.com..."
-- "Starting audio generation... (task ID: abc123)"
+**Atualizações de progresso:** Status breve para cada etapa
+- "Criando caderno 'Pesquisa: IA'..."
+- "Adicionando fonte: https://exemplo.com..."
+- "Iniciando geração de áudio... (ID da tarefa: abc123)"
 
-**Fire-and-forget for long operations:**
-- Start generation, return artifact ID immediately
-- Do NOT poll or wait in main conversation - generation takes 5-45 minutes (see timing table)
-- User checks status manually, OR use subagent with `artifact wait`
+**Fire-and-forget para operações longas:**
+- Inicie a geração, retorne o ID do artefato imediatamente
+- NÃO faça polling ou aguarde na conversa principal — a geração leva de 5 a 45 minutos (veja a tabela de tempos)
+- O usuário verifica o status manualmente, OU use subagente com `artifact wait`
 
-**JSON output:** Use `--json` flag for machine-readable output:
+**Saída JSON:** Use a flag `--json` para saída legível por máquina:
 ```bash
 notebooklm list --json
 notebooklm auth check --json
@@ -430,7 +430,7 @@ notebooklm source list --json
 notebooklm artifact list --json
 ```
 
-**JSON schemas (key fields):**
+**Esquemas JSON (campos principais):**
 
 `notebooklm list --json`:
 ```json
@@ -452,141 +452,141 @@ notebooklm artifact list --json
 {"notebook_id": "...", "notebook_title": "...", "artifacts": [{"index": 1, "id": "...", "title": "...", "type": "Audio", "type_id": 1, "status": "in_progress|pending|completed|unknown", "status_id": 1, "created_at": "..."}], "count": 1}
 ```
 
-**Status values:**
-- Sources: `processing` → `ready` (or `error`)
-- Artifacts: `pending` or `in_progress` → `completed` (or `unknown`)
+**Valores de status:**
+- Fontes: `processing` → `ready` (ou `error`)
+- Artefatos: `pending` ou `in_progress` → `completed` (ou `unknown`)
 
-## Error Handling
+## Tratamento de Erros
 
-**On failure, offer the user a choice:**
-1. Retry the operation
-2. Skip and continue with something else
-3. Investigate the error
+**Em caso de falha, ofereça ao usuário uma escolha:**
+1. Tentar novamente a operação
+2. Pular e continuar com outra coisa
+3. Investigar o erro
 
-**Error decision tree:**
+**Árvore de decisão de erros:**
 
-| Error | Cause | Action |
-|-------|-------|--------|
-| Auth/cookie error | Session expired | Run `notebooklm auth check` then `notebooklm login` |
-| "No notebook context" | Context not set | Use `-n <id>` or `--notebook <id>` flag (parallel), or `notebooklm use <id>` (single-agent) |
-| "No result found for RPC ID" | Rate limiting | Wait 5-10 min, retry |
-| `GENERATION_FAILED` | Google rate limit | Wait and retry later |
-| Download fails | Generation incomplete | Check `artifact list` for status |
-| Invalid notebook/source ID | Wrong ID | Run `notebooklm list` to verify |
-| RPC protocol error | Google changed APIs | May need CLI update |
+| Erro | Causa | Ação |
+|------|-------|------|
+| Erro de autenticação/cookie | Sessão expirada | Execute `notebooklm auth check` depois `notebooklm login` |
+| "No notebook context" | Contexto não definido | Use flag `-n <id>` ou `--notebook <id>` (paralelo), ou `notebooklm use <id>` (agente único) |
+| "No result found for RPC ID" | Limite de taxa | Aguarde 5 a 10 min, tente novamente |
+| `GENERATION_FAILED` | Limite de taxa do Google | Aguarde e tente novamente mais tarde |
+| Download falha | Geração incompleta | Verifique `artifact list` para o status |
+| ID de caderno/fonte inválido | ID errado | Execute `notebooklm list` para verificar |
+| Erro de protocolo RPC | Google alterou APIs | Pode precisar atualizar a CLI |
 
-## Exit Codes
+## Códigos de Saída
 
-All commands use consistent exit codes:
+Todos os comandos usam códigos de saída consistentes:
 
-| Code | Meaning | Action |
-|------|---------|--------|
-| 0 | Success | Continue |
-| 1 | Error (not found, processing failed) | Check stderr, see Error Handling |
-| 2 | Timeout (wait commands only) | Extend timeout or check status manually |
+| Código | Significado | Ação |
+|--------|-------------|------|
+| 0 | Sucesso | Continue |
+| 1 | Erro (não encontrado, processamento falhou) | Verifique stderr, veja Tratamento de Erros |
+| 2 | Timeout (apenas comandos wait) | Aumente o timeout ou verifique o status manualmente |
 
-**Examples:**
-- `source wait` returns 1 if source not found or processing failed
-- `artifact wait` returns 2 if timeout reached before completion
-- `generate` returns 1 if rate limited (check stderr for details)
+**Exemplos:**
+- `source wait` retorna 1 se a fonte não for encontrada ou o processamento falhar
+- `artifact wait` retorna 2 se o timeout for atingido antes da conclusão
+- `generate` retorna 1 se o limite de taxa for atingido (verifique stderr para detalhes)
 
-## Known Limitations
+## Limitações Conhecidas
 
-**Rate limiting:** Audio, video, quiz, flashcards, infographic, and slide deck generation may fail due to Google's rate limits. This is an API limitation, not a bug.
+**Limite de taxa:** Geração de áudio, vídeo, quiz, flashcards, infográfico e apresentação pode falhar devido aos limites de taxa do Google. Esta é uma limitação da API, não um bug.
 
-**Reliable operations:** These always work:
-- Notebooks (list, create, delete, rename)
-- Sources (add, list, delete)
-- Chat/queries
-- Mind-map, study-guide, report, data-table generation
+**Operações confiáveis:** Estas sempre funcionam:
+- Cadernos (listar, criar, excluir, renomear)
+- Fontes (adicionar, listar, excluir)
+- Chat/consultas
+- Geração de mapa mental, guia de estudos, relatório, tabela de dados
 
-**Unreliable operations:** These may fail with rate limiting:
-- Audio (podcast) generation
-- Video generation
-- Quiz and flashcard generation
-- Infographic and slide deck generation
+**Operações não confiáveis:** Estas podem falhar com limite de taxa:
+- Geração de áudio (podcast)
+- Geração de vídeo
+- Geração de quiz e flashcard
+- Geração de infográfico e apresentação
 
-**Workaround:** If generation fails:
-1. Check status: `notebooklm artifact list`
-2. Retry after 5-10 minutes
-3. Use the NotebookLM web UI as fallback
+**Solução alternativa:** Se a geração falhar:
+1. Verifique o status: `notebooklm artifact list`
+2. Tente novamente após 5 a 10 minutos
+3. Use a interface web do NotebookLM como alternativa
 
-**Processing times vary significantly.** Use the subagent pattern for long operations:
+**Os tempos de processamento variam significativamente.** Use o padrão de subagente para operações longas:
 
-| Operation | Typical time | Suggested timeout |
-|-----------|--------------|-------------------|
-| Source processing | 30s - 10 min | 600s |
-| Research (fast) | 30s - 2 min | 180s |
-| Research (deep) | 15 - 30+ min | 1800s |
-| Notes | instant | n/a |
-| Mind-map | instant (sync) | n/a |
-| Quiz, flashcards | 5 - 15 min | 900s |
-| Report, data-table | 5 - 15 min | 900s |
-| Audio generation | 10 - 20 min | 1200s |
-| Video generation | 15 - 45 min | 2700s |
+| Operação | Tempo típico | Timeout sugerido |
+|----------|--------------|-----------------|
+| Processamento de fonte | 30s a 10 min | 600s |
+| Pesquisa (rápida) | 30s a 2 min | 180s |
+| Pesquisa (profunda) | 15 a 30+ min | 1800s |
+| Notas | instantâneo | n/a |
+| Mapa mental | instantâneo (síncrono) | n/a |
+| Quiz, flashcards | 5 a 15 min | 900s |
+| Relatório, tabela de dados | 5 a 15 min | 900s |
+| Geração de áudio | 10 a 20 min | 1200s |
+| Geração de vídeo | 15 a 45 min | 2700s |
 
-**Polling intervals:** When checking status manually, poll every 15-30 seconds to avoid excessive API calls.
+**Intervalos de polling:** Ao verificar o status manualmente, faça polling a cada 15 a 30 segundos para evitar chamadas excessivas à API.
 
-## Language Configuration
+## Configuração de Idioma
 
-Language setting controls the output language for generated artifacts (audio, video, etc.).
+A configuração de idioma controla o idioma de saída para artefatos gerados (áudio, vídeo, etc.).
 
-**Important:** Language is a **GLOBAL** setting that affects all notebooks in your account.
+**Importante:** O idioma é uma configuração **GLOBAL** que afeta todos os cadernos da sua conta.
 
 ```bash
-# List all 80+ supported languages with native names
+# Listar todos os 80+ idiomas suportados com nomes nativos
 notebooklm language list
 
-# Show current language setting
+# Mostrar configuração de idioma atual
 notebooklm language get
 
-# Set language for artifact generation
-notebooklm language set zh_Hans  # Simplified Chinese
-notebooklm language set ja       # Japanese
-notebooklm language set en       # English (default)
+# Definir idioma para geração de artefatos
+notebooklm language set pt_BR   # Português (Brasil)
+notebooklm language set zh_Hans # Chinês Simplificado
+notebooklm language set en      # Inglês (padrão)
 ```
 
-**Common language codes:**
-| Code | Language |
-|------|----------|
+**Códigos de idioma comuns:**
+| Código | Idioma |
+|--------|--------|
 | `en` | English |
-| `zh_Hans` | 中文（简体） - Simplified Chinese |
-| `zh_Hant` | 中文（繁體） - Traditional Chinese |
-| `ja` | 日本語 - Japanese |
-| `ko` | 한국어 - Korean |
-| `es` | Español - Spanish |
-| `fr` | Français - French |
-| `de` | Deutsch - German |
 | `pt_BR` | Português (Brasil) |
+| `zh_Hans` | 中文（简体） - Chinês Simplificado |
+| `zh_Hant` | 中文（繁體） - Chinês Tradicional |
+| `ja` | 日本語 - Japonês |
+| `ko` | 한국어 - Coreano |
+| `es` | Español - Espanhol |
+| `fr` | Français - Francês |
+| `de` | Deutsch - Alemão |
 
-**Override per command:** Use `--language` flag on generate commands:
+**Substituição por comando:** Use a flag `--language` nos comandos de geração:
 ```bash
-notebooklm generate audio --language ja   # Japanese podcast
-notebooklm generate video --language zh_Hans  # Chinese video
+notebooklm generate audio --language pt_BR  # Podcast em português
+notebooklm generate video --language ja     # Vídeo em japonês
 ```
 
-**Offline mode:** Use `--local` flag to skip server sync:
+**Modo offline:** Use a flag `--local` para pular a sincronização com o servidor:
 ```bash
-notebooklm language set zh_Hans --local  # Save locally only
-notebooklm language get --local  # Read local config only
+notebooklm language set pt_BR --local  # Salva somente localmente
+notebooklm language get --local        # Lê configuração local apenas
 ```
 
-## Troubleshooting
+## Solução de Problemas
 
 ```bash
-notebooklm --help              # Main commands
-notebooklm auth check          # Diagnose auth issues
-notebooklm auth check --test   # Full auth validation with network test
-notebooklm notebook --help     # Notebook management
-notebooklm source --help       # Source management
-notebooklm research --help     # Research status/wait
-notebooklm generate --help     # Content generation
-notebooklm artifact --help     # Artifact management
-notebooklm download --help     # Download content
-notebooklm language --help     # Language settings
+notebooklm --help              # Comandos principais
+notebooklm auth check          # Diagnosticar problemas de autenticação
+notebooklm auth check --test   # Validação completa de autenticação com teste de rede
+notebooklm notebook --help     # Gerenciamento de cadernos
+notebooklm source --help       # Gerenciamento de fontes
+notebooklm research --help     # Status/espera de pesquisa
+notebooklm generate --help     # Geração de conteúdo
+notebooklm artifact --help     # Gerenciamento de artefatos
+notebooklm download --help     # Download de conteúdo
+notebooklm language --help     # Configurações de idioma
 ```
 
-**Diagnose auth:** `notebooklm auth check` - shows cookie domains, storage path, validation status
-**Re-authenticate:** `notebooklm login`
-**Check version:** `notebooklm --version`
-**Refresh a CLI-managed install:** `notebooklm skill install`
+**Diagnosticar autenticação:** `notebooklm auth check` — mostra domínios de cookies, caminho de armazenamento, status de validação
+**Reautenticar:** `notebooklm login`
+**Verificar versão:** `notebooklm --version`
+**Atualizar instalação gerenciada pela CLI:** `notebooklm skill install`
