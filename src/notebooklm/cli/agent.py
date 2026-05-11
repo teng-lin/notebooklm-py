@@ -13,7 +13,7 @@ def agent():
 
 
 @agent.command("show")
-@click.argument("target", type=click.Choice(["codex", "claude"], case_sensitive=False))
+@click.argument("target", type=click.Choice(["codex", "claude", "gemini"], case_sensitive=False))
 def show_agent(target: str):
     """Display instructions for Codex or Claude Code."""
     content = get_agent_source_content(target)

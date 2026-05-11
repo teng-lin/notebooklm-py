@@ -39,6 +39,14 @@ class TestAgentShow:
         assert result.exit_code == 0
         assert "Claude Skill" in result.output
 
+    def test_agent_show_gemini_displays_content(self, runner):
+        """Test that agent show gemini displays the bundled instructions."""
+        with patch.object(agent_module, "get_agent_source_content", return_value="# Gemini Skill"):
+            result = runner.invoke(cli, ["agent", "show", "gemini"])
+
+        assert result.exit_code == 0
+        assert "Gemini Skill" in result.output
+
     def test_agent_show_missing_content_returns_error(self, runner):
         """Test error when bundled agent instructions are missing."""
         with patch.object(agent_module, "get_agent_source_content", return_value=None):
@@ -69,6 +77,13 @@ class TestAgentTemplates:
     def test_claude_template_reads_package_data(self):
         """Test that claude content reads from packaged skill data."""
         content = agent_templates_module.get_agent_source_content("claude")
+
+        assert content is not None
+        assert "NotebookLM Automation" in content
+
+    def test_gemini_template_reads_same_skill_as_claude(self):
+        """Test that gemini content reads from the same SKILL.md as claude."""
+        content = agent_templates_module.get_agent_source_content("gemini")
 
         assert content is not None
         assert "NotebookLM Automation" in content

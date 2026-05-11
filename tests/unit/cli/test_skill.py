@@ -37,6 +37,7 @@ class TestSkillInstall:
         assert result.exit_code == 0
         assert "installed" in result.output.lower()
         assert (home / ".claude" / "skills" / "notebooklm" / "SKILL.md").exists()
+        assert (home / ".gemini" / "skills" / "notebooklm" / "SKILL.md").exists()
         assert (home / ".agents" / "skills" / "notebooklm" / "SKILL.md").exists()
 
     def test_skill_install_project_agents_target_only(self, runner, tmp_path):
@@ -75,6 +76,7 @@ class TestSkillInstall:
 
         assert result.exit_code == 0
         assert (project / ".claude" / "skills" / "notebooklm" / "SKILL.md").exists()
+        assert (project / ".gemini" / "skills" / "notebooklm" / "SKILL.md").exists()
         assert (project / ".agents" / "skills" / "notebooklm" / "SKILL.md").exists()
 
     def test_skill_install_source_not_found(self, runner, tmp_path):
@@ -122,6 +124,7 @@ class TestSkillStatus:
         assert result.exit_code == 0
         assert "not installed" in result.output.lower()
         assert "claude code" in result.output.lower()
+        assert "gemini cli" in result.output.lower()
         assert "agent skills" in result.output.lower()
 
     def test_skill_status_installed_version_mismatch(self, runner, tmp_path):
@@ -145,7 +148,11 @@ class TestSkillStatus:
         """Test status when both targets are installed with the current version."""
         home = tmp_path / "home"
         version = "1.2.3"
-        for subdir in [".claude/skills/notebooklm", ".agents/skills/notebooklm"]:
+        for subdir in [
+            ".claude/skills/notebooklm",
+            ".gemini/skills/notebooklm",
+            ".agents/skills/notebooklm",
+        ]:
             dest = home / subdir / "SKILL.md"
             dest.parent.mkdir(parents=True)
             dest.write_text(f"<!-- notebooklm-py v{version} -->\n# Test")
@@ -184,7 +191,11 @@ class TestSkillUninstall:
     def test_skill_uninstall_all_targets_removes_both(self, runner, tmp_path):
         """Test that uninstall --target all removes both targets and cleans empty dirs."""
         home = tmp_path / "home"
-        for subdir in [".claude/skills/notebooklm", ".agents/skills/notebooklm"]:
+        for subdir in [
+            ".claude/skills/notebooklm",
+            ".gemini/skills/notebooklm",
+            ".agents/skills/notebooklm",
+        ]:
             dest = home / subdir / "SKILL.md"
             dest.parent.mkdir(parents=True)
             dest.write_text("# Test")
@@ -194,9 +205,11 @@ class TestSkillUninstall:
 
         assert result.exit_code == 0
         assert not (home / ".claude" / "skills" / "notebooklm" / "SKILL.md").exists()
+        assert not (home / ".gemini" / "skills" / "notebooklm" / "SKILL.md").exists()
         assert not (home / ".agents" / "skills" / "notebooklm" / "SKILL.md").exists()
         # Empty intermediate directories should be cleaned up
         assert not (home / ".claude" / "skills" / "notebooklm").exists()
+        assert not (home / ".gemini" / "skills" / "notebooklm").exists()
         assert not (home / ".agents" / "skills" / "notebooklm").exists()
 
     def test_skill_uninstall_not_installed(self, runner, tmp_path):

@@ -5,6 +5,7 @@ from pathlib import Path
 
 AGENT_TEMPLATE_FILES = {
     "claude": "SKILL.md",
+    "gemini": "SKILL.md",
     "codex": "CODEX.md",
 }
 
@@ -31,7 +32,7 @@ def get_agent_source_content(target: str) -> str | None:
 
     # Prefer the repo-root skill when running from a source checkout so both
     # GitHub discovery and local CLI installs use the same source of truth.
-    if normalized == "claude" and REPO_ROOT_CLAUDE_SKILL.exists():
+    if normalized in ("claude", "gemini") and REPO_ROOT_CLAUDE_SKILL.exists():
         return REPO_ROOT_CLAUDE_SKILL.read_text(encoding="utf-8")
 
     filename = AGENT_TEMPLATE_FILES.get(normalized)

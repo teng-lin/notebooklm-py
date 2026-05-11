@@ -20,6 +20,7 @@ class SkillTarget:
 
 TARGETS = {
     "claude": SkillTarget("Claude Code", Path(".claude") / "skills" / "notebooklm" / "SKILL.md"),
+    "gemini": SkillTarget("Gemini CLI", Path(".gemini") / "skills" / "notebooklm" / "SKILL.md"),
     "agents": SkillTarget("Agent Skills", Path(".agents") / "skills" / "notebooklm" / "SKILL.md"),
 }
 SCOPES = ("user", "project")
