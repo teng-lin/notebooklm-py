@@ -115,6 +115,7 @@ uv tool install "notebooklm-py[cookies]"
 # pipx equivalent
 pipx install notebooklm-py
 pipx install "notebooklm-py[browser]"
+pipx install "notebooklm-py[cookies]"
 ```
 
 This is the right path for shell scripts, cron jobs, and ad-hoc terminal use — the `notebooklm` command stays available regardless of which project venv is active.
