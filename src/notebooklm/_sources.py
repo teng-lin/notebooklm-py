@@ -4,6 +4,7 @@ import asyncio
 import builtins
 import logging
 import re
+from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -404,9 +405,10 @@ class SourcesAPI:
         notebook_id: str,
         file_path: str | Path,
         mime_type: str | None = None,
-        title: str | None = None,
         wait: bool = False,
         wait_timeout: float = 120.0,
+        *,
+        title: str | None = None,
     ) -> Source:
         """Add a file source to a notebook using resumable upload.
 
@@ -424,7 +426,10 @@ class SourcesAPI:
             mime_type: MIME type of the file (not used in current implementation).
             title: Optional display title. When provided and different from the
                 source filename, a rename is issued after upload so the source
-                appears with this title in the UI and API responses.
+                appears with this title in the UI and API responses. Leading and
+                trailing whitespace is stripped; empty titles are rejected. If
+                the post-upload rename fails, the upload is preserved, a warning
+                is logged, and the returned source keeps the filename title.
             wait: If True, wait for source to be ready before returning.
             wait_timeout: Maximum seconds to wait if wait=True (default: 120).
 
@@ -439,6 +444,11 @@ class SourcesAPI:
             - Word: application/vnd.openxmlformats-officedocument.wordprocessingml.document
         """
         logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise ValidationError("Title cannot be empty or whitespace-only")
+
         file_path = Path(file_path).resolve()
 
         if not file_path.exists():
@@ -476,11 +486,9 @@ class SourcesAPI:
         if title is not None and title != filename:
             try:
                 renamed = await self.rename(notebook_id, source_id, title)
-                # Keep any metadata UPDATE_SOURCE returned (created_at, url, ...) but
-                # force _type_code back to None — rename runs before processing finishes,
-                # so the real type still has to be polled later.
-                source = renamed
-                source._type_code = None
+                # Use any metadata UPDATE_SOURCE returned, but force _type_code
+                # back to None because rename runs before file processing finishes.
+                source = replace(renamed, _type_code=None)
             except (RPCError, NetworkError):
                 # Don't fail the whole upload if the rename fails — the file is
                 # already uploaded. Surface a warning so the caller can retry.
@@ -489,6 +497,7 @@ class SourcesAPI:
                     source_id,
                     title,
                     filename,
+                    exc_info=True,
                 )
 
         if wait:

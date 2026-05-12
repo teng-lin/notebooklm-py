@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from notebooklm._sources import SourcesAPI
-from notebooklm.exceptions import RPCError
+from notebooklm.exceptions import NetworkError, RPCError, ValidationError
+from notebooklm.types import Source
 
 
 @pytest.fixture
@@ -406,6 +407,7 @@ class TestAddFile:
         assert result.id == "src_new_123"
         assert result.title == "test.pdf"
         assert result.kind == "unknown"
+        assert mock_core.rpc_call.call_count == 1
 
     @pytest.mark.asyncio
     async def test_add_file_raises_file_not_found(self, sources_api, mock_core):
@@ -438,6 +440,33 @@ class TestAddFile:
         assert result.title == "doc.txt"
 
     @pytest.mark.asyncio
+    async def test_add_file_preserves_positional_wait_args(self, sources_api, mock_core, tmp_path):
+        """Existing positional wait/wait_timeout callers remain compatible."""
+        test_file = tmp_path / "report.pdf"
+        test_file.write_bytes(b"fake pdf content")
+
+        mock_core.rpc_call.return_value = [[[["src_pdf"]]]]
+        sources_api.wait_until_ready = AsyncMock(
+            return_value=MagicMock(id="src_pdf", title="report.pdf")
+        )
+
+        mock_start_response = MagicMock()
+        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_upload_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+            mock_client_cls.return_value = mock_client
+
+            result = await sources_api.add_file("nb_123", str(test_file), None, True, 45.0)
+
+        assert result.id == "src_pdf"
+        sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_pdf", timeout=45.0)
+
+    @pytest.mark.asyncio
     async def test_add_file_with_custom_title_renames_after_upload(
         self, sources_api, mock_core, tmp_path
     ):
@@ -450,7 +479,7 @@ class TestAddFile:
         # First rpc_call serves the file registration; the second serves rename().
         mock_core.rpc_call.side_effect = [
             [[[["src_md"]]]],
-            [[[["src_md"], "Real Intended Title"]]],
+            [[[["src_md"], "Real Intended Title", [None, None, None, None, 8]]]],
         ]
 
         mock_start_response = MagicMock()
@@ -465,13 +494,73 @@ class TestAddFile:
             mock_client_cls.return_value = mock_client
 
             result = await sources_api.add_file(
-                "nb_123", str(test_file), title="Real Intended Title"
+                "nb_123", str(test_file), title="  Real Intended Title  "
             )
 
         assert result.id == "src_md"
         assert result.title == "Real Intended Title"
+        assert result._type_code is None
         # 1 register + 1 rename
         assert mock_core.rpc_call.call_count == 2
+        rename_params = mock_core.rpc_call.call_args_list[1].args[1]
+        assert rename_params == [None, ["src_md"], [[["Real Intended Title"]]]]
+
+    @pytest.mark.asyncio
+    async def test_add_file_with_custom_title_renames_before_wait(
+        self, sources_api, mock_core, tmp_path
+    ):
+        """When wait=True, the custom title rename should happen before polling."""
+        test_file = tmp_path / "boring-filename.md"
+        test_file.write_bytes(b"# content\n")
+
+        mock_core.rpc_call.side_effect = [
+            [[[["src_md"]]]],
+            [[[["src_md"], "Real Intended Title"]]],
+        ]
+
+        async def wait_side_effect(notebook_id, source_id, *, timeout):
+            assert notebook_id == "nb_123"
+            assert source_id == "src_md"
+            assert timeout == 120.0
+            assert mock_core.rpc_call.call_count == 2
+            return Source(id=source_id, title="Real Intended Title")
+
+        sources_api.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
+
+        mock_start_response = MagicMock()
+        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_upload_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+            mock_client_cls.return_value = mock_client
+
+            result = await sources_api.add_file(
+                "nb_123",
+                str(test_file),
+                title="Real Intended Title",
+                wait=True,
+            )
+
+        assert result.title == "Real Intended Title"
+        sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_md", timeout=120.0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("title", ["", "   "])
+    async def test_add_file_rejects_blank_custom_title(
+        self, sources_api, mock_core, tmp_path, title
+    ):
+        """Blank custom titles should fail before upload or rename starts."""
+        test_file = tmp_path / "notes.md"
+        test_file.write_bytes(b"# notes\n")
+
+        with pytest.raises(ValidationError, match="Title cannot be empty"):
+            await sources_api.add_file("nb_123", str(test_file), title=title)
+
+        mock_core.rpc_call.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_file_skips_rename_when_title_matches_filename(
@@ -504,8 +593,16 @@ class TestAddFile:
         assert mock_core.rpc_call.call_count == 1
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rename_error",
+        [
+            RPCError("rename rpc blew up"),
+            NetworkError("rename network blew up"),
+        ],
+        ids=["rpc", "network"],
+    )
     async def test_add_file_rename_failure_keeps_upload(
-        self, sources_api, mock_core, tmp_path, caplog
+        self, sources_api, mock_core, tmp_path, caplog, rename_error
     ):
         """A failing rename must not lose the already-uploaded file; the source
         is returned with the default filename title and a warning is logged.
@@ -515,11 +612,11 @@ class TestAddFile:
         test_file = tmp_path / "doc.txt"
         test_file.write_bytes(b"content")
 
-        # Registration succeeds; rename raises a library-level RPC error
+        # Registration succeeds; rename raises a library-level expected error
         # (representative of what `self.rename` actually raises in the wild).
         mock_core.rpc_call.side_effect = [
             [[[["src_doc"]]]],
-            RPCError("rename rpc blew up"),
+            rename_error,
         ]
 
         mock_start_response = MagicMock()
@@ -538,7 +635,52 @@ class TestAddFile:
 
         assert result.id == "src_doc"
         assert result.title == "doc.txt"
-        assert any("rename to 'Custom' failed" in rec.message for rec in caplog.records)
+        warning_records = [
+            rec for rec in caplog.records if "rename to 'Custom' failed" in rec.message
+        ]
+        assert warning_records
+        assert warning_records[0].exc_info is not None
+
+    @pytest.mark.asyncio
+    async def test_add_file_rename_failure_still_waits(self, sources_api, mock_core, tmp_path):
+        """A failed custom-title rename should not prevent wait=True polling."""
+        test_file = tmp_path / "doc.txt"
+        test_file.write_bytes(b"content")
+
+        mock_core.rpc_call.side_effect = [
+            [[[["src_doc"]]]],
+            RPCError("rename rpc blew up"),
+        ]
+
+        async def wait_side_effect(notebook_id, source_id, *, timeout):
+            assert notebook_id == "nb_123"
+            assert source_id == "src_doc"
+            assert timeout == 120.0
+            assert mock_core.rpc_call.call_count == 2
+            return Source(id=source_id, title="doc.txt")
+
+        sources_api.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
+
+        mock_start_response = MagicMock()
+        mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+        mock_upload_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+            mock_client_cls.return_value = mock_client
+
+            result = await sources_api.add_file(
+                "nb_123",
+                str(test_file),
+                title="Custom",
+                wait=True,
+            )
+
+        assert result.title == "doc.txt"
+        sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_doc", timeout=120.0)
 
 
 # =============================================================================

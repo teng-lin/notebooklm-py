@@ -228,7 +228,7 @@ def source_list(ctx, notebook_id, json_output, client_auth):
     default=None,
     help="Source type (auto-detected if not specified)",
 )
-@click.option("--title", help="Custom title for text and file sources")
+@click.option("--title", help="Custom title for text and uploaded-file sources")
 @click.option("--mime-type", help="MIME type for file sources")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
