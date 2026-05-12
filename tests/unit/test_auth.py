@@ -2651,21 +2651,18 @@ class TestPathAwareCookieIdentity:
         either sibling could be returned."""
         from notebooklm.auth import _find_cookie_for_storage
 
-        # Two in-memory cookies sharing (name, domain) at distinct paths.
-        root_cookie = httpx.Cookies()
-        root_cookie.set("OSID", "root", domain="accounts.google.com", path="/")
-        u0_cookie = httpx.Cookies()
-        u0_cookie.set("OSID", "u0", domain="accounts.google.com", path="/u/0/")
-        cookies_by_key = {
-            ("OSID", c.domain, c.path or "/"): c
-            for jar in (root_cookie, u0_cookie)
-            for c in jar.jar
-        }
+        # Two in-memory cookies sharing (name, domain) at distinct paths
+        # coexist in a single ``http.cookiejar`` because its internal index is
+        # ``(domain, path, name)`` — exactly the identity #369 makes first-class.
+        jar = httpx.Cookies()
+        jar.set("OSID", "root", domain=self._OSID_DOMAIN, path="/")
+        jar.set("OSID", "u0", domain=self._OSID_DOMAIN, path="/u/0/")
+        cookies_by_key = {(c.name, c.domain, c.path or "/"): c for c in jar.jar}
 
         # Looking up the /u/0/ key must return the /u/0/ cookie, not the / one.
         found = _find_cookie_for_storage(
             cookies_by_key,
-            ("OSID", "accounts.google.com", "/u/0/"),
+            ("OSID", self._OSID_DOMAIN, "/u/0/"),
             stored_value="stale_u0",
         )
         assert found is not None
