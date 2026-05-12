@@ -1300,10 +1300,14 @@ a successful library API call rather than the URL:
 ```python
 from notebooklm import NotebookLMClient, AuthError
 
-client = await NotebookLMClient.from_storage()
 try:
-    await client.notebooks.list()  # confirms auth
-except AuthError:
+    async with await NotebookLMClient.from_storage() as client:
+        await client.notebooks.list()  # confirms auth
+except (AuthError, ValueError):
+    # ValueError: from_storage()'s CSRF / session-id extraction
+    #   detected a redirect to accounts.google.com during fetch_tokens
+    #   (see auth.py:extract_csrf_token_from_html / extract_session_id_from_html)
+    # AuthError: a subsequent RPC call decoded an auth-class failure
     return  # don't overwrite a good file with a bad jar
 await context.storage_state(path=STORAGE)
 ```
