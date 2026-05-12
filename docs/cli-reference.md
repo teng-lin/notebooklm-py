@@ -111,9 +111,9 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
 | `list` | - | - | `source list` |
-| `add <content>` | URL/file/text | - | `source add "https://..."` |
+| `add <content>` | URL/file/text | `--title`, `--type`, `--mime-type`, `--timeout`, `--json` | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID | - | `source add-drive abc123 "Doc"` |
-| `add-research <query>` | Search query | `--mode [fast|deep]`, `--from [web|drive]`, `--import-all`, `--no-wait` | `source add-research "AI" --mode deep --no-wait` |
+| `add-research <query>` | Search query | `--mode [fast|deep]`, `--from [web|drive]`, `--import-all`, `--no-wait`, `--timeout` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | - | `source get src123` |
 | `fulltext <id>` | Source ID | `--json`, `-o FILE` | `source fulltext src123 -o content.txt` |
 | `guide <id>` | Source ID | `--json` | `source guide src123` |
@@ -541,6 +541,7 @@ notebooklm source add-research <query> [OPTIONS]
 - `--from [web|drive]` - Search source (default: web)
 - `--import-all` - Automatically import all found sources (works with blocking mode)
 - `--no-wait` - Start research and return immediately (non-blocking)
+- `--timeout SECONDS` - Retry budget for `--import-all` when the IMPORT_RESEARCH RPC times out (default: 1800). Mirrors `research wait --timeout`. Has no effect without `--import-all`.
 
 **Examples:**
 ```bash
@@ -552,6 +553,9 @@ notebooklm source add-research "Project Alpha" --from drive --mode deep
 
 # Non-blocking deep research for agent workflows
 notebooklm source add-research "AI safety papers" --mode deep --no-wait
+
+# Bounded import-retry budget for large result sets
+notebooklm source add-research "AI papers" --mode deep --import-all --timeout 3600
 ```
 
 ### Research: `status`

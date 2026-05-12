@@ -230,9 +230,20 @@ def source_list(ctx, notebook_id, json_output, client_auth):
 )
 @click.option("--title", help="Custom title for text and uploaded-file sources")
 @click.option("--mime-type", help="MIME type for file sources")
+@click.option(
+    "--timeout",
+    default=None,
+    type=float,
+    help=(
+        "HTTP request timeout in seconds (default: 30, from the library). "
+        "Increase when adding slow URLs or large files that exceed the default."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
-def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_output, client_auth):
+def source_add(
+    ctx, content, notebook_id, source_type, title, mime_type, timeout, json_output, client_auth
+):
     """Add a source to a notebook.
 
     \b
@@ -271,8 +282,12 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
             detected_type = "text"
             file_title = title or "Pasted Text"
 
+    client_kwargs: dict = {}
+    if timeout is not None:
+        client_kwargs["timeout"] = timeout
+
     async def _run():
-        async with NotebookLMClient(client_auth) as client:
+        async with NotebookLMClient(client_auth, **client_kwargs) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id)
             if detected_type == "url" or detected_type == "youtube":
                 src = await client.sources.add_url(nb_id_resolved, content)
@@ -547,9 +562,19 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, client_auth):
     is_flag=True,
     help="Start research and return immediately (use 'research status/wait' to monitor)",
 )
+@click.option(
+    "--timeout",
+    default=1800,
+    type=int,
+    help=(
+        "Retry budget in seconds for --import-all when the IMPORT_RESEARCH RPC "
+        "times out (default: 1800). Mirrors 'research wait --timeout'. "
+        "Has no effect without --import-all."
+    ),
+)
 @with_client
 def source_add_research(
-    ctx, query, notebook_id, search_source, mode, import_all, no_wait, client_auth
+    ctx, query, notebook_id, search_source, mode, import_all, no_wait, timeout, client_auth
 ):
     """Search web or drive and add sources from results.
 
@@ -608,6 +633,7 @@ def source_add_research(
                         nb_id_resolved,
                         task_id,
                         sources,
+                        max_elapsed=timeout,
                     )
                     console.print(f"[green]Imported {len(imported)} sources[/green]")
             else:

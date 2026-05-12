@@ -239,6 +239,53 @@ class TestSourceAdd:
             data = json.loads(result.output)
             assert data["source"]["id"] == "src_new"
 
+    def test_source_add_timeout_flag_threaded_to_client(self, runner, mock_auth):
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.add_url = AsyncMock(
+                return_value=Source(id="src_t", title="X", url="https://example.com")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "add",
+                        "https://example.com",
+                        "-n",
+                        "nb_123",
+                        "--timeout",
+                        "120",
+                    ],
+                )
+
+            assert result.exit_code == 0
+            assert mock_client_cls.call_args.kwargs["timeout"] == 120.0
+
+    def test_source_add_default_does_not_override_client_timeout(self, runner, mock_auth):
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.add_url = AsyncMock(
+                return_value=Source(id="src_d", title="Y", url="https://example.com")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["source", "add", "https://example.com", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0
+            assert "timeout" not in mock_client_cls.call_args.kwargs
+
 
 # =============================================================================
 # SOURCE GET TESTS
@@ -720,7 +767,47 @@ class TestSourceAddResearch:
             "nb_123",
             "task_123",
             [{"title": "Source 1", "url": "http://example.com"}],
+            max_elapsed=1800,
         )
+
+    def test_add_research_timeout_flag_threaded_to_import_with_retry(self, runner, mock_auth):
+        with (
+            patch_client_for_module("source") as mock_client_cls,
+            patch.object(source_module, "import_with_retry", new_callable=AsyncMock) as mock_import,
+        ):
+            mock_client = create_mock_client()
+            mock_client.research.start = AsyncMock(return_value={"task_id": "task_t1"})
+            mock_client.research.poll = AsyncMock(
+                return_value={
+                    "status": "completed",
+                    "task_id": "task_t1",
+                    "sources": [{"title": "S", "url": "http://example.com"}],
+                    "report": "",
+                }
+            )
+            mock_import.return_value = [{"id": "src_t1", "title": "S"}]
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "add-research",
+                        "topic",
+                        "--import-all",
+                        "--timeout",
+                        "600",
+                        "-n",
+                        "nb_123",
+                    ],
+                )
+
+        assert result.exit_code == 0
+        assert mock_import.await_args.kwargs["max_elapsed"] == 600
 
 
 # =============================================================================
