@@ -499,7 +499,7 @@ class TestAddFile:
 
         assert result.id == "src_md"
         assert result.title == "Real Intended Title"
-        assert result._type_code is None
+        assert result.kind == "unknown"
         # 1 register + 1 rename
         assert mock_core.rpc_call.call_count == 2
         rename_params = mock_core.rpc_call.call_args_list[1].args[1]

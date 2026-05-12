@@ -238,7 +238,7 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
     \b
     Source type is auto-detected:
       - URLs (http/https) -> url or youtube
-      - Existing files (.txt, .md) -> text
+      - Existing files (.txt, .md, etc.) -> file
       - Other content -> text (inline)
       - Use --type to override
 
