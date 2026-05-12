@@ -181,7 +181,7 @@ Before starting workflows, verify the CLI is ready:
 | Download quiz (markdown) | `notebooklm download quiz --format markdown quiz.md` |
 | Download flashcards | `notebooklm download flashcards cards.json` |
 | Download flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
-| Delete notebook | `notebooklm delete <id>` |
+| Delete notebook | `notebooklm delete -n <id>` |
 | List languages | `notebooklm language list` |
 | Get language | `notebooklm language get` |
 | Set language | `notebooklm language set zh_Hans` |
