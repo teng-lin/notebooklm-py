@@ -568,9 +568,8 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, client_auth):
     default=1800,
     type=int,
     help=(
-        "Retry budget in seconds for --import-all when the IMPORT_RESEARCH RPC "
-        "times out (default: 1800). Mirrors 'research wait --timeout'. "
-        "Has no effect without --import-all."
+        "Wait/retry budget in seconds for research completion and --import-all "
+        "IMPORT_RESEARCH retries (default: 1800). Mirrors 'research wait --timeout'."
     ),
 )
 @with_client
@@ -623,16 +622,19 @@ def source_add_research(
                 return
 
             status = None
-            for _ in range(60):
+            deadline = asyncio.get_running_loop().time() + timeout
+            while True:
                 status = await client.research.poll(nb_id_resolved)
                 if status.get("status") == "completed":
                     break
                 elif status.get("status") == "no_research":
                     console.print("[red]Research failed to start[/red]")
                     raise SystemExit(1)
-                await asyncio.sleep(5)
-            else:
-                status = {"status": "timeout"}
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    status = {"status": "timeout"}
+                    break
+                await asyncio.sleep(min(5, remaining))
 
             if status.get("status") == "completed":
                 sources = status.get("sources", [])
@@ -669,8 +671,14 @@ def source_add_research(
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", type=click.Path(), help="Write content to file")
+@click.option(
+    "--markdown",
+    "preserve_markdown",
+    is_flag=True,
+    help="For markdown sources, preserve raw markdown formatting when available.",
+)
 @with_client
-def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_auth):
+def source_fulltext(ctx, source_id, notebook_id, json_output, output, preserve_markdown, client_auth):
     """Get full indexed text content of a source.
 
     Retrieves the complete text content as indexed by NotebookLM. This is the
@@ -682,6 +690,7 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
     Examples:
       source fulltext abc123                    # Show fulltext in terminal
       source fulltext abc123 --json             # Output as JSON
+      source fulltext abc123 --markdown         # Preserve markdown tables/headings
       source fulltext abc123 -o content.txt     # Save to file
     """
     nb_id = require_notebook(notebook_id)
@@ -692,7 +701,9 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
             resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
 
             with console.status("Fetching fulltext content..."):
-                fulltext = await client.sources.get_fulltext(nb_id_resolved, resolved_id)
+                fulltext = await client.sources.get_fulltext(
+                    nb_id_resolved, resolved_id, preserve_markdown=preserve_markdown
+                )
 
             if json_output:
                 from dataclasses import asdict

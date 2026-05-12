@@ -875,6 +875,39 @@ class TestSourceAddResearch:
         assert result.exit_code == 0
         assert mock_import.await_args.kwargs["max_elapsed"] == 600
 
+    def test_add_research_timeout_bounds_polling_wait(self, runner, mock_auth, monkeypatch):
+        """--timeout also bounds the research polling wait, not only import retries."""
+        times = iter([0.0, 0.0, 1.0])
+
+        class FakeLoop:
+            def time(self):
+                return next(times)
+
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.research.start = AsyncMock(return_value={"task_id": "task_t1"})
+            mock_client.research.poll = AsyncMock(return_value={"status": "in_progress"})
+            mock_client_cls.return_value = mock_client
+            monkeypatch.setattr(source_module.asyncio, "get_running_loop", lambda: FakeLoop())
+
+            async def no_sleep(_delay):
+                return None
+
+            monkeypatch.setattr(source_module.asyncio, "sleep", no_sleep)
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["source", "add-research", "topic", "--timeout", "1", "-n", "nb_123"],
+                )
+
+        assert result.exit_code == 0
+        assert "Status: timeout" in result.output
+        assert mock_client.research.poll.await_count == 2
+
 
 # =============================================================================
 # COMMAND EXISTENCE TESTS
@@ -1317,6 +1350,39 @@ class TestSourceFulltext:
             assert result.exit_code == 0
             assert "Saved" in result.output
             assert output_file.read_text(encoding="utf-8") == content
+
+    def test_source_fulltext_markdown_flag_threads_to_api(self, runner, mock_auth):
+        """--markdown requests raw markdown preservation from the API layer."""
+        markdown = "# Report\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[Source(id="src_123", title="Markdown Report")]
+            )
+            mock_client.sources.get_fulltext = AsyncMock(
+                return_value=SourceFulltext(
+                    source_id="src_123",
+                    title="Markdown Report",
+                    content=markdown,
+                    _type_code=8,
+                    char_count=len(markdown),
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["source", "fulltext", "src_123", "-n", "nb_123", "--markdown"]
+                )
+
+            assert result.exit_code == 0
+            assert "| A | B |" in result.output
+            mock_client.sources.get_fulltext.assert_awaited_once_with(
+                "nb_123", "src_123", preserve_markdown=True
+            )
 
     def test_source_fulltext_json_output(self, runner, mock_auth):
         """--json outputs JSON with fulltext fields."""

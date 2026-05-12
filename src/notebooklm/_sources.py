@@ -839,7 +839,9 @@ class SourcesAPI:
 
         return {"summary": summary, "keywords": keywords}
 
-    async def get_fulltext(self, notebook_id: str, source_id: str) -> SourceFulltext:
+    async def get_fulltext(
+        self, notebook_id: str, source_id: str, *, preserve_markdown: bool = False
+    ) -> SourceFulltext:
         """Get the full indexed text content of a source.
 
         Returns the raw text content that was extracted and indexed from the source,
@@ -848,6 +850,9 @@ class SourcesAPI:
         Args:
             notebook_id: The notebook ID.
             source_id: The source ID to get fulltext for.
+            preserve_markdown: For markdown sources, prefer the raw markdown
+                body when the response includes it, instead of NotebookLM's
+                indexed plain-text blocks.
 
         Returns:
             SourceFulltext object with content, title, source_type, url, and char_count.
@@ -899,6 +904,11 @@ class SourcesAPI:
                     texts = self._extract_all_text(content_blocks)
                     content = "\n".join(texts)
 
+            if preserve_markdown and source_type == 8:
+                markdown_content = self._extract_markdown_content(result)
+                if markdown_content:
+                    content = markdown_content
+
         # Log warning if content is empty but source exists
         if not content:
             logger.warning(
@@ -920,6 +930,52 @@ class SourcesAPI:
     # =========================================================================
     # Private helper methods
     # =========================================================================
+
+    def _extract_markdown_content(self, data: Any) -> str:
+        """Best-effort extraction of raw markdown embedded in a source response.
+
+        Markdown report sources can include both indexed text blocks (already
+        flattened for search) and the original markdown body. The default
+        fulltext path keeps returning the indexed text for backward
+        compatibility; callers that opt in can use this helper to preserve
+        tables, headings, and other markdown formatting when the raw body is
+        present in the response.
+        """
+        candidates: builtins.list[str] = []
+
+        def walk(value: Any, depth: int = 100) -> None:
+            if depth <= 0:
+                return
+            if isinstance(value, str):
+                if self._looks_like_markdown_document(value):
+                    candidates.append(value)
+                return
+            if isinstance(value, builtins.list):
+                for item in value:
+                    walk(item, depth - 1)
+            elif isinstance(value, dict):
+                for item in value.values():
+                    walk(item, depth - 1)
+
+        walk(data)
+        return max(candidates, key=len, default="")
+
+    @staticmethod
+    def _looks_like_markdown_document(value: str) -> bool:
+        """Return true for strings likely to be raw markdown documents."""
+        text = value.strip()
+        if len(text) < 3:
+            return False
+        markdown_markers = (
+            text.startswith("#"),
+            "\n#" in text,
+            "\n|" in text and "|" in text,
+            "```" in text,
+            "\n- " in text,
+            "\n* " in text,
+            re.search(r"\[[^\]]+\]\([^\)]+\)", text) is not None,
+        )
+        return any(markdown_markers)
 
     def _extract_all_text(self, data: builtins.list, max_depth: int = 100) -> builtins.list[str]:
         """Recursively extract all text strings from nested arrays.

@@ -45,9 +45,9 @@ class TestAuthTokens:
             session_id="sess456",
         )
         assert tokens.cookies == {
-            ("SID", ".google.com"): "abc",
-            ("__Secure-1PSIDTS", ".google.com"): "test_1psidts",
-            ("HSID", ".google.com"): "def",
+            ("SID", ".google.com", "/"): "abc",
+            ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
+            ("HSID", ".google.com", "/"): "def",
         }
         assert tokens.flat_cookies == {
             "SID": "abc",
@@ -690,6 +690,108 @@ class TestCookieAttributePreservation:
         assert gaps.secure is True
         assert gaps.has_nonstandard_attr("HttpOnly")
 
+    def test_build_httpx_cookies_from_storage_keeps_path_siblings(self, tmp_path):
+        """Cookies with same name/domain but different paths coexist on load."""
+        storage_file = tmp_path / "storage_state.json"
+        state = {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": "root-sid",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": -1,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+                {
+                    "name": "SID",
+                    "value": "user-sid",
+                    "domain": ".google.com",
+                    "path": "/u/0/",
+                    "expires": -1,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "test_1psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+            ]
+        }
+        storage_file.write_text(json.dumps(state))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+
+        assert self._find_cookie(jar, "SID", ".google.com", "/").value == "root-sid"
+        assert self._find_cookie(jar, "SID", ".google.com", "/u/0/").value == "user-sid"
+
+    def test_path_sibling_round_trip_preserves_both_cookies(self, tmp_path):
+        """Load → save → reload keeps same-name/domain cookies on distinct paths."""
+        storage_file = tmp_path / "storage_state.json"
+        state = {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": "root-sid",
+                    "domain": ".google.com",
+                    "path": "/",
+                    "expires": -1,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+                {
+                    "name": "SID",
+                    "value": "user-sid",
+                    "domain": ".google.com",
+                    "path": "/u/0/",
+                    "expires": -1,
+                    "httpOnly": True,
+                    "secure": True,
+                },
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "test_1psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
+            ]
+        }
+        storage_file.write_text(json.dumps(state))
+
+        jar = build_httpx_cookies_from_storage(storage_file)
+        snapshot = snapshot_cookie_jar(jar)
+        self._find_cookie(jar, "SID", ".google.com", "/u/0/").value = "rotated-user-sid"
+        save_cookies_to_storage(jar, storage_file, original_snapshot=snapshot)
+        reloaded = build_httpx_cookies_from_storage(storage_file)
+
+        assert self._find_cookie(reloaded, "SID", ".google.com", "/").value == "root-sid"
+        assert (
+            self._find_cookie(reloaded, "SID", ".google.com", "/u/0/").value
+            == "rotated-user-sid"
+        )
+
+    def test_find_cookie_for_storage_uses_path_when_siblings_exist(self):
+        """Legacy save lookup chooses the cookie matching name/domain/path."""
+        import httpx
+
+        from notebooklm.auth import _find_cookie_for_storage
+
+        jar = httpx.Cookies()
+        jar.set("SID", "root-sid", domain=".google.com", path="/")
+        jar.set("SID", "user-sid", domain=".google.com", path="/u/0/")
+        cookies_by_key = {
+            (cookie.name, cookie.domain, cookie.path or "/"): cookie for cookie in jar.jar
+        }
+
+        found = _find_cookie_for_storage(cookies_by_key, ("SID", ".google.com", "/u/0/"), None)
+
+        assert found is not None
+        assert found.value == "user-sid"
+        assert found.path == "/u/0/"
+
     def test_round_trip_with_value_change_preserves_attributes(self, tmp_path):
         """Load → bump value → save → reload preserves path/secure/httpOnly.
 
@@ -1057,6 +1159,7 @@ class TestFetchTokens:
         assert (
             "ACCOUNT_REFRESH",
             ".accounts.google.com",
+            "/",
         ) in extract_cookies_with_domains(storage_state)
 
     def test_save_cookies_to_storage_preserves_secure_permissions(self, tmp_path):
@@ -1514,7 +1617,7 @@ class TestAuthTokensFromStorage:
 
         tokens = await AuthTokens.from_storage(storage_file)
 
-        assert tokens.cookies[("SID", ".google.com")] == "sid"
+        assert tokens.cookies[("SID", ".google.com", "/")] == "sid"
         assert tokens.flat_cookies["SID"] == "sid"
         assert tokens.csrf_token == "csrf_token"
         assert tokens.session_id == "session_id"
@@ -2368,8 +2471,8 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        assert ("PRODUCT_TOKEN", domain) in cookie_map
-        assert cookie_map[("PRODUCT_TOKEN", domain)] == "sibling"
+        assert ("PRODUCT_TOKEN", domain, "/") in cookie_map
+        assert cookie_map[("PRODUCT_TOKEN", domain, "/")] == "sibling"
 
     @pytest.mark.parametrize("domain", SIBLING_DOMAINS)
     def test_load_httpx_cookies_keeps_sibling_cookies(self, tmp_path, domain):
@@ -2424,13 +2527,13 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        assert ("SID", ".google.com") in cookie_map
-        assert ("HSID", ".google.com") in cookie_map
-        assert ("OSID", "notebooklm.google.com") in cookie_map
-        assert ("OSID2", ".notebooklm.google.com") in cookie_map
-        assert ("ACC", "accounts.google.com") in cookie_map
-        assert ("ACC2", ".accounts.google.com") in cookie_map
-        assert ("MEDIA", ".googleusercontent.com") in cookie_map
+        assert ("SID", ".google.com", "/") in cookie_map
+        assert ("HSID", ".google.com", "/") in cookie_map
+        assert ("OSID", "notebooklm.google.com", "/") in cookie_map
+        assert ("OSID2", ".notebooklm.google.com", "/") in cookie_map
+        assert ("ACC", "accounts.google.com", "/") in cookie_map
+        assert ("ACC2", ".accounts.google.com", "/") in cookie_map
+        assert ("MEDIA", ".googleusercontent.com", "/") in cookie_map
 
     def test_unified_filter_rejects_unrelated_domains(self):
         """Regression: cookies from unrelated domains are still rejected."""
@@ -2445,7 +2548,7 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        kept_names = {name for name, _ in cookie_map}
+        kept_names = {name for name, _domain, _path in cookie_map}
         assert kept_names == {"SID", "__Secure-1PSIDTS"}
 
 

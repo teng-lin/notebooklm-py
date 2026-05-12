@@ -949,6 +949,35 @@ class TestGetFulltext:
         assert "[2]" in body
 
     @pytest.mark.asyncio
+    async def test_get_fulltext_preserve_markdown_prefers_raw_markdown(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Markdown sources can return raw markdown instead of indexed text blocks."""
+        markdown = "# Report\n\n| A | B |\n|---|---|\n| 1 | 2 |"
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [
+                ["src_md", "Report", [None, None, None, None, 8]],
+                [markdown],
+                None,
+                [[["Report", "A", "B", "1", "2"]]],
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            fulltext = await client.sources.get_fulltext(
+                "nb_123", "src_md", preserve_markdown=True
+            )
+
+        assert fulltext.kind == SourceType.MARKDOWN
+        assert fulltext.content == markdown
+        assert "| A | B |" in fulltext.content
+
+    @pytest.mark.asyncio
     async def test_get_fulltext_empty_content(
         self,
         auth_tokens,
