@@ -181,7 +181,7 @@ Before starting workflows, verify the CLI is ready:
 | Download quiz (markdown) | `notebooklm download quiz --format markdown quiz.md` |
 | Download flashcards | `notebooklm download flashcards cards.json` |
 | Download flashcards (markdown) | `notebooklm download flashcards --format markdown cards.md` |
-| Delete notebook | `notebooklm notebook delete <id>` |
+| Delete notebook | `notebooklm delete <id>` |
 | List languages | `notebooklm language list` |
 | Get language | `notebooklm language get` |
 | Set language | `notebooklm language set zh_Hans` |
@@ -578,7 +578,6 @@ notebooklm language get --local  # Read local config only
 notebooklm --help              # Main commands
 notebooklm auth check          # Diagnose auth issues
 notebooklm auth check --test   # Full auth validation with network test
-notebooklm notebook --help     # Notebook management
 notebooklm source --help       # Source management
 notebooklm research --help     # Research status/wait
 notebooklm generate --help     # Content generation
