@@ -57,10 +57,15 @@ from .paths import get_storage_path, resolve_profile
 
 logger = logging.getLogger(__name__)
 
-CookieKey: TypeAlias = tuple[str, str]
+CookieKey: TypeAlias = tuple[str, str, str]
 DomainCookieMap: TypeAlias = dict[CookieKey, str]
 FlatCookieMap: TypeAlias = dict[str, str]
-CookieInput: TypeAlias = DomainCookieMap | FlatCookieMap
+# ``CookieInput`` also accepts the legacy ``(name, domain) -> value`` shape that
+# pre-#369 callers constructed by hand; :func:`normalize_cookie_map` widens
+# those entries to ``(name, domain, "/")`` so the rest of the pipeline sees a
+# uniform path-aware shape.
+LegacyDomainCookieMap: TypeAlias = dict[tuple[str, str], str]
+CookieInput: TypeAlias = DomainCookieMap | LegacyDomainCookieMap | FlatCookieMap
 
 
 class CookieSnapshotKey(NamedTuple):
@@ -330,7 +335,11 @@ class AuthTokens:
     """Authentication tokens for NotebookLM API.
 
     Attributes:
-        cookies: Dict of required Google auth cookies keyed by (name, domain)
+        cookies: Required Google auth cookies keyed by ``(name, domain, path)``
+            per RFC 6265 §5.3 (issue #369). Legacy 2-tuple ``(name, domain)``
+            and flat ``name -> value`` shapes are still accepted on
+            construction and widened to the path-aware shape by
+            :func:`normalize_cookie_map` during ``__post_init__``.
         csrf_token: CSRF token (SNlM0e) extracted from page
         session_id: Session ID (FdrFJe) extracted from page
         storage_path: Path to the storage_state.json file, if file-based auth was used
@@ -487,18 +496,41 @@ class AuthTokens:
 
 
 def normalize_cookie_map(cookies: CookieInput | None) -> DomainCookieMap:
-    """Normalize flat or domain-aware cookie maps into (name, domain) keys."""
+    """Normalize flat or domain-aware cookie maps into ``(name, domain, path)`` keys.
+
+    Accepts three input shapes for back-compat:
+
+    - Path-aware ``(name, domain, path) -> value`` (the canonical post-#369 shape).
+    - Legacy ``(name, domain) -> value`` — kept so external callers that built a
+      ``DomainCookieMap`` against the pre-#369 type alias keep working. The
+      missing path component defaults to ``/``.
+    - Flat ``name -> value`` — assigned to ``.google.com`` / ``/`` for backward
+      compatibility with very old callers.
+    """
     normalized: DomainCookieMap = {}
     if not cookies:
         return normalized
 
     for key, value in cookies.items():
         if isinstance(key, tuple):
-            name, domain = key
+            if len(key) == 3:
+                name, domain, path = key
+            elif len(key) == 2:
+                name, domain = key
+                path = "/"
+            else:
+                # Malformed tuple keys would silently disappear into a
+                # generic "missing required cookies" failure further down.
+                # Log loudly so the caller can fix the input.
+                logger.warning(
+                    "Dropping malformed cookie key %r (expected (name, domain[, path]))",
+                    key,
+                )
+                continue
         else:
-            name, domain = key, ".google.com"
+            name, domain, path = key, ".google.com", "/"
         if name:
-            normalized[(name, domain or ".google.com")] = value
+            normalized[(name, domain or ".google.com", path or "/")] = value
     return normalized
 
 
@@ -513,11 +545,19 @@ def flatten_cookie_map(cookies: CookieInput | None) -> FlatCookieMap:
     (tier 2)) resolves the same way regardless of input order. Within a single
     tier, first occurrence in iteration order wins — matching
     :func:`extract_cookies_from_storage`'s within-tier semantics.
+
+    Path is intentionally collapsed here (#369): the legacy ``Cookie:`` header
+    that consumes the flat shape carries only ``name=value`` pairs, with no slot
+    for path. When two cookies share ``(name, domain)`` at different paths, the
+    first one observed during iteration of the normalized map wins. This is
+    deterministic but **not** RFC 6265 §5.4 path-specificity ordering — callers
+    that need accurate path-aware behavior must use ``cookie_jar`` or the
+    ``DomainCookieMap`` directly.
     """
     flat: FlatCookieMap = {}
     priorities: dict[str, int] = {}
 
-    for (name, domain), value in normalize_cookie_map(cookies).items():
+    for (name, domain, _path), value in normalize_cookie_map(cookies).items():
         priority = _auth_domain_priority(domain)
         if name not in flat or priority > priorities[name]:
             flat[name] = value
@@ -1330,19 +1370,18 @@ def load_httpx_cookies(path: Path | None = None) -> "httpx.Cookies":
 def extract_cookies_with_domains(
     storage_state: dict[str, Any],
 ) -> DomainCookieMap:
-    """Extract Google cookies from storage state preserving original domains.
+    """Extract Google cookies from storage state preserving original identity.
 
-    Unlike extract_cookies_from_storage() which returns a simple dict of
-    name->value, this function returns a dict of (name, domain)->value tuples
-    to preserve the original cookie domains. This is required for building
-    proper httpx.Cookies jars that handle cross-domain redirects correctly.
+    Returns a path-aware ``(name, domain, path) -> value`` map per RFC 6265 §5.3.
+    Two cookies sharing ``(name, domain)`` at distinct paths survive as
+    independent entries instead of one silently shadowing the other (issue #369).
 
     Args:
         storage_state: Parsed JSON from Playwright's storage state file.
 
     Returns:
-        Dict mapping (cookie_name, domain) tuples to values.
-        Example: {("SID", ".google.com"): "abc123", ("HSID", ".google.com"): "def456"}
+        Dict mapping ``(cookie_name, domain, path)`` tuples to values.
+        Example: ``{("SID", ".google.com", "/"): "abc123"}``.
 
     Raises:
         ValueError: If required cookies (SID) are missing from storage state.
@@ -1357,12 +1396,12 @@ def extract_cookies_with_domains(
         if not _is_allowed_auth_domain(domain) or not name or not value:
             continue
 
-        key = (name, domain)
+        key = (name, domain, cookie.get("path") or "/")
         if key not in cookie_map:
             cookie_map[key] = value
 
-    # Validate required cookies exist (any domain)
-    _validate_required_cookies({name for name, _ in cookie_map})
+    # Validate required cookies exist (any domain or path).
+    _validate_required_cookies({name for name, _, _ in cookie_map})
     return cookie_map
 
 
@@ -1422,8 +1461,11 @@ def build_cookie_jar(
        flat mappings are assigned to .google.com for backward compatibility.
 
     Args:
-        cookies: Domain-aware (name, domain) cookie dict, or legacy flat
-            name-to-value cookie dict.
+        cookies: Path-aware ``(name, domain, path)`` cookie dict (the
+            canonical post-#369 shape), legacy ``(name, domain)`` cookie
+            dict, or legacy flat ``name -> value`` dict. The latter two are
+            widened via :func:`normalize_cookie_map` — missing path defaults
+            to ``/``, missing domain to ``.google.com``.
         storage_path: Path to storage_state.json with domain metadata.
 
     Returns:
@@ -1434,8 +1476,8 @@ def build_cookie_jar(
         return build_httpx_cookies_from_storage(storage_path)
 
     jar = httpx.Cookies()
-    for (name, domain), value in normalize_cookie_map(cookies).items():
-        jar.set(name, value, domain=domain)
+    for (name, domain, path), value in normalize_cookie_map(cookies).items():
+        jar.set(name, value, domain=domain, path=path)
     return jar
 
 
@@ -1810,8 +1852,8 @@ def _merge_cookies_legacy(cookie_jar: httpx.Cookies, storage_data: dict[str, Any
     Returns:
         Number of cookie entries added or modified in ``storage_data``.
     """
-    cookies_by_key = {
-        (cookie.name, cookie.domain): cookie
+    cookies_by_key: dict[CookieKey, Any] = {
+        (cookie.name, cookie.domain, cookie.path or "/"): cookie
         for cookie in cookie_jar.jar
         if cookie.name and cookie.domain and _is_allowed_cookie_domain(cookie.domain)
     }
@@ -1824,7 +1866,7 @@ def _merge_cookies_legacy(cookie_jar: httpx.Cookies, storage_data: dict[str, Any
         if not name or not domain:
             continue
 
-        key = (name, domain)
+        key: CookieKey = (name, domain, stored_cookie.get("path") or "/")
         stored_keys.update(_cookie_key_variants(key))
         refreshed_cookie = _find_cookie_for_storage(cookies_by_key, key, stored_cookie.get("value"))
         if refreshed_cookie is None:
@@ -1838,7 +1880,13 @@ def _merge_cookies_legacy(cookie_jar: httpx.Cookies, storage_data: dict[str, Any
         if changed:
             stored_cookie["value"] = refreshed_cookie.value
             stored_cookie["expires"] = new_expires
-            stored_cookie["path"] = refreshed_cookie.path or stored_cookie.get("path", "/")
+            # Normalize present-but-empty ``"path": ""`` to ``"/"`` so the row
+            # we write matches the path normalization used to build the
+            # identity key one block up (and used by every loader). Without
+            # the trailing ``or "/"`` an on-disk row with ``"path": ""`` would
+            # survive across save cycles while every other code path treats
+            # it as ``"/"``.
+            stored_cookie["path"] = refreshed_cookie.path or stored_cookie.get("path") or "/"
             stored_cookie["secure"] = refreshed_cookie.secure
             stored_cookie["httpOnly"] = _cookie_is_http_only(refreshed_cookie)
             updated_count += 1
@@ -2016,7 +2064,10 @@ def _merge_cookies_with_snapshot(
             )
             stored_cookie["value"] = matched_delta_cookie.value
             stored_cookie["expires"] = new_expires
-            stored_cookie["path"] = matched_delta_cookie.path or stored_cookie.get("path", "/")
+            # Mirror :func:`_merge_cookies_legacy`: ``or "/"`` normalizes a
+            # present-but-empty ``"path": ""`` so the written row matches the
+            # path normalization used by the identity key and every loader.
+            stored_cookie["path"] = matched_delta_cookie.path or stored_cookie.get("path") or "/"
             stored_cookie["secure"] = matched_delta_cookie.secure
             stored_cookie["httpOnly"] = _cookie_is_http_only(matched_delta_cookie)
             matched_delta_keys.add(matched_delta_key)
@@ -2123,13 +2174,18 @@ def _storage_entry_to_cookie(entry: dict[str, Any]) -> http.cookiejar.Cookie:
 
 
 def _cookie_key_variants(key: CookieKey) -> set[CookieKey]:
-    """Return equivalent host/domain cookie keys for leading-dot domains."""
-    name, domain = key
+    """Return equivalent host/domain cookie keys for leading-dot domains.
+
+    The path component is preserved verbatim (issue #369): RFC 6265 §5.3 treats
+    ``path`` as part of cookie identity, so variants only span the leading-dot
+    domain normalization that ``http.cookiejar`` applies.
+    """
+    name, domain, path = key
     variants = {key}
     if domain.startswith("."):
-        variants.add((name, domain[1:]))
+        variants.add((name, domain[1:], path))
     else:
-        variants.add((name, f".{domain}"))
+        variants.add((name, f".{domain}", path))
     return variants
 
 
@@ -2141,7 +2197,9 @@ def _find_cookie_for_storage(
     http.cookiejar normalizes ``Domain=accounts.google.com`` to
     ``.accounts.google.com``. If both the original host-only key and the
     normalized domain key exist, prefer the value that differs from storage
-    because that is the refreshed Set-Cookie value.
+    because that is the refreshed Set-Cookie value. Path is held fixed across
+    variants so a same-name sibling on a different path can't be returned by
+    accident (issue #369).
     """
     candidates = [
         cookie
@@ -2296,9 +2354,14 @@ async def _fetch_tokens_with_refresh(
 
 
 def _cookie_map_from_jar(cookie_jar: httpx.Cookies) -> DomainCookieMap:
-    """Extract a domain-aware auth cookie map from an httpx cookie jar."""
+    """Extract a path-aware auth cookie map from an httpx cookie jar.
+
+    Path-aware identity (issue #369) keeps two cookies that share ``(name,
+    domain)`` but differ on ``path`` from collapsing into a single map entry
+    on the way into ``AuthTokens.cookies``.
+    """
     return {
-        (cookie.name, cookie.domain): cookie.value
+        (cookie.name, cookie.domain, cookie.path or "/"): cookie.value
         for cookie in cookie_jar.jar
         if cookie.name
         and cookie.domain
@@ -2308,11 +2371,30 @@ def _cookie_map_from_jar(cookie_jar: httpx.Cookies) -> DomainCookieMap:
 
 
 def _update_cookie_input(target: CookieInput, fresh: DomainCookieMap) -> None:
-    """Update caller-provided cookies in place while preserving key style."""
+    """Update caller-provided cookies in place while preserving key style.
+
+    The caller's ``target`` may use any of the three accepted shapes (flat
+    ``name -> value``, legacy ``(name, domain) -> value``, or path-aware
+    ``(name, domain, path) -> value``). The freshly-fetched delta is always the
+    path-aware shape; we collapse it back to the caller's original shape so
+    they don't observe an in-place type change.
+    """
+    if any(isinstance(key, tuple) and len(key) == 2 for key in target):
+        # Legacy 2-tuple caller. Collapse the path dimension by keeping the
+        # first occurrence per (name, domain); for cookies that share name and
+        # domain at distinct paths this is lossy, but legacy callers had no
+        # way to express path either, so this matches their original contract.
+        legacy: dict[tuple[str, str], str] = {}
+        for (name, domain, _path), value in fresh.items():
+            legacy.setdefault((name, domain), value)
+        target.clear()
+        target.update(legacy)  # type: ignore[arg-type]
+        return
+
     use_domain_keys = any(isinstance(key, tuple) for key in target)
     target.clear()
     if use_domain_keys:
-        target.update(fresh)
+        target.update(fresh)  # type: ignore[arg-type]
     else:
         target.update(flatten_cookie_map(fresh))  # type: ignore[arg-type]
 

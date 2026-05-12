@@ -113,7 +113,7 @@ class TestFromStorage:
 
         client = await NotebookLMClient.from_storage(str(storage_file))
 
-        assert client.auth.cookies[("SID", ".google.com")] == "test_sid"
+        assert client.auth.cookies[("SID", ".google.com", "/")] == "test_sid"
         assert client.auth.csrf_token == "csrf_token_abc"
         assert client.auth.session_id == "session_id_xyz"
 
@@ -163,7 +163,7 @@ class TestFromStorage:
 
         try:
             client = await NotebookLMClient.from_storage()
-            assert client.auth.cookies[("SID", ".google.com")] == "default_sid"
+            assert client.auth.cookies[("SID", ".google.com", "/")] == "default_sid"
         finally:
             if real_storage_mtime is None:
                 assert not real_storage_path.exists()

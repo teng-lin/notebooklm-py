@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -45,9 +46,9 @@ class TestAuthTokens:
             session_id="sess456",
         )
         assert tokens.cookies == {
-            ("SID", ".google.com"): "abc",
-            ("__Secure-1PSIDTS", ".google.com"): "test_1psidts",
-            ("HSID", ".google.com"): "def",
+            ("SID", ".google.com", "/"): "abc",
+            ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
+            ("HSID", ".google.com", "/"): "def",
         }
         assert tokens.flat_cookies == {
             "SID": "abc",
@@ -1057,6 +1058,7 @@ class TestFetchTokens:
         assert (
             "ACCOUNT_REFRESH",
             ".accounts.google.com",
+            "/",
         ) in extract_cookies_with_domains(storage_state)
 
     def test_save_cookies_to_storage_preserves_secure_permissions(self, tmp_path):
@@ -1514,7 +1516,7 @@ class TestAuthTokensFromStorage:
 
         tokens = await AuthTokens.from_storage(storage_file)
 
-        assert tokens.cookies[("SID", ".google.com")] == "sid"
+        assert tokens.cookies[("SID", ".google.com", "/")] == "sid"
         assert tokens.flat_cookies["SID"] == "sid"
         assert tokens.csrf_token == "csrf_token"
         assert tokens.session_id == "session_id"
@@ -2368,8 +2370,8 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        assert ("PRODUCT_TOKEN", domain) in cookie_map
-        assert cookie_map[("PRODUCT_TOKEN", domain)] == "sibling"
+        assert ("PRODUCT_TOKEN", domain, "/") in cookie_map
+        assert cookie_map[("PRODUCT_TOKEN", domain, "/")] == "sibling"
 
     @pytest.mark.parametrize("domain", SIBLING_DOMAINS)
     def test_load_httpx_cookies_keeps_sibling_cookies(self, tmp_path, domain):
@@ -2424,13 +2426,13 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        assert ("SID", ".google.com") in cookie_map
-        assert ("HSID", ".google.com") in cookie_map
-        assert ("OSID", "notebooklm.google.com") in cookie_map
-        assert ("OSID2", ".notebooklm.google.com") in cookie_map
-        assert ("ACC", "accounts.google.com") in cookie_map
-        assert ("ACC2", ".accounts.google.com") in cookie_map
-        assert ("MEDIA", ".googleusercontent.com") in cookie_map
+        assert ("SID", ".google.com", "/") in cookie_map
+        assert ("HSID", ".google.com", "/") in cookie_map
+        assert ("OSID", "notebooklm.google.com", "/") in cookie_map
+        assert ("OSID2", ".notebooklm.google.com", "/") in cookie_map
+        assert ("ACC", "accounts.google.com", "/") in cookie_map
+        assert ("ACC2", ".accounts.google.com", "/") in cookie_map
+        assert ("MEDIA", ".googleusercontent.com", "/") in cookie_map
 
     def test_unified_filter_rejects_unrelated_domains(self):
         """Regression: cookies from unrelated domains are still rejected."""
@@ -2445,8 +2447,230 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        kept_names = {name for name, _ in cookie_map}
+        kept_names = {name for name, _, _ in cookie_map}
         assert kept_names == {"SID", "__Secure-1PSIDTS"}
+
+
+class TestPathAwareCookieIdentity:
+    """Issue #369: ``(name, domain, path)`` is the cookie identity per RFC 6265
+    §5.3. Two cookies sharing ``(name, domain)`` at different paths must coexist
+    end-to-end across the load/save APIs, and ``_find_cookie_for_storage`` must
+    not return a sibling on a different path.
+    """
+
+    # Shared fixtures: the OSID path-sibling pair under test is identical
+    # across cases except for the values and any extra Playwright-shaped
+    # fields (httpOnly/secure/expires) the load/save round trip needs.
+
+    _OSID_DOMAIN = "accounts.google.com"
+
+    def _required_cookies(self) -> list[dict[str, Any]]:
+        return [
+            {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "tts",
+                "domain": ".google.com",
+                "path": "/",
+            },
+        ]
+
+    def _osid_siblings(
+        self,
+        *,
+        root_value: str = "root",
+        u0_value: str = "u0",
+        extras: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return an ``OSID@/`` + ``OSID@/u/0/`` pair sharing optional fields."""
+        base = extras or {}
+        return [
+            {
+                "name": "OSID",
+                "value": root_value,
+                "domain": self._OSID_DOMAIN,
+                "path": "/",
+                **base,
+            },
+            {
+                "name": "OSID",
+                "value": u0_value,
+                "domain": self._OSID_DOMAIN,
+                "path": "/u/0/",
+                **base,
+            },
+        ]
+
+    def _storage_state(self, osids: list[dict[str, Any]]) -> dict[str, Any]:
+        return {"cookies": [*self._required_cookies(), *osids]}
+
+    def test_extract_cookies_with_domains_keeps_path_siblings(self):
+        """Two cookies sharing name+domain at distinct paths both survive
+        extraction (pre-#369 the second one silently shadowed the first)."""
+        cookie_map = extract_cookies_with_domains(self._storage_state(self._osid_siblings()))
+        assert cookie_map[("OSID", self._OSID_DOMAIN, "/")] == "root"
+        assert cookie_map[("OSID", self._OSID_DOMAIN, "/u/0/")] == "u0"
+
+    def test_build_httpx_cookies_keeps_path_siblings(self, tmp_path):
+        """The load-side dedup in ``build_httpx_cookies_from_storage`` keys
+        on ``(name, domain, path)`` so both path-siblings land in the jar."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps(self._storage_state(self._osid_siblings())))
+
+        jar = build_httpx_cookies_from_storage(storage)
+        observed = {(c.name, c.domain, c.path): c.value for c in jar.jar if c.name == "OSID"}
+        assert observed == {
+            ("OSID", self._OSID_DOMAIN, "/"): "root",
+            ("OSID", self._OSID_DOMAIN, "/u/0/"): "u0",
+        }
+
+    def test_round_trip_load_fetch_save_preserves_siblings(self, tmp_path):
+        """A synthetic ``OSID@/`` + ``OSID@/u/0/`` storage_state survives a
+        load → fetch (no-op mutation) → save round trip with **both** entries
+        intact. Closes the issue's acceptance criterion."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(
+            json.dumps(
+                self._storage_state(
+                    self._osid_siblings(
+                        extras={"httpOnly": False, "secure": False, "expires": -1},
+                    )
+                )
+            )
+        )
+
+        jar = build_httpx_cookies_from_storage(storage)
+        snapshot = snapshot_cookie_jar(jar)
+        # No mutation; save_cookies_to_storage is a no-op delta.
+        save_cookies_to_storage(jar, storage, original_snapshot=snapshot)
+
+        reloaded = json.loads(storage.read_text())
+        osids = [c for c in reloaded["cookies"] if c["name"] == "OSID"]
+        assert {(c["domain"], c["path"], c["value"]) for c in osids} == {
+            (self._OSID_DOMAIN, "/", "root"),
+            (self._OSID_DOMAIN, "/u/0/", "u0"),
+        }
+
+    def test_legacy_full_merge_preserves_path_siblings(self, tmp_path):
+        """The legacy ``original_snapshot=None`` merge keys ``cookies_by_key`` /
+        ``stored_keys`` on ``(name, domain, path)`` so a refreshed cookie at
+        path ``/`` does not overwrite a sibling at ``/u/0/`` and vice versa."""
+        import warnings
+
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(
+            json.dumps(
+                self._storage_state(
+                    self._osid_siblings(
+                        root_value="root_old",
+                        u0_value="u0_old",
+                        extras={"expires": -1},
+                    )
+                )
+            )
+        )
+
+        jar = httpx.Cookies()
+        jar.set("SID", "sid", domain=".google.com", path="/")
+        jar.set("__Secure-1PSIDTS", "tts", domain=".google.com", path="/")
+        jar.set("OSID", "root_new", domain="accounts.google.com", path="/")
+        jar.set("OSID", "u0_new", domain="accounts.google.com", path="/u/0/")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            save_cookies_to_storage(jar, storage)
+
+        reloaded = json.loads(storage.read_text())
+        osids = [c for c in reloaded["cookies"] if c["name"] == "OSID"]
+        observed = {(c["domain"], c["path"], c["value"]) for c in osids}
+        # Both siblings refreshed independently — pre-#369 the legacy merge
+        # would have shadowed one with the other because cookies_by_key was
+        # keyed on (name, domain).
+        assert observed == {
+            (self._OSID_DOMAIN, "/", "root_new"),
+            (self._OSID_DOMAIN, "/u/0/", "u0_new"),
+        }
+
+    def test_normalize_cookie_map_widens_legacy_2tuple_input(self):
+        """Pre-#369 callers built ``{(name, domain): value}`` dicts by hand;
+        those keep working — :func:`normalize_cookie_map` widens the missing
+        path to ``/`` so the rest of the pipeline sees the canonical shape."""
+        from notebooklm.auth import normalize_cookie_map
+
+        result = normalize_cookie_map(
+            {
+                ("SID", ".google.com"): "abc",
+                ("OSID", "accounts.google.com"): "xyz",
+            }
+        )
+        assert result == {
+            ("SID", ".google.com", "/"): "abc",
+            ("OSID", "accounts.google.com", "/"): "xyz",
+        }
+
+    def test_normalize_cookie_map_warns_on_malformed_tuple(self, caplog):
+        """A malformed tuple key would otherwise vanish into a downstream
+        'missing required cookies' error. Surface it via ``logger.warning``."""
+        import logging
+
+        from notebooklm.auth import normalize_cookie_map
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
+            result = normalize_cookie_map(
+                {("SID", ".google.com", "/", "extra"): "abc"}  # type: ignore[dict-item]
+            )
+        assert result == {}
+        assert any("malformed cookie key" in rec.message for rec in caplog.records)
+
+    def test_update_cookie_input_preserves_legacy_2tuple_shape(self):
+        """A caller that originally passed a legacy 2-tuple dict must observe
+        the same shape after an in-place refresh — internal widening should
+        not bleed 3-tuple keys into their data structure."""
+        from notebooklm.auth import _update_cookie_input
+
+        target: dict[Any, str] = {
+            ("SID", ".google.com"): "old_sid",
+            ("OSID", "accounts.google.com"): "old_osid",
+        }
+        fresh: dict[tuple[str, str, str], str] = {
+            ("SID", ".google.com", "/"): "new_sid",
+            ("OSID", "accounts.google.com", "/"): "new_osid",
+        }
+
+        _update_cookie_input(target, fresh)
+
+        assert target == {
+            ("SID", ".google.com"): "new_sid",
+            ("OSID", "accounts.google.com"): "new_osid",
+        }
+
+    def test_find_cookie_for_storage_picks_path_sibling(self):
+        """``_find_cookie_for_storage`` must discriminate on path: a stored
+        ``(OSID, accounts.google.com, /u/0/)`` row must NOT be refreshed with
+        the ``OSID`` value from path ``/``. Pre-#369 the path was ignored and
+        either sibling could be returned."""
+        from notebooklm.auth import _find_cookie_for_storage
+
+        # Two in-memory cookies sharing (name, domain) at distinct paths.
+        root_cookie = httpx.Cookies()
+        root_cookie.set("OSID", "root", domain="accounts.google.com", path="/")
+        u0_cookie = httpx.Cookies()
+        u0_cookie.set("OSID", "u0", domain="accounts.google.com", path="/u/0/")
+        cookies_by_key = {
+            ("OSID", c.domain, c.path or "/"): c
+            for jar in (root_cookie, u0_cookie)
+            for c in jar.jar
+        }
+
+        # Looking up the /u/0/ key must return the /u/0/ cookie, not the / one.
+        found = _find_cookie_for_storage(
+            cookies_by_key,
+            ("OSID", "accounts.google.com", "/u/0/"),
+            stored_value="stale_u0",
+        )
+        assert found is not None
+        assert found.value == "u0"
+        assert found.path == "/u/0/"
 
 
 class TestRookiepyDomainsCoverage:

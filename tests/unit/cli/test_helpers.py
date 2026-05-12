@@ -764,8 +764,8 @@ class TestGetAuthTokens:
                 auth = get_auth_tokens(ctx)
 
         assert auth.cookies == {
-            ("SID", ".google.com"): "test_sid",
-            ("__Secure-1PSIDTS", ".google.com"): "test_1psidts",
+            ("SID", ".google.com", "/"): "test_sid",
+            ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
         }
         assert auth.flat_cookies == {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
         assert auth.csrf_token == "csrf_token"
