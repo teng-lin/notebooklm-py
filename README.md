@@ -102,6 +102,23 @@ pip install "notebooklm-py[cookies]"
 
 If `playwright install chromium` fails with `TypeError: onExit is not a function`, see the Linux workaround in [Troubleshooting](docs/troubleshooting.md#linux).
 
+### CLI-only install (`uv tool` / `pipx`)
+
+If you only need the `notebooklm` CLI (not the Python library) and want it on your `$PATH` in an isolated environment, install with [`uv tool`](https://docs.astral.sh/uv/concepts/tools/) or [`pipx`](https://pipx.pypa.io/):
+
+```bash
+# uv (recommended on systems where uv is already the package manager)
+uv tool install notebooklm-py
+uv tool install "notebooklm-py[browser]"
+uv tool install "notebooklm-py[cookies]"
+
+# pipx equivalent
+pipx install notebooklm-py
+pipx install "notebooklm-py[browser]"
+```
+
+This is the right path for shell scripts, cron jobs, and ad-hoc terminal use — the `notebooklm` command stays available regardless of which project venv is active.
+
 ### Development Installation
 
 For contributors or testing unreleased features:
