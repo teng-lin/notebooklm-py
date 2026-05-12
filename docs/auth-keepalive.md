@@ -1248,6 +1248,72 @@ Two stacks, in order of preference:
 3. Use `PyCookieCloud` to pull cookies on demand (L6 — proposed, not yet
    shipped in `notebooklm-py`).
 
+#### 8.3.1 Anti-pattern: persisting `storage_state` on a redirect-to-login
+
+If you wrap the library in your own Playwright-based keepalive — instead
+of using `notebooklm auth refresh` or the in-process `keepalive=N` option
+— the most damaging mistake is to call `context.storage_state(path=...)`
+unconditionally at the end of each cycle. The corruption sequence
+(originally reported in
+[#312](https://github.com/teng-lin/notebooklm-py/issues/312)):
+
+1. Session has aged out — common on cloud-VPS IPs, where Google
+   force-logs-out more aggressively than on residential IPs.
+2. `await page.goto("https://notebooklm.google.com/")` 302s through
+   `accounts.google.com/v3/signin/.../flowName=*SignIn`.
+3. The login page sets six anonymous cookies — `NID`, `OTZ`,
+   `__Host-GAPS`, `_ga`, `_ga_*`, `_gcl_au` — and a subsequent
+   `context.storage_state(path=...)` serializes **only those**, dropping
+   `SID`, `HSID`, `__Secure-1PSID`, `__Secure-3PSID`, `SAPISID`,
+   `APISID`, and any `*PSIDTS`.
+4. The next cold start finds a six-cookie storage file, fails every RPC,
+   and the persistent Chrome profile takes the same Set-Cookie hit on
+   each retry — the profile fallback dies along with the storage file.
+
+**Recovery requires fresh interactive login.** No `auth refresh`, no
+profile copy, no on-disk backup short of one you took yourself. This is
+the same class of failure that `c7d7b0d` (#334, "keep NotebookLM
+subdomain cookies") and `fea8315` ("preserve cross-domain cookies")
+guard against on the library's *own* write path — but those guards live
+inside `auth.py`'s save pipeline and don't help code that calls
+Playwright directly.
+
+The rule, for any wrapper that owns its own `context.storage_state`
+call: gate persistence on a confirmed-authed page URL.
+
+```python
+SAFE_HOSTS = ("notebooklm.google.com",)  # extend if you legitimately
+                                         # land on other authed surfaces
+
+if any(h in page.url for h in SAFE_HOSTS):
+    await context.storage_state(path=STORAGE)
+else:
+    logger.warning("skipping storage_state persist: page on %s", page.url)
+    # treat as a no-op; let the next cycle retry, or raise an alert
+    # for interactive re-login
+```
+
+Equivalently — and more robust, since URL-substring checks miss
+edge cases like in-page JS-driven sign-in prompts — gate persistence on
+a successful library API call rather than the URL:
+
+```python
+from notebooklm import NotebookLMClient, AuthError
+
+client = await NotebookLMClient.from_storage()
+try:
+    await client.notebooks.list()  # confirms auth
+except AuthError:
+    return  # don't overwrite a good file with a bad jar
+await context.storage_state(path=STORAGE)
+```
+
+If you don't actually need a custom wrapper, prefer the supported
+keepalive surface — `notebooklm auth refresh` from cron (see the two
+stacks above) or `NotebookLMClient(keepalive=N)` for in-process
+clients. Both already gate their writes correctly under §3.4's
+fidelity rules.
+
 ### 8.4 Workspace / Enterprise account with admin session-binding
 
 Currently **not supported.** Document as such. The admin-policy session
