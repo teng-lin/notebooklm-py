@@ -145,6 +145,11 @@ def cli(ctx, storage, profile, verbose):
     # Configure logging based on verbosity: -v for INFO, -vv+ for DEBUG
     if verbose >= 2:
         logging.getLogger("notebooklm").setLevel(logging.DEBUG)
+        # DEBUG logging on httpx/urllib3 emits full URLs and headers — install
+        # redaction so credentials don't leak via third-party loggers.
+        from ._logging import install_redaction
+
+        install_redaction("httpx", "urllib3")
     elif verbose == 1:
         logging.getLogger("notebooklm").setLevel(logging.INFO)
 

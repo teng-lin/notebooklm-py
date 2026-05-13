@@ -1229,7 +1229,7 @@ def register_session_commands(cli):
                             raise SystemExit(1) from exc
                         else:
                             # Non-retryable error - re-raise immediately
-                            logger.debug(f"Non-retryable error: {error_str}")
+                            logger.debug("Non-retryable error: %s", error_str)
                             raise
 
                 if _url_matches_base_host(page.url):
@@ -1329,14 +1329,14 @@ def register_session_commands(cli):
                     )
                     if is_not_found:
                         label, install_url = _CHANNEL_BROWSERS[browser]
-                        logger.error(f"{label} not found: {e}")
+                        logger.error("%s not found: %s", label, e)
                         console.print(
                             f"[red]{label} not found.[/red]\n"
                             f"Install from: {install_url}\n"
                             "Or use the default Chromium browser: notebooklm login"
                         )
                         raise SystemExit(1) from e
-                logger.error(f"Login failed: {e}", exc_info=True)
+                logger.error("Login failed: %s", e, exc_info=True)
                 raise
             finally:
                 # Always close the browser context to prevent resource leaks

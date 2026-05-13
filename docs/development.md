@@ -243,6 +243,81 @@ Need network?
 
 ---
 
+## Logging and observability
+
+### Levels — when to emit what
+
+- **WARNING** — data loss, protocol drift, schema mismatch, unexpected non-2xx that isn't auth-recoverable. Actionable.
+- **INFO** — coarse-grained lifecycle events (login complete, profile switched). Rare in library code; CLI uses INFO for user-facing progress.
+- **DEBUG** — expected fallbacks, hot-path parser branches, polling status, request/response metadata. Off by default; enable via `NOTEBOOKLM_LOG_LEVEL=DEBUG` or `notebooklm -vv`.
+- **Silent + comment** — best-effort discovery loops (browser cookie scan, alternative profile locations). `except` body is `pass` or `continue` with a single-line `# best-effort: <what we tried>` comment.
+
+### Credential redaction
+
+The package handler installed by `configure_logging()` has a `RedactingFilter` attached. It runs for every record reaching the handler, including records originating in child loggers (`notebooklm._core`, `notebooklm._chat`, etc.) via Python logging's default propagation. The filter scrubs:
+
+- CSRF tokens (`at=...`)
+- Session IDs (`f.sid=...`)
+- Google session cookies (`SAPISID`, `SID`, `HSID`, `SSID`, `__Secure-1PSID`, `__Secure-3PSID`)
+- `Authorization: Bearer <token>` headers
+- `Cookie: <jar>` headers
+
+The filter pre-renders `record.exc_info` traceback into a scrubbed `record.exc_text` while preserving `record.exc_info` itself. The live exception object is not mutated.
+
+To add a new secret pattern: edit `_REDACT_PATTERNS` in `src/notebooklm/_logging.py` and add a unit test in `tests/unit/test__logging.py` before merging.
+
+### Attaching your own handler
+
+`notebooklm` propagates to root by default, so `caplog`, `basicConfig`, and similar workflows work without configuration. To capture notebooklm logs in a dedicated handler:
+
+```python
+import logging
+from notebooklm._logging import apply_redaction
+
+handler = logging.handlers.SysLogHandler(...)
+apply_redaction(handler)
+logging.getLogger("notebooklm").addHandler(handler)
+```
+
+`apply_redaction()` attaches the `RedactingFilter` and wraps the formatter so your handler also benefits from credential scrubbing.
+
+### Style — always lazy formatting
+
+Use `%`-style log calls, not f-strings:
+
+```python
+logger.warning("Failed for %s in %.2fs", name, elapsed)  # OK
+logger.warning(f"Failed for {name} in {elapsed:.2f}s")    # BAD
+```
+
+f-string eager evaluation defeats lazy formatting and (although the filter would still scrub via `record.getMessage()`) makes profile-time cost unconditional.
+
+### Third-party loggers
+
+`httpx`, `urllib3`, and `asyncio` can emit at DEBUG with full URLs and headers containing notebooklm-py credentials. The CLI calls `install_redaction` automatically when `-vv` is set:
+
+```python
+from notebooklm._logging import install_redaction
+install_redaction("httpx", "urllib3")
+```
+
+Library consumers must do the same if they enable DEBUG on these loggers. If a third-party library sets `propagate=False` on its internal loggers (rare), pass child names explicitly:
+
+```python
+install_redaction("httpx._client", "urllib3.connectionpool")
+```
+
+### Trade-offs
+
+The `RedactingFilter` preserves `record.exc_info` (the live exception object) so handlers like Sentry can still access it. However:
+
+- Standard `logging.Formatter` uses `record.exc_text` (scrubbed by our filter) and does NOT re-render from `exc_info`. Safe.
+- Custom formatters that ignore `exc_text` and read `exc_info` directly may render an unredacted traceback. **Mitigation**: wrap such handlers with `apply_redaction()` so the formatter is decorated and post-scrubs the final output regardless of which exception attribute it reads.
+- Records propagate to root by default (`notebooklm.propagate = True`) so `caplog` and `basicConfig` work without changes. Our filter mutates the record before propagation, so downstream handlers (including root's) see the scrubbed version. **Caveat**: if a user attaches an unredacted handler directly to a child logger (`notebooklm._core`), that handler fires *before* propagation reaches our parent handler. Mitigation: `apply_redaction(child_handler)`.
+- Applications that want notebooklm logs *isolated* from root can set `logging.getLogger('notebooklm').propagate = False` themselves.
+
+---
+
 ## CI/CD
 
 ### Workflows
