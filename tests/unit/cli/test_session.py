@@ -118,12 +118,13 @@ class TestLoginCommand:
         assert "Cannot run 'login' when NOTEBOOKLM_AUTH_JSON is set" in result.output
 
     def test_login_help_shows_browser_option(self, runner):
-        """Test login --help shows --browser option with chromium/msedge choices."""
+        """Test login --help shows --browser option with chromium/chrome/msedge choices."""
         result = runner.invoke(cli, ["login", "--help"])
 
         assert result.exit_code == 0
         assert "--browser" in result.output
         assert "chromium" in result.output
+        assert "chrome" in result.output
         assert "msedge" in result.output
 
     def test_login_rejects_invalid_browser(self, runner):
@@ -136,8 +137,10 @@ class TestLoginCommand:
     def mock_login_browser(self, tmp_path):
         """Mock Playwright browser launch for login --browser tests.
 
-        Yields (mock_ensure, mock_launch) for assertions on chromium install
-        check and launch_persistent_context kwargs.
+        The mocked page reports it is already on the NotebookLM host, so the
+        auto-detect ``wait_for_url`` fast-path is taken and the test does not
+        block. Yields (mock_ensure, mock_launch) for assertions on chromium
+        install check and launch_persistent_context kwargs.
         """
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed") as mock_ensure,
@@ -150,7 +153,6 @@ class TestLoginCommand:
                 return_value=tmp_path / "profile",
             ),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch("builtins.input", return_value=""),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -163,17 +165,21 @@ class TestLoginCommand:
 
             yield mock_ensure, mock_launch
 
-    def test_login_msedge_skips_chromium_install(self, runner, mock_login_browser):
-        """Test --browser msedge skips _ensure_chromium_installed."""
+    @pytest.mark.parametrize("browser", ["msedge", "chrome"])
+    def test_login_channel_browser_skips_chromium_install(
+        self, runner, mock_login_browser, browser
+    ):
+        """--browser msedge|chrome skips _ensure_chromium_installed."""
         mock_ensure, _ = mock_login_browser
-        runner.invoke(cli, ["login", "--browser", "msedge"])
+        runner.invoke(cli, ["login", "--browser", browser])
         mock_ensure.assert_not_called()
 
-    def test_login_msedge_passes_channel_param(self, runner, mock_login_browser):
-        """Test --browser msedge passes channel='msedge' to launch_persistent_context."""
+    @pytest.mark.parametrize("browser", ["msedge", "chrome"])
+    def test_login_channel_browser_passes_channel_param(self, runner, mock_login_browser, browser):
+        """--browser msedge|chrome passes channel=<browser> to launch_persistent_context."""
         _, mock_launch = mock_login_browser
-        runner.invoke(cli, ["login", "--browser", "msedge"])
-        assert mock_launch.call_args[1].get("channel") == "msedge"
+        runner.invoke(cli, ["login", "--browser", browser])
+        assert mock_launch.call_args[1].get("channel") == browser
 
     def test_login_chromium_default_no_channel(self, runner, mock_login_browser):
         """Test default chromium calls _ensure_chromium_installed and has no channel."""
@@ -182,8 +188,17 @@ class TestLoginCommand:
         mock_ensure.assert_called_once()
         assert "channel" not in mock_launch.call_args[1]
 
-    def test_login_msedge_not_installed_shows_helpful_error(self, runner, tmp_path):
-        """Test --browser msedge shows helpful error when Edge is not installed."""
+    @pytest.mark.parametrize(
+        ("browser", "expected_label", "expected_install_url_fragment"),
+        [
+            ("msedge", "Microsoft Edge", "microsoft.com/edge"),
+            ("chrome", "Google Chrome", "google.com/chrome"),
+        ],
+    )
+    def test_login_channel_browser_not_installed_shows_helpful_error(
+        self, runner, tmp_path, browser, expected_label, expected_install_url_fragment
+    ):
+        """--browser msedge|chrome shows helpful error when the browser is not installed."""
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
@@ -199,21 +214,22 @@ class TestLoginCommand:
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
             mock_launch.side_effect = Exception(
-                "Executable doesn't exist at /ms-edge\nFailed to launch"
+                f"Executable doesn't exist at /{browser}\nFailed to launch"
             )
 
-            result = runner.invoke(cli, ["login", "--browser", "msedge"])
+            result = runner.invoke(cli, ["login", "--browser", browser])
 
         assert result.exit_code == 1
-        assert "Microsoft Edge not found" in result.output
-        assert "microsoft.com/edge" in result.output
+        assert f"{expected_label} not found" in result.output
+        assert expected_install_url_fragment in result.output
 
     @pytest.fixture
     def mock_login_browser_with_storage(self, tmp_path):
         """Mock Playwright browser for login tests that assert exit_code == 0.
 
         Like mock_login_browser but also makes storage_state() create the file
-        so that storage_path.chmod() succeeds.
+        so that storage_path.chmod() succeeds. The mocked page reports it is
+        already on the NotebookLM host, so the auto-detect fast-path is taken.
         """
         storage_file = tmp_path / "storage.json"
         with (
@@ -225,7 +241,6 @@ class TestLoginCommand:
                 return_value=tmp_path / "profile",
             ),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch("builtins.input", return_value=""),
         ):
             mock_context = MagicMock()
             mock_page = MagicMock()
@@ -309,6 +324,56 @@ class TestLoginCommand:
         assert len(goto_calls) == 3
         assert goto_calls[1].kwargs.get("wait_until") == "commit"
         assert goto_calls[2].kwargs.get("wait_until") == "commit"
+
+    def test_login_auto_detect_skipped_when_already_logged_in(
+        self, runner, mock_login_browser_with_storage
+    ):
+        """When the initial page is already on NotebookLM, wait_for_url is not called."""
+        mock_page = mock_login_browser_with_storage
+
+        result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0
+        assert "Already logged in" in result.output
+        mock_page.wait_for_url.assert_not_called()
+
+    def test_login_auto_detect_waits_for_url_when_not_logged_in(
+        self, runner, mock_login_browser_with_storage
+    ):
+        """When the initial page is on accounts.google.com, wait_for_url is called."""
+        mock_page = mock_login_browser_with_storage
+        # Initial URL is on Google login, then wait_for_url "succeeds" and the
+        # next reads of mock_page.url return the NotebookLM host for the
+        # subsequent cookie-forcing navigation.
+        mock_page.url = "https://accounts.google.com/signin"
+
+        def succeed(url, **kwargs):
+            mock_page.url = "https://notebooklm.google.com/"
+
+        mock_page.wait_for_url.side_effect = succeed
+
+        result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0
+        mock_page.wait_for_url.assert_called_once()
+        # Verify timeout=300_000 (5 minutes) is passed
+        assert mock_page.wait_for_url.call_args.kwargs.get("timeout") == 300_000
+        assert "Login detected" in result.output
+
+    def test_login_auto_detect_timeout_exits_with_helpful_message(
+        self, runner, mock_login_browser_with_storage
+    ):
+        """When wait_for_url times out, login exits 1 with a helpful message."""
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+        mock_page = mock_login_browser_with_storage
+        mock_page.url = "https://accounts.google.com/signin"
+        mock_page.wait_for_url.side_effect = PlaywrightTimeout("Timeout 300000ms exceeded")
+
+        result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 1
+        assert "Login not detected within 5 minutes" in result.output
 
     def test_login_retries_on_connection_closed_error(
         self, runner, mock_login_browser_with_storage
