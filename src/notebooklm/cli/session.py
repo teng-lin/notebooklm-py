@@ -113,6 +113,16 @@ def _url_matches_base_host(url: str) -> bool:
     return current_host == get_base_host().lower()
 
 
+# Browsers launched via Playwright's `channel` parameter (system-installed,
+# not the bundled Chromium). Maps channel name -> (display label, install URL).
+# Used for the --browser option, the launch banner, and the not-installed
+# error path. The bundled "chromium" choice is intentionally absent.
+_CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
+    "msedge": ("Microsoft Edge", "https://www.microsoft.com/edge"),
+    "chrome": ("Google Chrome", "https://www.google.com/chrome"),
+}
+
+
 # Maps user-facing browser names to rookiepy function names.
 _ROOKIEPY_BROWSER_ALIASES: dict[str, str] = {
     "arc": "arc",
@@ -941,7 +951,7 @@ def register_session_commands(cli):
     )
     @click.option(
         "--browser",
-        type=click.Choice(["chromium", "chrome", "msedge"], case_sensitive=False),
+        type=click.Choice(["chromium", *_CHANNEL_BROWSERS], case_sensitive=False),
         default="chromium",
         help=(
             "Browser to use for login (default: chromium). "
@@ -1115,7 +1125,7 @@ def register_session_commands(cli):
             from playwright.sync_api import TimeoutError as PlaywrightTimeout
             from playwright.sync_api import sync_playwright
         except ImportError:
-            if browser in ("msedge", "chrome"):
+            if browser in _CHANNEL_BROWSERS:
                 install_hint = "  pip install notebooklm[browser]"
             else:
                 install_hint = "  pip install notebooklm[browser]\n  playwright install chromium"
@@ -1130,12 +1140,8 @@ def register_session_commands(cli):
         from ..paths import resolve_profile
 
         profile_name = resolve_profile()
-        browser_labels = {
-            "msedge": "Microsoft Edge",
-            "chrome": "Google Chrome",
-            "chromium": "Chromium",
-        }
-        browser_label = browser_labels.get(browser, "Chromium")
+        channel_info = _CHANNEL_BROWSERS.get(browser)
+        browser_label = channel_info[0] if channel_info else "Chromium"
         console.print(f"[dim]Profile: {profile_name}[/dim]")
         console.print(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
         console.print(f"[dim]Using persistent profile: {browser_profile}[/dim]")
@@ -1152,7 +1158,7 @@ def register_session_commands(cli):
                 ],
                 "ignore_default_args": ["--enable-automation"],
             }
-            if browser in ("msedge", "chrome"):
+            if browser in _CHANNEL_BROWSERS:
                 launch_kwargs["channel"] = browser
 
             context = None
@@ -1283,23 +1289,23 @@ def register_session_commands(cli):
 
             except Exception as e:
                 # Handle browser launch errors specially (context will be None if launch failed)
-                if context is None and browser in ("msedge", "chrome"):
+                if context is None and browser in _CHANNEL_BROWSERS:
                     err = str(e).lower()
-                    is_not_found = (
-                        "executable doesn't exist" in err
-                        or "is not found at" in err
-                        or "no such file" in err
-                        or "failed to launch" in err
+                    is_not_found = any(
+                        marker in err
+                        for marker in (
+                            "executable doesn't exist",
+                            "is not found at",
+                            "no such file",
+                            "failed to launch",
+                        )
                     )
                     if is_not_found:
-                        install_urls = {
-                            "msedge": "https://www.microsoft.com/edge",
-                            "chrome": "https://www.google.com/chrome",
-                        }
-                        logger.error(f"{browser_labels[browser]} not found: {e}")
+                        label, install_url = _CHANNEL_BROWSERS[browser]
+                        logger.error(f"{label} not found: {e}")
                         console.print(
-                            f"[red]{browser_labels[browser]} not found.[/red]\n"
-                            f"Install from: {install_urls[browser]}\n"
+                            f"[red]{label} not found.[/red]\n"
+                            f"Install from: {install_url}\n"
                             "Or use the default Chromium browser: notebooklm login"
                         )
                         raise SystemExit(1) from e
