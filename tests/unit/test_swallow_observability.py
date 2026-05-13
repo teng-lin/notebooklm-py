@@ -207,7 +207,7 @@ def test_stream_parser_debug_guarded_by_isenabledfor(caplog):
     """_chat.py:601 — non-JSON chunk debug log fires under DEBUG; suppressed otherwise."""
 
     # Direct: ensure the module has a guarded debug call (structural check).
-    src = (SRC_ROOT / "_chat.py").read_text()
+    src = (SRC_ROOT / "_chat.py").read_text(encoding="utf-8")
     assert "logger.isEnabledFor(logging.DEBUG)" in src
     assert "Stream parser" in src
 
@@ -219,7 +219,7 @@ def test_stream_parser_debug_guarded_by_isenabledfor(caplog):
 
 def _file_contains_best_effort_after_except(filepath: Path, except_line: int) -> bool:
     """Return True if a `# best-effort:` comment appears within 4 lines after except_line."""
-    lines = filepath.read_text().splitlines()
+    lines = filepath.read_text(encoding="utf-8").splitlines()
     window = lines[except_line - 1 : except_line + 4]
     text = "\n".join(window)
     return "# best-effort:" in text

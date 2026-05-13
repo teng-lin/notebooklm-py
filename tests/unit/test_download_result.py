@@ -189,5 +189,5 @@ def test_no_docs_callers():
     repo_root = Path(__file__).resolve().parents[2]
     docs_dir = repo_root / "docs"
     for md in docs_dir.rglob("*.md"):
-        text = md.read_text()
+        text = md.read_text(encoding="utf-8")
         assert "_download_urls_batch" not in text, f"unexpected docs ref in {md}"
