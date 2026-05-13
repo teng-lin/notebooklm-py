@@ -237,7 +237,7 @@ uv run ruff format --check . && \
 
 ```bash
 notebooklm --version
-uv run pytest -q
+uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90
 uv run pre-commit run --all-files
 ```
 

@@ -61,7 +61,7 @@ pre-commit run --all-files                      # manual run on the whole tree (
 
 > **Caveat:** if `pre-commit install` errors with `Cowardly refusing to install hooks with core.hooksPath set`, your git is configured to use a custom hooks directory (common with Husky / nx / shared dev configs). Workaround: `git config --unset core.hooksPath` then re-run `pre-commit install`, or run `pre-commit run --all-files` manually before each commit. CI runs the same hook either way, so a clean local hook is convenience, not correctness.
 
-> **CI parity.** The local pre-commit one-liner above matches the CI **lint gate** (`uv run pre-commit run --all-files` in `.github/workflows/test.yml`). CI additionally runs the full test matrix on multiple Python versions (3.10–3.14) and asserts a 90% coverage floor (`pytest --cov=src/notebooklm --cov-fail-under=90`). The lint+test failure modes are caught locally; the multi-Python-version drift is not — `uv run pytest -q` here uses your local Python version only.
+> **CI parity.** The local pre-commit one-liner above matches the CI **lint gate** (`uv run pre-commit run --all-files` in `.github/workflows/test.yml`). CI additionally runs the full test matrix on multiple Python versions (3.10–3.14) and asserts a 90% coverage floor (`pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90`). The lint+test failure modes are caught locally; the multi-Python-version drift is not — `uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90` here uses your local Python version only.
 
 ### Pull Request Process
 
