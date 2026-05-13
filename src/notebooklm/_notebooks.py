@@ -5,13 +5,18 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from ._core import ClientCore
+from ._env import get_base_url
+from ._settings import build_get_user_settings_params, extract_account_limits
+from .exceptions import NotebookLimitError, RPCError
 from .rpc import RPCMethod
-from .types import Notebook, NotebookDescription, SuggestedTopic
+from .types import AccountLimits, Notebook, NotebookDescription, SuggestedTopic
 
 if TYPE_CHECKING:
     from ._sources import SourcesAPI
 
 logger = logging.getLogger(__name__)
+
+CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 
 
 class NotebooksAPI:
@@ -67,10 +72,70 @@ class NotebooksAPI:
         """
         logger.debug("Creating notebook: %s", title)
         params = [title, None, None, [2], [1]]
-        result = await self._core.rpc_call(RPCMethod.CREATE_NOTEBOOK, params)
+        try:
+            result = await self._core.rpc_call(RPCMethod.CREATE_NOTEBOOK, params)
+        except RPCError as exc:
+            await self._raise_quota_error_if_detected(exc)
+            raise
         notebook = Notebook.from_api_response(result)
         logger.debug("Created notebook: %s", notebook.id)
         return notebook
+
+    async def _raise_quota_error_if_detected(self, error: RPCError) -> None:
+        """Convert CREATE_NOTEBOOK invalid-argument failures into quota errors."""
+        if (
+            error.method_id != RPCMethod.CREATE_NOTEBOOK.value
+            or error.rpc_code != CREATE_NOTEBOOK_QUOTA_RPC_CODE
+        ):
+            return
+
+        # The backend reports quota exhaustion as code 3 rather than a typed
+        # limit error, so verify against the account's advertised limit before
+        # changing the exception type.
+        try:
+            account_limits = await self._get_account_limits()
+        except Exception:
+            logger.debug(
+                "Could not fetch account limits after CREATE_NOTEBOOK failure; "
+                "leaving original RPC error unchanged",
+                exc_info=True,
+            )
+            return
+
+        notebook_limit = account_limits.notebook_limit
+        if notebook_limit is None:
+            return
+
+        try:
+            notebooks = await self.list()
+        except Exception:
+            logger.debug(
+                "Could not list notebooks after CREATE_NOTEBOOK failure; "
+                "leaving original RPC error unchanged",
+                exc_info=True,
+            )
+            return
+
+        owned_count = sum(1 for notebook in notebooks if notebook.is_owner)
+        # Allow one notebook of slack because list results can lag a failed
+        # create or omit service-internal notebooks that still count.
+        if owned_count < max(notebook_limit - 1, 0):
+            return
+
+        raise NotebookLimitError(
+            owned_count,
+            limit=notebook_limit,
+            original_error=error,
+        ) from error
+
+    async def _get_account_limits(self) -> AccountLimits:
+        """Fetch NotebookLM account limits from user settings."""
+        result = await self._core.rpc_call(
+            RPCMethod.GET_USER_SETTINGS,
+            build_get_user_settings_params(),
+            source_path="/",
+        )
+        return extract_account_limits(result)
 
     async def get(self, notebook_id: str) -> Notebook:
         """Get notebook details.
@@ -279,7 +344,7 @@ class NotebooksAPI:
         )
 
         # Build share URL
-        base_url = f"https://notebooklm.google.com/notebook/{notebook_id}"
+        base_url = f"{get_base_url()}/notebook/{notebook_id}"
         if public and artifact_id:
             url = f"{base_url}?artifactId={artifact_id}"
         elif public:
@@ -306,7 +371,7 @@ class NotebooksAPI:
         Returns:
             The share URL string.
         """
-        base_url = f"https://notebooklm.google.com/notebook/{notebook_id}"
+        base_url = f"{get_base_url()}/notebook/{notebook_id}"
         if artifact_id:
             return f"{base_url}?artifactId={artifact_id}"
         return base_url

@@ -14,24 +14,24 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass
 from functools import wraps
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit, urlunsplit
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from ..auth import (
-    AuthTokens,
-    fetch_tokens,
-    load_auth_from_storage,
-)
-from ..exceptions import RPCTimeoutError
+from .._research import CitedSourceSelection, ResearchAPI
+from ..auth import AuthTokens, build_cookie_jar, load_auth_from_storage
+from ..exceptions import NetworkError, NotebookLimitError, RPCError, RPCTimeoutError
 from ..paths import get_context_path
 from ..types import ArtifactType
+from ._encoding import safe_echo
 
 if TYPE_CHECKING:
-    from ..types import Artifact
+    from ..types import Artifact, Source
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -40,6 +40,15 @@ logger = logging.getLogger(__name__)
 _CLI_ARTIFACT_ALIASES = {
     "flashcard": "flashcards",  # CLI uses singular, enum uses plural
 }
+
+
+@dataclass(frozen=True)
+class ResearchImportResult:
+    """Result of importing research sources from CLI commands."""
+
+    imported: list[dict[str, str]]
+    sources: list[dict]
+    cited_selection: CitedSourceSelection | None = None
 
 
 def cli_name_to_artifact_type(name: str) -> ArtifactType | None:
@@ -76,6 +85,57 @@ def run_async(coro):
     return asyncio.run(coro)
 
 
+def _normalize_url(url: str) -> str:
+    """Lowercase scheme + host and strip a trailing slash for comparison.
+
+    Server-side URL storage normalizes case and trailing slashes; client-side
+    requests may not. Compare via this helper to avoid false-negative misses
+    when verifying that a requested URL appears post-import.
+    """
+    parsed = urlsplit(url)
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/"),
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
+def _source_url_norm(source: dict) -> str | None:
+    url = source.get("url")
+    if not isinstance(url, str) or not url:
+        return None
+    return _normalize_url(url)
+
+
+def _requested_urls_norm(sources: list[dict]) -> set[str]:
+    return {url for source in sources if (url := _source_url_norm(source))}
+
+
+def _has_no_url_entry(sources: list[dict]) -> bool:
+    return any(_source_url_norm(source) is None for source in sources)
+
+
+def _imported_source_entry(source: "Source") -> dict[str, str]:
+    return {"id": source.id, "title": source.title or source.url or ""}
+
+
+def _merge_imported_sources(
+    imported: list[dict[str, str]],
+    verified_imported: list[dict[str, str]],
+    verified_imported_ids: set[str],
+) -> list[dict[str, str]]:
+    if not verified_imported:
+        return imported
+    return [
+        *verified_imported,
+        *(entry for entry in imported if entry.get("id") not in verified_imported_ids),
+    ]
+
+
 async def import_with_retry(
     client,
     notebook_id: str,
@@ -90,20 +150,172 @@ async def import_with_retry(
 ) -> list[dict[str, str]]:
     """Retry research import on RPC timeouts with exponential backoff.
 
+    On RPC timeout, probes the notebook's source list to detect server-side
+    imports that succeeded despite the client deadline firing. This avoids the
+    duplicate-on-retry inflation that otherwise occurs when each retry re-adds
+    a copy of the same sources (a single timeout cascade can otherwise inflate
+    a 60-source import to 300+ sources across 5-6 retries).
+
+    If the pre-import source snapshot is unavailable, retries still filter out
+    URLs that are already visible after each timeout, but the returned list may
+    undercount server-side imports because the function cannot prove those
+    sources were absent before this call.
+
     This is intentionally CLI-only policy. Library consumers calling
     `client.research.import_sources()` directly still get one-shot behavior.
     """
     started_at = time.monotonic()
     delay = initial_delay
     attempt = 1
+    verified_imported: list[dict[str, str]] = []
+    verified_imported_ids: set[str] = set()
+
+    requested_urls_norm = _requested_urls_norm(sources)
+    # Track whether the request itself includes any non-URL entries (research
+    # reports, pasted text). If it doesn't, we must NOT include concurrent
+    # no-URL additions in the synthesized return — those would be unrelated
+    # sources reported as "imported" by this call.
+    requested_has_no_url_entry = _has_no_url_entry(sources)
+
+    # Snapshot baseline source IDs so the post-timeout probe can identify
+    # truly-new sources. We anchor the verified-success condition on URLs of
+    # *new* sources — not on a baseline→current URL delta — so concurrent
+    # additions from another session and pre-existing URLs cannot satisfy it.
+    baseline_ids: set[str] | None
+    try:
+        baseline = await client.sources.list(notebook_id, strict=True)
+        baseline_ids = {src.id for src in baseline}
+    except (NetworkError, RPCError) as snapshot_exc:
+        logger.warning(
+            "Pre-import sources.list snapshot failed for %s: %s; "
+            "verified-success path disabled for this call",
+            notebook_id,
+            snapshot_exc,
+        )
+        baseline_ids = None
 
     while True:
         try:
-            return await client.research.import_sources(notebook_id, task_id, sources)
+            imported = await client.research.import_sources(notebook_id, task_id, sources)
+            return _merge_imported_sources(imported, verified_imported, verified_imported_ids)
         except RPCTimeoutError:
             elapsed = time.monotonic() - started_at
             remaining = max_elapsed - elapsed
+
+            # Verify server-side state before retrying. The IMPORT_RESEARCH RPC
+            # frequently times out at the client (30s) after a successful
+            # server-side write; retrying then duplicates every source.
+            if requested_urls_norm:
+                try:
+                    current = await client.sources.list(notebook_id, strict=True)
+                    new_sources = (
+                        [src for src in current if src.id not in baseline_ids]
+                        if baseline_ids is not None
+                        else []
+                    )
+                    new_urls_norm = {_normalize_url(src.url) for src in new_sources if src.url}
+                    current_urls_norm = {_normalize_url(src.url) for src in current if src.url}
+                    # Success requires every requested URL to appear among the
+                    # *new* sources. Trivial-true cases (pre-existing URLs) and
+                    # concurrent unrelated additions both fail this check.
+                    if baseline_ids is not None and requested_urls_norm.issubset(new_urls_norm):
+                        logger.warning(
+                            "IMPORT_RESEARCH timed out for notebook %s but "
+                            "sources.list shows all %d requested URLs among "
+                            "new sources; treating as success and skipping "
+                            "retry to avoid duplicate inflation",
+                            notebook_id,
+                            len(requested_urls_norm),
+                        )
+                        if not json_output:
+                            console.print(
+                                f"[yellow]Import RPC timed out, but server-side "
+                                f"verified {len(requested_urls_norm)} requested "
+                                f"sources — skipping retry.[/yellow]"
+                            )
+                        # Return only new sources that match a requested URL.
+                        # No-URL new sources (research reports, pasted text)
+                        # are included only if the request itself had no-URL
+                        # entries — otherwise they're concurrent unrelated
+                        # additions and don't belong in the return.
+                        imported = [
+                            _imported_source_entry(src)
+                            for src in new_sources
+                            if (src.url and _normalize_url(src.url) in requested_urls_norm)
+                            or (not src.url and requested_has_no_url_entry)
+                        ]
+                        return _merge_imported_sources(
+                            imported, verified_imported, verified_imported_ids
+                        )
+                    source_norms = [(source, _source_url_norm(source)) for source in sources]
+                    removed_urls_norm = {
+                        url
+                        for _, url in source_norms
+                        if url is not None and url in current_urls_norm
+                    }
+                    filtered_sources = [
+                        source for source, url in source_norms if url not in current_urls_norm
+                    ]
+                    if len(filtered_sources) != len(sources):
+                        removed_count = len(sources) - len(filtered_sources)
+                        for src in new_sources:
+                            if (
+                                src.url
+                                and _normalize_url(src.url) in removed_urls_norm
+                                and src.id not in verified_imported_ids
+                            ):
+                                verified_imported.append(_imported_source_entry(src))
+                                verified_imported_ids.add(src.id)
+                        sources = filtered_sources
+                        requested_urls_norm = _requested_urls_norm(sources)
+                        requested_has_no_url_entry = _has_no_url_entry(sources)
+                        if not sources:
+                            logger.warning(
+                                "IMPORT_RESEARCH timed out for notebook %s but "
+                                "sources.list shows all requested URLs already "
+                                "present; treating as success and skipping retry "
+                                "to avoid duplicate inflation",
+                                notebook_id,
+                            )
+                            if not json_output:
+                                console.print(
+                                    "[yellow]Import RPC timed out, but all "
+                                    "requested sources are already present — "
+                                    "skipping retry.[/yellow]"
+                                )
+                            return _merge_imported_sources(
+                                [], verified_imported, verified_imported_ids
+                            )
+                        logger.warning(
+                            "IMPORT_RESEARCH timed out for notebook %s after "
+                            "%d requested source(s) were already present; retrying "
+                            "with %d remaining source(s)",
+                            notebook_id,
+                            removed_count,
+                            len(sources),
+                        )
+                except (NetworkError, RPCError) as probe_exc:
+                    # CancelledError is a BaseException, not Exception, and is
+                    # not in this tuple — it propagates naturally for callers
+                    # that need to cancel the operation cleanly.
+                    logger.warning(
+                        "Failed to probe server state after timeout: %s; falling back to retry",
+                        probe_exc,
+                    )
+
             if remaining <= 0:
+                raise
+
+            # Report-only imports (no URLs to verify) can't use the success
+            # check above. Cap retries at one to bound worst-case duplicate
+            # inflation for report entries when timeouts persist.
+            if not requested_urls_norm and attempt >= 2:
+                logger.warning(
+                    "IMPORT_RESEARCH timed out for notebook %s with no URLs to "
+                    "verify; giving up after %d attempts to bound duplicate inflation",
+                    notebook_id,
+                    attempt,
+                )
                 raise
 
             sleep_for = min(delay, max_delay, remaining)
@@ -124,6 +336,73 @@ async def import_with_retry(
             attempt += 1
 
 
+def _select_research_sources_for_import(
+    sources: list[dict], report: str, cited_only: bool
+) -> tuple[list[dict], CitedSourceSelection | None]:
+    if not cited_only or not sources:
+        return sources, None
+
+    cited_selection = ResearchAPI.select_cited_sources(sources, report)
+    return cited_selection.sources, cited_selection
+
+
+def _display_cited_import_selection(cited_selection: CitedSourceSelection | None) -> None:
+    if cited_selection is None:
+        return
+
+    if cited_selection.used_fallback:
+        console.print("[yellow]Could not resolve cited sources; importing all sources.[/yellow]")
+        return
+
+    console.print(
+        f"[dim]Importing {cited_selection.matched_url_source_count} cited source(s)[/dim]"
+    )
+
+
+async def import_research_sources(
+    client,
+    notebook_id: str,
+    task_id: str,
+    sources: list[dict],
+    *,
+    report: str = "",
+    cited_only: bool = False,
+    max_elapsed: float = 1800,
+    json_output: bool = False,
+    status_message: str | None = None,
+) -> ResearchImportResult:
+    """Select and import research sources using shared CLI policy."""
+    sources_to_import, cited_selection = _select_research_sources_for_import(
+        sources, report, cited_only
+    )
+    if not sources_to_import:
+        return ResearchImportResult([], sources_to_import, cited_selection)
+
+    if not json_output:
+        _display_cited_import_selection(cited_selection)
+
+    retry_kwargs: dict[str, Any] = {"max_elapsed": max_elapsed}
+    if json_output:
+        retry_kwargs["json_output"] = True
+
+    async def _import_selected() -> list[dict[str, str]]:
+        return await import_with_retry(
+            client,
+            notebook_id,
+            task_id,
+            sources_to_import,
+            **retry_kwargs,
+        )
+
+    if status_message and not json_output:
+        with console.status(status_message):
+            imported = await _import_selected()
+    else:
+        imported = await _import_selected()
+
+    return ResearchImportResult(imported, sources_to_import, cited_selection)
+
+
 # =============================================================================
 # AUTHENTICATION
 # =============================================================================
@@ -142,8 +421,20 @@ def get_client(ctx) -> tuple[dict, str, str]:
         FileNotFoundError: If auth storage not found
     """
     storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = run_async(fetch_tokens(cookies))
+    profile = ctx.obj.get("profile") if ctx.obj else None
+
+    resolved_storage_path = storage_path
+    if resolved_storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        from ..paths import get_storage_path
+
+        resolved_storage_path = get_storage_path(profile=profile)
+
+    # Load from storage (which respects NOTEBOOKLM_AUTH_JSON if resolved path is None)
+    cookies = load_auth_from_storage(resolved_storage_path)
+
+    from ..auth import fetch_tokens_with_domains
+
+    csrf, session_id = run_async(fetch_tokens_with_domains(resolved_storage_path, profile))
     return cookies, csrf, session_id
 
 
@@ -157,7 +448,35 @@ def get_auth_tokens(ctx) -> AuthTokens:
         AuthTokens ready for client construction
     """
     cookies, csrf, session_id = get_client(ctx)
-    return AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    profile = ctx.obj.get("profile") if ctx.obj else None
+
+    resolved_storage_path = storage_path
+    if resolved_storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        from ..paths import get_storage_path
+
+        resolved_storage_path = get_storage_path(profile=profile)
+
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON") and storage_path is None:
+        from ..auth import build_httpx_cookies_from_storage
+
+        jar = build_httpx_cookies_from_storage(None)
+    else:
+        jar = build_cookie_jar(cookies=cookies, storage_path=resolved_storage_path)
+
+    # Read persisted account routing so RPC URLs target the same Google
+    # account the tokens were minted for.
+    from ..auth import get_account_email_for_storage, get_authuser_for_storage
+
+    return AuthTokens(
+        cookies=cookies,
+        csrf_token=csrf,
+        session_id=session_id,
+        storage_path=resolved_storage_path,
+        cookie_jar=jar,
+        authuser=get_authuser_for_storage(resolved_storage_path),
+        account_email=get_account_email_for_storage(resolved_storage_path),
+    )
 
 
 # =============================================================================
@@ -226,7 +545,16 @@ def set_current_notebook(
     context_file = get_context_path()
     context_file.parent.mkdir(parents=True, exist_ok=True)
 
-    data: dict[str, str | bool] = {"notebook_id": notebook_id}
+    data: dict[str, Any] = {}
+    if context_file.exists():
+        try:
+            existing = json.loads(context_file.read_text(encoding="utf-8"))
+            if isinstance(existing, dict) and isinstance(existing.get("account"), dict):
+                data["account"] = existing["account"]
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    data["notebook_id"] = notebook_id
     if title:
         data["title"] = title
     if is_owner is not None:
@@ -237,11 +565,41 @@ def set_current_notebook(
     context_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def clear_context():
-    """Clear the current context."""
+def clear_context(*, clear_account: bool = False) -> bool:
+    """Clear the current context.
+
+    By default, only notebook/conversation fields are cleared; account
+    metadata used for multi-account auth routing is preserved. ``auth logout``
+    passes ``clear_account=True`` to remove the whole file.
+
+    Returns True if a context file was changed or removed, False if none existed.
+    """
     context_file = get_context_path()
     if context_file.exists():
-        context_file.unlink()
+        if clear_account:
+            context_file.unlink()
+            return True
+        try:
+            data = json.loads(context_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            context_file.unlink()
+            return True
+        if not isinstance(data, dict):
+            context_file.unlink()
+            return True
+        original = dict(data)
+        for key in ("notebook_id", "title", "is_owner", "created_at", "conversation_id"):
+            data.pop(key, None)
+        if not data:
+            context_file.unlink()
+            return True
+        if data != original:
+            context_file.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            return True
+        return False
+    return False
 
 
 def get_current_conversation() -> str | None:
@@ -418,7 +776,11 @@ async def resolve_source_ids(
 
 def handle_error(e: Exception):
     """Handle and display errors consistently."""
-    console.print(f"[red]Error: {e}[/red]")
+    message = f"Error: {e}"
+    try:
+        console.print(f"[red]{message}[/red]")
+    except UnicodeEncodeError:
+        safe_echo(message, err=True)
     raise SystemExit(1)
 
 
@@ -525,6 +887,13 @@ def with_client(f):
         except Exception as e:
             log_result("failed", str(e))
             if json_output:
+                if isinstance(e, NotebookLimitError):
+                    json_error_response(
+                        "NOTEBOOK_LIMIT",
+                        str(e),
+                        extra=e.to_error_response_extra(),
+                    )
+                    return
                 json_error_response("ERROR", str(e))
             else:
                 handle_error(e)
@@ -537,9 +906,9 @@ def with_client(f):
 # =============================================================================
 
 
-def json_output_response(data: dict) -> None:
+def json_output_response(data: dict | list) -> None:
     """Print JSON response (no colors for machine parsing)."""
-    click.echo(json.dumps(data, indent=2, default=str))
+    click.echo(json.dumps(data, indent=2, default=str, ensure_ascii=False))
 
 
 def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
@@ -553,7 +922,7 @@ def json_error_response(code: str, message: str, extra: dict | None = None) -> N
     response = {"error": True, "code": code, "message": message}
     if extra:
         response.update(extra)
-    click.echo(json.dumps(response, indent=2))
+    click.echo(json.dumps(response, indent=2, default=str, ensure_ascii=False))
     raise SystemExit(1)
 
 

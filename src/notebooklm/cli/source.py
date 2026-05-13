@@ -30,7 +30,7 @@ from .helpers import (
     display_report,
     display_research_sources,
     get_source_type_display,
-    import_with_retry,
+    import_research_sources,
     json_output_response,
     require_notebook,
     resolve_notebook_id,
@@ -228,17 +228,28 @@ def source_list(ctx, notebook_id, json_output, client_auth):
     default=None,
     help="Source type (auto-detected if not specified)",
 )
-@click.option("--title", help="Title for text sources")
+@click.option("--title", help="Custom title for text and uploaded-file sources")
 @click.option("--mime-type", help="MIME type for file sources")
+@click.option(
+    "--timeout",
+    default=None,
+    type=float,
+    help=(
+        "HTTP request timeout in seconds (default: 30, from the library). "
+        "Increase when adding slow URLs or large files that exceed the default."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
-def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_output, client_auth):
+def source_add(
+    ctx, content, notebook_id, source_type, title, mime_type, timeout, json_output, client_auth
+):
     """Add a source to a notebook.
 
     \b
     Source type is auto-detected:
       - URLs (http/https) -> url or youtube
-      - Existing files (.txt, .md) -> text
+      - Existing files (.txt, .md, etc.) -> file
       - Other content -> text (inline)
       - Use --type to override
 
@@ -271,8 +282,12 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
             detected_type = "text"
             file_title = title or "Pasted Text"
 
+    client_kwargs: dict = {}
+    if timeout is not None:
+        client_kwargs["timeout"] = timeout
+
     async def _run():
-        async with NotebookLMClient(client_auth) as client:
+        async with NotebookLMClient(client_auth, **client_kwargs) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id)
             if detected_type == "url" or detected_type == "youtube":
                 src = await client.sources.add_url(nb_id_resolved, content)
@@ -281,7 +296,9 @@ def source_add(ctx, content, notebook_id, source_type, title, mime_type, json_ou
                 text_title = file_title or "Untitled"
                 src = await client.sources.add_text(nb_id_resolved, text_title, text_content)
             elif detected_type == "file":
-                src = await client.sources.add_file(nb_id_resolved, content, mime_type)
+                src = await client.sources.add_file(
+                    nb_id_resolved, content, mime_type, title=file_title
+                )
 
             if json_output:
                 data = {
@@ -540,14 +557,34 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, client_auth):
     help="Search mode (default: fast)",
 )
 @click.option("--import-all", is_flag=True, help="Import all found sources")
+@click.option("--cited-only", is_flag=True, help="With --import-all, import only cited sources")
 @click.option(
     "--no-wait",
     is_flag=True,
     help="Start research and return immediately (use 'research status/wait' to monitor)",
 )
+@click.option(
+    "--timeout",
+    default=1800,
+    type=int,
+    help=(
+        "Retry budget in seconds for --import-all when the IMPORT_RESEARCH RPC "
+        "times out (default: 1800). Mirrors 'research wait --timeout'. "
+        "Has no effect without --import-all."
+    ),
+)
 @with_client
 def source_add_research(
-    ctx, query, notebook_id, search_source, mode, import_all, no_wait, client_auth
+    ctx,
+    query,
+    notebook_id,
+    search_source,
+    mode,
+    import_all,
+    cited_only,
+    no_wait,
+    timeout,
+    client_auth,
 ):
     """Search web or drive and add sources from results.
 
@@ -557,8 +594,12 @@ def source_add_research(
       source add-research "project docs" --from drive     # Search Google Drive
       source add-research "AI papers" --mode deep         # Deep search
       source add-research "tutorials" --import-all        # Auto-import all results
+      source add-research "topic" --import-all --cited-only
       source add-research "topic" --mode deep --no-wait   # Non-blocking deep search
     """
+    if cited_only and not import_all:
+        raise click.UsageError("--cited-only requires --import-all")
+
     nb_id = require_notebook(notebook_id)
 
     async def _run():
@@ -601,13 +642,16 @@ def source_add_research(
                 display_report(status.get("report", ""), json_hint=False)
 
                 if import_all and sources and task_id:
-                    imported = await import_with_retry(
+                    import_result = await import_research_sources(
                         client,
                         nb_id_resolved,
                         task_id,
                         sources,
+                        report=status.get("report", ""),
+                        cited_only=cited_only,
+                        max_elapsed=timeout,
                     )
-                    console.print(f"[green]Imported {len(imported)} sources[/green]")
+                    console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
             else:
                 console.print(f"[yellow]Status: {status.get('status', 'unknown')}[/yellow]")
 

@@ -1,7 +1,7 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-03-12
+**Last Updated:** 2026-05-11
 
 Complete reference for the `notebooklm` Python library.
 
@@ -84,6 +84,38 @@ client = NotebookLMClient(auth)
 # AuthTokens also supports profiles
 auth = AuthTokens.from_storage(profile="work")
 ```
+
+**Building a storage state from existing browser cookies (`[cookies]` extra):**
+
+Install with the optional `cookies` extra to pull cookies from a locally installed browser via [rookiepy](https://pypi.org/project/rookiepy/) — useful for headless environments where you cannot run Playwright:
+
+```bash
+pip install "notebooklm-py[cookies]"
+```
+
+```python
+import json
+import os
+import rookiepy
+from notebooklm import NotebookLMClient
+from notebooklm.auth import convert_rookiepy_cookies_to_storage_state
+
+# Pull Google cookies from Chrome (or .firefox(), .edge(), .safari(), .load() for auto-detect)
+raw = rookiepy.chrome(domains=[".google.com", "notebooklm.google.com"])
+storage_state = convert_rookiepy_cookies_to_storage_state(raw)
+
+# Persist for future runs; restrict to owner-only on POSIX since this file holds auth cookies
+storage_path = "/path/to/storage_state.json"
+with open(storage_path, "w") as f:
+    json.dump(storage_state, f)
+if os.name != "nt":
+    os.chmod(storage_path, 0o600)
+
+async with await NotebookLMClient.from_storage(storage_path) as client:
+    notebooks = await client.notebooks.list()
+```
+
+The helper converts the cookie list returned by `rookiepy` into the storage-state format `NotebookLMClient.from_storage()` expects — the actual cookie extraction (and Google-account selection) happens in the `rookiepy.<browser>(...)` call. As a result, the storage state reflects whichever Google account is currently active in the source browser on `google.com` / `notebooklm.google.com`. The CLI equivalent is `notebooklm login --browser-cookies <browser>`.
 
 **Environment Variable Support:**
 
@@ -176,16 +208,29 @@ class NotebookLMClient:
     @classmethod
     async def from_storage(
         cls, path: str | None = None, timeout: float = 30.0,
-        profile: str | None = None
+        profile: str | None = None,
+        keepalive: float | None = None,
+        keepalive_min_interval: float = 60.0,
     ) -> "NotebookLMClient"
 
     def __init__(
         self, auth: AuthTokens, timeout: float = 30.0,
-        storage_path: Path | None = None
+        storage_path: Path | None = None,
+        keepalive: float | None = None,
+        keepalive_min_interval: float = 60.0,
     )
 
     async def refresh_auth(self) -> AuthTokens
 ```
+
+**Long-lived clients:** pass `keepalive=<seconds>` to spawn a background task
+that periodically pokes `accounts.google.com` and persists any rotated
+`__Secure-1PSIDTS` cookie to `storage_state.json`. This keeps a worker /
+agent / long-running `async with` block from silently staling out. Disabled
+by default (`keepalive=None`). Values below `keepalive_min_interval` (default
+`60.0`) are clamped up to that floor. See [Cookie freshness for long-running
+/ unattended use](troubleshooting.md#cookie-freshness-for-long-running--unattended-use)
+for the full layered story.
 
 ---
 
@@ -341,7 +386,7 @@ print(f"Keywords: {guide['keywords']}")
 | `download_audio(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download audio to file (MP4/MP3) |
 | `download_video(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download video to file (MP4) |
 | `download_infographic(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download infographic to file (PNG) |
-| `download_slide_deck(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download slide deck as PDF |
+| `download_slide_deck(notebook_id, output_path, artifact_id=None, output_format="pdf")` | `str, str, str, str` | `str` | Download slide deck as PDF or PPTX (`output_format`: `"pdf"` or `"pptx"`) |
 | `download_report(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download report as Markdown (.md) |
 | `download_mind_map(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download mind map as JSON (.json) |
 | `download_data_table(notebook_id, output_path, artifact_id=None)` | `str, str, str` | `str` | Download data table as CSV (.csv) |
@@ -677,6 +722,8 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `get_output_language()` | none | `Optional[str]` | Get current output language setting |
+| `get_account_limits()` | none | `AccountLimits` | Get account-level limits such as max notebooks and sources per notebook |
+| `get_account_tier()` | none | `AccountTier` | Get current NotebookLM subscription tier |
 | `set_output_language(language)` | `str` | `Optional[str]` | Set output language for artifact generation |
 
 **Example:**
@@ -685,12 +732,20 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 lang = await client.settings.get_output_language()
 print(f"Current language: {lang}")  # e.g., "en", "ja", "zh_Hans"
 
+# Get server-reported account limits
+limits = await client.settings.get_account_limits()
+print(f"Notebook limit: {limits.notebook_limit}")
+
+# Get current NotebookLM subscription tier
+tier = await client.settings.get_account_tier()
+print(f"Account tier: {tier.plan_name or tier.tier}")
+
 # Set language for artifact generation
 result = await client.settings.set_output_language("ja")  # Japanese
 print(f"Language set to: {result}")
 ```
 
-**Important:** Language is a **GLOBAL setting** that affects all notebooks in your account. Supported languages include:
+**Important:** Language is a **GLOBAL setting** that affects all notebooks in your account. The tier string is internal NotebookLM metadata; use `get_account_limits()` for quota decisions because the raw tier name may not match the active notebook/source limits. Supported languages include:
 - `en` (English), `ja` (日本語), `zh_Hans` (中文简体), `zh_Hant` (中文繁體)
 - `ko` (한국어), `es` (Español), `fr` (Français), `de` (Deutsch), `pt_BR` (Português)
 - And [over 70 other languages](cli-reference.md#language-commands-notebooklm-language-cmd)
@@ -781,10 +836,23 @@ class Source:
     title: Optional[str]
     url: Optional[str]
     created_at: Optional[datetime]
+    status: int                          # 1=processing, 2=ready, 3=error, 5=preparing (defaults to READY)
 
     @property
     def kind(self) -> SourceType:
         """Get source type as SourceType enum."""
+
+    @property
+    def is_ready(self) -> bool:
+        """status == SourceStatus.READY"""
+
+    @property
+    def is_processing(self) -> bool:
+        """status == SourceStatus.PROCESSING"""
+
+    @property
+    def is_error(self) -> bool:
+        """status == SourceStatus.ERROR"""
 ```
 
 **Type Identification:**
@@ -813,7 +881,7 @@ print(f"Type: {source.kind}")  # "Type: pdf"
 class Artifact:
     id: str
     title: str
-    status: int                     # 1=processing, 2=pending, 3=completed
+    status: int                     # 1=processing, 2=pending, 3=completed, 4=failed
     created_at: Optional[datetime]
     url: Optional[str]
 
@@ -854,6 +922,47 @@ if artifact.is_quiz:
     print("This is a quiz")
 elif artifact.is_flashcards:
     print("This is a flashcard deck")
+```
+
+### GenerationStatus
+
+Returned by `poll_status`, `wait_for_completion`, and most artifact generation methods (`generate_audio`, `generate_video`, `generate_report`, `generate_quiz`, `generate_flashcards`, `generate_slide_deck`, `generate_infographic`, `generate_data_table`). Note that `generate_mind_map` returns a `dict[str, Any]` instead — the mind map is delivered as JSON inline rather than polled.
+
+```python
+@dataclass
+class GenerationStatus:
+    task_id: str                          # Same value as Artifact.id once complete
+    status: str                           # "pending" | "in_progress" | "completed" | "failed" | "not_found"
+    url: str | None = None                # Populated for media artifacts when status == "completed"
+    error: str | None = None
+    error_code: str | None = None         # e.g. "USER_DISPLAYABLE_ERROR" for rate limits
+    metadata: dict[str, Any] | None = None
+
+    @property
+    def is_complete(self) -> bool:
+        """Check if generation is complete."""
+
+    @property
+    def is_failed(self) -> bool:
+        """Check if generation failed."""
+
+    @property
+    def is_pending(self) -> bool:
+        """Check if generation is pending."""
+
+    @property
+    def is_rate_limited(self) -> bool:
+        """Check if generation failed due to rate limiting."""
+```
+
+**`url` semantics:** `poll_status` populates `url` for media artifact types (audio, video, infographic, slide-deck PDF) as soon as the server reports the asset as ready. Slide decks expose the PDF URL here; for the editable PowerPoint, use `client.artifacts.download_slide_deck(..., output_format="pptx")` instead.
+
+```python
+status = await client.artifacts.generate_audio(notebook_id)
+final = await client.artifacts.wait_for_completion(notebook_id, status.task_id)
+if final.is_complete and final.url:
+    # Stream the asset directly instead of re-fetching artifact metadata
+    ...
 ```
 
 ### AskResult

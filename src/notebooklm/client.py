@@ -19,13 +19,16 @@ Example:
         result = await client.chat.ask(notebook_id, "What is this about?")
 """
 
+import dataclasses
 import logging
+import os
 import re
 from pathlib import Path
 
 from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
-from ._core import DEFAULT_TIMEOUT, ClientCore
+from ._core import DEFAULT_KEEPALIVE_MIN_INTERVAL, DEFAULT_TIMEOUT, ClientCore
+from ._env import get_base_url
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
@@ -33,7 +36,7 @@ from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect
-from .auth import AuthTokens
+from .auth import AuthTokens, authuser_query
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +81,8 @@ class NotebookLMClient:
         auth: AuthTokens,
         timeout: float = DEFAULT_TIMEOUT,
         storage_path: Path | None = None,
+        keepalive: float | None = None,
+        keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
     ):
         """Initialize the NotebookLM client.
 
@@ -85,10 +90,38 @@ class NotebookLMClient:
             auth: Authentication tokens from browser login.
             timeout: HTTP request timeout in seconds. Defaults to 30 seconds.
             storage_path: Path to the storage state file for loading download cookies.
+            keepalive: Optional interval in seconds for a background task that
+                pokes ``accounts.google.com`` while the client is open, eliciting
+                ``__Secure-1PSIDTS`` rotation so long-lived clients (e.g. agents,
+                long-running workers) don't silently stale out. ``None`` (default)
+                disables the task — preserving existing CLI semantics. Values
+                below ``keepalive_min_interval`` are clamped up to that floor.
+            keepalive_min_interval: Lower bound for ``keepalive`` (defaults to
+                60 s) to avoid accidentally rate-limiting Google's identity
+                surface.
         """
+        # Normalize the effective storage path onto the auth object so every
+        # downstream code path (refresh_auth, ClientCore.close on-close save,
+        # the keepalive loop) writes to the same file. Without this, an
+        # explicit ``storage_path=`` kwarg only reaches the keepalive loop
+        # while ``auth.storage_path is None`` causes refresh and on-close
+        # saves to silently skip persistence. ``dataclasses.replace`` instead
+        # of in-place mutation so a caller reusing ``AuthTokens`` across
+        # multiple clients (with different storage paths) doesn't see one
+        # client's path leak into another.
+        if storage_path is not None and auth.storage_path != storage_path:
+            auth = dataclasses.replace(auth, storage_path=storage_path)
+
         # Pass refresh_auth as callback for automatic retry on auth failures
         # Note: refresh_auth calls update_auth_headers internally
-        self._core = ClientCore(auth, timeout=timeout, refresh_callback=self.refresh_auth)
+        self._core = ClientCore(
+            auth,
+            timeout=timeout,
+            refresh_callback=self.refresh_auth,
+            keepalive=keepalive,
+            keepalive_min_interval=keepalive_min_interval,
+            keepalive_storage_path=auth.storage_path,
+        )
 
         # Initialize sub-client APIs
         # Note: notes must be initialized before artifacts (artifacts uses notes API)
@@ -128,6 +161,8 @@ class NotebookLMClient:
         path: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         profile: str | None = None,
+        keepalive: float | None = None,
+        keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
     ) -> "NotebookLMClient":
         """Create a client from Playwright storage state file.
 
@@ -139,6 +174,10 @@ class NotebookLMClient:
             timeout: HTTP request timeout in seconds. Defaults to 30 seconds.
             profile: Profile name to load auth from (e.g., "work", "personal").
                 If None, uses the active profile (from CLI flag, env var, or config).
+            keepalive: Optional interval in seconds for the background SIDTS
+                rotation poke. ``None`` disables it (default). See
+                :class:`NotebookLMClient` for full semantics.
+            keepalive_min_interval: Floor for ``keepalive`` (defaults to 60 s).
 
         Returns:
             NotebookLMClient instance (not yet connected).
@@ -150,17 +189,27 @@ class NotebookLMClient:
             # Use a specific profile
             async with await NotebookLMClient.from_storage(profile="work") as client:
                 notebooks = await client.notebooks.list()
+
+            # Long-lived client with periodic keepalive (e.g. an agent worker)
+            async with await NotebookLMClient.from_storage(keepalive=600) as client:
+                ...
         """
         storage_path = Path(path) if path else None
         auth = await AuthTokens.from_storage(storage_path, profile=profile)
         # Always resolve the storage path so downstream cookie loading
         # (e.g. artifact downloads) uses the correct file, whether the
         # caller provided an explicit path, a named profile, or neither.
-        if storage_path is None:
+        if storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
             from .paths import get_storage_path
 
             storage_path = get_storage_path(profile)
-        return cls(auth, timeout=timeout, storage_path=storage_path)
+        return cls(
+            auth,
+            timeout=timeout,
+            storage_path=storage_path,
+            keepalive=keepalive,
+            keepalive_min_interval=keepalive_min_interval,
+        )
 
     async def refresh_auth(self) -> AuthTokens:
         """Refresh authentication tokens by fetching the NotebookLM homepage.
@@ -175,7 +224,10 @@ class NotebookLMClient:
             ValueError: If token extraction fails (page structure may have changed).
         """
         http_client = self._core.get_http_client()
-        response = await http_client.get("https://notebooklm.google.com/")
+        url = f"{get_base_url()}/"
+        if self.auth.account_email or self.auth.authuser:
+            url = f"{url}?{authuser_query(self.auth.authuser, self.auth.account_email)}"
+        response = await http_client.get(url)
         response.raise_for_status()
 
         # Check for redirect to login page
@@ -204,5 +256,14 @@ class NotebookLMClient:
         # CRITICAL: Update the HTTP client headers with new auth tokens
         # Without this, the client continues using stale credentials
         self._core.update_auth_headers()
+
+        # Persist refreshed cookies back to disk so the next CLI invocation
+        # picks up the updated short-lived tokens (e.g., __Secure-1PSIDCC).
+        # Routed through ClientCore.save_cookies so it serializes with the
+        # keepalive worker and the on-close save via ``_save_lock`` — without
+        # that, refresh_auth's synchronous save can race with an in-flight
+        # keepalive save and an older snapshot can clobber the freshly
+        # refreshed tokens.
+        await self._core.save_cookies(http_client.cookies)
 
         return self._core.auth

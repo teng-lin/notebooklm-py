@@ -55,6 +55,40 @@ class RPCErrorCode(IntEnum):
     SERVER_ERROR = 500  # Internal server error
 
 
+# gRPC canonical status codes (google.rpc.Code) embedded by the batchexecute
+# backend at index 5 of a `wrb.fr` response when the RPC returns null result
+# data. The bare single-element form `[code]` is what issues #114 and #294
+# observed on the wire.
+_GRPC_STATUS_MESSAGES: dict[int, str] = {
+    0: "OK",
+    1: "Cancelled",
+    2: "Unknown",
+    3: "Invalid argument",
+    4: "Deadline exceeded",
+    5: "Not found",
+    6: "Already exists",
+    7: "Permission denied",
+    8: "Resource exhausted",
+    9: "Failed precondition",
+    10: "Aborted",
+    11: "Out of range",
+    12: "Not implemented",
+    13: "Internal",
+    14: "Unavailable",
+    15: "Data loss",
+    16: "Unauthenticated",
+}
+
+# Hint appended to NOT_FOUND / PERMISSION_DENIED messages. Deliberately avoids
+# the substrings checked by AUTH_ERROR_PATTERNS in _core.py so these errors
+# don't incorrectly trigger the auth-refresh retry path.
+_ACCOUNT_MISMATCH_HINT = (
+    " If you have multiple Google accounts signed in, this is commonly an "
+    "account-routing mismatch — the request defaults to account index 0 when "
+    "no authuser is set. See issues #114 and #294 for context."
+)
+
+
 # Error code to human-readable message mapping
 _ERROR_CODE_MESSAGES: dict[int, tuple[str, bool]] = {
     # (message, is_retryable)
@@ -253,6 +287,60 @@ def collect_rpc_ids(chunks: list[Any]) -> list[str]:
     return found_ids
 
 
+def _extract_status_code(error_info: Any) -> tuple[int, str] | None:
+    """Extract a bare status code from a wrb.fr error_info block.
+
+    Returns ``(code, label)`` only for the bare single-element form ``[code]``
+    in the gRPC canonical range (0-16). Longer structures (e.g. the
+    ``[8, None, [[UserDisplayableError, ...]]]`` rate-limit shape) are handled
+    by the UserDisplayableError path and fall through here by returning
+    ``None``.
+
+    Note: we do not claim these codes are unambiguously gRPC — REMOVE_RECENTLY_VIEWED
+    returns ``[13]`` on what the client treats as a successful no-op (see
+    tests/cassettes/notebooks_remove_from_recent.yaml). Callers must respect
+    ``allow_null`` semantics before treating the code as an error.
+
+    Args:
+        error_info: Value at index 5 of a ``wrb.fr`` response item.
+
+    Returns:
+        ``(code, label)`` tuple for a recognized bare status, else ``None``.
+    """
+    if not isinstance(error_info, list) or len(error_info) != 1:
+        return None
+    code = error_info[0]
+    # type(code) is int (not isinstance) — bool is a subclass of int, so
+    # isinstance(True, int) is True and would accept [true] as code 1.
+    # Gate on _GRPC_STATUS_MESSAGES membership so this auto-tracks the table.
+    if type(code) is not int or code not in _GRPC_STATUS_MESSAGES:
+        return None
+    return code, _GRPC_STATUS_MESSAGES[code]
+
+
+def _find_wrb_status(chunks: list[Any], rpc_id: str) -> tuple[int, str] | None:
+    """Locate bare status code at index 5 of a wrb.fr entry for ``rpc_id``.
+
+    Used by ``decode_response`` to enrich the null-result error message when
+    the server explicitly flagged the RPC with a status code.
+    """
+    for chunk in chunks:
+        if not isinstance(chunk, list):
+            continue
+        items = chunk if (chunk and isinstance(chunk[0], list)) else [chunk]
+        for item in items:
+            if not isinstance(item, list) or len(item) < 6:
+                continue
+            if item[0] != "wrb.fr" or item[1] != rpc_id:
+                continue
+            if item[2] is not None or item[5] is None:
+                continue
+            status = _extract_status_code(item[5])
+            if status is not None:
+                return status
+    return None
+
+
 def _contains_user_displayable_error(obj: Any) -> bool:
     """Check if object contains a UserDisplayableError marker.
 
@@ -385,7 +473,33 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
 
         if rpc_id in found_ids:
             # RPC ID was found but extract_rpc_result returned None
-            # This means wrb.fr had null result_data without UserDisplayableError
+            # This means wrb.fr had null result_data without UserDisplayableError.
+            # Enrich the message if the server attached a bare status code at
+            # index 5 (issues #114 / #294 showed GET_NOTEBOOK returning [5]).
+            status = _find_wrb_status(chunks, rpc_id)
+            if status is not None:
+                code, label = status
+                message = f"RPC {rpc_id} returned null result with status code {code} ({label})."
+                # Route NOT_FOUND (5) / PERMISSION_DENIED (7) through ClientError
+                # so _core.is_auth_error does not misclassify them as auth
+                # failures and trigger a spurious token-refresh retry. The
+                # account-routing hint is only relevant for these two codes —
+                # other codes (e.g. INTERNAL 13) get a plain message.
+                if code in (5, 7):
+                    raise ClientError(
+                        message + _ACCOUNT_MISMATCH_HINT,
+                        method_id=rpc_id,
+                        rpc_code=code,
+                        found_ids=found_ids,
+                        raw_response=response_preview,
+                    )
+                raise RPCError(
+                    message,
+                    method_id=rpc_id,
+                    rpc_code=code,
+                    found_ids=found_ids,
+                    raw_response=response_preview,
+                )
             raise RPCError(
                 f"RPC {rpc_id} returned null result data "
                 f"(possible server error or parameter mismatch)",

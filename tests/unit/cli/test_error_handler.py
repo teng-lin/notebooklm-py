@@ -1,14 +1,17 @@
 """Tests for centralized CLI error handling."""
 
 import json
+from pathlib import Path
 
 import pytest
 
-from notebooklm.cli.error_handler import handle_errors
+import notebooklm.cli._encoding as encoding_module
+from notebooklm.cli.error_handler import _output_error, handle_errors
 from notebooklm.exceptions import (
     AuthError,
     ConfigurationError,
     NetworkError,
+    NotebookLimitError,
     RateLimitError,
     RPCError,
     ValidationError,
@@ -113,6 +116,21 @@ class TestHandleErrorsJsonOutput:
         assert data["error"] is True
         assert "method_id" not in data
 
+    def test_notebook_limit_error_json_includes_quota_context(self, capsys):
+        """NotebookLimitError should produce a specific JSON error code."""
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise NotebookLimitError(499, limit=500)
+
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert data["error"] is True
+        assert data["code"] == "NOTEBOOK_LIMIT"
+        assert data["current_count"] == 499
+        assert data["limit"] == 500
+        assert "known_limits" not in data
+        assert "method_id" not in data
+        assert "rpc_code" not in data
+
     def test_unexpected_error_json_format(self, capsys):
         """Unexpected errors should produce UNEXPECTED_ERROR code."""
         with pytest.raises(SystemExit), handle_errors(json_output=True):
@@ -123,6 +141,38 @@ class TestHandleErrorsJsonOutput:
         assert data["error"] is True
         assert data["code"] == "UNEXPECTED_ERROR"
         assert "Something broke" in data["message"]
+
+    def test_error_handler_json_output_preserves_unicode(self, capsys):
+        """CJK / emoji in error messages should be emitted as real UTF-8."""
+        with pytest.raises(SystemExit), handle_errors(json_output=True):
+            raise ValidationError("笔记本未找到 🔍")
+
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert "笔记本未找到 🔍" in data["message"]
+        # Raw output must contain real CJK/emoji, not escaped sequences.
+        assert "笔记本未找到" in output
+        assert "🔍" in output
+        assert "\\u" not in output
+
+    def test_output_error_serializes_path_in_extra(self, capsys):
+        """_output_error must not crash on non-primitive extras like pathlib.Path."""
+        with pytest.raises(SystemExit) as exc_info:
+            _output_error(
+                "Bad path",
+                "PATH_ERROR",
+                json_output=True,
+                exit_code=1,
+                extra={"path": Path("tmp_test_path")},
+            )
+
+        assert exc_info.value.code == 1
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert data["error"] is True
+        assert data["code"] == "PATH_ERROR"
+        assert data["message"] == "Bad path"
+        assert data["path"] == str(Path("tmp_test_path"))
 
 
 class TestHandleErrorsTextOutput:
@@ -146,6 +196,15 @@ class TestHandleErrorsTextOutput:
         assert "Network error" in output
         assert "internet connection" in output
 
+    def test_notebook_limit_error_text_includes_quota_context(self, capsys):
+        """NotebookLimitError should show notebook count in text mode."""
+        with pytest.raises(SystemExit), handle_errors(json_output=False):
+            raise NotebookLimitError(499, limit=500)
+
+        output = capsys.readouterr().err
+        assert "notebook limit" in output.lower()
+        assert "499/500" in output
+
     def test_unexpected_error_shows_bug_report_hint(self, capsys):
         """Unexpected errors should show bug report hint."""
         with pytest.raises(SystemExit), handle_errors(json_output=False):
@@ -165,6 +224,36 @@ class TestHandleErrorsTextOutput:
         data = json.loads(output)
         # Hint text should not be in the JSON structure
         assert "login" not in json.dumps(data).lower()
+
+    def test_text_output_falls_back_when_stream_cannot_encode(self, monkeypatch):
+        """Error reporting should not mask the original error with UnicodeEncodeError."""
+
+        class DummyStderr:
+            encoding = "cp950"
+
+        calls = []
+
+        def flaky_echo(message=None, **kwargs):
+            err = kwargs.get("err", False)
+            if not calls:
+                calls.append((message, err))
+                raise UnicodeEncodeError(
+                    "cp950",
+                    str(message),
+                    0,
+                    1,
+                    "illegal multibyte sequence",
+                )
+            calls.append((message, err))
+
+        monkeypatch.setattr(encoding_module.click, "echo", flaky_echo)
+        monkeypatch.setattr(encoding_module.sys, "stderr", DummyStderr())
+
+        with pytest.raises(SystemExit), handle_errors(json_output=False):
+            raise RuntimeError("bad 🌐")
+
+        assert calls[0] == ("Unexpected error: bad 🌐", True)
+        assert calls[1] == ("Unexpected error: bad ?", True)
 
 
 class TestHandleErrorsKeyboardInterrupt:

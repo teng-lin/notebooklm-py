@@ -57,7 +57,12 @@ Contains the authentication data extracted from your browser session:
 }
 ```
 
-**Required cookies:** `SID`, `HSID`, `SSID`, `APISID`, `SAPISID`, `__Secure-1PSID`, `__Secure-3PSID`
+**Cookie requirements** (empirically validated via single- and pair-wise ablation, see `auth-keepalive.md` §3.5; enforced by `_validate_required_cookies()` in `auth.py`):
+
+- **Tier 1 — strictly required (raises on absence):** `SID` AND `__Secure-1PSIDTS`. `SID` is the only individually-required cookie (`__Secure-1PSIDTS` is removable on its own because Google can re-mint it via `RotateCookies`), but the pair-wise check uncovered that as soon as `__Secure-1PSIDTS` and any one other auth cookie are both missing, Google rejects with `Authentication expired or invalid`. The library therefore enforces both up-front. Authoritative value: `MINIMUM_REQUIRED_COOKIES` in `auth.py`.
+- **Tier 2 — secondary binding (logs a warning if absent):** either `OSID` is present, or both `APISID` and `SAPISID` are present. Without this, even valid Tier 1 cookies can't authenticate the homepage GET. Logged rather than raised so unverified edge-case flows (e.g. Workspace SSO) aren't broken by a too-strict client check.
+
+In practice: extract the full cookie set via `notebooklm login` and don't try to subset it. Partial extractions (a known failure mode of browser-cookies tooling under Chrome 127+ App-Bound Encryption) are the leading suspect for "auth expires immediately" reports — see [#371](https://github.com/teng-lin/notebooklm-py/issues/371).
 
 **Override location:**
 ```bash
@@ -92,6 +97,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_HOME` | Base directory for all files | `~/.notebooklm` |
 | `NOTEBOOKLM_PROFILE` | Active profile name | `default` |
 | `NOTEBOOKLM_AUTH_JSON` | Inline authentication JSON (for CI/CD) | - |
+| `NOTEBOOKLM_HL` | Default interface/output language code (e.g. `en`, `ja`, `zh_Hans`) | `en` |
 | `NOTEBOOKLM_LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `WARNING` |
 | `NOTEBOOKLM_DEBUG_RPC` | Legacy: Enable RPC debug logging (use `LOG_LEVEL=DEBUG` instead) | `false` |
 
@@ -140,6 +146,26 @@ notebooklm list  # Works without any file on disk
 5. `~/.notebooklm/storage_state.json` (legacy fallback)
 
 **Note:** Cannot run `notebooklm login` when `NOTEBOOKLM_AUTH_JSON` is set.
+
+### NOTEBOOKLM_HL
+
+Sets the default interface/output language used by the client. The value is
+passed as the `hl` query parameter on every batchexecute RPC call and is the
+fallback language for the `generate audio|video|slide-deck|infographic|
+data-table|mind-map|report` commands and their `ArtifactsAPI` equivalents:
+
+```bash
+export NOTEBOOKLM_HL=ja
+notebooklm generate audio "deep dive"   # Japanese audio overview
+```
+
+Surrounding whitespace is stripped; an empty or whitespace-only value falls
+back to `en`. For the generate commands, the resolution order is:
+
+1. `--language` CLI flag
+2. `NOTEBOOKLM_HL` environment variable
+3. `language` value from the active profile's config
+4. `en` (built-in default)
 
 ## CLI Options
 
@@ -232,7 +258,7 @@ notebooklm login
 **One-off override with `--storage`:**
 
 ```bash
-notebooklm --storage /path/to/account.json list
+notebooklm --storage /path/to/storage_state.json list
 ```
 
 ## CI/CD Configuration

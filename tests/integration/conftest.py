@@ -99,7 +99,7 @@ def mock_list_notebooks_response():
             [
                 [
                     "My First Notebook",
-                    [],
+                    [["src_001"], ["src_002"]],
                     "nb_001",
                     "📘",
                     None,
@@ -107,7 +107,7 @@ def mock_list_notebooks_response():
                 ],
                 [
                     "Research Notes",
-                    [],
+                    None,
                     "nb_002",
                     "📚",
                     None,

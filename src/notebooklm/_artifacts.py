@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import httpx
 
 from ._core import ClientCore
+from ._env import get_default_language
 from .auth import load_httpx_cookies
 from .exceptions import ValidationError
 from .rpc import (
@@ -50,6 +51,7 @@ from .types import (
     ArtifactType,
     GenerationStatus,
     ReportSuggestion,
+    _extract_artifact_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -361,7 +363,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         instructions: str | None = None,
         audio_format: AudioFormat | None = None,
         audio_length: AudioLength | None = None,
@@ -371,7 +373,8 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             instructions: Custom instructions for the podcast hosts.
             audio_format: DEEP_DIVE, BRIEF, CRITIQUE, or DEBATE.
             audio_length: SHORT, DEFAULT, or LONG.
@@ -379,6 +382,8 @@ class ArtifactsAPI:
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -418,24 +423,38 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         instructions: str | None = None,
         video_format: VideoFormat | None = None,
         video_style: VideoStyle | None = None,
+        style_prompt: str | None = None,
     ) -> GenerationStatus:
         """Generate a Video Overview.
 
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             instructions: Custom instructions for video generation.
             video_format: EXPLAINER or BRIEF.
             video_style: AUTO_SELECT, CLASSIC, WHITEBOARD, etc.
+            style_prompt: Custom visual style instructions. Requires
+                ``video_style=VideoStyle.CUSTOM``.
 
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
+        normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
+        if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
+            raise ValidationError("style_prompt is not supported for cinematic videos")
+        if video_style == VideoStyle.CUSTOM and not normalized_style_prompt:
+            raise ValidationError("style_prompt is required when video_style is CUSTOM")
+        if normalized_style_prompt and video_style != VideoStyle.CUSTOM:
+            raise ValidationError("style_prompt requires video_style=VideoStyle.CUSTOM")
+
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -444,6 +463,17 @@ class ArtifactsAPI:
 
         format_code = video_format.value if video_format else None
         style_code = video_style.value if video_style else None
+
+        video_config = [
+            source_ids_double,
+            language,
+            instructions,
+            None,
+            format_code,
+            style_code,
+        ]
+        if normalized_style_prompt:
+            video_config.append(normalized_style_prompt)
 
         params = [
             [2],
@@ -460,14 +490,7 @@ class ArtifactsAPI:
                 [
                     None,
                     None,
-                    [
-                        source_ids_double,
-                        language,
-                        instructions,
-                        None,
-                        format_code,
-                        style_code,
-                    ],
+                    video_config,
                 ],
             ],
         ]
@@ -477,7 +500,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a Cinematic Video Overview.
@@ -497,12 +520,15 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             instructions: Custom instructions for video generation.
 
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -541,7 +567,7 @@ class ArtifactsAPI:
         notebook_id: str,
         report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         custom_prompt: str | None = None,
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
@@ -551,7 +577,8 @@ class ArtifactsAPI:
             notebook_id: The notebook ID.
             report_format: BRIEFING_DOC, STUDY_GUIDE, BLOG_POST, or CUSTOM.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             custom_prompt: Prompt for CUSTOM format. Falls back to a generic
                 default if None.
             extra_instructions: Additional instructions appended to the built-in
@@ -561,6 +588,8 @@ class ArtifactsAPI:
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -638,7 +667,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a study guide report.
@@ -648,12 +677,15 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             extra_instructions: Additional instructions appended to the default template.
 
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         return await self.generate_report(
             notebook_id,
             report_format=ReportFormat.STUDY_GUIDE,
@@ -779,7 +811,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         instructions: str | None = None,
         orientation: InfographicOrientation | None = None,
         detail_level: InfographicDetail | None = None,
@@ -790,7 +822,8 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             instructions: Custom instructions for infographic generation.
             orientation: LANDSCAPE, PORTRAIT, or SQUARE.
             detail_level: CONCISE, STANDARD, or DETAILED.
@@ -799,6 +832,8 @@ class ArtifactsAPI:
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -834,7 +869,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         instructions: str | None = None,
         slide_format: SlideDeckFormat | None = None,
         slide_length: SlideDeckLength | None = None,
@@ -844,7 +879,8 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             instructions: Custom instructions for slide deck generation.
             slide_format: DETAILED_DECK or PRESENTER_SLIDES.
             slide_length: DEFAULT or SHORT.
@@ -852,6 +888,8 @@ class ArtifactsAPI:
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -938,7 +976,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str = "en",
+        language: str | None = None,
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a data table.
@@ -946,12 +984,15 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
-            language: Language code (default: "en").
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
             instructions: Description of desired table structure.
 
         Returns:
             GenerationStatus with task_id for polling.
         """
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -988,6 +1029,8 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
+        language: str | None = None,
+        instructions: str | None = None,
     ) -> dict[str, Any]:
         """Generate an interactive mind map.
 
@@ -997,12 +1040,17 @@ class ArtifactsAPI:
         Args:
             notebook_id: The notebook ID.
             source_ids: Source IDs to include. If None, uses all sources.
+            language: Language code. If None, uses the ``NOTEBOOKLM_HL``
+                environment variable, defaulting to ``"en"``.
+            instructions: Custom instructions for the mind map.
 
         Returns:
             Dictionary with 'mind_map' (JSON data) and 'note_id'.
         """
         import json as json_module
 
+        if language is None:
+            language = get_default_language()
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
@@ -1014,7 +1062,7 @@ class ArtifactsAPI:
             None,
             None,
             None,
-            ["interactive_mindmap", [["[CONTEXT]", ""]], ""],
+            ["interactive_mindmap", [["[CONTEXT]", instructions or ""]], language],
             None,
             [2, None, [1]],
         ]
@@ -1098,49 +1146,17 @@ class ArtifactsAPI:
         if not audio_art:
             raise ArtifactNotReadyError("audio")
 
-        # Extract URL from metadata[6][5]
-        try:
-            metadata = audio_art[6]
-            if not isinstance(metadata, list) or len(metadata) <= 5:
-                raise ArtifactParseError(
-                    "audio",
-                    artifact_id=artifact_id,
-                    details="Invalid audio metadata structure",
-                )
-
-            media_list = metadata[5]
-            if not isinstance(media_list, list) or len(media_list) == 0:
-                raise ArtifactParseError(
-                    "audio",
-                    artifact_id=artifact_id,
-                    details="No media URLs found",
-                )
-
-            url = None
-            for item in media_list:
-                if isinstance(item, list) and len(item) > 2 and item[2] == "audio/mp4":
-                    url = item[0]
-                    break
-
-            if not url and len(media_list) > 0 and isinstance(media_list[0], list):
-                url = media_list[0][0]
-
-            if not url:
-                raise ArtifactDownloadError(
-                    "audio",
-                    artifact_id=artifact_id,
-                    details="Could not extract download URL",
-                )
-
-            return await self._download_url(url, output_path)
-
-        except (IndexError, TypeError) as e:
+        # Route through the shared extractor so readiness checks, Artifact.url,
+        # GenerationStatus.url, and downloads all agree on the same URL.
+        url = _extract_artifact_url(audio_art, ArtifactTypeCode.AUDIO.value)
+        if not url:
             raise ArtifactParseError(
                 "audio",
                 artifact_id=artifact_id,
-                details=f"Failed to parse audio artifact structure: {e}",
-                cause=e,
-            ) from e
+                details="Could not extract download URL from artifact metadata",
+            )
+
+        return await self._download_url(url, output_path)
 
     async def download_video(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -1177,50 +1193,17 @@ class ArtifactsAPI:
         if not video_art:
             raise ArtifactNotReadyError("video_overview")
 
-        # Extract URL from metadata[8]
-        try:
-            if len(video_art) <= 8:
-                raise ArtifactParseError("video_artifact", details="Invalid structure")
-
-            metadata = video_art[8]
-            if not isinstance(metadata, list):
-                raise ArtifactParseError("video_metadata", details="Invalid structure")
-
-            media_list = None
-            for item in metadata:
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and isinstance(item[0], list)
-                    and len(item[0]) > 0
-                    and isinstance(item[0][0], str)
-                    and item[0][0].startswith("http")
-                ):
-                    media_list = item
-                    break
-
-            if not media_list:
-                raise ArtifactParseError("media", details="No media URLs found")
-
-            url = None
-            for item in media_list:
-                if isinstance(item, list) and len(item) > 2 and item[2] == "video/mp4":
-                    url = item[0]
-                    if item[1] == 4:
-                        break
-
-            if not url and len(media_list) > 0:
-                url = media_list[0][0]
-
-            if not url:
-                raise ArtifactDownloadError("media", details="Could not extract download URL")
-
-            return await self._download_url(url, output_path)
-
-        except (IndexError, TypeError) as e:
+        # Route through the shared extractor so readiness checks, Artifact.url,
+        # GenerationStatus.url, and downloads all agree on the same URL.
+        url = _extract_artifact_url(video_art, ArtifactTypeCode.VIDEO.value)
+        if not url:
             raise ArtifactParseError(
-                "video_artifact", details=f"Failed to parse structure: {e}", cause=e
-            ) from e
+                "video_artifact",
+                artifact_id=artifact_id,
+                details="Could not extract download URL from artifact metadata",
+            )
+
+        return await self._download_url(url, output_path)
 
     async def download_infographic(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -1257,11 +1240,10 @@ class ArtifactsAPI:
         if not info_art:
             raise ArtifactNotReadyError("infographic")
 
-        # Reuse the shared helper so readiness checks and downloads agree on
-        # which URL to select (both now iterate forward, preferring the
-        # canonical content URL at a lower index).
+        # Route through the shared extractor so readiness checks and downloads
+        # agree on which URL to select.
         try:
-            url = self._find_infographic_url(info_art)
+            url = _extract_artifact_url(info_art, ArtifactTypeCode.INFOGRAPHIC.value)
             if not url:
                 raise ArtifactParseError("infographic", details="Could not find metadata")
             return await self._download_url(url, output_path)
@@ -1764,10 +1746,12 @@ class ArtifactsAPI:
                 error_msg: str | None = None
                 if status == "failed":
                     error_msg = self._extract_artifact_error(art)
+                url = _extract_artifact_url(art, artifact_type)
 
                 return GenerationStatus(
                     task_id=task_id,
                     status=status,
+                    url=url,
                     error=error_msg,
                 )
 
@@ -2359,46 +2343,6 @@ class ArtifactsAPI:
         except ValueError:
             return str(artifact_type)
 
-    def _is_valid_media_url(self, value: Any) -> bool:
-        """Check if value is a valid HTTP(S) URL.
-
-        Args:
-            value: The value to check.
-
-        Returns:
-            True if value is a string starting with http:// or https://.
-        """
-        return isinstance(value, str) and value.startswith(("http://", "https://"))
-
-    def _find_infographic_url(self, art: builtins.list[Any]) -> str | None:
-        """Extract infographic image URL from artifact data.
-
-        Infographic URLs are deeply nested in the artifact structure.
-        This method searches forward through the artifact to prefer the
-        canonical content URL over any later URL-containing fields.
-
-        Args:
-            art: Raw artifact data from _list_raw().
-
-        Returns:
-            The image URL if found, None otherwise.
-        """
-        for item in art:
-            if not isinstance(item, list) or len(item) <= 2:
-                continue
-            content = item[2]
-            if not isinstance(content, list) or len(content) == 0:
-                continue
-            first_content = content[0]
-            if not isinstance(first_content, list) or len(first_content) <= 1:
-                continue
-            img_data = first_content[1]
-            if isinstance(img_data, list) and len(img_data) > 0:
-                url = img_data[0]
-                if self._is_valid_media_url(url):
-                    return url
-        return None
-
     def _is_media_ready(self, art: builtins.list[Any], artifact_type: int) -> bool:
         """Check if media artifact has URLs populated.
 
@@ -2411,7 +2355,7 @@ class ArtifactsAPI:
         - art[2]: artifact_type (ArtifactTypeCode enum value)
         - art[4]: status_code (ArtifactStatus enum value)
         - art[6][5]: audio media URL list
-        - art[8]: video metadata containing URL list
+        - art[8][i][0][0]: video media URL string (within nested variants and entries)
         - art[16][3]: slide deck PDF URL
 
         Args:
@@ -2423,38 +2367,8 @@ class ArtifactsAPI:
             Returns True on unexpected structure (defensive fallback).
         """
         try:
-            if artifact_type == ArtifactTypeCode.AUDIO.value:
-                # Audio URL is at art[6][5] - check for non-empty media list
-                if len(art) > 6 and isinstance(art[6], list) and len(art[6]) > 5:
-                    media_list = art[6][5]
-                    if isinstance(media_list, list) and len(media_list) > 0:
-                        # Check first item has a valid URL
-                        first_item = media_list[0]
-                        if isinstance(first_item, list) and len(first_item) > 0:
-                            return self._is_valid_media_url(first_item[0])
-                return False
-
-            elif artifact_type == ArtifactTypeCode.VIDEO.value:
-                # Video URLs are in art[8] - check for any valid URL in the list
-                if len(art) > 8 and isinstance(art[8], list):
-                    return any(
-                        self._is_valid_media_url(item[0])
-                        for item in art[8]
-                        if isinstance(item, list) and len(item) > 0
-                    )
-                return False
-
-            elif artifact_type == ArtifactTypeCode.INFOGRAPHIC.value:
-                return self._find_infographic_url(art) is not None
-
-            elif artifact_type == ArtifactTypeCode.SLIDE_DECK.value:
-                # Slide deck PDF URL is at art[16][3]
-                return (
-                    len(art) > 16
-                    and isinstance(art[16], list)
-                    and len(art[16]) > 3
-                    and self._is_valid_media_url(art[16][3])
-                )
+            if artifact_type in _MEDIA_ARTIFACT_TYPES:
+                return _extract_artifact_url(art, artifact_type) is not None
 
             # Non-media artifacts (Report, Quiz, Flashcard, Data Table, Mind Map):
             # Status code alone is sufficient for these types

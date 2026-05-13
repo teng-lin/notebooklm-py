@@ -217,6 +217,162 @@ class TestSourcesAPI:
         assert sources[2].kind == "youtube"
 
     @pytest.mark.asyncio
+    async def test_list_sources_youtube_url_at_index_5(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Regression test for issue #265: YouTube URLs are stored at src[2][5][0].
+
+        The real NotebookLM API stores YouTube metadata at src[2][5] as
+        [url, video_id, channel_name], with src[2][7] = None. The list() method
+        must extract the URL from [5] when [7] is not populated.
+        """
+        response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "Test Notebook",
+                    [
+                        [
+                            ["src_yt"],
+                            "YouTube Video",
+                            [
+                                None,
+                                11,
+                                [1704240000, 0],
+                                None,
+                                9,  # YOUTUBE type code
+                                [
+                                    "https://www.youtube.com/watch?v=dcWU-qD8ISQ",
+                                    "dcWU-qD8ISQ",
+                                    "john newquist",
+                                ],
+                                None,
+                                None,  # [7] is None for YouTube sources
+                            ],
+                            [None, 2],
+                        ],
+                    ],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            sources = await client.sources.list("nb_123")
+
+        assert len(sources) == 1
+        assert sources[0].id == "src_yt"
+        assert sources[0].kind == "youtube"
+        assert sources[0].url == "https://www.youtube.com/watch?v=dcWU-qD8ISQ"
+
+    @pytest.mark.asyncio
+    async def test_list_sources_ignores_bare_http_at_index_0(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """metadata[0] must not be used as a URL fallback in list().
+
+        GET_NOTEBOOK source entries use the same medium-nested shape that
+        Source.from_api_response handles with allow_bare_http=False —
+        metadata[0] in that shape can pack unrelated http-like data. If the
+        bare-[0] fallback fires, list() would surface a bogus URL. Keep
+        allow_bare_http=False here so list() and from_api_response agree.
+        """
+        response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "Test Notebook",
+                    [
+                        [
+                            ["src_bare"],
+                            "Source with bare http at [0]",
+                            [
+                                # metadata[0] is an http-like string that must
+                                # be ignored — it is not a source URL here.
+                                "http://unrelated.example.com/not-a-source-url",
+                                11,
+                                [1704240000, 0],
+                                None,
+                                5,
+                                None,
+                                None,
+                                None,  # metadata[7] empty → no web-page URL
+                            ],
+                            [None, 2],
+                        ],
+                    ],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            sources = await client.sources.list("nb_123")
+
+        assert len(sources) == 1
+        assert sources[0].id == "src_bare"
+        assert sources[0].url is None
+
+    @pytest.mark.asyncio
+    async def test_list_sources_index_7_wins_over_5(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """When both src[2][7] and src[2][5] are populated, [7] wins."""
+        response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "Test Notebook",
+                    [
+                        [
+                            ["src_both"],
+                            "Hybrid",
+                            [
+                                None,
+                                11,
+                                [1704240000, 0],
+                                None,
+                                5,
+                                ["https://shouldnt.win/5"],
+                                None,
+                                ["https://should.win/7"],
+                            ],
+                            [None, 2],
+                        ],
+                    ],
+                    "nb_123",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1704067200, 0]],
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            sources = await client.sources.list("nb_123")
+
+        assert len(sources) == 1
+        assert sources[0].url == "https://should.win/7"
+
+    @pytest.mark.asyncio
     async def test_list_sources_empty(
         self,
         auth_tokens,
@@ -885,6 +1041,34 @@ class TestListSourcesMalformedResponse:
 
         assert sources == []
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("rpc_result", "message"),
+        [
+            ([], "API response structure changed"),
+            (["just_a_string"], "API response structure changed"),
+            ([["just_a_title"]], "API response structure changed"),
+            ([["Notebook Title", None]], "sources data is NoneType, not list"),
+        ],
+    )
+    async def test_list_sources_strict_raises_for_malformed_response(
+        self,
+        rpc_result,
+        message,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Strict mode exposes malformed source-list responses to callers
+        that must distinguish API-structure failures from empty notebooks.
+        """
+        response = build_rpc_response(RPCMethod.GET_NOTEBOOK, rpc_result)
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(RPCError, match=message):
+                await client.sources.list("nb_123", strict=True)
+
 
 class TestListSourcesParsingEdgeCases:
     """Tests for list() per-source parsing edge cases (lines 100-143)."""
@@ -1449,6 +1633,48 @@ class TestGetFulltextEdgeCases:
         assert fulltext.url == "https://example.com/article"
         assert fulltext._type_code == 5
         assert "main content" in fulltext.content
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_youtube_url_at_index_5(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Regression: YouTube fulltext metadata stores URL at result[0][2][5][0]."""
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [
+                [
+                    "src_yt",
+                    "YouTube Video",
+                    [
+                        None,
+                        0,
+                        None,
+                        None,
+                        9,
+                        [
+                            "https://www.youtube.com/watch?v=dcWU-qD8ISQ",
+                            "dcWU-qD8ISQ",
+                            "john newquist",
+                        ],
+                        None,
+                        None,
+                    ],
+                ],
+                None,
+                None,
+                [[["Transcript content."]]],
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            fulltext = await client.sources.get_fulltext("nb_123", "src_yt")
+
+        assert fulltext._type_code == 9
+        assert fulltext.url == "https://www.youtube.com/watch?v=dcWU-qD8ISQ"
 
     @pytest.mark.asyncio
     async def test_get_fulltext_source_type_only_empty_url_list(
@@ -2285,7 +2511,10 @@ class TestWaitUntilReadyErrorPaths:
         """Test wait_until_ready() raises SourceProcessingError when source is in ERROR state (line 235)."""
         from notebooklm.types import SourceProcessingError
 
-        # Source has ERROR status (status=3)
+        # Source has ERROR status (status=3). Use a non-audio terminal type
+        # (3 = PDF) at metadata[4] so the audio-tolerance gate (#391) does
+        # not keep polling. Audio (type 10) and unclassified types can briefly
+        # report status=3 transiently; PDF cannot.
         response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -2295,7 +2524,7 @@ class TestWaitUntilReadyErrorPaths:
                         [
                             ["src_error"],
                             "Failed Source",
-                            [None, 0],
+                            [None, 0, None, None, 3],  # metadata[4]=3 (PDF)
                             [None, 3],  # status=ERROR
                         ]
                     ],

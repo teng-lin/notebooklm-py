@@ -11,8 +11,6 @@ Commands:
     suggestions Get AI-suggested report topics
 """
 
-import json
-
 import click
 from rich.table import Table
 
@@ -429,7 +427,7 @@ def artifact_suggestions(ctx, notebook_id, json_output, client_auth):
                     {"title": s.title, "description": s.description, "prompt": s.prompt}
                     for s in suggestions
                 ]
-                console.print(json.dumps(data, indent=2))
+                json_output_response(data)
                 return
 
             table = Table(title="Suggested Reports")

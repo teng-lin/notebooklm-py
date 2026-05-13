@@ -44,7 +44,9 @@ class TestGenerateAudio:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
@@ -59,7 +61,9 @@ class TestGenerateAudio:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "audio", "--format", "debate", "-n", "nb_123"]
@@ -76,7 +80,9 @@ class TestGenerateAudio:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "audio", "--length", "long", "-n", "nb_123"]
@@ -98,7 +104,9 @@ class TestGenerateAudio:
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "--wait", "-n", "nb_123"])
 
@@ -111,7 +119,9 @@ class TestGenerateAudio:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
@@ -133,7 +143,9 @@ class TestGenerateVideo:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "video", "-n", "nb_123"])
 
@@ -147,13 +159,98 @@ class TestGenerateVideo:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "video", "--style", "kawaii", "-n", "nb_123"]
                 )
 
             assert result.exit_code == 0
+
+    def test_generate_video_with_custom_style_prompt(self, runner, mock_auth):
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_video = AsyncMock(
+                return_value={"artifact_id": "video_123", "status": "processing"}
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "generate",
+                        "video",
+                        "--style",
+                        "custom",
+                        "--style-prompt",
+                        "  Use hand-drawn diagrams  ",
+                        "-n",
+                        "nb_123",
+                    ],
+                )
+
+            assert result.exit_code == 0
+            mock_client.artifacts.generate_video.assert_awaited_once()
+            kwargs = mock_client.artifacts.generate_video.await_args.kwargs
+            assert kwargs["video_style"].name == "CUSTOM"
+            assert kwargs["style_prompt"] == "Use hand-drawn diagrams"
+
+    def test_generate_video_custom_style_requires_prompt(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(
+            cli,
+            ["generate", "video", "--style", "custom", "-n", "nb_123"],
+        )
+
+        assert result.exit_code == 1
+        assert "--style custom requires --style-prompt" in result.output
+
+    def test_generate_video_custom_style_rejects_blank_prompt(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "video",
+                "--style",
+                "custom",
+                "--style-prompt",
+                "   ",
+                "-n",
+                "nb_123",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--style custom requires --style-prompt" in result.output
+
+    def test_generate_video_style_prompt_requires_custom_style(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "video",
+                "--style",
+                "anime",
+                "--style-prompt",
+                "Use hand-drawn diagrams",
+                "-n",
+                "nb_123",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--style-prompt requires --style custom" in result.output
 
 
 # =============================================================================
@@ -170,7 +267,9 @@ class TestGenerateCinematicVideo:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "cinematic-video", "-n", "nb_123"])
 
@@ -184,7 +283,9 @@ class TestGenerateCinematicVideo:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -208,7 +309,9 @@ class TestGenerateCinematicVideo:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -218,6 +321,24 @@ class TestGenerateCinematicVideo:
             assert result.exit_code == 0
             # Should call generate_cinematic_video (not generate_video) despite --style
             mock_client.artifacts.generate_cinematic_video.assert_called_once()
+
+    def test_generate_cinematic_video_rejects_style_prompt(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "cinematic-video",
+                "--style-prompt",
+                "Use hand-drawn diagrams",
+                "-n",
+                "nb_123",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--style-prompt cannot be used with cinematic video" in result.output
 
 
 # =============================================================================
@@ -234,7 +355,9 @@ class TestGenerateQuiz:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "quiz", "-n", "nb_123"])
 
@@ -248,7 +371,9 @@ class TestGenerateQuiz:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -281,7 +406,9 @@ class TestGenerateFlashcards:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "flashcards", "-n", "nb_123"])
 
@@ -302,7 +429,9 @@ class TestGenerateSlideDeck:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "slide-deck", "-n", "nb_123"])
 
@@ -316,7 +445,9 @@ class TestGenerateSlideDeck:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -349,7 +480,9 @@ class TestGenerateInfographic:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "infographic", "-n", "nb_123"])
 
@@ -363,7 +496,9 @@ class TestGenerateInfographic:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -403,7 +538,9 @@ class TestGenerateDataTable:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "data-table", "Compare key concepts", "-n", "nb_123"]
@@ -426,7 +563,9 @@ class TestGenerateMindMap:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "mind-map", "-n", "nb_123"])
 
@@ -447,7 +586,9 @@ class TestGenerateReport:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "report", "-n", "nb_123"])
 
@@ -461,7 +602,9 @@ class TestGenerateReport:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "report", "--format", "study-guide", "-n", "nb_123"]
@@ -477,7 +620,9 @@ class TestGenerateReport:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "report", "Create a white paper", "-n", "nb_123"]
@@ -504,7 +649,9 @@ class TestGenerateReport:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -535,7 +682,9 @@ class TestGenerateReport:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -566,7 +715,9 @@ class TestGenerateReport:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -612,7 +763,9 @@ class TestGenerateJsonOutput:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", cmd, "--json", "-n", "nb_123"])
 
@@ -629,7 +782,9 @@ class TestGenerateJsonOutput:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "data-table", "Compare concepts", "--json", "-n", "nb_123"]
@@ -648,7 +803,9 @@ class TestGenerateJsonOutput:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "mind-map", "--json", "-n", "nb_123"])
 
@@ -708,7 +865,9 @@ class TestGenerateLanguageValidation:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -728,7 +887,9 @@ class TestGenerateLanguageValidation:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli, ["generate", "audio", "-n", "nb_123", "--language", "ja"]
@@ -949,7 +1110,9 @@ class TestRateLimitDetection:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
@@ -969,7 +1132,9 @@ class TestRateLimitDetection:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
 
@@ -1011,6 +1176,105 @@ class TestResolveLanguageDirect:
         """Line 139: language is None and config_lang is None → returns DEFAULT_LANGUAGE."""
         import importlib
 
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value=None):
+            result = generate_module.resolve_language(None)
+        assert result == "en"
+
+    def test_env_overrides_config(self, monkeypatch):
+        """NOTEBOOKLM_HL set, config also set, no flag → env wins over config."""
+        import importlib
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value="zh_Hans"):
+            result = generate_module.resolve_language(None)
+        assert result == "ja"
+
+    def test_flag_overrides_env(self, monkeypatch):
+        """Explicit --language argument wins over NOTEBOOKLM_HL env var."""
+        import importlib
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value="zh_Hans"):
+            result = generate_module.resolve_language("ko")
+        assert result == "ko"
+
+    def test_env_only_no_config(self, monkeypatch):
+        """NOTEBOOKLM_HL set, no config, no flag → env wins over default."""
+        import importlib
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value=None):
+            result = generate_module.resolve_language(None)
+        assert result == "ja"
+
+    def test_empty_env_falls_through_to_config(self, monkeypatch):
+        """Empty NOTEBOOKLM_HL is treated as unset and config wins."""
+        import importlib
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "")
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value="zh_Hans"):
+            result = generate_module.resolve_language(None)
+        assert result == "zh_Hans"
+
+    def test_invalid_env_raises_bad_parameter(self, monkeypatch):
+        """An unsupported NOTEBOOKLM_HL value still gets validated."""
+        import importlib
+
+        import click
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "xx_INVALID")
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with (
+            patch.object(generate_module, "get_language", return_value=None),
+            pytest.raises(click.BadParameter) as exc_info,
+        ):
+            generate_module.resolve_language(None)
+        assert "xx_INVALID" in str(exc_info.value)
+
+    def test_resolve_language_rejects_invalid_config_value(self):
+        """An unsupported language stored in the config file gets validated."""
+        import importlib
+
+        import click
+
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with (
+            patch.object(generate_module, "get_language", return_value="xx_INVALID"),
+            pytest.raises(click.BadParameter) as exc_info,
+        ):
+            generate_module.resolve_language(None)
+        assert "xx_INVALID" in str(exc_info.value)
+        assert "notebooklm language list" in str(exc_info.value)
+
+    def test_resolve_language_accepts_valid_config_value(self):
+        """A supported language stored in the config file is returned as-is."""
+        import importlib
+
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value="ja"):
+            result = generate_module.resolve_language(None)
+        assert result == "ja"
+
+    def test_resolve_language_treats_whitespace_env_as_unset(self, monkeypatch):
+        """Whitespace-only NOTEBOOKLM_HL falls through to config, not rejected."""
+        import importlib
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "   ")
+        generate_module = importlib.import_module("notebooklm.cli.generate")
+        with patch.object(generate_module, "get_language", return_value="ja"):
+            result = generate_module.resolve_language(None)
+        assert result == "ja"
+
+    def test_resolve_language_treats_whitespace_env_as_unset_no_config(self, monkeypatch):
+        """Whitespace-only NOTEBOOKLM_HL with no config falls through to default."""
+        import importlib
+
+        monkeypatch.setenv("NOTEBOOKLM_HL", "   ")
         generate_module = importlib.import_module("notebooklm.cli.generate")
         with patch.object(generate_module, "get_language", return_value=None):
             result = generate_module.resolve_language(None)
@@ -1240,7 +1504,9 @@ class TestGenerateReviseSlide:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1269,7 +1535,9 @@ class TestGenerateReviseSlide:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1299,7 +1567,9 @@ class TestGenerateReviseSlide:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1322,7 +1592,9 @@ class TestGenerateReviseSlide:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1348,7 +1620,9 @@ class TestGenerateReviseSlide:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1392,7 +1666,9 @@ class TestGenerateReportWithNonBriefingFormat:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1422,7 +1698,9 @@ class TestGenerateReportWithNonBriefingFormat:
             )
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(
                     cli,
@@ -1464,7 +1742,9 @@ class TestHandleGenerationResultPaths:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=status)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
@@ -1478,7 +1758,9 @@ class TestHandleGenerationResultPaths:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=["task_list_1", "extra"])
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
@@ -1492,7 +1774,9 @@ class TestHandleGenerationResultPaths:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
@@ -1506,7 +1790,9 @@ class TestHandleGenerationResultPaths:
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
 
@@ -1536,7 +1822,9 @@ class TestHandleGenerationResultPaths:
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--wait"])
 
@@ -1608,7 +1896,9 @@ class TestHandleGenerationResultListPathAndWait:
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--wait"])
 
@@ -1637,7 +1927,9 @@ class TestHandleGenerationResultListPathAndWait:
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
             mock_client_cls.return_value = mock_client
 
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--wait"])
 

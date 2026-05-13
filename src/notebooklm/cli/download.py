@@ -12,7 +12,6 @@ Commands:
     flashcards   Download flashcard deck
 """
 
-import json
 from collections.abc import Awaitable, Callable
 from functools import partial
 from pathlib import Path
@@ -20,7 +19,6 @@ from typing import Any, TypedDict
 
 import click
 
-from ..auth import AuthTokens, fetch_tokens, load_auth_from_storage
 from ..client import NotebookLMClient
 from ..types import Artifact, ArtifactType
 from .download_helpers import (
@@ -32,6 +30,7 @@ from .download_helpers import (
 from .helpers import (
     console,
     handle_error,
+    json_output_response,
     require_notebook,
     resolve_notebook_id,
     run_async,
@@ -164,9 +163,10 @@ async def _download_artifacts_generic(
     # Get notebook and auth
     nb_id = require_notebook(notebook)
     storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    cookies = load_auth_from_storage(storage_path)
-    csrf, session_id = await fetch_tokens(cookies)
-    auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    profile = ctx.obj.get("profile") if ctx.obj else None
+    from ..auth import AuthTokens
+
+    auth = await AuthTokens.from_storage(storage_path, profile=profile)
 
     # Adjust extension for PPTX format (must be outside _download() to avoid UnboundLocalError)
     if artifact_type_name == "slide-deck" and slide_format == "pptx":
@@ -660,7 +660,7 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
         )
 
         if json_output:
-            console.print(json.dumps(result, indent=2))
+            json_output_response(result)
             return
 
         _display_download_result(result, artifact_type)
@@ -802,10 +802,10 @@ async def _download_interactive(
     """
     nb_id = require_notebook(notebook)
     storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    cookies = load_auth_from_storage(storage_path)
+    profile = ctx.obj.get("profile") if ctx.obj else None
+    from ..auth import AuthTokens
 
-    csrf, session_id = await fetch_tokens(cookies)
-    auth = AuthTokens(cookies=cookies, csrf_token=csrf, session_id=session_id)
+    auth = await AuthTokens.from_storage(storage_path, profile=profile)
 
     async with NotebookLMClient(auth) as client:
         nb_id_resolved = await resolve_notebook_id(client, nb_id)

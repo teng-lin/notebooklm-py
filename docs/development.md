@@ -134,6 +134,40 @@ uv run pytest
 uv run pytest tests/e2e -m readonly        # Read-only tests only
 uv run pytest tests/e2e -m "not variants"  # Skip parameter variants
 uv run pytest tests/e2e --include-variants # All tests including variants
+
+# Select a profile for E2E tests
+uv run pytest tests/e2e -m e2e --profile work
+```
+
+### Selecting a profile for E2E tests
+
+The E2E suite picks up the active NotebookLM profile from (highest precedence first):
+
+1. `--profile <name>` pytest flag
+2. `NOTEBOOKLM_PROFILE` environment variable
+3. `default_profile` from `~/.notebooklm/config.json`
+4. `default`
+
+The auto-created notebook ID cache files
+(`generation_notebook_id`, `multi_source_notebook_id`) are written under the
+active profile directory (`~/.notebooklm/profiles/<name>/`), so each profile
+keeps its own cache and never reuses notebook IDs from another Google account.
+
+#### Notebook ID env vars are profile-agnostic
+
+The notebook ID env vars (`NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`,
+`NOTEBOOKLM_GENERATION_NOTEBOOK_ID`, `NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID`)
+are **not** profile-scoped — they're read as-is regardless of which profile
+is active. If you set them in `.env` and switch profiles, the test will try
+to access notebooks that don't exist in the other Google account.
+
+**Recommendation:** leave the generation/multi-source env vars unset and let
+the per-profile cache files handle it. Only `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`
+needs to be set; if you switch profiles often, override it inline:
+
+```bash
+NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
+  uv run pytest tests/e2e -m e2e --profile work
 ```
 
 ### Test Structure

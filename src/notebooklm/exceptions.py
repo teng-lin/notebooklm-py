@@ -14,6 +14,10 @@ Example:
 
 from __future__ import annotations
 
+from typing import Any
+
+from ._env import DEFAULT_BASE_URL, get_base_url
+
 __all__ = [
     # Base
     "NotebookLMError",
@@ -34,6 +38,7 @@ __all__ = [
     # Domain: Notebooks
     "NotebookError",
     "NotebookNotFoundError",
+    "NotebookLimitError",
     # Domain: Chat
     "ChatError",
     # Domain: Sources
@@ -312,6 +317,65 @@ class NotebookNotFoundError(NotebookError):
     def __init__(self, notebook_id: str):
         self.notebook_id = notebook_id
         super().__init__(f"Notebook not found: {notebook_id}")
+
+
+class NotebookLimitError(NotebookError):
+    """Notebook quota appears to be exhausted.
+
+    Attributes:
+        current_count: Number of owned notebooks returned by the list API.
+        limit: Server-reported NotebookLM notebook limit, if known.
+        known_limits: Optional known NotebookLM notebook limits to include in output.
+        original_error: The underlying RPC failure from create.
+    """
+
+    def __init__(
+        self,
+        current_count: int,
+        *,
+        limit: int | None = None,
+        known_limits: tuple[int, ...] = (),
+        original_error: RPCError | None = None,
+    ):
+        self.current_count = current_count
+        self.limit = limit
+        self.known_limits = known_limits
+        self.original_error = original_error
+
+        count_text = str(current_count)
+        if limit is not None:
+            count_text = f"{current_count}/{limit}"
+
+        known_text = ", ".join(str(value) for value in known_limits)
+        try:
+            base_url = get_base_url()
+        except ValueError:
+            base_url = DEFAULT_BASE_URL
+        message = (
+            "Cannot create notebook: account appears to be at or very near the "
+            f"NotebookLM notebook limit ({count_text} owned notebooks reported). "
+            f"Delete old notebooks at {base_url} and try again."
+        )
+        if known_limits:
+            message += f" Known NotebookLM limits include: {known_text}."
+        if original_error is not None:
+            message += f" Original RPC error: {original_error}"
+        super().__init__(message)
+
+    def to_error_response_extra(self) -> dict[str, Any]:
+        """Return structured fields for CLI JSON error responses."""
+        extra: dict[str, Any] = {
+            "current_count": self.current_count,
+            "limit": self.limit,
+        }
+        if self.known_limits:
+            extra["known_limits"] = list(self.known_limits)
+        if self.original_error is not None:
+            if self.original_error.method_id is not None:
+                extra["method_id"] = self.original_error.method_id
+            if self.original_error.rpc_code is not None:
+                extra["rpc_code"] = self.original_error.rpc_code
+        return extra
 
 
 # =============================================================================

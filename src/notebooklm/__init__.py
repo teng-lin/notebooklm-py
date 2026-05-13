@@ -66,6 +66,7 @@ from .exceptions import (
     NetworkError,
     # Domain: Notebooks
     NotebookError,
+    NotebookLimitError,
     # Base
     NotebookLMError,
     NotebookNotFoundError,
@@ -85,6 +86,8 @@ from .exceptions import (
 
 # Public API: Types and dataclasses
 from .types import (
+    AccountLimits,
+    AccountTier,
     Artifact,
     ArtifactType,
     AskResult,
@@ -136,6 +139,8 @@ __all__ = [
     # Auth
     "AuthTokens",
     # Types
+    "AccountLimits",
+    "AccountTier",
     "Notebook",
     "NotebookDescription",
     "NotebookMetadata",
@@ -170,6 +175,7 @@ __all__ = [
     # Domain Exceptions: Notebooks
     "NotebookError",
     "NotebookNotFoundError",
+    "NotebookLimitError",
     # Domain Exceptions: Chat
     "ChatError",
     # Domain Exceptions: Sources
@@ -210,7 +216,7 @@ __all__ = [
     "ShareAccess",
     "ShareViewLevel",
     "SharePermission",
-    # Deprecated (will be removed in v0.4.0)
+    # Deprecated (will be removed in v0.5.0)
     "StudioContentType",
 ]
 
@@ -240,7 +246,7 @@ def __getattr__(name: str):
         from .rpc.types import ArtifactTypeCode
 
         warnings.warn(
-            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.4.0.",
+            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.5.0.",
             DeprecationWarning,
             stacklevel=2,
         )

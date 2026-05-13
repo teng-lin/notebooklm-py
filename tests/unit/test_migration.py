@@ -193,7 +193,7 @@ class TestExplicitAuthBypassesProfileSetup:
             ["status", "--paths"],
             env={
                 "NOTEBOOKLM_HOME": str(ro_home),
-                "NOTEBOOKLM_AUTH_JSON": '{"cookies": [{"name": "SID", "value": "x", "domain": ".google.com"}]}',
+                "NOTEBOOKLM_AUTH_JSON": '{"cookies": [{"name": "SID", "value": "x", "domain": ".google.com"}, {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"}]}',
             },
         )
         assert result.exit_code != 1 or "PermissionError" not in str(result.exception or "")

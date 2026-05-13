@@ -80,7 +80,12 @@ jobs:
 
     - name: Install Playwright system dependencies (Linux)
       if: runner.os == 'Linux'
-      run: playwright install-deps
+      shell: bash
+      run: |
+        if ! timeout 180s playwright install-deps chromium; then
+          echo "::warning::Playwright system dependency installation timed out or failed."
+          echo "::warning::Continuing so the non-browser test matrix can run."
+        fi
 
     - name: Run tests with coverage
       run: pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=70

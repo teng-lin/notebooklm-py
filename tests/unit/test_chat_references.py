@@ -637,3 +637,110 @@ class TestAskWithReferences:
         # All references should have the same source_id
         for ref in result.references:
             assert ref.source_id == "aaaaaaaa-1234-5678-9012-abcdefabcdef"
+
+
+class TestMultiChunkReferenceInflation:
+    """Tests for issue #300: references inflated across multiple streaming chunks.
+
+    The API streams multiple progressive chunks. Each chunk with an answer
+    contains a full copy of the references. Before the fix, all_references
+    accumulated from every chunk, causing 600+ refs when only ~20 were cited.
+    """
+
+    @staticmethod
+    def _make_answer_chunk(answer_text: str, source_id: str, chunk_id: str) -> list:
+        """Build a single streaming inner_data chunk with one citation."""
+        return [
+            [
+                answer_text,
+                None,
+                [chunk_id, 12345],
+                None,
+                [
+                    [],
+                    None,
+                    None,
+                    [
+                        [
+                            [chunk_id],
+                            [
+                                None,
+                                None,
+                                0.9,
+                                [[None]],
+                                [[[10, 50, [[[5, 20, f"Text from {chunk_id}."]]]]]],
+                                [[[[source_id]]]],
+                                [chunk_id],
+                            ],
+                        ],
+                    ],
+                    1,
+                ],
+            ]
+        ]
+
+    @staticmethod
+    def _build_multi_chunk_response(*chunks: list) -> str:
+        parts = [")]}'"]
+        for chunk in chunks:
+            inner_json = json.dumps(chunk)
+            chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+            parts.append(f"\n{len(chunk_json)}\n{chunk_json}")
+        parts.append("\n")
+        return "".join(parts)
+
+    def test_multi_chunk_does_not_inflate_references(self, chat_api):
+        """References must not multiply when the API streams repeated chunks.
+
+        Issue #300: each streaming chunk repeated the full reference list, so
+        N chunks x M refs = N*M entries instead of M. The fix tracks refs
+        alongside the best answer instead of accumulating across all chunks.
+        """
+        source_id = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
+        short_chunk = self._make_answer_chunk("Short.", source_id, "chunk-1")
+        long_chunk = self._make_answer_chunk(
+            "This is the longer final answer from NotebookLM.", source_id, "chunk-2"
+        )
+
+        response = self._build_multi_chunk_response(short_chunk, long_chunk)
+        answer, refs, _ = chat_api._parse_ask_response_with_references(response)
+
+        assert answer == "This is the longer final answer from NotebookLM."
+        # One citation from the winning chunk only — not 2 (one per chunk)
+        assert len(refs) == 1, f"Expected 1 reference, got {len(refs)}"
+        assert refs[0].source_id == source_id
+
+    def test_many_chunks_still_single_ref_set(self, chat_api):
+        """Simulate 6 progressive streaming chunks (as in the bug report: 6x~67 = 402 sources)."""
+        source_id = "12345678-1234-1234-1234-123456789012"
+        chunks = [
+            self._make_answer_chunk(
+                f"Answer {'x' * i} final NotebookLM response.",
+                source_id,
+                f"chunk-{i}",
+            )
+            for i in range(1, 7)
+        ]
+
+        response = self._build_multi_chunk_response(*chunks)
+        _, refs, _ = chat_api._parse_ask_response_with_references(response)
+
+        # Should have exactly 1 reference from the longest (last) chunk, not 6
+        assert len(refs) == 1, f"Expected 1 reference, got {len(refs)}"
+
+    def test_refs_from_longest_winning_chunk(self, chat_api):
+        """Refs must come from the chunk that produced the longest answer."""
+        winning_source = "aaaabbbb-1111-2222-3333-ccccddddeeee"
+        losing_source = "11112222-3333-4444-5555-666677778888"
+
+        short_chunk = self._make_answer_chunk("Short answer.", losing_source, "chunk-short")
+        long_chunk = self._make_answer_chunk(
+            "This is definitively the longer, winning answer text.", winning_source, "chunk-long"
+        )
+
+        response = self._build_multi_chunk_response(short_chunk, long_chunk)
+        answer, refs, _ = chat_api._parse_ask_response_with_references(response)
+
+        assert answer == "This is definitively the longer, winning answer text."
+        assert len(refs) == 1
+        assert refs[0].source_id == winning_source, "Refs must belong to the winning chunk"

@@ -21,6 +21,11 @@ def runner() -> CliRunner:
 @pytest.fixture
 def mock_auth():
     """Mock authentication for CLI integration tests."""
+    import httpx
+
+    mock_jar = httpx.Cookies()
+    mock_jar.set("SID", "test", domain=".google.com")
+
     with (
         patch(
             "notebooklm.cli.helpers.load_auth_from_storage",
@@ -32,7 +37,14 @@ def mock_auth():
                 "SAPISID": "test",
             },
         ),
-        patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch,
+        patch(
+            "notebooklm.auth.fetch_tokens_with_domains",
+            new_callable=AsyncMock,
+        ) as mock_fetch,
+        patch(
+            "notebooklm.cli.helpers.build_cookie_jar",
+            return_value=mock_jar,
+        ),
     ):
         mock_fetch.return_value = ("csrf_token", "session_id")
         yield

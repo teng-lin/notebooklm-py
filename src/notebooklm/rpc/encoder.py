@@ -68,37 +68,3 @@ def build_request_body(
     body = "&".join(body_parts) + "&"
     logger.debug("Built request body: size=%d bytes", len(body))
     return body
-
-
-def build_url_params(
-    rpc_method: RPCMethod,
-    source_path: str = "/",
-    session_id: str | None = None,
-    bl: str | None = None,
-) -> dict[str, str]:
-    """
-    Build URL query parameters for batchexecute request.
-
-    Args:
-        rpc_method: RPC method being called
-        source_path: Source path context (e.g., /notebook/{id})
-        session_id: Session ID (FdrFJe value)
-        bl: Build label (changes periodically, optional)
-
-    Returns:
-        Dict of query parameters
-    """
-    params = {
-        "rpcids": rpc_method.value,
-        "source-path": source_path,
-        "hl": "en",
-        "rt": "c",  # Chunked response mode
-    }
-
-    if session_id:
-        params["f.sid"] = session_id
-
-    if bl:
-        params["bl"] = bl
-
-    return params

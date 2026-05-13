@@ -1,6 +1,7 @@
 """Unit tests for types module dataclasses and parsing."""
 
 import warnings
+from unittest.mock import patch
 
 import pytest
 
@@ -20,7 +21,57 @@ from notebooklm.types import (
     SourceFulltext,
     SourceType,
     UnknownTypeWarning,
+    _is_valid_artifact_url,
 )
+
+
+class TestArtifactUrlValidation:
+    """Test the canonical artifact URL validation helper."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("https://example.com/audio.mp3", True),
+            ("http://example.com/video.mp4", True),
+            ("example.com/audio.mp3", False),
+            ("ftp://example.com/file.mp3", False),
+            ("", False),
+            (None, False),
+            (123, False),
+            (["https://example.com"], False),
+        ],
+    )
+    def test_url_validation(self, value, expected):
+        assert _is_valid_artifact_url(value) is expected
+
+
+class TestTimestampParsing:
+    def test_datetime_from_timestamp_valid_value(self):
+        """Timestamp helper should preserve valid epoch-second values."""
+        from notebooklm.types import _datetime_from_timestamp
+
+        ts = 1704067200
+        parsed = _datetime_from_timestamp(ts)
+
+        assert parsed is not None
+        assert parsed.timestamp() == ts
+
+    def test_datetime_from_timestamp_oserror(self):
+        """Platform-specific timestamp errors should normalize to None."""
+        from notebooklm.types import _datetime_from_timestamp
+
+        with patch("notebooklm.types.datetime") as mock_datetime:
+            mock_datetime.fromtimestamp.side_effect = OSError("timestamp out of range")
+            parsed = _datetime_from_timestamp(1704067200)
+
+        assert parsed is None
+
+    @pytest.mark.parametrize("value", ["bad", None, float("inf"), float("-inf")])
+    def test_datetime_from_timestamp_invalid_value(self, value):
+        """Invalid or out-of-range timestamp values should normalize to None."""
+        from notebooklm.types import _datetime_from_timestamp
+
+        assert _datetime_from_timestamp(value) is None
 
 
 class TestNotebook:
@@ -31,7 +82,22 @@ class TestNotebook:
 
         assert notebook.id == "nb_123"
         assert notebook.title == "My Notebook"
+        assert notebook.sources_count == 0
         assert notebook.is_owner is True
+
+    def test_from_api_response_counts_sources(self):
+        """Test parsing notebook source count from embedded source entries."""
+        data = ["My Notebook", [["src_1"], ["src_2"], ["src_3"]], "nb_123", "📓"]
+        notebook = Notebook.from_api_response(data)
+
+        assert notebook.sources_count == 3
+
+    def test_from_api_response_none_sources_count_defaults_to_zero(self):
+        """Test parsing notebook source count when source entries are absent."""
+        data = ["My Notebook", None, "nb_123", "📓"]
+        notebook = Notebook.from_api_response(data)
+
+        assert notebook.sources_count == 0
 
     def test_from_api_response_with_timestamp(self):
         """Test parsing notebook with timestamp."""
@@ -95,6 +161,22 @@ class TestNotebook:
 
         assert notebook.created_at is None
 
+    def test_from_api_response_out_of_range_timestamp(self):
+        """Platform timestamp range errors should not escape notebook parsing."""
+        data = [
+            "Notebook",
+            [],
+            "nb_123",
+            "📓",
+            None,
+            [None, None, None, None, None, [1704067200, 0]],
+        ]
+
+        data[5][5][0] = float("inf")
+        notebook = Notebook.from_api_response(data)
+
+        assert notebook.created_at is None
+
     def test_from_api_response_non_string_title(self):
         """Test parsing when title is not a string."""
         data = [123, [], "nb_123", "📓"]
@@ -126,7 +208,37 @@ class TestSource:
 
         assert source.id == "src_456"
         assert source.title == "Nested Source"
-        # URL extraction depends on nesting level - verify ID and title parsed correctly
+        assert source.url == "https://example.com"
+
+    def test_from_api_response_nested_format_with_timestamp(self):
+        """Source.from_api_response should preserve creation timestamps when present."""
+        ts = 1704067200
+        data = [
+            [
+                ["src_ts"],
+                "Timestamped Source",
+                [None, None, [ts, 0], None, 5, None, None, ["https://example.com"]],
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.created_at is not None
+        assert source.created_at.timestamp() == ts
+
+    def test_from_api_response_nested_format_out_of_range_timestamp(self):
+        """Source timestamp range errors should produce None rather than raising."""
+        data = [
+            [
+                ["src_ts"],
+                "Timestamped Source",
+                [None, None, [1704067200, 0], None, 5, None, None, ["https://example.com"]],
+            ]
+        ]
+
+        data[0][2][2][0] = float("inf")
+        source = Source.from_api_response(data)
+
+        assert source.created_at is None
 
     def test_from_api_response_deeply_nested(self):
         """Test parsing deeply nested format."""
@@ -160,6 +272,127 @@ class TestSource:
 
         assert source.kind == SourceType.YOUTUBE
         assert source.kind == "youtube"  # str enum comparison
+
+    def test_from_api_response_deeply_nested_youtube_url_at_index_5(self):
+        """Regression test for issue #265: deeply-nested YouTube payloads store
+        the URL at entry[2][5][0]; entry[2][7] is None. from_api_response must
+        read the URL from index 5 when index 7 is unpopulated.
+        """
+        data = [
+            [
+                [
+                    ["src_yt_deep"],
+                    "YouTube Video",
+                    [
+                        None,
+                        None,
+                        None,
+                        None,
+                        9,  # YOUTUBE type code
+                        [
+                            "https://www.youtube.com/watch?v=dcWU-qD8ISQ",
+                            "dcWU-qD8ISQ",
+                            "john newquist",
+                        ],
+                        None,
+                        None,  # [7] is None for YouTube sources
+                    ],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.id == "src_yt_deep"
+        assert source.kind == SourceType.YOUTUBE
+        assert source.url == "https://www.youtube.com/watch?v=dcWU-qD8ISQ"
+
+    def test_from_api_response_medium_nested_youtube_url_at_index_5(self):
+        """Regression test for issue #265: medium-nested YouTube payloads also
+        store the URL at entry[2][5][0] with entry[2][7] = None.
+        """
+        data = [
+            [
+                ["src_yt_mid"],
+                "YouTube Video",
+                [
+                    None,
+                    None,
+                    None,
+                    None,
+                    9,
+                    [
+                        "https://www.youtube.com/watch?v=dcWU-qD8ISQ",
+                        "dcWU-qD8ISQ",
+                        "john newquist",
+                    ],
+                    None,
+                    None,
+                ],
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.id == "src_yt_mid"
+        assert source.url == "https://www.youtube.com/watch?v=dcWU-qD8ISQ"
+        assert source.kind == SourceType.YOUTUBE
+
+    def test_from_api_response_index_5_empty_list_does_not_crash(self):
+        """entry[2][5] == [] must not produce a URL and must not raise."""
+        data = [
+            [
+                [
+                    ["src_empty5"],
+                    "Weird Source",
+                    [None, None, None, None, 9, [], None, None],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.id == "src_empty5"
+        assert source.url is None
+
+    def test_from_api_response_index_5_non_string_first_element(self):
+        """entry[2][5][0] that isn't a string must not be used as a URL."""
+        data = [
+            [
+                [
+                    ["src_non_str"],
+                    "Weird Source",
+                    [None, None, None, None, 9, [123, "xyz", "chan"], None, None],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.id == "src_non_str"
+        assert source.url is None
+
+    def test_from_api_response_index_7_still_wins_over_5(self):
+        """When both [7] and [5] are populated, [7] takes precedence (matches
+        list() behaviour in _sources.py).
+        """
+        data = [
+            [
+                [
+                    ["src_both"],
+                    "Hybrid Source",
+                    [
+                        None,
+                        None,
+                        None,
+                        None,
+                        5,
+                        ["https://shouldnt.win/5"],
+                        None,
+                        ["https://should.win/7"],
+                    ],
+                ]
+            ]
+        ]
+        source = Source.from_api_response(data)
+
+        assert source.url == "https://should.win/7"
 
     def test_from_api_response_web_page_source(self):
         """Test that web page sources are parsed with type code 5."""
@@ -325,6 +558,207 @@ class TestArtifact:
         assert artifact.created_at is not None
         assert artifact.created_at.timestamp() == ts
 
+    def test_from_api_response_out_of_range_timestamp(self):
+        """Artifact timestamp range errors should produce None rather than raising."""
+        data = [
+            "art_123",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            [float("inf")],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.created_at is None
+
+    def test_from_mind_map_out_of_range_timestamp(self):
+        """Mind map timestamp range errors should produce None rather than raising."""
+        data = [
+            "mind_map_123",
+            [
+                "mind_map_123",
+                "{}",
+                [1, "user_id", [float("inf"), 0]],
+                None,
+                "Mind Map",
+            ],
+        ]
+        artifact = Artifact.from_mind_map(data)
+
+        assert artifact is not None
+        assert artifact.created_at is None
+
+    def test_from_api_response_audio_url(self):
+        """Completed audio artifacts expose their download URL."""
+        data = [
+            "art_audio",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            [None, None, None, None, None, [["https://audio.example/file.mp4", None, "audio/mp4"]]],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://audio.example/file.mp4"
+
+    def test_from_api_response_video_url_prefers_mp4_quality(self):
+        """Video artifacts expose the preferred MP4 download URL."""
+        data = [
+            "art_video",
+            "Video",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [
+                [
+                    ["https://video.example/low.webm", 1, "video/webm"],
+                    ["https://video.example/high.mp4", 4, "video/mp4"],
+                ]
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://video.example/high.mp4"
+
+    def test_from_api_response_video_url_returns_last_mp4_when_no_quality_4(self):
+        """When no quality-4 MP4 is present, the last MP4 wins (documents the
+        implicit ordering used by both the extractor and download_video)."""
+        data = [
+            "art_video",
+            "Video",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [
+                [
+                    ["https://video.example/first.mp4", 2, "video/mp4"],
+                    ["https://video.example/middle.webm", 1, "video/webm"],
+                    ["https://video.example/last.mp4", 3, "video/mp4"],
+                ]
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://video.example/last.mp4"
+
+    def test_from_api_response_video_url_falls_back_to_first_non_mp4(self):
+        """With no MP4 in any variant, the first valid URL is returned."""
+        data = [
+            "art_video",
+            "Video",
+            3,
+            None,
+            3,
+            None,
+            None,
+            None,
+            [
+                [
+                    ["https://video.example/a.webm", 1, "video/webm"],
+                    ["https://video.example/b.webm", 2, "video/webm"],
+                ]
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://video.example/a.webm"
+
+    def test_from_api_response_audio_url_finds_mp4_at_non_zero_position(self):
+        """Audio extractor must find an audio/mp4 entry even when it is not the
+        first item in the media list — regression against the legacy
+        first-item-only check."""
+        data = [
+            "art_audio",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                [
+                    ["https://audio.example/preview.bin", None, "application/octet-stream"],
+                    ["https://audio.example/file.mp4", None, "audio/mp4"],
+                ],
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://audio.example/file.mp4"
+
+    def test_from_api_response_audio_url_falls_back_to_first_url_when_no_mp4(self):
+        """If no audio/mp4 entry exists, the first valid URL is returned."""
+        data = [
+            "art_audio",
+            "Audio",
+            1,
+            None,
+            3,
+            None,
+            [
+                None,
+                None,
+                None,
+                None,
+                None,
+                [
+                    ["https://audio.example/a.ogg", None, "audio/ogg"],
+                    ["https://audio.example/b.wav", None, "audio/wav"],
+                ],
+            ],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://audio.example/a.ogg"
+
+    def test_from_api_response_infographic_url(self):
+        """Infographic artifacts expose their image URL."""
+        data = [
+            "art_info",
+            "Infographic",
+            7,
+            None,
+            3,
+            [None, None, [["ignored", ["https://image.example/info.png"]]]],
+        ]
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://image.example/info.png"
+
+    def test_from_api_response_slide_deck_url(self):
+        """Slide deck artifacts expose the PDF URL."""
+        data = (
+            ["art_slides", "Slides", 8, None, 3]
+            + [None] * 11
+            + [[None, None, None, "https://slides.example/deck.pdf"]]
+        )
+        artifact = Artifact.from_api_response(data)
+
+        assert artifact.url == "https://slides.example/deck.pdf"
+
     def test_from_api_response_with_variant(self):
         """Test parsing artifact with variant code (quiz/flashcards)."""
         data = ["art_quiz", "Quiz", 4, None, 3, None, None, None, None, [None, [2]]]
@@ -422,6 +856,58 @@ class TestArtifact:
         artifact = Artifact.from_api_response(["id", "Audio", 1, None, 3])
 
         assert artifact.report_subtype is None
+
+
+class TestExtractArtifactUrlMalformedShapes:
+    """Defensive coverage for the URL extractor helpers — every malformed-shape
+    branch must return ``None`` instead of raising, so callers (Artifact.url,
+    GenerationStatus.url, _is_media_ready, download_audio/video/infographic)
+    can rely on the helper as a single source of truth."""
+
+    def test_extract_artifact_url_unknown_type_returns_none(self):
+        from notebooklm.types import _extract_artifact_url
+
+        assert _extract_artifact_url(["any", "data"], None) is None
+        assert _extract_artifact_url(["any", "data"], 99) is None
+
+    def test_extract_audio_handles_short_or_non_list_data(self):
+        from notebooklm.types import _extract_audio_artifact_url
+
+        assert _extract_audio_artifact_url([1, 2, 3]) is None  # too short
+        assert _extract_audio_artifact_url([0] * 6 + ["not_a_list"]) is None  # data[6] not list
+        assert _extract_audio_artifact_url([0] * 6 + [[1, 2, 3]]) is None  # data[6] too short
+        assert _extract_audio_artifact_url([0] * 6 + [[0] * 5 + ["not_a_list"]]) is None
+        assert _extract_audio_artifact_url([0] * 6 + [[0] * 5 + [[]]]) is None  # empty media list
+
+    def test_extract_video_handles_short_or_non_list_data(self):
+        from notebooklm.types import _extract_video_artifact_url
+
+        assert _extract_video_artifact_url([1, 2, 3]) is None  # too short
+        assert _extract_video_artifact_url([0] * 8 + ["not_a_list"]) is None
+        assert _extract_video_artifact_url([0] * 8 + [[]]) is None  # empty data[8]
+        assert _extract_video_artifact_url([0] * 8 + [["not_a_list"]]) is None
+        assert _extract_video_artifact_url([0] * 8 + [[[None, None, "video/mp4"]]]) is None
+
+    def test_extract_infographic_handles_malformed_data(self):
+        from notebooklm.types import _extract_infographic_artifact_url
+
+        assert _extract_infographic_artifact_url([]) is None
+        assert _extract_infographic_artifact_url(["not_a_list"]) is None
+        assert _extract_infographic_artifact_url([[1]]) is None  # item too short
+        assert _extract_infographic_artifact_url([[1, 2, "not_a_list"]]) is None
+        assert _extract_infographic_artifact_url([[1, 2, []]]) is None  # empty content
+        assert _extract_infographic_artifact_url([[1, 2, [["only_one"]]]]) is None
+
+    def test_extract_slide_deck_handles_short_or_non_string_data(self):
+        from notebooklm.types import _extract_slide_deck_artifact_url
+
+        assert _extract_slide_deck_artifact_url([1, 2, 3]) is None  # too short
+        assert _extract_slide_deck_artifact_url([0] * 16 + ["not_a_list"]) is None
+        assert _extract_slide_deck_artifact_url([0] * 16 + [[1, 2, 3]]) is None  # too short
+        assert _extract_slide_deck_artifact_url([0] * 16 + [[None, None, None, 12345]]) is None
+        assert (
+            _extract_slide_deck_artifact_url([0] * 16 + [[None, None, None, "ftp://bad"]]) is None
+        )
 
 
 class TestArtifactKindProperty:
@@ -648,6 +1134,13 @@ class TestNote:
 
         assert note.created_at is not None
         assert note.created_at.timestamp() == ts
+
+    def test_from_api_response_out_of_range_timestamp(self):
+        """Note timestamp range errors should produce None rather than raising."""
+        data = ["note_123", "Title", "Content", [float("inf")]]
+        note = Note.from_api_response(data, "nb_123")
+
+        assert note.created_at is None
 
     def test_from_api_response_empty(self):
         """Test parsing with minimal data."""

@@ -9,6 +9,7 @@ from notebooklm.notebooklm_cli import cli
 from .conftest import create_mock_client, patch_client_for_module
 
 research_module = importlib.import_module("notebooklm.cli.research")
+helpers_module = importlib.import_module("notebooklm.cli.helpers")
 
 # =============================================================================
 # RESEARCH STATUS TESTS
@@ -178,7 +179,7 @@ class TestResearchWait:
         with (
             patch_client_for_module("research") as mock_client_cls,
             patch.object(
-                research_module, "import_with_retry", new_callable=AsyncMock
+                helpers_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
         ):
             mock_client = create_mock_client()
@@ -204,6 +205,50 @@ class TestResearchWait:
             [{"title": "Source 1", "url": "http://example.com"}],
             max_elapsed=300,
         )
+
+    def test_wait_with_import_all_cited_only(self, runner, mock_auth, mock_fetch_tokens):
+        with (
+            patch_client_for_module("research") as mock_client_cls,
+            patch.object(
+                helpers_module, "import_with_retry", new_callable=AsyncMock
+            ) as mock_import,
+        ):
+            mock_client = create_mock_client()
+            mock_client.research.poll = AsyncMock(
+                return_value={
+                    "status": "completed",
+                    "task_id": "task_123",
+                    "query": "AI research",
+                    "sources": [
+                        {"title": "Cited", "url": "https://example.com/cited"},
+                        {"title": "Uncited", "url": "https://example.com/uncited"},
+                    ],
+                    "report": "Report cites https://example.com/cited",
+                }
+            )
+            mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                ["research", "wait", "-n", "nb_123", "--import-all", "--cited-only"],
+            )
+
+        assert result.exit_code == 0
+        assert "Imported 1 sources" in result.output
+        mock_import.assert_awaited_once_with(
+            mock_client,
+            "nb_123",
+            "task_123",
+            [{"title": "Cited", "url": "https://example.com/cited"}],
+            max_elapsed=300,
+        )
+
+    def test_wait_cited_only_requires_import_all(self, runner, mock_auth, mock_fetch_tokens):
+        result = runner.invoke(cli, ["research", "wait", "-n", "nb_123", "--cited-only"])
+
+        assert result.exit_code == 1
+        assert "--cited-only requires --import-all" in result.output
 
     def test_wait_json_output_completed(self, runner, mock_auth, mock_fetch_tokens):
         with patch_client_for_module("research") as mock_client_cls:
@@ -231,7 +276,7 @@ class TestResearchWait:
         with (
             patch_client_for_module("research") as mock_client_cls,
             patch.object(
-                research_module, "import_with_retry", new_callable=AsyncMock
+                helpers_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
         ):
             mock_client = create_mock_client()
@@ -260,6 +305,48 @@ class TestResearchWait:
             "nb_123",
             "task_123",
             [{"title": "Source 1", "url": "http://example.com"}],
+            max_elapsed=300,
+            json_output=True,
+        )
+
+    def test_wait_json_output_with_import_cited_only(self, runner, mock_auth, mock_fetch_tokens):
+        with (
+            patch_client_for_module("research") as mock_client_cls,
+            patch.object(
+                helpers_module, "import_with_retry", new_callable=AsyncMock
+            ) as mock_import,
+        ):
+            mock_client = create_mock_client()
+            mock_client.research.poll = AsyncMock(
+                return_value={
+                    "status": "completed",
+                    "task_id": "task_123",
+                    "query": "AI research",
+                    "sources": [
+                        {"title": "Cited", "url": "https://example.com/cited"},
+                        {"title": "Uncited", "url": "https://example.com/uncited"},
+                    ],
+                    "report": "Report cites https://example.com/cited",
+                }
+            )
+            mock_import.return_value = [{"id": "src_1", "title": "Cited"}]
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                ["research", "wait", "-n", "nb_123", "--json", "--import-all", "--cited-only"],
+            )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["cited_only"] is True
+        assert data["cited_sources_selected"] == 1
+        assert data["cited_only_fallback"] is False
+        mock_import.assert_awaited_once_with(
+            mock_client,
+            "nb_123",
+            "task_123",
+            [{"title": "Cited", "url": "https://example.com/cited"}],
             max_elapsed=300,
             json_output=True,
         )

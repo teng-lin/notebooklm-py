@@ -15,11 +15,13 @@ from ..exceptions import (
     AuthError,
     ConfigurationError,
     NetworkError,
+    NotebookLimitError,
     NotebookLMError,
     RateLimitError,
     RPCError,
     ValidationError,
 )
+from ._encoding import safe_echo
 
 
 def _output_error(
@@ -44,11 +46,11 @@ def _output_error(
         response: dict = {"error": True, "code": code, "message": message}
         if extra:
             response.update(extra)
-        click.echo(json.dumps(response, indent=2))
+        click.echo(json.dumps(response, indent=2, default=str, ensure_ascii=False))
     else:
-        click.echo(message, err=True)
+        safe_echo(message, err=True)
         if hint:
-            click.echo(hint, err=True)
+            safe_echo(hint, err=True)
     raise SystemExit(exit_code)
 
 
@@ -80,7 +82,7 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         if json_output:
             _output_error("Cancelled by user", "CANCELLED", True, 130)
         else:
-            click.echo("\nCancelled.", err=True)
+            safe_echo("\nCancelled.", err=True)
             raise SystemExit(130) from None
     except RateLimitError as e:
         retry_msg = f" Retry after {e.retry_after}s." if e.retry_after else ""
@@ -115,6 +117,14 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
             json_output,
             1,
             hint="Check your internet connection and try again.",
+        )
+    except NotebookLimitError as e:
+        _output_error(
+            str(e),
+            "NOTEBOOK_LIMIT",
+            json_output,
+            1,
+            extra=e.to_error_response_extra(),
         )
     except NotebookLMError as e:
         extra_info: dict[str, Any] | None = None

@@ -107,6 +107,10 @@ jobs:
       run: playwright install-deps
 
     - name: Run E2E tests
+      id: e2e
+      # Don't fail the job here — the retry step below gets a 10-min cool-down
+      # shot at any failures, and its exit code is what marks the job red.
+      continue-on-error: true
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
@@ -115,13 +119,37 @@ jobs:
       run: |
         echo "Testing branch: ${{ needs.resolve-branch.outputs.branch }}"
         TEST_FILTER="${{ inputs.test_filter }}"
+        # --reruns 1 catches sub-minute network blips; longer chat-throttle
+        # recovery is handled by the cool-down retry step below.
         if [ -n "$TEST_FILTER" ]; then
           # Run specific test(s) when filter provided
-          pytest "$TEST_FILTER" -s -v --tb=short --reruns 2 --reruns-delay 30
+          pytest "$TEST_FILTER" -s -v --tb=short --reruns 1 --reruns-delay 30
         elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
           # Linux: run all E2E tests except variants
-          pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 2 --reruns-delay 30
+          pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
         else
           # Windows: run only read-only tests (safer, avoids write operations)
-          pytest tests/e2e -m "readonly and not variants" -s -v --tb=short --reruns 2 --reruns-delay 30
+          pytest tests/e2e -m "readonly and not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
         fi
+
+    - name: Retry failed E2E tests after 10-min cool-down
+      # Tests still throttled after the cool-down become skips via the
+      # _install_chat_rate_limit_skip fixture in tests/e2e/conftest.py.
+      if: steps.e2e.outcome == 'failure'
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        # Missing lastfailed after a failed e2e step means pytest crashed
+        # before writing the cache (import error, OOM, etc.) — that's a real
+        # failure, not a recoverable rate-limit, so fail the job rather than
+        # silently going green.
+        if [ ! -f .pytest_cache/v/cache/lastfailed ]; then
+          echo "::error::No lastfailed cache from previous step; pytest likely crashed before running tests."
+          exit 1
+        fi
+        echo "Initial E2E run failed. Sleeping 600s before retrying failed tests."
+        sleep 600
+        pytest --last-failed -s -v --tb=short

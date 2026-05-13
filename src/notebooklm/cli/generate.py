@@ -14,6 +14,7 @@ Commands:
 """
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -135,11 +136,11 @@ async def generate_with_retry(
 
 
 def resolve_language(language: str | None) -> str:
-    """Resolve language from CLI flag, config, or default.
+    """Resolve language from CLI flag, NOTEBOOKLM_HL env, config, or default.
 
-    Priority: CLI flag > config file > "en" default.
-    Uses explicit None checks to avoid treating empty string as falsy.
-    Validates that the language code is supported.
+    Priority: ``--language`` flag > ``NOTEBOOKLM_HL`` env var > config file
+    > "en" default. Uses explicit None checks to avoid treating empty
+    string as falsy. Validates each candidate against the supported list.
     """
     if language is not None:
         if language not in SUPPORTED_LANGUAGES:
@@ -149,8 +150,23 @@ def resolve_language(language: str | None) -> str:
                 param_hint="'--language'",
             )
         return language
+    env_lang = os.environ.get("NOTEBOOKLM_HL", "").strip()
+    if env_lang:
+        if env_lang not in SUPPORTED_LANGUAGES:
+            raise click.BadParameter(
+                f"Unknown language code: {env_lang}\n"
+                "Run 'notebooklm language list' to see supported codes.",
+                param_hint="'NOTEBOOKLM_HL'",
+            )
+        return env_lang
     config_lang = get_language()
     if config_lang is not None:
+        if config_lang not in SUPPORTED_LANGUAGES:
+            raise click.BadParameter(
+                f"Unknown language code in config: {config_lang}\n"
+                "Run 'notebooklm language list' to see supported codes.",
+                param_hint="config",
+            )
         return config_lang
     return DEFAULT_LANGUAGE
 
@@ -335,7 +351,11 @@ def generate():
     type=click.Choice(["short", "default", "long"]),
     default="default",
 )
-@click.option("--language", default=None, help="Output language (default: from config or 'en')")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @retry_option
@@ -421,6 +441,7 @@ def generate_audio(
     type=click.Choice(
         [
             "auto",
+            "custom",
             "classic",
             "whiteboard",
             "kawaii",
@@ -433,7 +454,12 @@ def generate_audio(
     ),
     default="auto",
 )
-@click.option("--language", default=None, help="Output language (default: from config or 'en')")
+@click.option("--style-prompt", default=None, help="Custom visual style prompt")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @retry_option
@@ -445,6 +471,7 @@ def generate_video(
     notebook_id,
     video_format,
     style,
+    style_prompt,
     language,
     source_ids,
     wait,
@@ -464,6 +491,7 @@ def generate_video(
     Example:
       notebooklm generate video "a funny explainer for kids age 5"
       notebooklm generate video "professional presentation" --style classic
+      notebooklm generate video --style custom --style-prompt "hand-drawn diagrams"
       notebooklm generate video --format cinematic "documentary overview"
       notebooklm generate video -s src_001 "from specific source"
     """
@@ -479,6 +507,7 @@ def generate_video(
     }
     style_map = {
         "auto": VideoStyle.AUTO_SELECT,
+        "custom": VideoStyle.CUSTOM,
         "classic": VideoStyle.CLASSIC,
         "whiteboard": VideoStyle.WHITEBOARD,
         "kawaii": VideoStyle.KAWAII,
@@ -489,6 +518,13 @@ def generate_video(
         "paper-craft": VideoStyle.PAPER_CRAFT,
     }
     is_cinematic = video_format == "cinematic"
+    normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
+    if is_cinematic and normalized_style_prompt:
+        raise click.UsageError("--style-prompt cannot be used with cinematic video")
+    if not is_cinematic and style == "custom" and not normalized_style_prompt:
+        raise click.UsageError("--style custom requires --style-prompt")
+    if not is_cinematic and normalized_style_prompt and style != "custom":
+        raise click.UsageError("--style-prompt requires --style custom")
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
@@ -510,6 +546,7 @@ def generate_video(
                     instructions=description or None,
                     video_format=format_map[video_format],
                     video_style=style_map[style],
+                    style_prompt=normalized_style_prompt,
                 )
 
             timeout = 1800.0 if is_cinematic else 600.0
@@ -559,7 +596,11 @@ generate.add_command(_cinematic_video_gen_cmd)
     type=click.Choice(["default", "short"]),
     default="default",
 )
-@click.option("--language", default=None, help="Output language (default: from config or 'en')")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @retry_option
@@ -861,7 +902,11 @@ def generate_flashcards(
     type=click.Choice(list(_INFOGRAPHIC_STYLE_MAP)),
     default="auto",
 )
-@click.option("--language", default=None, help="Output language (default: from config or 'en')")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @retry_option
@@ -936,7 +981,11 @@ def generate_infographic(
     default=None,
     help="Notebook ID (uses current if not set)",
 )
-@click.option("--language", default=None, help="Output language (default: from config or 'en')")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
 @click.option("--wait/--no-wait", default=False, help="Wait for completion (default: no-wait)")
 @retry_option
@@ -995,9 +1044,17 @@ def generate_data_table(
     help="Notebook ID (uses current if not set)",
 )
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
+@click.option("--instructions", default=None, help="Custom instructions for the mind map")
 @json_option
 @with_client
-def generate_mind_map(ctx, notebook_id, source_ids, json_output, client_auth):
+def generate_mind_map(
+    ctx, notebook_id, source_ids, language, instructions, json_output, client_auth
+):
     """Generate mind map.
 
     \b
@@ -1010,16 +1067,19 @@ def generate_mind_map(ctx, notebook_id, source_ids, json_output, client_auth):
             nb_id_resolved = await resolve_notebook_id(client, nb_id)
             sources = await resolve_source_ids(client, nb_id_resolved, source_ids)
 
-            # Show status spinner only for console output
-            if json_output:
-                result = await client.artifacts.generate_mind_map(
-                    nb_id_resolved, source_ids=sources
+            async def _generate():
+                return await client.artifacts.generate_mind_map(
+                    nb_id_resolved,
+                    source_ids=sources,
+                    language=resolve_language(language),
+                    instructions=instructions,
                 )
+
+            if json_output:
+                result = await _generate()
             else:
                 with console.status("Generating mind map..."):
-                    result = await client.artifacts.generate_mind_map(
-                        nb_id_resolved, source_ids=sources
-                    )
+                    result = await _generate()
 
             _output_mind_map_result(result, json_output)
 
@@ -1067,7 +1127,11 @@ def _output_mind_map_result(result: Any, json_output: bool) -> None:
     help="Notebook ID (uses current if not set)",
 )
 @click.option("--source", "-s", "source_ids", multiple=True, help="Limit to specific source IDs")
-@click.option("--language", default=None, help="Output language (default: from config or 'en')")
+@click.option(
+    "--language",
+    default=None,
+    help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+)
 @click.option(
     "--append",
     "append_instructions",

@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Status:** Active
-**Last Updated:** 2026-03-13
+**Last Updated:** 2026-05-11
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
@@ -50,6 +50,8 @@ See [Configuration](configuration.md) for details on environment variables and C
 | `auth check` | Diagnose authentication issues | `notebooklm auth check` |
 | `auth check --test` | Validate with network test | `notebooklm auth check --test` |
 | `auth check --json` | Output as JSON | `notebooklm auth check --json` |
+| `auth refresh` | One-shot SIDTS rotation poke (for OS schedulers) | `notebooklm auth refresh` |
+| `auth refresh --quiet` | Refresh; suppress success output | `notebooklm auth refresh --quiet` |
 | `doctor` | Check environment health | `notebooklm doctor` |
 | `doctor --fix` | Auto-fix detected issues | `notebooklm doctor --fix` |
 | `doctor --json` | Output diagnostics as JSON | `notebooklm doctor --json` |
@@ -82,7 +84,7 @@ See [Configuration](configuration.md) for details on environment variables and C
 |---------|-------------|---------|
 | `list` | List all notebooks | `notebooklm list` |
 | `create <title>` | Create notebook | `notebooklm create "Research"` |
-| `delete <id>` | Delete notebook | `notebooklm delete abc123` |
+| `delete -n <id>` | Delete notebook (uses current notebook if `-n` omitted) | `notebooklm delete -n abc123` |
 | `rename <title>` | Rename current notebook | `notebooklm rename "New Title"` |
 | `summary` | Get AI summary | `notebooklm summary` |
 
@@ -109,9 +111,9 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
 | `list` | - | - | `source list` |
-| `add <content>` | URL/file/text | - | `source add "https://..."` |
+| `add <content>` | URL/file/text | `--title`, `--type`, `--mime-type`, `--timeout`, `--json` | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID | - | `source add-drive abc123 "Doc"` |
-| `add-research <query>` | Search query | `--mode [fast|deep]`, `--from [web|drive]`, `--import-all`, `--no-wait` | `source add-research "AI" --mode deep --no-wait` |
+| `add-research <query>` | Search query | `--mode [fast|deep]`, `--from [web|drive]`, `--import-all`, `--no-wait`, `--timeout` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | - | `source get src123` |
 | `fulltext <id>` | Source ID | `--json`, `-o FILE` | `source fulltext src123 -o content.txt` |
 | `guide <id>` | Source ID | `--json` | `source guide src123` |
@@ -135,8 +137,12 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 All generate commands support:
 - `--source/-s` to select specific sources (repeatable)
 - `--json` for machine-readable output (returns `task_id` and `status`)
-- `--language` to override output language (defaults to config or 'en')
 - `--retry N` to automatically retry on rate limits with exponential backoff
+
+Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`, `infographic`, `slide-deck`, `data-table`, `mind-map`) also support:
+- `--language` to override output language (precedence: `--language` > `NOTEBOOKLM_HL` env > config > `'en'`)
+
+`quiz`, `flashcards`, and `revise-slide` do not accept `--language`.
 
 | Command | Options | Example |
 |---------|---------|---------|
@@ -271,11 +277,16 @@ Authenticate with Google NotebookLM via browser.
 notebooklm login [OPTIONS]
 ```
 
-Opens a Chromium browser with a persistent profile. Log in to your Google account, then press Enter in the terminal to save the session.
+By default, opens a Chromium browser with a persistent profile. Log in to your Google account, then press Enter in the terminal to save the session. Use `--browser msedge` for Microsoft Edge, or `--browser-cookies <browser>` to import cookies from an already-logged-in browser without launching Playwright.
 
 **Options:**
-- `--storage PATH` - Where to save storage_state.json (default: `$NOTEBOOKLM_HOME/storage_state.json`)
+- `--storage PATH` - Where to save storage_state.json (default: `$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json`)
 - `--browser [chromium|msedge]` - Browser to use for login (default: `chromium`). Use `msedge` for Microsoft Edge.
+- `--browser-cookies <auto|chrome|edge|firefox|safari|brave|arc|...>` - Read cookies from an installed browser instead of launching Playwright. Pass an explicit browser name, or `auto` to let rookiepy auto-detect. For Firefox Multi-Account Containers, use `firefox::<container-name>` to extract from a single container, or `firefox::none` for the no-container default — unscoped `firefox` merges every container's cookies (and emits a warning when that's happening). Requires `pip install "notebooklm-py[cookies]"`.
+- `--account EMAIL` - Pick a signed-in Google account by email when several are present in the browser. Only valid with `--browser-cookies`.
+- `--all-accounts` - Extract every Google account signed in to the browser into separate profiles named from each account email. Only valid with `--browser-cookies`.
+- `--profile-name NAME` - Name the profile created by a targeted `--account` import. Defaults to the account email's local part. Only valid with `--browser-cookies`.
+- `--fresh` - Start with a clean browser session (deletes the cached browser profile). Use to switch Google accounts. Has no effect with `--browser-cookies`.
 
 **Examples:**
 ```bash
@@ -284,7 +295,34 @@ notebooklm login
 
 # Use Microsoft Edge (for orgs that require Edge for SSO)
 notebooklm login --browser msedge
+
+# Reuse cookies from your already-logged-in Chrome session
+notebooklm login --browser-cookies chrome
+
+# Auto-detect any supported browser via rookiepy
+notebooklm login --browser-cookies auto
+
+# Firefox Multi-Account Containers: target one container
+notebooklm login --browser-cookies 'firefox::Work'
+notebooklm login --browser-cookies 'firefox::none'  # no-container default
+
+# Populate a named profile via cookie import
+notebooklm --profile work login --browser-cookies chrome
+
+# Pick a specific browser account by email
+notebooklm login --browser-cookies chrome --account alice@example.com
+
+# Extract every signed-in browser account into separate profiles
+notebooklm login --browser-cookies chrome --all-accounts
+
+# Force a clean browser session before logging in
+notebooklm login --fresh
 ```
+
+**Notes on `--browser-cookies`:**
+- Honors `--profile` / `NOTEBOOKLM_PROFILE` and writes to that profile's `storage_state.json`.
+- Without `--account` or `--all-accounts`, imports the browser's default Google account into the target profile.
+- Use `notebooklm auth inspect --browser <browser>` to see available account emails before a targeted import.
 
 ### Session: `use`
 
@@ -471,6 +509,47 @@ notebooklm auth check --json
 - Check if cookies are from correct domain (regional vs .google.com)
 - Diagnose NOTEBOOKLM_AUTH_JSON environment variable issues
 
+### Session: `auth refresh`
+
+One-shot keepalive: open a session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist the rotated cookies to `storage_state.json`, and exit. Designed to be invoked by the OS scheduler (launchd / systemd / cron / Task Scheduler / k8s CronJob) so an otherwise-idle profile does not stale out between user-driven calls.
+
+```bash
+notebooklm auth refresh [OPTIONS]
+```
+
+**Options:**
+- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out.
+- `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
+
+**Cadence:** 15-20 minutes is the recommended interval. Tighter is wasteful (the 60 s mtime guard would skip it anyway); significantly looser may cross the `__Secure-1PSIDTS` server-side validity window for your account/region.
+
+**Requires file-backed authentication.** `auth refresh` refuses to run when `NOTEBOOKLM_AUTH_JSON` is set, because the inline-JSON auth mode has no writable backing store to persist rotated cookies into. Use a profile-backed `storage_state.json` (the default) or set `NOTEBOOKLM_HOME` / `--profile` to point at one.
+
+**Exit codes:**
+- `0` - the auth path completed without raising. The rotation POST is **best-effort**: exit 0 also covers (a) the 60 s mtime guard skipping the POST, (b) `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` being set, (c) another process holding the cross-process rotate lock, and (d) a transient `httpx` error during the POST being caught and logged at DEBUG. Treat exit 0 as "no error" rather than "rotation occurred." For verification, enable `NOTEBOOKLM_LOG_LEVEL=DEBUG` and check for the `RotateCookies` log line.
+- `1` - a fatal error reached the CLI layer (e.g. `NOTEBOOKLM_AUTH_JSON` set, missing `storage_state.json`, invalid profile, `httpx.RequestError` not swallowed by the rotate guard). The OS scheduler's next firing is the retry mechanism; this command does not retry in-process.
+
+**Examples:**
+```bash
+# One-shot refresh against the default profile
+notebooklm auth refresh
+
+# Refresh a named profile (works with --profile / NOTEBOOKLM_PROFILE)
+notebooklm --profile work auth refresh
+
+# Re-extract from Chrome and repair account routing if browser account order changed
+notebooklm --profile work auth refresh --browser-cookies chrome
+
+# Quiet variant for cron / systemd
+notebooklm --profile work auth refresh --quiet
+```
+
+**Pairs with:**
+- `NOTEBOOKLM_REFRESH_CMD` for in-process auth-expiry recovery (covers the case where `auth refresh` itself fails because cookies have already expired beyond rotation)
+- `keepalive=<seconds>` on `NotebookLMClient` for in-process long-lived workers (no OS scheduler needed)
+
+See [Troubleshooting](troubleshooting.md) for full per-OS scheduler recipes (launchd plist, systemd user timer, cron, Task Scheduler, k8s CronJob).
+
 ### Source: `add-research`
 
 Perform AI-powered research and add discovered sources to the notebook.
@@ -484,6 +563,7 @@ notebooklm source add-research <query> [OPTIONS]
 - `--from [web|drive]` - Search source (default: web)
 - `--import-all` - Automatically import all found sources (works with blocking mode)
 - `--no-wait` - Start research and return immediately (non-blocking)
+- `--timeout SECONDS` - Retry budget for `--import-all` when the IMPORT_RESEARCH RPC times out (default: 1800). Mirrors `research wait --timeout`. Has no effect without `--import-all`.
 
 **Examples:**
 ```bash
@@ -495,6 +575,9 @@ notebooklm source add-research "Project Alpha" --from drive --mode deep
 
 # Non-blocking deep research for agent workflows
 notebooklm source add-research "AI safety papers" --mode deep --no-wait
+
+# Bounded import-retry budget for large result sets
+notebooklm source add-research "AI papers" --mode deep --import-all --timeout 3600
 ```
 
 ### Research: `status`

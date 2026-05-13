@@ -1,6 +1,7 @@
 """Tests for research functionality."""
 
 import json
+import logging
 from urllib.parse import parse_qs
 
 import pytest
@@ -72,6 +73,102 @@ class TestBuildImportEntries:
         assert entry[10] == 2
         assert entry[0] is None
         assert entry[1] is None
+
+
+class TestCitedSourceSelection:
+    def test_extract_report_urls_normalizes_markdown_and_bare_urls(self):
+        urls = ResearchAPI.extract_report_urls(
+            "See [Example](https://Example.com/a/) and https://example.com/b."
+        )
+
+        assert urls == {"https://example.com/a", "https://example.com/b"}
+
+    def test_extract_report_urls_keeps_balanced_parentheses(self):
+        urls = ResearchAPI.extract_report_urls(
+            "See [Function](https://en.wikipedia.org/wiki/Function_(mathematics)) "
+            "and https://example.com/Topic_(research)."
+        )
+
+        assert urls == {
+            "https://en.wikipedia.org/wiki/Function_(mathematics)",
+            "https://example.com/Topic_(research)",
+        }
+
+    def test_extract_report_urls_ignores_markdown_images(self):
+        urls = ResearchAPI.extract_report_urls(
+            "![chart](https://example.com/chart_(v2).png) and "
+            '![titled](https://example.com/titled.png "Chart title") '
+            "![](https://example.com/empty.png) "
+            "cite [Article](https://example.com/a)"
+        )
+
+        assert urls == {"https://example.com/a"}
+
+    def test_select_cited_sources_filters_urls_and_preserves_report_entry(self):
+        sources = [
+            {
+                "title": "Deep Research Report",
+                "result_type": 5,
+                "report_markdown": "# Report",
+            },
+            {"title": "Cited", "url": "https://example.com/cited/"},
+            {"title": "Uncited", "url": "https://example.com/uncited"},
+            {"title": "No URL"},
+        ]
+
+        selection = ResearchAPI.select_cited_sources(
+            sources,
+            "Final report cites [the source](https://example.com/cited).",
+        )
+
+        assert selection.used_fallback is False
+        assert selection.cited_url_count == 1
+        assert selection.matched_url_source_count == 1
+        assert [source["title"] for source in selection.sources] == [
+            "Deep Research Report",
+            "Cited",
+        ]
+
+    def test_select_cited_sources_deduplicates_report_entries_with_urls(self):
+        report_source = {
+            "title": "Deep Research Report",
+            "result_type": 5,
+            "report_markdown": "# Report",
+            "url": "https://example.com/report",
+        }
+
+        selection = ResearchAPI.select_cited_sources(
+            [report_source],
+            "Final report cites https://example.com/report",
+        )
+
+        assert selection.used_fallback is True
+        assert selection.sources == [report_source]
+
+    def test_select_cited_sources_falls_back_when_no_urls_found(self, caplog):
+        sources = [{"title": "Source", "url": "https://example.com/source"}]
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm._research"):
+            selection = ResearchAPI.select_cited_sources(sources, "# Report without links")
+
+        assert selection.used_fallback is True
+        assert selection.sources == sources
+        assert "falling back" in caplog.text
+
+    def test_select_cited_sources_falls_back_when_no_sources_match(self, caplog):
+        sources = [{"title": "Source", "url": "https://example.com/source"}]
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm._research"):
+            selection = ResearchAPI.select_cited_sources(
+                sources,
+                "Report cites https://example.com/other",
+            )
+
+        assert selection.used_fallback is True
+        assert selection.cited_url_count == 1
+        assert selection.matched_url_source_count == 0
+        assert selection.sources == sources
+        assert "none of the report URLs matched" in caplog.text
 
 
 class TestExtractLegacyReportChunks:

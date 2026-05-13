@@ -16,6 +16,7 @@ from ..client import NotebookLMClient
 from ..types import Note
 from .helpers import (
     console,
+    json_output_response,
     require_notebook,
     resolve_note_id,
     resolve_notebook_id,
@@ -51,8 +52,9 @@ def note():
     default=None,
     help="Notebook ID (uses current if not set)",
 )
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
-def note_list(ctx, notebook_id, client_auth):
+def note_list(ctx, notebook_id, json_output, client_auth):
     """List all notes in a notebook."""
     nb_id = require_notebook(notebook_id)
 
@@ -61,12 +63,31 @@ def note_list(ctx, notebook_id, client_auth):
             nb_id_resolved = await resolve_notebook_id(client, nb_id)
             notes = await client.notes.list(nb_id_resolved)
 
+            if json_output:
+                serialized = [
+                    {
+                        "id": n.id,
+                        "title": n.title or "Untitled",
+                        "preview": (n.content or "")[:100],
+                    }
+                    for n in notes
+                    if isinstance(n, Note)
+                ]
+                json_output_response(
+                    {
+                        "notebook_id": nb_id_resolved,
+                        "notes": serialized,
+                        "count": len(serialized),
+                    }
+                )
+                return
+
             if not notes:
                 console.print("[yellow]No notes found[/yellow]")
                 return
 
             table = Table(title=f"Notes in {nb_id_resolved}")
-            table.add_column("ID", style="cyan")
+            table.add_column("ID", style="cyan", no_wrap=True)
             table.add_column("Title", style="green")
             table.add_column("Preview", style="dim", max_width=50)
 

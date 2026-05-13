@@ -2,17 +2,30 @@
 
 import asyncio
 import logging
+import math
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
 
 import httpx
 
-from .auth import AuthTokens
+from ._env import get_default_language
+from .auth import (
+    AuthTokens,
+    CookieSaveResult,
+    CookieSnapshot,
+    _rotate_cookies,
+    advance_cookie_snapshot_after_save,
+    build_cookie_jar,
+    format_authuser_value,
+    save_cookies_to_storage,
+    snapshot_cookie_jar,
+)
 from .rpc import (
-    BATCHEXECUTE_URL,
     AuthError,
     ClientError,
     NetworkError,
@@ -24,6 +37,7 @@ from .rpc import (
     build_request_body,
     decode_response,
     encode_rpc_request,
+    get_batchexecute_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,6 +49,9 @@ MAX_CONVERSATION_CACHE_SIZE = 100
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_CONNECT_TIMEOUT = 10.0  # Connection establishment timeout
 
+# Minimum keepalive interval to avoid accidentally rate-limiting accounts.google.com
+DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
+
 # Auth error detection patterns (case-insensitive)
 AUTH_ERROR_PATTERNS = (
     "authentication",
@@ -43,6 +60,24 @@ AUTH_ERROR_PATTERNS = (
     "login",
     "re-authenticate",
 )
+
+
+def _resolve_keepalive_interval(keepalive: float | None, min_interval: float) -> float | None:
+    """Validate and clamp the keepalive interval.
+
+    ``None`` disables the background task. Otherwise both values must be
+    positive finite numbers; the effective interval is ``max(keepalive,
+    min_interval)`` so callers can't accidentally lower the rate-limit floor.
+    """
+    if not (math.isfinite(min_interval) and min_interval > 0):
+        raise ValueError(
+            f"keepalive_min_interval must be a positive finite number, got {min_interval!r}"
+        )
+    if keepalive is None:
+        return None
+    if not (math.isfinite(keepalive) and keepalive > 0):
+        raise ValueError(f"keepalive must be None or a positive finite number, got {keepalive!r}")
+    return max(keepalive, min_interval)
 
 
 def is_auth_error(error: Exception) -> bool:
@@ -66,9 +101,14 @@ def is_auth_error(error: Exception) -> bool:
     ):
         return False
 
-    # HTTP 401/403 are auth errors
+    # HTTP 400/401/403 are auth errors.
+    # Google returns 400 for expired CSRF tokens (not 401/403). Layer-1
+    # recovery (refresh_auth) re-extracts SNlM0e from the NotebookLM
+    # homepage and retries with a fresh token. The retry guard
+    # (``_is_retry`` in ``rpc_call``) bounds wasted refreshes on legitimate
+    # 400s (bad payload) to one extra GET per call.
     if isinstance(error, httpx.HTTPStatusError):
-        return error.response.status_code in (401, 403)
+        return error.response.status_code in (400, 401, 403)
 
     # RPCError with auth-related message
     if isinstance(error, RPCError):
@@ -98,6 +138,9 @@ class ClientCore:
         connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
         refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = None,
         refresh_retry_delay: float = 0.2,
+        keepalive: float | None = None,
+        keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
+        keepalive_storage_path: Path | None = None,
     ):
         """Initialize the core client.
 
@@ -110,6 +153,20 @@ class ClientCore:
             refresh_callback: Optional async callback to refresh auth tokens on failure.
                 If provided, rpc_call will automatically retry once after refreshing.
             refresh_retry_delay: Delay in seconds before retrying after refresh.
+            keepalive: Optional interval in seconds for a background task that pokes
+                ``accounts.google.com/RotateCookies`` while the client is open. ``None``
+                (default) disables the task. Must be ``None`` or a positive finite
+                number; values below ``keepalive_min_interval`` are clamped up to
+                that floor.
+            keepalive_min_interval: Lower bound for ``keepalive`` (defaults to 60s)
+                to avoid accidentally rate-limiting Google's identity surface.
+                Must be a positive finite number.
+            keepalive_storage_path: Optional storage path to persist rotated cookies
+                to from the keepalive loop. Falls back to ``auth.storage_path``.
+
+        Raises:
+            ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
+                positive finite number.
         """
         self.auth = auth
         self._timeout = timeout
@@ -123,11 +180,34 @@ class ClientCore:
         self._reqid_counter: int = 100000
         # OrderedDict for FIFO eviction when cache exceeds MAX_CONVERSATION_CACHE_SIZE
         self._conversation_cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+        # Keepalive background task configuration
+        self._keepalive_interval: float | None = _resolve_keepalive_interval(
+            keepalive, keepalive_min_interval
+        )
+        # Prefer the explicit storage_path if provided (e.g. NotebookLMClient(storage_path=...)
+        # with a manually-built AuthTokens), otherwise fall back to auth.storage_path.
+        self._keepalive_storage_path: Path | None = (
+            keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
+        )
+        self._keepalive_task: asyncio.Task[None] | None = None
+        # Serializes keepalive's worker-thread save with close()'s on-close save
+        # so that newer state always wins. Without this, an in-flight keepalive
+        # save kicked off before close() can finish *after* close()'s own save
+        # and clobber it (an older snapshot overwriting the freshest state).
+        self._save_lock = threading.Lock()
+        # Open-time cookie snapshot — the input to the dirty-flag/delta merge
+        # in save_cookies_to_storage. Captured in ``open()`` and forwarded
+        # through every ``save_cookies`` call so a stale in-memory jar can't
+        # clobber sibling-process writes (docs/auth-keepalive.md §3.4.1).
+        # Per-instance, never module-global.
+        self._loaded_cookie_snapshot: CookieSnapshot | None = None
 
     async def open(self) -> None:
         """Open the HTTP client connection.
 
         Called automatically by NotebookLMClient.__aenter__.
+        Uses httpx.Cookies jar to properly handle cross-domain redirects
+        (e.g., to accounts.google.com for auth token refresh).
         """
         if self._http_client is None:
             # Use granular timeouts: shorter connect timeout helps detect network issues
@@ -138,22 +218,209 @@ class ClientCore:
                 write=self._timeout,
                 pool=self._timeout,
             )
+            # Build cookies jar for cross-domain redirect support
+            # Use pre-built jar if available, otherwise build one
+            cookies = self.auth.cookie_jar or build_cookie_jar(
+                cookies=self.auth.cookies,
+                storage_path=self.auth.storage_path,
+            )
             self._http_client = httpx.AsyncClient(
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-                    "Cookie": self.auth.cookie_header,
                 },
+                cookies=cookies,
                 timeout=timeout,
+                follow_redirects=True,
             )
+
+            # Capture the open-time snapshot AFTER the AsyncClient is built
+            # (httpx normalizes domains on ingest) but BEFORE any rotation
+            # could possibly fire. When AuthTokens carries a snapshot from a
+            # failed pre-client save, keep it so the unpersisted delta can be
+            # retried instead of treating the already-mutated jar as clean.
+            self._loaded_cookie_snapshot = (
+                dict(self.auth.cookie_snapshot)
+                if self.auth.cookie_snapshot is not None
+                else snapshot_cookie_jar(self._http_client.cookies)
+            )
+            self.auth.cookie_snapshot = self._loaded_cookie_snapshot
+
+            # Spawn the keepalive task once the client is ready
+            if self._keepalive_interval is not None:
+                self._keepalive_task = asyncio.create_task(
+                    self._keepalive_loop(self._keepalive_interval)
+                )
+
+    async def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> None:
+        """Persist a cookie jar through the shared save lock.
+
+        Single chokepoint used by ``close()``, the keepalive loop, and
+        ``NotebookLMClient.refresh_auth``. Routes every save through:
+
+        1. **Snapshot the jar** on the event-loop thread so the worker isn't
+           iterating a live ``AsyncClient.cookies`` that may be mutating
+           (RPC redirects, the next poke iteration).
+        2. **Hold ``self._save_lock``** (a ``threading.Lock``) for the duration
+           of the off-loaded write. Multiple writers in the same process
+           serialize through this lock so the newer caller always wins.
+        3. **Off-load** the actual save to a worker thread via
+           ``asyncio.to_thread`` so disk I/O never stalls the event loop.
+        4. **Refresh the baseline snapshot** on success so that a subsequent
+           save in this client computes deltas against what we just
+           persisted — not against the open-time snapshot. Without this
+           step the same delta would re-apply on every save, silently
+           clobbering any sibling-process write that landed between two of
+           our own saves (the keepalive + close common case).
+
+        Cross-process serialization is handled at a different layer — the
+        OS-level file lock inside :func:`save_cookies_to_storage` itself.
+
+        Args:
+            jar: The cookie jar to persist. A copy is taken on the loop thread
+                before the worker reads it.
+            path: Storage path. Falls back to ``self._keepalive_storage_path``,
+                which itself falls back to ``self.auth.storage_path``. If both
+                are ``None``, the call is a no-op.
+        """
+        effective_path = path if path is not None else self._keepalive_storage_path
+        if effective_path is None:
+            return
+        save_path: Path = effective_path
+
+        jar_copy = httpx.Cookies(jar)
+        # Computed on the loop thread off ``jar_copy`` so the worker can refresh
+        # the baseline without re-snapshotting a jar that may have mutated in
+        # the meantime (next keepalive poke, in-flight RPC redirect).
+        post_save_snapshot = snapshot_cookie_jar(jar_copy)
+
+        def _save(
+            s: httpx.Cookies = jar_copy,
+            p: Path = save_path,
+            lock: threading.Lock = self._save_lock,
+            post: CookieSnapshot = post_save_snapshot,
+            client: ClientCore = self,
+        ) -> None:
+            """Worker-thread save: hold the in-process lock around the disk write."""
+            with lock:
+                # Read the baseline INSIDE the lock so a prior save that
+                # completed while we were queued advances ours too. Capturing
+                # this on the loop thread would let a concurrent save observe
+                # a stale baseline, compute deltas against pre-prior-save
+                # state, hit CAS rejection on every key, and silently lose
+                # the local rotation.
+                snap = client._loaded_cookie_snapshot
+                # Advance successful keys while preserving CAS-rejected ones.
+                # A silent I/O error leaves the baseline untouched; an
+                # exception does too. See class-level
+                # ``_loaded_cookie_snapshot``.
+                result = save_cookies_to_storage(
+                    s,
+                    p,
+                    original_snapshot=snap,
+                    return_result=True,
+                )
+                if isinstance(result, CookieSaveResult):
+                    if result.ok:
+                        client._loaded_cookie_snapshot = post
+                    elif result.cas_rejected_keys:
+                        client._loaded_cookie_snapshot = advance_cookie_snapshot_after_save(
+                            snap, post, result.cas_rejected_keys
+                        )
+                    if client._loaded_cookie_snapshot is not None:
+                        client.auth.cookie_snapshot = client._loaded_cookie_snapshot
+                elif result:
+                    client._loaded_cookie_snapshot = post
+                    client.auth.cookie_snapshot = post
+
+        await asyncio.to_thread(_save)
 
     async def close(self) -> None:
         """Close the HTTP client connection.
 
         Called automatically by NotebookLMClient.__aexit__.
         """
+        # Stop the keepalive task before tearing down the HTTP client so the
+        # loop can't issue a poke against an already-closed transport.
+        if self._keepalive_task is not None:
+            self._keepalive_task.cancel()
+            await asyncio.gather(self._keepalive_task, return_exceptions=True)
+            self._keepalive_task = None
+
         if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
+            try:
+                # Single source of truth for the on-close save: takes the
+                # in-process lock, snapshots, off-loads. Serializes naturally
+                # with any keepalive save still finishing in a worker thread
+                # — close() owns the freshest jar and must win, not the older
+                # snapshot.
+                await self.save_cookies(self._http_client.cookies)
+            except Exception as e:
+                logger.warning("Failed to sync refreshed cookies during close: %s", e)
+            finally:
+                await self._http_client.aclose()
+                self._http_client = None
+
+    async def _keepalive_loop(self, interval: float) -> None:
+        """Background loop that periodically pokes the identity surface.
+
+        Sleeps ``interval`` seconds between iterations, then calls
+        :func:`notebooklm.auth._rotate_cookies` to elicit ``__Secure-1PSIDTS``
+        rotation. Any rotated cookies are persisted to ``storage_state.json``
+        immediately (off-loop, via :func:`asyncio.to_thread`) so a long-lived
+        client's freshness survives a crash.
+
+        Error handling is split by failure mode:
+
+        - Poke failures (network blips, ``accounts.google.com`` downtime) are
+          opportunistic and logged at DEBUG. The next iteration retries.
+        - Persistence failures hide the most important class of bug — a
+          rotated cookie that exists in memory but not on disk — so they are
+          logged at WARNING with the storage path.
+
+        Both classes never propagate; the loop only exits via
+        :class:`asyncio.CancelledError` from :meth:`close`.
+        """
+        logger.debug("Keepalive task started (interval=%.1fs)", interval)
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                client = self._http_client
+                if client is None:
+                    # Client closed concurrently; exit gracefully.
+                    return
+
+                try:
+                    # Bypass the layer-1 dedup guards: this loop is self-paced
+                    # by ``keepalive_min_interval`` and never runs concurrently
+                    # with itself. Pass the storage path so the bare call
+                    # bumps the *per-profile* in-process timestamp, letting
+                    # concurrent layer-1 callers (e.g. spawned ``fetch_tokens``
+                    # tasks on the same profile) and other keepalive loops on
+                    # the same profile see the fresh rotation and skip.
+                    await _rotate_cookies(client, self._keepalive_storage_path)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - opportunistic best-effort
+                    logger.debug("Keepalive poke failed (non-fatal): %s", exc)
+                    continue
+
+                if self._keepalive_storage_path is None:
+                    continue
+
+                try:
+                    # save_cookies handles snapshot + lock + off-load.
+                    await self.save_cookies(client.cookies)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Keepalive cookie persistence to %s failed: %s",
+                        self._keepalive_storage_path,
+                        exc,
+                    )
+        except asyncio.CancelledError:
+            logger.debug("Keepalive task cancelled")
+            raise
 
     @property
     def is_open(self) -> bool:
@@ -161,17 +428,22 @@ class ClientCore:
         return self._http_client is not None
 
     def update_auth_headers(self) -> None:
-        """Update HTTP client headers with current auth tokens.
+        """Refresh auth metadata without resetting the live cookie jar.
 
         Call this after modifying auth tokens (e.g., after refresh_auth())
         to ensure the HTTP client uses the updated credentials.
+
+        The httpx client's cookie jar is authoritative once the session is
+        open. Re-injecting startup cookies here can overwrite cookies refreshed
+        during redirects to accounts.google.com.
 
         Raises:
             RuntimeError: If client is not initialized.
         """
         if not self._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
-        self._http_client.headers["Cookie"] = self.auth.cookie_header
+
+        self.auth.cookie_jar = self._http_client.cookies
 
     def _build_url(self, rpc_method: RPCMethod, source_path: str = "/") -> str:
         """Build the batchexecute URL for an RPC call.
@@ -183,13 +455,23 @@ class ClientCore:
         Returns:
             Full URL with query parameters.
         """
-        params = {
+        params: dict[str, str] = {
             "rpcids": rpc_method.value,
             "source-path": source_path,
             "f.sid": self.auth.session_id,
+            "hl": get_default_language(),
             "rt": "c",
         }
-        return f"{BATCHEXECUTE_URL}?{urlencode(params)}"
+        # Multi-account: route batchexecute to the same Google account the
+        # auth tokens were minted for. Email is preferred when known because
+        # Google's integer account indices can change as browser accounts are
+        # added or removed.
+        if self.auth.account_email or self.auth.authuser:
+            params["authuser"] = format_authuser_value(
+                self.auth.authuser,
+                self.auth.account_email,
+            )
+        return f"{get_batchexecute_url()}?{urlencode(params)}"
 
     async def rpc_call(
         self,

@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-01-21
+**Last Updated:** 2026-05-09
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -40,6 +40,11 @@ We follow [Semantic Versioning](https://semver.org/) with modifications for our 
    - Breaking changes require a major version bump
    - Deprecated APIs are marked with `DeprecationWarning` and documented
 
+3. **0.x Pre-1.0 Semantics**
+   - Per [SemVer §4](https://semver.org/#spec-item-4), the project is currently in 0.x and the public API is not yet considered stable.
+   - **MINOR** releases (e.g. 0.4.0 → 0.5.0) **may remove** previously deprecated public APIs. Removal is preceded by at least one MINOR release of `DeprecationWarning` notice.
+   - Once the project reaches 1.0.0, breaking changes will require a **MAJOR** bump as described above.
+
 ## Public API Surface
 
 The following are considered **public API** and are subject to stability guarantees:
@@ -64,6 +69,9 @@ Notebook, Source, Artifact, Note
 GenerationStatus, AskResult
 NotebookDescription, ConversationTurn
 ShareStatus, SharedUser, SourceFulltext
+NotebookMetadata, SourceSummary
+AccountLimits, AccountTier
+ChatReference, ReportSuggestion, SuggestedTopic
 
 # Exceptions (all inherit from NotebookLMError)
 NotebookLMError                    # Base exception
@@ -77,13 +85,23 @@ ArtifactError, ArtifactDownloadError, ArtifactNotFoundError, ArtifactNotReadyErr
 ChatError
 
 # Enums
-AudioFormat, VideoFormat, ExportType
+AudioFormat, AudioLength
+VideoFormat, VideoStyle
+QuizQuantity, QuizDifficulty
+InfographicOrientation, InfographicDetail, InfographicStyle
+SlideDeckFormat, SlideDeckLength
+ReportFormat
 SourceType, ArtifactType, SourceStatus
 ShareAccess, SharePermission, ShareViewLevel
 ChatGoal, ChatResponseLength, ChatMode
+DriveMimeType, ExportType
 
 # Auth
-AuthTokens, DEFAULT_STORAGE_PATH
+AuthTokens
+# (DEFAULT_STORAGE_PATH is deprecated; use notebooklm.paths.get_storage_path())
+
+# Helpers (cookies extra) - imported from notebooklm.auth
+notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"`
 ```
 
 ### Internal (May change without notice)
@@ -93,7 +111,7 @@ AuthTokens, DEFAULT_STORAGE_PATH
 notebooklm.rpc.*          # RPC protocol internals
 notebooklm._core.*        # Core infrastructure
 notebooklm._*.py          # All underscore-prefixed modules
-notebooklm.auth.*         # Auth internals (except AuthTokens)
+notebooklm.auth.*         # Auth internals (except AuthTokens and convert_rookiepy_cookies_to_storage_state)
 ```
 
 To use internal APIs, import them explicitly:
@@ -106,12 +124,12 @@ from notebooklm.rpc import RPCMethod, encode_rpc_request
 
 1. **Deprecation Notice**: Deprecated features emit `DeprecationWarning`
 2. **Documentation**: Deprecations are noted in docstrings and CHANGELOG
-3. **Removal Timeline**: Deprecated features are removed in the next major version
+3. **Removal Timeline**: Deprecated features are removed in the next major version. While the project is in 0.x, removal may instead occur in the next MINOR release after at least one MINOR cycle of `DeprecationWarning` (see "0.x Pre-1.0 Semantics" above).
 4. **Migration Guide**: Breaking changes include migration instructions
 
 ### Currently Deprecated
 
-The following are deprecated and will be removed in **v0.4.0**:
+The following are deprecated and will be removed in **v0.5.0**:
 
 | Deprecated | Replacement | Notes |
 |------------|-------------|-------|
@@ -120,13 +138,24 @@ The following are deprecated and will be removed in **v0.4.0**:
 | `Artifact.variant` | `Artifact.kind` | Use `.is_quiz` / `.is_flashcards` |
 | `SourceFulltext.source_type` | `SourceFulltext.kind` | Returns `SourceType` str enum |
 | `StudioContentType` | `ArtifactType` | Str enum for user-facing code |
+| `DEFAULT_STORAGE_PATH` | `notebooklm.paths.get_storage_path()` | Module-level constant replaced by helper |
+
+> **Note:** These were originally targeted for removal in v0.4.0. The removal was deferred one release to give downstream users more time to migrate. They continue to emit `DeprecationWarning` and will be removed in v0.5.0.
 
 ## Migration Guides
+
+### Migrating from v0.3.x to v0.4.0
+
+Version 0.4.0 is backward compatible with v0.3.x. Notable additions:
+
+- **Multi-account profiles** - Existing single-account setups continue to work as the implicit default profile. Your existing `~/.notebooklm/storage_state.json` is auto-detected — no manual migration is required. New accounts can be added via `notebooklm profile create <name>`.
+- **`[cookies]` optional extra** - To reuse cookies from your existing browser, install with `pip install "notebooklm-py[cookies]"` (requires `rookiepy`).
+- **Deprecation removal deferred** - The deprecated attributes originally scheduled for v0.4.0 (`Source.source_type`, `Artifact.artifact_type`, `Artifact.variant`, `SourceFulltext.source_type`, `StudioContentType`, `DEFAULT_STORAGE_PATH`) will now be removed in v0.5.0. They still emit `DeprecationWarning` — please migrate before v0.5.0.
 
 ### Migrating from v0.2.x to v0.3.0
 
 Version 0.3.0 introduces **deprecated** attributes that emit `DeprecationWarning` when accessed.
-These will be removed in v0.4.0. Update your code now to avoid breakage.
+These will be removed in v0.5.0. Update your code now to avoid breakage.
 
 #### 1. `Source.source_type` → `Source.kind`
 

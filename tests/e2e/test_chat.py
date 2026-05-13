@@ -7,33 +7,8 @@ Run with: pytest tests/e2e/test_chat.py -m e2e
 import pytest
 
 from notebooklm import AskResult, ChatReference
-from notebooklm.exceptions import ChatError
 
 from .conftest import requires_auth
-
-_RATE_LIMIT_PHRASES = ("rate limit", "rate limited", "rejected by the api")
-
-
-@pytest.fixture(autouse=True)
-async def _skip_on_chat_rate_limit(client):
-    """Auto-skip any test that hits a chat API rate limit.
-
-    Only skips on actual rate limit errors (ChatError with rate-limit message).
-    Other ChatErrors (HTTP failures, auth errors, etc.) are re-raised so they
-    show as failures rather than silently skipping.
-    """
-    original_ask = client.chat.ask
-
-    async def _ask_with_skip(*args, **kwargs):
-        try:
-            return await original_ask(*args, **kwargs)
-        except ChatError as e:
-            msg = str(e).lower()
-            if any(phrase in msg for phrase in _RATE_LIMIT_PHRASES):
-                pytest.skip(str(e))
-            raise
-
-    client.chat.ask = _ask_with_skip
 
 
 @pytest.mark.e2e

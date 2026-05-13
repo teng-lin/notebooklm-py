@@ -15,8 +15,9 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from ._core import ClientCore
+from ._env import get_default_language
 from .exceptions import ChatError, NetworkError, ValidationError
-from .rpc import QUERY_URL, RPCMethod
+from .rpc import RPCMethod, get_query_url
 from .types import AskResult, ChatReference, ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ class ChatAPI:
         self._core._reqid_counter += 100000
         url_params = {
             "bl": os.environ.get("NOTEBOOKLM_BL", _DEFAULT_BL),
-            "hl": "en",
+            "hl": get_default_language(),
             "_reqid": str(self._core._reqid_counter),
             "rt": "c",
         }
@@ -141,7 +142,7 @@ class ChatAPI:
             url_params["f.sid"] = self._core.auth.session_id
 
         query_string = urlencode(url_params)
-        url = f"{QUERY_URL}?{query_string}"
+        url = f"{get_query_url()}?{query_string}"
 
         http_client = self._core.get_http_client()
         try:
@@ -448,20 +449,24 @@ class ChatAPI:
 
         lines = response_text.strip().split("\n")
         best_marked_answer = ""
+        best_marked_refs: list[ChatReference] = []
         best_unmarked_answer = ""
-        all_references: list[ChatReference] = []
+        best_unmarked_refs: list[ChatReference] = []
         server_conv_id: str | None = None
 
         def process_chunk(json_str: str) -> None:
-            """Process a JSON chunk, updating best answers and all_references."""
-            nonlocal best_marked_answer, best_unmarked_answer, server_conv_id
+            """Process a JSON chunk, updating best answer candidates and their refs."""
+            nonlocal best_marked_answer, best_marked_refs
+            nonlocal best_unmarked_answer, best_unmarked_refs
+            nonlocal server_conv_id
             text, is_answer, refs, conv_id = self._extract_answer_and_refs_from_chunk(json_str)
             if text:
                 if is_answer and len(text) > len(best_marked_answer):
                     best_marked_answer = text
+                    best_marked_refs = refs
                 elif not is_answer and len(text) > len(best_unmarked_answer):
                     best_unmarked_answer = text
-            all_references.extend(refs)
+                    best_unmarked_refs = refs
             if conv_id:
                 server_conv_id = conv_id
 
@@ -485,6 +490,7 @@ class ChatAPI:
         # Prefer marked answers; fall back to longest unmarked text
         if best_marked_answer:
             longest_answer = best_marked_answer
+            final_refs = best_marked_refs
         elif best_unmarked_answer:
             logger.warning(
                 "No marked answer found; falling back to longest unmarked "
@@ -492,8 +498,10 @@ class ChatAPI:
                 len(best_unmarked_answer),
             )
             longest_answer = best_unmarked_answer
+            final_refs = best_unmarked_refs
         else:
             longest_answer = ""
+            final_refs = []
 
         if not longest_answer:
             logger.warning(
@@ -502,11 +510,11 @@ class ChatAPI:
             )
 
         # Assign citation numbers based on order of appearance
-        for idx, ref in enumerate(all_references, start=1):
+        for idx, ref in enumerate(final_refs, start=1):
             if ref.citation_number is None:
                 ref.citation_number = idx
 
-        return longest_answer, all_references, server_conv_id
+        return longest_answer, final_refs, server_conv_id
 
     def _extract_answer_and_refs_from_chunk(
         self, json_str: str
@@ -610,7 +618,10 @@ class ChatAPI:
         except ChatError:
             raise
         except Exception:
-            pass  # Ignore parse failures; let normal empty-answer handling proceed
+            logger.debug(
+                "Could not parse chat error payload; continuing with empty-answer handling",
+                exc_info=True,
+            )
 
     def _parse_citations(self, first: list) -> list[ChatReference]:
         """Parse citation details from response structure.

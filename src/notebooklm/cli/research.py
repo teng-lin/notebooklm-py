@@ -14,7 +14,7 @@ from .helpers import (
     console,
     display_report,
     display_research_sources,
-    import_with_retry,
+    import_research_sources,
     json_output_response,
     require_notebook,
     resolve_notebook_id,
@@ -123,9 +123,12 @@ def research_status(ctx, notebook_id, json_output, client_auth):
     help="Seconds between status checks (default: 5)",
 )
 @click.option("--import-all", is_flag=True, help="Import all found sources when done")
+@click.option("--cited-only", is_flag=True, help="With --import-all, import only cited sources")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
-def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, client_auth):
+def research_wait(
+    ctx, notebook_id, timeout, interval, import_all, cited_only, json_output, client_auth
+):
     """Wait for research to complete.
 
     Blocks until research is completed or timeout is reached.
@@ -135,8 +138,12 @@ def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, 
     Examples:
       notebooklm research wait
       notebooklm research wait --timeout 600 --import-all
+      notebooklm research wait --import-all --cited-only
       notebooklm research wait --json
     """
+    if cited_only and not import_all:
+        raise click.UsageError("--cited-only requires --import-all")
+
     nb_id = require_notebook(notebook_id)
 
     async def _run():
@@ -188,16 +195,22 @@ def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, 
                     "report": report,
                 }
                 if import_all and sources and task_id:
-                    imported = await import_with_retry(
+                    import_result = await import_research_sources(
                         client,
                         nb_id_resolved,
                         task_id,
                         sources,
+                        report=report,
+                        cited_only=cited_only,
                         max_elapsed=timeout,
                         json_output=True,
                     )
-                    result["imported"] = len(imported)
-                    result["imported_sources"] = imported
+                    if import_result.cited_selection is not None:
+                        result["cited_only"] = True
+                        result["cited_sources_selected"] = len(import_result.sources)
+                        result["cited_only_fallback"] = import_result.cited_selection.used_fallback
+                    result["imported"] = len(import_result.imported)
+                    result["imported_sources"] = import_result.imported
                 json_output_response(result)
             else:
                 console.print(f"[green]✓ Research completed:[/green] {query}")
@@ -206,14 +219,16 @@ def research_wait(ctx, notebook_id, timeout, interval, import_all, json_output, 
                 display_report(report)
 
                 if import_all and sources and task_id:
-                    with console.status("Importing sources..."):
-                        imported = await import_with_retry(
-                            client,
-                            nb_id_resolved,
-                            task_id,
-                            sources,
-                            max_elapsed=timeout,
-                        )
-                    console.print(f"[green]Imported {len(imported)} sources[/green]")
+                    import_result = await import_research_sources(
+                        client,
+                        nb_id_resolved,
+                        task_id,
+                        sources,
+                        report=report,
+                        cited_only=cited_only,
+                        max_elapsed=timeout,
+                        status_message="Importing sources...",
+                    )
+                    console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
 
     return _run()

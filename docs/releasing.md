@@ -1,7 +1,7 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-03-12
+**Last Updated:** 2026-05-09
 
 Checklist for releasing a new version of `notebooklm-py`.
 

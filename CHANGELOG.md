@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Cookie identity widened to `(name, domain, path)` per RFC 6265 §5.3** - `CookieKey`, `DomainCookieMap`, `AuthTokens.cookies`, `extract_cookies_with_domains`, and `normalize_cookie_map` now key on the path-aware triple instead of the legacy `(name, domain)` pair. PR #363 already made the snapshot/delta save path path-aware; #406 closes the corresponding load-side and legacy-merge gaps so two cookies sharing `(name, domain)` at distinct paths (e.g. `OSID@/` and `OSID@/u/0/`) coexist end-to-end. **Writes remain fully backward compatible** — `AuthTokens(cookies={"SID": "..."})` (flat) and `AuthTokens(cookies={("SID", ".google.com"): "..."})` (legacy 2-tuple) both still work; `normalize_cookie_map` widens missing paths to `/` and `_update_cookie_input` collapses path-siblings back when the caller's target uses the legacy 2-tuple shape. **Reads of `auth.cookies` with the old 2-tuple key shape now raise `KeyError`** — callers that subscript the dict directly should update from `auth.cookies[("SID", ".google.com")]` to `auth.cookies[("SID", ".google.com", "/")]`, or use `auth.flat_cookies["SID"]` / `auth.cookie_header` when path doesn't matter. The same migration applies to the return value of `extract_cookies_with_domains`. Empirically, every Set-Cookie observed in captured Google traffic uses `path=/`, so this is correctness/headroom rather than a live bug fix (#369, #406).
+
+## [0.4.1] - 2026-05-11
+
+> **Compatibility note.** Despite a few additive items (`notebooklm auth refresh` CLI, `keepalive=` constructor argument on `NotebookLMClient`, `NOTEBOOKLM_REFRESH_CMD` env var, two new dataclass fields), 0.4.1 is shipped as a patch release because the dominant work — and the reason to ship now — is auth/cookie stability remediation. Bumping to v0.5.0 would force the long-deferred removal of v0.3-era deprecated APIs (see [Stability](docs/stability.md)) earlier than scheduled; we'd rather keep that change isolated from the auth-keepalive work. All additive items are backward compatible — existing code keeps working without changes.
+
+### Added
+- **`notebooklm auth refresh` CLI command** - One-shot keepalive that opens a session, triggers the layer-1 SIDTS rotation poke against `accounts.google.com`, persists the rotated cookies to `storage_state.json`, and exits. Designed to be scheduled by the OS (launchd / systemd / cron / Task Scheduler / k8s CronJob) to keep an idle profile from staling out between user-driven calls. Pairs naturally with `--quiet` for log-only-on-error cron output. Requires file/profile-backed authentication — explicitly refuses to run when `NOTEBOOKLM_AUTH_JSON` is set (no writable backing store). See `docs/troubleshooting.md` for per-OS scheduler recipes (#336).
+- **Periodic keepalive task on `NotebookLMClient`** - Long-lived clients (agents, workers, multi-hour `async with` blocks) can opt into a background task that periodically POSTs `RotateCookies` to drive `__Secure-1PSIDTS` rotation, then persists rotated cookies to `storage_state.json` immediately so a crash doesn't lose the freshness. Disabled by default — pass `keepalive=<seconds>` to `NotebookLMClient(...)` or `NotebookLMClient.from_storage(...)` to enable. Values below `keepalive_min_interval` (default 60 s) are clamped up to that floor. The loop swallows transient errors at DEBUG and continues; cancellation on `__aexit__` is clean. Persistence runs off-loop via `asyncio.to_thread` so the loop never blocks on disk I/O. Closes the gap left by the per-call layer-1 poke for clients that never re-call `fetch_tokens` (#297, #312, #341).
+- **Auto-refresh on auth expiry** - `fetch_tokens` now optionally runs a user-provided shell command when a Google session cookie has expired, reloads cookies from the same storage path, and retries once. Opt in by setting the `NOTEBOOKLM_REFRESH_CMD` environment variable to a command that rewrites `storage_state.json` (e.g. a sync script reading from a cookie vault). Refresh commands receive `NOTEBOOKLM_REFRESH_STORAGE_PATH` and `NOTEBOOKLM_REFRESH_PROFILE` so profile-aware scripts can target the active auth file. Covers every CLI entry point without changing the public API. Retry guards prevent refresh loops (#336).
+- **`examples/refresh_browser_cookies.py`** - Sample `NOTEBOOKLM_REFRESH_CMD` script that re-extracts cookies from a live local browser via `notebooklm login --browser-cookies`. Provides a recovery path for unattended automation when the in-process keepalive isn't enough (idle gaps, force-logout, password change).
+- **`Source.created_at` and `GenerationStatus.url` public dataclass fields** - `Source.created_at` is now populated for both nested and deeply-nested response paths. `GenerationStatus.url` is now populated by `poll_status` for media artifact types (audio, video, infographic, slide-deck PDF) so callers can stream the asset as soon as the status flips to ready (#349, #356).
+- **`ALLOWED_COOKIE_DOMAINS` extended for sibling Google products** - The browser-cookie import path now accepts cookies from Google's sibling product domains, restoring `--browser-cookies` flows for users whose active Google session lives on a sibling surface rather than `notebooklm.google.com` directly (#362).
+
+### Fixed
+- **Cookies could silently stale out under sustained use** - `fetch_tokens` now POSTs to `https://accounts.google.com/RotateCookies` (Chrome's dedicated unsigned rotation endpoint) before hitting `notebooklm.google.com` to drive `__Secure-1PSIDTS` / `__Secure-3PSIDTS` rotation. Empirically validated against both DBSC-bound (Playwright-minted) and unbound (Firefox-imported) profiles. RPC traffic against `notebooklm.google.com` alone does not appear to trigger rotation, so a keepalive that hit NotebookLM alone could silently stale out. The rotated `Set-Cookie` lands in the live `httpx` jar and is persisted via `save_cookies_to_storage()` along the `fetch_tokens_with_domains` / `AuthTokens.from_storage` paths. A 60 s mtime guard rate-limits the layer-1 poke — the POST is skipped when storage was recently rotated. Failures log at DEBUG and never abort token fetch. Disable with `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` (e.g. networks that block `accounts.google.com`). Closes #312 (#345, #346).
+- **Concurrent `RotateCookies` poke stampede** - The 60 s mtime guard only debounces *sequential* invocations; under `asyncio.gather` fan-out, parallel CLI loops, or MCP worker pools, all callers see the same stale `storage_state.json` mtime and stampede the POST. Three layered protections inside `_poke_session`: a per-event-loop, per-storage-path async lock registry plus a sync state lock for in-process dedup (an `asyncio.gather` of 10 fires exactly one POST), a non-blocking `LOCK_EX | LOCK_NB` flock on the new `.storage_state.json.rotate.lock` sentinel for cross-process dedup (parallel CLI loops / MCP workers skip silently when another process is rotating), and a failure-stampede protection where the timestamp updates regardless of POST outcome — so a 15 s timeout against a hung `accounts.google.com` doesn't let 10 fanned-out callers each wait the full timeout. The layer-2 keepalive loop now calls the bare `_rotate_cookies` directly (it's already self-paced via `keepalive_min_interval`) and `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` continues to disable both layers (#347, #348).
+- **`Notebook.sources_count` parsed but never surfaced** - The `sources_count` field on the public `Notebook` dataclass is now populated from `data[1]` on both LIST and GET notebook shapes; previously it always read as `0` regardless of actual source count (#350).
+- **`Artifact.url` unpopulated for media artifacts** - The `url` field on the public `Artifact` dataclass is now populated for media types (audio, video, infographic; slide-deck exposes the PDF URL — use `download_slide_deck(output_format="pptx")` for PPTX) so callers no longer need to drop down to `download_*` to obtain the asset URL (#349, #356).
+- **Cross-process and refresh-path save races** - Close lifecycle and refresh-path saves now serialize correctly with the keepalive writer; concurrent writers no longer overwrite each other's rotated cookies (#344).
+- **Keepalive ↔ close serialization; stop mutating caller `Auth`** - The keepalive task no longer races with `__aexit__`, and no longer mutates the `Auth` instance the caller passed in. Callers that share an `Auth` across multiple clients now get the isolation the API documented (#343).
+- **Snapshot keepalive cookie jar; normalize explicit `storage_path`** - The keepalive task now snapshots the live `httpx` jar before writing (avoiding torn writes when an RPC is mid-flight); an explicit `storage_path=` argument to `NotebookLMClient` is normalized onto the `Auth` instance so the keepalive task writes to the file the caller actually pointed at (#342).
+- **Per-domain cookie scoping on file upload** - File-upload requests now send only cookies whose `Domain` attribute applies to the upload host, instead of the full jar. Prevents upload rejection when the jar mixes cookies for `google.com`, `notebooklm.google.com`, and `googleusercontent.com` (#373, #374).
+- **Two-tier cookie validation pre-flight** - Auth loaders now distinguish "missing-but-recoverable" from "fatal" cookie states before attempting an RPC, surfacing clearer errors and avoiding doomed requests against Google's identity surface (#372).
+- **Preserve cookie attributes on load** - `Domain`, `Path`, `Secure`, `HttpOnly`, and `SameSite` attributes round-trip through storage load, restoring behaviors that depended on cross-host scoping (#365, #368).
+- **Unify flat-cookie selection across loaders** - Legacy flat-cookie and modern Playwright storage shapes now share a single selection contract; subtle mismatches between the two paths are eliminated (#375, #376).
+- **Tolerate non-numeric / out-of-range timestamp values on dataclasses** - `Notebook.created_at`, `Source.created_at`, and `Artifact.created_at` now catch `TypeError`, `ValueError`, `OSError`, and `OverflowError` from `datetime.fromtimestamp` and resolve to `None` instead of raising on edge-case server responses (#357).
+- **`examples/refresh_browser_cookies.py` `--profile` placement** - The example invoked `... login --browser-cookies <b> --profile <p>` but `--profile` is a top-level Click option and was rejected after `login` (`Error: No such option: --profile`). Now invokes `... --profile <p> login --browser-cookies <b>` and works end-to-end against profile-backed storage.
+
+### Infrastructure
+- **Consolidated URL extraction** - `_extract_artifact_url`, per-type extractors (audio/video/infographic/slide-deck), and `_is_valid_artifact_url` moved to `types.py`. Readiness checks, `Artifact.url`, `GenerationStatus.url`, and the download paths now share one URL-selection contract: `mp4` quality-4 > any `mp4` > first valid URL for video. `SourcesAPI.get_fulltext` fixed for YouTube fulltext URLs at `metadata[5][0]` along the way (#349, #356).
+- **Removed redundant `ArtifactsAPI` URL helpers** - Private `_is_valid_media_url` and `_find_infographic_url` shim methods removed; tests now exercise the canonical `types.py` helpers (#358).
+- **E2E `--profile` pytest flag** - `pytest --profile <name>` scopes the E2E notebook ID cache to a named profile, so parallel multi-profile test runs don't collide on the cached notebook fixture (#340).
+
+## [0.4.0] - 2026-05-09
+
+### Added
+- **Multi-account profiles** - Switch between Google accounts without re-authenticating (#227)
+  - `notebooklm profile create/list/switch/rename/delete` commands
+  - Global `--profile` / `-p` flag and `NOTEBOOKLM_PROFILE` environment variable to scope any command to a profile
+  - Per-profile storage paths under `~/.notebooklm/profiles/<name>/`
+  - Implicit default profile preserved for backward compatibility; existing `~/.notebooklm/storage_state.json` is auto-detected as the default profile (no manual migration needed)
+- **`notebooklm doctor` diagnostic command** - `notebooklm doctor [--fix] [--json]` checks profile setup, auth, and migration status; reports actionable issues
+- **Microsoft Edge SSO login** - `notebooklm login --browser msedge` for organizations that require Edge for SSO (#204)
+- **Browser cookie import** - Reuse cookies from your existing browser session without driving Playwright
+  - `notebooklm login --browser-cookies <browser>` (chrome, edge, firefox, safari, etc.)
+  - New `convert_rookiepy_cookies_to_storage_state()` Python helper
+  - Optional `[cookies]` extra installs `rookiepy` (`pip install "notebooklm-py[cookies]"`)
+  - Honors the active profile: `notebooklm --profile <name> login --browser-cookies <browser>` writes to that profile's `storage_state.json`. Note that cookie extraction always pulls the source browser's currently-active Google account for `google.com` / `notebooklm.google.com` — to populate multiple profiles from the same browser, switch the active Google account in the browser between runs (or use a separate browser per profile).
+- **EPUB source type** - Upload `.epub` files as notebook sources (#231)
+- **Agent skill installation** - Install the bundled NotebookLM skill into local AI agents (#206, #207)
+  - `notebooklm skill install` - Install into `~/.claude/skills/notebooklm` and `~/.agents/skills/notebooklm`
+  - `notebooklm skill status` - Check installation state
+  - `notebooklm agent show codex` / `notebooklm agent show claude` - Print bundled agent templates
+- **Mind map customization** - `client.artifacts.generate_mind_map()` now accepts `language` and `instructions` parameters (#252)
+- **`note list --json`** - Machine-readable note listings (#259)
+- **Bare status codes in decoder errors** - Decoder surfaces server status codes on null RPC results for clearer diagnostics (#114, #294)
+
+### Fixed
+- **Cross-domain cookie preservation** - Login storage state retains cookies across `google.com` and `notebooklm.google.com` subdomains, restoring sessions for regional domains
+- **NotebookLM subdomain cookies** - Subdomain cookies are no longer dropped during login (#334)
+- **Video artifact detection** - Correctly detect completed video media URLs in polling responses (#333)
+- **Research import on unavailable snapshots** - CLI gracefully handles missing source snapshots during research import (#335)
+- **Source import retry** - Filtered partial-import retry payloads and tightened verification to avoid false positives (#321, #327)
+- **Server-state verification on timeout** - Prevents duplicate inflation when source imports time out (#319)
+- **Playwright navigation interruption** - Handles updated Playwright behavior on already-authenticated sessions (#214, #322)
+- **Login subprocess on Windows** - Use `sys.executable` for Playwright subprocess calls (#279)
+- **Legacy Windows Unicode output** - Sanitized output streams for legacy Windows consoles (#324)
+- **Settings quota errors** - Use account limits when reporting create-quota failures (#328)
+- **Chat references** - Emit references only from the winning chunk to avoid >600-element duplication (#300, #310)
+- **Login retry mechanism** - Resolved race conditions and improved error handling on retry (#243)
+- **Quota detection during polling** - Detect quota / daily-limit failures during artifact polling (#240)
+- **Google account switching** - Fixed switching between Google accounts at login time (#246)
+- **YouTube URL extraction** - Extract YouTube URLs at deeply-nested response positions (#265)
+- **Bare-HTTP URL fallback** - Disabled brittle bare-HTTP fallback in `sources.list()` (#294)
+- **Logout context cleanup** - Clear the active notebook context on `notebooklm logout`
+- **Infographic URL extraction** - Aligned with download-path logic; added regression test (#229)
+- **Custom storage path for downloads** - Artifact downloads now respect custom auth storage paths (#235)
+- **Windows file permissions** - Skip Unix-only `0o600` calls on Windows and rely on Python 3.13+ ACL behavior (#225)
+- **TOCTOU protection** - Hardened directory creation in `session.py` (#225)
+
+### Changed
+- **`rookiepy` is an optional `[cookies]` extra** - Excluded from `[all]` to avoid Python 3.13+ install issues; install with `pip install "notebooklm-py[cookies]"`
+- **Login error detection** - Improved detection of missing browser binaries (e.g., `msedge` not installed)
+- **Skill installation paths** - Hardened to handle alternative `~/.claude` and `~/.agents` layouts
+- **Deprecation removal deferred to v0.5.0** - The deprecated APIs originally scheduled for removal in v0.4.0 — `StudioContentType`, `Source.source_type`, `SourceFulltext.source_type`, `Artifact.artifact_type`, `Artifact.variant`, and `DEFAULT_STORAGE_PATH` — continue to work and emit `DeprecationWarning`. Removal is now planned for v0.5.0 to give downstream users an extra release to migrate.
+
+### Infrastructure
+- Pinned `ruff==0.8.6` in dev deps to match pre-commit configuration
+- Bumped `python-dotenv` (#299)
+- Bumped `pytest` in the `uv` group
+- Added contribution templates and PR quality guidelines for issues and PRs
+
 ## [0.3.4] - 2026-03-12
 
 ### Added
@@ -155,8 +249,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ARTIFACT_TYPE_DISPLAY`** - Unused constant replaced by `get_artifact_type_display()`
 
 ### Deprecated
-The following emit `DeprecationWarning` when accessed and will be removed in **v0.4.0**.
+The following emit `DeprecationWarning` when accessed and were originally scheduled for removal in v0.4.0.
 See [Migration Guide](docs/stability.md#migrating-from-v02x-to-v030) for upgrade instructions.
+
+> **Note:** Removal was subsequently deferred one release; see the [0.4.0] entry above. These names will now be removed in v0.5.0.
 
 - **`Source.source_type`** - Use `.kind` property instead (returns `SourceType` str enum)
 - **`Artifact.artifact_type`** - Use `.kind` property instead (returns `ArtifactType` str enum)
@@ -344,7 +440,9 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/teng-lin/notebooklm-py/compare/v0.3.1...v0.3.2

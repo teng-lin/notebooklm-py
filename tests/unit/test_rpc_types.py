@@ -8,6 +8,8 @@ from notebooklm.rpc.types import (
     RPCMethod,
     SourceStatus,
     artifact_status_to_str,
+    get_batchexecute_url,
+    get_query_url,
     source_status_to_str,
 )
 
@@ -22,6 +24,13 @@ class TestRPCConstants:
     def test_query_url(self):
         """Test query URL for streaming chat."""
         assert "GenerateFreeFormStreamed" in QUERY_URL
+
+    def test_endpoint_helpers_honor_env_after_import(self, monkeypatch):
+        """Test lazy endpoint helpers are not locked to import-time env."""
+        monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+
+        assert get_batchexecute_url().startswith("https://notebooklm.cloud.google.com/")
+        assert get_query_url().startswith("https://notebooklm.cloud.google.com/")
 
 
 class TestRPCMethod:
@@ -56,6 +65,10 @@ class TestRPCMethod:
     def test_list_artifacts(self):
         """Test LIST_ARTIFACTS RPC ID."""
         assert RPCMethod.LIST_ARTIFACTS == "gArtLc"
+
+    def test_get_user_tier(self):
+        """Test GET_USER_TIER RPC ID."""
+        assert RPCMethod.GET_USER_TIER == "ozz5Z"
 
     def test_rpc_method_is_string(self):
         """Test RPCMethod values are strings (for JSON serialization)."""

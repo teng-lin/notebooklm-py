@@ -37,22 +37,43 @@ import os
 from pathlib import Path
 
 # =============================================================================
-# WINDOWS COMPATIBILITY FIXES (issue #75, #79, #80)
+# WINDOWS COMPATIBILITY FIXES (issue #75, #79, #80, #318)
 # Must be applied before any async code runs
 # =============================================================================
 
-if sys.platform == "win32":
+
+def _reconfigure_output_stream(stream) -> None:
+    """Use UTF-8 with replacement for active Windows text streams."""
+    if stream is None:
+        return
+    reconfigure = getattr(stream, "reconfigure", None)
+    if not callable(reconfigure):
+        return
+    try:
+        reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, TypeError, ValueError):
+        pass
+
+
+def _configure_windows_runtime() -> None:
+    """Apply Windows runtime fixes before Click and Rich command modules load."""
+    if sys.platform != "win32":
+        return
+
     # Fix #79: Windows asyncio ProactorEventLoop can hang indefinitely at IOCP layer
     # (GetQueuedCompletionStatus) in certain environments like Sandboxie.
     # SelectorEventLoop avoids this issue.
-    import asyncio
-
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # Fix #80: Non-English Windows systems (cp950, cp932, etc.) can fail with
-    # UnicodeEncodeError when outputting Unicode characters like checkmarks.
-    # Setting PYTHONUTF8 ensures consistent UTF-8 encoding.
+    # Fix #80/#318: changing PYTHONUTF8 after startup does not update the already
+    # created stdout/stderr TextIOWrappers. Reconfigure the live streams so Rich's
+    # legacy Windows renderer can write emoji and other Unicode output safely.
     os.environ.setdefault("PYTHONUTF8", "1")
+    _reconfigure_output_stream(sys.stdout)
+    _reconfigure_output_stream(sys.stderr)
+
+
+_configure_windows_runtime()
 
 import click
 
@@ -182,17 +203,6 @@ cli.add_command(profile)
 
 
 def main():
-    # Windows-specific fixes
-    if sys.platform == "win32":
-        # Force UTF-8 encoding for Unicode output on non-English Windows systems
-        # Prevents UnicodeEncodeError when displaying Unicode characters (✓, ✗, box drawing)
-        # on systems with legacy encodings (cp950, cp932, cp936, etc.)
-        os.environ.setdefault("PYTHONUTF8", "1")
-
-        # Fix asyncio hanging issue - use WindowsSelectorEventLoopPolicy instead of
-        # default ProactorEventLoop to avoid IOCP blocking on network operations
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
     cli()
 
 

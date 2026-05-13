@@ -2,9 +2,12 @@
 
 ## Supported Versions
 
+Only the latest minor release receives security fixes. Earlier `0.x` releases predate the current API surface and are no longer maintained — please upgrade to the latest version.
+
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.4.x   | :white_check_mark: |
+| < 0.4   | :x:                |
 
 ## Reporting a Vulnerability
 

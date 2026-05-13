@@ -1,10 +1,14 @@
 """Tests for CLI helper functions."""
 
+import asyncio
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+import notebooklm.cli._encoding as encoding_module
 from notebooklm import Artifact
 from notebooklm.cli.helpers import (
     clear_context,
@@ -28,7 +32,7 @@ from notebooklm.cli.helpers import (
     set_current_notebook,
     with_client,
 )
-from notebooklm.exceptions import RPCTimeoutError
+from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
 from notebooklm.types import ArtifactType
 
 # =============================================================================
@@ -229,6 +233,20 @@ class TestJsonOutputResponse:
         assert data["nested"]["key"] == "value"
         assert data["list"] == [1, 2, 3]
 
+    def test_json_output_response_preserves_unicode(self, capsys):
+        """CJK / emoji characters should be emitted as real UTF-8, not \\uXXXX."""
+        json_output_response({"title": "中文笔记本", "emoji": "🚀"})
+
+        captured = capsys.readouterr()
+        # Round-trip must still parse.
+        data = json.loads(captured.out)
+        assert data["title"] == "中文笔记本"
+        assert data["emoji"] == "🚀"
+        # Raw output must contain real CJK chars, not escaped sequences.
+        assert "中文笔记本" in captured.out
+        assert "🚀" in captured.out
+        assert "\\u" not in captured.out
+
 
 class TestJsonErrorResponse:
     def test_outputs_error_json_and_exits(self, capsys):
@@ -242,6 +260,32 @@ class TestJsonErrorResponse:
         assert data["error"] is True
         assert data["code"] == "TEST_ERROR"
         assert data["message"] == "Test error message"
+
+    def test_json_error_response_preserves_unicode(self, capsys):
+        """Error messages with CJK / emoji should be emitted as real UTF-8."""
+        with pytest.raises(SystemExit):
+            json_error_response("ERROR", "笔记本不存在 🚫", extra={"title": "中文"})
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["message"] == "笔记本不存在 🚫"
+        assert data["title"] == "中文"
+        assert "笔记本不存在" in captured.out
+        assert "🚫" in captured.out
+        assert "中文" in captured.out
+        assert "\\u" not in captured.out
+
+    def test_json_error_response_serializes_path_in_extra(self, capsys):
+        """Non-primitive values like pathlib.Path must not crash the error reporter."""
+        with pytest.raises(SystemExit):
+            json_error_response("ERROR", "Bad path", extra={"path": Path("tmp_test_path")})
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["error"] is True
+        assert data["code"] == "ERROR"
+        assert data["message"] == "Bad path"
+        assert data["path"] == str(Path("tmp_test_path"))
 
 
 # =============================================================================
@@ -282,6 +326,34 @@ class TestContextManagement:
         with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
             clear_context()
             assert not context_file.exists()
+
+    def test_clear_context_preserves_account_metadata(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        context_file.write_text(
+            json.dumps(
+                {
+                    "notebook_id": "test",
+                    "conversation_id": "conv",
+                    "account": {"authuser": 1, "email": "bob@example.com"},
+                }
+            )
+        )
+        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+            assert clear_context() is True
+
+        assert json.loads(context_file.read_text()) == {
+            "account": {"authuser": 1, "email": "bob@example.com"}
+        }
+
+    def test_clear_context_can_remove_account_metadata(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        context_file.write_text(
+            json.dumps({"account": {"authuser": 1, "email": "bob@example.com"}})
+        )
+        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+            assert clear_context(clear_account=True) is True
+
+        assert not context_file.exists()
 
     def test_clear_context_no_file(self, tmp_path):
         """clear_context should not raise if file doesn't exist"""
@@ -329,6 +401,18 @@ class TestContextManagement:
             assert data["notebook_id"] == "nb_new"
             assert "conversation_id" not in data
 
+    def test_set_current_notebook_preserves_account_metadata(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        context_file.write_text(
+            json.dumps({"account": {"authuser": 1, "email": "bob@example.com"}})
+        )
+        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+            set_current_notebook("nb_new", title="New Notebook")
+
+        data = json.loads(context_file.read_text())
+        assert data["notebook_id"] == "nb_new"
+        assert data["account"] == {"authuser": 1, "email": "bob@example.com"}
+
 
 class TestRequireNotebook:
     def test_returns_provided_notebook_id(self, tmp_path):
@@ -372,6 +456,44 @@ class TestHandleError:
             mock_console.print.assert_called_once()
             call_args = mock_console.print.call_args[0][0]
             assert "Test error" in call_args
+
+    def test_falls_back_when_console_cannot_encode_error(self):
+        class DummyStderr:
+            encoding = "cp950"
+
+        calls = []
+
+        def flaky_echo(message=None, **kwargs):
+            err = kwargs.get("err", False)
+            if not calls:
+                calls.append((message, err))
+                raise UnicodeEncodeError(
+                    "cp950",
+                    str(message),
+                    0,
+                    1,
+                    "illegal multibyte sequence",
+                )
+            calls.append((message, err))
+
+        with (
+            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch("notebooklm.cli._encoding.click.echo", side_effect=flaky_echo),
+            patch.object(encoding_module.sys, "stderr", DummyStderr()),
+        ):
+            mock_console.print.side_effect = UnicodeEncodeError(
+                "cp950",
+                "Error: broken 🌐",
+                14,
+                15,
+                "illegal multibyte sequence",
+            )
+
+            with pytest.raises(SystemExit) as exc_info:
+                handle_error(ValueError("broken 🌐"))
+
+        assert exc_info.value.code == 1
+        assert calls == [("Error: broken 🌐", True), ("Error: broken ?", True)]
 
 
 class TestHandleAuthError:
@@ -471,8 +593,10 @@ class TestWithClientDecorator:
 
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
@@ -520,8 +644,10 @@ class TestWithClientDecorator:
 
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
@@ -545,8 +671,10 @@ class TestWithClientDecorator:
 
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd)
 
@@ -569,8 +697,10 @@ class TestWithClientDecorator:
 
         runner = CliRunner()
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(test_cmd, ["--json"])
 
@@ -591,13 +721,15 @@ class TestGetClient:
         ctx.obj = None
 
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test_sid"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf_token", "session_id")
 
                 cookies, csrf, session = get_client(ctx)
 
-        assert cookies == {"SID": "test_sid"}
+        assert cookies == {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
         assert csrf == "csrf_token"
         assert session == "session_id"
 
@@ -606,8 +738,10 @@ class TestGetClient:
         ctx.obj = {"storage_path": "/custom/path"}
 
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
 
                 get_client(ctx)
@@ -621,15 +755,61 @@ class TestGetAuthTokens:
         ctx.obj = None
 
         with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load:
-            mock_load.return_value = {"SID": "test_sid"}
-            with patch("notebooklm.cli.helpers.fetch_tokens", new_callable=AsyncMock) as mock_fetch:
+            mock_load.return_value = {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
                 mock_fetch.return_value = ("csrf_token", "session_id")
 
                 auth = get_auth_tokens(ctx)
 
-        assert auth.cookies == {"SID": "test_sid"}
+        assert auth.cookies == {
+            ("SID", ".google.com", "/"): "test_sid",
+            ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
+        }
+        assert auth.flat_cookies == {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
         assert auth.csrf_token == "csrf_token"
         assert auth.session_id == "session_id"
+
+    def test_explicit_storage_path_overrides_auth_json_cookie_jar(self, tmp_path, monkeypatch):
+        storage_path = tmp_path / "storage_state.json"
+        ctx = MagicMock()
+        ctx.obj = {"storage_path": storage_path, "profile": None}
+        monkeypatch.setenv(
+            "NOTEBOOKLM_AUTH_JSON",
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "env", "domain": ".google.com"},
+                        {
+                            "name": "__Secure-1PSIDTS",
+                            "value": "test_1psidts",
+                            "domain": ".google.com",
+                        },
+                    ]
+                }
+            ),
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
+            patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch("notebooklm.auth.build_httpx_cookies_from_storage") as mock_env_jar,
+            patch("notebooklm.cli.helpers.build_cookie_jar") as mock_build_jar,
+        ):
+            mock_load.return_value = {"SID": "file", "__Secure-1PSIDTS": "test_1psidts"}
+            mock_fetch.return_value = ("csrf", "session")
+            mock_build_jar.return_value = httpx.Cookies()
+
+            auth = get_auth_tokens(ctx)
+
+        mock_env_jar.assert_not_called()
+        mock_build_jar.assert_called_once_with(
+            cookies={"SID": "file", "__Secure-1PSIDTS": "test_1psidts"}, storage_path=storage_path
+        )
+        assert auth.storage_path == storage_path
 
 
 class TestRunAsync:
@@ -644,7 +824,11 @@ class TestRunAsync:
 class TestImportWithRetry:
     @pytest.mark.asyncio
     async def test_retries_rpc_timeout_then_succeeds(self):
+        # Empty baseline + empty post-timeout probe → verification fails →
+        # falls through to legacy retry. This exercises the retry path
+        # explicitly rather than relying on a snapshot exception.
         client = MagicMock()
+        client.sources.list = AsyncMock(return_value=[])
         client.research.import_sources = AsyncMock(
             side_effect=[
                 RPCTimeoutError("Timed out", timeout_seconds=30.0),
@@ -673,6 +857,7 @@ class TestImportWithRetry:
     @pytest.mark.asyncio
     async def test_retries_silently_for_json_output(self):
         client = MagicMock()
+        client.sources.list = AsyncMock(return_value=[])
         client.research.import_sources = AsyncMock(
             side_effect=[
                 RPCTimeoutError("Timed out", timeout_seconds=30.0),
@@ -697,11 +882,18 @@ class TestImportWithRetry:
     @pytest.mark.asyncio
     async def test_raises_after_elapsed_budget(self):
         client = MagicMock()
+        client.sources.list = AsyncMock(return_value=[])
         error = RPCTimeoutError("Timed out", timeout_seconds=30.0)
         client.research.import_sources = AsyncMock(side_effect=error)
 
+        # time.monotonic is read once at start, then on each timeout. We need
+        # enough values to cover the snapshot path plus the timeout-handling
+        # path (elapsed check). Past-budget on second read forces the raise.
         with (
-            patch("notebooklm.cli.helpers.time.monotonic", side_effect=[0.0, 1801.0]),
+            patch(
+                "notebooklm.cli.helpers.time.monotonic",
+                side_effect=[0.0, 1801.0],
+            ),
             patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             pytest.raises(RPCTimeoutError),
         ):
@@ -718,6 +910,7 @@ class TestImportWithRetry:
     @pytest.mark.asyncio
     async def test_does_not_retry_non_timeout_error(self):
         client = MagicMock()
+        client.sources.list = AsyncMock(return_value=[])
         client.research.import_sources = AsyncMock(side_effect=ValueError("boom"))
 
         with (
@@ -733,3 +926,823 @@ class TestImportWithRetry:
 
         assert client.research.import_sources.await_count == 1
         mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_retry_when_server_state_shows_import_succeeded(self):
+        """If the import RPC times out but sources.list shows our URLs were
+        added server-side, treat it as success and skip retry. This avoids
+        the duplicate-on-retry inflation that otherwise multiplies sources by
+        the retry count.
+        """
+        # Two pre-existing sources, then after the timed-out import the same
+        # two plus the URL we just tried to import.
+        baseline_src = MagicMock(id="src_pre", title="Pre-existing", url="https://pre.example.com")
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [baseline_src],  # snapshot before import
+                [baseline_src, new_src],  # probe after timeout — URL is now there
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console") as mock_console,
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+            )
+
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+        # Single import attempt — no retry.
+        assert client.research.import_sources.await_count == 1
+        # Snapshot + post-timeout probe — exactly two sources.list calls.
+        assert client.sources.list.await_count == 2
+        # No sleep, no retry — straight to verified-success exit.
+        mock_sleep.assert_not_awaited()
+        # One console print: the verified-success notice.
+        assert mock_console.print.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_retry_when_url_normalization_matches(self):
+        """Server-side URL normalization (case folding, trailing-slash strip)
+        is handled by normalizing both sides before the subset check, so a
+        cosmetic difference between request and stored URL doesn't force a
+        duplicating retry.
+        """
+        # Server stored a normalized URL (no trailing slash, lowercased).
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # empty baseline
+                [new_src],  # post-timeout — one new source visible
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                # Trailing slash + uppercase host differ from server-normalized form.
+                [{"url": "https://Example.com/", "title": "Source 1"}],
+            )
+
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+        assert client.research.import_sources.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_retries_when_server_state_shows_no_progress(self):
+        """If sources.list shows the requested URLs were NOT imported, fall
+        back to the original retry behavior.
+        """
+        client = MagicMock()
+        client.sources.list = AsyncMock(return_value=[])  # always empty
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_1", "title": "Source 1"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                initial_delay=5,
+            )
+
+        assert imported == [{"id": "src_1", "title": "Source 1"}]
+        assert client.research.import_sources.await_count == 2
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
+    async def test_partial_timeout_retries_only_missing_urls(self):
+        """If a timed-out import partially committed URLs, the retry payload
+        must drop already-visible URLs to avoid duplicating them.
+        """
+        imported_src = MagicMock(id="src_1", title="Source 1", url="https://one.example.com")
+        sources = [
+            {"url": "https://one.example.com", "title": "Source 1"},
+            {"url": "https://two.example.com", "title": "Source 2"},
+            {"url": "https://three.example.com", "title": "Source 3"},
+        ]
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # baseline
+                [imported_src],  # post-timeout probe — 1 of 3 is visible
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_2", "title": "Source 2"}, {"id": "src_3", "title": "Source 3"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                sources,
+                initial_delay=5,
+            )
+
+        assert imported == [
+            {"id": "src_1", "title": "Source 1"},
+            {"id": "src_2", "title": "Source 2"},
+            {"id": "src_3", "title": "Source 3"},
+        ]
+        assert client.research.import_sources.await_count == 2
+        first_call_sources = client.research.import_sources.await_args_list[0].args[2]
+        retry_call_sources = client.research.import_sources.await_args_list[1].args[2]
+        assert first_call_sources == sources
+        assert retry_call_sources == [
+            {"url": "https://two.example.com", "title": "Source 2"},
+            {"url": "https://three.example.com", "title": "Source 3"},
+        ]
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
+    async def test_partial_timeout_preserves_report_entries_for_retry(self):
+        """Filtering URL entries that are already visible must leave no-URL
+        report entries in the retry payload.
+        """
+        imported_src = MagicMock(id="src_1", title="Source 1", url="https://one.example.com")
+        report_entry = {
+            "title": "Research Report",
+            "report_markdown": "# Findings\n...",
+            "result_type": 5,
+        }
+        sources = [
+            {"url": "https://one.example.com", "title": "Source 1"},
+            {"url": "https://two.example.com", "title": "Source 2"},
+            report_entry,
+        ]
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # baseline
+                [imported_src],  # post-timeout probe — URL 1 is visible
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_2", "title": "Source 2"}, {"id": "src_report", "title": "Report"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                sources,
+                initial_delay=5,
+            )
+
+        assert imported == [
+            {"id": "src_1", "title": "Source 1"},
+            {"id": "src_2", "title": "Source 2"},
+            {"id": "src_report", "title": "Report"},
+        ]
+        retry_call_sources = client.research.import_sources.await_args_list[1].args[2]
+        assert retry_call_sources == [
+            {"url": "https://two.example.com", "title": "Source 2"},
+            report_entry,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_partial_timeout_merges_prior_verified_sources_on_later_verified_success(self):
+        """When multiple timeouts happen, later verified-success returns must
+        include sources verified during earlier partial probes.
+        """
+        source_1 = MagicMock(id="src_1", title="Source 1", url="https://one.example.com")
+        source_2 = MagicMock(id="src_2", title="Source 2", url="https://two.example.com")
+        sources = [
+            {"url": "https://one.example.com", "title": "Source 1"},
+            {"url": "https://two.example.com", "title": "Source 2"},
+        ]
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # baseline
+                [source_1],  # first timeout — only URL 1 is visible, so retry URL 2
+                [source_1, source_2],  # second timeout — URL 2 is now visible
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                sources,
+                initial_delay=5,
+            )
+
+        assert imported == [
+            {"id": "src_1", "title": "Source 1"},
+            {"id": "src_2", "title": "Source 2"},
+        ]
+        assert client.research.import_sources.await_count == 2
+        retry_call_sources = client.research.import_sources.await_args_list[1].args[2]
+        assert retry_call_sources == [{"url": "https://two.example.com", "title": "Source 2"}]
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
+    async def test_snapshot_failure_deduplicates_retries_without_verified_success(self):
+        """A malformed pre-import snapshot must not masquerade as an empty
+        notebook. Without a reliable baseline we can still drop URLs already
+        visible after a timeout, but we must not classify all current rows as
+        newly imported by this call.
+        """
+        source_1 = MagicMock(id="src_1", title="Source 1", url="https://one.example.com")
+        source_2 = MagicMock(id="src_2", title="Source 2", url="https://two.example.com")
+        source_3 = MagicMock(id="src_3", title="Source 3", url="https://three.example.com")
+        sources = [
+            {"url": "https://one.example.com", "title": "Source 1"},
+            {"url": "https://two.example.com", "title": "Source 2"},
+            {"url": "https://three.example.com", "title": "Source 3"},
+        ]
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                RPCError("snapshot unavailable"),
+                [source_1],
+                [source_1, source_2, source_3],
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                sources,
+                initial_delay=5,
+            )
+
+        assert imported == []
+        assert client.research.import_sources.await_count == 2
+        assert client.sources.list.await_count == 3
+        assert all(
+            awaited_call.kwargs.get("strict") is True
+            for awaited_call in client.sources.list.await_args_list
+        )
+        assert client.research.import_sources.await_args_list[0].args[2] == sources
+        assert client.research.import_sources.await_args_list[1].args[2] == [
+            {"url": "https://two.example.com", "title": "Source 2"},
+            {"url": "https://three.example.com", "title": "Source 3"},
+        ]
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
+    async def test_partial_timeout_skips_retry_when_filter_removes_all_sources(self):
+        """If every requested URL is already visible after the timeout, there
+        is nothing left to retry.
+        """
+        existing_src = MagicMock(id="src_existing", title="Old", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [existing_src],  # baseline already has the URL
+                [existing_src],  # post-timeout probe still shows it
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console") as mock_console,
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Old (request)"}],
+                initial_delay=5,
+            )
+
+        assert imported == []
+        assert client.research.import_sources.await_count == 1
+        mock_sleep.assert_not_awaited()
+        assert mock_console.print.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retries_when_pre_existing_url_meets_concurrent_unrelated_addition(
+        self,
+    ):
+        """Combined edge case: the requested URL was already in the notebook
+        before the import, AND a concurrent session added an unrelated source
+        during the timeout window. The verified-success branch must NOT fire
+        — neither the pre-existing URL nor the unrelated addition is proof
+        our import wrote anything. The retry payload filter should still avoid
+        re-adding the requested URL because it is already present.
+        """
+        existing_src = MagicMock(id="src_existing", title="Old", url="https://example.com")
+        unrelated_src = MagicMock(
+            id="src_unrelated",
+            title="Unrelated (concurrent)",
+            url="https://other.example.com",
+        )
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [existing_src],  # baseline already has the requested URL
+                # post-timeout: pre-existing + unrelated concurrent addition,
+                # but no truly-new source matching the requested URL.
+                [existing_src, unrelated_src],
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_existing", "title": "Old"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Old (request)"}],
+                initial_delay=5,
+            )
+
+        assert imported == []
+        assert client.research.import_sources.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_returned_list_includes_non_url_sources_like_research_reports(self):
+        """When the request includes a research-report entry (no URL, only
+        title + ``report_markdown``), the verified-success return value must
+        surface the matching new no-URL source so callers can count it as
+        imported.
+        """
+        # A new research-report entry with no URL.
+        report_src = MagicMock(id="src_report", title="Research Report", url=None)
+        # And a new URL-bearing source.
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # empty baseline
+                [report_src, new_src],  # both new after the timeout
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [
+                    # Mixed request: one URL + one report entry.
+                    {"url": "https://example.com", "title": "Source 1"},
+                    {
+                        "title": "Research Report",
+                        "report_markdown": "# Findings\n...",
+                        "result_type": 5,
+                    },
+                ],
+            )
+
+        # Both sources are returned — the report (no URL) and the URL source.
+        ids_returned = {entry["id"] for entry in imported}
+        assert ids_returned == {"src_report", "src_new"}
+
+    @pytest.mark.asyncio
+    async def test_does_not_over_report_concurrent_no_url_source(self):
+        """When the request has NO no-URL entries (URLs only), a concurrent
+        no-URL source added during the timeout window must NOT be reported
+        as imported — even if the requested URL itself was successfully
+        written. Otherwise the caller's `len(imported)` overstates what this
+        call actually added.
+        """
+        # The user's URL did import successfully.
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        # A concurrent session added a research report during the same window.
+        concurrent_report = MagicMock(
+            id="src_concurrent_report", title="Unrelated Report", url=None
+        )
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # empty baseline
+                [new_src, concurrent_report],
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+            )
+
+        # Only the requested URL's source is returned; the concurrent report
+        # is not part of this call's contribution.
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+
+    @pytest.mark.asyncio
+    async def test_does_not_falsely_succeed_on_unrelated_concurrent_source(self):
+        """Concurrent activity from another session (e.g. web UI, parallel CLI)
+        can add unrelated sources during the import window. The verification
+        condition must NOT fire on those — success must require the *requested*
+        URLs to actually appear among the new sources, not just that the post-
+        timeout source count grew.
+
+        Without this guard, a real timeout coinciding with any concurrent
+        addition would skip the retry and return the unrelated source as
+        "imported" — silently losing the user's import.
+        """
+        unrelated_src = MagicMock(
+            id="src_unrelated",
+            title="Unrelated",
+            url="https://other.example.com",
+        )
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # baseline: empty
+                # Post-timeout: only the unrelated concurrent addition is
+                # visible; our requested URL is NOT there.
+                [unrelated_src],
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_new", "title": "Source 1"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                initial_delay=5,
+            )
+
+        # Must retry, not falsely return the unrelated source.
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+        assert client.research.import_sources.await_count == 2
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
+    async def test_does_not_falsely_succeed_on_pre_existing_requested_url(self):
+        """If the requested URL was already in the notebook before the import
+        and the post-timeout snapshot shows no truly-new source matching it,
+        verification must NOT fire — even though `requested_urls.issubset(
+        current_urls)` is trivially true. The retry filter then drops the
+        already-present URL instead of re-adding a duplicate.
+        """
+        existing_src = MagicMock(id="src_existing", title="Old", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [existing_src],  # baseline: already has the URL
+                [existing_src],  # post-timeout: nothing changed
+                [existing_src],  # post-retry probe (if reached)
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_existing", "title": "Old"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Old (request)"}],
+                initial_delay=5,
+            )
+
+        assert client.research.import_sources.await_count == 1
+        mock_sleep.assert_not_awaited()
+        assert imported == []
+
+    @pytest.mark.asyncio
+    async def test_report_only_import_bounded_retries_on_persistent_timeout(self):
+        """Report-only deep-research imports (no URLs) can't use the URL-match
+        verification path. To bound the worst-case duplicate inflation, the
+        retry loop must give up after a small number of attempts rather than
+        burning the full ``max_elapsed`` budget — otherwise a persistent
+        timeout still produces 5-6x duplicate reports.
+
+        Patches ``time.monotonic`` to never advance past budget, so the only
+        thing that can bound the loop is an explicit retry cap on the
+        no-URL path.
+        """
+        # All sources are report-only: no `url` field.
+        client = MagicMock()
+        client.sources.list = AsyncMock(return_value=[])
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            # Time budget never expires — only the retry cap can stop the loop.
+            patch(
+                "notebooklm.cli.helpers.time.monotonic",
+                return_value=0.0,
+            ),
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+            pytest.raises(RPCTimeoutError),
+        ):
+            await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [
+                    {
+                        "title": "Research Report",
+                        "report_markdown": "# Findings\n...",
+                        "result_type": 5,
+                    }
+                ],
+                initial_delay=1,
+            )
+
+        # Exactly 2 attempts (1 original + 1 retry) before raising. `<= 2`
+        # would also pass if the retry disappeared entirely, which would mask
+        # a regression — assert the cap and the single backoff sleep.
+        assert client.research.import_sources.await_count == 2
+        mock_sleep.assert_awaited_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_retry_when_post_timeout_probe_raises(self):
+        """If the post-timeout ``sources.list`` probe itself fails (transient
+        network blip, server hiccup), the function must log and fall back to
+        the legacy retry path rather than crashing or skipping verification
+        silently.
+        """
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # baseline
+                NetworkError("probe down"),  # post-timeout probe fails
+                [new_src],  # post-retry probe (would succeed if reached, unused)
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_new", "title": "Source 1"}],
+            ]
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("notebooklm.cli.helpers.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                initial_delay=5,
+            )
+
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+        # Probe failure → legacy retry path → 2 import attempts.
+        assert client.research.import_sources.await_count == 2
+        mock_sleep.assert_awaited_once_with(5)
+
+    @pytest.mark.asyncio
+    async def test_verified_success_suppresses_console_output_when_json_output(self):
+        """The verified-success branch's user-visible notice must respect the
+        ``json_output`` flag — JSON consumers should not see human-readable
+        text spliced into stdout.
+        """
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[[], [new_src]],
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.helpers.console") as mock_console,
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                json_output=True,
+            )
+
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+        mock_console.print.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_snapshot_propagates_cancelled_error(self):
+        """``asyncio.CancelledError`` from the pre-import snapshot must
+        propagate so callers can cleanly cancel the operation. A bare
+        ``except Exception`` would swallow it and continue running.
+        """
+        client = MagicMock()
+        client.sources.list = AsyncMock(side_effect=asyncio.CancelledError())
+        client.research.import_sources = AsyncMock()
+
+        with pytest.raises(asyncio.CancelledError):
+            await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+            )
+
+        # The import should never run — cancellation aborted the snapshot.
+        client.research.import_sources.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_probe_propagates_cancelled_error(self):
+        """``asyncio.CancelledError`` from the post-timeout probe must
+        propagate, not be swallowed and converted into a retry.
+        """
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[
+                [],  # baseline OK
+                asyncio.CancelledError(),  # probe cancelled
+            ]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.helpers.console"),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+            )
+
+        # Only the original attempt — no retry after cancellation.
+        assert client.research.import_sources.await_count == 1
+
+
+class TestGetAuthTokensAuthuser:
+    """Regression for #359: get_auth_tokens must read authuser from context.json
+    so RPC URLs route to the right Google account."""
+
+    def test_authuser_from_context_json_propagates_to_authtokens(self, tmp_path):
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "x", "domain": ".google.com"},
+                        {"name": "HSID", "value": "x", "domain": ".google.com"},
+                        {"name": "SSID", "value": "x", "domain": ".google.com"},
+                        {"name": "APISID", "value": "x", "domain": ".google.com"},
+                        {"name": "SAPISID", "value": "x", "domain": ".google.com"},
+                        {"name": "__Secure-1PSIDTS", "value": "x", "domain": ".google.com"},
+                    ]
+                }
+            )
+        )
+        (tmp_path / "context.json").write_text(
+            json.dumps({"account": {"authuser": 2, "email": "bob@example.com"}}),
+            encoding="utf-8",
+        )
+
+        ctx = MagicMock()
+        ctx.obj = {"storage_path": storage, "profile": None}
+
+        token_fetch = object()
+        with (
+            patch("notebooklm.auth.fetch_tokens_with_domains", new=lambda *_, **__: token_fetch),
+            patch(
+                "notebooklm.cli.helpers.run_async",
+                return_value=("csrf_v2", "sess_v2"),
+            ),
+        ):
+            tokens = get_auth_tokens(ctx)
+
+        assert tokens.authuser == 2
+        assert tokens.csrf_token == "csrf_v2"
+
+    def test_default_authuser_when_no_account_metadata(self, tmp_path):
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "x", "domain": ".google.com"},
+                        {"name": "HSID", "value": "x", "domain": ".google.com"},
+                        {"name": "SSID", "value": "x", "domain": ".google.com"},
+                        {"name": "APISID", "value": "x", "domain": ".google.com"},
+                        {"name": "SAPISID", "value": "x", "domain": ".google.com"},
+                        {"name": "__Secure-1PSIDTS", "value": "x", "domain": ".google.com"},
+                    ]
+                }
+            )
+        )
+
+        ctx = MagicMock()
+        ctx.obj = {"storage_path": storage, "profile": None}
+
+        token_fetch = object()
+        with (
+            patch("notebooklm.auth.fetch_tokens_with_domains", new=lambda *_, **__: token_fetch),
+            patch(
+                "notebooklm.cli.helpers.run_async",
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            tokens = get_auth_tokens(ctx)
+
+        assert tokens.authuser == 0

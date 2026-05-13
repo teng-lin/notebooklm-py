@@ -1629,7 +1629,7 @@ class TestDownloadAudioErrorPaths:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ArtifactParseError, match="Invalid audio metadata structure"):
+            with pytest.raises(ArtifactParseError, match="Could not extract download URL"):
                 await client.artifacts.download_audio("nb_123", "/tmp/audio.mp4")
 
     @pytest.mark.asyncio
@@ -1654,7 +1654,7 @@ class TestDownloadAudioErrorPaths:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ArtifactParseError, match="No media URLs found"):
+            with pytest.raises(ArtifactParseError, match="Could not extract download URL"):
                 await client.artifacts.download_audio("nb_123", "/tmp/audio.mp4")
 
     @pytest.mark.asyncio
@@ -2152,7 +2152,9 @@ class TestGetArtifactTypeNameAndIsMediaReady:
         build_rpc_response,
     ):
         """poll_status returns 'completed' for video when art[8] has valid URL."""
-        # Video artifact with art[8] containing a URL
+        # Video artifact with art[8] containing a URL.
+        # Real-API shape: art[8][i][0][0] holds the URL string (matches the
+        # structure parsed by download_video).
         video_artifact = [
             "video_task",
             "Video Overview",
@@ -2162,7 +2164,7 @@ class TestGetArtifactTypeNameAndIsMediaReady:
             None,
             None,
             None,
-            [["https://storage.googleapis.com/video.mp4"]],  # art[8]
+            [[["https://storage.googleapis.com/video.mp4"]]],  # art[8]
         ]
         response = build_rpc_response(RPCMethod.LIST_ARTIFACTS, [[video_artifact]])
         httpx_mock.add_response(content=response.encode())
@@ -2438,3 +2440,130 @@ class TestWaitForCompletionDeprecated:
                 assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
 
         assert result.status == "completed"
+
+
+def _decoded_request_body(request) -> str:
+    """Return the readable URL-decoded body of the latest CREATE_ARTIFACT POST.
+
+    The batchexecute payload double-encodes the inner params (the f.req
+    array is JSON, and one of its slots is itself a JSON-encoded string),
+    so we further normalise the embedded backslash-escaped quotes back to
+    plain ``"`` to make substring assertions stable.
+    """
+    from urllib.parse import unquote_plus
+
+    raw = unquote_plus(request.content.decode("utf-8"))
+    # Collapse the JSON-in-JSON escaping so that '"ja"' literally appears.
+    return raw.replace('\\"', '"')
+
+
+_LANGUAGE_AWARE_GENERATORS = [
+    "generate_audio",
+    "generate_video",
+    "generate_cinematic_video",
+    "generate_report",
+    "generate_study_guide",
+    "generate_infographic",
+    "generate_slide_deck",
+    "generate_data_table",
+    "generate_mind_map",
+]
+
+
+def _register_generate_responses(method_name: str, httpx_mock, build_rpc_response) -> int:
+    """Register the HTTP responses required for one ``generate_*`` call and
+    return the index of the request that carries the language code.
+
+    Most language-aware generators issue a single CREATE_ARTIFACT call.
+    ``generate_mind_map`` is the outlier: it calls GENERATE_MIND_MAP first,
+    then CREATE_NOTE + UPDATE_NOTE to persist the result. The language code
+    is embedded only in the first request, so the assertion target differs.
+    """
+    if method_name == "generate_mind_map":
+        # GENERATE_MIND_MAP returns mind-map JSON; subsequent note RPCs persist it.
+        httpx_mock.add_response(
+            content=build_rpc_response(
+                RPCMethod.GENERATE_MIND_MAP,
+                [['{"name": "Root", "children": []}', None, ["note_xyz"]]],
+            ).encode()
+        )
+        httpx_mock.add_response(
+            content=build_rpc_response(
+                RPCMethod.CREATE_NOTE,
+                [["note_xyz"]],
+            ).encode()
+        )
+        httpx_mock.add_response(
+            content=build_rpc_response(
+                RPCMethod.UPDATE_NOTE,
+                [["note_xyz"]],
+            ).encode()
+        )
+        return 0  # language travels with the first (GENERATE_MIND_MAP) request
+
+    httpx_mock.add_response(
+        content=build_rpc_response(
+            RPCMethod.CREATE_ARTIFACT,
+            [["artifact_123", "Title", "2024-01-05", None, 1]],
+        ).encode()
+    )
+    return -1  # last (and only) request carries the language
+
+
+class TestGenerateUsesNotebookLMHL:
+    """The 9 language-aware generate_* methods must honor NOTEBOOKLM_HL when
+    the caller does not pass an explicit language argument, and the explicit
+    argument must still win when both are present.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method_name", _LANGUAGE_AWARE_GENERATORS)
+    async def test_generate_uses_env_language_when_none(
+        self,
+        method_name,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        monkeypatch,
+    ):
+        """NOTEBOOKLM_HL=ja, no language arg -> outgoing RPC carries 'ja'."""
+        monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
+
+        request_index = _register_generate_responses(method_name, httpx_mock, build_rpc_response)
+
+        async with NotebookLMClient(auth_tokens) as client:
+            method = getattr(client.artifacts, method_name)
+            await method(notebook_id="nb_123", source_ids=["src_001"])
+
+        body = _decoded_request_body(httpx_mock.get_requests()[request_index])
+        # The language code is embedded as a quoted JSON string inside the
+        # nested params list. Assert presence/absence.
+        assert '"ja"' in body
+        assert '"en"' not in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method_name", _LANGUAGE_AWARE_GENERATORS)
+    async def test_generate_explicit_language_overrides_env(
+        self,
+        method_name,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        monkeypatch,
+    ):
+        """NOTEBOOKLM_HL=ja but explicit language='ko' -> outgoing carries 'ko'."""
+        monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
+
+        request_index = _register_generate_responses(method_name, httpx_mock, build_rpc_response)
+
+        async with NotebookLMClient(auth_tokens) as client:
+            method = getattr(client.artifacts, method_name)
+            await method(
+                notebook_id="nb_123",
+                source_ids=["src_001"],
+                language="ko",
+            )
+
+        body = _decoded_request_body(httpx_mock.get_requests()[request_index])
+        assert '"ko"' in body
+        assert '"ja"' not in body

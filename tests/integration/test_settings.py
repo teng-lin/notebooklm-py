@@ -107,6 +107,39 @@ class TestSettingsAPI:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_get_account_limits(self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response):
+        """Test getting account limits from user settings."""
+        response_data = [
+            [
+                None,
+                [6, 500, 300, 500000, 2],
+                [True, None, None, True, ["en"]],
+            ]
+        ]
+        response = build_rpc_response(RPCMethod.GET_USER_SETTINGS, response_data)
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.settings.get_account_limits()
+
+        assert result.notebook_limit == 500
+        assert result.source_limit == 300
+        assert result.raw_limits == (6, 500, 300, 500000, 2)
+
+    @pytest.mark.asyncio
+    async def test_get_account_tier(self, httpx_mock: HTTPXMock, auth_tokens, build_rpc_response):
+        """Test getting account tier."""
+        response_data = [[[[None, "1", 627], [[1613, [None, "NOTEBOOKLM_TIER_STANDARD"]]], 0]]]
+        response = build_rpc_response(RPCMethod.GET_USER_TIER, response_data)
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.settings.get_account_tier()
+
+        assert result.tier == "NOTEBOOKLM_TIER_STANDARD"
+        assert result.plan_name == "Standard"
+
 
 class TestLoginLanguageSync:
     """Integration test for syncing server language to local config after login."""

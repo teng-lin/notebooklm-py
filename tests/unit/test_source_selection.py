@@ -17,7 +17,8 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._chat import ChatAPI
 from notebooklm.auth import AuthTokens
-from notebooklm.rpc import InfographicStyle
+from notebooklm.exceptions import ValidationError
+from notebooklm.rpc import InfographicStyle, VideoFormat, VideoStyle
 
 
 @pytest.fixture
@@ -282,6 +283,89 @@ class TestArtifactsSourceSelection:
         assert source_ids_double == [["src_a"], ["src_b"]]
 
     @pytest.mark.asyncio
+    async def test_generate_video_custom_style_prompt_encoding(self, mock_core, mock_notes_api):
+        """Test custom video style prompt is encoded after the style code."""
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+        mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
+
+        await api.generate_video(
+            notebook_id="nb_123",
+            source_ids=["src_a"],
+            video_style=VideoStyle.CUSTOM,
+            style_prompt="  Use hand-drawn diagrams  ",
+        )
+
+        params = mock_core.rpc_call.call_args.args[1]
+        video_config = params[2][8][2]
+        assert video_config[5] == VideoStyle.CUSTOM.value
+        assert video_config[6] == "Use hand-drawn diagrams"
+
+    @pytest.mark.asyncio
+    async def test_generate_video_custom_style_requires_prompt(self, mock_core, mock_notes_api):
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+
+        with pytest.raises(ValidationError, match="style_prompt is required"):
+            await api.generate_video(
+                notebook_id="nb_123",
+                source_ids=["src_a"],
+                video_style=VideoStyle.CUSTOM,
+            )
+
+    @pytest.mark.asyncio
+    async def test_generate_video_custom_style_rejects_empty_prompt(
+        self, mock_core, mock_notes_api
+    ):
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+
+        with pytest.raises(ValidationError, match="style_prompt is required"):
+            await api.generate_video(
+                notebook_id="nb_123",
+                source_ids=["src_a"],
+                video_style=VideoStyle.CUSTOM,
+                style_prompt="",
+            )
+
+    @pytest.mark.asyncio
+    async def test_generate_video_custom_style_rejects_blank_prompt(
+        self, mock_core, mock_notes_api
+    ):
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+
+        with pytest.raises(ValidationError, match="style_prompt is required"):
+            await api.generate_video(
+                notebook_id="nb_123",
+                source_ids=["src_a"],
+                video_style=VideoStyle.CUSTOM,
+                style_prompt="   ",
+            )
+
+    @pytest.mark.asyncio
+    async def test_generate_video_style_prompt_requires_custom_style(
+        self, mock_core, mock_notes_api
+    ):
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+
+        with pytest.raises(ValidationError, match="style_prompt requires"):
+            await api.generate_video(
+                notebook_id="nb_123",
+                source_ids=["src_a"],
+                video_style=VideoStyle.ANIME,
+                style_prompt="Use hand-drawn diagrams",
+            )
+
+    @pytest.mark.asyncio
+    async def test_generate_video_cinematic_rejects_style_prompt(self, mock_core, mock_notes_api):
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+
+        with pytest.raises(ValidationError, match="cinematic"):
+            await api.generate_video(
+                notebook_id="nb_123",
+                source_ids=["src_a"],
+                video_format=VideoFormat.CINEMATIC,
+                style_prompt="Use hand-drawn diagrams",
+            )
+
+    @pytest.mark.asyncio
     async def test_generate_report_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_report has correct source encoding format."""
         api = ArtifactsAPI(mock_core, mock_notes_api)
@@ -508,6 +592,31 @@ class TestArtifactsSourceSelection:
         source_ids_nested = params[0]
 
         assert source_ids_nested == [[["src_mm_1"]], [["src_mm_2"]]]
+
+    @pytest.mark.asyncio
+    async def test_generate_mind_map_passes_language_and_instructions(
+        self, mock_core, mock_notes_api
+    ):
+        """Test generate_mind_map passes language and instructions to RPC payload."""
+        api = ArtifactsAPI(mock_core, mock_notes_api)
+
+        mock_core.get_source_ids.return_value = ["src_1"]
+        mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
+
+        await api.generate_mind_map(
+            notebook_id="nb_123",
+            source_ids=["src_1"],
+            language="ja",
+            instructions="Focus on key themes",
+        )
+
+        call_args = mock_core.rpc_call.call_args
+        params = call_args.args[1]
+
+        # params[5] should contain the mind map config with language and instructions
+        mind_map_config = params[5]
+        assert mind_map_config[1][0][1] == "Focus on key themes"
+        assert mind_map_config[2] == "ja"
 
     @pytest.mark.asyncio
     async def test_suggest_reports_uses_get_suggested_reports(self, mock_core, mock_notes_api):

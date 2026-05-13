@@ -150,8 +150,102 @@ class TestWindowsUTF8Mode:
 
     Non-English Windows systems (cp950, cp932, cp936, etc.) can fail with
     UnicodeEncodeError when outputting Unicode characters like checkmarks.
-    The fix sets PYTHONUTF8=1 at CLI startup.
+    The fix sets PYTHONUTF8=1 and reconfigures live stdout/stderr at CLI startup.
     """
+
+    def test_windows_runtime_is_noop_on_non_windows(self, monkeypatch):
+        """Non-Windows platforms should not mutate streams or event loop policy."""
+        from notebooklm import notebooklm_cli
+
+        class DummyStream:
+            def __init__(self):
+                self.reconfigure_calls = []
+
+            def reconfigure(self, **kwargs):
+                self.reconfigure_calls.append(kwargs)
+
+        stdout = DummyStream()
+        stderr = DummyStream()
+
+        monkeypatch.setattr(notebooklm_cli.sys, "platform", "linux")
+        monkeypatch.setattr(notebooklm_cli.sys, "stdout", stdout)
+        monkeypatch.setattr(notebooklm_cli.sys, "stderr", stderr)
+        monkeypatch.setattr(
+            notebooklm_cli.asyncio,
+            "set_event_loop_policy",
+            lambda policy: pytest.fail("event loop policy should not be set on non-Windows"),
+        )
+        monkeypatch.delenv("PYTHONUTF8", raising=False)
+
+        notebooklm_cli._configure_windows_runtime()
+
+        assert "PYTHONUTF8" not in os.environ
+        assert stdout.reconfigure_calls == []
+        assert stderr.reconfigure_calls == []
+
+    def test_reconfigure_output_stream_ignores_unsupported_stream(self):
+        """Streams without reconfigure support should be ignored."""
+        from notebooklm import notebooklm_cli
+
+        notebooklm_cli._reconfigure_output_stream(object())
+
+    def test_reconfigure_output_stream_ignores_missing_stream(self):
+        """Detached Windows processes may not have standard streams."""
+        from notebooklm import notebooklm_cli
+
+        notebooklm_cli._reconfigure_output_stream(None)
+
+    def test_reconfigure_output_stream_ignores_reconfigure_errors(self):
+        """A failed best-effort reconfigure should not abort CLI startup."""
+        from notebooklm import notebooklm_cli
+
+        class BrokenStream:
+            def reconfigure(self, **kwargs):
+                raise OSError("stream is closed")
+
+        notebooklm_cli._reconfigure_output_stream(BrokenStream())
+
+    def test_windows_runtime_reconfigures_active_output_streams(self, monkeypatch):
+        """Simulate Windows startup and verify existing streams are made UTF-8-safe."""
+        from notebooklm import notebooklm_cli
+
+        class DummyStream:
+            encoding = "cp950"
+
+            def __init__(self):
+                self.reconfigure_calls = []
+
+            def reconfigure(self, **kwargs):
+                self.reconfigure_calls.append(kwargs)
+
+        class DummyPolicy:
+            pass
+
+        stdout = DummyStream()
+        stderr = DummyStream()
+        policies = []
+
+        monkeypatch.setitem(
+            notebooklm_cli.asyncio.__dict__,
+            "WindowsSelectorEventLoopPolicy",
+            DummyPolicy,
+        )
+        monkeypatch.setattr(notebooklm_cli.sys, "platform", "win32")
+        monkeypatch.setattr(notebooklm_cli.sys, "stdout", stdout)
+        monkeypatch.setattr(notebooklm_cli.sys, "stderr", stderr)
+        monkeypatch.setattr(
+            notebooklm_cli.asyncio,
+            "set_event_loop_policy",
+            lambda policy: policies.append(policy),
+        )
+        monkeypatch.delenv("PYTHONUTF8", raising=False)
+
+        notebooklm_cli._configure_windows_runtime()
+
+        assert os.environ["PYTHONUTF8"] == "1"
+        assert stdout.reconfigure_calls == [{"encoding": "utf-8", "errors": "replace"}]
+        assert stderr.reconfigure_calls == [{"encoding": "utf-8", "errors": "replace"}]
+        assert isinstance(policies[0], DummyPolicy)
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
     def test_utf8_mode_enabled(self):

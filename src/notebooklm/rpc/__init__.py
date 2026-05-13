@@ -42,6 +42,9 @@ from .types import (
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
+    get_batchexecute_url,
+    get_query_url,
+    get_upload_url,
 )
 
 __all__ = [
@@ -49,6 +52,9 @@ __all__ = [
     "BATCHEXECUTE_URL",
     "QUERY_URL",
     "UPLOAD_URL",
+    "get_batchexecute_url",
+    "get_query_url",
+    "get_upload_url",
     "ArtifactTypeCode",
     "StudioContentType",  # Deprecated alias
     "ArtifactStatus",

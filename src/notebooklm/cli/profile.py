@@ -16,6 +16,7 @@ import shutil
 import click
 from rich.table import Table
 
+from ..auth import read_account_metadata
 from ..paths import (
     get_config_path,
     get_profile_dir,
@@ -37,6 +38,39 @@ def _validate_profile_name(name: str) -> str:
             "Use alphanumeric characters, hyphens, and underscores. Must start with a letter or digit."
         )
     return name
+
+
+def email_to_profile_name(email: str, *, fallback: str = "account") -> str:
+    """Derive a valid profile name from an email address.
+
+    Profile names are restricted to ``[a-zA-Z0-9_-]`` (see
+    :data:`_PROFILE_NAME_RE`) and must start with an alphanumeric character.
+    Email local-parts routinely contain ``.``, ``+``, etc. that aren't
+    allowed, so we rewrite them to hyphens.
+
+    Examples::
+
+        alice@example.com         -> "alice"
+        alice.smith@example.com   -> "alice-smith"
+        bob+work@gmail.com        -> "bob-work"
+        teng.lin.9414@gmail.com   -> "teng-lin-9414"
+
+    Args:
+        email: Account email address.
+        fallback: Profile name to use when sanitization yields an empty
+            string or a name that does not start with an alphanum.
+
+    Returns:
+        A profile name guaranteed to satisfy :data:`_PROFILE_NAME_RE`.
+    """
+    local = email.split("@", 1)[0] if "@" in email else email
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "-", local)
+    sanitized = re.sub(r"-{2,}", "-", sanitized).strip("-_")
+    if not sanitized or not _PROFILE_NAME_RE.match(sanitized):
+        # The function's contract is "always returns a valid profile name", so
+        # protect callers that pass a malformed fallback (e.g. "-tmp").
+        return fallback if _PROFILE_NAME_RE.match(fallback) else "account"
+    return sanitized
 
 
 @click.group("profile")
@@ -64,12 +98,15 @@ def list_cmd(json_output):
         storage = get_storage_path(profile=name)
         is_active = name == active
         authenticated = storage.exists()
+        account_metadata = read_account_metadata(storage)
+        account_email = account_metadata.get("email")
 
         profile_data.append(
             {
                 "name": name,
                 "active": is_active,
                 "authenticated": authenticated,
+                "account": account_email if isinstance(account_email, str) else None,
             }
         )
 
@@ -80,6 +117,7 @@ def list_cmd(json_output):
     table = Table(title="Profiles")
     table.add_column("", width=2)
     table.add_column("Name", style="cyan")
+    table.add_column("Account", style="dim")
     table.add_column("Auth Status")
 
     for p in profile_data:
@@ -87,7 +125,8 @@ def list_cmd(json_output):
         auth_status = (
             "[green]authenticated[/green]" if p["authenticated"] else "[dim]not authenticated[/dim]"
         )
-        table.add_row(marker, str(p["name"]), auth_status)
+        account = str(p["account"] or "-")
+        table.add_row(marker, str(p["name"]), account, auth_status)
 
     console.print(table)
     console.print(f"\n[dim]Active profile: {active}[/dim]")

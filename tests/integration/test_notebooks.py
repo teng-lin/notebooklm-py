@@ -26,6 +26,8 @@ class TestListNotebooks:
         assert all(isinstance(nb, Notebook) for nb in notebooks)
         assert notebooks[0].title == "My First Notebook"
         assert notebooks[0].id == "nb_001"
+        assert notebooks[0].sources_count == 2
+        assert notebooks[1].sources_count == 0
 
     @pytest.mark.asyncio
     async def test_list_notebooks_request_format(
@@ -155,6 +157,57 @@ class TestGetNotebook:
         assert isinstance(notebook, Notebook)
         assert notebook.id == "nb_123"
         assert notebook.title == "Test Notebook"
+        # data[1] holds the source list in the GET_NOTEBOOK shape, same as LIST.
+        assert notebook.sources_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_notebook_sources_count_matches_real_payload(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Regression: ``Notebook.sources_count`` is derived from ``data[1]``.
+
+        Pinned to the shape captured in ``tests/cassettes/notebooks_get.yaml``
+        (a real GET_NOTEBOOK response) — two PDF source entries at index 1.
+        If Google ever moves the source list, this test fails before any
+        downstream code that depends on ``sources_count`` (notably the
+        divergence warning in ``_notebooks.py``) silently produces a wrong
+        count.
+        """
+        response = build_rpc_response(
+            RPCMethod.GET_NOTEBOOK,
+            [
+                [
+                    "TypeScript Fundamentals",
+                    [
+                        [
+                            ["fdfc8ac4-3237-4f2a-8a79-3e24297a7040"],
+                            "Programming TypeScript.pdf",
+                            [None, 87289, [1767921640, 565022000], None, 3, None, 1],
+                            [None, 2],
+                        ],
+                        [
+                            ["ddd31154-74a0-484a-a24c-aff796acae2f"],
+                            "typescript-book.pdf",
+                            [None, 22183, [1767921620, 707149000], None, 3, None, 1],
+                            [None, 2],
+                        ],
+                    ],
+                    "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e",
+                    "📘",
+                    None,
+                    [None, None, None, None, None, [1768963937, 237838000]],
+                ]
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            notebook = await client.notebooks.get("c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e")
+
+        assert notebook.sources_count == 2
 
     @pytest.mark.asyncio
     async def test_get_notebook_uses_source_path(
