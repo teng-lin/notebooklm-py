@@ -115,7 +115,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | `add-drive <id> <title>` | Drive file ID | - | `source add-drive abc123 "Doc"` |
 | `add-research <query>` | Search query | `--mode [fast|deep]`, `--from [web|drive]`, `--import-all`, `--no-wait`, `--timeout` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | - | `source get src123` |
-| `fulltext <id>` | Source ID | `--json`, `-o FILE` | `source fulltext src123 -o content.txt` |
+| `fulltext <id>` | Source ID | `--json`, `-o FILE`, `-f [text\|markdown]` | `source fulltext src123 -f markdown -o out.md` (`-f markdown` requires the `markdown` extra: `pip install "notebooklm-py[markdown]"`) |
 | `guide <id>` | Source ID | `--json` | `source guide src123` |
 | `rename <id> <title>` | Source ID, new title | - | `source rename src123 "New Name"` |
 | `refresh <id>` | Source ID | - | `source refresh src123` |

@@ -970,6 +970,112 @@ class TestGetFulltext:
         assert fulltext.content == ""
         assert fulltext.char_count == 0
 
+    @pytest.mark.asyncio
+    async def test_get_fulltext_markdown_basic(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Markdown mode converts HTML at result[4][1] via markdownify."""
+        pytest.importorskip("markdownify")
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [
+                ["source_md", "MD Article", []],
+                None,
+                None,
+                None,
+                [None, "<h1>Title</h1><p>Hello <strong>world</strong>.</p>"],
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            fulltext = await client.sources.get_fulltext(
+                "nb_123", "source_md", output_format="markdown"
+            )
+
+        assert fulltext.source_id == "source_md"
+        assert "# Title" in fulltext.content
+        assert "**world**" in fulltext.content
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_markdown_sends_params_3_3(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Markdown mode requests HTML rendition via params [3],[3]."""
+        pytest.importorskip("markdownify")
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [["src_x", "T", []], None, None, None, [None, "<p>x</p>"]],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            await client.sources.get_fulltext("nb_123", "src_x", output_format="markdown")
+
+        body = urllib.parse.unquote(httpx_mock.get_request().content.decode())
+        assert "[3]" in body
+        assert "[2]" not in body or body.count("[3]") >= 2
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_invalid_format_raises(self, auth_tokens):
+        """Unknown output_format must fail fast before any RPC call."""
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ValueError, match=r"text.*markdown"):
+                await client.sources.get_fulltext(
+                    "nb_123",
+                    "src_x",
+                    output_format="html",  # type: ignore[arg-type]
+                )
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_markdown_missing_dep_raises(self, monkeypatch, auth_tokens):
+        """When markdownify is unavailable, ImportError surfaces before the RPC."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "markdownify":
+                raise ImportError("No module named 'markdownify'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ImportError, match="markdownify"):
+                await client.sources.get_fulltext("nb_123", "src_x", output_format="markdown")
+
+    @pytest.mark.asyncio
+    async def test_get_fulltext_markdown_no_html_returns_empty(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        caplog,
+    ):
+        """Source with no HTML rendition logs a warning and returns empty content."""
+        pytest.importorskip("markdownify")
+        response = build_rpc_response(
+            RPCMethod.GET_SOURCE,
+            [["src_yt", "YouTube vid", []], None, None, None],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with caplog.at_level("WARNING"):
+                fulltext = await client.sources.get_fulltext(
+                    "nb_123", "src_yt", output_format="markdown"
+                )
+
+        assert fulltext.content == ""
+        assert any("no HTML rendition" in r.message for r in caplog.records)
+
 
 class TestListSourcesMalformedResponse:
     """Tests for list() warning paths when API response is malformed (lines 71-95)."""

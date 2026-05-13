@@ -7,7 +7,7 @@ import re
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -839,15 +839,23 @@ class SourcesAPI:
 
         return {"summary": summary, "keywords": keywords}
 
-    async def get_fulltext(self, notebook_id: str, source_id: str) -> SourceFulltext:
-        """Get the full indexed text content of a source.
-
-        Returns the raw text content that was extracted and indexed from the source,
-        along with metadata. This is what NotebookLM uses for chat and artifact generation.
+    async def get_fulltext(
+        self,
+        notebook_id: str,
+        source_id: str,
+        *,
+        output_format: Literal["text", "markdown"] = "text",
+    ) -> SourceFulltext:
+        """Get the full content of a source.
 
         Args:
             notebook_id: The notebook ID.
             source_id: The source ID to get fulltext for.
+            output_format: Content format - ``"text"`` (default) returns flattened
+                plaintext, ``"markdown"`` returns the source with headings,
+                tables, links, and emphasis preserved. The markdown format
+                requires the ``markdownify`` package (``pip install
+                'notebooklm-py[markdown]'``).
 
         Returns:
             SourceFulltext object with content, title, source_type, url, and char_count.
@@ -858,9 +866,28 @@ class SourcesAPI:
         Note:
             Source type codes: 1=google_docs, 2=google_other, 3=pdf, 4=pasted_text,
             5=web_page, 8=generated_text, 9=youtube
+
+            The ``"markdown"`` format works by requesting the HTML rendition
+            from the API (params ``[3],[3]`` instead of ``[2],[2]``) and
+            converting it via *markdownify*.
         """
-        # GET_SOURCE RPC with params: [[source_id], [2], [2]]
-        params = [[source_id], [2], [2]]
+        if output_format not in ("text", "markdown"):
+            raise ValueError(f"Invalid format: '{output_format}'. Must be 'text' or 'markdown'.")
+
+        # Fail fast on missing optional dep so CLI users don't pay for an RPC
+        # round-trip before seeing the install hint.
+        if output_format == "markdown":
+            try:
+                from markdownify import markdownify as md
+            except ImportError:
+                raise ImportError(
+                    "The 'markdown' format requires the 'markdownify' package. "
+                    "Install it with: pip install 'notebooklm-py[markdown]'"
+                ) from None
+
+        # [3],[3] returns HTML at result[4][1]; [2],[2] returns plaintext at result[3][0]
+        params = [[source_id], [3], [3]] if output_format == "markdown" else [[source_id], [2], [2]]
+
         result = await self._core.rpc_call(
             RPCMethod.GET_SOURCE,
             params,
@@ -891,13 +918,31 @@ class SourcesAPI:
                         source_type = metadata[4]
                     url = _extract_source_url(metadata, allow_bare_http=False)
 
-            # Content blocks at result[3][0]
-            # Each block may be nested arrays with text strings
-            if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
-                content_blocks = result[3][0]
-                if isinstance(content_blocks, list):
-                    texts = self._extract_all_text(content_blocks)
-                    content = "\n".join(texts)
+            if output_format == "markdown":
+                # HTML content at result[4][1]; may be absent for source types
+                # without an HTML rendition (e.g. youtube, pasted_text).
+                html_content = None
+                if len(result) > 4 and isinstance(result[4], list) and len(result[4]) > 1:
+                    candidate = result[4][1]
+                    if isinstance(candidate, str):
+                        html_content = candidate
+                if html_content is not None:
+                    content = md(html_content, heading_style="ATX")
+                else:
+                    logger.warning(
+                        "Source %s (type=%s) has no HTML rendition for output_format='markdown'; "
+                        "returning empty content. Retry with output_format='text'.",
+                        source_id,
+                        source_type,
+                    )
+            else:
+                # Plaintext content blocks at result[3][0]
+                # Each block may be nested arrays with text strings
+                if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
+                    content_blocks = result[3][0]
+                    if isinstance(content_blocks, list):
+                        texts = self._extract_all_text(content_blocks)
+                        content = "\n".join(texts)
 
         # Log warning if content is empty but source exists
         if not content:

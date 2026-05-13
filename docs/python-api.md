@@ -294,7 +294,7 @@ print(url)
 |--------|------------|---------|-------------|
 | `list(notebook_id)` | `notebook_id: str` | `list[Source]` | List sources |
 | `get(notebook_id, source_id)` | `str, str` | `Source` | Get source details |
-| `get_fulltext(notebook_id, source_id)` | `str, str` | `SourceFulltext` | Get full indexed text content |
+| `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
 | `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
 | `add_url(notebook_id, url)` | `str, str` | `Source` | Add URL source |
 | `add_youtube(notebook_id, url)` | `str, str` | `Source` | Add YouTube video |

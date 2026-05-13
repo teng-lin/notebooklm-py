@@ -669,20 +669,28 @@ def source_add_research(
 )
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.option("--output", "-o", type=click.Path(), help="Write content to file")
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    type=click.Choice(["text", "markdown"]),
+    default="text",
+    help="Content format: text (default) or markdown",
+)
 @with_client
-def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_auth):
-    """Get full indexed text content of a source.
+def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_format, client_auth):
+    """Get full content of a source.
 
-    Retrieves the complete text content as indexed by NotebookLM. This is the
-    actual text that NotebookLM uses when answering questions about this source.
+    Retrieves the complete content from NotebookLM. Use --format markdown to get
+    a rich version with headings, tables, links, and emphasis preserved.
 
     SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
 
     \b
     Examples:
-      source fulltext abc123                    # Show fulltext in terminal
-      source fulltext abc123 --json             # Output as JSON
-      source fulltext abc123 -o content.txt     # Save to file
+      source fulltext abc123                        # Show plaintext in terminal
+      source fulltext abc123 -f markdown -o out.md  # Save markdown to file
+      source fulltext abc123 --json                 # Output as JSON
     """
     nb_id = require_notebook(notebook_id)
 
@@ -692,7 +700,9 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
             resolved_id = await resolve_source_id(client, nb_id_resolved, source_id)
 
             with console.status("Fetching fulltext content..."):
-                fulltext = await client.sources.get_fulltext(nb_id_resolved, resolved_id)
+                fulltext = await client.sources.get_fulltext(
+                    nb_id_resolved, resolved_id, output_format=output_format
+                )
 
             if json_output:
                 from dataclasses import asdict
@@ -712,14 +722,14 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, client_aut
                 console.print(f"[bold]URL:[/bold] {fulltext.url}")
             console.print()
             console.print("[bold cyan]Content:[/bold cyan]")
-            # Show first 2000 chars with truncation notice
+            # markup=False so markdown links like `[text](url)` are not eaten by Rich's tag parser
             if len(fulltext.content) > 2000:
-                console.print(fulltext.content[:2000])
+                console.print(fulltext.content[:2000], markup=False, highlight=False)
                 console.print(
                     f"\n[dim]... ({fulltext.char_count - 2000:,} more chars, use -o to save full content)[/dim]"
                 )
             else:
-                console.print(fulltext.content)
+                console.print(fulltext.content, markup=False, highlight=False)
 
     return _run()
 

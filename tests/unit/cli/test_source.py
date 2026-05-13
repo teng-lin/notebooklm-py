@@ -1351,6 +1351,39 @@ class TestSourceFulltext:
             assert data["content"] == "Some content"
             assert data["char_count"] == 12
 
+    def test_source_fulltext_format_markdown_propagates(self, runner, mock_auth):
+        """`-f markdown` propagates output_format='markdown' to the API."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[Source(id="src_123", title="MD Source")]
+            )
+            mock_client.sources.get_fulltext = AsyncMock(
+                return_value=SourceFulltext(
+                    source_id="src_123",
+                    title="MD Source",
+                    content="# Heading\n\n[link](https://example.com)",
+                    char_count=39,
+                    url=None,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["source", "fulltext", "src_123", "-n", "nb_123", "-f", "markdown"]
+                )
+
+            assert result.exit_code == 0
+            mock_client.sources.get_fulltext.assert_awaited_once()
+            _, kwargs = mock_client.sources.get_fulltext.call_args
+            assert kwargs["output_format"] == "markdown"
+            # Markdown link should round-trip verbatim, not be eaten by Rich markup
+            assert "[link](https://example.com)" in result.output
+
     def test_source_fulltext_with_url(self, runner, mock_auth):
         """Shows URL field when present in fulltext."""
         with patch_client_for_module("source") as mock_client_cls:

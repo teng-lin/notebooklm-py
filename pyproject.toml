@@ -34,6 +34,7 @@ Documentation = "https://github.com/teng-lin/notebooklm-py#readme"
 Issues = "https://github.com/teng-lin/notebooklm-py/issues"
 
 [project.optional-dependencies]
+markdown = ["markdownify>=0.14.1"]
 browser = ["playwright>=1.40.0"]
 cookies = ["rookiepy>=0.1.0"]
 dev = [
@@ -49,7 +50,7 @@ dev = [
     "ruff==0.8.6",
     "vcrpy>=6.0.0",
 ]
-all = ["notebooklm-py[browser,dev]"]
+all = ["notebooklm-py[browser,dev,markdown]"]
 
 [project.scripts]
 notebooklm = "notebooklm.notebooklm_cli:main"
