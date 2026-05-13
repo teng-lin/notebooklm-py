@@ -63,30 +63,31 @@ def main() -> int:
 
     # Scan line-by-line and ignore commented YAML lines so a stale
     # `# --cov-fail-under=90` doesn't shadow a real drift in the executed
-    # command.
-    match = None
+    # command. Collect ALL occurrences so a workflow with multiple jobs
+    # cannot smuggle a divergent threshold past the check.
+    thresholds: list[int] = []
+    pattern = re.compile(r"(?<!\S)--cov-fail-under(?:=|\s+)(\d+)(?!\S)")
     for line in yml.splitlines():
         stripped = line.lstrip()
         if stripped.startswith("#"):
             continue
-        m = re.search(r"(?<!\S)--cov-fail-under(?:=|\s+)(\d+)(?!\S)", stripped)
-        if m:
-            match = m
-            break
-    if not match:
+        for m in pattern.finditer(stripped):
+            thresholds.append(int(m.group(1)))
+
+    if not thresholds:
         print(f"No --cov-fail-under in {args.workflow}", file=sys.stderr)
         return 2
-    ci_threshold = int(match.group(1))
 
-    if pyproject_threshold != ci_threshold:
-        print(
-            f"DRIFT: pyproject.toml fail_under={pyproject_threshold} but "
-            f"{args.workflow} --cov-fail-under={ci_threshold}",
-            file=sys.stderr,
-        )
-        return 1
+    for ci_threshold in thresholds:
+        if pyproject_threshold != ci_threshold:
+            print(
+                f"DRIFT: pyproject.toml fail_under={pyproject_threshold} but "
+                f"{args.workflow} --cov-fail-under={ci_threshold}",
+                file=sys.stderr,
+            )
+            return 1
 
-    print(f"OK: both at {pyproject_threshold}%")
+    print(f"OK: {len(thresholds)} occurrence(s), all at {pyproject_threshold}%")
     return 0
 
 

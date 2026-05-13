@@ -84,6 +84,33 @@ def test_workflow_permissions_rejects_bypass_attempts(tmp_path, body):
     assert "sneaky.yml" in result.stderr
 
 
+def test_workflow_permissions_accepts_quoted_values(tmp_path):
+    """`contents: 'read'` and `contents: "read"` are valid YAML and must pass."""
+    wf_dir = tmp_path / "workflows"
+    wf_dir.mkdir()
+    (wf_dir / "quoted.yml").write_text(
+        "name: Quoted\non: push\n"
+        "permissions:\n"
+        "  contents: 'read'\n"
+        '  issues: "none"\n'
+        "jobs:\n  x:\n    runs-on: ubuntu-latest\n"
+    )
+    result = _run([str(SCRIPTS / "check_workflow_permissions.py"), "--workflow-dir", str(wf_dir)])
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+
+def test_workflow_permissions_globs_yaml_extension(tmp_path):
+    """`.yaml` files are also scanned (GitHub Actions accepts both)."""
+    wf_dir = tmp_path / "workflows"
+    wf_dir.mkdir()
+    (wf_dir / "missing.yaml").write_text(
+        "name: NoPerms\non: push\njobs:\n  x:\n    runs-on: ubuntu-latest\n"
+    )
+    result = _run([str(SCRIPTS / "check_workflow_permissions.py"), "--workflow-dir", str(wf_dir)])
+    assert result.returncode == 1
+    assert "missing.yaml" in result.stderr
+
+
 def test_workflow_permissions_allowlist(tmp_path):
     """codeql.yml is allowlisted; a workflow without block but named codeql.yml passes."""
     wf_dir = tmp_path / "workflows"
@@ -148,6 +175,31 @@ def test_coverage_thresholds_ignores_commented_cov_fail_under(tmp_path):
         ]
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
+
+
+def test_coverage_thresholds_catches_divergent_second_occurrence(tmp_path):
+    """Multiple --cov-fail-under occurrences must all match (not just the first)."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[tool.coverage.report]\nfail_under = 90\n")
+    workflow = tmp_path / "test.yml"
+    # First occurrence matches; second diverges. Old re.search would miss it.
+    workflow.write_text(
+        "jobs:\n"
+        "  a:\n    steps:\n      - run: pytest --cov-fail-under=90\n"
+        "  b:\n    steps:\n      - run: pytest --cov-fail-under=70\n"
+    )
+    result = _run(
+        [
+            str(SCRIPTS / "check_coverage_thresholds.py"),
+            "--pyproject",
+            str(pyproject),
+            "--workflow",
+            str(workflow),
+        ]
+    )
+    assert result.returncode == 1
+    assert "DRIFT" in result.stderr
+    assert "--cov-fail-under=70" in result.stderr
 
 
 def test_coverage_thresholds_detects_drift(tmp_path):

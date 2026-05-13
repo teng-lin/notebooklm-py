@@ -184,6 +184,43 @@ async def test_untrusted_domain_still_raises(mock_artifacts_api, tmp_path):
         )
 
 
+@pytest.mark.asyncio
+async def test_download_warning_log_does_not_leak_url_via_exception_str(
+    mock_artifacts_api, tmp_path, caplog
+):
+    """str(httpx exception) may include the full URL with capability tokens.
+    The warning log must use a safe identifier (status code or class name),
+    not the raw exception."""
+    api, _ = mock_artifacts_api
+
+    # Build a 503 error whose str() includes a fake-tokenized URL.
+    request = httpx.Request("GET", "https://storage.googleapis.com/file.mp4?capability_token=LEAKY")
+    response = httpx.Response(503, request=request)
+    boom = httpx.HTTPStatusError("Service Unavailable", request=request, response=response)
+
+    with (
+        _patched_httpx_client(None) as mock_client,
+        caplog.at_level(logging.WARNING, logger="notebooklm"),
+    ):
+        mock_client.get = AsyncMock(side_effect=boom)
+        result = await api._download_urls_batch(
+            [
+                (
+                    f"{TRUSTED_URL_PREFIX}file.mp4?capability_token=LEAKY",
+                    str(tmp_path / "file.mp4"),
+                )
+            ]
+        )
+
+    # Failure recorded with the raw URL+exception for the caller, BUT...
+    assert len(result.failed) == 1
+    # ...the log line must not contain the token.
+    warning_messages = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+    joined = " ".join(warning_messages)
+    assert "LEAKY" not in joined, f"capability token leaked: {joined!r}"
+    assert "HTTP 503" in joined
+
+
 def test_no_docs_callers():
     """_download_urls_batch is private — no public docs reference it."""
     repo_root = Path(__file__).resolve().parents[2]

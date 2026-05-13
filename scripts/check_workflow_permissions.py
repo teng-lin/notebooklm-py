@@ -57,7 +57,8 @@ def main() -> int:
     # indented `<scope>: read` or `<scope>: none` lines.
     bad: list[str] = []
     issues: dict[str, str] = {}
-    for path in sorted(workflow_dir.glob("*.yml")):
+    workflow_files = sorted(list(workflow_dir.glob("*.yml")) + list(workflow_dir.glob("*.yaml")))
+    for path in workflow_files:
         if path.name in ALLOWLIST:
             continue
         lines = path.read_text().splitlines()
@@ -137,7 +138,8 @@ def _validate_block_body(lines: list[str], header_idx: int) -> tuple[bool, str]:
     """
     import re
 
-    item_re = re.compile(r"^( +)([a-z][a-z0-9-]*):\s*([a-z-]+)\s*(#.*)?$")
+    # Accept optional single/double quotes around the value (valid YAML).
+    item_re = re.compile(r"^( +)([a-z][a-z0-9-]*):\s*['\"]?([a-z-]+)['\"]?\s*(#.*)?$")
 
     body_started = False
     for line in lines[header_idx + 1 :]:

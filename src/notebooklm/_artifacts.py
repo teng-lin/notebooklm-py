@@ -2207,11 +2207,18 @@ class ArtifactsAPI:
                     )
 
                 except (httpx.HTTPError, ValueError) as e:
+                    # str(e) for httpx errors can include the full request URL
+                    # (with capability tokens in query params). Log a safe
+                    # identifier instead.
+                    if isinstance(e, httpx.HTTPStatusError) and e.response is not None:
+                        reason = f"HTTP {e.response.status_code}"
+                    else:
+                        reason = e.__class__.__name__
                     logger.warning(
                         "Download failed for %s%s: %s",
                         parsed.netloc,
                         parsed.path,
-                        e,
+                        reason,
                     )
                     result.failed.append((url, e))
 
