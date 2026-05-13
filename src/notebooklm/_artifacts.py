@@ -2318,7 +2318,11 @@ class ArtifactsAPI:
                     # Each per-chunk write is dispatched to a worker thread so the
                     # event loop isn't blocked on disk I/O; the loop body still
                     # awaits each write before reading the next chunk, so the
-                    # shared file handle is never accessed concurrently.
+                    # shared file handle is never accessed concurrently in normal
+                    # execution. On task cancellation the worker thread may briefly
+                    # outlive the `with` block, but the temp file is unconditionally
+                    # unlinked in the outer `except` handler so the partial state
+                    # is discarded either way.
                     total_bytes = 0
                     with open(temp_file, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=65536):
@@ -2335,8 +2339,9 @@ class ArtifactsAPI:
                     temp_file.rename(output_file)
                     logger.debug("Downloaded %s (%d bytes)", url[:60], total_bytes)
                     return output_path
-        except Exception:
-            # Clean up partial temp file on any failure
+        except BaseException:
+            # Clean up partial temp file on any failure, including asyncio.CancelledError
+            # (which is a BaseException, not an Exception, in Python 3.8+).
             temp_file.unlink(missing_ok=True)
             raise
 

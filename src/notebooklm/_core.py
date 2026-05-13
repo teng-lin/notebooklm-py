@@ -200,9 +200,13 @@ class ClientCore:
             keepalive_storage_path: Optional storage path to persist rotated cookies
                 to from the keepalive loop. Falls back to ``auth.storage_path``.
             rate_limit_max_retries: Max automatic retries when a 429 response carries
-                a parseable ``Retry-After`` header. Defaults to ``2``. Each
-                retry sleeps for the (clamped) ``Retry-After`` value; ``Retry-After``
-                is capped at ``MAX_RETRY_AFTER_SECONDS``. Set to ``0`` to disable.
+                a parseable ``Retry-After`` header. ``0`` (default) preserves the
+                pre-Phase-3 contract of raising ``RateLimitError`` immediately —
+                opt in to a positive value to enable bounded sleep-and-retry.
+                Each retry sleeps for the (clamped) ``Retry-After`` value; that
+                per-attempt value is capped at ``MAX_RETRY_AFTER_SECONDS``, but
+                the cumulative sleep across N retries is ``N * cap``, so pick
+                ``rate_limit_max_retries`` accordingly.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
