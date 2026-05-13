@@ -58,12 +58,24 @@ _JUNK_STATUSES = frozenset({"error"})
 def _normalize_url_for_dedup(url: str) -> str:
     """Return a URL with only the fragment stripped, for dedup comparison.
 
-    Query strings are preserved because they often disambiguate distinct
-    resources (e.g. YouTube ``?v=ID``, Google Docs ``?id=ID``, arXiv versions),
-    so collapsing them would falsely flag legitimate sources as duplicates.
+    Scheme and host are lowercased per RFC 3986 (both are case-insensitive),
+    so ``https://Example.com/a`` and ``https://example.com/a`` are recognised
+    as the same resource. Query strings are preserved because they often
+    disambiguate distinct resources (e.g. YouTube ``?v=ID``, Google Docs
+    ``?id=ID``, arXiv versions), so collapsing them would falsely flag
+    legitimate sources as duplicates.
     """
     parsed = urlparse(url)
-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, ""))
+    return urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            "",
+        )
+    )
 
 
 # Sort key sentinel: sources with no created_at go to the END so a real,

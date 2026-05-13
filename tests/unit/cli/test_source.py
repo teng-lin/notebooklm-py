@@ -1,5 +1,6 @@
 """Tests for source CLI commands."""
 
+import contextlib
 import importlib
 import json
 from datetime import datetime
@@ -1716,6 +1717,16 @@ class TestSourceCleanClassify:
         out = source_module._classify_junk_sources(sources)
         assert [c[0] for c in out] == ["src_2"]
 
+    def test_dedup_is_case_insensitive_on_scheme_and_host(self):
+        # Per RFC 3986, scheme and host are case-insensitive, so mixed-case
+        # copies of the same URL must be recognised as duplicates.
+        sources = [
+            _src("src_1", url="https://Example.COM/a", created_at=datetime(2024, 1, 1)),
+            _src("src_2", url="HTTPS://example.com/a", created_at=datetime(2024, 2, 1)),
+        ]
+        out = source_module._classify_junk_sources(sources)
+        assert [c[0] for c in out] == ["src_2"]
+
     def test_undated_sources_go_to_end_of_sort(self):
         # If src_undated were placed at position 0 (epoch sentinel), it would
         # be kept and src_dated deleted as a duplicate. With float('inf') the
@@ -1798,16 +1809,18 @@ class TestSourceCleanCommand:
 
 
 class _CleanPatch:
-    """Context manager that patches the NotebookLMClient for source-clean tests."""
+    """Context manager that patches the NotebookLMClient for source-clean tests.
+
+    Uses ``ExitStack`` so any patch that raises mid-setup correctly unwinds the
+    patches that already entered, instead of leaking them into the next test.
+    """
 
     def __init__(self, sources):
         self._sources = sources
-        self._stack: list = []
+        self._exit_stack = contextlib.ExitStack()
 
     def __enter__(self):
-        mock_client_cls_ctx = patch_client_for_module("source")
-        mock_client_cls = mock_client_cls_ctx.__enter__()
-        self._stack.append(mock_client_cls_ctx)
+        mock_client_cls = self._exit_stack.enter_context(patch_client_for_module("source"))
 
         mock_client = create_mock_client()
         mock_client.sources.list = AsyncMock(return_value=self._sources)
@@ -1815,12 +1828,11 @@ class _CleanPatch:
         mock_client_cls.return_value = mock_client
         self.sources = mock_client.sources
 
-        fetch_ctx = patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock)
-        fetch_mock = fetch_ctx.__enter__()
+        fetch_mock = self._exit_stack.enter_context(
+            patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock)
+        )
         fetch_mock.return_value = ("csrf", "session")
-        self._stack.append(fetch_ctx)
         return self
 
     def __exit__(self, *exc):
-        for ctx in reversed(self._stack):
-            ctx.__exit__(*exc)
+        return self._exit_stack.__exit__(*exc)
