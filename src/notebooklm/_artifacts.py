@@ -1855,11 +1855,17 @@ class ArtifactsAPI:
             try:
                 status = await self.poll_status(notebook_id, task_id)
             except (NetworkError, RPCTimeoutError, ServerError) as e:
-                # Transient — retry up to POLL_MAX_RETRIES times with exponential backoff
+                # Transient — retry up to POLL_MAX_RETRIES times with exponential
+                # backoff capped at 8s. Also clamp by remaining timeout budget so
+                # the retry path never extends wall-clock past the caller's
+                # `timeout` parameter; raise if there's no headroom left.
                 if poll_retry_count >= POLL_MAX_RETRIES:
                     raise
+                remaining = timeout - (asyncio.get_running_loop().time() - start_time)
+                if remaining <= 0:
+                    raise
                 poll_retry_count += 1
-                backoff = min(2**poll_retry_count, 8.0)  # cap at 8s
+                backoff = min(2**poll_retry_count, 8.0, remaining)
                 logger.warning(
                     "wait_for_completion: transient %s on poll #%d, retrying in %.1fs",
                     e.__class__.__name__,
