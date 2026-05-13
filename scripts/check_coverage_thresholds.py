@@ -61,7 +61,18 @@ def main() -> int:
         print(f"Workflow not found: {args.workflow}", file=sys.stderr)
         return 2
 
-    match = re.search(r"--cov-fail-under=(\d+)", yml)
+    # Scan line-by-line and ignore commented YAML lines so a stale
+    # `# --cov-fail-under=90` doesn't shadow a real drift in the executed
+    # command.
+    match = None
+    for line in yml.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        m = re.search(r"(?<!\S)--cov-fail-under(?:=|\s+)(\d+)(?!\S)", stripped)
+        if m:
+            match = m
+            break
     if not match:
         print(f"No --cov-fail-under in {args.workflow}", file=sys.stderr)
         return 2

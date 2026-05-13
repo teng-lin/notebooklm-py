@@ -118,6 +118,38 @@ def test_coverage_thresholds_passes_on_real_state():
     assert result.returncode == 0, f"stderr: {result.stderr}\nstdout: {result.stdout}"
 
 
+def test_coverage_thresholds_ignores_commented_cov_fail_under(tmp_path):
+    """A commented `# --cov-fail-under=70` must not shadow the active value."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        textwrap.dedent(
+            """\
+            [tool.coverage.report]
+            fail_under = 90
+            """
+        )
+    )
+    workflow = tmp_path / "test.yml"
+    # The commented line should be ignored; the live line agrees with pyproject.
+    workflow.write_text(
+        "jobs:\n"
+        "  x:\n"
+        "    steps:\n"
+        "      # Historical: --cov-fail-under=70\n"
+        "      - run: pytest --cov-fail-under=90\n"
+    )
+    result = _run(
+        [
+            str(SCRIPTS / "check_coverage_thresholds.py"),
+            "--pyproject",
+            str(pyproject),
+            "--workflow",
+            str(workflow),
+        ]
+    )
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+
+
 def test_coverage_thresholds_detects_drift(tmp_path):
     """Synthetic mismatched thresholds → exit 1 with drift message."""
     pyproject = tmp_path / "pyproject.toml"

@@ -81,24 +81,34 @@ def main() -> int:
 
 
 # Scopes that may appear with `read` or `none` (or `write` only on allowlisted
-# workflows — but allowlisted ones never reach this validator).
+# workflows — but allowlisted ones never reach this validator). Sourced from
+# GitHub Actions workflow-syntax + GITHUB_TOKEN reference docs.
 _ALLOWED_READ_SCOPES = frozenset(
     {
         "actions",
+        "artifact-metadata",
         "attestations",
         "checks",
+        "code-scanning",
         "contents",
         "deployments",
         "discussions",
+        "environments",
         "id-token",
         "issues",
+        "labels",
+        "merge-queues",
+        "metadata",
+        "migrations",
         "models",
         "packages",
         "pages",
         "pull-requests",
         "repository-projects",
+        "security-contacts",
         "security-events",
         "statuses",
+        "vulnerability-alerts",
     }
 )
 
