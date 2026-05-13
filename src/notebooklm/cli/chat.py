@@ -102,6 +102,15 @@ def register_chat_commands(cli):
     )
     @click.option("--save-as-note", is_flag=True, help="Save response as a note")
     @click.option("--note-title", default=None, help="Note title (use with --save-as-note)")
+    @click.option(
+        "--timeout",
+        default=None,
+        type=click.IntRange(min=1),
+        help=(
+            "HTTP request timeout in seconds (default: 30, from the library). "
+            "Increase for long or complex prompts."
+        ),
+    )
     @with_client
     def ask_cmd(
         ctx,
@@ -112,6 +121,7 @@ def register_chat_commands(cli):
         json_output,
         save_as_note,
         note_title,
+        timeout,
         client_auth,
     ):
         """Ask a notebook a question.
@@ -130,8 +140,12 @@ def register_chat_commands(cli):
         """
         nb_id = require_notebook(notebook_id)
 
+        client_kwargs: dict = {}
+        if timeout is not None:
+            client_kwargs["timeout"] = float(timeout)
+
         async def _run():
-            async with NotebookLMClient(client_auth) as client:
+            async with NotebookLMClient(client_auth, **client_kwargs) as client:
                 nb_id_resolved = await resolve_notebook_id(client, nb_id)
                 effective_conv_id = _determine_conversation_id(
                     explicit_conversation_id=conversation_id,

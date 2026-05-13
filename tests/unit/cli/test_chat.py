@@ -244,6 +244,48 @@ class TestHistoryCommand:
             assert long_a in flat
 
 
+class TestAskTimeout:
+    def test_ask_passes_timeout_to_client(self, runner, mock_auth):
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["ask", "What is 42?", "-n", "nb_123", "--timeout", "300"]
+                )
+
+            assert result.exit_code == 0, result.output
+            mock_client_cls.assert_called_once()
+            assert mock_client_cls.call_args.kwargs.get("timeout") == 300.0
+
+    def test_ask_omits_timeout_kwarg_when_flag_not_set(self, runner, mock_auth):
+        """When --timeout is not passed, the CLI must not override the library default."""
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["ask", "What is 42?", "-n", "nb_123"])
+
+            assert result.exit_code == 0, result.output
+            assert "timeout" not in mock_client_cls.call_args.kwargs
+
+    def test_ask_rejects_non_positive_timeout(self, runner, mock_auth):
+        result = runner.invoke(cli, ["ask", "What is 42?", "-n", "nb_123", "--timeout", "0"])
+        assert result.exit_code == 2, result.output
+
+
 class TestAskServerResumed:
     def test_ask_shows_resumed_when_no_local_conv_but_server_has_one(
         self, runner, mock_auth, tmp_path
