@@ -307,5 +307,45 @@ def test_no_uv_sync_all_extras_in_canonical_install_paths() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# §8.4 #6 — Persona C section links to production deployment docs, not a
+# placeholder issue reference
+# ---------------------------------------------------------------------------
+
+PYTHON_API_MD = REPO_ROOT / "docs" / "python-api.md"
+_PRODUCTION_DEPLOYMENT_XREF = "python-api.md#production-deployment"
+_PERSONA_C_PLACEHOLDER = "#417"
+
+
+def test_persona_c_links_to_production_deployment_docs() -> None:
+    """The 'C. Library user' section in installation.md must contain the
+    cross-reference link to python-api.md#production-deployment and must NOT
+    contain the old placeholder deferral to issue #417.
+
+    Catches: reverting the cross-reference back to the issue placeholder.
+    """
+    installation_text = _read(INSTALLATION_MD)
+
+    assert _PRODUCTION_DEPLOYMENT_XREF in installation_text, (
+        f"installation.md must contain the cross-reference link "
+        f"`{_PRODUCTION_DEPLOYMENT_XREF}` in the 'C. Library user' section."
+    )
+    assert _PERSONA_C_PLACEHOLDER not in installation_text, (
+        "installation.md must not contain the old issue-#417 placeholder. "
+        "The production deployment section now lives in python-api.md."
+    )
+
+
+def test_python_api_md_has_production_deployment_section() -> None:
+    """python-api.md must contain a '## Production deployment' heading so that
+    the cross-reference link from installation.md resolves.
+    """
+    text = _read(PYTHON_API_MD)
+    assert "## Production deployment" in text, (
+        "docs/python-api.md must contain a '## Production deployment' heading "
+        "— the cross-reference from installation.md depends on it."
+    )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

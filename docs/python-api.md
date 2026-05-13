@@ -1605,3 +1605,168 @@ print(result.answer)
 # Streaming is handled internally by the library
 # The ask() method returns the complete response
 ```
+
+---
+
+## Production deployment
+
+This section covers patterns for embedding `notebooklm-py` in long-running services such as FastAPI or Django backends.
+
+### FastAPI / async services
+
+`NotebookLMClient` manages an `httpx.AsyncClient` connection pool internally. Treat it as a **singleton** — create one instance at application startup and reuse it for the lifetime of the process. Creating a new client per request wastes connections and resets internal token-refresh state.
+
+The recommended pattern is a FastAPI `lifespan` handler combined with `Depends()`:
+
+```python
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+from fastapi import Depends, FastAPI
+from notebooklm import NotebookLMClient
+
+_client: NotebookLMClient | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    global _client
+    _client = await NotebookLMClient.from_storage(keepalive=300)
+    await _client.__aenter__()
+    try:
+        yield
+    finally:
+        await _client.__aexit__(None, None, None)
+        _client = None
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+async def get_client() -> NotebookLMClient:
+    assert _client is not None, "Client not initialized"
+    return _client
+
+
+@app.get("/notebooks")
+async def list_notebooks(client: NotebookLMClient = Depends(get_client)):
+    return await client.notebooks.list()
+```
+
+The `keepalive=300` argument starts a background task that pokes `accounts.google.com` every 300 seconds to keep `__Secure-1PSIDTS` fresh. See [Auth keepalive](auth-keepalive.md) for the full layered refresh design.
+
+### Concurrency
+
+The library is safe to call from multiple concurrent coroutines. `__Secure-1PSIDTS` rotations are serialized via internal per-event-loop asyncio locks, so simultaneous requests will not race to write conflicting cookie values.
+
+For high-throughput services, the default `httpx.AsyncClient` pool is sufficient for moderate parallelism. If you need to tune connection limits explicitly, pass a pre-configured client via the `NotebookLMClient` constructor and supply an `httpx.Limits` object:
+
+```python
+import httpx
+from notebooklm import NotebookLMClient
+from notebooklm.auth import AuthTokens
+
+auth = AuthTokens.from_storage()
+transport = httpx.AsyncHTTPTransport(
+    limits=httpx.Limits(max_connections=50, max_keepalive_connections=20)
+)
+# Pass a custom httpx client through the internal _core layer if needed
+client = NotebookLMClient(auth=auth)
+```
+
+See [Auth keepalive](auth-keepalive.md) for additional guidance on long-lived connection management.
+
+### Rate limits and retries
+
+NotebookLM enforces per-account rate limits. A bare `asyncio.sleep()` retry loop is fragile — use exponential back-off with jitter via `tenacity`:
+
+```python
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    wait_random,
+)
+from notebooklm import RPCError
+
+
+@retry(
+    retry=retry_if_exception_type(RPCError),
+    wait=wait_exponential(multiplier=1, min=4, max=60) + wait_random(0, 2),
+    stop=stop_after_attempt(5),
+)
+async def generate_audio_with_retry(client: NotebookLMClient, notebook_id: str):
+    return await client.artifacts.generate_audio(notebook_id)
+```
+
+For artifact generation, check `GenerationStatus.is_rate_limited` after `wait_for_completion()`. Chat throttles carry an approximately 10-minute cool-down; back off at least that long before retrying chat-based operations.
+
+### Containers and orchestration
+
+The `[browser]` extra (Playwright / Chromium) is **not needed in production**. Install only the base package to keep your image small:
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir notebooklm-py
+
+COPY . .
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+Mount `storage_state.json` via your secrets manager rather than baking it into the image. In Docker Compose, use a secret or environment variable:
+
+```yaml
+# docker-compose.yml
+services:
+  api:
+    image: my-notebooklm-service
+    environment:
+      NOTEBOOKLM_AUTH_JSON: "${NOTEBOOKLM_AUTH_JSON}"
+```
+
+In Kubernetes, store the file content in a `Secret` and expose it as an environment variable or a mounted volume that `from_storage()` can read.
+
+### Multi-tenant deployments
+
+Two patterns cover the common multi-tenant cases.
+
+**Static profiles** — one pre-generated `storage_state.json` per account stored on disk:
+
+```python
+async def get_client_for_tenant(tenant_id: str) -> NotebookLMClient:
+    # Maps to ~/.notebooklm/profiles/<tenant_id>/storage_state.json
+    return await NotebookLMClient.from_storage(profile=tenant_id, keepalive=300)
+```
+
+**Dynamic tokens** — per-tenant auth fetched from a database at request time:
+
+```python
+from notebooklm import AuthTokens, NotebookLMClient
+
+
+async def get_client_for_tenant(tenant_id: str) -> NotebookLMClient:
+    raw_auth = await db.get_auth(tenant_id)  # your DB fetch
+    auth = AuthTokens(**raw_auth)
+    return NotebookLMClient(auth=auth)
+```
+
+This pattern keeps credentials entirely server-side and lets you rotate them without touching the filesystem.
+
+### Auth keepalive
+
+Pass `keepalive=N` (seconds) to `from_storage()` or the `NotebookLMClient` constructor to enable a background task that periodically refreshes `__Secure-1PSIDTS` and writes the rotated value back to `storage_state.json`. Values below `keepalive_min_interval` (default 60 s) are clamped up.
+
+For environments where the storage file is read-only (e.g. a mounted secret), set `NOTEBOOKLM_REFRESH_CMD` to a shell command that fetches fresh credentials. The library runs that command on auth-expiry signals and retries once automatically:
+
+```bash
+export NOTEBOOKLM_REFRESH_CMD="vault kv get -field=storage_state secret/notebooklm \
+  > ~/.notebooklm/profiles/default/storage_state.json"
+```
+
+See [Auth keepalive](auth-keepalive.md) for the full layered keepalive and recovery design.
