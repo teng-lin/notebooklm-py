@@ -242,7 +242,7 @@ async def test_retry_inherits_parent_request_id():
 
     captured_ids: list[str | None] = []
 
-    async def fake_impl(method, params, source_path, allow_null, is_retry):
+    async def fake_impl(method, params, source_path, allow_null, is_retry, rate_limit_retries=0):
         captured_ids.append(get_request_id())
         # First call: raise to trigger retry path; second call: succeed.
         if not is_retry:

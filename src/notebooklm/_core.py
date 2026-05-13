@@ -7,6 +7,8 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlencode
@@ -54,6 +56,38 @@ DEFAULT_CONNECT_TIMEOUT = 10.0  # Connection establishment timeout
 DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
 
 # Auth error detection patterns (case-insensitive)
+# Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
+# so a malicious or buggy server can't force a multi-hour pause.
+MAX_RETRY_AFTER_SECONDS = 300
+
+
+def _parse_retry_after(value: str | None) -> int | None:
+    """Parse RFC 7231 Retry-After: integer-seconds OR HTTP-date.
+
+    Returns seconds-until-retry as a non-negative int, clamped to
+    ``MAX_RETRY_AFTER_SECONDS``. Returns ``None`` for empty or unparseable input.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    # Integer-seconds form (most common)
+    try:
+        return min(MAX_RETRY_AFTER_SECONDS, max(0, int(value)))
+    except ValueError:
+        pass
+    # HTTP-date form (RFC 7231 §7.1.1.1)
+    try:
+        dt = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    delta = (dt - datetime.now(timezone.utc)).total_seconds()
+    return min(MAX_RETRY_AFTER_SECONDS, max(0, int(delta)))
+
+
 AUTH_ERROR_PATTERNS = (
     "authentication",
     "expired",
@@ -142,6 +176,7 @@ class ClientCore:
         keepalive: float | None = None,
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
         keepalive_storage_path: Path | None = None,
+        rate_limit_max_retries: int = 0,
     ):
         """Initialize the core client.
 
@@ -164,6 +199,10 @@ class ClientCore:
                 Must be a positive finite number.
             keepalive_storage_path: Optional storage path to persist rotated cookies
                 to from the keepalive loop. Falls back to ``auth.storage_path``.
+            rate_limit_max_retries: Max automatic retries when a 429 response carries
+                a parseable ``Retry-After`` header. Defaults to ``2``. Each
+                retry sleeps for the (clamped) ``Retry-After`` value; ``Retry-After``
+                is capped at ``MAX_RETRY_AFTER_SECONDS``. Set to ``0`` to disable.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
@@ -174,6 +213,9 @@ class ClientCore:
         self._connect_timeout = connect_timeout
         self._refresh_callback = refresh_callback
         self._refresh_retry_delay = refresh_retry_delay
+        if rate_limit_max_retries < 0:
+            raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
+        self._rate_limit_max_retries = rate_limit_max_retries
         self._refresh_lock: asyncio.Lock | None = asyncio.Lock() if refresh_callback else None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
@@ -481,6 +523,7 @@ class ClientCore:
         source_path: str = "/",
         allow_null: bool = False,
         _is_retry: bool = False,
+        _rate_limit_retries: int = 0,
     ) -> Any:
         """Make an RPC call to the NotebookLM API.
 
@@ -493,6 +536,7 @@ class ClientCore:
             source_path: The source path parameter (usually /notebook/{id}).
             allow_null: If True, don't raise error when response is null.
             _is_retry: Internal flag to prevent infinite retries.
+            _rate_limit_retries: Internal counter for rate limit retries.
 
         Returns:
             Decoded response data.
@@ -506,14 +550,19 @@ class ClientCore:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
         # Only the outer rpc_call mints a request id; the recursive retry path
-        # (_is_retry=True) inherits the parent's id so a single failure→refresh
-        # →retry sequence appears under one [req=<id>] in the logs.
-        if _is_retry:
-            return await self._rpc_call_impl(method, params, source_path, allow_null, _is_retry)
+        # (_is_retry=True or rate limit retry) inherits the parent's id so a
+        # single failure→refresh→retry sequence appears under one [req=<id>]
+        # in the logs.
+        if _is_retry or _rate_limit_retries > 0:
+            return await self._rpc_call_impl(
+                method, params, source_path, allow_null, _is_retry, _rate_limit_retries
+            )
 
         _reqid_token = set_request_id()
         try:
-            return await self._rpc_call_impl(method, params, source_path, allow_null, _is_retry)
+            return await self._rpc_call_impl(
+                method, params, source_path, allow_null, _is_retry, _rate_limit_retries
+            )
         finally:
             reset_request_id(_reqid_token)
 
@@ -524,6 +573,7 @@ class ClientCore:
         source_path: str,
         allow_null: bool,
         _is_retry: bool,
+        _rate_limit_retries: int = 0,
     ) -> Any:
         # Caller (rpc_call) has already verified self._http_client is not None;
         # re-assert for mypy narrowing through this helper.
@@ -560,17 +610,32 @@ class ClientCore:
 
                 # Map HTTP status codes to appropriate exception types
                 if status == 429:
-                    # Rate limiting - extract retry-after if available
-                    retry_after = None
-                    retry_after_header = e.response.headers.get("retry-after")
-                    if retry_after_header:
-                        try:
-                            retry_after = int(retry_after_header)
-                        except ValueError:
-                            logger.debug(
-                                "Retry-After header not an integer: %r",
-                                retry_after_header,
-                            )
+                    # Rate limiting - parse retry-after (integer or HTTP-date).
+                    retry_after = _parse_retry_after(e.response.headers.get("retry-after"))
+                    # Opt-in automatic retry: if the caller enabled the budget and
+                    # the server gave us a parseable Retry-After, sleep and retry.
+                    # _is_retry stays at its incoming value so the post-sleep call
+                    # can still escalate via the auth-refresh path on 401/403.
+                    if (
+                        retry_after is not None
+                        and _rate_limit_retries < self._rate_limit_max_retries
+                    ):
+                        logger.warning(
+                            "RPC %s rate-limited (HTTP 429); sleeping %ds then retrying (%d/%d)",
+                            method.name,
+                            retry_after,
+                            _rate_limit_retries + 1,
+                            self._rate_limit_max_retries,
+                        )
+                        await asyncio.sleep(retry_after)
+                        return await self.rpc_call(
+                            method,
+                            params,
+                            source_path,
+                            allow_null,
+                            _is_retry=_is_retry,
+                            _rate_limit_retries=_rate_limit_retries + 1,
+                        )
                     msg = f"API rate limit exceeded calling {method.name}"
                     if retry_after:
                         msg += f". Retry after {retry_after} seconds"

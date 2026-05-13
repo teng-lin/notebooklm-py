@@ -32,11 +32,14 @@ from .rpc import (
     InfographicDetail,
     InfographicOrientation,
     InfographicStyle,
+    NetworkError,
     QuizDifficulty,
     QuizQuantity,
     ReportFormat,
     RPCError,
     RPCMethod,
+    RPCTimeoutError,
+    ServerError,
     SlideDeckFormat,
     SlideDeckLength,
     VideoFormat,
@@ -57,6 +60,9 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of retries for transient errors during artifact polling
+POLL_MAX_RETRIES = 3
 
 # Media artifact types that require URL availability before reporting completion
 _MEDIA_ARTIFACT_TYPES = frozenset(
@@ -1622,10 +1628,13 @@ class ArtifactsAPI:
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
 
-            with output.open("w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
-                writer.writerows(rows)
+            def _write_csv() -> None:
+                with output.open("w", newline="", encoding="utf-8-sig") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(headers)
+                    writer.writerows(rows)
+
+            await asyncio.to_thread(_write_csv)
 
             return str(output)
 
@@ -1838,11 +1847,29 @@ class ArtifactsAPI:
         current_interval = initial_interval
         consecutive_not_found = 0
         total_not_found = 0
+        poll_retry_count = 0
         first_not_found_time: float | None = None
         last_status: str | None = None
 
         while True:
-            status = await self.poll_status(notebook_id, task_id)
+            try:
+                status = await self.poll_status(notebook_id, task_id)
+            except (NetworkError, RPCTimeoutError, ServerError) as e:
+                # Transient — retry up to POLL_MAX_RETRIES times with exponential backoff
+                if poll_retry_count >= POLL_MAX_RETRIES:
+                    raise
+                poll_retry_count += 1
+                backoff = min(2**poll_retry_count, 8.0)  # cap at 8s
+                logger.warning(
+                    "wait_for_completion: transient %s on poll #%d, retrying in %.1fs",
+                    e.__class__.__name__,
+                    poll_retry_count,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+                continue
+
+            poll_retry_count = 0  # reset on success
             last_status = status.status
 
             if status.is_complete or status.is_failed:
@@ -2195,7 +2222,7 @@ class ArtifactsAPI:
 
                     output_file = Path(output_path)
                     output_file.parent.mkdir(parents=True, exist_ok=True)
-                    output_file.write_bytes(response.content)
+                    await asyncio.to_thread(output_file.write_bytes, response.content)
                     result.succeeded.append(output_path)
                     # Log host+path only; download URLs may carry capability
                     # tokens in query params that aren't covered by the
@@ -2287,11 +2314,15 @@ class ArtifactsAPI:
                             "Authentication may have expired. Run 'notebooklm login'.",
                         )
 
-                    # Stream to file in chunks to handle large files efficiently
+                    # Stream to file in chunks to handle large files efficiently.
+                    # Each per-chunk write is dispatched to a worker thread so the
+                    # event loop isn't blocked on disk I/O; the loop body still
+                    # awaits each write before reading the next chunk, so the
+                    # shared file handle is never accessed concurrently.
                     total_bytes = 0
                     with open(temp_file, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=65536):
-                            f.write(chunk)
+                            await asyncio.to_thread(f.write, chunk)
                             total_bytes += len(chunk)
 
                     if total_bytes == 0:
