@@ -54,14 +54,10 @@ def test_cache_conversation_turn_remains_synchronous():
 
 
 @pytest.mark.asyncio
-async def test_cache_eviction_preserves_invariant_size():
+async def test_cache_eviction_preserves_invariant_size(monkeypatch):
+    monkeypatch.setattr(_core, "MAX_CONVERSATION_CACHE_SIZE", 3)
     async with make_core() as core:
-        original_max = _core.MAX_CONVERSATION_CACHE_SIZE
-        try:
-            _core.MAX_CONVERSATION_CACHE_SIZE = 3
-            for i in range(10):
-                core.cache_conversation_turn(f"conv-{i}", "q", "a", 0)
-            assert len(core._conversation_cache) == 3
-            assert list(core._conversation_cache.keys()) == ["conv-7", "conv-8", "conv-9"]
-        finally:
-            _core.MAX_CONVERSATION_CACHE_SIZE = original_max
+        for i in range(10):
+            core.cache_conversation_turn(f"conv-{i}", "q", "a", 0)
+        assert len(core._conversation_cache) == 3
+        assert list(core._conversation_cache.keys()) == ["conv-7", "conv-8", "conv-9"]

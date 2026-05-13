@@ -64,11 +64,10 @@ def test_rpc_call_impl_has_no_await_before_post():
         attr = call.func
         return isinstance(attr, ast.Attribute) and attr.attr == "post"
 
-    post_await_lineno = None
-    for node in ast.walk(func):
-        if is_post_await(node):
-            post_await_lineno = node.lineno
-            break
+    # ast.walk does not guarantee source order, so pick the earliest match by
+    # line number — robust to future code that contains multiple post() calls.
+    post_await_linenos = [n.lineno for n in ast.walk(func) if is_post_await(n)]
+    post_await_lineno = min(post_await_linenos, default=None)
     assert post_await_lineno is not None, (
         "Could not locate `await ...post(...)` in _rpc_call_impl. If you "
         "refactored the call site (e.g., to `self._http_client.request(...)`), "
