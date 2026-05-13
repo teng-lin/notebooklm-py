@@ -120,7 +120,7 @@ class TestNotebookList:
 
 
 class TestNotebookCreate:
-    def test_notebook_create(self, runner, mock_auth):
+    def test_notebook_create(self, runner, mock_auth, mock_context_file):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notebooks.create = AsyncMock(
@@ -138,8 +138,12 @@ class TestNotebookCreate:
 
             assert result.exit_code == 0
             assert "Created notebook" in result.output
+            assert "Context set to new notebook" in result.output
+            context = json.loads(mock_context_file.read_text())
+            assert context["notebook_id"] == "new_nb_id"
+            assert context["title"] == "Test Notebook"
 
-    def test_notebook_create_json_output(self, runner, mock_auth):
+    def test_notebook_create_json_output(self, runner, mock_auth, mock_context_file):
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notebooks.create = AsyncMock(
@@ -158,6 +162,54 @@ class TestNotebookCreate:
             assert result.exit_code == 0
             data = json.loads(result.output)
             assert data["notebook"]["id"] == "new_nb_id"
+            context = json.loads(mock_context_file.read_text())
+            assert context["notebook_id"] == "new_nb_id"
+
+    def test_notebook_create_replaces_existing_context(self, runner, mock_auth, mock_context_file):
+        """Reproduces #220: create must overwrite a previously active context."""
+        mock_context_file.write_text(
+            json.dumps({"notebook_id": "old_nb", "title": "Previously Active"})
+        )
+
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.create = AsyncMock(
+                return_value=Notebook(
+                    id="brand_new", title="Fresh", created_at=datetime(2024, 1, 1)
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["create", "Fresh"])
+
+            assert result.exit_code == 0
+            context = json.loads(mock_context_file.read_text())
+            assert context["notebook_id"] == "brand_new"
+            assert context["title"] == "Fresh"
+
+    def test_notebook_create_without_created_at(self, runner, mock_auth, mock_context_file):
+        """Guard the `if nb.created_at else None` branch so a future refactor can't regress it."""
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notebooks.create = AsyncMock(
+                return_value=Notebook(id="nb_no_date", title="Undated", created_at=None)
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["create", "Undated"])
+
+            assert result.exit_code == 0
+            context = json.loads(mock_context_file.read_text())
+            assert context["notebook_id"] == "nb_no_date"
+            assert "created_at" not in context
 
     def test_notebook_create_json_quota_error(self, runner, mock_auth):
         """Create emits structured JSON when notebook quota is detected."""
