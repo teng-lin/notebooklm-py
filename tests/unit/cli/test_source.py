@@ -14,6 +14,7 @@ from notebooklm.types import (
     SourceFulltext,
     SourceNotFoundError,
     SourceProcessingError,
+    SourceStatus,
     SourceTimeoutError,
 )
 
@@ -1584,3 +1585,242 @@ class TestSourceWait:
             assert data["source_id"] == "src_123"
             assert data["timeout_seconds"] == 30
             assert data["last_status_code"] == 1
+
+
+# =============================================================================
+# SOURCE CLEAN TESTS
+# =============================================================================
+
+
+def _src(
+    sid: str,
+    *,
+    title: str | None = None,
+    url: str | None = None,
+    status: int = SourceStatus.READY,
+    created_at: datetime | None = None,
+) -> Source:
+    """Build a Source fixture with sensible defaults for clean tests."""
+    return Source(id=sid, title=title, url=url, status=status, created_at=created_at)
+
+
+class TestSourceCleanClassify:
+    """Unit tests for the pure-function ``_classify_junk_sources`` helper.
+
+    These are independent of Click/CLI invocation so they're fast and exercise
+    every branch of the classification logic without mocking the client.
+    """
+
+    def test_empty_notebook_returns_nothing(self):
+        assert source_module._classify_junk_sources([]) == []
+
+    def test_error_status_is_flagged(self):
+        s = _src("src_e", status=SourceStatus.ERROR, url="https://ex.com/a")
+        out = source_module._classify_junk_sources([s])
+        assert [(c[0], c[3]) for c in out] == [("src_e", "error_status")]
+
+    def test_unknown_status_is_not_flagged(self):
+        # Unrecognized status codes must NOT be auto-deleted; they may
+        # represent future NotebookLM states or missing-status payloads.
+        s = _src("src_u", status=99, url="https://ex.com/a")
+        assert source_module._classify_junk_sources([s]) == []
+
+    def test_zero_status_is_not_flagged(self):
+        # status=0 maps to "unknown" via the truthy fallback. Must NOT delete.
+        s = _src("src_z", status=0, url="https://ex.com/a")
+        assert source_module._classify_junk_sources([s]) == []
+
+    def test_processing_status_is_not_flagged(self):
+        s = _src("src_p", status=SourceStatus.PROCESSING, url="https://ex.com/a")
+        assert source_module._classify_junk_sources([s]) == []
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Access Denied",
+            "403 Forbidden",
+            "404 Not Found",
+            "Just a Moment...",
+            "Attention Required! | Cloudflare",
+            "Security check",
+            "CAPTCHA verification",
+            "  403  ",
+        ],
+    )
+    def test_gateway_titles_are_flagged(self, title):
+        s = _src("src_g", title=title, url="https://ex.com/a")
+        out = source_module._classify_junk_sources([s])
+        assert [(c[0], c[3]) for c in out] == [("src_g", "gateway_title")]
+
+    def test_legitimate_titles_starting_with_digits_are_not_flagged(self):
+        # "404 Not Found" is a gateway title, but "100 Ways to ..." is not.
+        s = _src("src_ok", title="100 Ways to Cook Pasta", url="https://ex.com/a")
+        assert source_module._classify_junk_sources([s]) == []
+
+    def test_url_title_on_ready_source_is_not_deleted(self):
+        # Regression: PR review caught that URL-as-title was being treated as
+        # junk, which deletes legitimate in-flight sources (Source.title is
+        # documented to "may be URL if not yet processed").
+        s = _src(
+            "src_url",
+            title="https://example.com/article",
+            url="https://example.com/article",
+        )
+        assert source_module._classify_junk_sources([s]) == []
+
+    def test_dedup_keeps_oldest_and_flags_later_copies(self):
+        # Oldest at t=0; two later duplicates.
+        sources = [
+            _src("src_3", url="https://ex.com/a", created_at=datetime(2024, 3, 1)),
+            _src("src_1", url="https://ex.com/a", created_at=datetime(2024, 1, 1)),
+            _src("src_2", url="https://ex.com/a", created_at=datetime(2024, 2, 1)),
+        ]
+        out = source_module._classify_junk_sources(sources)
+        deleted_ids = sorted(c[0] for c in out)
+        assert deleted_ids == ["src_2", "src_3"]
+        assert all(c[3].startswith("duplicate_of:src_1"[:21]) for c in out)
+
+    def test_dedup_when_oldest_is_error(self):
+        # First copy (oldest) is error → flagged as error_status, NOT recorded
+        # in seen_urls. Second copy becomes the kept anchor; third copy
+        # deduped against it. Both deletions report their own reason.
+        sources = [
+            _src(
+                "src_e",
+                url="https://ex.com/a",
+                status=SourceStatus.ERROR,
+                created_at=datetime(2024, 1, 1),
+            ),
+            _src("src_ok", url="https://ex.com/a", created_at=datetime(2024, 2, 1)),
+            _src("src_dup", url="https://ex.com/a", created_at=datetime(2024, 3, 1)),
+        ]
+        out = source_module._classify_junk_sources(sources)
+        by_id = {c[0]: c[3] for c in out}
+        assert set(by_id) == {"src_e", "src_dup"}
+        assert by_id["src_e"] == "error_status"
+        assert by_id["src_dup"].startswith("duplicate_of:")
+
+    def test_dedup_preserves_query_string(self):
+        # Different YouTube video IDs (via ?v=) must NOT be collapsed.
+        sources = [
+            _src("yt_a", url="https://youtube.com/watch?v=AAA"),
+            _src("yt_b", url="https://youtube.com/watch?v=BBB"),
+        ]
+        assert source_module._classify_junk_sources(sources) == []
+
+    def test_dedup_strips_fragment(self):
+        sources = [
+            _src("src_1", url="https://ex.com/a#top", created_at=datetime(2024, 1, 1)),
+            _src("src_2", url="https://ex.com/a#bottom", created_at=datetime(2024, 2, 1)),
+        ]
+        out = source_module._classify_junk_sources(sources)
+        assert [c[0] for c in out] == ["src_2"]
+
+    def test_undated_sources_go_to_end_of_sort(self):
+        # If src_undated were placed at position 0 (epoch sentinel), it would
+        # be kept and src_dated deleted as a duplicate. With float('inf') the
+        # dated one wins.
+        sources = [
+            _src("src_undated", url="https://ex.com/a", created_at=None),
+            _src("src_dated", url="https://ex.com/a", created_at=datetime(2024, 1, 1)),
+        ]
+        out = source_module._classify_junk_sources(sources)
+        assert [c[0] for c in out] == ["src_undated"]
+
+    def test_source_with_no_url_is_not_deduped(self):
+        # Text-only sources have url=None — they must never be deduped together.
+        sources = [
+            _src("src_1", title="Note A"),
+            _src("src_2", title="Note B"),
+        ]
+        assert source_module._classify_junk_sources(sources) == []
+
+
+class TestSourceCleanCommand:
+    """End-to-end Click invocation tests for the ``source clean`` command."""
+
+    def _patch_clean(self, sources):
+        """Return a context manager that wires up a mock client returning sources."""
+        return _CleanPatch(sources)
+
+    def test_already_clean_short_circuits(self, runner, mock_auth):
+        with self._patch_clean([_src("src_1", title="Page", url="https://ex.com/a")]) as mc:
+            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
+            assert result.exit_code == 0
+            assert "already clean" in result.output.lower()
+            mc.sources.delete.assert_not_called()
+
+    def test_dry_run_shows_table_and_skips_delete(self, runner, mock_auth):
+        sources = [
+            _src("src_err", title="oops", status=SourceStatus.ERROR),
+            _src("src_block", title="Just a Moment...", url="https://ex.com/x"),
+        ]
+        with self._patch_clean(sources) as mc:
+            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "--dry-run"])
+            assert result.exit_code == 0
+            assert "Dry run" in result.output
+            assert "error_status" in result.output
+            assert "gateway_title" in result.output
+            mc.sources.delete.assert_not_called()
+
+    def test_yes_skips_confirmation_and_deletes(self, runner, mock_auth):
+        sources = [_src("src_err", status=SourceStatus.ERROR)]
+        with self._patch_clean(sources) as mc:
+            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
+            assert result.exit_code == 0
+            mc.sources.delete.assert_awaited_once_with("nb_123", "src_err")
+            assert "Successfully cleaned" in result.output
+
+    def test_user_declines_confirmation_aborts(self, runner, mock_auth):
+        sources = [_src("src_err", status=SourceStatus.ERROR)]
+        with self._patch_clean(sources) as mc:
+            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123"], input="n\n")
+            assert result.exit_code == 0
+            mc.sources.delete.assert_not_called()
+
+    def test_partial_failure_reports_failing_ids(self, runner, mock_auth):
+        sources = [
+            _src("src_a", status=SourceStatus.ERROR),
+            _src("src_b", status=SourceStatus.ERROR),
+        ]
+
+        async def fake_delete(nb, sid):
+            if sid == "src_b":
+                raise RuntimeError("boom")
+
+        with self._patch_clean(sources) as mc:
+            mc.sources.delete = AsyncMock(side_effect=fake_delete)
+            result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
+            assert result.exit_code == 0
+            assert "1 deletion(s) failed" in result.output
+            assert "src_b" in result.output
+            assert "boom" in result.output
+
+
+class _CleanPatch:
+    """Context manager that patches the NotebookLMClient for source-clean tests."""
+
+    def __init__(self, sources):
+        self._sources = sources
+        self._stack: list = []
+
+    def __enter__(self):
+        mock_client_cls_ctx = patch_client_for_module("source")
+        mock_client_cls = mock_client_cls_ctx.__enter__()
+        self._stack.append(mock_client_cls_ctx)
+
+        mock_client = create_mock_client()
+        mock_client.sources.list = AsyncMock(return_value=self._sources)
+        mock_client.sources.delete = AsyncMock(return_value=None)
+        mock_client_cls.return_value = mock_client
+        self.sources = mock_client.sources
+
+        fetch_ctx = patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock)
+        fetch_mock = fetch_ctx.__enter__()
+        fetch_mock.return_value = ("csrf", "session")
+        self._stack.append(fetch_ctx)
+        return self
+
+    def __exit__(self, *exc):
+        for ctx in reversed(self._stack):
+            ctx.__exit__(*exc)
