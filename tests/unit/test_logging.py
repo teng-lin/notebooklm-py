@@ -8,15 +8,25 @@ from __future__ import annotations
 
 import io
 import logging
+import sys
 
 import pytest
 
 from notebooklm._logging import (
     RedactingFilter,
     RedactingFormatter,
+    apply_redaction,
     configure_logging,
     install_redaction,
 )
+
+
+def raising_exc_info(message: str) -> tuple:
+    """Raise ValueError(message) and return the resulting sys.exc_info() tuple."""
+    try:
+        raise ValueError(message)
+    except ValueError:
+        return sys.exc_info()
 
 
 @pytest.fixture
@@ -106,23 +116,28 @@ def test_formatter_scrubs_csrf_token_in_url():
     assert "at=***" in out
 
 
+_GOOGLE_COOKIE_PAIRS = [
+    ("SAPISID", "abc123def"),
+    ("APISID", "apisid_val"),
+    ("__Secure-1PSID", "psid_xyz"),
+    ("__Secure-3PSID", "psid_qrs"),
+    ("__Secure-1PSIDCC", "psidcc_xyz"),
+    ("__Secure-3PSIDCC", "psidcc_qrs"),
+    ("SIDCC", "sidcc_val"),
+    ("HSID", "hsid_val"),
+    ("SSID", "ssid_val"),
+    ("LSID", "lsid_val"),
+    ("SID", "sid_val"),
+]
+
+
 def test_formatter_scrubs_google_session_cookies():
     fmt = RedactingFormatter(logging.Formatter("%(message)s"))
-    rec = _record(
-        "cookie jar: SAPISID=abc123def; __Secure-1PSID=psid_xyz; "
-        "__Secure-3PSID=psid_qrs; HSID=hsid_val; SSID=ssid_val; SID=sid_val"
-    )
+    jar = "; ".join(f"{name}={value}" for name, value in _GOOGLE_COOKIE_PAIRS)
+    rec = _record(f"cookie jar: {jar}")
     out = fmt.format(rec)
-    for cookie_name in (
-        "SAPISID",
-        "__Secure-1PSID",
-        "__Secure-3PSID",
-        "HSID",
-        "SSID",
-        "SID",
-    ):
+    for cookie_name, secret in _GOOGLE_COOKIE_PAIRS:
         assert f"{cookie_name}=***" in out, f"missing {cookie_name}=***"
-    for secret in ("abc123def", "psid_xyz", "psid_qrs", "hsid_val", "ssid_val", "sid_val"):
         assert secret not in out
 
 
@@ -144,15 +159,80 @@ def test_formatter_preserves_non_secret_text():
 
 def test_formatter_scrubs_exception_traceback():
     fmt = RedactingFormatter(logging.Formatter("%(message)s"))
-    try:
-        raise ValueError("request rejected for at=SECRET_TOK in body")
-    except ValueError:
-        import sys
-
-        rec = _record("rpc error", exc_info=sys.exc_info())
+    rec = _record(
+        "rpc error", exc_info=raising_exc_info("request rejected for at=SECRET_TOK in body")
+    )
     out = fmt.format(rec)
     assert "SECRET_TOK" not in out
     assert "at=***" in out
+
+
+def test_formatter_scrubs_oauth_credentials():
+    """refresh_token / access_token / id_token / code= OAuth params."""
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record(
+        "oauth body: refresh_token=RT_SECRET&access_token=AT_SECRET"
+        "&id_token=IDT_SECRET&code=AUTH_CODE_X"
+    )
+    out = fmt.format(rec)
+    for secret in ("RT_SECRET", "AT_SECRET", "IDT_SECRET", "AUTH_CODE_X"):
+        assert secret not in out, f"{secret} leaked"
+    for key in ("refresh_token=***", "access_token=***", "id_token=***", "code=***"):
+        assert key in out
+
+
+def test_formatter_scrubs_set_cookie_response_header():
+    """Set-Cookie: response header (separate from Cookie: request header)."""
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    rec = _record("Set-Cookie: SAPISID=server_minted_value; Path=/; HttpOnly; Secure")
+    out = fmt.format(rec)
+    assert "server_minted_value" not in out
+    assert "Set-Cookie: ***" in out
+
+
+def test_formatter_handles_nonstring_record_msg():
+    """record.msg may be an Exception or other non-str; _scrub must coerce."""
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    # logging.LogRecord accepts non-str msg; getMessage() returns str(msg) % args.
+    err = RuntimeError("token at=SECRET_TOK in repr")
+    rec = _record(err)  # msg is the Exception object
+    out = fmt.format(rec)
+    assert "SECRET_TOK" not in out
+    assert "at=***" in out
+
+
+def test_filter_scrubs_stack_info():
+    """stack_info from logger.<level>(..., stack_info=True) is scrubbed."""
+    filt = RedactingFilter()
+    rec = _record("hello")
+    rec.stack_info = (
+        "Stack (most recent call last):\n"
+        '  File "x.py", line 1, in <module>\n'
+        "    token at=SECRET_TOK leaked here\n"
+    )
+    filt.filter(rec)
+    assert "SECRET_TOK" not in rec.stack_info
+    assert "at=***" in rec.stack_info
+
+
+def test_formatter_clears_polluted_exc_text_on_record():
+    """Direct formatter usage without Filter: inner.format may set unscrubbed
+    record.exc_text as a side effect. RedactingFormatter re-scrubs it so a
+    subsequent handler cannot leak via record.exc_text."""
+    inner = logging.Formatter("%(message)s")
+    fmt = RedactingFormatter(inner)
+    rec = _record(
+        "direct call",
+        exc_info=raising_exc_info("traceback contains at=POLLUTED_TOK"),
+    )
+    # rec.exc_text is None initially.
+    assert rec.exc_text is None
+    fmt.format(rec)
+    # After format(), inner sets exc_text as a side effect. We must have
+    # re-scrubbed it.
+    assert rec.exc_text is not None
+    assert "POLLUTED_TOK" not in rec.exc_text
+    assert "at=***" in rec.exc_text
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +243,10 @@ def test_formatter_scrubs_exception_traceback():
 def test_filter_mutates_record_msg_in_place_and_preserves_exc_info():
     """v4 critical regression: exc_info is preserved (not nulled). exc_text scrubbed."""
     filt = RedactingFilter()
-    try:
-        raise ValueError("at=SECRET in traceback")
-    except ValueError:
-        import sys
-
-        rec = _record("scrub me: at=ALSO_SECRET", exc_info=sys.exc_info())
+    rec = _record(
+        "scrub me: at=ALSO_SECRET",
+        exc_info=raising_exc_info("at=SECRET in traceback"),
+    )
 
     assert filt.filter(rec) is True
 
@@ -237,14 +315,9 @@ def test_child_emission_scrubbed_via_parent_handler_mutation(saved_logger_state)
     handler = saved_logger_state.handlers[0]
     handler.stream = buf
 
-    try:
-        raise ValueError("at=SECRET_TOK detail")
-    except ValueError:
-        import sys
-
-        logging.getLogger("notebooklm._core").warning(
-            "child record: at=ALSO_SECRET", exc_info=sys.exc_info()
-        )
+    logging.getLogger("notebooklm._core").warning(
+        "child record: at=ALSO_SECRET", exc_info=raising_exc_info("at=SECRET_TOK detail")
+    )
 
     out = buf.getvalue()
     assert "SECRET_TOK" not in out
@@ -383,8 +456,6 @@ def test_configure_logging_honors_debug_rpc_env(saved_logger_state, monkeypatch)
 
 def test_apply_redaction_is_idempotent(saved_logger_state):
     """Calling apply_redaction twice does not double-wrap filter or formatter."""
-    from notebooklm._logging import apply_redaction
-
     h = logging.StreamHandler()
     h.setLevel(logging.NOTSET)
     apply_redaction(h)
@@ -422,12 +493,7 @@ def test_decorator_delegates_format_methods(saved_logger_state):
     assert fmt.formatTime(rec) == inner.formatTime(rec)
 
     # formatException delegates and scrubs
-    try:
-        raise ValueError("traceback with at=SECRET")
-    except ValueError:
-        import sys
-
-        ei = sys.exc_info()
+    ei = raising_exc_info("traceback with at=SECRET")
     rendered_exc = fmt.formatException(ei)
     assert "SECRET" not in rendered_exc
     assert "at=***" in rendered_exc

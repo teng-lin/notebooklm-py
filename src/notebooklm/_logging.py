@@ -30,31 +30,52 @@ __all__ = [
     "install_redaction",
 ]
 
-_REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    # CSRF / form-body auth tokens
+# Patterns are immutable. Adding a new pattern requires a unit test.
+# Order matters: longer / more-specific cookie names first within the cookie
+# group so `SID` doesn't shadow `SAPISID`. Patterns are applied in sequence.
+_REDACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # CSRF / form-body auth tokens (Google batchexecute)
     (re.compile(r"(\bat=)[^&\s\"'<>]+"), r"\1***"),
     # session-id query param
     (re.compile(r"(\bf\.sid=)[^&\s\"'<>]+"), r"\1***"),
-    # Google session cookies — preserve name, redact value
+    # OAuth-shaped credentials (refresh / access / authorization code)
     (
-        re.compile(r"(SAPISID|__Secure-1PSID|__Secure-3PSID|HSID|SSID|SID)=([^;\s,\"'<>]+)"),
+        re.compile(
+            r"(\b(?:refresh_token|access_token|id_token|code)=)[^&\s\"'<>]+",
+            re.IGNORECASE,
+        ),
+        r"\1***",
+    ),
+    # Google session cookies — preserve name, redact value. Longer/more-
+    # specific names first so SAPISID/SIDCC/SSID don't get partially shadowed
+    # by a bare-SID match.
+    (
+        re.compile(
+            r"(__Secure-1PSIDCC|__Secure-3PSIDCC|__Secure-1PSID|__Secure-3PSID"
+            r"|SAPISID|APISID|SIDCC|HSID|SSID|LSID|SID)=([^;\s,\"'<>]+)"
+        ),
         r"\1=***",
     ),
-    # Authorization: Bearer <token>
+    # Authorization: Bearer <token> (case-insensitive header name)
     (
         re.compile(r"(Authorization:\s*Bearer\s+)[^\s\"'<>]+", re.IGNORECASE),
         r"\1***",
     ),
-    # Cookie: <whole jar> header
+    # Cookie: <whole jar> (request header) and Set-Cookie: (response header)
     (re.compile(r"(Cookie:\s*)[^\r\n]+", re.IGNORECASE), r"\1***"),
-]
+    (re.compile(r"(Set-Cookie:\s*)[^\r\n]+", re.IGNORECASE), r"\1***"),
+)
 
 _HANDLER_MARKER = "_notebooklm_redacting"
 _DEFAULT_FMT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _DEFAULT_DATEFMT = "%H:%M:%S"
 
 
-def _scrub(text: str) -> str:
+def _scrub(text: object) -> str:
+    # Defensive: record.msg / stack_info can be non-string in unusual setups
+    # (Exception instance, custom __str__ object). Coerce before regex.
+    if not isinstance(text, str):
+        text = str(text)
     for pattern, replacement in _REDACT_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
@@ -68,6 +89,15 @@ def _has_redacting_filter(filters: Iterable[Any]) -> bool:
 
 def _has_marked_handler(handlers: list[logging.Handler]) -> bool:
     return any(getattr(h, _HANDLER_MARKER, False) for h in handlers)
+
+
+def _make_default_handler() -> logging.StreamHandler:
+    """Create a StreamHandler with the package's default format, wrapped for redaction."""
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.NOTSET)
+    handler.setFormatter(logging.Formatter(_DEFAULT_FMT, _DEFAULT_DATEFMT))
+    apply_redaction(handler)
+    return handler
 
 
 class RedactingFilter(logging.Filter):
@@ -101,6 +131,11 @@ class RedactingFilter(logging.Filter):
         elif record.exc_text:
             record.exc_text = _scrub(record.exc_text)
 
+        # stack_info from logger.<level>(..., stack_info=True) — rarely used
+        # but technically a leak vector.
+        if record.stack_info:
+            record.stack_info = _scrub(record.stack_info)
+
         return True
 
 
@@ -125,12 +160,21 @@ class RedactingFormatter(logging.Formatter):
         )
 
     def format(self, record: logging.LogRecord) -> str:
-        return _scrub(self._inner.format(record))
+        rendered = _scrub(self._inner.format(record))
+        # logging.Formatter.format() caches the rendered traceback on
+        # record.exc_text as a side effect when exc_info is set and exc_text
+        # was None. If we were called without the Filter pre-setting exc_text
+        # (direct formatter usage, test code, future code paths), inner.format
+        # may have just stored an UNSCRUBBED traceback on the record. Re-scrub
+        # so the record cannot leak via a subsequent handler.
+        if record.exc_text:
+            record.exc_text = _scrub(record.exc_text)
+        return rendered
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         return self._inner.formatTime(record, datefmt)
 
-    def formatException(self, ei) -> str:
+    def formatException(self, ei: logging._SysExcInfoType | tuple[None, None, None]) -> str:
         return _scrub(self._inner.formatException(ei))
 
     def formatStack(self, stack_info: str) -> str:
@@ -182,12 +226,7 @@ def configure_logging() -> None:
         if os.environ.get("NOTEBOOKLM_DEBUG_RPC", "").lower() in ("1", "true", "yes"):
             level_name = "DEBUG"
         logger.setLevel(getattr(logging, level_name, logging.WARNING))
-
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.NOTSET)
-        handler.setFormatter(logging.Formatter(_DEFAULT_FMT, _DEFAULT_DATEFMT))
-        apply_redaction(handler)
-        logger.addHandler(handler)
+        logger.addHandler(_make_default_handler())
 
     logger.propagate = True
 
@@ -212,8 +251,4 @@ def install_redaction(*logger_names: str) -> None:
         for h in ext_logger.handlers:
             apply_redaction(h)
         if not _has_marked_handler(ext_logger.handlers):
-            handler = logging.StreamHandler()
-            handler.setLevel(logging.NOTSET)
-            handler.setFormatter(logging.Formatter(_DEFAULT_FMT, _DEFAULT_DATEFMT))
-            apply_redaction(handler)
-            ext_logger.addHandler(handler)
+            ext_logger.addHandler(_make_default_handler())
