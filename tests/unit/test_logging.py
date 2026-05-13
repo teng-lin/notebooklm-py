@@ -483,7 +483,7 @@ def test_filter_rescrubs_existing_exc_text():
     assert "SAPISID=***" in rec.exc_text
 
 
-def test_decorator_delegates_format_methods(saved_logger_state):
+def test_decorator_delegates_format_methods():
     """formatTime/formatException/formatStack delegate to inner and scrub."""
     inner = logging.Formatter("%(message)s")
     fmt = RedactingFormatter(inner)

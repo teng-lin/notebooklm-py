@@ -57,7 +57,7 @@ The client is **not thread-safe**. Do not share a `NotebookLMClient` across thre
 
 #### Behavior under concurrent token refresh
 
-The current implementation does not snapshot auth state at the start of each RPC. If a token refresh completes while an RPC is in flight, the in-flight call may observe a mix of pre-refresh and post-refresh credentials between its URL build, body build, and HTTP send (`_core.py:461 → 512 → 515`). The typical visible symptom is a 401 that triggers a retry — which the client handles transparently.
+The current implementation does not snapshot auth state at the start of each RPC. If a token refresh completes while an RPC is in flight, the in-flight call may observe a mix of pre-refresh and post-refresh credentials between its URL build (`_build_url`), body build (`build_request_body`), and HTTP send (`_http_client.post`). The typical visible symptom is a 401 that triggers a retry — which the client handles transparently.
 
 A consistent `(csrf_token, session_id, cookies)` snapshot per `rpc_call` is planned for a later phase of the remediation work; the snapshot will eliminate the mixed-credential window. Until then, treat the auth-refresh path as best-effort: concurrent RPCs across a refresh boundary may individually fail and retry, but state will not become silently corrupted.
 
