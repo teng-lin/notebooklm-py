@@ -1245,6 +1245,14 @@ def register_session_commands(cli):
                             "Try again with: notebooklm login"
                         )
                         raise SystemExit(1) from None
+                    except PlaywrightError as exc:
+                        # Browser/tab closed during the wait. Cannot resume a
+                        # partially completed SSO form, so surface the same
+                        # help text other browser-closed paths use.
+                        if TARGET_CLOSED_ERROR in str(exc):
+                            console.print(BROWSER_CLOSED_HELP)
+                            raise SystemExit(1) from exc
+                        raise
                     console.print("[green]Login detected.[/green]")
 
                 # Force .google.com cookies for regional users (e.g. UK lands on
@@ -1270,6 +1278,20 @@ def register_session_commands(cli):
                                     raise
                         elif not _is_navigation_interrupted_error(error_str):
                             raise
+
+                # Defense-in-depth: wait_for_url proved we reached the host,
+                # but the cookie-forcing round-trip above can land us back on
+                # accounts.google.com if the session was invalidated mid-flow
+                # (rare, but the old interactive path defended against this
+                # via a "save anyway?" confirm). Auto-detect is non-interactive,
+                # so fail fast with a clear next step instead.
+                if not _url_matches_base_host(page.url):
+                    console.print(
+                        f"[red]Unexpected URL after login: {page.url}[/red]\n"
+                        "Authentication may be incomplete. "
+                        "Try: notebooklm login --fresh"
+                    )
+                    raise SystemExit(1)
 
                 context.storage_state(path=str(storage_path))
                 from ..auth import clear_account_metadata

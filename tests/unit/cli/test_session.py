@@ -375,6 +375,48 @@ class TestLoginCommand:
         assert result.exit_code == 1
         assert "Login not detected within 5 minutes" in result.output
 
+    def test_login_auto_detect_browser_closed_during_wait_shows_help(
+        self, runner, mock_login_browser_with_storage
+    ):
+        """When the browser is closed during wait_for_url, login surfaces BROWSER_CLOSED_HELP."""
+        from playwright.sync_api import Error as PlaywrightError
+
+        mock_page = mock_login_browser_with_storage
+        mock_page.url = "https://accounts.google.com/signin"
+        mock_page.wait_for_url.side_effect = PlaywrightError(
+            "Target page, context or browser has been closed"
+        )
+
+        result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 1
+        assert "browser window was closed" in result.output.lower()
+
+    def test_login_auto_detect_final_url_drift_fails_safely(
+        self, runner, mock_login_browser_with_storage
+    ):
+        """If the cookie-forcing round-trip leaves us off-host, fail without saving auth."""
+        mock_page = mock_login_browser_with_storage
+        # Start unauthenticated; wait_for_url succeeds; final cookie-forcing
+        # goto bounces back to accounts.google.com (session invalidated mid-flow).
+        mock_page.url = "https://accounts.google.com/signin"
+
+        def wait_succeeds(url, **kwargs):
+            mock_page.url = "https://notebooklm.google.com/"
+
+        def goto_drifts(url, **kwargs):
+            if "notebooklm" in url:
+                mock_page.url = "https://accounts.google.com/AccountChooser"
+
+        mock_page.wait_for_url.side_effect = wait_succeeds
+        mock_page.goto.side_effect = goto_drifts
+
+        result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 1
+        assert "Unexpected URL after login" in result.output
+        assert "Authentication saved" not in result.output
+
     def test_login_retries_on_connection_closed_error(
         self, runner, mock_login_browser_with_storage
     ):
