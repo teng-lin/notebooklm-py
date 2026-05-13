@@ -215,9 +215,9 @@ class TestSourceListingAndSelection:
         """Verify the test notebook has at least 3 sources."""
         sources = await client.sources.list(multi_source_notebook_id)
 
-        assert (
-            len(sources) >= 3
-        ), f"Expected at least 3 sources for multi-source tests, got {len(sources)}"
+        assert len(sources) >= 3, (
+            f"Expected at least 3 sources for multi-source tests, got {len(sources)}"
+        )
 
         # Verify each source has an ID
         for source in sources:

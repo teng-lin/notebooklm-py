@@ -127,8 +127,8 @@ class TestResearchImportVerification:
         valid_sources = [s for s in sources_mixed if s.get("url")]
 
         # Should only have 1 valid source
-        assert (
-            len(valid_sources) == 1
-        ), f"Expected 1 valid source after filtering, got {len(valid_sources)}"
+        assert len(valid_sources) == 1, (
+            f"Expected 1 valid source after filtering, got {len(valid_sources)}"
+        )
         assert valid_sources[0]["url"] == "https://example.com/valid"
         assert valid_sources[0]["title"] == "Valid Source"

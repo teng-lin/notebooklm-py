@@ -187,9 +187,9 @@ class TestStaleOverwriteFreshRace:
         jar_b.set("__Secure-1PSIDTS", "NEW", domain=".google.com", path="/")
         save_cookies_to_storage(jar_b, storage, original_snapshot=snapshot_b)
 
-        assert (
-            _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == "NEW"
-        ), "Process B's rotation should land on disk before A closes"
+        assert _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == "NEW", (
+            "Process B's rotation should land on disk before A closes"
+        )
 
         # Process A closes: jar still holds OLD (it never rotated). Without
         # the fix, this save would write OLD over NEW. With the fix, A's
@@ -890,9 +890,9 @@ class TestRefreshCmdResnapshot:
         # values and the resulting delta would mass-rewrite disk.
         key = CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
         assert key in snapshot, "snapshot must include the post-refresh PSIDTS key"
-        assert (
-            snapshot[key].value == "post_refresh"
-        ), f"snapshot must reflect the post-refresh jar state, got {snapshot[key].value!r}"
+        assert snapshot[key].value == "post_refresh", (
+            f"snapshot must reflect the post-refresh jar state, got {snapshot[key].value!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_auth_tokens_from_storage_re_snapshots_after_refresh(self, tmp_path, monkeypatch):
@@ -963,9 +963,9 @@ class TestNoneValuedCookieIsTreatedAsDeletion:
 
         # Disk must not carry any ``"value": null`` row.
         for stored in _read_cookies(storage):
-            assert (
-                stored.get("value") is not None
-            ), f"None-valued cookie must never be persisted as value:null, got: {stored}"
+            assert stored.get("value") is not None, (
+                f"None-valued cookie must never be persisted as value:null, got: {stored}"
+            )
 
     def test_none_value_cookie_treated_as_deletion_under_cas(self, tmp_path):
         """Coalescing None → missing means the key becomes a deletion
@@ -1182,9 +1182,9 @@ class TestSchemaRejectReturnsFalse:
             result = save_cookies_to_storage(jar, storage, original_snapshot=snapshot)
 
         assert result is False, "schema-reject must surface as False to gate baseline advance"
-        assert any(
-            "'cookies' key" in r.message for r in caplog.records
-        ), "schema-reject must emit a WARNING describing the cause"
+        assert any("'cookies' key" in r.message for r in caplog.records), (
+            "schema-reject must emit a WARNING describing the cause"
+        )
 
 
 class TestNoTempFileLeakOnWriteFailure:
@@ -1216,9 +1216,9 @@ class TestNoTempFileLeakOnWriteFailure:
         save_cookies_to_storage(jar, storage, original_snapshot=snapshot)
 
         leftover = list(tmp_path.glob(".storage_state.json.*.tmp"))
-        assert (
-            leftover == []
-        ), f"temp file must be cleaned up when write fails; found leftovers: {leftover}"
+        assert leftover == [], (
+            f"temp file must be cleaned up when write fails; found leftovers: {leftover}"
+        )
 
 
 class TestCASRejectReturnsFalse:

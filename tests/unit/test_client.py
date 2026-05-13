@@ -747,9 +747,9 @@ class TestRpcCallAutoRetry:
 
         # With shared task pattern, refresh should be called exactly once
         # (second caller waits on the same task instead of starting a new refresh)
-        assert (
-            refresh_count[0] == 1
-        ), f"Refresh should be called exactly once, got {refresh_count[0]}"
+        assert refresh_count[0] == 1, (
+            f"Refresh should be called exactly once, got {refresh_count[0]}"
+        )
 
     @pytest.mark.asyncio
     async def test_400_triggers_auth_refresh(self):

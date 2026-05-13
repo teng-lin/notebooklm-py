@@ -282,9 +282,9 @@ class TestChatReferencesE2E:
 
         # All reference source IDs should exist in the notebook
         for ref in result.references:
-            assert (
-                ref.source_id in source_ids
-            ), f"Reference source_id {ref.source_id} not found in notebook sources"
+            assert ref.source_id in source_ids, (
+                f"Reference source_id {ref.source_id} not found in notebook sources"
+            )
 
     @pytest.mark.asyncio
     async def test_cited_text_matches_source_content(self, client, multi_source_notebook_id):

@@ -68,9 +68,9 @@ class TestExceptionHierarchy:
             ArtifactDownloadError,
         ]
         for exc_class in exceptions:
-            assert issubclass(
-                exc_class, NotebookLMError
-            ), f"{exc_class.__name__} should inherit from NotebookLMError"
+            assert issubclass(exc_class, NotebookLMError), (
+                f"{exc_class.__name__} should inherit from NotebookLMError"
+            )
 
     def test_network_error_not_under_rpc(self):
         """NetworkError is NOT under RPCError (by design)."""

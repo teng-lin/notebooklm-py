@@ -91,15 +91,15 @@ class TestPlaywrightEventLoopFix:
         with _windows_playwright_event_loop():
             inside_policy = asyncio.get_event_loop_policy()
             # Inside the context, should be default (ProactorEventLoop) policy
-            assert not isinstance(
-                inside_policy, asyncio.WindowsSelectorEventLoopPolicy
-            ), "Context manager should switch to default policy for Playwright"
+            assert not isinstance(inside_policy, asyncio.WindowsSelectorEventLoopPolicy), (
+                "Context manager should switch to default policy for Playwright"
+            )
 
         # After exit, should restore original policy
         restored_policy = asyncio.get_event_loop_policy()
-        assert isinstance(
-            restored_policy, asyncio.WindowsSelectorEventLoopPolicy
-        ), "Context manager should restore WindowsSelectorEventLoopPolicy after Playwright"
+        assert isinstance(restored_policy, asyncio.WindowsSelectorEventLoopPolicy), (
+            "Context manager should restore WindowsSelectorEventLoopPolicy after Playwright"
+        )
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only test")
     def test_context_manager_restores_on_exception(self):
@@ -112,9 +112,9 @@ class TestPlaywrightEventLoopFix:
 
         # Policy should be restored despite exception
         restored_policy = asyncio.get_event_loop_policy()
-        assert isinstance(
-            restored_policy, asyncio.WindowsSelectorEventLoopPolicy
-        ), "Context manager should restore policy even on exception"
+        assert isinstance(restored_policy, asyncio.WindowsSelectorEventLoopPolicy), (
+            "Context manager should restore policy even on exception"
+        )
 
 
 class TestWindowsEventLoopPolicy:

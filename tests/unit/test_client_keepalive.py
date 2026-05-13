@@ -177,9 +177,9 @@ class TestKeepalivePokes:
             await asyncio.sleep(0.5)
 
         poke_requests = [r for r in httpx_mock.get_requests() if "RotateCookies" in str(r.url)]
-        assert (
-            len(poke_requests) >= 2
-        ), f"Expected at least 2 keepalive pokes, got {len(poke_requests)}"
+        assert len(poke_requests) >= 2, (
+            f"Expected at least 2 keepalive pokes, got {len(poke_requests)}"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
@@ -219,9 +219,9 @@ class TestKeepalivePokes:
 
         poke_requests = [r for r in httpx_mock.get_requests() if "RotateCookies" in str(r.url)]
         # First call raised; at least one further successful call must follow.
-        assert (
-            len(poke_requests) >= 2
-        ), f"Loop should have retried after failure; got {len(poke_requests)} pokes"
+        assert len(poke_requests) >= 2, (
+            f"Loop should have retried after failure; got {len(poke_requests)} pokes"
+        )
 
 
 class TestKeepalivePersistenceFailure:
@@ -604,12 +604,12 @@ class TestCrossProcessFileLock:
 
         save_cookies_to_storage(jar, storage_path, original_snapshot=empty_snapshot)
 
-        assert (
-            fcntl.LOCK_EX in flock_calls
-        ), f"Expected an LOCK_EX call before the save, got: {flock_calls}"
-        assert (
-            fcntl.LOCK_UN in flock_calls
-        ), f"Expected an LOCK_UN call after the save, got: {flock_calls}"
+        assert fcntl.LOCK_EX in flock_calls, (
+            f"Expected an LOCK_EX call before the save, got: {flock_calls}"
+        )
+        assert fcntl.LOCK_UN in flock_calls, (
+            f"Expected an LOCK_UN call after the save, got: {flock_calls}"
+        )
 
     def test_save_cookies_to_storage_creates_lock_sentinel(self, tmp_path):
         """The lock file is a sibling of the storage file with a `.lock` suffix

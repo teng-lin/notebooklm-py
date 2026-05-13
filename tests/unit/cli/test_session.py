@@ -1656,14 +1656,14 @@ class TestLoginWindowsPermissions:
 
         # mkdir should NOT receive mode= on Windows
         for call in mkdir_calls:
-            assert (
-                "mode" not in call["kwargs"]
-            ), f"mkdir received mode= on Windows for {call['path']}"
+            assert "mode" not in call["kwargs"], (
+                f"mkdir received mode= on Windows for {call['path']}"
+            )
 
         # chmod should NOT be called on Windows
-        assert (
-            len(chmod_calls) == 0
-        ), f"chmod called {len(chmod_calls)} time(s) on Windows: {chmod_calls}"
+        assert len(chmod_calls) == 0, (
+            f"chmod called {len(chmod_calls)} time(s) on Windows: {chmod_calls}"
+        )
 
     def test_unix_login_sets_mode_and_chmod(self, monkeypatch, _patch_login_deps, runner):
         """On Unix, login mkdir calls include mode=0o700 and chmod is called."""
@@ -1691,9 +1691,9 @@ class TestLoginWindowsPermissions:
 
         # mkdir should receive mode=0o700 on Unix (2 calls: storage_parent + browser_profile)
         mode_calls = [c for c in mkdir_calls if c["kwargs"].get("mode") == 0o700]
-        assert (
-            len(mode_calls) >= 2
-        ), f"Expected ≥2 mkdir calls with mode=0o700 on Unix, got {len(mode_calls)}"
+        assert len(mode_calls) >= 2, (
+            f"Expected ≥2 mkdir calls with mode=0o700 on Unix, got {len(mode_calls)}"
+        )
 
         # chmod(0o700) should be called on Unix (2 calls: storage_parent + browser_profile)
         chmod_700 = [c for c in chmod_calls if c["args"] == (0o700,)]
@@ -1711,9 +1711,9 @@ class TestLoginWindowsPermissions:
 
         source = inspect.getsource(session_mod)
         # The pattern: if sys.platform != "win32": ... storage_path.chmod(0o600)
-        assert (
-            'sys.platform != "win32"' in source or "sys.platform != 'win32'" in source
-        ), "Missing Windows guard for storage_state.json chmod(0o600)"
+        assert 'sys.platform != "win32"' in source or "sys.platform != 'win32'" in source, (
+            "Missing Windows guard for storage_state.json chmod(0o600)"
+        )
 
 
 class TestLoginBrowserCookies:
@@ -2057,8 +2057,7 @@ class TestLoginBrowserCookies:
             patch(
                 "notebooklm._firefox_containers.resolve_container_id",
                 side_effect=ValueError(
-                    "Firefox container 'Nope' not found. "
-                    "Available containers: 'Work', 'Personal'."
+                    "Firefox container 'Nope' not found. Available containers: 'Work', 'Personal'."
                 ),
             ),
             patch(

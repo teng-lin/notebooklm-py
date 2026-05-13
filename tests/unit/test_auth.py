@@ -2272,9 +2272,9 @@ class TestExtractCookiesRegionalDomains:
             results.add(cookies["SID"])
 
         # All permutations should produce the same result: .google.com wins
-        assert results == {
-            "sid_base"
-        }, f"Extraction should be deterministic, but got different results: {results}"
+        assert results == {"sid_base"}, (
+            f"Extraction should be deterministic, but got different results: {results}"
+        )
 
     def test_regional_only_uses_first_encountered(self):
         """Test behavior when only regional domains exist (no .google.com).
@@ -3011,9 +3011,9 @@ class TestPokeConcurrencyThrottling:
             await auth_module._poke_session(client, storage_path)
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert (
-            poke_requests == []
-        ), "expected no RotateCookies POST when another process holds the rotation lock"
+        assert poke_requests == [], (
+            "expected no RotateCookies POST when another process holds the rotation lock"
+        )
 
     def test_rotation_lock_path_is_sibling_of_storage(self, tmp_path):
         """Lock sentinel sits next to the storage file with a ``.rotate.lock`` suffix."""
@@ -3074,9 +3074,9 @@ class TestPokeConcurrencyThrottling:
             await auth_module._rotate_cookies(client)
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert (
-            poke_requests == []
-        ), "_rotate_cookies must short-circuit when NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1"
+        assert poke_requests == [], (
+            "_rotate_cookies must short-circuit when NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
@@ -3135,9 +3135,9 @@ class TestPokeConcurrencyThrottling:
             await auth_module._poke_session(client, profile_b)
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert (
-            len(poke_requests) == 2
-        ), f"each profile must rotate independently; got {len(poke_requests)} POSTs"
+        assert len(poke_requests) == 2, (
+            f"each profile must rotate independently; got {len(poke_requests)} POSTs"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
@@ -3181,9 +3181,9 @@ class TestPokeConcurrencyThrottling:
             # (uncontended because L2 didn't take it) and reads the per-profile
             # timestamp. Claimed early, this short-circuits without a 2nd POST.
             await auth_module._poke_session(client, storage_path)
-            assert (
-                post_calls == 1
-            ), f"L1 fired during L2's in-flight POST; early-stamp broken (post_calls={post_calls})"
+            assert post_calls == 1, (
+                f"L1 fired during L2's in-flight POST; early-stamp broken (post_calls={post_calls})"
+            )
             gate.set()
             await task_l2
 
@@ -3245,9 +3245,9 @@ class TestPokeConcurrencyThrottling:
             await auth_module._poke_session(client, storage_path)
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert (
-            len(poke_requests) == 1
-        ), f"infra failure must fail open and let rotation proceed; got {len(poke_requests)} POSTs"
+        assert len(poke_requests) == 1, (
+            f"infra failure must fail open and let rotation proceed; got {len(poke_requests)} POSTs"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
@@ -3277,9 +3277,9 @@ class TestPokeConcurrencyThrottling:
             await auth_module._poke_session(client, storage_path)
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert (
-            len(poke_requests) == 1
-        ), f"second poke should skip via monotonic timestamp; got {len(poke_requests)} POSTs"
+        assert len(poke_requests) == 1, (
+            f"second poke should skip via monotonic timestamp; got {len(poke_requests)} POSTs"
+        )
 
 
 class TestKeepalivePoke:
@@ -3297,9 +3297,9 @@ class TestKeepalivePoke:
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
         all_urls = [str(r.url) for r in httpx_mock.get_requests()]
-        assert (
-            len(poke_requests) == 1
-        ), f"expected exactly one RotateCookies request, got: {all_urls}"
+        assert len(poke_requests) == 1, (
+            f"expected exactly one RotateCookies request, got: {all_urls}"
+        )
         assert str(poke_requests[0].url) == KEEPALIVE_ROTATE_URL
         assert poke_requests[0].method == "POST"
 
@@ -3364,9 +3364,9 @@ class TestKeepalivePoke:
         await fetch_tokens_with_domains(path=storage_path)
 
         poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert (
-            poke_requests == []
-        ), "rate-limit guard should skip RotateCookies when storage_state.json is fresh"
+        assert poke_requests == [], (
+            "rate-limit guard should skip RotateCookies when storage_state.json is fresh"
+        )
 
     @pytest.mark.asyncio
     async def test_poke_fires_when_storage_older_than_window(self, tmp_path, httpx_mock: HTTPXMock):
@@ -3462,9 +3462,9 @@ class TestKeepalivePoke:
 
         rewritten = json.loads(storage_path.read_text())
         sidts_values = [c["value"] for c in rewritten["cookies"] if c["name"] == "__Secure-1PSIDTS"]
-        assert sidts_values == [
-            "ROTATED"
-        ], f"expected rotated SIDTS persisted to disk, got: {sidts_values}"
+        assert sidts_values == ["ROTATED"], (
+            f"expected rotated SIDTS persisted to disk, got: {sidts_values}"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
