@@ -112,6 +112,10 @@ src/notebooklm/
    uv run pre-commit install
    ```
 
+   The `browser` extra is required for the default `uv run pytest` suite because
+   several unit tests import and patch `playwright.sync_api`. The command
+   `uv sync --frozen --extra dev` installs the test tools, but not Playwright.
+
    CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job.
 
 2. **Authenticate:**

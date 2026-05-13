@@ -30,6 +30,11 @@ pre-commit install
 
 For full prerequisites, headless setup, optional extras (`[cookies]`, `[markdown]`), and platform notes, see [docs/installation.md#e-contributor](docs/installation.md#e-contributor).
 
+The `browser` extra is part of the contributor install because the default unit
+suite imports and patches `playwright.sync_api`. The command
+`uv sync --frozen --extra dev` is only the test/lint toolchain; it is not enough
+for `uv run pytest`.
+
 ### Code Quality
 
 This project uses **ruff** for linting and formatting:
