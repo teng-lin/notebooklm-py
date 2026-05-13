@@ -12,6 +12,9 @@ on:
           - testpypi
           - pypi
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Verify from ${{ inputs.source }}

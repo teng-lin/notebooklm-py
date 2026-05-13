@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -68,6 +69,30 @@ _MEDIA_ARTIFACT_TYPES = frozenset(
 
 if TYPE_CHECKING:
     from ._notes import NotesAPI
+
+
+@dataclass(frozen=False)
+class DownloadResult:
+    """Outcome of a multi-URL download batch.
+
+    Replaces the v0 silent-partial-failure behavior where `_download_urls_batch`
+    returned only successful paths. Callers can now distinguish "all succeeded"
+    from "partial" via the properties below.
+
+    `succeeded`: paths that downloaded cleanly (matches existing list[str] shape).
+    `failed`: (url, exception) tuples for transient httpx / ValueError failures.
+    """
+
+    succeeded: list[str] = field(default_factory=list)
+    failed: list[tuple[str, Exception]] = field(default_factory=list)
+
+    @property
+    def all_succeeded(self) -> bool:
+        return not self.failed
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.succeeded) and bool(self.failed)
 
 
 def _extract_app_data(html_content: str) -> dict:
@@ -2109,16 +2134,20 @@ class ArtifactsAPI:
 
     async def _download_urls_batch(
         self, urls_and_paths: builtins.list[tuple[str, str]]
-    ) -> builtins.list[str]:
+    ) -> "DownloadResult":
         """Download multiple files using httpx with proper cookie handling.
 
         Args:
             urls_and_paths: List of (url, output_path) tuples.
 
         Returns:
-            List of successfully downloaded output paths.
+            DownloadResult with succeeded (paths) and failed ((url, exception)
+            tuples) lists. Transient httpx/ValueError failures land in `failed`
+            so the caller can act on partial success; ArtifactDownloadError
+            (auth / untrusted-domain / HTML response) still propagates and
+            aborts the batch — those are security signals, not transient.
         """
-        downloaded: list[str] = []
+        result = DownloadResult()
 
         # Load cookies with domain info for cross-domain redirect handling
         cookies = load_httpx_cookies(path=self._storage_path)
@@ -2145,6 +2174,16 @@ class ArtifactsAPI:
                         )
 
                     response = await client.get(url)
+                    if response.status_code in (401, 403):
+                        # Auth-shaped failures are security signals, not
+                        # transient. Surface them so callers re-auth.
+                        raise ArtifactDownloadError(
+                            "media",
+                            details=(
+                                f"Authentication failed (HTTP {response.status_code}) "
+                                f"on {parsed.netloc}{parsed.path}"
+                            ),
+                        )
                     response.raise_for_status()
 
                     content_type = response.headers.get("content-type", "")
@@ -2156,13 +2195,27 @@ class ArtifactsAPI:
                     output_file = Path(output_path)
                     output_file.parent.mkdir(parents=True, exist_ok=True)
                     output_file.write_bytes(response.content)
-                    downloaded.append(output_path)
-                    logger.debug("Downloaded %s (%d bytes)", url[:60], len(response.content))
+                    result.succeeded.append(output_path)
+                    # Log host+path only; download URLs may carry capability
+                    # tokens in query params that aren't covered by the
+                    # standard redaction patterns.
+                    logger.debug(
+                        "Downloaded %s%s (%d bytes)",
+                        parsed.netloc,
+                        parsed.path,
+                        len(response.content),
+                    )
 
                 except (httpx.HTTPError, ValueError) as e:
-                    logger.warning("Download failed for %s: %s", url[:60], e)
+                    logger.warning(
+                        "Download failed for %s%s: %s",
+                        parsed.netloc,
+                        parsed.path,
+                        e,
+                    )
+                    result.failed.append((url, e))
 
-        return downloaded
+        return result
 
     async def _download_url(self, url: str, output_path: str) -> str:
         """Download a file from URL using streaming with proper cookie handling.

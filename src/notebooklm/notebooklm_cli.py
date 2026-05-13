@@ -52,6 +52,7 @@ def _reconfigure_output_stream(stream) -> None:
     try:
         reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError, TypeError, ValueError):
+        # best-effort: stdout.reconfigure unavailable on this platform.
         pass
 
 

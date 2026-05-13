@@ -19,7 +19,9 @@ from __future__ import annotations
 import logging
 import os
 import re
+import uuid
 from collections.abc import Iterable
+from contextvars import ContextVar, Token
 from typing import Any
 
 __all__ = [
@@ -27,8 +29,41 @@ __all__ = [
     "RedactingFormatter",
     "apply_redaction",
     "configure_logging",
+    "get_request_id",
     "install_redaction",
+    "reset_request_id",
+    "set_request_id",
 ]
+
+
+# Per-asyncio-Task correlation id. Set by rpc_call() (and any other entry
+# point that wants its records tagged); read by RedactingFilter when each
+# record is processed.
+_current_request_id: ContextVar[str | None] = ContextVar("notebooklm_request_id", default=None)
+
+
+def set_request_id(req_id: str | None = None) -> Token[str | None]:
+    """Set the correlation id for this Task / context. Returns a token.
+
+    Callers MUST pass the token to ``reset_request_id`` in a ``finally``
+    block — otherwise the id leaks into later same-Task logs.
+
+    Pass ``req_id=None`` to generate a fresh 8-char hex id.
+    """
+    if req_id is None:
+        req_id = uuid.uuid4().hex[:8]
+    return _current_request_id.set(req_id)
+
+
+def reset_request_id(token: Token[str | None]) -> None:
+    """Restore the correlation id to its previous value."""
+    _current_request_id.reset(token)
+
+
+def get_request_id() -> str | None:
+    """Return the current correlation id, or None if unset."""
+    return _current_request_id.get()
+
 
 # Patterns are immutable. Adding a new pattern requires a unit test.
 # Order matters: longer / more-specific cookie names first within the cookie
@@ -135,6 +170,15 @@ class RedactingFilter(logging.Filter):
         # but technically a leak vector.
         if record.stack_info:
             record.stack_info = _scrub(record.stack_info)
+
+        # Correlation prefix. AFTER scrub so an 8-hex id can never be
+        # accidentally scrubbed by a future pattern. Marker attribute
+        # prevents double-prefix when a record is processed by multiple
+        # handlers each with this filter.
+        req_id = _current_request_id.get()
+        if req_id and not getattr(record, "_notebooklm_reqid_applied", False):
+            record.msg = f"[req={req_id}] {record.msg}"
+            record._notebooklm_reqid_applied = True
 
         return True
 

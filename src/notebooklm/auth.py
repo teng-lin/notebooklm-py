@@ -1135,7 +1135,8 @@ def write_account_metadata(storage_path: Path, *, authuser: int, email: str | No
             existing = json.loads(context_path.read_text(encoding="utf-8"))
             if isinstance(existing, dict):
                 data = existing
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as e:
+            logger.debug("Account context unreadable; using empty dict: %s", e)
             data = {}
 
     payload: dict[str, Any] = {"authuser": authuser}

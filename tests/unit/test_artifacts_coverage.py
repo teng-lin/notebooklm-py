@@ -66,9 +66,11 @@ class TestDownloadUrlsBatch:
 
             result = await api._download_urls_batch(urls_and_paths)
 
-        assert len(result) == 2
-        assert str(tmp_path / "file1.mp4") in result
-        assert str(tmp_path / "file2.mp4") in result
+        assert result.all_succeeded
+        assert len(result.succeeded) == 2
+        assert str(tmp_path / "file1.mp4") in result.succeeded
+        assert str(tmp_path / "file2.mp4") in result.succeeded
+        assert result.failed == []
 
     @pytest.mark.asyncio
     async def test_batch_download_html_response_rejected(self, mock_artifacts_api, tmp_path):
@@ -126,9 +128,14 @@ class TestDownloadUrlsBatch:
 
             result = await api._download_urls_batch(urls_and_paths)
 
-        # Only first file should succeed
-        assert len(result) == 1
-        assert str(tmp_path / "file1.mp4") in result
+        # Only first file should succeed; second is recorded in failed.
+        assert not result.all_succeeded
+        assert result.partial
+        assert result.succeeded == [str(tmp_path / "file1.mp4")]
+        assert len(result.failed) == 1
+        failed_url, failed_exc = result.failed[0]
+        assert failed_url == "https://storage.googleapis.com/file2.mp4"
+        assert isinstance(failed_exc, httpx.HTTPError)
 
 
 # =============================================================================

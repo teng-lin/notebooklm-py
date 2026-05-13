@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 import httpx
 
 from ._env import get_default_language
+from ._logging import reset_request_id, set_request_id
 from .auth import (
     AuthTokens,
     CookieSaveResult,
@@ -504,6 +505,29 @@ class ClientCore:
         if not self._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
+        # Only the outer rpc_call mints a request id; the recursive retry path
+        # (_is_retry=True) inherits the parent's id so a single failure→refresh
+        # →retry sequence appears under one [req=<id>] in the logs.
+        if _is_retry:
+            return await self._rpc_call_impl(method, params, source_path, allow_null, _is_retry)
+
+        _reqid_token = set_request_id()
+        try:
+            return await self._rpc_call_impl(method, params, source_path, allow_null, _is_retry)
+        finally:
+            reset_request_id(_reqid_token)
+
+    async def _rpc_call_impl(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str,
+        allow_null: bool,
+        _is_retry: bool,
+    ) -> Any:
+        # Caller (rpc_call) has already verified self._http_client is not None;
+        # re-assert for mypy narrowing through this helper.
+        assert self._http_client is not None
         start = time.perf_counter()
         logger.debug("RPC %s starting", method.name)
 
@@ -543,7 +567,10 @@ class ClientCore:
                         try:
                             retry_after = int(retry_after_header)
                         except ValueError:
-                            pass
+                            logger.debug(
+                                "Retry-After header not an integer: %r",
+                                retry_after_header,
+                            )
                     msg = f"API rate limit exceeded calling {method.name}"
                     if retry_after:
                         msg += f". Retry after {retry_after} seconds"
@@ -802,19 +829,47 @@ class ClientCore:
         if not notebook_data or not isinstance(notebook_data, list):
             return source_ids
 
+        # Schema-drift detection points: log WARNING at each isinstance/len
+        # guard that fails on a non-empty response (real drift surfaces here,
+        # not at the safety-net except below).
         try:
-            if len(notebook_data) > 0 and isinstance(notebook_data[0], list):
-                notebook_info = notebook_data[0]
-                if len(notebook_info) > 1 and isinstance(notebook_info[1], list):
-                    sources = notebook_info[1]
-                    for source in sources:
-                        if isinstance(source, list) and len(source) > 0:
-                            first = source[0]
-                            if isinstance(first, list) and len(first) > 0:
-                                sid = first[0]
-                                if isinstance(sid, str):
-                                    source_ids.append(sid)
-        except (IndexError, TypeError):
-            pass
+            if not isinstance(notebook_data[0], list):
+                # notebook_data is already known to be a non-empty list here
+                # (guarded by `if not notebook_data` above).
+                logger.warning(
+                    "get_source_ids: notebook_data[0] shape unexpected for %s "
+                    "(schema drift?). top-type=%s",
+                    notebook_id,
+                    type(notebook_data[0]).__name__,
+                )
+                return source_ids
+
+            notebook_info = notebook_data[0]
+            if not (len(notebook_info) > 1 and isinstance(notebook_info[1], list)):
+                logger.warning(
+                    "get_source_ids: notebook_info[1] not list for %s (schema drift?). len=%d",
+                    notebook_id,
+                    len(notebook_info),
+                )
+                return source_ids
+
+            sources = notebook_info[1]
+            for source in sources:
+                if not (isinstance(source, list) and source):
+                    continue
+                first = source[0]
+                if not (isinstance(first, list) and first):
+                    continue
+                sid = first[0]
+                if isinstance(sid, str):
+                    source_ids.append(sid)
+        except (IndexError, TypeError) as e:
+            # Defense-in-depth: guards above should make this unreachable.
+            logger.warning(
+                "get_source_ids: unexpected exception despite guards for %s: %s",
+                notebook_id,
+                e,
+                exc_info=True,
+            )
 
         return source_ids

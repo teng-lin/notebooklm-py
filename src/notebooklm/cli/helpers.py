@@ -553,6 +553,7 @@ def set_current_notebook(
             if isinstance(existing, dict) and isinstance(existing.get("account"), dict):
                 data["account"] = existing["account"]
         except (json.JSONDecodeError, OSError):
+            # best-effort: existing config unreadable; rewrite from scratch.
             pass
 
     data["notebook_id"] = notebook_id

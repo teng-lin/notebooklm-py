@@ -216,8 +216,15 @@ class NotebooksAPI:
             if result and isinstance(result, list):
                 summary = result[0][0][0]
                 return str(summary) if summary else ""
-        except (IndexError, TypeError):
-            pass
+        except (IndexError, TypeError) as e:
+            # result[0][0][0] is unguarded — except IS reachable when the
+            # summary payload shape drifts.
+            logger.warning(
+                "Summary extraction failed for notebook %s (schema drift?): %s",
+                notebook_id,
+                e,
+                exc_info=True,
+            )
         return ""
 
     async def get_description(self, notebook_id: str) -> NotebookDescription:
@@ -270,9 +277,13 @@ class NotebooksAPI:
                                     prompt=str(topic[1]) if topic[1] else "",
                                 )
                             )
-            except (IndexError, TypeError):
+            except (IndexError, TypeError) as e:
                 # A partial result (e.g. summary but no topics) is possible.
-                pass
+                logger.debug(
+                    "Partial description for notebook %s (no topics?): %s",
+                    notebook_id,
+                    e,
+                )
 
         return NotebookDescription(summary=summary, suggested_topics=suggested_topics)
 

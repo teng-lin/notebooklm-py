@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Code Quality
@@ -33,6 +36,12 @@ jobs:
 
     - name: Run type checking
       run: mypy src/notebooklm --ignore-missing-imports
+
+    - name: Assert workflow permissions are scoped (Phase 1 T4)
+      run: python scripts/check_workflow_permissions.py
+
+    - name: Assert coverage thresholds match (Phase 1 T5)
+      run: python scripts/check_coverage_thresholds.py
 
     - name: Verify e2e test fixtures
       run: pytest tests/e2e --collect-only -q

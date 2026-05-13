@@ -131,6 +131,7 @@ def find_firefox_profile_path() -> Path | None:
         try:
             parser.read(profiles_ini, encoding="utf-8")
         except (OSError, configparser.Error):
+            # best-effort: profiles.ini unreadable for this candidate; try next.
             continue
 
         # 1. Modern: any [Install...] section names a default profile path.
@@ -361,6 +362,7 @@ def _row_to_rookiepy_dict(row: tuple[Any, ...], *, expiry_in_ms: bool) -> dict[s
         try:
             expiry = expiry // 1000
         except TypeError:
+            # best-effort: cookie expiry is non-numeric; leave as-is.
             pass
     return {
         "domain": host or "",

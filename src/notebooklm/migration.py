@@ -130,8 +130,8 @@ def _set_default_profile_in_config() -> None:
     if config_path.exists():
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("Migration config unparseable; using empty default: %s", e)
 
     if "default_profile" not in data:
         data["default_profile"] = "default"

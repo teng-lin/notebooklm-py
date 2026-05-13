@@ -317,8 +317,14 @@ class ChatAPI:
                     if isinstance(next_turn, list) and len(next_turn) > 4 and next_turn[2] == 2:
                         try:
                             a = str(next_turn[4][0][0] or "")
-                        except (IndexError, TypeError):
-                            pass
+                        except (IndexError, TypeError) as e:
+                            # next_turn[4] is unguarded — this except is
+                            # reachable when the answer payload shape drifts.
+                            logger.warning(
+                                "QA-pair parse: answer turn shape unexpected (schema drift?): %s",
+                                e,
+                                exc_info=True,
+                            )
                         i += 1  # skip the answer turn
                 pairs.append((q, a))
             i += 1
@@ -592,6 +598,11 @@ class ChatAPI:
                         refs = self._parse_citations(first)
                         return text, is_answer, refs, server_conv_id
             except json.JSONDecodeError:
+                # Hot-path stream parser: skip non-JSON chunks. Guard the
+                # debug log with isEnabledFor so the redaction regex doesn't
+                # run on every chunk when DEBUG is off.
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Stream parser: non-JSON chunk skipped")
                 continue
 
         return None, False, refs, None
