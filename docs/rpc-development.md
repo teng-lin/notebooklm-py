@@ -476,3 +476,30 @@ async def validate_rpc_call(rpc_id: str, params: list, expected_action: str):
     assert result is not None, f"RPC {rpc_id} returned None"
     return {"rpc_id": rpc_id, "action": expected_action, "status": "verified"}
 ```
+
+## RPC Health Check Triage Policy
+
+The `rpc-health.yml` workflow runs daily (07:00 UTC) and opens an issue on any
+detected RPC ID mismatch or auth failure:
+
+- **RPC ID mismatch** issues: labeled `bug, rpc-breakage, automated`.
+- **Auth failure** issues: labeled `bug, automated` (no `rpc-breakage` label —
+  auth is an operational concern, not a protocol break).
+
+Routing:
+
+- **Maintainer assignment**: Issues land in the `teng-lin/notebooklm-py`
+  default issue inbox. The maintainer triages within 24 hours during business
+  days. (No auto-assignee — the project has a single maintainer and
+  auto-assignment adds noise.)
+- **Acknowledged-but-deferred**: If an upstream RPC change is observed but
+  the library still functions for the majority of users (e.g., one optional
+  field renamed), the maintainer closes the issue with the `acknowledged`
+  label and links the PR that resolves it.
+- **Notifying users**: If the breakage affects an RPC most users invoke
+  (e.g., `LIST_NOTEBOOKS`, `CREATE_NOTEBOOK`), the maintainer additionally
+  files a release-note draft + pins the issue.
+
+If you see an `rpc-breakage` issue sitting unattended for >7 days, ping the
+maintainer in a comment — it likely fell out of the inbox. The intent of this
+workflow is fast detection, not perpetual auto-noise.

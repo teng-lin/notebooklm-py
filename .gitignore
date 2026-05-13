@@ -16,6 +16,7 @@ build/
 captured_rpcs/
 .worktrees/
 .worktree/
+worktrees/
 .sisyphus/
 .scratch/
 .claude/

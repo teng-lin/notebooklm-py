@@ -42,6 +42,7 @@ from .rpc import (
     VideoFormat,
     VideoStyle,
     artifact_status_to_str,
+    nest_source_ids,
 )
 from .types import (
     Artifact,
@@ -412,8 +413,8 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
+        source_ids_double = nest_source_ids(source_ids, 1)
 
         format_code = audio_format.value if audio_format else None
         length_code = audio_length.value if audio_length else None
@@ -424,7 +425,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                1,  # ArtifactTypeCode.AUDIO
+                ArtifactTypeCode.AUDIO.value,
                 source_ids_triple,
                 None,
                 None,
@@ -483,8 +484,8 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
+        source_ids_double = nest_source_ids(source_ids, 1)
 
         format_code = video_format.value if video_format else None
         style_code = video_style.value if video_style else None
@@ -506,7 +507,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                3,  # ArtifactTypeCode.VIDEO
+                ArtifactTypeCode.VIDEO.value,
                 source_ids_triple,
                 None,
                 None,
@@ -557,8 +558,8 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
+        source_ids_double = nest_source_ids(source_ids, 1)
 
         params = [
             [2],
@@ -657,8 +658,8 @@ class ArtifactsAPI:
         config = format_configs[report_format]
         if extra_instructions and report_format != ReportFormat.CUSTOM:
             config = {**config, "prompt": f"{config['prompt']}\n\n{extra_instructions}"}
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
-        source_ids_double = [[sid] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
+        source_ids_double = nest_source_ids(source_ids, 1)
 
         params = [
             [2],
@@ -666,7 +667,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                2,  # ArtifactTypeCode.REPORT
+                ArtifactTypeCode.REPORT.value,
                 source_ids_triple,
                 None,
                 None,
@@ -742,7 +743,7 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
         quantity_code = quantity.value if quantity else None
         difficulty_code = difficulty.value if difficulty else None
 
@@ -752,7 +753,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                4,  # ArtifactTypeCode.QUIZ_FLASHCARD
+                ArtifactTypeCode.QUIZ_FLASHCARD.value,
                 source_ids_triple,
                 None,
                 None,
@@ -799,7 +800,7 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
         quantity_code = quantity.value if quantity else None
         difficulty_code = difficulty.value if difficulty else None
 
@@ -809,7 +810,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                4,  # ArtifactTypeCode.QUIZ_FLASHCARD
+                ArtifactTypeCode.QUIZ_FLASHCARD.value,
                 source_ids_triple,
                 None,
                 None,
@@ -862,7 +863,7 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
         orientation_code = orientation.value if orientation else None
         detail_code = detail_level.value if detail_level else None
         style_code = style.value if style else None
@@ -873,7 +874,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                7,  # ArtifactTypeCode.INFOGRAPHIC
+                ArtifactTypeCode.INFOGRAPHIC.value,
                 source_ids_triple,
                 None,
                 None,
@@ -918,7 +919,7 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
         format_code = slide_format.value if slide_format else None
         length_code = slide_length.value if slide_length else None
 
@@ -928,7 +929,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                8,  # ArtifactTypeCode.SLIDE_DECK
+                ArtifactTypeCode.SLIDE_DECK.value,
                 source_ids_triple,
                 None,
                 None,
@@ -1021,7 +1022,7 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_triple = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_triple = nest_source_ids(source_ids, 2)
 
         params = [
             [2],
@@ -1029,7 +1030,7 @@ class ArtifactsAPI:
             [
                 None,
                 None,
-                9,  # ArtifactTypeCode.DATA_TABLE
+                ArtifactTypeCode.DATA_TABLE.value,
                 source_ids_triple,
                 None,
                 None,
@@ -1079,7 +1080,7 @@ class ArtifactsAPI:
         if source_ids is None:
             source_ids = await self._core.get_source_ids(notebook_id)
 
-        source_ids_nested = [[[sid]] for sid in source_ids] if source_ids else []
+        source_ids_nested = nest_source_ids(source_ids, 2)
 
         params = [
             source_ids_nested,

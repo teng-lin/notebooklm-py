@@ -35,6 +35,33 @@ def encode_rpc_request(method: RPCMethod, params: list[Any]) -> list:
     return [[inner]]
 
 
+def nest_source_ids(ids: list[str] | None, depth: int) -> list:
+    """Wrap each source ID in ``depth`` inner lists, then collect.
+
+    The outer list is always present; ``depth`` is the number of inner
+    wrapping levels per ID.
+
+    - depth=1: ``[[id1], [id2]]``
+    - depth=2: ``[[[id1]], [[id2]]]``
+    - depth=3: ``[[[[id1]]], [[[id2]]]]``
+
+    Args:
+        ids: Source IDs, or ``None`` (treated as empty).
+        depth: Inner wrap levels per ID. Must be ``>= 1``.
+
+    Returns:
+        Empty list when ``ids`` is ``None`` or empty.
+    """
+    if depth < 1:
+        raise ValueError(f"depth must be >= 1, got {depth}")
+    if not ids:
+        return []
+    result: list = list(ids)
+    for _ in range(depth):
+        result = [[item] for item in result]
+    return result
+
+
 def build_request_body(
     rpc_request: list,
     csrf_token: str | None = None,

@@ -2,7 +2,9 @@
 
 import json
 
-from notebooklm.rpc.encoder import build_request_body, encode_rpc_request
+import pytest
+
+from notebooklm.rpc.encoder import build_request_body, encode_rpc_request, nest_source_ids
 from notebooklm.rpc.types import RPCMethod
 
 
@@ -116,3 +118,47 @@ class TestBuildRequestBody:
 
         assert "f.req=" in body
         assert "at=token" in body
+
+
+class TestNestSourceIds:
+    """Phase 2 P2.1 — `nest_source_ids` helper."""
+
+    def test_empty_returns_empty(self):
+        assert nest_source_ids([], 1) == []
+        assert nest_source_ids([], 5) == []
+        assert nest_source_ids(None, 1) == []
+        assert nest_source_ids(None, 2) == []
+
+    def test_depth_1(self):
+        """depth=1 → [[sid] for sid in ids]"""
+        assert nest_source_ids(["a"], 1) == [["a"]]
+        assert nest_source_ids(["a", "b"], 1) == [["a"], ["b"]]
+
+    def test_depth_2(self):
+        """depth=2 → [[[sid]] for sid in ids]"""
+        assert nest_source_ids(["a"], 2) == [[["a"]]]
+        assert nest_source_ids(["a", "b"], 2) == [[["a"]], [["b"]]]
+
+    def test_depth_3(self):
+        """depth=3 → [[[[sid]]] for sid in ids]"""
+        assert nest_source_ids(["a"], 3) == [[[["a"]]]]
+
+    def test_invalid_depth_raises(self):
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids(["a"], 0)
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids(["a"], -1)
+
+    def test_invalid_depth_raises_even_for_empty_input(self):
+        """Depth validation runs before empty short-circuit — contract is uniform."""
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids([], 0)
+        with pytest.raises(ValueError, match="depth must be >= 1"):
+            nest_source_ids(None, 0)
+
+    def test_input_not_mutated(self):
+        """The helper must not mutate its input list."""
+        ids = ["a", "b", "c"]
+        original = list(ids)
+        nest_source_ids(ids, 2)
+        assert ids == original

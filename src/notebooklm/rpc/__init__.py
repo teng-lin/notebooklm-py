@@ -16,7 +16,7 @@ from .decoder import (
     parse_chunked_response,
     strip_anti_xssi,
 )
-from .encoder import build_request_body, encode_rpc_request
+from .encoder import build_request_body, encode_rpc_request, nest_source_ids
 from .types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
@@ -77,6 +77,7 @@ __all__ = [
     "ExportType",
     "encode_rpc_request",
     "build_request_body",
+    "nest_source_ids",
     "strip_anti_xssi",
     "parse_chunked_response",
     "extract_rpc_result",

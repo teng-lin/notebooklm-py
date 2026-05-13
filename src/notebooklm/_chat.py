@@ -17,7 +17,7 @@ import httpx
 from ._core import ClientCore
 from ._env import get_default_language
 from .exceptions import ChatError, NetworkError, ValidationError
-from .rpc import RPCMethod, get_query_url
+from .rpc import RPCMethod, get_query_url, nest_source_ids
 from .types import AskResult, ChatReference, ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class ChatAPI:
             assert conversation_id is not None  # Type narrowing for mypy
             conversation_history = self._build_conversation_history(conversation_id)
 
-        sources_array = [[[sid]] for sid in source_ids] if source_ids else []
+        sources_array = nest_source_ids(source_ids, 2)
 
         params: list[Any] = [
             sources_array,
