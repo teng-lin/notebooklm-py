@@ -1012,19 +1012,22 @@ def with_client(f):
                 logger.debug("CLI command %s: %s (%.3fs)", status, cmd_name, elapsed)
             return elapsed
 
-        # Auth bootstrap: FileNotFoundError here means the storage file is
-        # missing, which has a dedicated rich UX via ``handle_auth_error``.
-        # We deliberately handle this BEFORE entering ``handle_errors`` so a
-        # FileNotFoundError raised *inside* the command body (e.g., a missing
-        # ``--source-file`` argument) is not misclassified as an auth error.
-        try:
-            auth = get_auth_tokens(ctx)
-        except FileNotFoundError:
-            log_result("failed", "not authenticated")
-            handle_auth_error(json_output)
-            return  # unreachable — handle_auth_error raises SystemExit
-
         with handle_errors(verbose=verbose, json_output=json_output):
+            # Auth bootstrap: FileNotFoundError here means the storage file is
+            # missing — it has a dedicated rich UX via ``handle_auth_error``.
+            # The narrow ``except FileNotFoundError`` ensures a FileNotFoundError
+            # raised *inside* the command body (e.g., a missing ``--source-file``
+            # argument; see issue #153) is NOT misclassified as an auth error —
+            # it propagates to ``handle_errors``' UNEXPECTED_ERROR branch instead.
+            # Any OTHER exception from the auth bootstrap (malformed storage JSON,
+            # AuthError during token extraction, etc.) also reaches ``handle_errors``
+            # so users get typed hints rather than a raw traceback.
+            try:
+                auth = get_auth_tokens(ctx)
+            except FileNotFoundError:
+                log_result("failed", "not authenticated")
+                handle_auth_error(json_output)
+                return  # unreachable — handle_auth_error raises SystemExit
             try:
                 coro = f(ctx, *args, client_auth=auth, **kwargs)
                 result = run_async(coro)

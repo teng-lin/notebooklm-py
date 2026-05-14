@@ -132,6 +132,59 @@ def test_file_not_found_routes_to_auth_hint(runner: CliRunner, monkeypatch) -> N
     assert "notebooklm login" in combined.lower()
 
 
+def test_auth_bootstrap_non_filenotfound_routes_through_handle_errors(
+    runner: CliRunner, monkeypatch
+) -> None:
+    """Non-FileNotFoundError exceptions during auth bootstrap reach ``handle_errors``.
+
+    Regression guard for Gemini feedback on PR #454: previously the auth
+    bootstrap lived OUTSIDE ``handle_errors``, so a ``ValueError`` from
+    malformed storage JSON or an ``AuthError`` during token extraction would
+    bubble unhandled instead of getting the centralized hint + typed code.
+    """
+    monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+
+    async def _never_called(_auth):
+        raise AssertionError("body should not run when auth bootstrap fails")
+
+    # AuthError surfaces with the actionable "run notebooklm login" hint and exit 1.
+    with patch(
+        "notebooklm.cli.helpers.get_auth_tokens",
+        side_effect=AuthError("token refresh failed"),
+    ):
+        cli = _build_cli(_never_called)
+        result = runner.invoke(cli, ["run"], catch_exceptions=False)
+
+    assert result.exit_code == 1, result.stderr
+    assert "notebooklm login" in result.stderr
+
+
+def test_auth_bootstrap_malformed_json_routes_through_handle_errors(
+    runner: CliRunner, monkeypatch
+) -> None:
+    """``ValueError`` (e.g., malformed storage JSON) during auth bootstrap exits 2.
+
+    Without ``handle_errors`` wrapping the bootstrap this would bubble as an
+    uncaught traceback.
+    """
+    monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+
+    async def _never_called(_auth):
+        raise AssertionError("body should not run when auth bootstrap fails")
+
+    with patch(
+        "notebooklm.cli.helpers.get_auth_tokens",
+        side_effect=ValueError("malformed storage JSON"),
+    ):
+        cli = _build_cli(_never_called)
+        result = runner.invoke(cli, ["run", "--json"], catch_exceptions=False)
+
+    assert result.exit_code == 2, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["error"] is True
+    assert payload["code"] == "UNEXPECTED_ERROR"
+
+
 # ---------------------------------------------------------------------------
 # JSON-mode failure paths
 # ---------------------------------------------------------------------------
