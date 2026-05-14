@@ -233,7 +233,7 @@ def parse_chunked_response(response: str) -> list[Any]:
                     i + 1,
                     byte_count,
                     actual_byte_count,
-                    json_str[:100],
+                    _truncate_response_preview(json_str),
                 )
 
             try:
@@ -246,7 +246,7 @@ def parse_chunked_response(response: str) -> list[Any]:
                     "Skipping malformed chunk at line %d: %s. Preview: %s",
                     i + 1,
                     e,
-                    json_str[:100],
+                    _truncate_response_preview(json_str),
                 )
             i += 1
         except ValueError:
@@ -262,7 +262,7 @@ def parse_chunked_response(response: str) -> list[Any]:
                     "Skipping non-JSON line at %d: %s. Preview: %s",
                     i + 1,
                     e,
-                    line[:100],
+                    _truncate_response_preview(line),
                 )
             i += 1
 
@@ -274,7 +274,7 @@ def parse_chunked_response(response: str) -> list[Any]:
                 f"Response parsing failed: {skipped_count} of {total_records} response records "
                 f"malformed. "
                 f"This may indicate API changes or data corruption.",
-                raw_response=response[:500],
+                raw_response=response,
             )
         # Non-critical but warn user results may be incomplete
         logger.warning(

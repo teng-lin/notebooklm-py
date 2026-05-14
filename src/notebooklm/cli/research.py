@@ -21,6 +21,14 @@ from .helpers import (
     with_client,
 )
 
+# UI-only cap for the research summary preview shown in `research status` /
+# `research wait`. Unlike RPC error previews (see
+# :func:`notebooklm.exceptions._truncate_response_preview`), this is a
+# user-facing display cap — not a leak-prevention truncation — and intentionally
+# does not respect ``NOTEBOOKLM_DEBUG`` (users can re-fetch the full summary
+# with the underlying API or with `research wait --import-all`).
+_SUMMARY_PREVIEW_CHARS = 500
+
 
 @click.group()
 def research():
@@ -91,7 +99,7 @@ def research_status(ctx, notebook_id, json_output, client_auth):
                 display_research_sources(sources)
 
                 if summary:
-                    console.print(f"\n[bold]Summary:[/bold]\n{summary[:500]}")
+                    console.print(f"\n[bold]Summary:[/bold]\n{summary[:_SUMMARY_PREVIEW_CHARS]}")
 
                 display_report(status.get("report", ""))
 
