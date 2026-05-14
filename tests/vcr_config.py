@@ -118,6 +118,28 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     (r">People Conf<", ">SCRUBBED_NAME<"),
     # Display name in JSON (user-specific - add your name if recording new cassettes)
     (r'"People Conf"', '"SCRUBBED_NAME"'),
+    # ==========================================================================
+    # Playwright ``storage_state.json`` cookie objects (JSON form, not Cookie-header form)
+    # ==========================================================================
+    # The patterns above (e.g., ``SID=[^;]+``) only match the ``Cookie: SID=...; ...``
+    # header form. A serialized ``storage_state`` (``json.dumps`` of the dict Playwright
+    # returns) instead carries ``{"name": "SID", "value": "<secret>", ...}`` objects, so
+    # the header-form regexes never fire on a storage_state body and the secret leaks.
+    # See ``tests/unit/test_cookie_redaction.py`` for the round-trip assertion.
+    #
+    # Playwright emits ``name`` before ``value`` in each cookie object. We still register
+    # the reversed ordering defensively in case a fixture is hand-authored or a future
+    # Playwright version reorders keys.
+    (
+        r'("name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|SIDCC|OSID|NID|'
+        r'__Secure-[^"]+|__Host-[^"]+)",\s*"value":\s*")[^"]*(")',
+        r"\1SCRUBBED\2",
+    ),
+    (
+        r'("value":\s*")[^"]*("\s*,\s*"name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|'
+        r'SIDCC|OSID|NID|__Secure-[^"]+|__Host-[^"]+)")',
+        r"\1SCRUBBED\2",
+    ),
 ]
 
 
