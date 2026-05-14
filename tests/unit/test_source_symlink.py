@@ -49,8 +49,23 @@ def runner() -> CliRunner:
 
 
 @pytest.fixture
-def mock_auth():
-    """Stub auth loading + token fetch so CLI paths run offline."""
+def mock_auth(tmp_path: Path, monkeypatch):
+    """Stub auth loading + token fetch so CLI paths run offline.
+
+    Also points ``get_storage_path`` at a non-existent path inside the
+    test's ``tmp_path`` so ``build_cookie_jar`` takes the in-memory branch
+    (using the cookie dict returned by our mock) instead of reading any
+    real storage file the runner may have left behind from a prior test.
+    Without this, ``build_cookie_jar`` calls ``build_httpx_cookies_from_storage``
+    on the runner's default-profile storage, which validates against the
+    real cookie set and fails this test with
+    "Missing required cookies: SID, __Secure-1PSIDTS".
+    """
+    fake_storage = tmp_path / "no_such_storage.json"
+    monkeypatch.setattr(
+        "notebooklm.paths.get_storage_path",
+        lambda profile=None, **_kw: fake_storage,
+    )
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
         patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
