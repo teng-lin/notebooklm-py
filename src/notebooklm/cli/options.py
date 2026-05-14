@@ -4,9 +4,10 @@ Provides reusable option decorators to reduce boilerplate in commands.
 """
 
 import click
+from click.decorators import FC
 
 
-def notebook_option(f):
+def notebook_option(f: FC) -> FC:
     """Add --notebook/-n option for notebook ID.
 
     The option defaults to None, allowing context-based resolution.
@@ -21,7 +22,7 @@ def notebook_option(f):
     )(f)
 
 
-def json_option(f):
+def json_option(f: FC) -> FC:
     """Add --json output flag."""
     return click.option(
         "--json",
@@ -31,7 +32,7 @@ def json_option(f):
     )(f)
 
 
-def wait_option(f):
+def wait_option(f: FC) -> FC:
     """Add --wait/--no-wait flag for generation commands."""
     return click.option(
         "--wait/--no-wait",
@@ -40,7 +41,7 @@ def wait_option(f):
     )(f)
 
 
-def source_option(f):
+def source_option(f: FC) -> FC:
     """Add --source/-s option for source ID.
 
     Supports partial ID matching (e.g., 'abc' matches 'abc123...').
@@ -54,7 +55,7 @@ def source_option(f):
     )(f)
 
 
-def artifact_option(f):
+def artifact_option(f: FC) -> FC:
     """Add --artifact/-a option for artifact ID.
 
     Supports partial ID matching (e.g., 'abc' matches 'abc123...').
@@ -68,7 +69,7 @@ def artifact_option(f):
     )(f)
 
 
-def output_option(f):
+def output_option(f: FC) -> FC:
     """Add --output/-o option for output file path."""
     return click.option(
         "-o",
@@ -80,7 +81,7 @@ def output_option(f):
     )(f)
 
 
-def prompt_file_option(f):
+def prompt_file_option(f: FC) -> FC:
     """Add --prompt-file option for reading prompt/query text from a file."""
     return click.option(
         "--prompt-file",
@@ -91,7 +92,7 @@ def prompt_file_option(f):
     )(f)
 
 
-def retry_option(f):
+def retry_option(f: FC) -> FC:
     """Add --retry option for rate limit retry with exponential backoff."""
     return click.option(
         "--retry",
@@ -105,11 +106,11 @@ def retry_option(f):
 # Composite decorators for common patterns
 
 
-def standard_options(f):
+def standard_options(f: FC) -> FC:
     """Apply notebook + json options (most common pattern)."""
     return notebook_option(json_option(f))
 
 
-def generate_options(f):
+def generate_options(f: FC) -> FC:
     """Apply notebook + json + wait + retry options for generation commands."""
     return notebook_option(json_option(wait_option(retry_option(f))))

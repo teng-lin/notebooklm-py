@@ -132,6 +132,12 @@ module = "notebooklm.cli.*"
 warn_return_any = false
 strict_optional = true
 
+[[tool.mypy.overrides]]
+module = "notebooklm.rpc.*"
+disallow_untyped_defs = true
+warn_return_any = true
+strict_optional = true
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100

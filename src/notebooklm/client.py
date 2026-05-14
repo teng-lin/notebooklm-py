@@ -24,6 +24,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from types import TracebackType
 
 from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
@@ -145,7 +146,12 @@ class NotebookLMClient:
         await self._core.open()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Close the client connection."""
         logger.debug("Closing NotebookLM client")
         await self._core.close()

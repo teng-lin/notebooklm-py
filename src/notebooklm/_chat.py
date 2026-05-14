@@ -17,8 +17,8 @@ import httpx
 from ._core import ClientCore
 from ._env import get_default_language
 from .exceptions import ChatError, NetworkError, ValidationError
-from .rpc import RPCMethod, get_query_url, nest_source_ids
-from .types import AskResult, ChatReference, ConversationTurn
+from .rpc import ChatGoal, ChatResponseLength, RPCMethod, get_query_url, nest_source_ids
+from .types import AskResult, ChatMode, ChatReference, ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -363,8 +363,8 @@ class ChatAPI:
     async def configure(
         self,
         notebook_id: str,
-        goal: Any | None = None,
-        response_length: Any | None = None,
+        goal: ChatGoal | None = None,
+        response_length: ChatResponseLength | None = None,
         custom_prompt: str | None = None,
     ) -> None:
         """Configure chat persona and response settings for a notebook.
@@ -379,7 +379,6 @@ class ChatAPI:
             ValidationError: If goal is CUSTOM but custom_prompt is not provided.
         """
         logger.debug("Configuring chat for notebook %s", notebook_id)
-        from .rpc import ChatGoal, ChatResponseLength
 
         if goal is None:
             goal = ChatGoal.DEFAULT
@@ -404,15 +403,13 @@ class ChatAPI:
             allow_null=True,
         )
 
-    async def set_mode(self, notebook_id: str, mode: Any) -> None:
+    async def set_mode(self, notebook_id: str, mode: ChatMode) -> None:
         """Set chat mode using predefined configurations.
 
         Args:
             notebook_id: The notebook ID.
             mode: Predefined ChatMode (DEFAULT, LEARNING_GUIDE, CONCISE, DETAILED).
         """
-        from .rpc import ChatGoal, ChatResponseLength
-        from .types import ChatMode
 
         mode_configs = {
             ChatMode.DEFAULT: (ChatGoal.DEFAULT, ChatResponseLength.DEFAULT, None),
