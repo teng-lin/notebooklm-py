@@ -231,6 +231,40 @@ class TestRegisterFileSource:
         with pytest.raises(SourceAddError, match=r"Response shape:.*\[\[\[1, 2, 3\]\]\]"):
             await sources_api._register_file_source("nb_123", "test.pdf")
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_token", ["OK", "DONE", "true", "null"])
+    async def test_register_file_source_rejects_all_alpha_status_tokens(
+        self, sources_api, mock_core, status_token
+    ):
+        """Fallback must reject all-alpha status tokens — ``OK``/``DONE``/``true``
+        in the response position would otherwise be picked up as a bogus
+        SOURCE_ID and break the downstream upload silently.
+        """
+        from notebooklm.exceptions import SourceAddError
+
+        mock_core.rpc_call.return_value = [[[status_token]]]
+
+        with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
+    @pytest.mark.asyncio
+    async def test_register_file_source_walker_has_recursion_guard(self, sources_api, mock_core):
+        """A pathological deeply-nested response shouldn't trigger
+        RecursionError — the depth guard mirrors :func:`_extract_all_text`.
+        """
+        # 200-deep nest with a UUID at the bottom. Past the depth guard the
+        # walker stops, so the UUID is unreachable and we raise — but we don't
+        # crash with RecursionError.
+        from notebooklm.exceptions import SourceAddError
+
+        deep: list = ["dc84ca28-2629-49ac-aec3-de45f0ec93e4"]
+        for _ in range(200):
+            deep = [deep]
+        mock_core.rpc_call.return_value = deep
+
+        with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
 
 # =============================================================================
 # _start_resumable_upload() tests

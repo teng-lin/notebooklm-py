@@ -51,17 +51,21 @@ def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
     """Locate the SOURCE_ID string in an ADD_SOURCE_FILE response.
 
     The historical shape was a strictly position-0 walk: ``[[[[id]]]]``. Issue
-    #474 surfaced a new shape where that walk lands on ``None`` (or on the
-    echoed filename) and silently fails. Walk the whole structure instead,
-    prefer a UUID-shaped leaf, and fall back to any other id-shaped string that
-    is plausibly not a status label.
+    #474 surfaced cases where that walk lands on ``None`` or on the echoed
+    filename and silently fails. Walk the whole structure instead, prefer a
+    UUID-shaped leaf, and fall back to any other id-shaped string that is
+    plausibly not a status label.
     """
     uuid_match: str | None = None
     fallback: str | None = None
+    # Depth guard mirrors the existing _extract_all_text pattern — Google's
+    # responses are shallow in practice, but a malformed/adversarial payload
+    # shouldn't be able to trigger RecursionError.
+    max_depth = 50
 
-    def walk(node: Any) -> None:
+    def walk(node: Any, depth: int) -> None:
         nonlocal uuid_match, fallback
-        if uuid_match is not None:
+        if uuid_match is not None or depth > max_depth:
             return
         if isinstance(node, str):
             candidate = node.strip()
@@ -70,24 +74,37 @@ def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
             if _SOURCE_ID_UUID_PATTERN.match(candidate):
                 uuid_match = candidate
                 return
-            # Fallback: reject obvious non-id strings (status labels like "OK",
-            # mime types like "application/pdf", free-form messages). An id-shaped
-            # string has no embedded whitespace, no slashes, and is at least 4 chars.
-            if fallback is None and len(candidate) >= 4 and not any(c in candidate for c in " \t/"):
+            # Fallback: reject obvious non-id strings — status labels ("OK",
+            # "DONE", "true"), mime types ("application/pdf"), free-form
+            # messages. An id-shaped string has no embedded whitespace, no
+            # slashes, is at least 4 chars, and contains at least one digit,
+            # hyphen, or underscore (excludes all-alpha status tokens).
+            if fallback is None and _looks_like_id_string(candidate):
                 fallback = candidate
         elif isinstance(node, list):
             for child in node:
                 if uuid_match is not None:
                     return
-                walk(child)
-        elif isinstance(node, dict):
-            for value in node.values():
-                if uuid_match is not None:
-                    return
-                walk(value)
+                walk(child, depth + 1)
 
-    walk(result)
+    walk(result, 0)
     return uuid_match or fallback
+
+
+def _looks_like_id_string(candidate: str) -> bool:
+    """Heuristic for the non-UUID fallback in :func:`_extract_register_file_source_id`.
+
+    Accepts strings that look like an id (`src_pdf`, `source_id_123`) and
+    rejects short status tokens (`OK`, `DONE`, `true`) and structured fields
+    (`application/pdf`, anything with whitespace).
+    """
+    if len(candidate) < 4:
+        return False
+    if any(c in candidate for c in " \t/"):
+        return False
+    # Require at least one digit, hyphen, or underscore — blocks all-alpha
+    # status tokens while still admitting test-style ids like ``src_pdf``.
+    return any(c.isdigit() or c in "-_" for c in candidate)
 
 
 class SourcesAPI:
