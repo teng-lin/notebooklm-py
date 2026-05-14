@@ -31,8 +31,9 @@ if TYPE_CHECKING:
     from rich.console import Console
 
 from ..auth import (
-    ALLOWED_COOKIE_DOMAINS,
     GOOGLE_REGIONAL_CCTLDS,
+    OPTIONAL_COOKIE_DOMAINS_BY_LABEL,
+    REQUIRED_COOKIE_DOMAINS,
     convert_rookiepy_cookies_to_storage_state,
     extract_cookies_from_storage,
     fetch_tokens_with_domains,
@@ -178,7 +179,10 @@ def _handle_rookiepy_error(e: Exception, browser_name: str) -> None:
 
 
 def _enumerate_browser_accounts(
-    browser_name: str, *, verbose: bool = True
+    browser_name: str,
+    *,
+    verbose: bool = True,
+    include_domains: set[str] | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Read cookies from ``browser_name`` and discover signed-in accounts.
 
@@ -186,6 +190,9 @@ def _enumerate_browser_accounts(
         browser_name: rookiepy browser alias.
         verbose: Forwarded to :func:`_read_browser_cookies` to suppress the
             human-readable progress line in JSON-output paths.
+        include_domains: Forwarded to :func:`_read_browser_cookies` to
+            broaden the extraction set with sibling-product cookies. See
+            :func:`_parse_include_domains`.
 
     Returns:
         ``(raw_cookies, accounts)`` — the original rookiepy cookies and the
@@ -202,7 +209,9 @@ def _enumerate_browser_accounts(
         extract_cookies_with_domains,
     )
 
-    raw_cookies = _read_browser_cookies(browser_name, verbose=verbose)
+    raw_cookies = _read_browser_cookies(
+        browser_name, verbose=verbose, include_domains=include_domains
+    )
     storage_state = convert_rookiepy_cookies_to_storage_state(raw_cookies)
     try:
         extract_cookies_from_storage(storage_state)
@@ -249,6 +258,7 @@ def _login_browser_cookies_single(
     account_email: str | None,
     profile_name: str | None,
     active_profile: str | None,
+    include_domains: set[str] | None = None,
 ) -> None:
     """Extract one account from ``--browser-cookies`` into a profile.
 
@@ -265,12 +275,19 @@ def _login_browser_cookies_single(
     if account_email is None and profile_name is None:
         # Path 1: existing behavior — extract default account into active profile.
         resolved_storage = explicit_storage or get_storage_path(profile=active_profile)
-        _login_with_browser_cookies(resolved_storage, browser_cookies, active_profile)
+        _login_with_browser_cookies(
+            resolved_storage,
+            browser_cookies,
+            active_profile,
+            include_domains=include_domains,
+        )
         return
 
     # Path 2: targeted extraction. We need the email to derive a profile name
     # when --profile-name is omitted.
-    raw_cookies, accounts = _enumerate_browser_accounts(browser_cookies)
+    raw_cookies, accounts = _enumerate_browser_accounts(
+        browser_cookies, include_domains=include_domains
+    )
     selected = _select_account(accounts, account_email=account_email)
 
     target_profile = profile_name or email_to_profile_name(selected.email)
@@ -316,11 +333,17 @@ def _next_available_profile_name(base_name: str, unavailable: set[str]) -> str:
         suffix += 1
 
 
-def _login_all_accounts_from_browser(browser_cookies: str) -> None:
+def _login_all_accounts_from_browser(
+    browser_cookies: str,
+    *,
+    include_domains: set[str] | None = None,
+) -> None:
     """Extract every signed-in Google account into its own profile."""
     from ..paths import list_profiles
 
-    raw_cookies, accounts = _enumerate_browser_accounts(browser_cookies)
+    raw_cookies, accounts = _enumerate_browser_accounts(
+        browser_cookies, include_domains=include_domains
+    )
     if not accounts:
         console.print("[yellow]No accounts discovered.[/yellow]")
         return
@@ -487,9 +510,12 @@ def _refresh_from_browser_cookies(
     storage_path: Path,
     profile: str | None,
     quiet: bool,
+    include_domains: set[str] | None = None,
 ) -> None:
     """Refresh the active profile from browser cookies, repairing account drift."""
-    raw_cookies, accounts = _enumerate_browser_accounts(browser_name, verbose=not quiet)
+    raw_cookies, accounts = _enumerate_browser_accounts(
+        browser_name, verbose=not quiet, include_domains=include_domains
+    )
     if not accounts:
         console.print(f"[red]No signed-in Google accounts found in {browser_name}.[/red]")
         raise SystemExit(1)
@@ -512,9 +538,111 @@ def _refresh_from_browser_cookies(
         )
 
 
-def _build_google_cookie_domains() -> list[str]:
-    """Return the list of Google cookie domains we ask cookie extractors to read."""
-    domains = list(ALLOWED_COOKIE_DOMAINS)
+_INCLUDE_DOMAINS_ALL = "all"
+
+
+def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
+    """Parse one or more ``--include-domains`` flag values into labels.
+
+    Accepts both ``--include-domains=youtube --include-domains=docs`` and
+    ``--include-domains=youtube,docs`` (and any mix). Whitespace around
+    commas is tolerated. Empty fragments are dropped.
+
+    Raises:
+        click.BadParameter: if any label is not one of
+            :data:`notebooklm.auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL` keys
+            (or the literal ``"all"``).
+    """
+    labels: set[str] = set()
+    for raw in values:
+        for part in raw.split(","):
+            label = part.strip().lower()
+            if not label:
+                continue
+            labels.add(label)
+    if not labels:
+        return labels
+    valid = set(OPTIONAL_COOKIE_DOMAINS_BY_LABEL) | {_INCLUDE_DOMAINS_ALL}
+    bad = labels - valid
+    if bad:
+        supported = ", ".join(sorted(valid))
+        raise click.BadParameter(
+            f"unknown --include-domains label(s): {', '.join(sorted(bad))}. Supported: {supported}."
+        )
+    return labels
+
+
+def _warn_missing_optional_domains(include_domains: set[str]) -> None:
+    """Emit a migration warning when the default minimum-cookies set is used.
+
+    The T5.G change narrows the default extraction set to
+    :data:`REQUIRED_COOKIE_DOMAINS`. Users upgrading from the prior
+    behavior need a heads-up that YouTube / Docs / myaccount / Mail
+    cookies are no longer scraped at login. Telling them how to opt back
+    in is the entire point of the warning.
+    """
+    if include_domains:
+        return
+    supported = ", ".join(sorted(OPTIONAL_COOKIE_DOMAINS_BY_LABEL))
+    console.print(
+        "[dim]Note: sibling-product cookies not included by default. "
+        f"Pass --include-domains=<{supported}> (or =all) to extract them.[/dim]"
+    )
+    logger.info(
+        "Login extracting REQUIRED_COOKIE_DOMAINS only (T5.G default). "
+        "Pass --include-domains=%s (or =all) to include sibling cookies.",
+        supported,
+    )
+
+
+def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
+    """Resolve ``--include-domains`` labels to the union of their domain sets."""
+    if not labels:
+        return frozenset()
+    if _INCLUDE_DOMAINS_ALL in labels:
+        return frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values())
+    selected: set[str] = set()
+    for label in labels:
+        selected.update(OPTIONAL_COOKIE_DOMAINS_BY_LABEL[label])
+    return frozenset(selected)
+
+
+def _build_google_cookie_domains(
+    *,
+    include_optional: bool = False,
+    include_domains: set[str] | None = None,
+) -> list[str]:
+    """Return the cookie-domain list fed to extractors (rookiepy / Firefox).
+
+    Defaults to :data:`REQUIRED_COOKIE_DOMAINS` plus all known regional
+    ``.google.<ccTLD>`` variants (T5.G tightening). Sibling-product cookies
+    (YouTube, Docs, myaccount, Mail) are excluded unless the caller opts
+    in via ``include_optional=True`` or a non-empty ``include_domains``
+    label set.
+
+    Args:
+        include_optional: When ``True``, include every optional sibling
+            domain (equivalent to ``--include-domains=all``). Preserves
+            the pre-T5.G behavior for callers that still need the broad
+            set.
+        include_domains: Set of optional-domain labels (output of
+            :func:`_parse_include_domains`). Each label expands via
+            :data:`OPTIONAL_COOKIE_DOMAINS_BY_LABEL`. ``"all"`` is
+            accepted as a shortcut for every label.
+
+    Returns:
+        List of cookie-domain strings (suitable for ``rookiepy.load(
+        domains=...)`` or :func:`extract_firefox_container_cookies`).
+    """
+    selected_optional: frozenset[str]
+    if include_domains:
+        selected_optional = _resolve_optional_cookie_domains(include_domains)
+    elif include_optional:
+        selected_optional = frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values())
+    else:
+        selected_optional = frozenset()
+
+    domains: list[str] = list(REQUIRED_COOKIE_DOMAINS | selected_optional)
     for cctld in GOOGLE_REGIONAL_CCTLDS:
         domain = f".google.{cctld}"
         if domain not in domains:
@@ -523,7 +651,10 @@ def _build_google_cookie_domains() -> list[str]:
 
 
 def _read_firefox_container_cookies(
-    container_spec: str, *, verbose: bool = True
+    container_spec: str,
+    *,
+    verbose: bool = True,
+    include_domains: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Load Google cookies from a specific Firefox Multi-Account Container.
 
@@ -578,7 +709,7 @@ def _read_firefox_container_cookies(
                 f"'{container_spec}' (userContextId={container_id})...[/yellow]"
             )
 
-    domains = _build_google_cookie_domains()
+    domains = _build_google_cookie_domains(include_domains=include_domains)
     try:
         return extract_firefox_container_cookies(profile_path, container_id, domains=domains)
     except FileNotFoundError as e:
@@ -624,7 +755,12 @@ def _maybe_warn_firefox_containers_in_use() -> None:
         )
 
 
-def _read_browser_cookies(browser_name: str, *, verbose: bool = True) -> list[dict[str, Any]]:
+def _read_browser_cookies(
+    browser_name: str,
+    *,
+    verbose: bool = True,
+    include_domains: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """Load Google cookies from an installed browser via rookiepy.
 
     Wraps rookiepy import + dispatch + error handling so multiple commands
@@ -638,6 +774,11 @@ def _read_browser_cookies(browser_name: str, *, verbose: bool = True) -> list[di
             rookiepy entirely.
         verbose: When False, suppress the "Reading cookies from …" progress
             line. Used by ``auth inspect --json`` to keep stdout pure JSON.
+        include_domains: Optional set of ``--include-domains`` labels
+            (output of :func:`_parse_include_domains`) that broaden the
+            extraction set with sibling-product cookies. ``None`` (the
+            default) keeps the extraction tight to
+            :data:`REQUIRED_COOKIE_DOMAINS`.
 
     Returns:
         Raw cookie dicts as returned by rookiepy (or by the Firefox
@@ -661,7 +802,9 @@ def _read_browser_cookies(browser_name: str, *, verbose: bool = True) -> list[di
                 "[cyan]firefox::none[/cyan] for the no-container default."
             )
             raise SystemExit(1)
-        return _read_firefox_container_cookies(container_spec, verbose=verbose)
+        return _read_firefox_container_cookies(
+            container_spec, verbose=verbose, include_domains=include_domains
+        )
 
     try:
         import rookiepy
@@ -675,7 +818,7 @@ def _read_browser_cookies(browser_name: str, *, verbose: bool = True) -> list[di
         )
         raise SystemExit(1) from None
 
-    domains = _build_google_cookie_domains()
+    domains = _build_google_cookie_domains(include_domains=include_domains)
 
     if browser_name == "auto":
         if verbose:
@@ -726,6 +869,7 @@ def _login_with_browser_cookies(
     *,
     authuser: int = 0,
     email: str | None = None,
+    include_domains: set[str] | None = None,
 ) -> None:
     """Extract Google cookies from an installed browser via rookiepy.
 
@@ -735,8 +879,10 @@ def _login_with_browser_cookies(
         profile: Profile name (forwarded to verification step).
         authuser: Internal Google account index fallback for this profile.
         email: Optional account email to record for stable routing.
+        include_domains: Optional ``--include-domains`` label set forwarded
+            to :func:`_read_browser_cookies`.
     """
-    raw_cookies = _read_browser_cookies(browser_name)
+    raw_cookies = _read_browser_cookies(browser_name, include_domains=include_domains)
 
     storage_state = convert_rookiepy_cookies_to_storage_state(raw_cookies)
     try:
@@ -1020,6 +1166,19 @@ def register_session_commands(cli):
         default=False,
         help="Start with a clean browser session (deletes cached browser profile). Use to switch Google accounts.",
     )
+    @click.option(
+        "--include-domains",
+        "include_domains_raw",
+        multiple=True,
+        default=(),
+        help=(
+            "Opt in to extracting sibling-product cookies (default: required "
+            "Google auth/Drive cookies only). Pass labels comma-separated or "
+            "repeat the flag: --include-domains=youtube,docs OR "
+            "--include-domains=youtube --include-domains=docs. Supported "
+            "labels: youtube, docs, myaccount, mail, all."
+        ),
+    )
     @click.pass_context
     def login(
         ctx,
@@ -1030,6 +1189,7 @@ def register_session_commands(cli):
         all_accounts,
         profile_name,
         fresh,
+        include_domains_raw,
     ):
         """Log in to NotebookLM via browser.
 
@@ -1075,6 +1235,11 @@ def register_session_commands(cli):
             )
             raise SystemExit(1)
 
+        # Parse + validate --include-domains. Raises click.BadParameter on
+        # unknown labels (Click converts that to a non-zero exit + stderr
+        # message).
+        include_domains = _parse_include_domains(include_domains_raw)
+
         # rookiepy fast-path: skip Playwright entirely
         if browser_cookies is not None:
             if fresh:
@@ -1082,8 +1247,12 @@ def register_session_commands(cli):
                     "[yellow]Warning: --fresh has no effect with --browser-cookies "
                     "(no browser profile is used).[/yellow]"
                 )
+            # Warn only on the rookiepy path — Playwright does not consult
+            # _build_google_cookie_domains, so the migration note would be
+            # noise there.
+            _warn_missing_optional_domains(include_domains)
             if all_accounts:
-                _login_all_accounts_from_browser(browser_cookies)
+                _login_all_accounts_from_browser(browser_cookies, include_domains=include_domains)
                 return
             active_profile = ctx.obj.get("profile") if ctx.obj else None
             _login_browser_cookies_single(
@@ -1092,6 +1261,7 @@ def register_session_commands(cli):
                 account_email=account_email,
                 profile_name=profile_name,
                 active_profile=active_profile,
+                include_domains=include_domains,
             )
             return
 
@@ -1689,8 +1859,21 @@ def register_session_commands(cli):
             "Requires: pip install 'notebooklm-py[cookies]'"
         ),
     )
+    @click.option(
+        "--include-domains",
+        "include_domains_raw",
+        multiple=True,
+        default=(),
+        help=(
+            "Opt in to enumerating accounts via sibling-product cookies. "
+            "Same syntax as 'notebooklm login --include-domains'. By "
+            "default this command only consults required Google auth "
+            "cookies, which is sufficient for account discovery on every "
+            "tested path."
+        ),
+    )
     @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-    def auth_inspect(browser_name, json_output):
+    def auth_inspect(browser_name, include_domains_raw, json_output):
         """List Google accounts visible to a browser's cookie store.
 
         Read-only — never writes to disk. Use this before
@@ -1702,7 +1885,10 @@ def register_session_commands(cli):
           notebooklm auth inspect --browser chrome
           notebooklm auth inspect --browser firefox --json
         """
-        _, accounts = _enumerate_browser_accounts(browser_name, verbose=not json_output)
+        include_domains = _parse_include_domains(include_domains_raw)
+        _, accounts = _enumerate_browser_accounts(
+            browser_name, verbose=not json_output, include_domains=include_domains
+        )
         if json_output:
             json_output_response(
                 {
@@ -1956,10 +2142,21 @@ def register_session_commands(cli):
         ),
     )
     @click.option(
+        "--include-domains",
+        "include_domains_raw",
+        multiple=True,
+        default=(),
+        help=(
+            "Forward to the browser-cookie reader (only meaningful with "
+            "--browser-cookies). Same syntax as 'notebooklm login "
+            "--include-domains'."
+        ),
+    )
+    @click.option(
         "--quiet", "-q", is_flag=True, help="Suppress success output (only print on error)"
     )
     @click.pass_context
-    def auth_refresh(ctx, browser_cookies, quiet):
+    def auth_refresh(ctx, browser_cookies, include_domains_raw, quiet):
         """Refresh stored cookies by exercising the auth path once.
 
         One-shot keepalive: opens a session, runs the layer-1 poke against
@@ -2005,6 +2202,15 @@ def register_session_commands(cli):
             )
             raise SystemExit(1)
 
+        include_domains = _parse_include_domains(include_domains_raw)
+        if include_domains and browser_cookies is None:
+            click.echo(
+                "Error: --include-domains only applies when --browser-cookies "
+                "is also set (the keepalive-only path does not re-extract cookies).",
+                err=True,
+            )
+            raise SystemExit(1)
+
         profile = ctx.obj.get("profile") if ctx.obj else None
         storage_path = get_storage_path(profile=profile)
 
@@ -2015,6 +2221,7 @@ def register_session_commands(cli):
                     storage_path=storage_path,
                     profile=profile,
                     quiet=quiet,
+                    include_domains=include_domains,
                 )
             except Exception as exc:
                 if isinstance(exc, SystemExit):

@@ -1752,43 +1752,83 @@ class TestMinimumRequiredCookies:
 
 
 class TestAllowedCookieDomains:
-    """Test allowed cookie domains constant."""
+    """Test cookie-domain constants (REQUIRED, OPTIONAL, ALLOWED union)."""
 
-    def test_allowed_cookie_domains(self):
-        """Test ALLOWED_COOKIE_DOMAINS contains expected domains."""
-        from notebooklm.auth import ALLOWED_COOKIE_DOMAINS
+    def test_allowed_cookie_domains_union(self):
+        """``ALLOWED_COOKIE_DOMAINS`` is the union of REQUIRED + OPTIONAL.
 
-        # Single set-difference assertion. CodeQL's
-        # py/incomplete-url-substring-sanitization heuristic flags per-line
-        # ``"<literal>" in ALLOWED_COOKIE_DOMAINS`` patterns as if they were
-        # substring sanitization of a URL, even though this is set-membership
-        # against a constant. The set-diff form has no string-in-string
-        # appearance and reads at least as clearly.
+        Pins the union so external code that still imports the old constant
+        keeps working. Internal callers should prefer the explicit
+        REQUIRED/OPTIONAL constants — see the T5.G migration note in
+        ``src/notebooklm/auth.py``.
+        """
+        from notebooklm.auth import (
+            ALLOWED_COOKIE_DOMAINS,
+            OPTIONAL_COOKIE_DOMAINS,
+            REQUIRED_COOKIE_DOMAINS,
+        )
+
+        assert ALLOWED_COOKIE_DOMAINS == REQUIRED_COOKIE_DOMAINS | OPTIONAL_COOKIE_DOMAINS
+
+    def test_required_cookie_domains_preserve_normalization_variants(self):
+        """REQUIRED keeps both host and dotted variants of each domain.
+
+        Codex caution (T5.G plan): http.cookiejar may normalize
+        ``Domain=accounts.google.com`` to ``.accounts.google.com``. If
+        REQUIRED only contained one variant, the next extraction would
+        silently drop the cookie. Pin both forms here.
+        """
+        from notebooklm.auth import REQUIRED_COOKIE_DOMAINS
+
+        # Required core auth + drive ingest set.
         expected = {
-            # Core NotebookLM/Google auth domains
             ".google.com",
             "google.com",
             ".notebooklm.google.com",
             "notebooklm.google.com",
+            ".notebooklm.cloud.google.com",
+            "notebooklm.cloud.google.com",
             ".googleusercontent.com",
             "accounts.google.com",
             ".accounts.google.com",
-            # Sibling Google product domains added in issue #360
-            ".youtube.com",
-            "youtube.com",
-            "accounts.youtube.com",
-            ".accounts.youtube.com",
             "drive.google.com",
             ".drive.google.com",
-            "docs.google.com",
-            ".docs.google.com",
-            "myaccount.google.com",
-            ".myaccount.google.com",
-            "mail.google.com",
-            ".mail.google.com",
         }
-        missing = expected - ALLOWED_COOKIE_DOMAINS
-        assert not missing, f"ALLOWED_COOKIE_DOMAINS is missing: {missing}"
+        missing = expected - REQUIRED_COOKIE_DOMAINS
+        assert not missing, f"REQUIRED_COOKIE_DOMAINS is missing: {missing}"
+
+    def test_required_is_frozenset(self):
+        """REQUIRED must be a frozenset so it cannot be mutated at runtime."""
+        from notebooklm.auth import (
+            ALLOWED_COOKIE_DOMAINS,
+            OPTIONAL_COOKIE_DOMAINS,
+            REQUIRED_COOKIE_DOMAINS,
+        )
+
+        assert isinstance(REQUIRED_COOKIE_DOMAINS, frozenset)
+        assert isinstance(OPTIONAL_COOKIE_DOMAINS, frozenset)
+        assert isinstance(ALLOWED_COOKIE_DOMAINS, frozenset)
+
+    def test_optional_cookie_domains_label_partition(self):
+        """OPTIONAL labels partition the OPTIONAL domain set exactly."""
+        from notebooklm.auth import (
+            OPTIONAL_COOKIE_DOMAINS,
+            OPTIONAL_COOKIE_DOMAINS_BY_LABEL,
+        )
+
+        union = frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values())
+        assert union == OPTIONAL_COOKIE_DOMAINS
+
+    def test_required_and_optional_are_disjoint(self):
+        """No domain appears in both REQUIRED and OPTIONAL.
+
+        Otherwise the runtime gate would be ambiguous and the
+        ``--include-domains`` opt-in would have no observable effect for
+        the overlapping domain.
+        """
+        from notebooklm.auth import OPTIONAL_COOKIE_DOMAINS, REQUIRED_COOKIE_DOMAINS
+
+        assert REQUIRED_COOKIE_DOMAINS.isdisjoint(OPTIONAL_COOKIE_DOMAINS)
 
 
 # =============================================================================
@@ -1976,18 +2016,38 @@ class TestIsAllowedAuthDomain:
         assert _is_allowed_auth_domain(".google.de") is True  # Germany
         assert _is_allowed_auth_domain(".google.fr") is True  # France
 
-    def test_accepts_sibling_google_products(self):
-        """Test accepts sibling Google product domains (issue #360)."""
+    def test_rejects_youtube_by_default_post_t5g(self):
+        """YouTube cookies are rejected unless --include-domains=youtube opted in.
+
+        T5.G tightened the runtime gate from the union (REQUIRED ∪ OPTIONAL)
+        down to REQUIRED only. ``youtube.com`` is not a subdomain of
+        ``.google.com``, so removing it from the exact-match list actively
+        rejects it at the runtime gate. See ``test_runtime_gate_*`` for
+        the security boundary.
+        """
         from notebooklm.auth import _is_allowed_auth_domain
 
-        # YouTube
-        assert _is_allowed_auth_domain(".youtube.com") is True
-        assert _is_allowed_auth_domain("youtube.com") is True
-        assert _is_allowed_auth_domain("accounts.youtube.com") is True
-        assert _is_allowed_auth_domain(".accounts.youtube.com") is True
-        # Drive / Docs / myaccount / mail
+        assert _is_allowed_auth_domain(".youtube.com") is False
+        assert _is_allowed_auth_domain("youtube.com") is False
+        assert _is_allowed_auth_domain("accounts.youtube.com") is False
+        assert _is_allowed_auth_domain(".accounts.youtube.com") is False
+
+    def test_accepts_sibling_google_subdomains(self):
+        """Sibling Google subdomains still pass via the ``.google.com`` suffix.
+
+        Drive / Docs / myaccount / Mail are subdomains of ``.google.com``,
+        so the runtime gate accepts them via the suffix branch (tier 3 of
+        :func:`_is_allowed_cookie_domain`) even though only ``drive.*`` is
+        in :data:`REQUIRED_COOKIE_DOMAINS`. Only ``youtube.com`` is
+        materially blast-radius-narrowed by T5.G.
+        """
+        from notebooklm.auth import _is_allowed_auth_domain
+
+        # Drive (in REQUIRED) — exact-match tier
         assert _is_allowed_auth_domain("drive.google.com") is True
         assert _is_allowed_auth_domain(".drive.google.com") is True
+        # Docs / myaccount / mail — accepted via .google.com suffix tier
+        # (storage_state.json may still contain these from legacy logins).
         assert _is_allowed_auth_domain("docs.google.com") is True
         assert _is_allowed_auth_domain(".docs.google.com") is True
         assert _is_allowed_auth_domain("myaccount.google.com") is True
@@ -2096,14 +2156,22 @@ class TestIsAllowedCookieDomainRegional:
         assert _is_allowed_cookie_domain("accounts.google.com") is True
         assert _is_allowed_cookie_domain("lh3.googleusercontent.com") is True
 
-    def test_accepts_sibling_google_products(self):
-        """Test accepts sibling Google product domains (issue #360)."""
+    def test_youtube_rejected_post_t5g(self):
+        """YouTube is no longer in the default runtime allowlist (T5.G).
+
+        See :class:`TestIsAllowedAuthDomain` for the security rationale.
+        """
         from notebooklm.auth import _is_allowed_cookie_domain
 
-        assert _is_allowed_cookie_domain(".youtube.com") is True
-        assert _is_allowed_cookie_domain("youtube.com") is True
-        assert _is_allowed_cookie_domain("accounts.youtube.com") is True
-        assert _is_allowed_cookie_domain(".accounts.youtube.com") is True
+        assert _is_allowed_cookie_domain(".youtube.com") is False
+        assert _is_allowed_cookie_domain("youtube.com") is False
+        assert _is_allowed_cookie_domain("accounts.youtube.com") is False
+        assert _is_allowed_cookie_domain(".accounts.youtube.com") is False
+
+    def test_accepts_sibling_google_subdomains(self):
+        """Sibling Google subdomains still pass via the ``.google.com`` suffix tier."""
+        from notebooklm.auth import _is_allowed_cookie_domain
+
         assert _is_allowed_cookie_domain("drive.google.com") is True
         assert _is_allowed_cookie_domain("docs.google.com") is True
         assert _is_allowed_cookie_domain("myaccount.google.com") is True
@@ -2333,20 +2401,22 @@ class TestLoadHttpxCookiesRegional:
 
 
 class TestSiblingGoogleProductExtraction:
-    """Test cookie extraction from sibling Google product domains (issue #360).
+    """Cookie extraction behavior for sibling Google product domains.
 
-    Pre-#360 the auth allowlist was strictly NotebookLM-shaped: cookies on
-    ``.youtube.com``, ``drive.google.com``, ``docs.google.com``,
-    ``myaccount.google.com``, and ``.mail.google.com`` were dropped at
-    extraction. The unified allowlist now keeps them so future flows that
-    traverse those domains have the cookies they need.
+    T5.G tightened the default runtime allowlist from the union of
+    REQUIRED + OPTIONAL down to REQUIRED only. The blast-radius reduction
+    falls almost entirely on ``youtube.com`` because the other sibling
+    Google subdomains (``docs.google.com``, ``myaccount.google.com``,
+    ``mail.google.com``) still pass the ``.google.com`` suffix tier of
+    :func:`_is_allowed_cookie_domain`. This class pins both contracts:
+
+    - Subdomains of ``.google.com`` (Drive / Docs / myaccount / Mail) keep
+      flowing through extraction.
+    - ``youtube.com`` cookies are now dropped at extraction time. Re-enable
+      with ``notebooklm login --include-domains=youtube``.
     """
 
-    SIBLING_DOMAINS = [
-        ".youtube.com",
-        "youtube.com",
-        "accounts.youtube.com",
-        ".accounts.youtube.com",
+    GOOGLE_SUBDOMAIN_SIBLINGS = [
         "drive.google.com",
         ".drive.google.com",
         "docs.google.com",
@@ -2356,16 +2426,21 @@ class TestSiblingGoogleProductExtraction:
         "mail.google.com",
         ".mail.google.com",
     ]
+    YOUTUBE_DOMAINS = [
+        ".youtube.com",
+        "youtube.com",
+        "accounts.youtube.com",
+        ".accounts.youtube.com",
+    ]
 
-    @pytest.mark.parametrize("domain", SIBLING_DOMAINS)
-    def test_extract_cookies_with_domains_keeps_sibling_cookies(self, domain):
-        """``extract_cookies_with_domains`` retains sibling-product cookies."""
+    @pytest.mark.parametrize("domain", GOOGLE_SUBDOMAIN_SIBLINGS)
+    def test_extract_cookies_with_domains_keeps_google_subdomain_siblings(self, domain):
+        """``extract_cookies_with_domains`` keeps Drive/Docs/myaccount/Mail cookies."""
         storage_state = {
             "cookies": [
                 # Required SID on .google.com so extraction doesn't fail
                 {"name": "SID", "value": "base_sid", "domain": ".google.com"},
                 {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
-                # Sibling-product cookie that pre-#360 would have been dropped
                 {"name": "PRODUCT_TOKEN", "value": "sibling", "domain": domain},
             ]
         }
@@ -2373,9 +2448,22 @@ class TestSiblingGoogleProductExtraction:
         assert ("PRODUCT_TOKEN", domain, "/") in cookie_map
         assert cookie_map[("PRODUCT_TOKEN", domain, "/")] == "sibling"
 
-    @pytest.mark.parametrize("domain", SIBLING_DOMAINS)
-    def test_load_httpx_cookies_keeps_sibling_cookies(self, tmp_path, domain):
-        """``load_httpx_cookies`` (download path) accepts sibling-product cookies."""
+    @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
+    def test_extract_cookies_with_domains_drops_youtube_by_default(self, domain):
+        """T5.G regression: YouTube cookies are filtered out at extraction time."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "base_sid", "domain": ".google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
+                {"name": "YT_TOKEN", "value": "yt", "domain": domain},
+            ]
+        }
+        cookie_map = extract_cookies_with_domains(storage_state)
+        assert ("YT_TOKEN", domain, "/") not in cookie_map
+
+    @pytest.mark.parametrize("domain", GOOGLE_SUBDOMAIN_SIBLINGS)
+    def test_load_httpx_cookies_keeps_google_subdomain_siblings(self, tmp_path, domain):
+        """``load_httpx_cookies`` accepts Google-subdomain sibling cookies."""
         storage_state = {
             "cookies": [
                 {"name": "SID", "value": "base_sid", "domain": ".google.com"},
@@ -2389,9 +2477,25 @@ class TestSiblingGoogleProductExtraction:
         cookies = load_httpx_cookies(path=storage_file)
         assert cookies.get("PRODUCT_TOKEN", domain=domain) == "sibling"
 
-    @pytest.mark.parametrize("domain", SIBLING_DOMAINS)
-    def test_convert_rookiepy_keeps_sibling_cookies(self, domain):
-        """rookiepy → storage_state conversion keeps sibling-product cookies."""
+    @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
+    def test_load_httpx_cookies_drops_youtube_by_default(self, tmp_path, domain):
+        """``load_httpx_cookies`` filters YouTube cookies out by default (T5.G)."""
+        storage_state = {
+            "cookies": [
+                {"name": "SID", "value": "base_sid", "domain": ".google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "test_1psidts", "domain": ".google.com"},
+                {"name": "YT_TOKEN", "value": "yt", "domain": domain},
+            ]
+        }
+        storage_file = tmp_path / "storage.json"
+        storage_file.write_text(json.dumps(storage_state))
+
+        cookies = load_httpx_cookies(path=storage_file)
+        assert cookies.get("YT_TOKEN", domain=domain, default=None) is None
+
+    @pytest.mark.parametrize("domain", GOOGLE_SUBDOMAIN_SIBLINGS)
+    def test_convert_rookiepy_keeps_google_subdomain_siblings(self, domain):
+        """rookiepy → storage_state conversion keeps Google-subdomain siblings."""
         raw = [
             {
                 "domain": domain,
@@ -2406,6 +2510,23 @@ class TestSiblingGoogleProductExtraction:
         result = convert_rookiepy_cookies_to_storage_state(raw)
         assert len(result["cookies"]) == 1
         assert result["cookies"][0]["domain"] == domain
+
+    @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
+    def test_convert_rookiepy_drops_youtube_by_default(self, domain):
+        """rookiepy → storage_state drops YouTube cookies by default (T5.G)."""
+        raw = [
+            {
+                "domain": domain,
+                "name": "YT_TOKEN",
+                "value": "yt",
+                "path": "/",
+                "secure": True,
+                "expires": None,
+                "http_only": False,
+            }
+        ]
+        result = convert_rookiepy_cookies_to_storage_state(raw)
+        assert result["cookies"] == []
 
     def test_strict_allowlisted_domains_still_work(self):
         """Regression: pre-existing strict-allowlisted domains keep working.
@@ -2671,16 +2792,27 @@ class TestPathAwareCookieIdentity:
 
 
 class TestRookiepyDomainsCoverage:
-    """Confirm ``_login_with_browser_cookies`` would request sibling domains.
+    """Confirm ``_login_with_browser_cookies`` knows about every sibling product.
 
-    The login path constructs its rookiepy ``domains`` list from
-    ``ALLOWED_COOKIE_DOMAINS + regional ccTLDs``, so adding a domain to the
-    constant automatically widens what we ask the browser for. This test pins
-    that contract — if someone narrows the constant later, the contract here
-    flags it.
+    Post-T5.G the rookiepy ``domains`` list defaults to REQUIRED only, but
+    the ``--include-domains`` opt-in still has to cover every sibling
+    product. Pin that every known sibling label resolves to at least one
+    domain, so future contributors can't forget to wire up a new label.
     """
 
-    def test_allowlist_covers_sibling_products(self):
+    def test_every_optional_label_has_domains(self):
+        from notebooklm.auth import OPTIONAL_COOKIE_DOMAINS_BY_LABEL
+
+        for label, domains in OPTIONAL_COOKIE_DOMAINS_BY_LABEL.items():
+            assert domains, f"label {label!r} maps to an empty domain set"
+
+    def test_allowlist_union_still_covers_legacy_siblings(self):
+        """ALLOWED_COOKIE_DOMAINS (union) covers every legacy sibling domain.
+
+        External callers that read the union constant for documentation /
+        validation purposes (e.g. ``cli.session`` historically) keep
+        seeing the same domains. Only the runtime gate has tightened.
+        """
         from notebooklm.auth import ALLOWED_COOKIE_DOMAINS
 
         for domain in (
@@ -2691,8 +2823,8 @@ class TestRookiepyDomainsCoverage:
             "myaccount.google.com",
         ):
             assert domain in ALLOWED_COOKIE_DOMAINS, (
-                f"{domain!r} must be in ALLOWED_COOKIE_DOMAINS so "
-                "_login_with_browser_cookies asks rookiepy for it (issue #360)"
+                f"{domain!r} must be in ALLOWED_COOKIE_DOMAINS (union) so "
+                "callers that read the legacy constant still see it (T5.G)"
             )
 
 
@@ -2826,13 +2958,14 @@ class TestConvertRookiepyCookies:
         assert result["cookies"][0]["name"] == "OSID"
 
     def test_sibling_google_product_subdomains_kept(self):
-        """Auth conversion keeps sibling Google product cookies (issue #360).
+        """Auth conversion keeps sibling Google subdomain cookies (post-T5.G).
 
-        Pre-#360 the auth allowlist was strict and dropped subdomains like
-        ``.mail.google.com``. The unified allowlist now matches the broader
-        download policy so cookies from ``.youtube.com``, ``drive.google.com``,
-        ``docs.google.com``, ``myaccount.google.com``, and ``.mail.google.com``
-        survive extraction.
+        T5.G narrowed the runtime gate from the union to REQUIRED, but the
+        ``.google.com`` suffix branch of :func:`_is_allowed_cookie_domain`
+        still accepts cookies on Drive / Docs / myaccount / Mail. Only
+        ``youtube.com`` (which is not a subdomain of ``.google.com``) is
+        now dropped by default — see
+        :class:`TestSiblingGoogleProductExtraction` for that contract.
         """
         raw = [
             {
@@ -2846,7 +2979,6 @@ class TestConvertRookiepyCookies:
             }
             for domain in (
                 ".mail.google.com",
-                ".youtube.com",
                 ".drive.google.com",
                 ".docs.google.com",
                 ".myaccount.google.com",
@@ -2856,7 +2988,6 @@ class TestConvertRookiepyCookies:
         kept_domains = {c["domain"] for c in result["cookies"]}
         assert kept_domains == {
             ".mail.google.com",
-            ".youtube.com",
             ".drive.google.com",
             ".docs.google.com",
             ".myaccount.google.com",
