@@ -346,10 +346,29 @@ def source_list(ctx, notebook_id, json_output, client_auth):
         "Increase when adding slow URLs or large files that exceed the default."
     ),
 )
+@click.option(
+    "--follow-symlinks",
+    is_flag=True,
+    default=False,
+    help=(
+        "Follow symbolic links when uploading a file. By default, symlinks "
+        "are rejected so a workspace symlink cannot silently exfiltrate the "
+        "file it points at (e.g. ~/Downloads/foo.pdf -> /etc/passwd)."
+    ),
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def source_add(
-    ctx, content, notebook_id, source_type, title, mime_type, timeout, json_output, client_auth
+    ctx,
+    content,
+    notebook_id,
+    source_type,
+    title,
+    mime_type,
+    timeout,
+    follow_symlinks,
+    json_output,
+    client_auth,
 ):
     """Add a source to a notebook.
 
@@ -379,7 +398,17 @@ def source_add(
         if content.startswith(("http://", "https://")):
             detected_type = "youtube" if is_youtube_url(content) else "url"
         elif Path(content).exists():
-            file_path = Path(content).resolve()  # Resolve symlinks
+            raw = Path(content)
+            # Security: reject symlinks unless the user has explicitly opted
+            # in via --follow-symlinks. Transparent symlink resolution is a
+            # footgun on shared workstations (a workspace ``foo.pdf`` symlink
+            # could point at ``/etc/passwd`` and silently upload it).
+            if raw.is_symlink() and not follow_symlinks:
+                raise click.ClickException(
+                    "Path is a symlink; pass --follow-symlinks to follow it "
+                    f"explicitly. Refusing to upload: {raw}"
+                )
+            file_path = raw.resolve()  # Resolve only after explicit --follow-symlinks opt-in
             # Security: Ensure it's a regular file (not a symlink to sensitive file)
             if not file_path.is_file():
                 raise click.ClickException(f"Not a regular file: {content}")
