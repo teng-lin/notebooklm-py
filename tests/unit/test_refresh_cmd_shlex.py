@@ -90,8 +90,17 @@ class TestShlexDefault:
         await _run_refresh_cmd()
 
         target = recorder.calls[0]["args"][0]
-        assert target == ["echo", "hello world"]
-        assert len(target) == 2  # quoted segment stays one token
+        # The load-bearing invariant: the quoted span stays a single argv
+        # element, so the child sees one "hello world" arg instead of two.
+        # POSIX ``shlex.split`` strips the surrounding quotes; non-POSIX
+        # (Windows) preserves them — the child shell-less invocation then
+        # rejects them, but that's the user's problem and not ours.
+        assert len(target) == 2
+        assert target[0] == "echo"
+        if os.name == "nt":
+            assert target[1] == '"hello world"'
+        else:
+            assert target[1] == "hello world"
 
     @pytest.mark.asyncio
     async def test_malformed_command_raises_runtime_error(self, monkeypatch, tmp_path):
