@@ -239,6 +239,46 @@ def test_host_umbrella_cookie_is_scrubbed_in_storage_state() -> None:
     assert '"name": "__Host-GAPS"' in scrubbed
 
 
+def test_storage_state_value_with_escaped_quote_does_not_leak_tail() -> None:
+    """Adversarial cookie values containing escaped quotes are fully redacted.
+
+    The naive value class ``[^"]*`` terminates at the first ``"`` in the input
+    even when that quote is JSON-escaped (``\\"``), which would leave the
+    portion of the value AFTER the escaped quote unredacted in the output.
+    The PR fix uses the "string with escapes" idiom
+    ``[^"\\\\]*(?:\\\\.[^"\\\\]*)*`` which consumes escape sequences correctly.
+
+    This is a real (if narrow) attack surface: a service that ever returned a
+    cookie value containing a quote, or a malicious fixture, would leak the
+    tail of the value through the sanitizer. Pin the safe behavior so a
+    future "simplification" of the regex cannot silently re-open it.
+    """
+    # The literal value embeds a quote character; ``json.dumps`` will escape it.
+    raw_value = 'before"AFTER_LEAK_MARKER'
+    payload = json.dumps(
+        {
+            "cookies": [
+                {
+                    "name": "SID",
+                    "value": raw_value,
+                    "domain": ".google.com",
+                    "path": "/",
+                }
+            ],
+            "origins": [],
+        }
+    )
+    scrubbed = scrub_string(payload)
+
+    # Neither the leading nor the trailing portion of the value should survive.
+    assert "AFTER_LEAK_MARKER" not in scrubbed, (
+        f"Tail-of-value leaked past escaped quote in:\n{scrubbed}"
+    )
+    assert "before" not in scrubbed, f"Head-of-value leaked before escaped quote in:\n{scrubbed}"
+    # And the redaction marker should be present exactly once.
+    assert scrubbed.count('"value": "SCRUBBED"') == 1
+
+
 def test_storage_state_handles_value_before_name_ordering() -> None:
     """Defensive ordering: ``"value"`` appearing before ``"name"`` still scrubs.
 

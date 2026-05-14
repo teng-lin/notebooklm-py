@@ -137,13 +137,23 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # Playwright emits ``name`` before ``value`` in each cookie object. We still register
     # the reversed ordering defensively in case a fixture is hand-authored or a future
     # Playwright version reorders keys.
+    #
+    # The cookie-value match uses the "string with escapes" idiom
+    # ``[^"\\]*(?:\\.[^"\\]*)*`` rather than the naive ``[^"]*``. A naive value class
+    # terminates at the first ``"``, even when that quote is JSON-escaped (``\"``),
+    # which would leave the tail of the value unredacted in the output (a sensitive
+    # cookie value containing a literal quote would be silently leaked). The escape-
+    # aware idiom consumes ``\"`` sequences correctly. Cookie names never contain
+    # quotes in practice (ASCII identifiers), so the name alternation keeps the
+    # simpler ``[^"]+`` class.
     (
         r'("name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|SIDCC|OSID|NID|'
-        r'__Secure-[^"]+|__Host-[^"]+)",\s*"value":\s*")[^"]*(")',
+        r'__Secure-[^"]+|__Host-[^"]+)"\s*,\s*"value":\s*")[^"\\]*(?:\\.[^"\\]*)*(")',
         r"\1SCRUBBED\2",
     ),
     (
-        r'("value":\s*")[^"]*("\s*,\s*"name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|'
+        r'("value":\s*")[^"\\]*(?:\\.[^"\\]*)*'
+        r'("\s*,\s*"name":\s*"(?:SID|HSID|SSID|APISID|SAPISID|'
         r'SIDCC|OSID|NID|__Secure-[^"]+|__Host-[^"]+)")',
         r"\1SCRUBBED\2",
     ),
