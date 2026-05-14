@@ -993,9 +993,6 @@ class ArtifactsAPI:
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
             )
-            if result is None:
-                logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
-            return self._parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
         except RPCError as e:
             if e.rpc_code == "USER_DISPLAYABLE_ERROR":
                 return GenerationStatus(
@@ -1005,6 +1002,13 @@ class ArtifactsAPI:
                     error_code=str(e.rpc_code) if e.rpc_code is not None else None,
                 )
             raise
+        if result is None:
+            logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
+        # Parse outside the try/except so a strict-mode UnknownRPCMethodError
+        # (DecodingError -> RPCError) is not swallowed by the rpc_code guard
+        # above. Schema drift is a separate signal from quota/displayable
+        # errors and must surface to callers under strict decoding.
+        return self._parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
 
     async def generate_data_table(
         self,
@@ -2103,7 +2107,6 @@ class ArtifactsAPI:
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
             )
-            return self._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
         except RPCError as e:
             if e.rpc_code == "USER_DISPLAYABLE_ERROR":
                 return GenerationStatus(
@@ -2113,6 +2116,11 @@ class ArtifactsAPI:
                     error_code=str(e.rpc_code) if e.rpc_code is not None else None,
                 )
             raise
+        # Parse outside the try/except so a strict-mode UnknownRPCMethodError
+        # (DecodingError -> RPCError) is not swallowed by the rpc_code guard
+        # above. Schema drift is a separate signal from quota/displayable
+        # errors and must surface to callers under strict decoding.
+        return self._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw artifact list data."""
@@ -2390,12 +2398,20 @@ class ArtifactsAPI:
             source: Caller label included in drift logs / exceptions.
         """
         artifact_id = safe_index(result, 0, 0, method_id=method_id, source=source)
-        # status_code is optional: it may legitimately be absent from a real
-        # response. Under strict mode, missing this leaf still raises — that
-        # is intentional: we want to learn if Google starts omitting it.
-        status_code = safe_index(result, 0, 4, method_id=method_id, source=source)
 
         if artifact_id:
+            # In every captured CREATE_ARTIFACT / REVISE_SLIDE response we have
+            # observed, ``status_code`` sits at ``result[0][4]``. We treat it
+            # as required: under strict mode, a missing leaf raises
+            # ``UnknownRPCMethodError`` so we learn early if Google starts
+            # omitting it. The ``is not None`` fallback to ``"pending"`` only
+            # exists for soft-mode drift, where ``safe_index`` returns
+            # ``None`` instead of raising.
+            #
+            # Fetching ``status_code`` here (after the ``artifact_id`` check)
+            # avoids emitting a duplicate drift warning when the outer
+            # descent already failed at ``result[0][0]``.
+            status_code = safe_index(result, 0, 4, method_id=method_id, source=source)
             status = artifact_status_to_str(status_code) if status_code is not None else "pending"
             return GenerationStatus(task_id=artifact_id, status=status)
 

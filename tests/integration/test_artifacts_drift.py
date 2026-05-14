@@ -171,3 +171,26 @@ class TestParseGenerationResultStrictDrift:
         assert err.method_id == RPCMethod.CREATE_ARTIFACT.value
         # We descended into result[0], then failed on result[0][0].
         assert err.path == (0,)
+
+    def test_status_code_missing_raises_in_strict_mode(self, artifacts_api, monkeypatch):
+        """task_id present but status_code position absent must raise in strict mode.
+
+        ``status_code`` is treated as a required leaf: in every captured real
+        response it sits at ``result[0][4]``. If Google starts shipping a
+        truncated shape like ``[["task_short"]]`` (task_id only, no
+        status_code), we want to learn about it via a typed drift exception
+        rather than silently falling back to ``"pending"``.
+        """
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+
+        with pytest.raises(UnknownRPCMethodError) as exc_info:
+            artifacts_api._parse_generation_result(
+                [["task_short"]], method_id=RPCMethod.CREATE_ARTIFACT.value
+            )
+
+        err = exc_info.value
+        assert err.method_id == RPCMethod.CREATE_ARTIFACT.value
+        assert err.source == "_parse_generation_result"
+        # We descended into result[0] (a list of length 1), then failed on
+        # result[0][4] — so the failing path stops at (0,).
+        assert err.path == (0,)

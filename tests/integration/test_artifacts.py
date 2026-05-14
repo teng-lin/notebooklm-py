@@ -2003,8 +2003,13 @@ class TestParseGenerationResult:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
         """_parse_generation_result returns failed status when result has no artifact_id."""
+        # These tests pin down soft-strict behavior; guard against CI flipping
+        # NOTEBOOKLM_STRICT_DECODE on in the future. Strict-mode coverage of
+        # the same inputs lives in test_artifacts_drift.py.
+        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -2035,8 +2040,10 @@ class TestParseGenerationResult:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
         """_parse_generation_result returns failed status when result is None."""
+        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -2066,8 +2073,10 @@ class TestParseGenerationResult:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
         """_parse_generation_result reads status_code from artifact_data[4]."""
+        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
