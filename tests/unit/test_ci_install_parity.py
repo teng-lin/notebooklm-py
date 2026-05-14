@@ -1,45 +1,87 @@
-import os
+"""Tests for `scripts/check_ci_install_parity.py`.
+
+Phase 6 / P6.4 — drift catcher between ``.github/workflows/test.yml`` and
+``CONTRIBUTING.md`` install commands.
+"""
+
+from __future__ import annotations
+
+import subprocess
 import sys
 from pathlib import Path
 
-# Add project root to sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "scripts" / "check_ci_install_parity.py"
 
-from scripts.check_ci_install_parity import main
-
-
-def test_main_success(tmp_path):
-    # Setup mock files
-    workflow_dir = tmp_path / ".github/workflows"
-    workflow_dir.mkdir(parents=True)
-    test_yml = workflow_dir / "test.yml"
-    test_yml.write_text("run: uv sync --frozen --all-extras")
-
-    contributing_md = tmp_path / "CONTRIBUTING.md"
-    contributing_md.write_text("uv sync --frozen --all-extras")
-
-    # We need to mock Path(__file__).parent.parent in the script or just pass paths
-    # For simplicity, let's just run it against the real repo since we just updated them
-    pass
+# Import the canonical command from the script so the tests can't drift from the
+# actual contract (Codex polish review feedback).
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from check_ci_install_parity import CANONICAL_INSTALL_CMD as CANONICAL  # noqa: E402
 
 
-def test_real_parity():
-    assert main() == 0
-
-
-def test_failure_ci(tmp_path, monkeypatch):
-    repo = tmp_path
-    (repo / ".github/workflows").mkdir(parents=True)
-    (repo / ".github/workflows/test.yml").write_text("run: pip install .")
-    (repo / "CONTRIBUTING.md").write_text("uv sync --frozen --all-extras")
-
-    # Mock Path in the script to point to our tmp_path
-    import scripts.check_ci_install_parity
-
-    monkeypatch.setattr(
-        scripts.check_ci_install_parity, "Path", lambda *args: repo if not args else Path(*args)
+def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
+        timeout=30,
     )
-    # Wait, that's not how Path works.
 
-    # Let's just use a more robust script that takes arguments if we want to test it properly
-    pass
+
+def test_passes_on_real_repo_state():
+    """Current main has both files in sync."""
+    result = _run([])
+    assert result.returncode == 0, (
+        f"stderr: {result.stderr}\nstdout: {result.stdout}\n"
+        "If this fails, either CONTRIBUTING.md or .github/workflows/test.yml has drifted."
+    )
+
+
+def test_detects_workflow_drift(tmp_path):
+    """Synthetic test.yml without the canonical install command → exit 1."""
+    workflow = tmp_path / "test.yml"
+    workflow.write_text("jobs:\n  x:\n    steps:\n      - run: pip install -e .\n")
+    contributing = tmp_path / "CONTRIBUTING.md"
+    contributing.write_text(f"# Install\n```bash\n{CANONICAL}\n```\n")
+
+    result = _run(["--workflow", str(workflow), "--contributing", str(contributing)])
+    assert result.returncode == 1
+    assert "test.yml" in result.stderr
+    assert "DRIFT" in result.stderr
+
+
+def test_detects_contributing_drift(tmp_path):
+    """Synthetic CONTRIBUTING.md without the canonical command → exit 1."""
+    workflow = tmp_path / "test.yml"
+    workflow.write_text(f"jobs:\n  x:\n    steps:\n      - run: {CANONICAL}\n")
+    contributing = tmp_path / "CONTRIBUTING.md"
+    contributing.write_text("# No canonical install here, just prose\n")
+
+    result = _run(["--workflow", str(workflow), "--contributing", str(contributing)])
+    assert result.returncode == 1
+    assert "CONTRIBUTING.md" in result.stderr
+    assert "DRIFT" in result.stderr
+
+
+def test_missing_workflow_file(tmp_path):
+    """Missing test.yml → exit 2 (argument error)."""
+    contributing = tmp_path / "CONTRIBUTING.md"
+    contributing.write_text(CANONICAL)
+
+    result = _run(
+        ["--workflow", str(tmp_path / "missing.yml"), "--contributing", str(contributing)]
+    )
+    assert result.returncode == 2
+    assert "not found" in result.stderr.lower()
+
+
+def test_missing_contributing_file(tmp_path):
+    """Missing CONTRIBUTING.md → exit 2 (symmetric to missing workflow)."""
+    workflow = tmp_path / "test.yml"
+    workflow.write_text(f"jobs:\n  x:\n    steps:\n      - run: {CANONICAL}\n")
+
+    result = _run(["--workflow", str(workflow), "--contributing", str(tmp_path / "missing.md")])
+    assert result.returncode == 2
+    assert "not found" in result.stderr.lower()

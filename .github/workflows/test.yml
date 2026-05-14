@@ -35,25 +35,25 @@ jobs:
       run: uv sync --frozen --extra browser --extra dev --extra markdown
 
     - name: Run pre-commit checks
-      run: pre-commit run --all-files
+      run: uv run pre-commit run --all-files
 
     - name: Run type checking
-      run: mypy src/notebooklm --ignore-missing-imports
+      run: uv run mypy src/notebooklm --ignore-missing-imports
 
     - name: Assert workflow permissions are scoped (Phase 1 T4)
-      run: python scripts/check_workflow_permissions.py
+      run: uv run python scripts/check_workflow_permissions.py
 
     - name: Assert coverage thresholds match (Phase 1 T5)
-      run: python scripts/check_coverage_thresholds.py
+      run: uv run python scripts/check_coverage_thresholds.py
 
     - name: Assert CI install matches CONTRIBUTING.md (Phase 6 P6.4)
-      run: python scripts/check_ci_install_parity.py
+      run: uv run python scripts/check_ci_install_parity.py
 
     - name: Assert CLAUDE.md paths are fresh (Phase 6 P6.6)
-      run: python scripts/check_claude_md_freshness.py
+      run: uv run python scripts/check_claude_md_freshness.py
 
     - name: Verify e2e test fixtures
-      run: pytest tests/e2e --collect-only -q
+      run: uv run pytest tests/e2e --collect-only -q
 
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -86,7 +86,7 @@ jobs:
       id: playwright-version
       shell: bash
       run: |
-        echo "version=$(pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        echo "version=$(uv pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
       uses: actions/cache@v5
@@ -97,16 +97,16 @@ jobs:
         key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}
 
     - name: Install Playwright browsers
-      run: playwright install chromium
+      run: uv run playwright install chromium
 
     - name: Install Playwright system dependencies (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        if ! timeout 180s playwright install-deps chromium; then
+        if ! timeout 180s uv run playwright install-deps chromium; then
           echo "::warning::Playwright system dependency installation timed out or failed."
           echo "::warning::Continuing so the non-browser test matrix can run."
         fi
 
     - name: Run tests with coverage
-      run: pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90
+      run: uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-fail-under=90
