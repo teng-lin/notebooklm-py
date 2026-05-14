@@ -30,6 +30,7 @@ from notebooklm._core import (
     _AuthSnapshot,
     _TransportAuthExpired,
     _TransportRateLimited,
+    _TransportServerError,
 )
 from notebooklm._logging import get_request_id
 from notebooklm.auth import AuthTokens
@@ -40,6 +41,7 @@ def _make_core(
     *,
     refresh_callback: Callable[[], Any] | None = None,
     rate_limit_max_retries: int = 0,
+    server_error_max_retries: int = 0,
 ) -> ClientCore:
     auth = AuthTokens(
         csrf_token="CSRF_OLD",
@@ -51,6 +53,7 @@ def _make_core(
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.0,
         rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
     )
 
 
@@ -410,3 +413,419 @@ async def test_rpc_call_happy_path_url_and_body_unchanged(monkeypatch):
         assert "f.req=" in captured["content"]
     finally:
         await core.close()
+
+
+# ---------------------------------------------------------------------------
+# server_error_max_retries — 5xx + network with exponential backoff (T3.A)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_5xx_retries_then_succeeds(monkeypatch):
+    """503 followed by 200: server_error_max_retries=3 lets us recover."""
+    core = _make_core(server_error_max_retries=3)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise _status_error(503)
+            return _ok_response()
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        response = await core._perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert call_count["n"] == 2
+        # First retry sleeps 2 ** 0 = 1 second.
+        assert sleeps == [1]
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
+    """Persistent 502 with budget=3 → 4 total attempts, then _TransportServerError."""
+    core = _make_core(server_error_max_retries=3)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            raise _status_error(502)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportServerError) as exc_info:
+            await core._perform_authed_post(build_request=build, log_label="test")
+
+        # Initial + 3 retries = 4 total attempts.
+        assert call_count["n"] == 4
+        # Exponential backoff: 1, 2, 4 seconds (capped at 30).
+        assert sleeps == [1, 2, 4]
+        assert exc_info.value.status_code == 502
+        assert isinstance(exc_info.value.original, httpx.HTTPStatusError)
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_network_error_retries_then_succeeds(monkeypatch):
+    """httpx.RequestError (network blip) follows the server-error retry path."""
+    core = _make_core(server_error_max_retries=3)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise httpx.ReadTimeout("connection blip")
+            return _ok_response()
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        response = await core._perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert call_count["n"] == 2
+        assert sleeps == [1]
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_network_error_exhausts_budget_raises_transport_server_error(monkeypatch):
+    """Repeated httpx.ConnectError → exhausts budget → _TransportServerError
+    wrapping the underlying RequestError (status_code/response are None)."""
+    core = _make_core(server_error_max_retries=2)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        async def fake_post(*args, **kwargs):
+            raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportServerError) as exc_info:
+            await core._perform_authed_post(build_request=build, log_label="test")
+
+        # Initial + 2 retries = 3 attempts; 2 sleeps (1, 2).
+        assert sleeps == [1, 2]
+        assert exc_info.value.status_code is None
+        assert exc_info.value.response is None
+        assert isinstance(exc_info.value.original, httpx.ConnectError)
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_server_error_budget_zero_raises_immediately(monkeypatch):
+    """server_error_max_retries=0 short-circuits to immediate raise (no sleep)."""
+    core = _make_core(server_error_max_retries=0)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            raise _status_error(500)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportServerError) as exc_info:
+            await core._perform_authed_post(build_request=build, log_label="test")
+
+        # Exactly one attempt, no sleep.
+        assert call_count["n"] == 1
+        assert sleeps == []
+        assert exc_info.value.status_code == 500
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
+    """Backoff schedule: 1, 2, 4, 8, 16, 30 — caps at 30 for high attempt counts."""
+    core = _make_core(server_error_max_retries=8)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        async def fake_post(*args, **kwargs):
+            raise _status_error(503)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportServerError):
+            await core._perform_authed_post(build_request=build, log_label="test")
+
+        # min(2 ** attempt, 30) for attempt in 0..7 → 1, 2, 4, 8, 16, 30, 30, 30.
+        assert sleeps == [1, 2, 4, 8, 16, 30, 30, 30]
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_5xx_path_does_not_touch_429_path(monkeypatch):
+    """Sanity: a 429 should still hit the rate-limit path, not the 5xx path,
+    even when server_error_max_retries is configured."""
+    core = _make_core(rate_limit_max_retries=1, server_error_max_retries=3)
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        async def fake_post(*args, **kwargs):
+            raise _status_error(429, retry_after="5")
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportRateLimited) as exc_info:
+            await core._perform_authed_post(build_request=build, log_label="test")
+
+        # 429-path sleep uses Retry-After (5), NOT exponential backoff.
+        assert sleeps == [5]
+        assert exc_info.value.retry_after == 5
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
+    """A 503 must not be misclassified as auth error → refresh path. Refresh
+    callback must never be called even when configured."""
+    refresh_calls: list[bool] = []
+    captured_core: dict[str, ClientCore] = {}
+
+    async def refresh() -> AuthTokens:
+        refresh_calls.append(True)
+        return captured_core["c"].auth
+
+    core = _make_core(refresh_callback=refresh, server_error_max_retries=1)
+    captured_core["c"] = core
+    await core.open()
+    try:
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        async def fake_post(*args, **kwargs):
+            raise _status_error(503)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportServerError):
+            await core._perform_authed_post(build_request=build, log_label="test")
+
+        assert refresh_calls == []
+    finally:
+        await core.close()
+
+
+# ---------------------------------------------------------------------------
+# rpc_call + query_post wrappers for _TransportServerError
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rpc_call_maps_transport_server_error_to_server_error(monkeypatch):
+    """``RPCError`` family: 5xx after retries → :class:`ServerError`."""
+    from notebooklm.rpc import ServerError
+
+    core = _make_core(server_error_max_retries=1)
+    await core.open()
+    try:
+
+        async def fake_sleep(seconds: float) -> None:
+            pass
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        async def fake_post(*args, **kwargs):
+            raise _status_error(503)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(ServerError) as exc_info:
+            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+        assert exc_info.value.status_code == 503
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_rpc_call_maps_transport_server_error_network_to_network_error(monkeypatch):
+    """Network failure exhausting budget on rpc_call → NetworkError (not RPCError)."""
+    from notebooklm.rpc import NetworkError
+
+    core = _make_core(server_error_max_retries=1)
+    await core.open()
+    try:
+
+        async def fake_sleep(seconds: float) -> None:
+            pass
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        async def fake_post(*args, **kwargs):
+            raise httpx.ConnectError("nope")
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(NetworkError):
+            await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_query_post_maps_transport_server_error_to_chat_error(monkeypatch):
+    """``query_post`` (chat surface): 5xx after retries → ChatError."""
+    from notebooklm.exceptions import ChatError
+
+    core = _make_core(server_error_max_retries=1)
+    await core.open()
+    try:
+
+        async def fake_sleep(seconds: float) -> None:
+            pass
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        async def fake_post(*args, **kwargs):
+            raise _status_error(500)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(ChatError) as exc_info:
+            await core.query_post(build_request=build, parse_label="chat.ask")
+
+        assert "HTTP 500" in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, _TransportServerError)
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_query_post_maps_transport_server_error_network_to_network_error(monkeypatch):
+    """Network failure exhausting budget on query_post → NetworkError."""
+    from notebooklm.exceptions import NetworkError
+
+    core = _make_core(server_error_max_retries=1)
+    await core.open()
+    try:
+
+        async def fake_sleep(seconds: float) -> None:
+            pass
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        async def fake_post(*args, **kwargs):
+            raise httpx.ConnectError("nope")
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(NetworkError) as exc_info:
+            await core.query_post(build_request=build, parse_label="chat.ask")
+
+        assert isinstance(exc_info.value.original_error, httpx.ConnectError)
+    finally:
+        await core.close()
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+
+def test_server_error_max_retries_negative_raises():
+    """Symmetric with rate_limit_max_retries: negative values are rejected."""
+    auth = AuthTokens(
+        csrf_token="CSRF",
+        session_id="SID",
+        cookies={"SID": "x"},
+    )
+    with pytest.raises(ValueError, match="server_error_max_retries must be >= 0"):
+        ClientCore(auth=auth, server_error_max_retries=-1)

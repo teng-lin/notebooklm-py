@@ -618,7 +618,9 @@ class TestChatAskErrorHandling:
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
         )
 
-        async with NotebookLMClient(auth_tokens) as client:
+        # ``server_error_max_retries=0`` pins the original immediate-raise
+        # contract; T3.A's default retries 5xx + RequestError 3x.
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             with pytest.raises(NetworkError, match="timed out"):
                 await client.chat.ask(
                     "nb_123",
@@ -650,7 +652,7 @@ class TestChatAskErrorHandling:
             method="POST",
         )
 
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             with pytest.raises(ChatError, match="500"):
                 await client.chat.ask(
                     "nb_123",
@@ -676,7 +678,7 @@ class TestChatAskErrorHandling:
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
         )
 
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             with pytest.raises(NetworkError, match="connection refused"):
                 await client.chat.ask(
                     "nb_123",

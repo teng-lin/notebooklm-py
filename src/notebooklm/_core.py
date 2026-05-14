@@ -160,6 +160,41 @@ class _TransportRateLimited(Exception):
         self.original = original
 
 
+class _TransportServerError(Exception):
+    """Raised by ``_perform_authed_post`` when the server-error retry budget
+    is exhausted.
+
+    Covers two retryable failure modes that share an exponential-backoff
+    schedule (synthesis C4 / T4):
+
+    - ``isinstance(original, httpx.HTTPStatusError)`` with a 5xx status —
+      the response is available via ``response`` / ``status_code``.
+    - ``isinstance(original, httpx.RequestError)`` — a network-layer failure
+      (timeout, connect error, ...). ``response`` and ``status_code`` are
+      ``None`` in this case.
+
+    Callers map this onto their own error domain:
+
+    - ``rpc_call`` translates this back into the historical :class:`ServerError`
+      / :class:`NetworkError` shapes the RPC API has always raised.
+    - ``query_post`` translates this into :class:`ChatError` /
+      :class:`NetworkError` to match the chat API contract.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        original: Exception,
+        response: httpx.Response | None = None,
+        status_code: int | None = None,
+    ):
+        super().__init__(message)
+        self.original = original
+        self.response = response
+        self.status_code = status_code
+
+
 # Build-request factory: receives a fresh ``_AuthSnapshot`` and returns the
 # triple (url, body, extra_headers) for one HTTP attempt. ``_perform_authed_post``
 # invokes this once per attempt so refreshed snapshots are picked up on retry.
@@ -246,6 +281,7 @@ class ClientCore:
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
         keepalive_storage_path: Path | None = None,
         rate_limit_max_retries: int = 0,
+        server_error_max_retries: int = 3,
     ):
         """Initialize the core client.
 
@@ -276,6 +312,14 @@ class ClientCore:
                 per-attempt value is capped at ``MAX_RETRY_AFTER_SECONDS``, but
                 the cumulative sleep across N retries is ``N * cap``, so pick
                 ``rate_limit_max_retries`` accordingly.
+            server_error_max_retries: Max automatic retries for retryable transient
+                transport failures: HTTP 5xx responses and network-layer
+                ``httpx.RequestError`` (timeouts, connect errors). Defaults to
+                ``3``. Uses exponential backoff ``min(2 ** attempt, 30)``
+                seconds — 5xx responses rarely carry ``Retry-After``, so the
+                429 model doesn't apply. Set to ``0`` to disable. Refresh-path
+                errors (400/401/403) are NOT covered here; those follow the
+                existing auth-refresh-and-retry flow.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
@@ -289,6 +333,11 @@ class ClientCore:
         if rate_limit_max_retries < 0:
             raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
         self._rate_limit_max_retries = rate_limit_max_retries
+        if server_error_max_retries < 0:
+            raise ValueError(
+                f"server_error_max_retries must be >= 0, got {server_error_max_retries}"
+            )
+        self._server_error_max_retries = server_error_max_retries
         self._refresh_lock: asyncio.Lock | None = asyncio.Lock() if refresh_callback else None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
@@ -713,6 +762,13 @@ class ClientCore:
           after that, raises :class:`_TransportRateLimited` with the final
           response and parsed retry-after value. With no parseable header or
           ``rate_limit_max_retries == 0``, raises immediately.
+        - **Server-error path** — on HTTP 5xx, or any ``httpx.RequestError``
+          (network-layer failures: timeouts, connect errors), sleeps with
+          exponential backoff ``min(2 ** attempt, 30)`` seconds and retries
+          until ``server_error_max_retries`` is reached; after that, raises
+          :class:`_TransportServerError`. ``server_error_max_retries == 0``
+          short-circuits to an immediate raise. This path does NOT honor
+          ``Retry-After`` because 5xx rarely carries it.
         - All other errors propagate as :class:`httpx.HTTPStatusError` /
           :class:`httpx.RequestError` unchanged.
 
@@ -742,6 +798,7 @@ class ClientCore:
 
         refreshed_this_call = False
         rate_limit_retries = 0
+        server_error_retries = 0
         start = time.perf_counter()
 
         while True:
@@ -808,6 +865,49 @@ class ClientCore:
                         f"{log_label} rate-limited (HTTP 429)",
                         retry_after=retry_after,
                         response=exc.response,
+                        original=exc,
+                    ) from exc
+
+                # --- 5xx / network retry path -------------------------------
+                # Exponential backoff: 5xx responses rarely carry Retry-After
+                # so we don't use the 429 model. ``httpx.RequestError`` covers
+                # transient network-layer failures (timeouts, connect errors,
+                # remote-protocol blips) that are reasonable to retry.
+                is_server_error = (
+                    isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600
+                )
+                is_network_error = isinstance(exc, httpx.RequestError)
+                if is_server_error or is_network_error:
+                    if server_error_retries < self._server_error_max_retries:
+                        backoff = min(2**server_error_retries, 30)
+                        status_label = (
+                            f"HTTP {exc.response.status_code}"  # type: ignore[union-attr]
+                            if is_server_error
+                            else type(exc).__name__
+                        )
+                        logger.warning(
+                            "%s server/network error (%s); backing off %ds then retrying (%d/%d)",
+                            log_label,
+                            status_label,
+                            backoff,
+                            server_error_retries + 1,
+                            self._server_error_max_retries,
+                        )
+                        await asyncio.sleep(backoff)
+                        server_error_retries += 1
+                        continue
+                    if is_server_error:
+                        status_error = cast(httpx.HTTPStatusError, exc)
+                        raise _TransportServerError(
+                            f"{log_label} server error "
+                            f"(HTTP {status_error.response.status_code}) after "
+                            f"{server_error_retries} retries",
+                            original=status_error,
+                            response=status_error.response,
+                            status_code=status_error.response.status_code,
+                        ) from exc
+                    raise _TransportServerError(
+                        f"{log_label} network error after {server_error_retries} retries: {exc}",
                         original=exc,
                     ) from exc
 
@@ -889,6 +989,18 @@ class ClientCore:
                     if exc.retry_after is not None
                     else ""
                 )
+            ) from exc
+        except _TransportServerError as exc:
+            if isinstance(exc.original, httpx.HTTPStatusError):
+                raise ChatError(
+                    f"{parse_label} failed with HTTP {exc.original.response.status_code} "
+                    f"after retries: {exc.original}"
+                ) from exc
+            # Network-layer failure (RequestError / Timeout).
+            assert isinstance(exc.original, httpx.RequestError)
+            raise NetworkError(
+                f"{parse_label} network error after retries: {exc.original}",
+                original_error=exc.original,
             ) from exc
         except httpx.TimeoutException as exc:
             raise NetworkError(
@@ -1019,6 +1131,29 @@ class ClientCore:
                 method_id=method.value,
                 retry_after=exc.retry_after,
             ) from exc.original
+        except _TransportServerError as exc:
+            elapsed = time.perf_counter() - start
+            # Translate the budget-exhaustion signal back into the historical
+            # RPC error shape: 5xx → ServerError; network → NetworkError /
+            # RPCTimeoutError. ``_raise_rpc_error_from_*`` already does the
+            # right mapping for the underlying ``original`` exception.
+            if isinstance(exc.original, httpx.HTTPStatusError):
+                logger.error(
+                    "RPC %s failed after %.3fs: HTTP %s (server-error retries exhausted)",
+                    method.name,
+                    elapsed,
+                    exc.original.response.status_code,
+                )
+                self._raise_rpc_error_from_http_status(exc.original, method)
+            else:
+                assert isinstance(exc.original, httpx.RequestError)
+                logger.error(
+                    "RPC %s failed after %.3fs: %s (server-error retries exhausted)",
+                    method.name,
+                    elapsed,
+                    exc.original,
+                )
+                self._raise_rpc_error_from_request_error(exc.original, method)
         except httpx.HTTPStatusError as exc:
             elapsed = time.perf_counter() - start
             logger.error(

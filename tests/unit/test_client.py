@@ -638,8 +638,13 @@ class TestRpcCallAutoRetry:
         assert call_count[0] == 2, "Should only retry once"
 
     @pytest.mark.asyncio
-    async def test_no_retry_on_non_auth_error(self):
-        """rpc_call should NOT retry on non-auth errors (HTTP 500)."""
+    async def test_no_auth_refresh_on_non_auth_error(self):
+        """rpc_call should NOT trigger auth refresh on non-auth errors (HTTP 500).
+
+        Note: ``server_error_max_retries=0`` opts out of the T3.A 5xx retry
+        path so this test stays focused on the original assertion — that 500
+        does not trigger an auth refresh, regardless of the retry policy.
+        """
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
             csrf_token="csrf",
@@ -652,7 +657,12 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = ClientCore(
+            auth,
+            refresh_callback=mock_refresh,
+            refresh_retry_delay=0,
+            server_error_max_retries=0,
+        )
 
         call_count = [0]
 

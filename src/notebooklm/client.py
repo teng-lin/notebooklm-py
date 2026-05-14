@@ -84,6 +84,8 @@ class NotebookLMClient:
         storage_path: Path | None = None,
         keepalive: float | None = None,
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
+        rate_limit_max_retries: int = 0,
+        server_error_max_retries: int = 3,
     ):
         """Initialize the NotebookLM client.
 
@@ -100,6 +102,15 @@ class NotebookLMClient:
             keepalive_min_interval: Lower bound for ``keepalive`` (defaults to
                 60 s) to avoid accidentally rate-limiting Google's identity
                 surface.
+            rate_limit_max_retries: Max automatic retries on HTTP 429 with a
+                parseable ``Retry-After``. ``0`` (default) preserves the
+                pre-Phase-3 contract of raising immediately. See
+                :class:`ClientCore` for the per-attempt sleep semantics.
+            server_error_max_retries: Max automatic retries for retryable
+                transient failures: HTTP 5xx and network-layer
+                ``httpx.RequestError`` (timeouts, connect errors). Defaults to
+                ``3``. Uses exponential backoff ``min(2 ** attempt, 30)``
+                seconds. Set to ``0`` to disable.
         """
         # Normalize the effective storage path onto the auth object so every
         # downstream code path (refresh_auth, ClientCore.close on-close save,
@@ -122,6 +133,8 @@ class NotebookLMClient:
             keepalive=keepalive,
             keepalive_min_interval=keepalive_min_interval,
             keepalive_storage_path=auth.storage_path,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
         )
 
         # Initialize sub-client APIs
@@ -169,6 +182,8 @@ class NotebookLMClient:
         profile: str | None = None,
         keepalive: float | None = None,
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
+        rate_limit_max_retries: int = 0,
+        server_error_max_retries: int = 3,
     ) -> "NotebookLMClient":
         """Create a client from Playwright storage state file.
 
@@ -184,6 +199,10 @@ class NotebookLMClient:
                 rotation poke. ``None`` disables it (default). See
                 :class:`NotebookLMClient` for full semantics.
             keepalive_min_interval: Floor for ``keepalive`` (defaults to 60 s).
+            rate_limit_max_retries: Max automatic retries on HTTP 429. ``0``
+                (default) preserves pre-Phase-3 raise-immediately behavior.
+            server_error_max_retries: Max automatic retries for HTTP 5xx /
+                network errors with exponential backoff. Defaults to ``3``.
 
         Returns:
             NotebookLMClient instance (not yet connected).
@@ -215,6 +234,8 @@ class NotebookLMClient:
             storage_path=storage_path,
             keepalive=keepalive,
             keepalive_min_interval=keepalive_min_interval,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
         )
 
     async def refresh_auth(self) -> AuthTokens:
