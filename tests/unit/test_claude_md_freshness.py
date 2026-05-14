@@ -77,6 +77,9 @@ def test_main_failure(tmp_path):
 
 
 def test_real_claude_md():
-    # Verify that the current CLAUDE.md in the project is fresh
-    # We need to be at the repo root for this to work
-    assert main([]) == 0
+    # Verify that the current CLAUDE.md in the project is fresh.
+    # Resolve paths relative to this file so the test is not CWD-dependent
+    # (pytest can be invoked from any subdirectory).
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    claude_md = os.path.join(repo_root, "CLAUDE.md")
+    assert main(["--claude-md", claude_md, "--repo-root", repo_root]) == 0
