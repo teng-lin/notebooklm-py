@@ -26,7 +26,7 @@ from .helpers import (
     resolve_notebook_id,
     with_client,
 )
-from .options import notebook_option
+from .options import json_option, notebook_option
 
 
 @click.group()
@@ -134,8 +134,9 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, client_auth):
 @artifact.command("get")
 @click.argument("artifact_id")
 @notebook_option
+@json_option
 @with_client
-def artifact_get(ctx, artifact_id, notebook_id, client_auth):
+def artifact_get(ctx, artifact_id, notebook_id, json_output, client_auth):
     """Get artifact details.
 
     ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -144,9 +145,29 @@ def artifact_get(ctx, artifact_id, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id)
-            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_artifact_id(
+                client, nb_id_resolved, artifact_id, json_output=json_output
+            )
             art = await client.artifacts.get(nb_id_resolved, resolved_id)
+
+            if json_output:
+                if art is None:
+                    json_output_response({"id": resolved_id, "found": False})
+                    return
+                data = {
+                    "id": art.id,
+                    "title": art.title,
+                    "type": get_artifact_type_display(art).split(" ", 1)[-1],
+                    "type_id": art.kind.value,
+                    "status": art.status_str,
+                    "status_id": art.status,
+                    "created_at": art.created_at.isoformat() if art.created_at else None,
+                    "found": True,
+                }
+                json_output_response(data)
+                return
+
             if art:
                 console.print(f"[bold cyan]Artifact:[/bold cyan] {art.id}")
                 console.print(f"[bold]Title:[/bold] {art.title}")
@@ -166,8 +187,9 @@ def artifact_get(ctx, artifact_id, notebook_id, client_auth):
 @click.argument("artifact_id")
 @click.argument("new_title")
 @notebook_option
+@json_option
 @with_client
-def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
+def artifact_rename(ctx, artifact_id, new_title, notebook_id, json_output, client_auth):
     """Rename an artifact.
 
     ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -176,8 +198,10 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id)
-            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_artifact_id(
+                client, nb_id_resolved, artifact_id, json_output=json_output
+            )
 
             # Check if this is a mind map (stored with notes, not artifacts)
             mind_maps = await client.notes.list_mind_maps(nb_id_resolved)
@@ -188,8 +212,11 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
             await client.artifacts.rename(nb_id_resolved, resolved_id, new_title)
             # The rename API returns None; if no exception was raised, the operation succeeded.
             # We display the requested new_title as confirmation.
-            console.print(f"[green]Renamed artifact:[/green] {resolved_id}")
-            console.print(f"[bold]New title:[/bold] {new_title}")
+            if json_output:
+                json_output_response({"id": resolved_id, "renamed": True, "new_title": new_title})
+            else:
+                console.print(f"[green]Renamed artifact:[/green] {resolved_id}")
+                console.print(f"[bold]New title:[/bold] {new_title}")
 
     return _run()
 
@@ -198,8 +225,9 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, client_auth):
 @click.argument("artifact_id")
 @notebook_option
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
+@json_option
 @with_client
-def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
+def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth):
     """Delete an artifact.
 
     ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -208,10 +236,14 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id)
-            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_artifact_id(
+                client, nb_id_resolved, artifact_id, json_output=json_output
+            )
 
             if not yes and not click.confirm(f"Delete artifact {resolved_id}?"):
+                if json_output:
+                    json_output_response({"id": resolved_id, "deleted": False, "cancelled": True})
                 return
 
             # Check if this is a mind map (stored with notes)
@@ -219,14 +251,30 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
             for mm in mind_maps:
                 if mm[0] == resolved_id:
                     await client.notes.delete(nb_id_resolved, resolved_id)
-                    console.print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}")
-                    console.print(
-                        "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]"
-                    )
+                    if json_output:
+                        json_output_response(
+                            {
+                                "id": resolved_id,
+                                "deleted": True,
+                                "kind": "mind_map",
+                                "note": (
+                                    "Mind maps are cleared, not removed. "
+                                    "Google may garbage collect them later."
+                                ),
+                            }
+                        )
+                    else:
+                        console.print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}")
+                        console.print(
+                            "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]"
+                        )
                     return
 
             await client.artifacts.delete(nb_id_resolved, resolved_id)
-            console.print(f"[green]Deleted artifact:[/green] {resolved_id}")
+            if json_output:
+                json_output_response({"id": resolved_id, "deleted": True})
+            else:
+                console.print(f"[green]Deleted artifact:[/green] {resolved_id}")
 
     return _run()
 
@@ -236,8 +284,9 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, client_auth):
 @notebook_option
 @click.option("--title", required=True, help="Title for exported document")
 @click.option("--type", "export_type", type=click.Choice(["docs", "sheets"]), default="docs")
+@json_option
 @with_client
-def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_auth):
+def artifact_export(ctx, artifact_id, notebook_id, title, export_type, json_output, client_auth):
     """Export artifact to Google Docs/Sheets.
 
     ARTIFACT_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
@@ -246,14 +295,29 @@ def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_au
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id)
-            resolved_id = await resolve_artifact_id(client, nb_id_resolved, artifact_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
+            resolved_id = await resolve_artifact_id(
+                client, nb_id_resolved, artifact_id, json_output=json_output
+            )
             # Convert export_type string to ExportType enum
             export_type_enum = ExportType.SHEETS if export_type == "sheets" else ExportType.DOCS
             # Pass None for content - backend retrieves content from artifact_id
             result = await client.artifacts.export(
                 nb_id_resolved, resolved_id, None, title, export_type_enum
             )
+
+            if json_output:
+                json_output_response(
+                    {
+                        "id": resolved_id,
+                        "exported": bool(result),
+                        "export_type": export_type,
+                        "title": title,
+                        "result": result,
+                    }
+                )
+                return
+
             if result:
                 console.print(f"[green]Exported to Google {export_type.title()}[/green]")
                 console.print(result)
@@ -266,15 +330,32 @@ def artifact_export(ctx, artifact_id, notebook_id, title, export_type, client_au
 @artifact.command("poll")
 @click.argument("task_id")
 @notebook_option
+@json_option
 @with_client
-def artifact_poll(ctx, task_id, notebook_id, client_auth):
+def artifact_poll(ctx, task_id, notebook_id, json_output, client_auth):
     """Poll generation status."""
     nb_id = require_notebook(notebook_id)
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id)
+            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             status = await client.artifacts.poll_status(nb_id_resolved, task_id)
+
+            if json_output:
+                # Mirror the GenerationStatus dataclass fields so automation can
+                # introspect status / url / error without parsing prose.
+                json_output_response(
+                    {
+                        "task_id": getattr(status, "task_id", task_id),
+                        "status": getattr(status, "status", None),
+                        "url": getattr(status, "url", None),
+                        "error": getattr(status, "error", None),
+                        "error_code": getattr(status, "error_code", None),
+                        "metadata": getattr(status, "metadata", None),
+                    }
+                )
+                return
+
             console.print("[bold cyan]Task Status:[/bold cyan]")
             console.print(status)
 

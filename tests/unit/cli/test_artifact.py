@@ -158,6 +158,44 @@ class TestArtifactGet:
             assert result.exit_code == 1
             assert "No artifact found" in result.output
 
+    def test_artifact_get_json_output(self, runner, mock_auth):
+        """`artifact get --json` emits structured JSON mirroring the Artifact."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)
+                ]
+            )
+            mock_client.artifacts.get = AsyncMock(
+                return_value=Artifact(
+                    id="art_123",
+                    title="Test Artifact",
+                    _artifact_type=4,
+                    status=3,
+                    created_at=datetime(2024, 1, 1),
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "get", "art_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["id"] == "art_123"
+            assert data["title"] == "Test Artifact"
+            assert data["found"] is True
+            # type / status / created_at keys must be present for automation
+            assert "type" in data
+            assert "status" in data
+            assert "created_at" in data
+
 
 # =============================================================================
 # ARTIFACT RENAME TESTS
@@ -188,6 +226,30 @@ class TestArtifactRename:
 
             assert result.exit_code == 0
             assert "Renamed artifact" in result.output
+
+    def test_artifact_rename_json_output(self, runner, mock_auth):
+        """`artifact rename --json` emits a structured success payload."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[Artifact(id="art_123", title="Old Title", _artifact_type=4, status=3)]
+            )
+            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+            mock_client.artifacts.rename = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["artifact", "rename", "art_123", "New Title", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data == {"id": "art_123", "renamed": True, "new_title": "New Title"}
 
     def test_artifact_rename_rejects_mind_map(self, runner, mock_auth):
         with patch_client_for_module("artifact") as mock_client_cls:
@@ -242,6 +304,62 @@ class TestArtifactDelete:
 
             assert result.exit_code == 0
             assert "Deleted artifact" in result.output
+
+    def test_artifact_delete_json_output(self, runner, mock_auth):
+        """`artifact delete --json` emits a structured success payload."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="art_123", title="Test Artifact", _artifact_type=4, status=3)
+                ]
+            )
+            mock_client.notes.list_mind_maps = AsyncMock(return_value=[])
+            mock_client.artifacts.delete = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "delete", "art_123", "-n", "nb_123", "-y", "--json"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data == {"id": "art_123", "deleted": True}
+
+    def test_artifact_delete_mind_map_json_output(self, runner, mock_auth):
+        """`artifact delete --json` flags mind-map carve-out in the payload."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    Artifact(id="mm_456", title="Mind Map Title", _artifact_type=5, status=3)
+                ]
+            )
+            mock_client.notes.list_mind_maps = AsyncMock(
+                return_value=[
+                    ["mm_456", ["mm_456", "{}", None, None, "Mind Map Title"]],
+                ]
+            )
+            mock_client.notes.delete = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "delete", "mm_456", "-n", "nb_123", "-y", "--json"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["id"] == "mm_456"
+            assert data["deleted"] is True
+            assert data["kind"] == "mind_map"
 
     def test_artifact_delete_mind_map_clears(self, runner, mock_auth):
         with patch_client_for_module("artifact") as mock_client_cls:
@@ -350,6 +468,44 @@ class TestArtifactExport:
             assert call_args[0][2] is None, "content should be None (backend retrieves it)"
             assert call_args[0][4] == ExportType.SHEETS, "export_type should be ExportType.SHEETS"
 
+    def test_artifact_export_json_output(self, runner, mock_auth):
+        """`artifact export --json` emits structured payload with the export result."""
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[Artifact(id="art_123", title="Doc", _artifact_type=2, status=3)]
+            )
+            mock_client.artifacts.export = AsyncMock(
+                return_value={"url": "https://docs.google.com/document/d/123"}
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "artifact",
+                        "export",
+                        "art_123",
+                        "--title",
+                        "My Export",
+                        "-n",
+                        "nb_123",
+                        "--json",
+                    ],
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["id"] == "art_123"
+            assert data["exported"] is True
+            assert data["export_type"] == "docs"
+            assert data["title"] == "My Export"
+            assert data["result"] == {"url": "https://docs.google.com/document/d/123"}
+
     def test_artifact_export_failure(self, runner, mock_auth):
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
@@ -394,6 +550,37 @@ class TestArtifactPoll:
 
             assert result.exit_code == 0
             assert "Task Status" in result.output
+
+    def test_artifact_poll_json_output(self, runner, mock_auth):
+        """`artifact poll --json` mirrors the GenerationStatus dataclass fields."""
+        from notebooklm.types import GenerationStatus
+
+        with patch_client_for_module("artifact") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.poll_status = AsyncMock(
+                return_value=GenerationStatus(
+                    task_id="task_123",
+                    status="completed",
+                    url="https://example.com/audio.mp3",
+                    error=None,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["artifact", "poll", "task_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["task_id"] == "task_123"
+            assert data["status"] == "completed"
+            assert data["url"] == "https://example.com/audio.mp3"
+            assert data["error"] is None
 
 
 # =============================================================================
