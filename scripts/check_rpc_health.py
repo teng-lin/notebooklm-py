@@ -454,11 +454,13 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if method == RPCMethod.GET_SUGGESTED_REPORTS:
         return [[2], notebook_id]
 
-    # Methods that take [[notebook_id]] as the only param
-    if method in (
-        RPCMethod.GET_NOTES_AND_MIND_MAPS,
-        RPCMethod.DISCOVER_SOURCES,
-    ):
+    # Methods that take [[notebook_id]] as the only param.
+    # Note: DISCOVER_SOURCES is intentionally NOT listed here. It is in
+    # ALWAYS_SKIP_METHODS ("not fully rolled out by Google") and would be
+    # short-circuited before get_test_params runs anyway; keeping it out
+    # of get_test_params also lets the coverage assertion in
+    # tests/unit/test_rpc_health_coverage.py classify it explicitly.
+    if method == RPCMethod.GET_NOTES_AND_MIND_MAPS:
         return [[notebook_id]]
 
     # GET_LAST_CONVERSATION_ID: returns most recent conversation ID
