@@ -2016,30 +2016,33 @@ class TestIsAllowedAuthDomain:
         assert _is_allowed_auth_domain(".google.de") is True  # Germany
         assert _is_allowed_auth_domain(".google.fr") is True  # France
 
-    def test_rejects_youtube_by_default_post_t5g(self):
-        """YouTube cookies are rejected unless --include-domains=youtube opted in.
+    def test_accepts_youtube_for_opt_in_post_t5g(self):
+        """YouTube cookies pass the runtime gate so ``--include-domains=youtube``
+        works end-to-end.
 
-        T5.G tightened the runtime gate from the union (REQUIRED ∪ OPTIONAL)
-        down to REQUIRED only. ``youtube.com`` is not a subdomain of
-        ``.google.com``, so removing it from the exact-match list actively
-        rejects it at the runtime gate. See ``test_runtime_gate_*`` for
-        the security boundary.
+        T5.G enforces blast-radius reduction at *extraction* time
+        (rookiepy is asked for :data:`REQUIRED_COOKIE_DOMAINS` only).
+        The runtime gate stays permissive over the full union
+        (:data:`ALLOWED_COOKIE_DOMAINS`) so opted-in YouTube cookies
+        survive ``convert_rookiepy_cookies_to_storage_state``,
+        ``extract_cookies_with_domains``, and
+        ``build_httpx_cookies_from_storage`` — all of which delegate to
+        this gate.
         """
         from notebooklm.auth import _is_allowed_auth_domain
 
-        assert _is_allowed_auth_domain(".youtube.com") is False
-        assert _is_allowed_auth_domain("youtube.com") is False
-        assert _is_allowed_auth_domain("accounts.youtube.com") is False
-        assert _is_allowed_auth_domain(".accounts.youtube.com") is False
+        assert _is_allowed_auth_domain(".youtube.com") is True
+        assert _is_allowed_auth_domain("youtube.com") is True
+        assert _is_allowed_auth_domain("accounts.youtube.com") is True
+        assert _is_allowed_auth_domain(".accounts.youtube.com") is True
 
     def test_accepts_sibling_google_subdomains(self):
-        """Sibling Google subdomains still pass via the ``.google.com`` suffix.
+        """Sibling Google subdomains pass via the ``.google.com`` suffix.
 
         Drive / Docs / myaccount / Mail are subdomains of ``.google.com``,
         so the runtime gate accepts them via the suffix branch (tier 3 of
         :func:`_is_allowed_cookie_domain`) even though only ``drive.*`` is
-        in :data:`REQUIRED_COOKIE_DOMAINS`. Only ``youtube.com`` is
-        materially blast-radius-narrowed by T5.G.
+        in :data:`REQUIRED_COOKIE_DOMAINS`.
         """
         from notebooklm.auth import _is_allowed_auth_domain
 
@@ -2156,17 +2159,20 @@ class TestIsAllowedCookieDomainRegional:
         assert _is_allowed_cookie_domain("accounts.google.com") is True
         assert _is_allowed_cookie_domain("lh3.googleusercontent.com") is True
 
-    def test_youtube_rejected_post_t5g(self):
-        """YouTube is no longer in the default runtime allowlist (T5.G).
+    def test_youtube_accepted_for_opt_in_post_t5g(self):
+        """YouTube remains in the runtime allowlist (T5.G).
 
-        See :class:`TestIsAllowedAuthDomain` for the security rationale.
+        Blast-radius reduction is enforced at extraction time, not by the
+        runtime gate. See :class:`TestIsAllowedAuthDomain` for the
+        rationale and :class:`TestSiblingGoogleProductExtraction` for the
+        extraction-time contracts.
         """
         from notebooklm.auth import _is_allowed_cookie_domain
 
-        assert _is_allowed_cookie_domain(".youtube.com") is False
-        assert _is_allowed_cookie_domain("youtube.com") is False
-        assert _is_allowed_cookie_domain("accounts.youtube.com") is False
-        assert _is_allowed_cookie_domain(".accounts.youtube.com") is False
+        assert _is_allowed_cookie_domain(".youtube.com") is True
+        assert _is_allowed_cookie_domain("youtube.com") is True
+        assert _is_allowed_cookie_domain("accounts.youtube.com") is True
+        assert _is_allowed_cookie_domain(".accounts.youtube.com") is True
 
     def test_accepts_sibling_google_subdomains(self):
         """Sibling Google subdomains still pass via the ``.google.com`` suffix tier."""
@@ -2403,17 +2409,15 @@ class TestLoadHttpxCookiesRegional:
 class TestSiblingGoogleProductExtraction:
     """Cookie extraction behavior for sibling Google product domains.
 
-    T5.G tightened the default runtime allowlist from the union of
-    REQUIRED + OPTIONAL down to REQUIRED only. The blast-radius reduction
-    falls almost entirely on ``youtube.com`` because the other sibling
-    Google subdomains (``docs.google.com``, ``myaccount.google.com``,
-    ``mail.google.com``) still pass the ``.google.com`` suffix tier of
-    :func:`_is_allowed_cookie_domain`. This class pins both contracts:
-
-    - Subdomains of ``.google.com`` (Drive / Docs / myaccount / Mail) keep
-      flowing through extraction.
-    - ``youtube.com`` cookies are now dropped at extraction time. Re-enable
-      with ``notebooklm login --include-domains=youtube``.
+    T5.G enforces blast-radius reduction at *extraction* time
+    (``_build_google_cookie_domains`` defaults to
+    :data:`REQUIRED_COOKIE_DOMAINS`, so rookiepy never returns YouTube
+    cookies unless the user opts in). The runtime gate stays permissive
+    over the full union so that opted-in cookies survive every downstream
+    filter. This class pins the contract that the downstream
+    storage-state filters do *not* drop sibling-product cookies once they
+    have been extracted — neither for Google subdomains nor for opted-in
+    YouTube cookies.
     """
 
     GOOGLE_SUBDOMAIN_SIBLINGS = [
@@ -2449,8 +2453,15 @@ class TestSiblingGoogleProductExtraction:
         assert cookie_map[("PRODUCT_TOKEN", domain, "/")] == "sibling"
 
     @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
-    def test_extract_cookies_with_domains_drops_youtube_by_default(self, domain):
-        """T5.G regression: YouTube cookies are filtered out at extraction time."""
+    def test_extract_cookies_with_domains_keeps_opted_in_youtube(self, domain):
+        """T5.G contract: ``extract_cookies_with_domains`` keeps YouTube cookies.
+
+        Blast radius is reduced at extraction time (rookiepy does not
+        return YouTube cookies by default). When a user has opted in via
+        ``--include-domains=youtube`` and the storage_state contains a
+        YouTube cookie, this filter must keep it so the opt-in is
+        observable end-to-end.
+        """
         storage_state = {
             "cookies": [
                 {"name": "SID", "value": "base_sid", "domain": ".google.com"},
@@ -2459,7 +2470,8 @@ class TestSiblingGoogleProductExtraction:
             ]
         }
         cookie_map = extract_cookies_with_domains(storage_state)
-        assert ("YT_TOKEN", domain, "/") not in cookie_map
+        assert ("YT_TOKEN", domain, "/") in cookie_map
+        assert cookie_map[("YT_TOKEN", domain, "/")] == "yt"
 
     @pytest.mark.parametrize("domain", GOOGLE_SUBDOMAIN_SIBLINGS)
     def test_load_httpx_cookies_keeps_google_subdomain_siblings(self, tmp_path, domain):
@@ -2478,8 +2490,14 @@ class TestSiblingGoogleProductExtraction:
         assert cookies.get("PRODUCT_TOKEN", domain=domain) == "sibling"
 
     @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
-    def test_load_httpx_cookies_drops_youtube_by_default(self, tmp_path, domain):
-        """``load_httpx_cookies`` filters YouTube cookies out by default (T5.G)."""
+    def test_load_httpx_cookies_keeps_opted_in_youtube(self, tmp_path, domain):
+        """``load_httpx_cookies`` keeps opted-in YouTube cookies (T5.G).
+
+        Blast radius is reduced at extraction time. The runtime gate
+        (and therefore this loader) is permissive over the union so
+        ``--include-domains=youtube`` cookies survive download/refresh
+        operations.
+        """
         storage_state = {
             "cookies": [
                 {"name": "SID", "value": "base_sid", "domain": ".google.com"},
@@ -2491,7 +2509,7 @@ class TestSiblingGoogleProductExtraction:
         storage_file.write_text(json.dumps(storage_state))
 
         cookies = load_httpx_cookies(path=storage_file)
-        assert cookies.get("YT_TOKEN", domain=domain, default=None) is None
+        assert cookies.get("YT_TOKEN", domain=domain) == "yt"
 
     @pytest.mark.parametrize("domain", GOOGLE_SUBDOMAIN_SIBLINGS)
     def test_convert_rookiepy_keeps_google_subdomain_siblings(self, domain):
@@ -2512,8 +2530,15 @@ class TestSiblingGoogleProductExtraction:
         assert result["cookies"][0]["domain"] == domain
 
     @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
-    def test_convert_rookiepy_drops_youtube_by_default(self, domain):
-        """rookiepy → storage_state drops YouTube cookies by default (T5.G)."""
+    def test_convert_rookiepy_keeps_opted_in_youtube(self, domain):
+        """rookiepy → storage_state keeps opted-in YouTube cookies (T5.G).
+
+        Blast radius is reduced at extraction time by
+        ``_build_google_cookie_domains`` (the rookiepy domain filter).
+        Once a YouTube cookie has been extracted (because the user
+        opted in), this converter must keep it so the opt-in is
+        observable end-to-end.
+        """
         raw = [
             {
                 "domain": domain,
@@ -2526,7 +2551,9 @@ class TestSiblingGoogleProductExtraction:
             }
         ]
         result = convert_rookiepy_cookies_to_storage_state(raw)
-        assert result["cookies"] == []
+        assert len(result["cookies"]) == 1
+        assert result["cookies"][0]["domain"] == domain
+        assert result["cookies"][0]["name"] == "YT_TOKEN"
 
     def test_strict_allowlisted_domains_still_work(self):
         """Regression: pre-existing strict-allowlisted domains keep working.

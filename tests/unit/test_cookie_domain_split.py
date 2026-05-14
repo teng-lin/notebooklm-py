@@ -1,9 +1,18 @@
 """Tests for the T5.G cookie-domain blast-radius split.
 
-Pins the contract that ``REQUIRED_COOKIE_DOMAINS`` is the default
-extraction + runtime-gate set and ``OPTIONAL_COOKIE_DOMAINS_BY_LABEL`` is
-the opt-in surface for ``--include-domains`` on ``notebooklm login`` /
-``notebooklm auth refresh`` / ``notebooklm auth inspect``.
+Pins the two-layer contract:
+
+* ``REQUIRED_COOKIE_DOMAINS`` is the default *extraction* set fed to
+  rookiepy. This is the load-bearing T5.G control: sibling-product
+  cookies (YouTube, etc.) never reach ``storage_state.json`` unless
+  the user opts in via ``--include-domains`` on
+  ``notebooklm login`` / ``notebooklm auth refresh`` /
+  ``notebooklm auth inspect``.
+* The runtime gate consults the full ``REQUIRED ∪ OPTIONAL`` union so
+  opted-in cookies survive every downstream filter
+  (``convert_rookiepy_cookies_to_storage_state``,
+  ``extract_cookies_with_domains``,
+  ``build_httpx_cookies_from_storage``).
 
 These tests are split out from ``test_auth.py`` because they cross the
 auth/cli boundary — the contracts only make sense as a set.
@@ -81,19 +90,32 @@ class TestRequiredVsOptional:
 
 
 class TestRuntimeGate:
-    """The runtime gate consults REQUIRED only, not the full union."""
+    """The runtime gate consults the REQUIRED ∪ OPTIONAL union.
 
-    def test_runtime_gate_rejects_youtube_by_default(self):
-        """T5.G regression: stored cookies on ``.youtube.com`` are not trusted.
+    Blast-radius reduction is enforced at *extraction* time (see
+    :class:`TestBuildGoogleCookieDomains` and
+    :class:`TestBlastRadiusExtractor` below): rookiepy only returns cookies
+    from :data:`REQUIRED_COOKIE_DOMAINS` by default, so YouTube cookies
+    never reach ``storage_state.json`` unless the user explicitly opts in
+    via ``--include-domains=youtube``. The runtime gate must stay
+    permissive over the full union so opted-in cookies survive the
+    downstream auth/storage filters.
+    """
 
-        This is the load-bearing security boundary. If a storage_state.json
-        with a YouTube cookie is loaded into the auth jar, the runtime gate
-        rejects it; the cookie is never sent to notebooklm.google.com.
+    def test_runtime_gate_accepts_youtube_for_opt_in(self):
+        """T5.G contract: the runtime gate accepts every OPTIONAL domain.
+
+        If it rejected ``.youtube.com`` here, ``--include-domains=youtube``
+        cookies would be extracted by rookiepy and then immediately
+        filtered back out by ``convert_rookiepy_cookies_to_storage_state``,
+        ``extract_cookies_with_domains``, and
+        ``build_httpx_cookies_from_storage`` — all of which delegate to
+        this gate.
         """
-        assert _is_allowed_cookie_domain(".youtube.com") is False
-        assert _is_allowed_cookie_domain("youtube.com") is False
-        assert _is_allowed_cookie_domain("accounts.youtube.com") is False
-        assert _is_allowed_cookie_domain(".accounts.youtube.com") is False
+        assert _is_allowed_cookie_domain(".youtube.com") is True
+        assert _is_allowed_cookie_domain("youtube.com") is True
+        assert _is_allowed_cookie_domain("accounts.youtube.com") is True
+        assert _is_allowed_cookie_domain(".accounts.youtube.com") is True
 
     def test_runtime_gate_accepts_required_set(self):
         """Every REQUIRED domain passes the runtime gate (exact-match tier)."""
@@ -103,11 +125,7 @@ class TestRuntimeGate:
             )
 
     def test_runtime_gate_accepts_google_subdomain_optional_siblings(self):
-        """Docs / myaccount / Mail still pass via the .google.com suffix tier.
-
-        Document that the blast-radius reduction is materially narrower
-        than the OPTIONAL set: only ``youtube.com`` is actively rejected.
-        """
+        """Docs / myaccount / Mail pass via the .google.com suffix tier."""
         for domain in (
             "docs.google.com",
             ".docs.google.com",
@@ -117,6 +135,13 @@ class TestRuntimeGate:
             ".mail.google.com",
         ):
             assert _is_allowed_cookie_domain(domain) is True
+
+    def test_runtime_gate_still_rejects_lookalikes(self):
+        """The permissive gate is still strict against lookalike domains."""
+        assert _is_allowed_cookie_domain(".not-youtube.com") is False
+        assert _is_allowed_cookie_domain("notyoutube.com") is False
+        assert _is_allowed_cookie_domain("evil-google.com") is False
+        assert _is_allowed_cookie_domain(".google.zz") is False
 
 
 class TestBuildGoogleCookieDomains:
@@ -229,13 +254,16 @@ class TestResolveOptionalCookieDomains:
 
 
 class TestBlastRadiusExtractor:
-    """Extractor actively excludes YouTube unless opted in (T5.G regression).
+    """Blast-radius reduction is enforced at extraction time, not runtime.
 
-    The plan calls for a "blast-radius regression test" that asserts the
-    storage_state.json artefact contains no YouTube cookies after a
-    default-flag login. We exercise the conversion path directly because
-    that is where the runtime allowlist is applied — it does not depend
-    on rookiepy nor Playwright being installed.
+    T5.G plan: rookiepy is asked only for ``REQUIRED_COOKIE_DOMAINS`` by
+    default. Sibling-product cookies (YouTube) therefore never enter
+    ``storage_state.json`` unless the user explicitly opts in. The
+    downstream runtime gate is permissive over the full union so
+    opted-in cookies still flow through.
+
+    These tests pin the contract at the *only* choke point that gates
+    blast radius: the domain list fed to the browser-cookie extractor.
     """
 
     def _raw_cookie(self, domain: str, name: str) -> dict:
@@ -249,35 +277,19 @@ class TestBlastRadiusExtractor:
             "http_only": False,
         }
 
-    def test_default_extraction_drops_youtube_cookies(self):
-        """Default login does not persist YouTube cookies, even if rookiepy yields them.
+    def test_default_extraction_list_excludes_youtube(self):
+        """Default login asks rookiepy for REQUIRED only — no YouTube domains.
 
-        Reads a fake rookiepy output with both a Google auth cookie and a
-        YouTube cookie; converts to storage_state.json via the same code
-        path login uses; asserts only the Google auth cookie survives.
+        The actual blast-radius control: rookiepy never returns YouTube
+        cookies under the default flag set, so they never reach
+        ``storage_state.json``. The downstream runtime gate stays
+        permissive so opted-in cookies survive the filters.
         """
-        google_domain = ".google.com"
-        youtube_domain = ".youtube.com"
-        raw = [
-            # Google auth cookie (REQUIRED domain).
-            self._raw_cookie(google_domain, "SID"),
-            # YouTube cookie that rookiepy would have returned if the user
-            # passed --include-domains=youtube at the previous run.
-            self._raw_cookie(youtube_domain, "LOGIN_INFO"),
-        ]
-        result = convert_rookiepy_cookies_to_storage_state(raw)
-        # Use frozenset-difference form to keep CodeQL's
-        # py/incomplete-url-substring-sanitization heuristic happy — it
-        # flags ``"<literal>" in container`` even when the container is
-        # set-membership not URL parsing (same defensive pattern as
-        # ``test_auth.TestAllowedCookieDomains``).
-        kept_domains = frozenset(c["domain"] for c in result["cookies"])
-        assert frozenset({google_domain}) <= kept_domains
-        assert kept_domains.isdisjoint({youtube_domain})
-        # Specifically the named YouTube cookie is gone.
-        assert not any(c["name"] == "LOGIN_INFO" for c in result["cookies"])
+        youtube_variants = frozenset({".youtube.com", "youtube.com"})
+        domains_default = frozenset(_build_google_cookie_domains())
+        assert domains_default.isdisjoint(youtube_variants)
 
-    def test_opt_in_then_default_does_not_leak_youtube(self):
+    def test_opt_in_then_default_resets_extraction_set(self):
         """After ``--include-domains=youtube`` then a default re-login, no YouTube.
 
         Simulates the codex-flagged "user opted in once, then forgot
@@ -289,18 +301,70 @@ class TestBlastRadiusExtractor:
         # First run with --include-domains=youtube: YouTube cookies extracted.
         domains_optin = frozenset(_build_google_cookie_domains(include_domains={"youtube"}))
         # Set-intersection form sidesteps CodeQL's substring-sanitization
-        # heuristic (same reason as the test above).
+        # heuristic.
         assert youtube_variants & domains_optin
 
         # Second run with default: YouTube is NOT in the extraction list.
         domains_default = frozenset(_build_google_cookie_domains())
         assert domains_default.isdisjoint(youtube_variants)
 
-        # And conversion would drop a YouTube cookie even if it somehow
-        # arrived from a previous run.
-        raw = [self._raw_cookie(".youtube.com", "LOGIN_INFO")]
-        result = convert_rookiepy_cookies_to_storage_state(raw)
-        assert result["cookies"] == []
+    def test_youtube_cookies_survive_when_opted_in(self, tmp_path: Path):
+        """End-to-end: ``--include-domains=youtube`` persists YouTube cookies.
+
+        The Gemini-flagged regression: under the original tightened
+        runtime gate, ``--include-domains=youtube`` was a silent no-op
+        because every downstream filter
+        (:func:`convert_rookiepy_cookies_to_storage_state`,
+        :func:`extract_cookies_with_domains`,
+        :func:`build_httpx_cookies_from_storage`) dropped the cookies
+        again on the way through. This test exercises the full pipeline
+        and asserts opted-in cookies survive end-to-end.
+        """
+        from notebooklm.auth import (
+            _is_allowed_auth_domain,
+            build_httpx_cookies_from_storage,
+            extract_cookies_with_domains,
+        )
+
+        # Simulate the rookiepy output for a user who passed
+        # ``--include-domains=youtube``: REQUIRED auth cookies plus a YouTube
+        # opt-in cookie.
+        raw = [
+            self._raw_cookie(".google.com", "SID"),
+            self._raw_cookie(".google.com", "__Secure-1PSIDTS"),
+            self._raw_cookie(".youtube.com", "LOGIN_INFO"),
+        ]
+        # Step 1: rookiepy → storage_state conversion must keep the YouTube
+        # cookie (the runtime gate is permissive over the union).
+        storage_state = convert_rookiepy_cookies_to_storage_state(raw)
+        kept_domains = frozenset(c["domain"] for c in storage_state["cookies"])
+        assert {".youtube.com"} <= kept_domains, (
+            "convert_rookiepy_cookies_to_storage_state must keep YouTube "
+            "cookies once they have been extracted; the runtime gate is "
+            "permissive over the union (T5.G)."
+        )
+        assert any(c["name"] == "LOGIN_INFO" for c in storage_state["cookies"])
+
+        # Step 2: storage_state → DomainCookieMap (used by AuthTokens).
+        cookie_map = extract_cookies_with_domains(storage_state)
+        assert ("LOGIN_INFO", ".youtube.com", "/") in cookie_map, (
+            "extract_cookies_with_domains must keep YouTube cookies for the opt-in path."
+        )
+
+        # Step 3: storage_state → httpx jar (used by downloads + refresh).
+        storage_file = tmp_path / "storage_state.json"
+        storage_file.write_text(json.dumps(storage_state))
+        jar = build_httpx_cookies_from_storage(storage_file)
+        assert jar.get("LOGIN_INFO", domain=".youtube.com") == "v", (
+            "build_httpx_cookies_from_storage must keep YouTube cookies for the opt-in path."
+        )
+
+        # Step 4: the runtime gate itself accepts every YouTube variant.
+        for domain in (".youtube.com", "youtube.com", "accounts.youtube.com"):
+            assert _is_allowed_auth_domain(domain) is True, (
+                f"_is_allowed_auth_domain({domain!r}) must accept the domain so "
+                "opted-in cookies survive every downstream filter (T5.G)."
+            )
 
 
 class TestTokenVerificationStillWorksAfterMinimumSet:

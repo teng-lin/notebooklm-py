@@ -223,6 +223,11 @@ def _validate_required_cookies(
 # ``_login_with_browser_cookies`` (via
 # :func:`notebooklm.cli.session._build_google_cookie_domains`); adding a
 # domain here automatically extends what we ask the browser for at login.
+# This is the single load-bearing T5.G control: blast-radius reduction
+# is enforced at extraction time (what rookiepy returns), not at the
+# runtime gate, which stays permissive over the REQUIRED ∪ OPTIONAL
+# union so that ``--include-domains=...`` cookies survive downstream
+# filters (see :func:`_is_allowed_cookie_domain`).
 REQUIRED_COOKIE_DOMAINS: frozenset[str] = frozenset(
     {
         ".google.com",
@@ -656,10 +661,12 @@ def _is_allowed_auth_domain(domain: str) -> bool:
     The previous strict / broad split (#334 / fea8315) created an asymmetry
     where ``save_cookies_to_storage`` would persist cookies that the next
     extraction would silently drop. Issue #360 collapsed both filters into
-    this single policy. T5.G tightened the exact-match tier from the
-    union :data:`ALLOWED_COOKIE_DOMAINS` to :data:`REQUIRED_COOKIE_DOMAINS`;
-    YouTube cookies are now rejected unless ``--include-domains=youtube``
-    is passed at login.
+    this single policy. T5.G narrows the *extraction* surface (rookiepy
+    only requests :data:`REQUIRED_COOKIE_DOMAINS` by default, so YouTube
+    cookies are never written to ``storage_state.json`` unless the user
+    opts in via ``--include-domains=youtube``); the runtime gate stays
+    permissive over the full :data:`ALLOWED_COOKIE_DOMAINS` union so that
+    opted-in cookies survive the downstream filters.
 
     Args:
         domain: Cookie domain to check (e.g., '.google.com', '.google.com.sg')
@@ -1436,18 +1443,17 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     The leading-dot suffix check ensures lookalikes like ``evil-google.com``
     are rejected.
 
-    Note (T5.G): the runtime gate now consults
-    :data:`REQUIRED_COOKIE_DOMAINS` instead of the union with
-    :data:`OPTIONAL_COOKIE_DOMAINS`. Sibling-product cookies on
-    ``.youtube.com`` (and similar non-``.google.com`` siblings) received
-    during refresh or carried in legacy storage_state files are no longer
-    trusted at runtime. Sibling Google subdomains such as
-    ``docs.google.com`` / ``myaccount.google.com`` / ``mail.google.com``
-    are still accepted via the ``.google.com`` suffix branch (3); only
-    ``youtube.com`` cookies are now actively rejected by default.
-    Re-enable extraction (and so re-broaden the gate via union semantics
-    in downstream callers) by passing ``--include-domains=youtube`` to
-    ``notebooklm login``.
+    Note (T5.G): the runtime gate consults the
+    :data:`ALLOWED_COOKIE_DOMAINS` union (REQUIRED ∪ OPTIONAL). The
+    blast-radius reduction is enforced at **extraction time** —
+    ``_build_google_cookie_domains`` defaults to
+    :data:`REQUIRED_COOKIE_DOMAINS` only, so rookiepy never returns
+    sibling-product cookies (e.g. ``.youtube.com``) unless the user
+    opts in via ``--include-domains=...``. The runtime gate must stay
+    permissive over the full union so that opted-in cookies survive
+    the downstream filters in :func:`convert_rookiepy_cookies_to_storage_state`,
+    :func:`extract_cookies_with_domains`, and
+    :func:`build_httpx_cookies_from_storage`.
 
     Args:
         domain: Cookie domain to check (e.g., '.google.com', 'lh3.google.com')
@@ -1455,9 +1461,10 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     Returns:
         True if domain is allowed for auth/download cookies.
     """
-    # Exact match against the required allowlist (tightened from the broader
-    # ALLOWED_COOKIE_DOMAINS union in T5.G).
-    if domain in REQUIRED_COOKIE_DOMAINS:
+    # Exact match against the union of REQUIRED + OPTIONAL. Anything that
+    # could have been validly opted in via ``--include-domains`` at
+    # extraction time must pass this gate at runtime (T5.G).
+    if domain in ALLOWED_COOKIE_DOMAINS:
         return True
 
     # Check if it's a valid Google domain (base or regional)
