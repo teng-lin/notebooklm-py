@@ -16,6 +16,7 @@ from ..exceptions import (
     RPCTimeoutError,
     ServerError,
     UnknownRPCMethodError,
+    _truncate_response_preview,
 )
 from ._safe_index import safe_index
 
@@ -467,8 +468,9 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
     chunks = parse_chunked_response(cleaned)
     logger.debug("Parsed %d chunks from response", len(chunks))
 
-    # Create response preview for error context (first 500 chars)
-    response_preview = cleaned[:500] if len(cleaned) > 500 else cleaned
+    # Create response preview for error context (first 80 chars by default;
+    # ``NOTEBOOKLM_DEBUG=1`` preserves the full body).
+    response_preview = _truncate_response_preview(cleaned)
 
     # Collect all RPC IDs for debugging
     found_ids = collect_rpc_ids(chunks)

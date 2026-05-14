@@ -803,5 +803,6 @@ class TestUnknownRPCMethodErrorRouting:
         assert err.method_id == requested
         assert err.found_ids == found
         assert err.raw_response is not None
-        # raw_response preview cap (500 chars) preserved by the base RPCError contract.
-        assert len(err.raw_response) <= 500
+        # raw_response preview cap (80 chars + "..." = 83) preserved by the
+        # base RPCError contract (NOTEBOOKLM_DEBUG=1 opts into full body).
+        assert len(err.raw_response) <= 83

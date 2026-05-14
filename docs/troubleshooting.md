@@ -278,6 +278,29 @@ If the IDs don't match, the method ID has changed. Report the new ID in a GitHub
 - Try with fewer sources selected
 - Reduce generation frequency
 
+#### How to get the full response preview from an RPCError
+
+`RPCError.raw_response` is truncated to **80 chars + `"..."`** by default so
+error messages stay readable in logs and CLI output. When you need the
+full body to diagnose schema drift or a malformed response, opt in:
+
+```bash
+NOTEBOOKLM_DEBUG=1 notebooklm <your-command>
+```
+
+Or in Python, set the env var before instantiating the client:
+
+```python
+import os
+os.environ["NOTEBOOKLM_DEBUG"] = "1"
+
+from notebooklm import NotebookLMClient
+# Subsequent RPCError instances will carry the full untruncated body.
+```
+
+The value must be exactly `"1"` — `"0"`, `"true"`, etc. are treated as
+unset (still truncated).
+
 #### "RPCError: [3]" or "UserDisplayableError"
 
 **Cause:** Google API returned an error, typically:
@@ -590,6 +613,7 @@ Windows systems with non-English locales (Chinese cp950, Japanese cp932, etc.) m
 |----------|---------|--------|
 | `NOTEBOOKLM_LOG_LEVEL` | `WARNING` | Set to `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 | `NOTEBOOKLM_DEBUG_RPC` | (unset) | Legacy: Set to `1` to enable `DEBUG` level |
+| `NOTEBOOKLM_DEBUG` | (unset) | Set to `1` to preserve the full raw RPC response body on `RPCError.raw_response` (default: truncated to 80 chars + `"..."`) |
 
 **When to use each level:**
 

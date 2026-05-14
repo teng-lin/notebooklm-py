@@ -14,10 +14,28 @@ Example:
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
 from ._env import DEFAULT_BASE_URL, get_base_url
+
+
+def _truncate_response_preview(raw: str | None) -> str | None:
+    """Truncate a raw RPC response preview for safe display in error contexts.
+
+    Default behavior keeps the preview compact (80 chars + ``"..."`` suffix) so
+    error logs and CLI output stay readable. Set ``NOTEBOOKLM_DEBUG=1`` to opt
+    into the full untruncated body for deep debugging.
+    """
+    if raw is None:
+        return None
+    if os.environ.get("NOTEBOOKLM_DEBUG") == "1":
+        return raw
+    if len(raw) > 80:
+        return raw[:80] + "..."
+    return raw
+
 
 __all__ = [
     # Base
@@ -134,7 +152,9 @@ class RPCError(NotebookLMError):
 
     Attributes:
         method_id: The RPC method ID (e.g., "abc123") for debugging.
-        raw_response: First 500 chars of raw response for debugging.
+        raw_response: First 80 chars of raw response for debugging
+            (with ``"..."`` suffix if truncated). Set ``NOTEBOOKLM_DEBUG=1`` to
+            preserve the full body.
         rpc_code: Google's internal error code if available.
         found_ids: List of RPC IDs found in the response (for debugging).
     """
@@ -150,7 +170,7 @@ class RPCError(NotebookLMError):
     ):
         super().__init__(message)
         self.method_id = method_id
-        self.raw_response = raw_response[:500] if raw_response else None
+        self.raw_response = _truncate_response_preview(raw_response)
         self.rpc_code = rpc_code
         self.found_ids = found_ids or []
 
@@ -202,7 +222,8 @@ class UnknownRPCMethodError(DecodingError):
             this error (e.g. ``"_notebooks.list"``).
         found_ids: When raised by the response-level decoder, the list of RPC
             IDs actually present in the response.
-        raw_response: First 500 chars of the raw response, when available.
+        raw_response: First 80 chars of the raw response, when available
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
         data_at_failure: Truncated repr (~200 chars) of the data the helper
             was attempting to index into when descent failed.
     """
@@ -243,10 +264,14 @@ class UnknownRPCMethodError(DecodingError):
         # Override base found_ids with the typed list (may contain ints).
         if found_ids is not None:
             self.found_ids = found_ids  # type: ignore[assignment]
-        # Honor RPCError's 500-char truncation contract for stringy
-        # raw_response while preserving non-string payloads (dict/list/etc)
-        # supported by this subclass's widened ``Any`` type.
-        self.raw_response = raw_response[:500] if isinstance(raw_response, str) else raw_response
+        # Honor RPCError's truncation contract for stringy raw_response while
+        # preserving non-string payloads (dict/list/etc) supported by this
+        # subclass's widened ``Any`` type.
+        self.raw_response = (
+            _truncate_response_preview(raw_response)
+            if isinstance(raw_response, str)
+            else raw_response
+        )
         self.data_at_failure = data_at_failure
 
     def __str__(self) -> str:
@@ -465,7 +490,8 @@ class NotebookNotFoundError(RPCError, NotebookError):
     Attributes:
         notebook_id: The ID that was not found.
         method_id: The RPC method ID (inherited from :class:`RPCError`).
-        raw_response: First 500 chars of the raw response, if any.
+        raw_response: First 80 chars of the raw response, if any
+            (``NOTEBOOKLM_DEBUG=1`` preserves the full body).
     """
 
     def __init__(

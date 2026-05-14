@@ -142,17 +142,20 @@ def test_data_at_failure_is_truncated(monkeypatch):
     assert len(exc_info.value.data_at_failure) <= 210  # 200 + ellipsis margin
 
 
-def test_unknown_rpc_method_error_truncates_string_raw_response():
-    """Regression: ``UnknownRPCMethodError`` must honor RPCError's 500-char cap.
+def test_unknown_rpc_method_error_truncates_string_raw_response(monkeypatch):
+    """Regression: ``UnknownRPCMethodError`` must honor RPCError's truncation cap.
 
     Previously the subclass unconditionally reassigned ``self.raw_response``
-    after the base class truncated, bypassing the contract.
+    after the base class truncated, bypassing the contract. The preview is now
+    capped at 80 chars + "..." (NOTEBOOKLM_DEBUG=1 opts into the full body).
     """
+    monkeypatch.delenv("NOTEBOOKLM_DEBUG", raising=False)
     huge = "x" * 5000
     err = UnknownRPCMethodError("boom", raw_response=huge)
     assert err.raw_response is not None
     assert isinstance(err.raw_response, str)
-    assert len(err.raw_response) == 500
+    assert len(err.raw_response) == 83
+    assert err.raw_response.endswith("...")
 
 
 def test_unknown_rpc_method_error_preserves_non_string_raw_response():

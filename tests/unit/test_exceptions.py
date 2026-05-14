@@ -150,11 +150,15 @@ class TestRPCErrorAttributes:
             assert issubclass(w[0].category, DeprecationWarning)
             assert "code" in str(w[0].message)
 
-    def test_rpc_error_truncates_raw_response(self):
-        """RPCError truncates raw_response to 500 chars."""
+    def test_rpc_error_truncates_raw_response(self, monkeypatch):
+        """RPCError truncates raw_response to 80 chars + '...' by default."""
+        monkeypatch.delenv("NOTEBOOKLM_DEBUG", raising=False)
         long_response = "x" * 1000
         e = RPCError("Failed", raw_response=long_response)
-        assert len(e.raw_response) == 500
+        assert e.raw_response is not None
+        assert len(e.raw_response) == 83
+        assert e.raw_response.endswith("...")
+        assert e.raw_response[:-3] == "x" * 80
 
     def test_rpc_error_stores_found_ids(self):
         """RPCError stores found_ids list."""
