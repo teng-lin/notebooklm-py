@@ -47,6 +47,7 @@ from .rpc import (
     VideoStyle,
     artifact_status_to_str,
     nest_source_ids,
+    safe_index,
 )
 from .types import (
     Artifact,
@@ -994,7 +995,7 @@ class ArtifactsAPI:
             )
             if result is None:
                 logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
-            return self._parse_generation_result(result)
+            return self._parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
         except RPCError as e:
             if e.rpc_code == "USER_DISPLAYABLE_ERROR":
                 return GenerationStatus(
@@ -2102,7 +2103,7 @@ class ArtifactsAPI:
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
             )
-            return self._parse_generation_result(result)
+            return self._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
         except RPCError as e:
             if e.rpc_code == "USER_DISPLAYABLE_ERROR":
                 return GenerationStatus(
@@ -2363,31 +2364,40 @@ class ArtifactsAPI:
             temp_file.unlink(missing_ok=True)
             raise
 
-    def _parse_generation_result(self, result: Any) -> GenerationStatus:
+    def _parse_generation_result(
+        self,
+        result: Any,
+        *,
+        method_id: str,
+        source: str = "_parse_generation_result",
+    ) -> GenerationStatus:
         """Parse generation API result into GenerationStatus.
 
         The API returns a single ID that serves as both the task_id (for polling
         during generation) and the artifact_id (once complete). This ID is at
         position [0][0] in the response and becomes Artifact.id in the list.
-        """
-        if result and isinstance(result, list) and len(result) > 0:
-            artifact_data = result[0]
-            artifact_id = (
-                artifact_data[0]
-                if isinstance(artifact_data, list) and len(artifact_data) > 0
-                else None
-            )
-            status_code = (
-                artifact_data[4]
-                if isinstance(artifact_data, list) and len(artifact_data) > 4
-                else None
-            )
 
-            if artifact_id:
-                status = (
-                    artifact_status_to_str(status_code) if status_code is not None else "pending"
-                )
-                return GenerationStatus(task_id=artifact_id, status=status)
+        Schema-drift handling is delegated to ``safe_index``: under the default
+        soft-strict mode (``NOTEBOOKLM_STRICT_DECODE=0``) drift returns ``None``
+        and falls through to the legacy "failed" path; under strict mode
+        (``=1``) ``safe_index`` raises ``UnknownRPCMethodError`` so callers can
+        surface schema changes early.
+
+        Args:
+            result: Decoded RPC payload.
+            method_id: Calling RPC method ID (``CREATE_ARTIFACT`` or
+                ``REVISE_SLIDE``) — threaded through to error diagnostics.
+            source: Caller label included in drift logs / exceptions.
+        """
+        artifact_id = safe_index(result, 0, 0, method_id=method_id, source=source)
+        # status_code is optional: it may legitimately be absent from a real
+        # response. Under strict mode, missing this leaf still raises — that
+        # is intentional: we want to learn if Google starts omitting it.
+        status_code = safe_index(result, 0, 4, method_id=method_id, source=source)
+
+        if artifact_id:
+            status = artifact_status_to_str(status_code) if status_code is not None else "pending"
+            return GenerationStatus(task_id=artifact_id, status=status)
 
         return GenerationStatus(
             task_id="", status="failed", error="Generation failed - no artifact_id returned"

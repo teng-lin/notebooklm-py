@@ -298,7 +298,7 @@ class TestParseGenerationResult:
         """Test parsing None result returns failed status."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result(None)
+        result = api._parse_generation_result(None, method_id="R7cb6c")
 
         assert result.status == "failed"
         assert result.task_id == ""
@@ -308,7 +308,7 @@ class TestParseGenerationResult:
         """Test parsing empty list returns failed status."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([])
+        result = api._parse_generation_result([], method_id="R7cb6c")
 
         assert result.status == "failed"
         assert result.task_id == ""
@@ -319,7 +319,9 @@ class TestParseGenerationResult:
         api, _ = mock_artifacts_api
 
         # Valid result with status code 1 (in_progress)
-        result = api._parse_generation_result([["artifact_001", "Title", 1, None, 1]])
+        result = api._parse_generation_result(
+            [["artifact_001", "Title", 1, None, 1]], method_id="R7cb6c"
+        )
 
         assert result.task_id == "artifact_001"
         assert result.status == "in_progress"
@@ -328,7 +330,9 @@ class TestParseGenerationResult:
         """Test parsing valid completed status (code 3)."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([["artifact_002", "Title", 1, None, 3]])
+        result = api._parse_generation_result(
+            [["artifact_002", "Title", 1, None, 3]], method_id="R7cb6c"
+        )
 
         assert result.task_id == "artifact_002"
         assert result.status == "completed"
@@ -337,7 +341,9 @@ class TestParseGenerationResult:
         """Test parsing unknown status code returns unknown."""
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([["artifact_003", "Title", 1, None, 99]])
+        result = api._parse_generation_result(
+            [["artifact_003", "Title", 1, None, 99]], method_id="R7cb6c"
+        )
 
         assert result.task_id == "artifact_003"
         assert result.status == "unknown"  # Unknown codes return "unknown"
