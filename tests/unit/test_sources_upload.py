@@ -248,6 +248,48 @@ class TestRegisterFileSource:
             await sources_api._register_file_source("nb_123", "test.pdf")
 
     @pytest.mark.asyncio
+    async def test_register_file_source_wraps_rpc_error_with_status_code(
+        self, sources_api, mock_core
+    ):
+        """When the decoder raises RPCError (e.g. server returned null result
+        with a status code at wrb.fr[5] — the suspected #474 mode for account-
+        routing mismatches), wrap the rich diagnostic into SourceAddError so
+        the user sees actionable detail instead of a generic "Failed to get
+        SOURCE_ID" with no context.
+        """
+        from notebooklm.exceptions import ClientError, SourceAddError
+
+        # ClientError is what the decoder raises for status codes 5/7 (NOT_FOUND
+        # / PERMISSION_DENIED) with an account-routing hint attached — exactly
+        # the #114/#294 pattern we suspect for #474.
+        mock_core.rpc_call.side_effect = ClientError(
+            "RPC o4cbdc returned null result with status code 7 (Permission denied). "
+            "If you have multiple Google accounts signed in...",
+            method_id="o4cbdc",
+            rpc_code=7,
+        )
+
+        with pytest.raises(SourceAddError, match="Permission denied") as exc_info:
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
+        # The original RPCError is preserved as the cause so debuggers can
+        # inspect the full decoder context.
+        assert isinstance(exc_info.value.cause, ClientError)
+        assert exc_info.value.cause.rpc_code == 7
+
+    @pytest.mark.asyncio
+    async def test_register_file_source_lets_auth_error_propagate(self, sources_api, mock_core):
+        """AuthError must NOT be wrapped — the core auth-refresh retry path
+        relies on the exception bubbling up unchanged.
+        """
+        from notebooklm.exceptions import AuthError
+
+        mock_core.rpc_call.side_effect = AuthError("session expired")
+
+        with pytest.raises(AuthError, match="session expired"):
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
+    @pytest.mark.asyncio
     async def test_register_file_source_walker_has_recursion_guard(self, sources_api, mock_core):
         """A pathological deeply-nested response shouldn't trigger
         RecursionError — the depth guard mirrors :func:`_extract_all_text`.

@@ -16,7 +16,7 @@ from ._core import ClientCore
 from ._env import get_base_url
 from ._url_utils import is_youtube_url
 from .auth import authuser_query, format_authuser_value
-from .exceptions import NetworkError, ValidationError
+from .exceptions import AuthError, NetworkError, ValidationError
 from .rpc import RPCError, RPCMethod, get_upload_url
 from .rpc.types import SourceStatus
 from .types import (
@@ -1186,21 +1186,40 @@ class SourcesAPI:
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
 
-        result = await self._core.rpc_call(
-            RPCMethod.ADD_SOURCE_FILE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
+        # allow_null=False: ADD_SOURCE_FILE should always return the source id
+        # on success. When the server quietly returns null with a status code
+        # at wrb.fr[5] — the suspected #474 mode for account-routing mismatches
+        # (issues #114, #294) — the decoder enriches the error with that code
+        # and an account-routing hint. Surface that diagnostic to the caller
+        # via SourceAddError, instead of swallowing the null with allow_null=True
+        # and raising a generic "Failed to get SOURCE_ID" with no detail.
+        # AuthError is allowed to propagate so the core auth-refresh retry path
+        # is not disrupted.
+        try:
+            result = await self._core.rpc_call(
+                RPCMethod.ADD_SOURCE_FILE,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=False,
+            )
+        except AuthError:
+            raise
+        except RPCError as exc:
+            raise SourceAddError(
+                filename,
+                cause=exc,
+                message=f"Failed to register file source for {filename}: {exc}",
+            ) from exc
 
         source_id = _extract_register_file_source_id(result, filename)
         if source_id:
             return source_id
 
-        # Shape drift: the registration succeeded at the RPC layer but the
-        # decoder couldn't locate the SOURCE_ID. Include a faithful preview of
-        # the actual response (repr, not json — repr surfaces types that the
-        # walker rejected) so future drift produces an actionable report (#474).
+        # The decoder returned a non-null payload that the walker couldn't
+        # parse — a genuine shape drift, not a null-result rejection. Include
+        # a faithful preview of the actual response (repr, not json — repr
+        # surfaces types the walker rejected) so future drift produces an
+        # actionable bug report (#474).
         preview = repr(result)
         if len(preview) > 200:
             preview = preview[:200] + "..."
