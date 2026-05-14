@@ -91,6 +91,16 @@ class AccountTier:
     plan_name: str | None = None
 
 
+@dataclass(frozen=True)
+class CitedSourceSelection:
+    """Result of applying cited-only filtering to research sources."""
+
+    sources: list[dict[str, Any]]
+    cited_url_count: int
+    matched_url_source_count: int
+    used_fallback: bool = False
+
+
 class SourceType(str, Enum):
     """User-facing source types.
 
@@ -411,6 +421,7 @@ def _extract_artifact_url(data: list[Any], artifact_type: int | None) -> str | N
 
 __all__ = [
     # Dataclasses
+    "CitedSourceSelection",
     "Notebook",
     "NotebookDescription",
     "NotebookMetadata",

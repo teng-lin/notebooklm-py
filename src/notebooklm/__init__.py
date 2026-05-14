@@ -97,6 +97,7 @@ from .types import (
     ChatMode,
     ChatReference,
     ChatResponseLength,
+    CitedSourceSelection,
     ConversationTurn,
     DriveMimeType,
     ExportType,
@@ -156,6 +157,7 @@ __all__ = [
     "ChatReference",
     "AskResult",
     "ChatMode",
+    "CitedSourceSelection",
     "SharedUser",
     "ShareStatus",
     # Base Exceptions

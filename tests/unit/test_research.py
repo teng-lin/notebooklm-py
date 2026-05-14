@@ -148,7 +148,7 @@ class TestCitedSourceSelection:
     def test_select_cited_sources_falls_back_when_no_urls_found(self, caplog):
         sources = [{"title": "Source", "url": "https://example.com/source"}]
 
-        with caplog.at_level(logging.WARNING, logger="notebooklm._research"):
+        with caplog.at_level(logging.WARNING, logger="notebooklm.research"):
             selection = ResearchAPI.select_cited_sources(sources, "# Report without links")
 
         assert selection.used_fallback is True
@@ -158,7 +158,7 @@ class TestCitedSourceSelection:
     def test_select_cited_sources_falls_back_when_no_sources_match(self, caplog):
         sources = [{"title": "Source", "url": "https://example.com/source"}]
 
-        with caplog.at_level(logging.WARNING, logger="notebooklm._research"):
+        with caplog.at_level(logging.WARNING, logger="notebooklm.research"):
             selection = ResearchAPI.select_cited_sources(
                 sources,
                 "Report cites https://example.com/other",

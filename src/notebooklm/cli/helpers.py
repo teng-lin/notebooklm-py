@@ -24,11 +24,11 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from .._research import CitedSourceSelection, ResearchAPI
 from ..auth import AuthTokens, build_cookie_jar, load_auth_from_storage
 from ..exceptions import NetworkError, NotebookLimitError, RPCError, RPCTimeoutError
 from ..paths import get_context_path
-from ..types import ArtifactType
+from ..research import select_cited_sources
+from ..types import ArtifactType, CitedSourceSelection
 from ._encoding import safe_echo
 
 if TYPE_CHECKING:
@@ -343,7 +343,7 @@ def _select_research_sources_for_import(
     if not cited_only or not sources:
         return sources, None
 
-    cited_selection = ResearchAPI.select_cited_sources(sources, report)
+    cited_selection = select_cited_sources(sources, report)
     return cited_selection.sources, cited_selection
 
 
