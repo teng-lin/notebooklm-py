@@ -256,18 +256,24 @@ class TestBlastRadiusExtractor:
         YouTube cookie; converts to storage_state.json via the same code
         path login uses; asserts only the Google auth cookie survives.
         """
+        google_domain = ".google.com"
+        youtube_domain = ".youtube.com"
         raw = [
             # Google auth cookie (REQUIRED domain).
-            self._raw_cookie(".google.com", "SID"),
+            self._raw_cookie(google_domain, "SID"),
             # YouTube cookie that rookiepy would have returned if the user
             # passed --include-domains=youtube at the previous run.
-            self._raw_cookie(".youtube.com", "LOGIN_INFO"),
+            self._raw_cookie(youtube_domain, "LOGIN_INFO"),
         ]
         result = convert_rookiepy_cookies_to_storage_state(raw)
-        domains = {c["domain"] for c in result["cookies"]}
-        # SID cookie kept; YouTube cookie filtered out.
-        assert ".google.com" in domains
-        assert ".youtube.com" not in domains
+        # Use frozenset-difference form to keep CodeQL's
+        # py/incomplete-url-substring-sanitization heuristic happy — it
+        # flags ``"<literal>" in container`` even when the container is
+        # set-membership not URL parsing (same defensive pattern as
+        # ``test_auth.TestAllowedCookieDomains``).
+        kept_domains = frozenset(c["domain"] for c in result["cookies"])
+        assert frozenset({google_domain}) <= kept_domains
+        assert kept_domains.isdisjoint({youtube_domain})
         # Specifically the named YouTube cookie is gone.
         assert not any(c["name"] == "LOGIN_INFO" for c in result["cookies"])
 
@@ -278,14 +284,17 @@ class TestBlastRadiusExtractor:
         and re-ran default" case. The extractor must actively exclude on
         re-run, not just default to a smaller request set.
         """
+        youtube_variants = frozenset({".youtube.com", "youtube.com"})
+
         # First run with --include-domains=youtube: YouTube cookies extracted.
-        domains_optin = _build_google_cookie_domains(include_domains={"youtube"})
-        assert ".youtube.com" in domains_optin
+        domains_optin = frozenset(_build_google_cookie_domains(include_domains={"youtube"}))
+        # Set-intersection form sidesteps CodeQL's substring-sanitization
+        # heuristic (same reason as the test above).
+        assert youtube_variants & domains_optin
 
         # Second run with default: YouTube is NOT in the extraction list.
-        domains_default = _build_google_cookie_domains()
-        assert ".youtube.com" not in domains_default
-        assert "youtube.com" not in domains_default
+        domains_default = frozenset(_build_google_cookie_domains())
+        assert domains_default.isdisjoint(youtube_variants)
 
         # And conversion would drop a YouTube cookie even if it somehow
         # arrived from a previous run.
@@ -451,6 +460,27 @@ class TestLoginCliFlag:
 
         assert result.exit_code == 0, result.output
         assert "sibling-product cookies not included" not in result.output
+
+    def test_login_include_domains_without_browser_cookies_warns(self, monkeypatch, tmp_path):
+        """``--include-domains`` on the Playwright path is a no-op — warn.
+
+        Claude review feedback: a user who runs ``notebooklm login
+        --include-domains=youtube`` (no ``--browser-cookies``) gets no
+        signal that the flag did nothing. Mirror the symmetric warning
+        ``--fresh`` already prints when combined with ``--browser-cookies``.
+        """
+        monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
+        runner = CliRunner()
+
+        # Stub Playwright import to break out before any real browser launch.
+        # We only care that the warning is printed before the Playwright path
+        # is attempted, so we let the import fail (no playwright in scope)
+        # and the function will SystemExit afterwards.
+        with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
+            result = runner.invoke(cli, ["login", "--include-domains", "youtube"])
+
+        assert "--include-domains has no effect without --browser-cookies" in result.output
 
 
 class TestAuthRefreshCliFlag:

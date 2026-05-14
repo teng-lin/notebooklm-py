@@ -596,13 +596,25 @@ def _warn_missing_optional_domains(include_domains: set[str]) -> None:
 
 
 def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
-    """Resolve ``--include-domains`` labels to the union of their domain sets."""
+    """Resolve ``--include-domains`` labels to the union of their domain sets.
+
+    Contract: ``labels`` must be the output of
+    :func:`_parse_include_domains`, which validates that every label is in
+    :data:`OPTIONAL_COOKIE_DOMAINS_BY_LABEL` (or the literal ``"all"``).
+    Callers are expected to surface the ``click.BadParameter`` from the
+    parser before we ever reach this function; the dict lookup below is
+    therefore unguarded by design.
+    """
     if not labels:
         return frozenset()
     if _INCLUDE_DOMAINS_ALL in labels:
         return frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values())
     selected: set[str] = set()
     for label in labels:
+        # ``_parse_include_domains`` guarantees ``label`` is a valid key
+        # (or ``"all"``, handled above). Unguarded lookup is intentional —
+        # a KeyError here would be a bug in our own validation, not user
+        # input.
         selected.update(OPTIONAL_COOKIE_DOMAINS_BY_LABEL[label])
     return frozenset(selected)
 
@@ -1264,6 +1276,17 @@ def register_session_commands(cli):
                 include_domains=include_domains,
             )
             return
+
+        # Playwright path does not consult ``_build_google_cookie_domains``
+        # (the browser owns its own cookie jar via persistent context), so
+        # ``--include-domains`` is a no-op here. Warn rather than silently
+        # ignore so a user doesn't think it took effect.
+        if include_domains:
+            console.print(
+                "[yellow]Warning: --include-domains has no effect without "
+                "--browser-cookies (the Playwright login flow saves whatever "
+                "cookies the browser context already holds).[/yellow]"
+            )
 
         profile = ctx.obj.get("profile") if ctx.obj else None
         storage_path = (
