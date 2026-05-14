@@ -42,6 +42,54 @@ logger = logging.getLogger(__name__)
 _TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
 
 
+_SOURCE_ID_UUID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
+    """Locate the SOURCE_ID string in an ADD_SOURCE_FILE response.
+
+    The historical shape was a strictly position-0 walk: ``[[[[id]]]]``. Issue
+    #474 surfaced a new shape where that walk lands on ``None`` (or on the
+    echoed filename) and silently fails. Walk the whole structure instead,
+    prefer a UUID-shaped leaf, and fall back to any other id-shaped string that
+    is plausibly not a status label.
+    """
+    uuid_match: str | None = None
+    fallback: str | None = None
+
+    def walk(node: Any) -> None:
+        nonlocal uuid_match, fallback
+        if uuid_match is not None:
+            return
+        if isinstance(node, str):
+            candidate = node.strip()
+            if not candidate or candidate == filename:
+                return
+            if _SOURCE_ID_UUID_PATTERN.match(candidate):
+                uuid_match = candidate
+                return
+            # Fallback: reject obvious non-id strings (status labels like "OK",
+            # mime types like "application/pdf", free-form messages). An id-shaped
+            # string has no embedded whitespace, no slashes, and is at least 4 chars.
+            if fallback is None and len(candidate) >= 4 and not any(c in candidate for c in " \t/"):
+                fallback = candidate
+        elif isinstance(node, list):
+            for child in node:
+                if uuid_match is not None:
+                    return
+                walk(child)
+        elif isinstance(node, dict):
+            for value in node.values():
+                if uuid_match is not None:
+                    return
+                walk(value)
+
+    walk(result)
+    return uuid_match or fallback
+
+
 class SourcesAPI:
     """Operations on NotebookLM sources.
 
@@ -1128,23 +1176,23 @@ class SourcesAPI:
             allow_null=True,
         )
 
-        # Parse SOURCE_ID from response - handle various nesting formats
-        # API returns different structures: [[[[id]]]], [[[id]]], [[id]], etc.
-        if result and isinstance(result, list):
+        source_id = _extract_register_file_source_id(result, filename)
+        if source_id:
+            return source_id
 
-            def extract_id(data):
-                """Recursively extract first string from nested lists."""
-                if isinstance(data, str):
-                    return data
-                if isinstance(data, list) and len(data) > 0:
-                    return extract_id(data[0])
-                return None
-
-            source_id = extract_id(result)
-            if source_id:
-                return source_id
-
-        raise SourceAddError(filename, message="Failed to get SOURCE_ID from registration response")
+        # Shape drift: the registration succeeded at the RPC layer but the
+        # decoder couldn't locate the SOURCE_ID. Include a faithful preview of
+        # the actual response (repr, not json — repr surfaces types that the
+        # walker rejected) so future drift produces an actionable report (#474).
+        preview = repr(result)
+        if len(preview) > 200:
+            preview = preview[:200] + "..."
+        raise SourceAddError(
+            filename,
+            message=(
+                f"Failed to get SOURCE_ID from registration response. Response shape: {preview}"
+            ),
+        )
 
     async def _start_resumable_upload(
         self,

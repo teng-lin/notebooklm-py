@@ -162,6 +162,75 @@ class TestRegisterFileSource:
         with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
             await sources_api._register_file_source("nb_123", "test.pdf")
 
+    @pytest.mark.asyncio
+    async def test_register_file_source_handles_leading_none_shape(self, sources_api, mock_core):
+        """Shape drift (#474): the new wrb.fr result_data starts with a None
+        element, so the legacy position-0 walk lands on None. The full-tree
+        scan should still find the UUID-shaped SOURCE_ID elsewhere.
+        """
+        uuid = "dc84ca28-2629-49ac-aec3-de45f0ec93e4"
+        mock_core.rpc_call.return_value = [None, [[[uuid]]]]
+
+        result = await sources_api._register_file_source("nb_123", "report.pdf")
+        assert result == uuid
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "filename,response,expected",
+        [
+            # Filename echoed next to the SOURCE_ID (sibling).
+            (
+                "report.pdf",
+                [[[["report.pdf", ["11111111-2222-3333-4444-555555555555"]]]]],
+                "11111111-2222-3333-4444-555555555555",
+            ),
+            # Filename at the first leaf position — the legacy data[0] walker
+            # would have returned 'doc.pdf' and broken downstream upload (#474).
+            (
+                "doc.pdf",
+                [[["doc.pdf"], [["aabbccdd-eeff-1122-3344-556677889900"]]]],
+                "aabbccdd-eeff-1122-3344-556677889900",
+            ),
+        ],
+        ids=["filename-sibling-of-uuid", "filename-at-position-zero"],
+    )
+    async def test_register_file_source_prefers_uuid_over_echoed_filename(
+        self, sources_api, mock_core, filename, response, expected
+    ):
+        """The extractor must skip the echoed filename and return the UUID,
+        regardless of where the filename sits in the structure (#474).
+        """
+        mock_core.rpc_call.return_value = response
+
+        result = await sources_api._register_file_source("nb_123", filename)
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_register_file_source_falls_back_to_non_uuid_string(self, sources_api, mock_core):
+        """Existing tests pass non-UUID IDs like 'src_pdf' — when no UUID
+        candidate is present, the extractor falls back to the first non-
+        filename string. Preserves backward compatibility with prior shapes.
+        """
+        mock_core.rpc_call.return_value = [[[["src_pdf"]]]]
+
+        result = await sources_api._register_file_source("nb_123", "doc.pdf")
+        assert result == "src_pdf"
+
+    @pytest.mark.asyncio
+    async def test_register_file_source_error_message_includes_shape_preview(
+        self, sources_api, mock_core
+    ):
+        """Future shape drift should surface a structural preview in the error
+        so users can file actionable bug reports (#474).
+        """
+        from notebooklm.exceptions import SourceAddError
+
+        # Pure-numeric response — no string leaves → no candidates → raises.
+        mock_core.rpc_call.return_value = [[[1, 2, 3]]]
+
+        with pytest.raises(SourceAddError, match=r"Response shape:.*\[\[\[1, 2, 3\]\]\]"):
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
 
 # =============================================================================
 # _start_resumable_upload() tests
