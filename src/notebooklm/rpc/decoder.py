@@ -471,8 +471,9 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
     # Pass the full cleaned body to exception constructors; ``RPCError.__init__``
     # routes ``raw_response`` through ``_truncate_response_preview`` so the
     # truncation contract (and ``NOTEBOOKLM_DEBUG=1`` opt-in) lives in one
-    # place. We keep a separate pre-truncated copy for the direct
-    # attribute-assignment branch below, which bypasses ``__init__``.
+    # place. The one branch that bypasses ``__init__`` (direct attribute set
+    # on an already-constructed exception) calls the helper explicitly at the
+    # call site below.
     response_preview = cleaned
 
     # Collect all RPC IDs for debugging
