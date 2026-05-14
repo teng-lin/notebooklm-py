@@ -264,14 +264,13 @@ class UnknownRPCMethodError(DecodingError):
         # Override base found_ids with the typed list (may contain ints).
         if found_ids is not None:
             self.found_ids = found_ids  # type: ignore[assignment]
-        # Honor RPCError's truncation contract for stringy raw_response while
-        # preserving non-string payloads (dict/list/etc) supported by this
-        # subclass's widened ``Any`` type.
-        self.raw_response = (
-            _truncate_response_preview(raw_response)
-            if isinstance(raw_response, str)
-            else raw_response
-        )
+        # The base class already truncated the string branch via
+        # ``_truncate_response_preview`` (see ``base_raw_response`` above).
+        # Only override here for non-string payloads (dict/list/etc) supported
+        # by this subclass's widened ``Any`` type — those bypass the base
+        # class's ``str | None`` contract entirely.
+        if not isinstance(raw_response, str):
+            self.raw_response = raw_response
         self.data_at_failure = data_at_failure
 
     def __str__(self) -> str:

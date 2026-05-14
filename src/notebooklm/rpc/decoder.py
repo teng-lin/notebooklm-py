@@ -468,9 +468,12 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
     chunks = parse_chunked_response(cleaned)
     logger.debug("Parsed %d chunks from response", len(chunks))
 
-    # Create response preview for error context (first 80 chars by default;
-    # ``NOTEBOOKLM_DEBUG=1`` preserves the full body).
-    response_preview = _truncate_response_preview(cleaned)
+    # Pass the full cleaned body to exception constructors; ``RPCError.__init__``
+    # routes ``raw_response`` through ``_truncate_response_preview`` so the
+    # truncation contract (and ``NOTEBOOKLM_DEBUG=1`` opt-in) lives in one
+    # place. We keep a separate pre-truncated copy for the direct
+    # attribute-assignment branch below, which bypasses ``__init__``.
+    response_preview = cleaned
 
     # Collect all RPC IDs for debugging
     found_ids = collect_rpc_ids(chunks)
@@ -481,11 +484,14 @@ def decode_response(raw_response: str, rpc_id: str, allow_null: bool = False) ->
     try:
         result = extract_rpc_result(chunks, rpc_id)
     except RPCError as e:
-        # Add context to errors from extract_rpc_result
+        # Add context to errors from extract_rpc_result. This branch sets
+        # ``raw_response`` directly on an already-constructed exception, so
+        # ``__init__`` does not run again — apply the helper explicitly here
+        # to honor the truncation contract.
         if not e.found_ids:
             e.found_ids = found_ids
         if not e.raw_response:
-            e.raw_response = response_preview
+            e.raw_response = _truncate_response_preview(response_preview)
         raise
 
     if result is None and not allow_null:
