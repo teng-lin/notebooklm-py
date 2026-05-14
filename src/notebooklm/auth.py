@@ -2443,6 +2443,11 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     run_shell: bool
     if use_shell:
         logger.warning("Using shell-mode for %s (opt-in)", NOTEBOOKLM_REFRESH_CMD_ENV)
+        # Deliberately do NOT log a basename/preview of ``cmd`` here: in
+        # shell-mode the entire string is forwarded to ``/bin/sh -c`` and
+        # may contain pipes, redirection, ``$VAR`` expansion, or inline
+        # tokens. We can't extract a single "first token" without risking
+        # leaking the rest, so we stay silent past the opt-in warning.
         run_target = cmd
         run_shell = True
     else:

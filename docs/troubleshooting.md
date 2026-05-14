@@ -54,7 +54,7 @@ Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) an
    - Poke failures are logged at DEBUG and never propagate. Persistence failures (the more dangerous failure mode — a rotation succeeded in memory but never landed on disk) are logged at WARNING with the storage path. Either way, the next iteration retries.
    - Honors `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` (the poke itself becomes a no-op when set, but the task still wakes; pass `keepalive=None` to disable the loop entirely).
 
-3. **External recovery script (opt-in).** When auth has fully expired (idle past the rotation window, force-logout, password change), `fetch_tokens` can shell out to a user-provided refresh script, reload `storage_state.json`, and retry once.
+3. **External recovery script (opt-in).** When auth has fully expired (idle past the rotation window, force-logout, password change), `fetch_tokens` can invoke a user-provided refresh command, reload `storage_state.json`, and retry once. The command is parsed with `shlex.split` (POSIX) / `CommandLineToArgvW` (Windows) and executed with `shell=False` by default; set `NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1` to opt back into the legacy `shell=True` behavior when the command relies on pipes, redirection, or `$VAR` expansion.
    - Wire it up:
      ```bash
      pip install 'notebooklm-py[cookies]'

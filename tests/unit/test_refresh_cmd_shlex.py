@@ -205,18 +205,36 @@ class TestShellOptIn:
         )
 
     @pytest.mark.asyncio
-    async def test_opt_in_zero_string_does_not_use_shell(self, monkeypatch, tmp_path):
-        """Only the literal '1' opts in; '0' / 'false' / anything else stays safe."""
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "0",  # numeric falsy
+            "true",  # YAML/JSON boolean false-friend
+            "True",  # capitalized Python literal
+            "yes",  # natural-language affirmative
+            "on",  # systemd/INI affirmative
+            "1 ",  # trailing whitespace (env files often add it)
+            " 1",  # leading whitespace
+            "",  # empty string (explicit unset-equivalent)
+        ],
+    )
+    async def test_opt_in_only_strict_literal_one(self, monkeypatch, tmp_path, value):
+        """Only the literal '1' opts in. Common truthy-looking strings
+        ('true', 'yes', 'on', whitespace-padded '1', ...) MUST stay on the
+        safe shell=False default — these are the YAML/INI footguns users
+        most easily hit when copying ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1``
+        from one config to another.
+        """
         _stub_storage_path(monkeypatch, tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
-        monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "0")
+        monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, value)
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
         await _run_refresh_cmd()
 
         call = recorder.calls[0]
-        assert isinstance(call["args"][0], list)
+        assert isinstance(call["args"][0], list), f"value={value!r} unexpectedly opted into shell"
         assert call["kwargs"]["shell"] is False
 
 

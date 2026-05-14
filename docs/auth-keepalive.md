@@ -45,8 +45,12 @@ The headline tradeoffs:
 
 A separate, complementary refresh hook also lives in the codebase:
 ``NOTEBOOKLM_REFRESH_CMD`` ([#336](https://github.com/teng-lin/notebooklm-py/pull/336))
-runs an arbitrary user-supplied shell command on auth-expiry signals (the
-"`Authentication expired`" redirect), then retries token fetch once. It's
+runs a user-supplied recovery command on auth-expiry signals (the
+"`Authentication expired`" redirect), then retries token fetch once. The
+command string is parsed with :func:`shlex.split` and executed with
+``shell=False`` by default; set ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1`` to
+opt back into the legacy ``shell=True`` behavior when the command needs
+shell features (pipes, redirection, ``$VAR`` expansion). It's
 orthogonal to L1–L3 — those proactively keep `*PSIDTS` fresh, while
 `NOTEBOOKLM_REFRESH_CMD` is the reactive "we lost the session anyway, run
 my recovery script" lever. See §9 below.
@@ -1415,17 +1419,24 @@ When to set it:
 - **Test environments** that mock the auth surface and don't want real
   POSTs leaking out.
 
-### 9.2 `NOTEBOOKLM_REFRESH_CMD=<shell-command>`
+### 9.2 `NOTEBOOKLM_REFRESH_CMD=<command-line>`
 
 Reactive recovery hook (merged in
-[#336](https://github.com/teng-lin/notebooklm-py/pull/336),
+[#336](https://github.com/teng-lin/notebooklm-py/pull/336), hardened to
+`shell=False` by default in
+[#475](https://github.com/teng-lin/notebooklm-py/pull/475);
 `auth.py::_should_try_refresh` and `_run_refresh_cmd`). When token fetch
 fails with an auth-expiry signal (the
 "`Authentication expired or invalid`" / `accounts.google.com` redirect),
 the library:
 
-1. Runs the configured shell command via `subprocess.run(..., shell=True)`
-   with a 60 s timeout.
+1. Parses the configured command with :func:`shlex.split` (POSIX) or
+   `CommandLineToArgvW` (Windows) and runs it via
+   `subprocess.run(argv, shell=False, ...)` with a 60 s timeout. To opt
+   back into the legacy `shell=True` semantics (when the command needs
+   pipes, redirection, or `$VAR` expansion), set
+   `NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1` — a `WARNING` is logged on each
+   invocation in this mode so the security trade-off stays visible.
 2. Sets `NOTEBOOKLM_REFRESH_PROFILE` and `NOTEBOOKLM_REFRESH_STORAGE_PATH`
    in the child env so the script knows which profile to refresh.
 3. Sets `_NOTEBOOKLM_REFRESH_ATTEMPTED=1` in the child env to prevent
