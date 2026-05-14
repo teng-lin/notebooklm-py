@@ -44,17 +44,24 @@ import vcr
 # Google authentication cookies and tokens
 # Uses capture groups where possible to preserve original names
 SENSITIVE_PATTERNS: list[tuple[str, str]] = [
-    # Session cookies (preserve name, scrub value)
-    (r"SID=[^;]+", "SID=SCRUBBED"),
-    (r"HSID=[^;]+", "HSID=SCRUBBED"),
-    (r"SSID=[^;]+", "SSID=SCRUBBED"),
-    (r"APISID=[^;]+", "APISID=SCRUBBED"),
-    (r"SAPISID=[^;]+", "SAPISID=SCRUBBED"),
-    (r"SIDCC=[^;]+", "SIDCC=SCRUBBED"),
-    (r"OSID=[^;]+", "OSID=SCRUBBED"),
+    # Session cookies (preserve name, scrub value).
+    # The leading negative lookbehind ``(?<![A-Za-z0-9_-])`` anchors each pattern to a
+    # cookie-name boundary so substrings like ``BSID=...`` (a legitimate non-protected
+    # cookie that contains ``SID`` as a suffix) are NOT scrubbed. Without the
+    # lookbehind the regex matches the ``SID=...`` tail of ``BSID=...`` and corrupts
+    # benign fixture data. See ``tests/unit/test_cookie_redaction.py``.
+    (r"(?<![A-Za-z0-9_-])SID=[^;]+", "SID=SCRUBBED"),
+    (r"(?<![A-Za-z0-9_-])HSID=[^;]+", "HSID=SCRUBBED"),
+    (r"(?<![A-Za-z0-9_-])SSID=[^;]+", "SSID=SCRUBBED"),
+    (r"(?<![A-Za-z0-9_-])APISID=[^;]+", "APISID=SCRUBBED"),
+    (r"(?<![A-Za-z0-9_-])SAPISID=[^;]+", "SAPISID=SCRUBBED"),
+    (r"(?<![A-Za-z0-9_-])SIDCC=[^;]+", "SIDCC=SCRUBBED"),
+    (r"(?<![A-Za-z0-9_-])OSID=[^;]+", "OSID=SCRUBBED"),
     # NID tracking cookie (Google network ID)
-    (r"NID=[^;]+", "NID=SCRUBBED"),
-    # Secure cookies - preserve original name (e.g., __Secure-1PSID=SCRUBBED)
+    (r"(?<![A-Za-z0-9_-])NID=[^;]+", "NID=SCRUBBED"),
+    # Secure cookies - preserve original name (e.g., __Secure-1PSID=SCRUBBED).
+    # The ``__Secure-`` / ``__Host-`` prefixes are already distinctive enough that no
+    # legitimate cookie shares them, so no lookbehind is needed here.
     (r"(__Secure-[^=]+)=[^;]+", r"\1=SCRUBBED"),
     (r"(__Host-[^=]+)=[^;]+", r"\1=SCRUBBED"),
     # CSRF and session tokens in HTML/JSON (WIZ_global_data format)
