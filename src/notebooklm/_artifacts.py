@@ -2335,11 +2335,14 @@ class ArtifactsAPI:
                     total_bytes = 0
                     with open(temp_file, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=65536):
-                            write_task = asyncio.ensure_future(asyncio.to_thread(f.write, chunk))
+                            write_task = asyncio.create_task(asyncio.to_thread(f.write, chunk))
                             try:
                                 await asyncio.shield(write_task)
                             except asyncio.CancelledError:
-                                with contextlib.suppress(BaseException):
+                                # Narrow to (CancelledError, Exception) so genuine
+                                # process-level signals (KeyboardInterrupt, SystemExit)
+                                # still propagate during cleanup.
+                                with contextlib.suppress(asyncio.CancelledError, Exception):
                                     await write_task
                                 raise
                             total_bytes += len(chunk)

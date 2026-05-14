@@ -82,10 +82,12 @@ def test_rpc_call_impl_has_no_await_before_post():
 
     outer_nodes = list(_walk_outer(func))
     # ast.iter_child_nodes does not guarantee source order across all node
-    # types, so pick the earliest post-await by line number.
-    post_await_linenos = [n.lineno for n in outer_nodes if is_post_await(n)]
-    post_await_lineno = min(post_await_linenos, default=None)
-    assert post_await_lineno is not None, (
+    # types, so pick the earliest post-await by (lineno, col_offset). Using
+    # the tuple — not just lineno — catches same-line earlier awaits like
+    # ``await build_body(); await post(...)`` written on one line.
+    post_await_positions = [(n.lineno, n.col_offset) for n in outer_nodes if is_post_await(n)]
+    post_await_position = min(post_await_positions, default=None)
+    assert post_await_position is not None, (
         "Could not locate `await ...post(...)` in _rpc_call_impl. If you "
         "refactored the call site (e.g., to `self._http_client.request(...)`), "
         "update this guard to match — the invariant is 'no await before the "
@@ -93,10 +95,12 @@ def test_rpc_call_impl_has_no_await_before_post():
     )
 
     earlier_awaits = [
-        n for n in outer_nodes if isinstance(n, ast.Await) and n.lineno < post_await_lineno
+        n
+        for n in outer_nodes
+        if isinstance(n, ast.Await) and (n.lineno, n.col_offset) < post_await_position
     ]
     assert not earlier_awaits, (
-        f"_rpc_call_impl gained an await before the POST at line {post_await_lineno}: "
+        f"_rpc_call_impl gained an await before the POST at {post_await_position}: "
         f"{[(n.lineno, ast.dump(n)) for n in earlier_awaits]}. "
         "This breaks the snapshot-invariant — auth state could be mutated between "
         "the read and the actual send."
@@ -193,9 +197,11 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
             for t in pending:
                 t.cancel()
             # Bounded join so cancelled tasks actually settle before the
-            # ``async with make_core(...)`` block exits.
+            # ``async with make_core(...)`` block exits. Narrow to
+            # ``(CancelledError, Exception)`` so KeyboardInterrupt / SystemExit
+            # during the test still propagate.
             if pending:
-                with contextlib.suppress(BaseException):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.wait_for(
                         asyncio.gather(*pending, return_exceptions=True),
                         EVENT_TIMEOUT_S,
