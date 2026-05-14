@@ -52,7 +52,12 @@ def test_main_success(tmp_path):
     (repo / "src/notebooklm/__init__.py").touch()
 
     claude_md = repo / "CLAUDE.md"
-    claude_md.write_text("### Repository Structure\n\nsrc/notebooklm/\n├── __init__.py")
+    # Explicit utf-8 — the tree-decoration chars `├──` / `│` are outside
+    # cp1252 and Windows CI would otherwise crash with UnicodeEncodeError.
+    claude_md.write_text(
+        "### Repository Structure\n\nsrc/notebooklm/\n├── __init__.py",
+        encoding="utf-8",
+    )
 
     assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 0
 
@@ -63,7 +68,10 @@ def test_main_failure(tmp_path):
     (repo / "src/notebooklm").mkdir(parents=True)
 
     claude_md = repo / "CLAUDE.md"
-    claude_md.write_text("### Repository Structure\n\nsrc/notebooklm/\n├── nonexistent.py")
+    claude_md.write_text(
+        "### Repository Structure\n\nsrc/notebooklm/\n├── nonexistent.py",
+        encoding="utf-8",
+    )
 
     assert main(["--claude-md", str(claude_md), "--repo-root", str(repo)]) == 1
 
