@@ -8,6 +8,8 @@ The migration is:
 - Idempotent: safe to run multiple times
 - Crash-safe: uses copy-then-delete with marker file
 - Non-destructive: originals kept until all copies succeed
+- Single-writer: cross-process ``filelock`` serializes concurrent CLI
+  invocations so a container start-up race cannot interleave copies.
 """
 
 import json
@@ -15,16 +17,29 @@ import logging
 import shutil
 import sys
 
+from filelock import FileLock, Timeout
+
 from ._atomic_io import atomic_update_json
 from .paths import get_config_path, get_home_dir
 
 logger = logging.getLogger(__name__)
 
 _MIGRATION_MARKER = ".migration_complete"
+_MIGRATION_LOCK = ".migration.lock"
+_MIGRATION_LOCK_TIMEOUT = 30.0
 
 # Legacy files that should be moved into profiles/default/
 _LEGACY_FILES = ["storage_state.json", "context.json"]
 _LEGACY_DIRS = ["browser_profile"]
+
+
+class MigrationLockTimeoutError(RuntimeError):
+    """Raised when ``migrate_to_profiles()`` cannot acquire the migration lock.
+
+    Surfaces the underlying :class:`filelock.Timeout` so callers can
+    distinguish a stuck peer from other migration failures (e.g., a CI
+    runner whose previous job left a stale process holding the lock).
+    """
 
 
 def _has_legacy_files(home) -> bool:
@@ -45,11 +60,53 @@ def migrate_to_profiles() -> bool:
     2. Delete originals
     3. Write .migration_complete marker (last — incomplete runs retry)
 
+    The migration body runs under a cross-process ``filelock`` rooted at
+    ``<home>/.migration.lock`` so concurrent CLI invocations (e.g., a
+    container start-up race) cannot interleave copies. The loser of the
+    race re-checks the marker inside the lock and no-ops.
+
     Returns:
         True if migration was performed, False if already migrated or no-op.
+
+    Raises:
+        MigrationLockTimeoutError: If the migration lock cannot be acquired
+            within ``_MIGRATION_LOCK_TIMEOUT`` seconds — usually means a
+            sibling process is stuck mid-migration.
     """
     home = get_home_dir()
+
+    # Ensure the home dir exists BEFORE the lock so ``filelock`` has a
+    # writable parent for the lock file. Permissions are also set here.
+    get_home_dir(create=True)
+
+    lock_path = home / _MIGRATION_LOCK
+    try:
+        with FileLock(str(lock_path), timeout=_MIGRATION_LOCK_TIMEOUT):
+            return _migrate_to_profiles_locked(home)
+    except Timeout as exc:
+        raise MigrationLockTimeoutError(
+            f"Could not acquire migration lock at {lock_path} within "
+            f"{_MIGRATION_LOCK_TIMEOUT:.0f}s; another process may be "
+            "stuck mid-migration."
+        ) from exc
+
+
+def _migrate_to_profiles_locked(home) -> bool:
+    """Core migration body, executed while holding the migration lock.
+
+    Split out so the lock-acquisition wrapper stays small and the locked
+    region is straightforward to reason about.
+    """
     profiles_dir = home / "profiles"
+    default_dir = profiles_dir / "default"
+
+    # Inside the lock, re-check the marker FIRST. If another process completed
+    # the migration while we were waiting, the marker is the authoritative
+    # signal — return immediately as a no-op. The marker lives at
+    # ``default_dir / _MIGRATION_MARKER`` (NOT the home root); see the
+    # marker-write site at the end of this function.
+    if (default_dir / _MIGRATION_MARKER).exists() and not _has_legacy_files(home):
+        return False
 
     # Already migrated: profiles dir exists and no legacy files left to clean up
     if profiles_dir.exists() and not _has_legacy_files(home):
@@ -60,8 +117,7 @@ def migrate_to_profiles() -> bool:
     legacy_dirs = [home / name for name in _LEGACY_DIRS if (home / name).is_dir()]
 
     if not legacy_files and not legacy_dirs:
-        # Fresh install — ensure home dir has correct permissions first
-        get_home_dir(create=True)
+        # Fresh install — home dir permissions already set by caller.
         if sys.platform == "win32":
             profiles_dir.mkdir(exist_ok=True)
         else:
@@ -70,9 +126,6 @@ def migrate_to_profiles() -> bool:
         return True
 
     # Migrate legacy files into profiles/default/
-    # Ensure home dir has correct 0o700 permissions (may already exist from legacy)
-    get_home_dir(create=True)
-    default_dir = profiles_dir / "default"
     if sys.platform == "win32":
         default_dir.mkdir(parents=True, exist_ok=True)
     else:
@@ -101,13 +154,18 @@ def migrate_to_profiles() -> bool:
             shutil.copytree(src, dst)
             logger.debug("Copied %s/ → %s/", src.name, dst)
 
-    # Remove originals (copies already in place as fallback)
+    # Remove originals (copies already in place as fallback). Tolerate
+    # already-removed paths (a previous interrupted run, or another
+    # concurrent migration that partially completed before we entered).
     for src in legacy_files:
-        src.unlink()
+        try:
+            src.unlink()
+        except FileNotFoundError:
+            pass
         logger.debug("Removed legacy %s", src.name)
 
     for src in legacy_dirs:
-        shutil.rmtree(src)
+        shutil.rmtree(src, ignore_errors=True)
         logger.debug("Removed legacy %s/", src.name)
 
     # Update config.json with default_profile
