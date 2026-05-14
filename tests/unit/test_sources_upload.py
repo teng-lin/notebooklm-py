@@ -290,9 +290,44 @@ class TestRegisterFileSource:
             await sources_api._register_file_source("nb_123", "test.pdf")
 
     @pytest.mark.asyncio
+    async def test_register_file_source_lets_rate_limit_error_propagate(
+        self, sources_api, mock_core
+    ):
+        """RateLimitError must propagate so callers implementing back-off keep
+        their specific exception type (and ``retry_after``) without having to
+        unwrap ``SourceAddError.cause``.
+        """
+        from notebooklm.exceptions import RateLimitError
+
+        mock_core.rpc_call.side_effect = RateLimitError(
+            "API rate limit exceeded",
+            method_id="o4cbdc",
+            rpc_code="USER_DISPLAYABLE_ERROR",
+        )
+
+        with pytest.raises(RateLimitError, match="rate limit"):
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
+    @pytest.mark.asyncio
+    async def test_register_file_source_lets_server_error_propagate(self, sources_api, mock_core):
+        """ServerError must propagate so callers handling transient 5xx
+        backend errors keep the specific exception type for retry logic.
+        """
+        from notebooklm.exceptions import ServerError
+
+        mock_core.rpc_call.side_effect = ServerError(
+            "Backend unavailable",
+            method_id="o4cbdc",
+            rpc_code=500,
+        )
+
+        with pytest.raises(ServerError, match="Backend unavailable"):
+            await sources_api._register_file_source("nb_123", "test.pdf")
+
+    @pytest.mark.asyncio
     async def test_register_file_source_walker_has_recursion_guard(self, sources_api, mock_core):
-        """A pathological deeply-nested response shouldn't trigger
-        RecursionError — the depth guard mirrors :func:`_extract_all_text`.
+        """A pathological deeply-nested response must not trigger
+        RecursionError — the depth guard caps recursion at ``max_depth=50``.
         """
         # 200-deep nest with a UUID at the bottom. Past the depth guard the
         # walker stops, so the UUID is unreachable and we raise — but we don't

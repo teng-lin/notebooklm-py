@@ -16,7 +16,7 @@ from ._core import ClientCore
 from ._env import get_base_url
 from ._url_utils import is_youtube_url
 from .auth import authuser_query, format_authuser_value
-from .exceptions import AuthError, NetworkError, ValidationError
+from .exceptions import AuthError, NetworkError, RateLimitError, ServerError, ValidationError
 from .rpc import RPCError, RPCMethod, get_upload_url
 from .rpc.types import SourceStatus
 from .types import (
@@ -58,9 +58,8 @@ def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
     """
     uuid_match: str | None = None
     fallback: str | None = None
-    # Depth guard mirrors the existing _extract_all_text pattern — Google's
-    # responses are shallow in practice, but a malformed/adversarial payload
-    # shouldn't be able to trigger RecursionError.
+    # Depth guard for malformed/adversarial payloads — Google's real responses
+    # are shallow (≤5 levels), so 50 is generous without risking RecursionError.
     max_depth = 50
 
     def walk(node: Any, depth: int) -> None:
@@ -1193,8 +1192,11 @@ class SourcesAPI:
         # and an account-routing hint. Surface that diagnostic to the caller
         # via SourceAddError, instead of swallowing the null with allow_null=True
         # and raising a generic "Failed to get SOURCE_ID" with no detail.
-        # AuthError is allowed to propagate so the core auth-refresh retry path
-        # is not disrupted.
+        #
+        # AuthError, RateLimitError, and ServerError are allowed to propagate
+        # unchanged so callers can keep using their specific exception types
+        # for auth-refresh retry, rate-limit back-off, and server-error handling
+        # without having to unwrap SourceAddError.cause.
         try:
             result = await self._core.rpc_call(
                 RPCMethod.ADD_SOURCE_FILE,
@@ -1202,7 +1204,7 @@ class SourcesAPI:
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=False,
             )
-        except AuthError:
+        except (AuthError, RateLimitError, ServerError):
             raise
         except RPCError as exc:
             raise SourceAddError(
