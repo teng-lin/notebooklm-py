@@ -7,6 +7,7 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
 import asyncio
 import builtins
+import contextlib
 import csv
 import html
 import json
@@ -2322,17 +2323,25 @@ class ArtifactsAPI:
 
                     # Stream to file in chunks to handle large files efficiently.
                     # Each per-chunk write is dispatched to a worker thread so the
-                    # event loop isn't blocked on disk I/O; the loop body still
-                    # awaits each write before reading the next chunk, so the
-                    # shared file handle is never accessed concurrently in normal
-                    # execution. On task cancellation the worker thread may briefly
-                    # outlive the `with` block, but the temp file is unconditionally
-                    # unlinked in the outer `except` handler so the partial state
-                    # is discarded either way.
+                    # event loop isn't blocked on disk I/O; the loop body awaits
+                    # each write before reading the next chunk so the shared file
+                    # handle is never accessed concurrently in normal execution.
+                    #
+                    # Cancellation: ``asyncio.shield`` keeps the in-flight write
+                    # alive across a CancelledError; the except block awaits the
+                    # shielded task to completion BEFORE letting the with-block
+                    # close the file. Without this, the worker thread could touch
+                    # ``f`` after the with-block has started closing it.
                     total_bytes = 0
                     with open(temp_file, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=65536):
-                            await asyncio.to_thread(f.write, chunk)
+                            write_task = asyncio.ensure_future(asyncio.to_thread(f.write, chunk))
+                            try:
+                                await asyncio.shield(write_task)
+                            except asyncio.CancelledError:
+                                with contextlib.suppress(BaseException):
+                                    await write_task
+                                raise
                             total_bytes += len(chunk)
 
                     if total_bytes == 0:

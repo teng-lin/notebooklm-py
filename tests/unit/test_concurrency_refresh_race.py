@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import inspect
 import json
 import textwrap
@@ -64,9 +65,25 @@ def test_rpc_call_impl_has_no_await_before_post():
         attr = call.func
         return isinstance(attr, ast.Attribute) and attr.attr == "post"
 
-    # ast.walk does not guarantee source order, so pick the earliest match by
-    # line number — robust to future code that contains multiple post() calls.
-    post_await_linenos = [n.lineno for n in ast.walk(func) if is_post_await(n)]
+    def _walk_outer(parent):
+        """Yield nodes that belong to ``parent`` itself (skip nested defs).
+
+        ``ast.walk`` descends into nested ``FunctionDef`` / ``AsyncFunctionDef``
+        / ``Lambda`` bodies — that would let a future helper coroutine inside
+        ``_rpc_call_impl`` smuggle the matching ``await ...post(...)`` past
+        this guard. We only want statements lexically at the outer level.
+        """
+        boundaries = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+        for child in ast.iter_child_nodes(parent):
+            if isinstance(child, boundaries):
+                continue  # don't descend into nested callables
+            yield child
+            yield from _walk_outer(child)
+
+    outer_nodes = list(_walk_outer(func))
+    # ast.iter_child_nodes does not guarantee source order across all node
+    # types, so pick the earliest post-await by line number.
+    post_await_linenos = [n.lineno for n in outer_nodes if is_post_await(n)]
     post_await_lineno = min(post_await_linenos, default=None)
     assert post_await_lineno is not None, (
         "Could not locate `await ...post(...)` in _rpc_call_impl. If you "
@@ -76,7 +93,7 @@ def test_rpc_call_impl_has_no_await_before_post():
     )
 
     earlier_awaits = [
-        n for n in ast.walk(func) if isinstance(n, ast.Await) and n.lineno < post_await_lineno
+        n for n in outer_nodes if isinstance(n, ast.Await) and n.lineno < post_await_lineno
     ]
     assert not earlier_awaits, (
         f"_rpc_call_impl gained an await before the POST at line {post_await_lineno}: "
@@ -143,24 +160,46 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
         client = NotebookLMClient.__new__(NotebookLMClient)
         client._core = core
 
-        if rpc_first:
-            rpc_task = asyncio.create_task(core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
-            await asyncio.wait_for(rpc_send_entered.wait(), EVENT_TIMEOUT_S)
-            refresh_task = asyncio.create_task(client.refresh_auth())
-            await asyncio.wait_for(get_entered.wait(), EVENT_TIMEOUT_S)
+        # try/finally ensures the mock-transport handlers are unblocked even
+        # if a wait_for times out — otherwise pending tasks dangle in the
+        # event loop and the test hangs until pytest's own timeout fires.
+        rpc_task: asyncio.Task | None = None
+        refresh_task: asyncio.Task | None = None
+        try:
+            if rpc_first:
+                rpc_task = asyncio.create_task(core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
+                await asyncio.wait_for(rpc_send_entered.wait(), EVENT_TIMEOUT_S)
+                refresh_task = asyncio.create_task(client.refresh_auth())
+                await asyncio.wait_for(get_entered.wait(), EVENT_TIMEOUT_S)
+                let_get_complete.set()
+                await asyncio.wait_for(refresh_task, EVENT_TIMEOUT_S)
+                let_rpc_send_complete.set()
+                await asyncio.wait_for(rpc_task, EVENT_TIMEOUT_S)
+            else:
+                refresh_task = asyncio.create_task(client.refresh_auth())
+                await asyncio.wait_for(get_entered.wait(), EVENT_TIMEOUT_S)
+                rpc_task = asyncio.create_task(core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
+                await asyncio.wait_for(rpc_send_entered.wait(), EVENT_TIMEOUT_S)
+                let_get_complete.set()
+                await asyncio.wait_for(refresh_task, EVENT_TIMEOUT_S)
+                let_rpc_send_complete.set()
+                await asyncio.wait_for(rpc_task, EVENT_TIMEOUT_S)
+        finally:
+            # Always release the mock-transport gates so any in-flight handlers
+            # can return — even if the test errored above.
             let_get_complete.set()
-            await refresh_task
             let_rpc_send_complete.set()
-            await rpc_task
-        else:
-            refresh_task = asyncio.create_task(client.refresh_auth())
-            await asyncio.wait_for(get_entered.wait(), EVENT_TIMEOUT_S)
-            rpc_task = asyncio.create_task(core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
-            await asyncio.wait_for(rpc_send_entered.wait(), EVENT_TIMEOUT_S)
-            let_get_complete.set()
-            await refresh_task
-            let_rpc_send_complete.set()
-            await rpc_task
+            pending = [t for t in (rpc_task, refresh_task) if t is not None and not t.done()]
+            for t in pending:
+                t.cancel()
+            # Bounded join so cancelled tasks actually settle before the
+            # ``async with make_core(...)`` block exits.
+            if pending:
+                with contextlib.suppress(BaseException):
+                    await asyncio.wait_for(
+                        asyncio.gather(*pending, return_exceptions=True),
+                        EVENT_TIMEOUT_S,
+                    )
 
     assert len(captured_post) == 1, (
         f"Expected exactly one POST on the wire, got {len(captured_post)}: {captured_post!r}"

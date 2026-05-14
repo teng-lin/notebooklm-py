@@ -23,6 +23,7 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         cwd=REPO_ROOT,
         check=False,
+        timeout=30,
     )
 
 

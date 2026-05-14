@@ -123,23 +123,12 @@ async def test_summary_warns_on_indexerror_drift(caplog):
 # ---------------------------------------------------------------------------
 
 
-def test_retry_after_non_integer_logs_debug(caplog):
-    """_core.py:545 — Retry-After non-integer should DEBUG log, not WARNING."""
-    import notebooklm._core as core_mod
-
-    with caplog.at_level(logging.DEBUG, logger="notebooklm"):
-        # Drive the parse directly via a small helper inline; the production
-        # call site is buried in an HTTP error path. Simulate by invoking the
-        # same code shape.
-        try:
-            int("not-an-int")
-        except ValueError as e:
-            core_mod.logger.debug("Retry-After header not an integer: %r", "not-an-int")
-            assert e is not None
-    debug_records = [
-        r for r in caplog.records if r.levelno == logging.DEBUG and "Retry-After" in r.message
-    ]
-    assert debug_records
+# Removed: ``test_retry_after_non_integer_logs_debug`` was self-fulfilling — it
+# called ``core_mod.logger.debug(...)`` inline rather than exercising production
+# code. Phase 3 replaced the original "Retry-After header not an integer" log
+# site with the ``_parse_retry_after`` helper, which returns ``None`` silently
+# for unparseable input. Parse semantics are covered by
+# ``tests/unit/test_retry_after.py``.
 
 
 @pytest.mark.asyncio

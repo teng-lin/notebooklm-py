@@ -8,13 +8,14 @@ budget enables bounded automatic retries that sleep for the (clamped)
 
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from notebooklm._core import ClientCore
-from notebooklm.rpc import RateLimitError, RPCMethod
+from notebooklm.rpc import RateLimitError, RPCError, RPCMethod
 
 
 @pytest.fixture
@@ -54,14 +55,12 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
     core = ClientCore(auth_tokens, rate_limit_max_retries=2)
     core._http_client = mock_client
 
-    with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
-        # Decode may fail on the synthetic 200 — that's fine, what we care about
-        # is the post counts and sleep budget. We expect either success or a
-        # decode-level failure, but the retry MUST have fired.
-        try:
-            await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
-        except Exception:
-            pass
+    # Decode may fail on the synthetic 200 — that's fine, what we care about
+    # is the post counts and sleep budget. We expect either success or an
+    # RPCError-tree decode failure, but the retry MUST have fired. Narrowed
+    # from `except Exception` to keep unrelated programming errors visible.
+    with patch("asyncio.sleep", AsyncMock()) as mock_sleep, contextlib.suppress(RPCError):
+        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
 
     assert mock_client.post.call_count == 2, (
         f"Expected initial 429 then 1 retry, got {mock_client.post.call_count}"
