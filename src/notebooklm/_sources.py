@@ -472,6 +472,11 @@ class SourcesAPI:
         """
         logger.debug("Adding URL source to notebook %s: %s", notebook_id, url[:80])
         video_id = self._extract_youtube_video_id(url)
+        # Preserve transport-level signals so callers can act on the specific
+        # type (AuthError → re-login, RateLimitError → back-off with retry_after,
+        # ServerError → transient-retry). Only the generic RPCError catch wraps
+        # into SourceAddError with the underlying cause attached. Mirrors the
+        # propagation contract in _register_file_source (#474, #407).
         try:
             if video_id:
                 result = await self._add_youtube_source(notebook_id, url)
@@ -485,8 +490,9 @@ class SourcesAPI:
                         url[:100],
                     )
                 result = await self._add_url_source(notebook_id, url)
+        except (AuthError, RateLimitError, ServerError):
+            raise
         except RPCError as e:
-            # Wrap RPC error with more helpful context for users
             raise SourceAddError(url, cause=e) from e
 
         if result is None:
@@ -1153,11 +1159,16 @@ class SourcesAPI:
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
+        # allow_null=False mirrors _register_file_source — ADD_SOURCE on
+        # success returns the new source row. A null result with a status
+        # code at wrb.fr[5] is the #407 / #474 mode; allow_null=True would
+        # swallow that diagnostic. The decoder now raises RPCError with the
+        # status code so add_url can wrap it into SourceAddError with detail.
         return await self._core.rpc_call(
             RPCMethod.ADD_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+            allow_null=False,
         )
 
     async def _add_url_source(self, notebook_id: str, url: str) -> Any:

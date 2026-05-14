@@ -1204,6 +1204,58 @@ class TestAddUrlWithYouTube:
         # Regular URL params have the URL at position [0][0][2] (different from YouTube's [7])
         assert params[0][0][2] == ["https://example.com/article"]
 
+    @pytest.mark.asyncio
+    async def test_add_url_wraps_rpc_error_with_status_code(self, sources_api, mock_core):
+        """When ADD_SOURCE returns null with a status code at wrb.fr[5] —
+        the #407 mode shared with #474 — the decoder raises ClientError /
+        RPCError and add_url wraps it into SourceAddError with the rich
+        diagnostic preserved as .cause. Previously allow_null=True on
+        _add_youtube_source swallowed the status code silently.
+        """
+        from notebooklm.exceptions import ClientError, SourceAddError
+
+        mock_core.rpc_call.side_effect = ClientError(
+            "RPC <id> returned null result with status code 7 (Permission denied). ...",
+            method_id="<id>",
+            rpc_code=7,
+        )
+
+        with pytest.raises(SourceAddError) as exc_info:
+            await sources_api.add_url("nb_123", "https://youtu.be/dQw4w9WgXcQ")
+
+        assert isinstance(exc_info.value.cause, ClientError)
+        assert exc_info.value.cause.rpc_code == 7
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "exc_factory",
+        [
+            lambda: __import__("notebooklm.exceptions", fromlist=["AuthError"]).AuthError(
+                "session expired"
+            ),
+            lambda: __import__("notebooklm.exceptions", fromlist=["RateLimitError"]).RateLimitError(
+                "rate limited", method_id="<id>"
+            ),
+            lambda: __import__("notebooklm.exceptions", fromlist=["ServerError"]).ServerError(
+                "backend down", method_id="<id>", rpc_code=503
+            ),
+        ],
+        ids=["auth", "rate-limit", "server"],
+    )
+    async def test_add_url_lets_transport_errors_propagate(
+        self, sources_api, mock_core, exc_factory
+    ):
+        """AuthError, RateLimitError, and ServerError must NOT be wrapped —
+        callers rely on the specific exception type for re-login / back-off
+        / transient retry. Mirrors the propagation contract on
+        _register_file_source for #474.
+        """
+        exc = exc_factory()
+        mock_core.rpc_call.side_effect = exc
+
+        with pytest.raises(type(exc)):
+            await sources_api.add_url("nb_123", "https://example.com/article")
+
 
 # =============================================================================
 # _add_youtube_source() tests
