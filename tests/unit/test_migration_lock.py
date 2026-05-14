@@ -54,7 +54,9 @@ def _seed_legacy_layout(home: Path) -> None:
     (home / "browser_profile" / "data").write_text("chrome data", encoding="utf-8")
 
 
-def test_concurrent_threads_only_one_migrates(tmp_path: Path) -> None:
+def test_concurrent_threads_only_one_migrates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Two threads race on a fresh home — only one performs the copy.
 
     The loser must acquire the lock AFTER the winner has written the
@@ -70,6 +72,13 @@ def test_concurrent_threads_only_one_migrates(tmp_path: Path) -> None:
     cases; we accept the unit-test tradeoff to avoid subprocess overhead.
     """
     _seed_legacy_layout(tmp_path)
+    # Set NOTEBOOKLM_HOME once outside the workers. Using
+    # ``patch.dict(os.environ, ..., clear=True)`` inside concurrent
+    # threads races: each thread snapshots the *current* (already
+    # cleared) env as its "original", and the last thread to exit
+    # restores a near-empty env — wiping USERPROFILE on Windows and
+    # breaking later tests that call ``Path.home()``.
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
 
     results: list[bool] = []
     errors: list[BaseException] = []
@@ -78,8 +87,7 @@ def test_concurrent_threads_only_one_migrates(tmp_path: Path) -> None:
     def worker() -> None:
         try:
             barrier.wait()
-            with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(tmp_path)}, clear=True):
-                results.append(migrate_to_profiles())
+            results.append(migrate_to_profiles())
         except BaseException as exc:  # noqa: BLE001 - capture all failures
             errors.append(exc)
 
