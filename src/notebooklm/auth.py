@@ -2403,12 +2403,17 @@ def _split_refresh_cmd(cmd: str) -> list[str]:
     argc = ctypes.c_int(0)
     argv_ptr = CommandLineToArgvW(cmd, ctypes.byref(argc))
     if not argv_ptr:
-        # CommandLineToArgvW returns NULL for empty / whitespace-only input.
+        # CommandLineToArgvW returns NULL for some empty-input edge cases.
         # Mirror shlex.split's behavior and return an empty list; the caller
         # surfaces this as ``RuntimeError("...parsed to empty argv")``.
         return []
     try:
-        return [argv_ptr[i] for i in range(argc.value)]
+        # On Windows, ``CommandLineToArgvW`` is documented to return a single
+        # empty-string entry (argc=1, argv[0]="") for whitespace-only input,
+        # rather than NULL. Filter out empty entries so the caller's
+        # ``if not argv`` empty-argv guard catches this case the same way
+        # ``shlex.split("   ") == []`` does on POSIX.
+        return [argv_ptr[i] for i in range(argc.value) if argv_ptr[i]]
     finally:
         LocalFree(ctypes.cast(argv_ptr, wintypes.HLOCAL))
 
