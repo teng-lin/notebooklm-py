@@ -2374,6 +2374,45 @@ def _should_try_refresh(err: Exception) -> bool:
     return any(sig in msg for sig in _AUTH_ERROR_SIGNALS)
 
 
+def _split_refresh_cmd(cmd: str) -> list[str]:
+    """Parse ``NOTEBOOKLM_REFRESH_CMD`` into an argv for ``shell=False`` exec.
+
+    On POSIX systems, defers to :func:`shlex.split`. On Windows, uses
+    ``CommandLineToArgvW`` so quoted paths like
+    ``"C:\\Program Files\\Python\\python.exe"`` produce a properly unquoted
+    argv that ``subprocess.run(argv, shell=False)`` can locate. ``shlex``
+    in non-POSIX mode preserves the literal quote characters and would
+    leave the OS unable to find the executable.
+
+    Raises:
+        ValueError: If the command is malformed (e.g., unterminated quote).
+    """
+    if os.name != "nt":
+        return shlex.split(cmd)
+
+    import ctypes
+    from ctypes import wintypes
+
+    CommandLineToArgvW = ctypes.windll.shell32.CommandLineToArgvW  # type: ignore[attr-defined]
+    CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    LocalFree = ctypes.windll.kernel32.LocalFree  # type: ignore[attr-defined]
+    LocalFree.argtypes = [wintypes.HLOCAL]
+    LocalFree.restype = wintypes.HLOCAL
+
+    argc = ctypes.c_int(0)
+    argv_ptr = CommandLineToArgvW(cmd, ctypes.byref(argc))
+    if not argv_ptr:
+        # CommandLineToArgvW returns NULL for empty / whitespace-only input.
+        # Mirror shlex.split's behavior and return an empty list; the caller
+        # surfaces this as ``RuntimeError("...parsed to empty argv")``.
+        return []
+    try:
+        return [argv_ptr[i] for i in range(argc.value)]
+    finally:
+        LocalFree(ctypes.cast(argv_ptr, wintypes.HLOCAL))
+
+
 async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None = None) -> None:
     """Run ``NOTEBOOKLM_REFRESH_CMD`` to refresh stored cookies.
 
@@ -2408,10 +2447,9 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
         run_shell = True
     else:
         try:
-            # ``shlex.split`` uses POSIX rules on POSIX systems and non-POSIX
-            # rules on Windows so backslash-containing paths round-trip with
-            # ``subprocess.list2cmdline``.
-            argv = shlex.split(cmd, posix=(os.name != "nt"))
+            # POSIX → shlex.split. Windows → CommandLineToArgvW so quoted
+            # paths like ``"C:\\Program Files\\..."`` arrive unquoted.
+            argv = _split_refresh_cmd(cmd)
         except ValueError as split_err:
             raise RuntimeError(
                 f"{NOTEBOOKLM_REFRESH_CMD_ENV} could not be parsed: {split_err}"

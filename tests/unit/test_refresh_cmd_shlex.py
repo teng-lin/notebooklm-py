@@ -21,6 +21,7 @@ from notebooklm.auth import (
     NOTEBOOKLM_REFRESH_CMD_ENV,
     NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV,
     _run_refresh_cmd,
+    _split_refresh_cmd,
 )
 
 
@@ -90,25 +91,22 @@ class TestShlexDefault:
         await _run_refresh_cmd()
 
         target = recorder.calls[0]["args"][0]
-        # The load-bearing invariant: the quoted span stays a single argv
-        # element, so the child sees one "hello world" arg instead of two.
-        # POSIX ``shlex.split`` strips the surrounding quotes; non-POSIX
-        # (Windows) preserves them — the child shell-less invocation then
-        # rejects them, but that's the user's problem and not ours.
+        # The quoted span stays a single argv element AND the syntactic
+        # quotes are stripped on both platforms — POSIX via shlex.split,
+        # Windows via CommandLineToArgvW.
+        assert target == ["echo", "hello world"]
         assert len(target) == 2
-        assert target[0] == "echo"
-        if os.name == "nt":
-            assert target[1] == '"hello world"'
-        else:
-            assert target[1] == "hello world"
 
     @pytest.mark.asyncio
     async def test_malformed_command_raises_runtime_error(self, monkeypatch, tmp_path):
         _stub_storage_path(monkeypatch, tmp_path)
         # Unterminated double quote — POSIX ``shlex.split`` raises ValueError.
-        # Skip on Windows where ``posix=False`` mode is lenient about quoting.
+        # Skip on Windows: ``CommandLineToArgvW`` is lenient and treats the
+        # remainder of the string as the final quoted token rather than
+        # signaling an error. We still get a valid argv, so this specific
+        # surface is POSIX-only.
         if os.name == "nt":
-            pytest.skip("shlex non-POSIX mode does not raise on unterminated quotes")
+            pytest.skip("CommandLineToArgvW is lenient about unterminated quotes")
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, 'echo "unterminated')
         # subprocess.run should never be reached.
         called = {"hit": False}
@@ -222,6 +220,55 @@ class TestShellOptIn:
         assert call["kwargs"]["shell"] is False
 
 
+class TestSplitRefreshCmd:
+    """Unit-level coverage of the per-platform parser ``_split_refresh_cmd``.
+
+    The Windows branch uses ``CommandLineToArgvW`` (not ``shlex.split``) so
+    quoted paths like ``"C:\\Program Files\\Python\\python.exe"`` arrive
+    in argv WITHOUT the surrounding literal quotes. This was the regression
+    flagged by CodeRabbit on the initial review.
+    """
+
+    def test_posix_split_strips_quotes(self):
+        if os.name == "nt":
+            pytest.skip("POSIX-only branch")
+        assert _split_refresh_cmd("echo hi") == ["echo", "hi"]
+        assert _split_refresh_cmd('echo "hello world"') == ["echo", "hello world"]
+
+    def test_posix_split_raises_on_unterminated_quote(self):
+        if os.name == "nt":
+            pytest.skip("POSIX-only branch")
+        with pytest.raises(ValueError):
+            _split_refresh_cmd('echo "unterminated')
+
+    def test_windows_split_strips_quotes_from_paths(self):
+        """Regression: CodeRabbit-flagged case — quoted Windows paths must
+        arrive in argv WITHOUT the literal quote characters so
+        ``subprocess.run(argv, shell=False)`` can locate the executable.
+        """
+        if os.name != "nt":
+            pytest.skip("Windows-only branch")
+        cmd = (
+            r'"C:\Program Files\Python\python.exe" '
+            r'"C:\Temp\script with spaces.py"'
+        )
+        argv = _split_refresh_cmd(cmd)
+        assert argv == [
+            r"C:\Program Files\Python\python.exe",
+            r"C:\Temp\script with spaces.py",
+        ]
+        for token in argv:
+            assert not token.startswith('"'), f"literal quote leaked into argv: {token!r}"
+            assert not token.endswith('"'), f"literal quote leaked into argv: {token!r}"
+
+    def test_windows_split_handles_whitespace_only(self):
+        if os.name != "nt":
+            pytest.skip("Windows-only branch")
+        # Whitespace-only / empty input: parser returns an empty argv (the
+        # caller surfaces it as RuntimeError).
+        assert _split_refresh_cmd("   ") == []
+
+
 class TestEndToEndWithRealSubprocess:
     """Integration smoke: real subprocess invocation under shell=False."""
 
@@ -232,7 +279,7 @@ class TestEndToEndWithRealSubprocess:
         script = tmp_path / "refresh.py"
         marker = tmp_path / "ran.txt"
         script.write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('ok')\n")
-        # Build a properly-quoted command line that shlex.split can re-parse.
+        # Build a properly-quoted command line that the parser can re-parse.
         if os.name == "nt":
             cmd = subprocess.list2cmdline([sys.executable, str(script)])
         else:
