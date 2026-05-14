@@ -73,11 +73,10 @@ def migrate_to_profiles() -> bool:
             within ``_MIGRATION_LOCK_TIMEOUT`` seconds — usually means a
             sibling process is stuck mid-migration.
     """
-    home = get_home_dir()
-
     # Ensure the home dir exists BEFORE the lock so ``filelock`` has a
-    # writable parent for the lock file. Permissions are also set here.
-    get_home_dir(create=True)
+    # writable parent for the lock file. Permissions (0o700 on POSIX) are
+    # also set here, before any concurrent peer can observe an open dir.
+    home = get_home_dir(create=True)
 
     lock_path = home / _MIGRATION_LOCK
     try:

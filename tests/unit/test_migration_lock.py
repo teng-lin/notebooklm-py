@@ -62,6 +62,12 @@ def test_concurrent_threads_only_one_migrates(tmp_path: Path) -> None:
     the lock, both threads would copy + delete, racing on the same legacy
     files (and the second ``unlink`` would have crashed pre-fix with
     ``FileNotFoundError``).
+
+    Note: thread-based contention exercises ``filelock``'s internal
+    ``threading.Lock`` rather than the OS-level ``fcntl``/``LockFileEx``
+    layer that production cross-process races would hit. The invariant
+    under test — single-writer migration body — is identical in both
+    cases; we accept the unit-test tradeoff to avoid subprocess overhead.
     """
     _seed_legacy_layout(tmp_path)
 
