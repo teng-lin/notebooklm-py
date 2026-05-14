@@ -26,10 +26,13 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[all]"
+      run: uv sync --frozen --extra browser --extra dev --extra markdown
 
     - name: Run pre-commit checks
       run: pre-commit run --all-files
@@ -42,6 +45,12 @@ jobs:
 
     - name: Assert coverage thresholds match (Phase 1 T5)
       run: python scripts/check_coverage_thresholds.py
+
+    - name: Assert CI install matches CONTRIBUTING.md (Phase 6 P6.4)
+      run: python scripts/check_ci_install_parity.py
+
+    - name: Assert CLAUDE.md paths are fresh (Phase 6 P6.6)
+      run: python scripts/check_claude_md_freshness.py
 
     - name: Verify e2e test fixtures
       run: pytest tests/e2e --collect-only -q
@@ -65,10 +74,13 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[all]"
+      run: uv sync --frozen --extra browser --extra dev --extra markdown
 
     - name: Get Playwright version
       id: playwright-version

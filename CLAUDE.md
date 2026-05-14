@@ -108,6 +108,7 @@ src/notebooklm/
 ├── _chat.py             # ChatAPI
 ├── _research.py         # ResearchAPI
 ├── _notes.py            # NotesAPI
+├── notebooklm_cli.py    # Entry-point assembler — imports + registers cli/ groups
 ├── rpc/                 # RPC protocol layer
 │   ├── types.py         # Method IDs and enums
 │   ├── encoder.py       # Request encoding

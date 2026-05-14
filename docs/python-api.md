@@ -298,7 +298,7 @@ metadata = await client.notebooks.get_metadata(nb.id)
 print(metadata.title)
 
 # Enable public sharing and fetch the URL
-await client.notebooks.share(nb.id, public=True)
+await client.sharing.set_public(nb.id, public=True)
 url = await client.notebooks.get_share_url(nb.id)
 print(url)
 ```

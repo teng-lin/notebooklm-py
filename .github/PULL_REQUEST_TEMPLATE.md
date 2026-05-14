@@ -14,8 +14,8 @@ Closes #<issue_number>
 
 - [ ] I tested these changes locally
 - [ ] Tests pass (`pytest`)
-- [ ] Linting passes (`ruff check src/ tests/`)
-- [ ] Formatting passes (`ruff format --check src/ tests/`)
+- [ ] Linting passes (`ruff check .`)
+- [ ] Formatting passes (`ruff format --check .`)
 - [ ] Type checking passes (`mypy src/notebooklm --ignore-missing-imports`)
 
 ## Notes

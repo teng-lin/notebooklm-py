@@ -220,7 +220,7 @@ _SILENT_SITES = [
     ("_firefox_containers.py", 133),
     ("_firefox_containers.py", 363),
     ("cli/helpers.py", 555),
-    ("notebooklm_cli.py", 54),
+    ("notebooklm_cli.py", 66),
 ]
 
 

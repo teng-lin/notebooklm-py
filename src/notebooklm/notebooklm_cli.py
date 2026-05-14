@@ -15,6 +15,18 @@ Command structure:
   notebooklm note <command>           # Note operations
   notebooklm research <command>       # Research status/wait
 
+Architecture:
+    - This module is the entry-point assembler invoked via the ``notebooklm``
+      console script (see ``[project.scripts]`` in ``pyproject.toml``).
+    - It imports command groups from the ``notebooklm.cli`` package and
+      registers them on the top-level Click group ``notebooklm``.
+    - The ``cli/`` package contains the actual command implementations
+      (one module per command group: ``session``, ``notebook``, ``source``,
+      ``artifact``, ``generate``, ``download``, ``chat``, ``note``,
+      ``doctor``, ``profile``, ``agent``).
+    - Editing CLI behavior: change ``cli/<group>.py``. Editing CLI surface
+      (adding a new top-level command): import + register here.
+
 LLM-friendly design:
   # Set context once, then use simple commands
   notebooklm use nb123
