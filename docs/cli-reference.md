@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-15
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
