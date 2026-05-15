@@ -927,7 +927,7 @@ print(f"Language set to: {result}")
 
 ### SharingAPI (`client.sharing`)
 
-**CLI equivalent:** [Share commands](cli-reference.md#share-status-public-view-level-add-update-remove) — `notebooklm share status`, `public`, `view-level`, `add`, `update`, `remove`.
+**CLI equivalent:** [Share Commands](cli-reference.md#share-status-public-view-level-add-update-remove) — `notebooklm share status`, `public`, `view-level`, `add`, `update`, `remove`.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
