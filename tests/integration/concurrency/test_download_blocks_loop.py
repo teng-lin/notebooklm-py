@@ -200,12 +200,23 @@ async def test_download_mind_map_does_not_block_event_loop(
     mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
     tmp_path: Path,
 ) -> None:
-    """``download_mind_map`` must offload its ``write_text`` to a thread.
+    """``download_mind_map`` must offload its JSON write to a thread.
 
-    Same heartbeat methodology as the report test. Mind map JSON is
-    serialized in-memory (cheap) and then written to disk; only the
-    write needs to be offloaded.
+    Same heartbeat methodology as the report test. The production path
+    in ``download_mind_map`` calls ``json.dump(json_data, fp, ...)``
+    inside the ``asyncio.to_thread`` callable. We patch *both*
+    ``json.dump`` (post-fix call site) and ``Path.write_text`` (legacy
+    call site) with slow stubs so the test catches a regression
+    regardless of which write API the implementation uses. If neither
+    is invoked, the gap stays small — but if either runs on the loop
+    thread the heartbeat will stall.
+
+    Pointed out by coderabbit on PR #579: the original test only
+    patched ``Path.write_text``, which the post-fix code no longer
+    invokes for mind maps. Patching both APIs is the robust fix.
     """
+    import notebooklm._artifacts as artifacts_module
+
     api, _ = mock_artifacts_api
     output_path = tmp_path / "mindmap.json"
 
@@ -222,7 +233,12 @@ async def test_download_mind_map_does_not_block_event_loop(
         ]
     ]
 
+    original_json_dump = json.dump
     original_write_text = Path.write_text
+
+    def slow_json_dump(*args: object, **kwargs: object) -> None:
+        time.sleep(BLOCKING_SLEEP_S)
+        return original_json_dump(*args, **kwargs)  # type: ignore[arg-type]
 
     def slow_write_text(self: Path, *args: object, **kwargs: object) -> int:
         time.sleep(BLOCKING_SLEEP_S)
@@ -245,6 +261,11 @@ async def test_download_mind_map_does_not_block_event_loop(
                 "notebooklm._artifacts._mind_map.list_mind_maps",
                 new=AsyncMock(return_value=mind_map_rows),
             ),
+            # Patch the `json` module as imported by `_artifacts` so the
+            # closure inside `download_mind_map` resolves to the stub.
+            patch.object(artifacts_module.json, "dump", slow_json_dump),
+            # Cover the legacy ``Path.write_text``-based path too so a
+            # rewrite either direction is caught by this test.
             patch.object(Path, "write_text", slow_write_text),
         ):
             result = await api.download_mind_map("nb_t7d4", str(output_path))
@@ -260,7 +281,7 @@ async def test_download_mind_map_does_not_block_event_loop(
     assert gap_ms < MAX_GAP_MS, (
         f"download_mind_map blocked the event loop for {gap_ms:.1f} ms "
         f"(threshold {MAX_GAP_MS} ms). "
-        f"The Path.write_text call must be wrapped in asyncio.to_thread."
+        f"The json.dump/write call must be wrapped in asyncio.to_thread."
     )
 
 
@@ -278,7 +299,16 @@ async def test_concurrent_downloads_keep_loop_responsive(
 
     A single overall ``MAX_GAP_MS`` bound is asserted: even with two
     concurrent slow-stubbed writes the loop must not stall.
+
+    Implementation note (per coderabbit PR #579 review): we patch
+    *both* of the actual production blocking call sites — ``Path.write_text``
+    for ``download_report`` and ``json.dump`` (as imported by the
+    ``_artifacts`` module) for ``download_mind_map`` — so each path
+    is genuinely stalled by ``BLOCKING_SLEEP_S`` and the heartbeat
+    assertion actually covers both downloads.
     """
+    import notebooklm._artifacts as artifacts_module
+
     api, _ = mock_artifacts_api
     report_path = tmp_path / "report.md"
     mindmap_path = tmp_path / "mindmap.json"
@@ -306,10 +336,15 @@ async def test_concurrent_downloads_keep_loop_responsive(
     ]
 
     original_write_text = Path.write_text
+    original_json_dump = json.dump
 
     def slow_write_text(self: Path, *args: object, **kwargs: object) -> int:
         time.sleep(BLOCKING_SLEEP_S)
         return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    def slow_json_dump(*args: object, **kwargs: object) -> None:
+        time.sleep(BLOCKING_SLEEP_S)
+        return original_json_dump(*args, **kwargs)  # type: ignore[arg-type]
 
     samples: list[float] = []
     stop = asyncio.Event()
@@ -330,6 +365,7 @@ async def test_concurrent_downloads_keep_loop_responsive(
                 new=AsyncMock(return_value=mind_map_rows),
             ),
             patch.object(Path, "write_text", slow_write_text),
+            patch.object(artifacts_module.json, "dump", slow_json_dump),
         ):
             mock_list.return_value = report_artifact_list
             report_result, mindmap_result = await asyncio.gather(
@@ -350,7 +386,7 @@ async def test_concurrent_downloads_keep_loop_responsive(
     assert gap_ms < MAX_GAP_MS, (
         f"Concurrent download_report + download_mind_map blocked the event loop "
         f"for {gap_ms:.1f} ms (threshold {MAX_GAP_MS} ms). "
-        f"Both write_text calls must be wrapped in asyncio.to_thread."
+        f"Both write paths must be wrapped in asyncio.to_thread."
     )
 
 
