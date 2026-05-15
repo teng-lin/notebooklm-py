@@ -584,6 +584,29 @@ async def test_synthetic_transport_passes_non_batchexecute_through():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "PUT", "DELETE"])
+async def test_synthetic_transport_only_substitutes_post_on_batchexecute(method):
+    """Even on the batchexecute path, only POST requests are substituted.
+
+    Non-POST methods on /batchexecute (a hypothetical GET probe, an OPTIONS
+    preflight, etc.) are out of scope for error-shape cassettes and must
+    pass through unchanged. Closes CodeRabbit feedback on PR #638.
+    """
+    inner = _RecordingInnerTransport()
+    wrapper = _SyntheticErrorTransport("429", inner)
+    async with httpx.AsyncClient(transport=wrapper) as client:
+        resp = await client.request(
+            method,
+            "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
+        )
+    assert resp.status_code == 200
+    assert resp.content == b"inner-response"
+    assert len(inner.calls) == 1
+    # ``_fired`` must NOT have been flipped by a non-POST request.
+    assert wrapper._fired is False
+
+
+@pytest.mark.asyncio
 async def test_synthetic_transport_substitutes_every_batchexecute_call():
     """With ``always=True`` (the default), every batchexecute POST gets the
     synthetic response — important because the client's auth-refresh path

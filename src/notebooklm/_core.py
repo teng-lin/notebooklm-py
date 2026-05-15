@@ -235,7 +235,15 @@ class _SyntheticErrorTransport(httpx.AsyncBaseTransport):
         return self._builder
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        if self._is_batchexecute(request) and (self._always or not self._fired):
+        # Substitute ONLY on POST batchexecute calls. Non-POST traffic on the
+        # same path (a hypothetical GET batchexecute probe, OPTIONS preflight,
+        # etc.) is out of scope for error-shape cassettes and must pass through
+        # unchanged — see CodeRabbit feedback on PR #638.
+        if (
+            request.method.upper() == "POST"
+            and self._is_batchexecute(request)
+            and (self._always or not self._fired)
+        ):
             self._fired = True
             status_code, body, headers = self._load_builder()(self._mode)
             response = httpx.Response(
