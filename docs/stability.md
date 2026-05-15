@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-15
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 

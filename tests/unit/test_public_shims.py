@@ -250,6 +250,37 @@ async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_client_rpc_call_forwards_default_arguments() -> None:
+    """The public delegator must preserve ClientCore.rpc_call defaults."""
+    from notebooklm import NotebookLMClient
+    from notebooklm.auth import AuthTokens
+    from notebooklm.rpc import RPCMethod
+
+    client = NotebookLMClient(
+        AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="session",
+        )
+    )
+    # No async context is needed: this test replaces the core RPC coroutine
+    # before any real transport initialization can be required.
+    client._core.rpc_call = AsyncMock(return_value=[])
+
+    result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+
+    assert result == []
+    client._core.rpc_call.assert_awaited_once_with(
+        method=RPCMethod.LIST_NOTEBOOKS,
+        params=[],
+        source_path="/",
+        allow_null=False,
+        _is_retry=False,
+        disable_internal_retries=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # PR-T1.D section: __all__ contract tests for the public shim modules.
 #
