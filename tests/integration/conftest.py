@@ -1,11 +1,27 @@
 """Shared fixtures for integration tests."""
 
-import os
+import importlib.util
 from pathlib import Path
 
 import pytest
 
 from notebooklm.auth import AuthTokens
+
+# Load ``tests/vcr_config.py`` by file path — the ``tests`` directory is not a
+# package (no ``__init__.py``), so ``from tests.vcr_config import ...`` only
+# works when the repo root happens to be on ``sys.path``. That holds in a
+# fresh REPL but NOT inside pytest's per-module import. Loading by file path
+# bypasses ``sys.path`` and is the same idiom used inside ``vcr_config.py``
+# itself for its sibling ``cassette_patterns.py`` import.
+_vcr_config_spec = importlib.util.spec_from_file_location(
+    "tests_vcr_config", Path(__file__).resolve().parent.parent / "vcr_config.py"
+)
+assert _vcr_config_spec is not None and _vcr_config_spec.loader is not None, (
+    "Could not load tests/vcr_config.py from tests/integration/conftest.py"
+)
+_vcr_config = importlib.util.module_from_spec(_vcr_config_spec)
+_vcr_config_spec.loader.exec_module(_vcr_config)
+_is_vcr_record_mode = _vcr_config._is_vcr_record_mode
 
 # =============================================================================
 # VCR Cassette Availability Check
@@ -31,7 +47,7 @@ _real_cassettes = (
 )
 
 # Skip VCR tests if no real cassettes exist (unless in record mode)
-_vcr_record_mode = os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+_vcr_record_mode = _is_vcr_record_mode()
 _cassettes_available = bool(_real_cassettes) or _vcr_record_mode
 
 # Marker for skipping VCR tests when cassettes are not available

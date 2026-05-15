@@ -93,6 +93,20 @@ recompute_chunk_prefix = _cassette_patterns.recompute_chunk_prefix
 scrub_string = _cassette_patterns.scrub_string
 
 
+def _is_vcr_record_mode() -> bool:
+    """Return True if VCR record mode is enabled via environment.
+
+    Reads ``NOTEBOOKLM_VCR_RECORD`` and treats the case-insensitive values
+    ``"1"``, ``"true"``, and ``"yes"`` as enabling record mode. Any other
+    value (including unset/empty) returns False.
+
+    Single source of truth for record-mode env-var parsing — both this
+    module's VCR-instance config and ``tests/integration/conftest.py``
+    consume this helper to avoid drift between the two checks.
+    """
+    return os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+
+
 def scrub_request(request: Any) -> Any:
     """Scrub sensitive data from recorded HTTP request.
 
@@ -292,8 +306,7 @@ def _freq_body_matcher(r1: Any, r2: Any) -> bool:
 
 # Determine record mode from environment
 # Set NOTEBOOKLM_VCR_RECORD=1 (or =true, =yes) to record new cassettes
-_record_env = os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower()
-_record_mode = "new_episodes" if _record_env in ("1", "true", "yes") else "none"
+_record_mode = "new_episodes" if _is_vcr_record_mode() else "none"
 
 # Main VCR instance for notebooklm-py tests
 notebooklm_vcr = vcr.VCR(
