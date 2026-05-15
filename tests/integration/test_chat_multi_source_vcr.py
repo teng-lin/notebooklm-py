@@ -153,6 +153,14 @@ def _load_cassette_params() -> tuple[list[Any], str]:
     interaction = _find_chat_interaction(cassette)
     body = interaction["request"]["body"]
     params = _decode_freq_params(body)
+    # Bounds-guard ``params[7]`` so a malformed/short cassette fails with a
+    # message that identifies the helper rather than a bare ``IndexError``.
+    # The caller's ``len(params) == 9`` assertion would otherwise fire too
+    # late (after this helper has already crashed).
+    assert len(params) > 7, (
+        f"cassette params too short: expected at least 8 slots, got {len(params)}. "
+        f"Re-record with NOTEBOOKLM_VCR_RECORD=1."
+    )
     notebook_id = params[7]
     assert isinstance(notebook_id, str), f"slot 7 (notebook_id) not a string: {notebook_id!r}"
     return params, notebook_id
@@ -327,9 +335,12 @@ class TestChatMultiSource:
             else:
                 # Replay path: discover the recorded inputs from the
                 # cassette so the request the client builds matches the
-                # request the cassette holds.
-                _, recorded_notebook_id = _load_cassette_params()
-                recorded_source_ids = _extract_source_ids_from_nested(_load_cassette_params()[0][0])
+                # request the cassette holds. Single helper call —
+                # ``params`` carries the sources_array at slot 0 and
+                # ``recorded_notebook_id`` is what slot 7 already
+                # carries (validated by the helper).
+                params, recorded_notebook_id = _load_cassette_params()
+                recorded_source_ids = _extract_source_ids_from_nested(params[0])
                 with notebooklm_vcr.use_cassette(
                     CASSETTE_NAME,
                     match_on=[
