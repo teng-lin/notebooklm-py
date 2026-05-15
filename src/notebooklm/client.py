@@ -95,7 +95,7 @@ class NotebookLMClient:
         storage_path: Path | None = None,
         keepalive: float | None = None,
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
-        rate_limit_max_retries: int = 0,
+        rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
@@ -116,10 +116,14 @@ class NotebookLMClient:
             keepalive_min_interval: Lower bound for ``keepalive`` (defaults to
                 60 s) to avoid accidentally rate-limiting Google's identity
                 surface.
-            rate_limit_max_retries: Max automatic retries on HTTP 429 with a
-                parseable ``Retry-After``. ``0`` (default) preserves the
-                pre-Phase-3 contract of raising immediately. See
-                :class:`ClientCore` for the per-attempt sleep semantics.
+            rate_limit_max_retries: Max automatic retries on HTTP 429.
+                Defaults to ``3`` (T7.H2 / audit §11) so programmatic users
+                inherit "smart retry" behavior out of the box. Set to ``0``
+                to restore the pre-T7.H2 contract of raising immediately.
+                Sleeps for ``Retry-After`` when the server provides a
+                parseable header; otherwise falls back to capped exponential
+                backoff ``min(2 ** attempt, 30)`` seconds with ±20% jitter.
+                See :class:`ClientCore` for full sleep semantics.
             server_error_max_retries: Max automatic retries for retryable
                 transient failures: HTTP 5xx and network-layer
                 ``httpx.RequestError`` (timeouts, connect errors). Defaults to
@@ -264,7 +268,7 @@ class NotebookLMClient:
         profile: str | None = None,
         keepalive: float | None = None,
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
-        rate_limit_max_retries: int = 0,
+        rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
@@ -284,8 +288,10 @@ class NotebookLMClient:
                 rotation poke. ``None`` disables it (default). See
                 :class:`NotebookLMClient` for full semantics.
             keepalive_min_interval: Floor for ``keepalive`` (defaults to 60 s).
-            rate_limit_max_retries: Max automatic retries on HTTP 429. ``0``
-                (default) preserves pre-Phase-3 raise-immediately behavior.
+            rate_limit_max_retries: Max automatic retries on HTTP 429.
+                Defaults to ``3`` (T7.H2 / audit §11). Set to ``0`` to
+                restore raise-immediately behavior. See
+                :class:`NotebookLMClient` for full sleep semantics.
             server_error_max_retries: Max automatic retries for HTTP 5xx /
                 network errors with exponential backoff. Defaults to ``3``.
             limits: HTTP connection-pool tuning (``ConnectionLimits``). ``None``

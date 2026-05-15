@@ -294,7 +294,7 @@ class ClientCore:
         keepalive: float | None = None,
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
         keepalive_storage_path: Path | None = None,
-        rate_limit_max_retries: int = 0,
+        rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
@@ -320,14 +320,17 @@ class ClientCore:
                 Must be a positive finite number.
             keepalive_storage_path: Optional storage path to persist rotated cookies
                 to from the keepalive loop. Falls back to ``auth.storage_path``.
-            rate_limit_max_retries: Max automatic retries when a 429 response carries
-                a parseable ``Retry-After`` header. ``0`` (default) preserves the
-                pre-Phase-3 contract of raising ``RateLimitError`` immediately —
-                opt in to a positive value to enable bounded sleep-and-retry.
-                Each retry sleeps for the (clamped) ``Retry-After`` value; that
-                per-attempt value is capped at ``MAX_RETRY_AFTER_SECONDS``, but
-                the cumulative sleep across N retries is ``N * cap``, so pick
-                ``rate_limit_max_retries`` accordingly.
+            rate_limit_max_retries: Max automatic retries on HTTP 429.
+                Defaults to ``3`` (T7.H2 / audit §11) so programmatic users
+                inherit "smart retry" behavior without having to opt in. Set
+                to ``0`` to restore the pre-T7.H2 contract of raising
+                ``RateLimitError`` immediately. Each retry sleeps for the
+                ``Retry-After`` value when the server provides a parseable
+                header (clamped at ``MAX_RETRY_AFTER_SECONDS``); when the
+                header is absent or unparseable, the loop falls back to
+                capped exponential backoff ``min(2 ** attempt, 30)`` seconds
+                with ±20% jitter, matching the 5xx path so the positive
+                default is still useful when Google omits the hint.
             server_error_max_retries: Max automatic retries for retryable transient
                 transport failures: HTTP 5xx responses and network-layer
                 ``httpx.RequestError`` (timeouts, connect errors). Defaults to
@@ -964,10 +967,12 @@ class ClientCore:
           (``rpc_call``) or translate to their own typed error
           (``query_post``). If the post-refresh retry's POST fails for a
           non-auth reason, that exception propagates as-is.
-        - **Rate-limit path** — on HTTP 429 with a parseable Retry-After,
-          sleeps and retries until ``rate_limit_max_retries`` is reached;
-          after that, raises :class:`_TransportRateLimited` with the final
-          response and parsed retry-after value. With no parseable header or
+        - **Rate-limit path** — on HTTP 429, sleeps and retries until
+          ``rate_limit_max_retries`` is reached; after that, raises
+          :class:`_TransportRateLimited` with the final response and
+          parsed retry-after value. Sleep budget: ``Retry-After`` when
+          parseable, otherwise ``min(2 ** attempt, 30)`` seconds with
+          ±20% jitter (T7.H2 / audit §11). With
           ``rate_limit_max_retries == 0``, raises immediately.
         - **Server-error path** — on HTTP 5xx, or any ``httpx.RequestError``
           (network-layer failures: timeouts, connect errors), sleeps with
@@ -1061,17 +1066,30 @@ class ClientCore:
                     # probe-then-retry loop instead.
                     if (
                         not disable_internal_retries
-                        and retry_after is not None
                         and rate_limit_retries < self._rate_limit_max_retries
                     ):
+                        # Sleep budget: honor ``Retry-After`` when the server
+                        # provides a parseable hint; otherwise fall back to
+                        # capped exponential backoff with ±20% jitter (T7.H2
+                        # / audit §11). The fallback mirrors the 5xx path so
+                        # the positive ``rate_limit_max_retries`` default is
+                        # still useful when Google omits the header.
+                        if retry_after is not None:
+                            sleep_seconds: float = retry_after
+                            sleep_source = f"Retry-After={retry_after}s"
+                        else:
+                            backoff = min(2**rate_limit_retries, 30)
+                            backoff += random.uniform(-0.2 * backoff, 0.2 * backoff)  # noqa: S311  # nosec B311 — jitter, not crypto
+                            sleep_seconds = max(0.1, backoff)
+                            sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
                         logger.warning(
-                            "%s rate-limited (HTTP 429); sleeping %ds then retrying (%d/%d)",
+                            "%s rate-limited (HTTP 429); sleeping (%s) then retrying (%d/%d)",
                             log_label,
-                            retry_after,
+                            sleep_source,
                             rate_limit_retries + 1,
                             self._rate_limit_max_retries,
                         )
-                        await asyncio.sleep(retry_after)
+                        await asyncio.sleep(sleep_seconds)
                         rate_limit_retries += 1
                         continue
                     raise _TransportRateLimited(

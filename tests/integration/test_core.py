@@ -132,7 +132,11 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_rate_limit_429_with_retry_after_header(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        # Pin ``rate_limit_max_retries=0`` to exercise the raise-immediately
+        # path. T7.H2 raised the default to 3 — the post-retries raise is
+        # covered by ``tests/integration/concurrency/test_rate_limit_default.py``;
+        # this test documents the explicit-disable contract.
+        async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
             core = client._core
 
             mock_response = MagicMock()
@@ -150,7 +154,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_rate_limit_429_without_retry_after_header(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        # See ``test_rate_limit_429_with_retry_after_header`` for why this
+        # pins ``rate_limit_max_retries=0``.
+        async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
             core = client._core
 
             mock_response = MagicMock()
@@ -168,7 +174,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_rate_limit_429_with_invalid_retry_after_header(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        # See ``test_rate_limit_429_with_retry_after_header`` for why this
+        # pins ``rate_limit_max_retries=0``.
+        async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
             core = client._core
 
             mock_response = MagicMock()
