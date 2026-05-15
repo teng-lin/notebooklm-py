@@ -1565,15 +1565,19 @@ class ArtifactsAPI:
 
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
-            # Offload the synchronous write to a worker thread so a slow
-            # filesystem doesn't stall the event loop for every sibling
-            # task. Mirrors the pattern used in download_data_table /
-            # download_audio (T7.D4, audit §30).
-            await asyncio.to_thread(
-                output.write_text,
-                json.dumps(json_data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
+
+            # Offload both the serialization AND the write to a worker
+            # thread. ``json.dump`` streams into the file handle so we
+            # never materialize a large intermediate string on the loop
+            # thread (per gemini-code-assist review on PR #579), and
+            # the disk write stays off the event loop. Mirrors the
+            # ``_write_csv`` helper pattern in download_data_table
+            # (T7.D4, audit §30).
+            def _write_json() -> None:
+                with output.open("w", encoding="utf-8") as f:
+                    json.dump(json_data, f, indent=2, ensure_ascii=False)
+
+            await asyncio.to_thread(_write_json)
             return str(output)
 
         except (IndexError, TypeError, json.JSONDecodeError) as e:
