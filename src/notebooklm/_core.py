@@ -401,7 +401,19 @@ class ClientCore:
         # ``NotebookLMClient`` instances in the same process have
         # independent upload budgets.
         self._upload_semaphore: asyncio.Semaphore | None = None
-        self._refresh_lock: asyncio.Lock | None = asyncio.Lock() if refresh_callback else None
+        # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
+        # Python versions, and ``ClientCore`` can be constructed outside one
+        # (e.g. a sync-mode ``NotebookLMClient(...)`` instantiation before the
+        # caller's ``asyncio.run``). Use :meth:`_get_refresh_lock` to fetch
+        # the live lock on demand. Mirrors the ``_reqid_lock`` /
+        # ``_auth_snapshot_lock`` lazy-init pattern (audit §13 / T7.G1).
+        # The lock gates single-flight refresh-task creation in
+        # :meth:`_await_refresh` — the assert on ``_refresh_callback is not
+        # None`` there is the real precondition; this lock is allocated on
+        # first refresh attempt regardless of whether a callback was wired,
+        # because asyncio is single-threaded and the check-then-assign in
+        # ``_get_refresh_lock`` is race-free without an outer lock.
+        self._refresh_lock: asyncio.Lock | None = None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
         # Request ID counter for chat API (must be unique per request).
@@ -853,6 +865,23 @@ class ClientCore:
             self._auth_snapshot_lock = asyncio.Lock()
         return self._auth_snapshot_lock
 
+    def _get_refresh_lock(self) -> asyncio.Lock:
+        """Return the lazily-initialised ``_refresh_lock``.
+
+        ``asyncio.Lock()`` needs a running loop in some Python versions, so
+        ``ClientCore.__init__`` leaves the field as ``None`` (audit §13 /
+        T7.G1). Callers must be inside an async context — the only call site
+        is :meth:`_await_refresh`, which is itself a coroutine. The
+        check-then-assign is safe without an outer lock because asyncio is
+        single-threaded: no other coroutine can execute between the
+        ``is None`` check and the assignment unless we ``await``, so every
+        concurrent caller resolves to the *same* lock instance and the
+        single-flight refresh dedupe is preserved.
+        """
+        if self._refresh_lock is None:
+            self._refresh_lock = asyncio.Lock()
+        return self._refresh_lock
+
     async def _snapshot(self) -> _AuthSnapshot:
         """Capture the current auth headers as a frozen snapshot.
 
@@ -1192,9 +1221,12 @@ class ClientCore:
         refresh wave once the current task transitions to ``done()``.
         """
         assert self._refresh_callback is not None
-        assert self._refresh_lock is not None
 
-        async with self._refresh_lock:
+        # Lazy-init the lock on first refresh attempt (audit §13 / T7.G1).
+        # Every concurrent caller resolves to the same instance because
+        # ``_get_refresh_lock`` runs synchronously in a single-threaded
+        # asyncio loop, so single-flight task creation below is preserved.
+        async with self._get_refresh_lock():
             if self._refresh_task is not None and not self._refresh_task.done():
                 refresh_task = self._refresh_task
                 logger.debug("Joining existing refresh task")

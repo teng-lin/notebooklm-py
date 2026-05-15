@@ -29,7 +29,11 @@ class TestAutoRefreshIntegration:
         # Bound methods aren't identical, so compare underlying function
         assert client._core._refresh_callback is not None
         assert client._core._refresh_callback.__func__ is NotebookLMClient.refresh_auth
-        assert client._core._refresh_lock is not None
+        # ``_refresh_lock`` is lazily created on first ``_await_refresh``
+        # (T7.G1). At construction time it is ``None`` so the client can
+        # be instantiated outside a running loop; the helper allocates the
+        # lock on demand inside the async refresh path.
+        assert client._core._refresh_lock is None
 
     @pytest.mark.asyncio
     async def test_full_refresh_flow_http_error(self):

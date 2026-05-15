@@ -453,8 +453,15 @@ class TestClientCoreRefreshCallback:
         core = ClientCore(auth)
         assert core._refresh_callback is None
 
-    def test_refresh_lock_created_when_callback_provided(self):
-        """ClientCore should create refresh lock when callback provided."""
+    def test_refresh_lock_lazy_at_construction(self):
+        """Refresh lock is ``None`` at construction regardless of callback (T7.G1).
+
+        Lazy-init mirrors ``_reqid_lock`` / ``_auth_snapshot_lock`` so the
+        client can be constructed outside a running event loop. The lock
+        is allocated on first ``_await_refresh`` call. See
+        ``test_refresh_state_machine_lazy_lock.py`` for the construction-
+        outside-loop and first-refresh-creates-lock guarantees.
+        """
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
             csrf_token="csrf",
@@ -464,21 +471,15 @@ class TestClientCoreRefreshCallback:
         async def mock_refresh():
             pass
 
-        core = ClientCore(auth, refresh_callback=mock_refresh)
-        assert core._refresh_lock is not None
-        assert isinstance(core._refresh_lock, asyncio.Lock)
+        # With callback: lazy — lock is None until first refresh attempt.
+        core_with_cb = ClientCore(auth, refresh_callback=mock_refresh)
+        assert core_with_cb._refresh_lock is None
+        assert core_with_cb._refresh_callback is mock_refresh
 
-    def test_no_refresh_lock_when_no_callback(self):
-        """ClientCore should NOT create refresh lock when no callback."""
-
-        auth = AuthTokens(
-            cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
-            csrf_token="csrf",
-            session_id="sid",
-        )
-
-        core = ClientCore(auth)
-        assert core._refresh_lock is None
+        # Without callback: also None (unchanged behavior on this axis).
+        core_without_cb = ClientCore(auth)
+        assert core_without_cb._refresh_lock is None
+        assert core_without_cb._refresh_callback is None
 
 
 # =============================================================================
