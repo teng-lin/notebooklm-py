@@ -7,7 +7,7 @@ setup (scrubbing, matchers, record modes).
 
 ## Layout
 
-```
+```text
 tests/cassettes/
 ├── README.md                           (this file)
 ├── <object>_<operation>.yaml           (real recorded interactions)
