@@ -335,6 +335,51 @@ the result with the cassette guard before committing:
 tests/check_cassettes_clean.sh
 ```
 
+#### Synthetic error cassettes (T8.E10)
+
+> [!WARNING]
+> **Error cassettes generated through this plumbing are SYNTHETIC.** They
+> validate the client's exception-mapping branches (`RateLimitError`,
+> `ServerError`, the auth-refresh path), NOT Google's actual error response
+> shapes. If you need to validate a real-world error shape, capture a live
+> recording instead — these synthetic shapes are intentionally minimal.
+
+The `NOTEBOOKLM_VCR_RECORD_ERRORS` env var opts a recording session into
+substituting the next outgoing batchexecute RPC with a synthetic error
+response. Three modes are supported:
+
+| Mode            | HTTP status | Maps to                                         |
+|-----------------|-------------|-------------------------------------------------|
+| `429`           | 429         | `RateLimitError` (after retry budget exhausted) |
+| `5xx`           | 500         | `ServerError`   (after retry budget exhausted) |
+| `expired_csrf`  | 400         | auth-refresh path (NotebookLM uses 400, not 401)|
+
+The plumbing has three opt-in layers:
+
+1. **Env var**: `NOTEBOOKLM_VCR_RECORD_ERRORS=<mode>` activates the transport
+   wrapper inside `ClientCore.open()`.
+2. **Pytest marker**: `@pytest.mark.synthetic_error("<mode>")` sets the env
+   var for the duration of a single test (auto-reverted on teardown).
+3. **Filename prefix**: cassettes recorded under this mode MUST be named
+   `error_synthetic_<mode>_<slug>.yaml` — use
+   `tests.cassette_patterns.synthetic_error_cassette_name(mode, slug)` to
+   build the filename so reviewers can tell synthetic shapes apart from
+   real recordings at a glance.
+
+Example recording session (this is the workflow T8.E4 will use to record
+the actual error cassettes — T8.E10 itself ships only the plumbing):
+
+```bash
+NOTEBOOKLM_VCR_RECORD=1 \
+NOTEBOOKLM_VCR_RECORD_ERRORS=429 \
+  uv run pytest tests/integration/test_error_cassettes.py::test_rate_limit_records
+```
+
+Production behavior is unchanged when `NOTEBOOKLM_VCR_RECORD_ERRORS` is
+unset — the transport wrapper is only constructed when the env var resolves
+to a recognized mode, and a typo'd value resolves to `None` (the recording
+session continues without substitution).
+
 ### Per-method RPC coverage gate
 
 `tests/scripts/check_method_coverage.py` enforces, on every PR, that each

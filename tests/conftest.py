@@ -41,6 +41,40 @@ def _reset_poke_state():
 
 
 @pytest.fixture(autouse=True)
+def _synthetic_error_mode(request, monkeypatch):
+    """T8.E10 — opt a test into ``NOTEBOOKLM_VCR_RECORD_ERRORS=<mode>``.
+
+    When a test (or its enclosing module/class) carries
+    ``@pytest.mark.synthetic_error("429"|"5xx"|"expired_csrf")``, this fixture
+    sets the env var for the test's lifetime via ``monkeypatch`` (so it's
+    auto-reverted on teardown). Without the marker, the env var is left
+    untouched — preserving the spec's "opt-in" contract.
+
+    Set BEFORE the client constructs its HTTP transport (markers are read at
+    setup time): the transport wrapper in ``_core.py:_get_error_injection_mode``
+    reads the env var only during ``ClientCore.open()``, so the var must be
+    in place before the fixture under test enters its ``async with`` block.
+
+    Production behavior is unchanged when the marker is absent.
+    """
+    marker = request.node.get_closest_marker("synthetic_error")
+    if marker is None:
+        return
+    if not marker.args:
+        raise pytest.UsageError(
+            "@pytest.mark.synthetic_error requires one positional arg: "
+            "the mode (429, 5xx, or expired_csrf)."
+        )
+    mode = marker.args[0]
+    valid = {"429", "5xx", "expired_csrf"}
+    if mode not in valid:
+        raise pytest.UsageError(
+            f"@pytest.mark.synthetic_error: invalid mode {mode!r}; valid modes are {sorted(valid)}."
+        )
+    monkeypatch.setenv("NOTEBOOKLM_VCR_RECORD_ERRORS", mode)
+
+
+@pytest.fixture(autouse=True)
 def _mock_keepalive_poke(request):
     """Default-mock the auth keepalive poke so tests don't trip on it.
 
@@ -78,6 +112,13 @@ def pytest_configure(config):
         "markers",
         "no_default_keepalive_mock: skip the default accounts.google.com/RotateCookies "
         "mock so the test can register its own response",
+    )
+    config.addinivalue_line(
+        "markers",
+        "synthetic_error(mode): T8.E10 — opts a test into "
+        "NOTEBOOKLM_VCR_RECORD_ERRORS=<mode> for the duration of the test. "
+        "Used by T8.E4 (and any future error-cassette PR) to record cassettes "
+        "with synthetic error shapes. Mode must be one of: 429, 5xx, expired_csrf.",
     )
     # Disable Rich/Click formatting in tests to avoid ANSI escape codes in output
     # This ensures consistent test assertions regardless of -s flag

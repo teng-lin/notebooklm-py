@@ -91,6 +91,15 @@ def _load_sibling(module_name: str, file_name: str) -> Any:
 _cassette_patterns = _load_sibling("tests_cassette_patterns", "cassette_patterns.py")
 recompute_chunk_prefix = _cassette_patterns.recompute_chunk_prefix
 scrub_string = _cassette_patterns.scrub_string
+build_synthetic_error_response = _cassette_patterns.build_synthetic_error_response
+synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
+SYNTHETIC_ERROR_CASSETTE_PREFIX = _cassette_patterns.SYNTHETIC_ERROR_CASSETTE_PREFIX
+VALID_ERROR_MODES = _cassette_patterns.VALID_ERROR_MODES
+
+# T8.E10 — env var name shared with ``src/notebooklm/_core.py``. Kept in sync as
+# a local copy so the unit tests can import it from either side without taking
+# a runtime dependency on the production module.
+ERROR_INJECT_ENV_VAR = "NOTEBOOKLM_VCR_RECORD_ERRORS"
 
 
 def _is_vcr_record_mode() -> bool:
@@ -105,6 +114,24 @@ def _is_vcr_record_mode() -> bool:
     consume this helper to avoid drift between the two checks.
     """
     return os.environ.get("NOTEBOOKLM_VCR_RECORD", "").lower() in ("1", "true", "yes")
+
+
+def get_error_injection_mode() -> str | None:
+    """Return the active synthetic-error mode from the environment, or ``None``.
+
+    Reads ``NOTEBOOKLM_VCR_RECORD_ERRORS`` and validates the value against
+    :data:`VALID_ERROR_MODES`. Unset, empty, or unrecognized values resolve to
+    ``None`` so plumbing never crashes on a typo — the unit tests assert the
+    typo path explicitly. The value comparison is case-insensitive.
+
+    This helper mirrors ``_get_error_injection_mode`` in ``_core.py``; both
+    sides validate against the same canonical set in
+    :mod:`tests.cassette_patterns` so they cannot drift.
+    """
+    raw = os.environ.get(ERROR_INJECT_ENV_VAR, "").strip().lower()
+    if not raw:
+        return None
+    return raw if raw in VALID_ERROR_MODES else None
 
 
 def scrub_request(request: Any) -> Any:
@@ -137,6 +164,44 @@ def scrub_request(request: Any) -> Any:
     return request
 
 
+def _substitute_synthetic_error(response: dict[str, Any]) -> dict[str, Any]:
+    """T8.E10 — defense-in-depth synthetic-error substitution.
+
+    When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` resolves to a valid mode (see
+    :data:`VALID_ERROR_MODES`), rewrite the response shape to the canonical
+    synthetic-error shape from :mod:`tests.cassette_patterns`.
+
+    The transport wrapper in ``src/notebooklm/_core.py`` already substitutes
+    the live response BEFORE it reaches VCR, so in normal recording this hook
+    sees the synthetic shape already. This pass exists so that:
+
+    1. Tests that bypass the production transport (e.g. direct
+       ``notebooklm_vcr.use_cassette`` with a hand-built ``httpx.AsyncClient``)
+       still record synthetic shapes when the env var is set.
+    2. The substitution is observable from cassette-only paths in CI without
+       requiring access to the production transport.
+
+    Returns ``response`` unchanged when the env var is unset or the value is
+    not a recognized mode.
+    """
+    mode = get_error_injection_mode()
+    if mode is None:
+        return response
+    status_code, body_bytes, headers = build_synthetic_error_response(mode)
+    response["status"] = {"code": status_code, "message": ""}
+    response["body"] = {"string": body_bytes}
+    # Preserve any incoming headers (e.g. Content-Length VCR fills in) but
+    # overlay our synthetic ones so the Content-Type / Retry-After hints land
+    # on the recorded shape.
+    out_headers = response.get("headers", {})
+    if not isinstance(out_headers, dict):
+        out_headers = {}
+    for k, v in headers.items():
+        out_headers[k] = [v]
+    response["headers"] = out_headers
+    return response
+
+
 def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     """Scrub sensitive data from recorded HTTP response.
 
@@ -154,7 +219,16 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     tolerance branch would log a warning on every replay. The helper is a
     no-op on bodies that don't look chunked, so it's safe to call
     unconditionally.
+
+    T8.E10: when ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to a valid mode,
+    :func:`_substitute_synthetic_error` runs FIRST so that downstream scrub
+    steps see the canonical synthetic shape rather than whatever the wire
+    produced (the transport wrapper in ``_core.py`` normally already
+    substituted, but this pass closes the loop for VCR-only test paths).
     """
+    # T8.E10 — synthetic-error substitution (no-op when env var unset).
+    response = _substitute_synthetic_error(response)
+
     # Scrub response body
     body = response.get("body", {})
     if "string" in body:

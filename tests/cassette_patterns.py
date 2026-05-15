@@ -781,3 +781,109 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
         leaks.append(f"Leak (avatar URL): {match.group(0)!r}")
 
     return (not leaks, leaks)
+
+
+# =============================================================================
+# T8.E10 — Synthetic error-response builders for VCR recording
+# =============================================================================
+#
+# These helpers exist so that T8.E4 (and any future error-shape cassette PRs)
+# can generate cassettes whose responses match the shapes our client's
+# exception mapping in ``src/notebooklm/_core.py`` keys on:
+#
+#   - HTTP 429  -> ``_TransportRateLimited`` -> ``RateLimitError``
+#   - HTTP 5xx  -> ``_TransportServerError`` -> ``ServerError``
+#   - HTTP 400  -> ``is_auth_error()``       -> refresh path + ``AuthError`` on
+#                                               second failure
+#
+# The synthetic bodies are **not** captured from Google. They are deliberately
+# minimal and exist purely to validate client-side exception mapping. Documented
+# warning lives in ``docs/development.md`` under "Synthetic error cassettes".
+
+ERROR_MODE_RATE_LIMIT = "429"
+ERROR_MODE_SERVER = "5xx"
+ERROR_MODE_EXPIRED_CSRF = "expired_csrf"
+
+VALID_ERROR_MODES: frozenset[str] = frozenset(
+    {ERROR_MODE_RATE_LIMIT, ERROR_MODE_SERVER, ERROR_MODE_EXPIRED_CSRF}
+)
+
+# Filename prefix that T8.E4 (and any future error-cassette PR) MUST apply to
+# cassettes generated through this plumbing. The prefix is mechanical: it lets a
+# reader of ``tests/cassettes/`` distinguish synthetic error shapes from real
+# recordings at a glance, without having to open the YAML.
+SYNTHETIC_ERROR_CASSETTE_PREFIX = "error_synthetic_"
+
+
+def synthetic_error_cassette_name(mode: str, slug: str) -> str:
+    """Build the canonical ``error_synthetic_<mode>_<slug>.yaml`` filename.
+
+    Args:
+        mode: One of ``VALID_ERROR_MODES``.
+        slug: A short identifier for the RPC being recorded (e.g. ``"list_notebooks"``).
+
+    Raises:
+        ValueError: If ``mode`` is not a recognized synthetic-error mode.
+    """
+    if mode not in VALID_ERROR_MODES:
+        raise ValueError(
+            f"Unknown synthetic error mode {mode!r}. Valid modes: {sorted(VALID_ERROR_MODES)}"
+        )
+    return f"{SYNTHETIC_ERROR_CASSETTE_PREFIX}{mode}_{slug}.yaml"
+
+
+def build_synthetic_error_response(
+    mode: str,
+) -> tuple[int, bytes, dict[str, str]]:
+    """Return a ``(status_code, body, headers)`` triple for a synthetic error.
+
+    The shape is intentionally minimal; the client's exception mapping keys on
+    the HTTP status code (see ``_core.py:is_auth_error`` and the 429 / 5xx
+    branches in ``_perform_authed_post``), so a syntactically-valid Google
+    error-shaped body is sufficient.
+
+    For the ``expired_csrf`` mode we return HTTP 400 — not 401 — because that
+    matches the documented Google contract: NotebookLM returns 400 (not 401/403)
+    when the embedded CSRF token has expired, which is why ``is_auth_error``
+    treats 400 as an auth-refresh trigger. See ``is_auth_error`` in
+    ``src/notebooklm/_core.py``.
+
+    Args:
+        mode: One of ``VALID_ERROR_MODES``.
+
+    Returns:
+        A tuple of ``(status_code, body_bytes, headers_dict)`` suitable for
+        constructing an ``httpx.Response``.
+
+    Raises:
+        ValueError: If ``mode`` is not a recognized synthetic-error mode.
+    """
+    if mode == ERROR_MODE_RATE_LIMIT:
+        body = (
+            b'{"error": {"code": 429, "message": "Rate limited", "status": "RESOURCE_EXHAUSTED"}}'
+        )
+        # Retry-After is honored by the 429 retry loop in ``_perform_authed_post``.
+        # Setting a small value keeps the recording-time loop short.
+        headers = {
+            "Content-Type": "application/json; charset=UTF-8",
+            "Retry-After": "1",
+        }
+        return (429, body, headers)
+    if mode == ERROR_MODE_SERVER:
+        body = b'{"error": {"code": 500, "message": "Internal error"}}'
+        headers = {"Content-Type": "application/json; charset=UTF-8"}
+        return (500, body, headers)
+    if mode == ERROR_MODE_EXPIRED_CSRF:
+        # NotebookLM returns 400 (not 401/403) for expired CSRF — this matches
+        # the ``is_auth_error`` branch that treats 400/401/403 as auth-refresh
+        # triggers. The body shape echoes Google's typical "invalid request"
+        # response; the client keys on status code, not body, for this path.
+        body = (
+            b'{"error": {"code": 400, "message": "Invalid request token", '
+            b'"status": "INVALID_ARGUMENT"}}'
+        )
+        headers = {"Content-Type": "application/json; charset=UTF-8"}
+        return (400, body, headers)
+    raise ValueError(
+        f"Unknown synthetic error mode {mode!r}. Valid modes: {sorted(VALID_ERROR_MODES)}"
+    )
