@@ -81,6 +81,24 @@ src/notebooklm/
 | **Core** | `_core.py` | HTTP client, request counter, RPC abstraction |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
 
+### Boundary Guardrails
+
+The architecture tests encode the current layer contract:
+
+- `tests/unit/test_public_shims.py` has a documented public import manifest.
+  When a docs change adds or removes a supported import path, update the
+  manifest in the same PR so public API drift is intentional and reviewable.
+- `tests/unit/test_cli_boundary.py` parses `src/notebooklm/cli/**/*.py` and
+  rejects CLI imports from `notebooklm._*`, `notebooklm.rpc.*`, or `_private`
+  names exposed by public modules. Promote needed symbols through a public
+  facade (`notebooklm.types`, `notebooklm.auth`, `notebooklm.research`, etc.)
+  before using them from the CLI.
+- `tests/unit/test_init_order.py` records the temporary baseline of feature
+  APIs that still access `ClientCore` private state directly. Future capability
+  migration PRs should reduce that baseline as private state moves behind
+  explicit `ClientCore` methods; do not add new entries unless the PR also
+  explains the follow-up migration path.
+
 ### Key Design Decisions
 
 **Why underscore prefixes?** Files like `_notebooks.py` are internal implementation. Public API stays clean (`from notebooklm import NotebookLMClient`).

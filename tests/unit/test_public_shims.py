@@ -9,10 +9,119 @@ Plan: .sisyphus/plans/private-module-boundary.md
 from __future__ import annotations
 
 import importlib
+import warnings
 from types import ModuleType
 from unittest.mock import AsyncMock
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# PR-T2 section: documented public import manifest
+#
+# This is the public import surface documented by PR-T1. Keep this manifest
+# explicit: if docs add a new supported import path, add it here in the same PR;
+# if docs intentionally remove one, remove it here with the docs change.
+# ---------------------------------------------------------------------------
+
+
+_DOCUMENTED_PUBLIC_IMPORTS = {
+    "notebooklm": [
+        "ArtifactType",
+        "AudioFormat",
+        "AudioLength",
+        "AuthTokens",
+        "ChatGoal",
+        "ChatResponseLength",
+        "ConnectionLimits",
+        "correlation_id",
+        "ExportType",
+        "NonIdempotentRetryError",
+        "NotebookLMClient",
+        "QuizDifficulty",
+        "QuizQuantity",
+        "ReportFormat",
+        "RPCError",
+        "SharePermission",
+        "ShareViewLevel",
+        "SourceType",
+        "VideoFormat",
+        "VideoStyle",
+    ],
+    "notebooklm.auth": [
+        "AuthTokens",
+        "convert_rookiepy_cookies_to_storage_state",
+        "OPTIONAL_COOKIE_DOMAINS",
+        "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+        "REQUIRED_COOKIE_DOMAINS",
+    ],
+    "notebooklm.config": [
+        "DEFAULT_BASE_URL",
+        "get_base_url",
+    ],
+    "notebooklm.log": [
+        "install_redaction",
+    ],
+    "notebooklm.research": [
+        "extract_report_urls",
+        "normalize_url",
+        "select_cited_sources",
+    ],
+    "notebooklm.rpc": [
+        "RPCMethod",
+    ],
+    "notebooklm.types": [
+        "ConnectionLimits",
+    ],
+    "notebooklm.urls": [
+        "is_google_auth_redirect",
+        "is_youtube_url",
+    ],
+}
+
+
+@pytest.mark.parametrize(
+    ("module_name", "public_name"),
+    [
+        pytest.param(module_name, public_name, id=f"{module_name}:{public_name}")
+        for module_name, public_names in _DOCUMENTED_PUBLIC_IMPORTS.items()
+        for public_name in public_names
+    ],
+)
+def test_documented_public_import_manifest_resolves(
+    module_name: str,
+    public_name: str,
+) -> None:
+    """Every documented public import from PR-T1 must remain importable."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        module = __import__(module_name, fromlist=[public_name])
+
+    sentinel = object()
+    assert getattr(module, public_name, sentinel) is not sentinel
+
+
+def test_public_import_manifest_has_no_duplicates() -> None:
+    """The manifest should stay reviewable and deterministic."""
+    for module_name, public_names in _DOCUMENTED_PUBLIC_IMPORTS.items():
+        assert public_names == sorted(public_names, key=str.lower), (
+            f"{module_name} manifest entries must be sorted case-insensitively"
+        )
+        assert len(public_names) == len(set(public_names)), (
+            f"{module_name} manifest contains duplicate entries"
+        )
+
+
+def test_public_facade_imports_are_identity_reexports() -> None:
+    """Compatibility facades must keep returning the canonical public objects."""
+    import notebooklm
+    import notebooklm.auth as public_auth
+    import notebooklm.rpc as public_rpc
+    import notebooklm.rpc.types as rpc_types
+    import notebooklm.types as public_types
+
+    assert notebooklm.AuthTokens is public_auth.AuthTokens
+    assert notebooklm.ConnectionLimits is public_types.ConnectionLimits
+    assert public_rpc.RPCMethod is rpc_types.RPCMethod
 
 # ---------------------------------------------------------------------------
 # PR-A section: notebooklm.research public surface
