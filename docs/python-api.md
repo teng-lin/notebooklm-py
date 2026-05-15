@@ -506,7 +506,7 @@ floor checks). All raise `ValueError`:
 
 ---
 
-**Last full audit**: 2026-05-15, HEAD `<placeholder-z1-will-fill>`
+**Last full audit**: 2026-05-15, HEAD `bbcfe69` (T7.Z1; 0 new CRITICAL findings vs the 2026-05-14 baseline at HEAD `89773ec`).
 
 ---
 
