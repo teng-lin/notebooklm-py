@@ -166,6 +166,12 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
     elsewhere (e.g. inside an async method) before such a change can ship —
     static-only, so it has zero runtime cost and runs even when the async
     test infrastructure is offline.
+
+    Known blind spot: this scan only matches ``with self._save_lock:`` —
+    aliased acquisitions like ``lock = self._save_lock; with lock: ...``
+    inside an async method are NOT caught here. Those are covered by the
+    runtime guards above, which observe the thread that actually holds the
+    lock rather than relying on syntactic structure.
     """
     import notebooklm._core as core_module
 
