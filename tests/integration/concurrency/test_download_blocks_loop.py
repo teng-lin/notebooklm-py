@@ -522,10 +522,16 @@ async def test_download_url_cookie_load_does_not_block_event_loop(
         # to the cookie load; the subsequent network call fails with
         # ``ArtifactDownloadError`` (transport error), but that's fine —
         # we only need the heartbeat data from the pre-network phase.
+        #
+        # Use ``new=`` instead of ``side_effect=`` for the same reason
+        # the batch test above does — MagicMock + side_effect can stall
+        # the event loop on Windows CI even when wrapped in
+        # ``asyncio.to_thread`` (see the comment block on the batch
+        # test for the full rationale).
         with (
             patch(
                 "notebooklm._artifacts.load_httpx_cookies",
-                side_effect=slow_load_httpx_cookies,
+                new=slow_load_httpx_cookies,
             ),
             pytest.raises(ArtifactDownloadError),
         ):
