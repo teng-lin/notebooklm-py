@@ -195,8 +195,12 @@ def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
         # Record mode — preserve real cadence so the live API isn't spammed.
         return
 
-    async def instant_sleep(_seconds: float) -> None:
-        return None
+    async def instant_sleep(_seconds: float, result: object | None = None) -> object | None:
+        # Preserve ``asyncio.sleep``'s full signature: it accepts an optional
+        # ``result`` value to return after the sleep. Nothing in this repo
+        # currently uses it, but matching the stdlib signature keeps the
+        # monkey-patch drop-in for any future caller.
+        return result
 
     monkeypatch.setattr(asyncio, "sleep", instant_sleep)
 
