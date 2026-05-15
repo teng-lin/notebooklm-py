@@ -123,6 +123,7 @@ def test_public_facade_imports_are_identity_reexports() -> None:
     assert notebooklm.ConnectionLimits is public_types.ConnectionLimits
     assert public_rpc.RPCMethod is rpc_types.RPCMethod
 
+
 # ---------------------------------------------------------------------------
 # PR-A section: notebooklm.research public surface
 # ---------------------------------------------------------------------------
