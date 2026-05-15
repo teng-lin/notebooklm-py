@@ -473,7 +473,7 @@ immediately.
 applications can choose their own metrics backend:
 
 ```python
-from notebooklm import correlation_id
+from notebooklm import NotebookLMClient, correlation_id
 
 events = []
 

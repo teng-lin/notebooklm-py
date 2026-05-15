@@ -329,9 +329,20 @@ class NotebookLMClient:
         if drain:
             try:
                 await self.drain(timeout=drain_timeout)
-            finally:
+            except TimeoutError as drain_exc:
+                try:
+                    await self._core.close()
+                except Exception as close_exc:
+                    logger.warning(
+                        "Suppressing close() error after drain timeout to preserve timeout "
+                        "signal: %s",
+                        close_exc,
+                    )
+                    raise drain_exc from close_exc
+                raise
+            else:
                 await self._core.close()
-            return
+                return
         await self._core.close()
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:

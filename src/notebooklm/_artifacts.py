@@ -1958,10 +1958,27 @@ class ArtifactsAPI:
             ),
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
+        try:
+            poll_operation_token = await self._core._begin_transport_task(
+                poll_task,
+                f"artifact wait {task_id}",
+            )
+        except BaseException:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await poll_task
+            raise
 
         pending[key] = (future, poll_task)
 
+        async def _finish_poll_operation() -> None:
+            try:
+                await self._core._finish_transport_post(poll_operation_token)
+            except Exception as exc:  # noqa: BLE001 - cleanup should not mask poll result
+                logger.warning("Artifact poll drain bookkeeping failed: %s", exc)
+
         def _on_poll_done(task: asyncio.Task[GenerationStatus]) -> None:
+            asyncio.create_task(_finish_poll_operation())
             # Pop the registry entry first so a follower that arrives
             # concurrently with completion either (a) attaches to the
             # already-resolved future and gets the cached result, or

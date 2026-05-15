@@ -33,6 +33,8 @@ def _make_api():
     # ClientCore._pending_polls (T7.E2) — real dict so the leader/follower
     # dedupe in ``wait_for_completion`` can ``dict.get(key)`` against it.
     core._pending_polls = {}
+    core._begin_transport_task = AsyncMock(return_value=object())
+    core._finish_transport_post = AsyncMock()
     notes = MagicMock()
     notes.list_mind_maps = AsyncMock(return_value=[])
     notes.create = AsyncMock(return_value=MagicMock(id="note_1"))

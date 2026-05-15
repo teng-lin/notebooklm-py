@@ -861,10 +861,12 @@ class SourcesAPI:
                 # i.e. ``_upload_file_streaming`` was never invoked
                 # (size-check or RPC raised). After hand-off the
                 # streaming helper owns the close.
-                if operation_token is not None:
-                    await self._core._finish_transport_post(operation_token)
-                if not handed_off:
-                    file_obj.close()
+                try:
+                    if operation_token is not None:
+                        await self._core._finish_transport_post(operation_token)
+                finally:
+                    if not handed_off:
+                        file_obj.close()
 
         # Step 4: Ensure the source is registered server-side BEFORE renaming.
         # The UPDATE_SOURCE RPC silently no-ops against an unregistered source

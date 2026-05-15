@@ -26,6 +26,8 @@ def mock_artifacts_api():
     # A MagicMock attribute would return a child Mock and confuse the
     # ``existing is not None`` branch.
     mock_core._pending_polls = {}
+    mock_core._begin_transport_task = AsyncMock(return_value=object())
+    mock_core._finish_transport_post = AsyncMock()
     mock_notes = MagicMock()
     mock_notes.list_mind_maps = AsyncMock(return_value=[])
     mock_note = MagicMock()

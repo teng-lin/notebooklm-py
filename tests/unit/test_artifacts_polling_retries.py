@@ -12,6 +12,8 @@ def api():
     # ClientCore._pending_polls (T7.E2) — real dict so the leader/follower
     # dedupe in ``wait_for_completion`` can ``dict.get(key)`` against it.
     core._pending_polls = {}
+    core._begin_transport_task = AsyncMock(return_value=object())
+    core._finish_transport_post = AsyncMock()
     notes_api = MagicMock()
     return ArtifactsAPI(core, notes_api)
 

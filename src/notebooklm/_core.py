@@ -939,6 +939,24 @@ class ClientCore:
             self._in_flight_posts += 1
         return _TransportOperationToken(task=task)
 
+    async def _begin_transport_task(
+        self,
+        task: asyncio.Task[Any],
+        log_label: str,
+    ) -> _TransportOperationToken:
+        """Admit an internally-spawned task as part of the current operation."""
+        condition = self._get_drain_condition()
+        current_depth = self._current_operation_depth(asyncio.current_task())
+        async with condition:
+            if self._draining and current_depth == 0:
+                raise RuntimeError(
+                    "NotebookLMClient is draining; new client operations are not accepted "
+                    f"({log_label})."
+                )
+            self._operation_depths[task] = self._operation_depths.get(task, 0) + 1
+            self._in_flight_posts += 1
+        return _TransportOperationToken(task=task)
+
     async def _finish_transport_post(self, token: _TransportOperationToken) -> None:
         condition = self._get_drain_condition()
         async with condition:

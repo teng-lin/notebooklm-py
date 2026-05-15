@@ -126,6 +126,52 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 
 
 @pytest.mark.asyncio
+async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
+    core = ClientCore(auth_tokens)
+    api = ArtifactsAPI(core)
+    first_poll_started = asyncio.Event()
+    release_first_poll = asyncio.Event()
+    poll_count = 0
+
+    async def fake_poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        nonlocal poll_count
+        operation_token = await core._begin_transport_post("poll_status")
+        try:
+            poll_count += 1
+            if poll_count == 1:
+                first_poll_started.set()
+                await release_first_poll.wait()
+                return GenerationStatus(task_id=task_id, status="in_progress")
+            return GenerationStatus(task_id=task_id, status="completed")
+        finally:
+            await core._finish_transport_post(operation_token)
+
+    api.poll_status = fake_poll_status  # type: ignore[method-assign]
+
+    wait_task = asyncio.create_task(
+        api.wait_for_completion(
+            "nb_123",
+            "task_1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+        )
+    )
+    await first_poll_started.wait()
+
+    drain_task = asyncio.create_task(core.drain(timeout=1.0))
+    await asyncio.sleep(0)
+    assert not drain_task.done()
+
+    release_first_poll.set()
+    result = await wait_task
+    await drain_task
+
+    assert result.status == "completed"
+    assert poll_count == 2
+
+
+@pytest.mark.asyncio
 async def test_close_with_drain_closes_transport_after_timeout(auth_tokens: AuthTokens) -> None:
     client = NotebookLMClient(auth_tokens)
     calls: list[str] = []
@@ -144,6 +190,27 @@ async def test_close_with_drain_closes_transport_after_timeout(auth_tokens: Auth
         await client.close(drain=True, drain_timeout=0.1)
 
     assert calls == ["drain:0.1", "close"]
+
+
+@pytest.mark.asyncio
+async def test_close_with_invalid_drain_does_not_close_transport(auth_tokens: AuthTokens) -> None:
+    client = NotebookLMClient(auth_tokens)
+    calls: list[str] = []
+
+    async def invalid_drain(timeout: float | None = None) -> None:
+        calls.append(f"drain:{timeout}")
+        raise ValueError("bad deadline")
+
+    async def close_transport() -> None:
+        calls.append("close")
+
+    client._core.drain = invalid_drain  # type: ignore[method-assign]
+    client._core.close = close_transport  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="bad deadline"):
+        await client.close(drain=True, drain_timeout=-1.0)
+
+    assert calls == ["drain:-1.0"]
 
 
 @pytest.mark.asyncio
