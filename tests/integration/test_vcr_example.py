@@ -13,8 +13,10 @@ Usage:
     # Replay mode (default, uses recorded cassettes):
     pytest tests/integration/test_vcr_example.py -v
 
-Note: Cassettes are gitignored by default. To share recorded cassettes,
-verify they're properly scrubbed and commit them explicitly.
+Note: Cassettes are committed to the repo after security review (see
+.gitignore for the policy). Verify sensitive data is scrubbed
+(``uv run python tests/scripts/check_cassettes_clean.py``) before
+committing a new or re-recorded cassette.
 
 Note: These tests are automatically skipped if cassettes are not available.
 """

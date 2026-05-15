@@ -9,11 +9,11 @@ setup (scrubbing, matchers, record modes).
 
 ```
 tests/cassettes/
-├── README.md                       (this file)
-├── <object>_<operation>.yaml       (real recorded interactions)
-├── <object>_<operation>_<ctx>.yaml (real, with extra context)
+├── README.md                           (this file)
+├── <object>_<operation>.yaml           (real recorded interactions)
+├── <object>_<operation>_<context>.yaml (real, with extra context)
 └── examples/
-    └── example_<description>.yaml  (illustrative fixtures, not recordings)
+    └── example_<description>.yaml      (illustrative fixtures, not recordings)
 ```
 
 ## Naming convention
