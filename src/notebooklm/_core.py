@@ -9,6 +9,7 @@ import time
 import warnings
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine
+from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -70,6 +71,17 @@ DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
 # batch ingestion pipelines that ingest dozens of files in parallel and
 # have headroom in the process FD limit (``ulimit -n``).
 DEFAULT_MAX_CONCURRENT_UPLOADS = 4
+
+# Default ceiling on simultaneous in-flight ``_perform_authed_post``
+# RPC POSTs (T7.H1 / audit §8). Sits *below* the default httpx pool
+# size (``ConnectionLimits.max_connections=100``) so short-lived helper
+# requests outside the RPC path — refresh GETs, resumable-upload
+# preflights — have pool headroom even when the RPC semaphore is
+# saturated. The default is intentionally conservative because
+# batchexecute itself rate-limits aggressive fan-out; callers with a
+# higher account tier (or an external rate-limiter) can opt out via
+# ``max_concurrent_rpcs=None``.
+DEFAULT_MAX_CONCURRENT_RPCS = 16
 
 # Auth error detection patterns (case-insensitive)
 # Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
@@ -298,6 +310,7 @@ class ClientCore:
         server_error_max_retries: int = 3,
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+        max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
     ):
         """Initialize the core client.
 
@@ -357,11 +370,27 @@ class ClientCore:
                 of the RPC connection pool because uploads use their own
                 ``httpx.AsyncClient`` (Scotty endpoint) and don't share
                 the RPC pool.
+            max_concurrent_rpcs: Ceiling on simultaneous in-flight
+                ``_perform_authed_post`` RPC POSTs. Defaults to
+                ``DEFAULT_MAX_CONCURRENT_RPCS`` (16) — well below the
+                default httpx pool size (``max_connections=100``) so
+                short-lived helper requests (refresh GETs, upload
+                preflights) outside this gate still have pool headroom.
+                Pass ``None`` to disable the gate entirely (callers with
+                an external rate-limiter or single-shot CLI work).
+                Must be ``>= 1`` when supplied. Pre-T7.H1 the gate did
+                not exist; heavy fan-out workloads tripped opaque
+                ``httpx.PoolTimeout`` errors before the connection pool
+                could surface clean back-pressure (audit §8). Cross-
+                validation with ``limits.max_connections`` is enforced at
+                the ``NotebookLMClient`` boundary (so the constraint
+                applies whether ``limits`` is explicit or auto-defaulted
+                inside ``ClientCore``).
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
-                positive finite number, or if ``max_concurrent_uploads`` is
-                a non-positive integer.
+                positive finite number, or if ``max_concurrent_uploads`` /
+                ``max_concurrent_rpcs`` is a non-positive integer.
         """
         # Lazy import to break the types.py -> _core.py cycle.
         from .types import ConnectionLimits
@@ -401,6 +430,27 @@ class ClientCore:
         # ``NotebookLMClient`` instances in the same process have
         # independent upload budgets.
         self._upload_semaphore: asyncio.Semaphore | None = None
+        # RPC-fanout throttle (T7.H1 / audit §8). ``None`` means "no
+        # gate" (caller has an external rate-limiter, or this is a
+        # single-shot CLI invocation). Default ``DEFAULT_MAX_CONCURRENT_RPCS``
+        # (16) sits well below the default ``ConnectionLimits.max_connections``
+        # so helper GET/POSTs outside the RPC pipeline still have pool
+        # headroom. Cross-validation with ``limits.max_connections`` is
+        # enforced one layer up at ``NotebookLMClient.__init__`` because
+        # ``ClientCore`` synthesizes its own ``ConnectionLimits()`` when
+        # ``limits=None``, masking the relationship at this layer.
+        if max_concurrent_rpcs is None:
+            self._max_concurrent_rpcs: int | None = None
+        else:
+            if max_concurrent_rpcs < 1:
+                raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
+            self._max_concurrent_rpcs = max_concurrent_rpcs
+        # Lazily-created for the same reason as ``_upload_semaphore``
+        # (``asyncio.Semaphore()`` binds to the running loop in some
+        # Python versions). Per-instance, never module-global. When
+        # ``_max_concurrent_rpcs is None``, the accessor returns a
+        # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
+        self._rpc_semaphore: asyncio.Semaphore | None = None
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and ``ClientCore`` can be constructed outside one
         # (e.g. a sync-mode ``NotebookLMClient(...)`` instantiation before the
@@ -437,6 +487,20 @@ class ClientCore:
         # would re-introduce the reentrancy ambiguity T7.F2 set out to
         # avoid.
         self._auth_snapshot_lock: asyncio.Lock | None = None
+        # Event-loop affinity guard (audit §14 / T7.G2). Captured in
+        # :meth:`open` and checked in :meth:`_perform_authed_post`; a cheap
+        # ``is`` comparison fails fast when a caller drives the same
+        # ``ClientCore`` from a different loop (typical mistake: instantiating
+        # under ``asyncio.run`` in one thread, then handing the client to
+        # another thread's loop). Each client is per-loop — the asyncio
+        # primitives we hold (``_reqid_lock``, ``_refresh_lock``,
+        # ``_auth_snapshot_lock``, ``_upload_semaphore``, ``_rpc_semaphore``,
+        # the ``httpx.AsyncClient`` pool, in-flight tasks like
+        # ``_refresh_task``/``_keepalive_task``) are all bound to the loop
+        # that ``open()`` ran on; reusing them under a different loop
+        # produces hangs and ``RuntimeError`` deep in httpx instead of an
+        # actionable message at the call site.
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
         # OrderedDict for FIFO eviction when cache exceeds MAX_CONVERSATION_CACHE_SIZE
         self._conversation_cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
         # Keepalive background task configuration
@@ -587,14 +651,48 @@ class ClientCore:
             self._upload_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
         return self._upload_semaphore
 
+    def _get_rpc_semaphore(self) -> AbstractAsyncContextManager[Any]:
+        """Return the per-instance RPC semaphore (or a null-context).
+
+        When ``max_concurrent_rpcs`` was set to ``None`` at construction
+        time, this returns a :class:`contextlib.nullcontext` so the
+        ``async with`` wrapper in :meth:`_perform_authed_post` collapses
+        to a no-op (callers with their own external rate-limiter opted
+        out of the gate). Otherwise it lazily constructs an
+        ``asyncio.Semaphore`` bound to the running loop on first use,
+        mirroring the lazy-init pattern of :attr:`_reqid_lock` /
+        :attr:`_auth_snapshot_lock` / :meth:`get_upload_semaphore`.
+
+        The check-then-assign is safe without an outer lock because
+        asyncio is single-threaded: no other coroutine can execute
+        between the ``is None`` check and the assignment unless we
+        ``await`` (and we don't).
+        """
+        if self._max_concurrent_rpcs is None:
+            return nullcontext()
+        if self._rpc_semaphore is None:
+            self._rpc_semaphore = asyncio.Semaphore(self._max_concurrent_rpcs)
+        return self._rpc_semaphore
+
     async def open(self) -> None:
         """Open the HTTP client connection.
 
         Called automatically by NotebookLMClient.__aenter__.
         Uses httpx.Cookies jar to properly handle cross-domain redirects
         (e.g., to accounts.google.com for auth token refresh).
+
+        Captures the running event loop in ``self._bound_loop`` so
+        :meth:`_perform_authed_post` can fail fast if the same client is
+        later driven from a different loop (audit §14 / T7.G2). Re-opening
+        on a different loop intentionally replaces the binding — ``open()``
+        is the only binding moment; ``close()`` does not unbind so an
+        accidental cross-loop call after close still raises actionably.
         """
         if self._http_client is None:
+            # Capture event-loop affinity before any awaitable resource is
+            # built so the binding is consistent with the loop that owns
+            # every primitive constructed below (T7.G2 / audit §14).
+            self._bound_loop = asyncio.get_running_loop()
             # Use granular timeouts: shorter connect timeout helps detect network issues
             # faster, while longer read/write timeouts accommodate slow responses
             timeout = httpx.Timeout(
@@ -1037,170 +1135,222 @@ class ClientCore:
         assert self._http_client is not None
         client = self._http_client
 
+        # Event-loop affinity guard (audit §14 / T7.G2). Cheap ``is``
+        # comparison — no per-call list traversal, no extra await. Fails
+        # fast with an actionable message instead of a deep httpx /
+        # asyncio.Lock error when the same client is reused across loops.
+        # Placed BEFORE ``_get_rpc_semaphore()`` so a cross-loop misuse
+        # never even reserves a semaphore slot.
+        if self._bound_loop is not None and asyncio.get_running_loop() is not self._bound_loop:
+            raise RuntimeError(
+                "NotebookLMClient is bound to a different event loop. "
+                "Each client is per-loop; create a new client in the target loop."
+            )
+
         refreshed_this_call = False
         rate_limit_retries = 0
         server_error_retries = 0
         start = time.perf_counter()
 
-        while True:
-            snapshot = await self._snapshot()
-            url, body, headers = build_request(snapshot)
+        # ---------------------------------------------------------------
+        # Semaphore placement contract (T7.H1 / audit §8) — DO NOT MOVE.
+        #
+        # The ``max_concurrent_rpcs`` semaphore is acquired HERE — at
+        # ``_perform_authed_post``'s body — and ONLY here. This placement
+        # is load-bearing for two independent reasons:
+        #
+        #   1. ``rpc_call`` (and its inner ``_rpc_call_impl``) implements
+        #      a decode-time refresh-and-retry that *recursively* re-enters
+        #      ``rpc_call(..., _is_retry=True)`` (see ``_core.py`` around
+        #      the ``return await self.rpc_call(...)`` site at the tail of
+        #      ``_handle_decode_auth_error``). If the semaphore were
+        #      acquired at ``rpc_call`` instead, the outer call would hold
+        #      one permit while awaiting the inner recursive call to
+        #      release one — guaranteed deadlock at ``max_concurrent_rpcs=1``
+        #      and permit-fragmentation risk at any cap.
+        #
+        #   2. ``NotebookLMClient.refresh_auth`` issues a *raw*
+        #      ``http_client.get(homepage_url)`` — it doesn't go through
+        #      ``_perform_authed_post`` at all. Wrapping refresh would
+        #      double-gate the refresh-then-retry waterfall (refresh under
+        #      one permit, post-refresh retry waiting for another) and
+        #      let one slow refresh starve every in-flight RPC against
+        #      the same client.
+        #
+        # The wrap is around the *entire* attempt loop (snapshot →
+        # build → post → retry-backoff sleeps) deliberately: releasing
+        # the permit during a 429/5xx backoff would let the next batch of
+        # callers burst in just as the current cohort wakes up to retry,
+        # undoing the smoothing the semaphore exists to provide.
+        #
+        # Future contributors: do NOT move this ``async with`` to wrap
+        # ``rpc_call`` (deadlock) or ``refresh_auth`` (wrong protocol +
+        # starvation). The auth-refresh path is reached via the inner
+        # ``await self._await_refresh()`` below, which itself drops back
+        # through this same critical section on its post-refresh retry
+        # iteration — that's the contract callers depend on.
+        # ---------------------------------------------------------------
+        async with self._get_rpc_semaphore():
+            while True:
+                snapshot = await self._snapshot()
+                url, body, headers = build_request(snapshot)
 
-            try:
-                if headers:
-                    response = await client.post(url, content=body, headers=headers)
-                else:
-                    response = await client.post(url, content=body)
-                response.raise_for_status()
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                # --- Auth refresh path ---------------------------------
-                if (
-                    not refreshed_this_call
-                    and self._refresh_callback is not None
-                    and is_auth_error(exc)
-                ):
-                    logger.info(
-                        "%s auth error detected, attempting token refresh",
-                        log_label,
-                    )
-                    try:
-                        await self._await_refresh()
-                    except Exception as refresh_error:
-                        logger.warning("Token refresh failed: %s", refresh_error)
-                        # Signal "refresh failed" to the caller via a typed
-                        # transport exception so the RPC mapper can re-raise
-                        # the *original* HTTPStatusError unchanged (matches
-                        # the historical ``_try_refresh_and_retry`` contract
-                        # — see ``test_no_retry_on_cookie_expiration``).
-                        raise _TransportAuthExpired(
-                            f"auth refresh failed for {log_label}",
+                try:
+                    if headers:
+                        response = await client.post(url, content=body, headers=headers)
+                    else:
+                        response = await client.post(url, content=body)
+                    response.raise_for_status()
+                except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                    # --- Auth refresh path ---------------------------------
+                    if (
+                        not refreshed_this_call
+                        and self._refresh_callback is not None
+                        and is_auth_error(exc)
+                    ):
+                        logger.info(
+                            "%s auth error detected, attempting token refresh",
+                            log_label,
+                        )
+                        try:
+                            await self._await_refresh()
+                        except Exception as refresh_error:
+                            logger.warning("Token refresh failed: %s", refresh_error)
+                            # Signal "refresh failed" to the caller via a typed
+                            # transport exception so the RPC mapper can re-raise
+                            # the *original* HTTPStatusError unchanged (matches
+                            # the historical ``_try_refresh_and_retry`` contract
+                            # — see ``test_no_retry_on_cookie_expiration``).
+                            raise _TransportAuthExpired(
+                                f"auth refresh failed for {log_label}",
+                                original=exc,
+                            ) from refresh_error
+                        if self._refresh_retry_delay > 0:
+                            await asyncio.sleep(self._refresh_retry_delay)
+                        logger.info("Token refresh successful, retrying %s", log_label)
+                        refreshed_this_call = True
+                        # Loop around: next iteration takes a FRESH snapshot,
+                        # rebuilds the request body with the new csrf/sid, and
+                        # re-POSTs.
+                        continue
+
+                    # --- 429 rate-limit path --------------------------------
+                    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+                        retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
+                        # ``disable_internal_retries`` (T7.B2) suppresses the 429
+                        # retry loop for declared mutating create RPCs whose retries
+                        # would risk duplicate-resource creation. The API-layer
+                        # ``_idempotency.idempotent_create`` wrapper owns the
+                        # probe-then-retry loop instead.
+                        if (
+                            not disable_internal_retries
+                            and rate_limit_retries < self._rate_limit_max_retries
+                        ):
+                            # Sleep budget: honor ``Retry-After`` when the server
+                            # provides a parseable hint; otherwise fall back to
+                            # capped exponential backoff with ±20% jitter (T7.H2
+                            # / audit §11). The fallback mirrors the 5xx path so
+                            # the positive ``rate_limit_max_retries`` default is
+                            # still useful when Google omits the header.
+                            if retry_after is not None:
+                                sleep_seconds: float = retry_after
+                                sleep_source = f"Retry-After={retry_after}s"
+                            else:
+                                backoff = min(2**rate_limit_retries, 30)
+                                backoff += random.uniform(-0.2 * backoff, 0.2 * backoff)  # noqa: S311  # nosec B311 — jitter, not crypto
+                                sleep_seconds = max(0.1, backoff)
+                                sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
+                            logger.warning(
+                                "%s rate-limited (HTTP 429); sleeping (%s) then retrying (%d/%d)",
+                                log_label,
+                                sleep_source,
+                                rate_limit_retries + 1,
+                                self._rate_limit_max_retries,
+                            )
+                            await asyncio.sleep(sleep_seconds)
+                            rate_limit_retries += 1
+                            continue
+                        raise _TransportRateLimited(
+                            f"{log_label} rate-limited (HTTP 429)",
+                            retry_after=retry_after,
+                            response=exc.response,
                             original=exc,
-                        ) from refresh_error
-                    if self._refresh_retry_delay > 0:
-                        await asyncio.sleep(self._refresh_retry_delay)
-                    logger.info("Token refresh successful, retrying %s", log_label)
-                    refreshed_this_call = True
-                    # Loop around: next iteration takes a FRESH snapshot,
-                    # rebuilds the request body with the new csrf/sid, and
-                    # re-POSTs.
-                    continue
-
-                # --- 429 rate-limit path --------------------------------
-                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-                    retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
-                    # ``disable_internal_retries`` (T7.B2) suppresses the 429
-                    # retry loop for declared mutating create RPCs whose retries
-                    # would risk duplicate-resource creation. The API-layer
-                    # ``_idempotency.idempotent_create`` wrapper owns the
-                    # probe-then-retry loop instead.
-                    if (
-                        not disable_internal_retries
-                        and rate_limit_retries < self._rate_limit_max_retries
-                    ):
-                        # Sleep budget: honor ``Retry-After`` when the server
-                        # provides a parseable hint; otherwise fall back to
-                        # capped exponential backoff with ±20% jitter (T7.H2
-                        # / audit §11). The fallback mirrors the 5xx path so
-                        # the positive ``rate_limit_max_retries`` default is
-                        # still useful when Google omits the header.
-                        if retry_after is not None:
-                            sleep_seconds: float = retry_after
-                            sleep_source = f"Retry-After={retry_after}s"
-                        else:
-                            backoff = min(2**rate_limit_retries, 30)
-                            backoff += random.uniform(-0.2 * backoff, 0.2 * backoff)  # noqa: S311  # nosec B311 — jitter, not crypto
-                            sleep_seconds = max(0.1, backoff)
-                            sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
-                        logger.warning(
-                            "%s rate-limited (HTTP 429); sleeping (%s) then retrying (%d/%d)",
-                            log_label,
-                            sleep_source,
-                            rate_limit_retries + 1,
-                            self._rate_limit_max_retries,
-                        )
-                        await asyncio.sleep(sleep_seconds)
-                        rate_limit_retries += 1
-                        continue
-                    raise _TransportRateLimited(
-                        f"{log_label} rate-limited (HTTP 429)",
-                        retry_after=retry_after,
-                        response=exc.response,
-                        original=exc,
-                    ) from exc
-
-                # --- 5xx / network retry path -------------------------------
-                # Exponential backoff: 5xx responses rarely carry Retry-After
-                # so we don't use the 429 model. ``httpx.RequestError`` covers
-                # transient network-layer failures (timeouts, connect errors,
-                # remote-protocol blips) that are reasonable to retry.
-                is_server_error = (
-                    isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600
-                )
-                is_network_error = isinstance(exc, httpx.RequestError)
-                if is_server_error or is_network_error:
-                    # ``disable_internal_retries`` (T7.B2) short-circuits the
-                    # 5xx / network retry loop for declared mutating create
-                    # RPCs (e.g. CREATE_NOTEBOOK, ADD_SOURCE) where a naive
-                    # re-POST after a server commit would duplicate the
-                    # resource. The API-layer ``idempotent_create`` wrapper
-                    # owns the probe-then-retry loop instead.
-                    if (
-                        not disable_internal_retries
-                        and server_error_retries < self._server_error_max_retries
-                    ):
-                        # Exponential backoff capped at 30s. The cap blunts
-                        # thundering-herd well past the first few retries
-                        # (every retry beyond ~5 attempts waits exactly 30s),
-                        # but the early retries (1s, 2s, 4s, ...) can still
-                        # synchronize across clients that all failed on the
-                        # same transient backend blip. Add a small ±20% jitter
-                        # so concurrent retries are spread out.
-                        backoff = min(2**server_error_retries, 30)
-                        backoff += random.uniform(-0.2 * backoff, 0.2 * backoff)  # noqa: S311  # nosec B311 — jitter, not crypto
-                        backoff = max(0.1, backoff)
-                        status_label = (
-                            f"HTTP {exc.response.status_code}"  # type: ignore[union-attr]
-                            if is_server_error
-                            else type(exc).__name__
-                        )
-                        logger.warning(
-                            "%s server/network error (%s); backing off %.1fs then retrying (%d/%d)",
-                            log_label,
-                            status_label,
-                            backoff,
-                            server_error_retries + 1,
-                            self._server_error_max_retries,
-                        )
-                        await asyncio.sleep(backoff)
-                        server_error_retries += 1
-                        continue
-                    if is_server_error:
-                        status_error = cast(httpx.HTTPStatusError, exc)
-                        raise _TransportServerError(
-                            f"{log_label} server error "
-                            f"(HTTP {status_error.response.status_code}) after "
-                            f"{server_error_retries} retries",
-                            original=status_error,
-                            response=status_error.response,
-                            status_code=status_error.response.status_code,
                         ) from exc
-                    raise _TransportServerError(
-                        f"{log_label} network error after {server_error_retries} retries: {exc}",
-                        original=exc,
-                    ) from exc
 
-                # --- Anything else: propagate the raw transport error ----
-                elapsed = time.perf_counter() - start
-                logger.debug(
-                    "%s transport error after %.3fs: %s",
-                    log_label,
-                    elapsed,
-                    exc,
-                )
-                raise
+                    # --- 5xx / network retry path -------------------------------
+                    # Exponential backoff: 5xx responses rarely carry Retry-After
+                    # so we don't use the 429 model. ``httpx.RequestError`` covers
+                    # transient network-layer failures (timeouts, connect errors,
+                    # remote-protocol blips) that are reasonable to retry.
+                    is_server_error = (
+                        isinstance(exc, httpx.HTTPStatusError)
+                        and 500 <= exc.response.status_code < 600
+                    )
+                    is_network_error = isinstance(exc, httpx.RequestError)
+                    if is_server_error or is_network_error:
+                        # ``disable_internal_retries`` (T7.B2) short-circuits the
+                        # 5xx / network retry loop for declared mutating create
+                        # RPCs (e.g. CREATE_NOTEBOOK, ADD_SOURCE) where a naive
+                        # re-POST after a server commit would duplicate the
+                        # resource. The API-layer ``idempotent_create`` wrapper
+                        # owns the probe-then-retry loop instead.
+                        if (
+                            not disable_internal_retries
+                            and server_error_retries < self._server_error_max_retries
+                        ):
+                            # Exponential backoff capped at 30s. The cap blunts
+                            # thundering-herd well past the first few retries
+                            # (every retry beyond ~5 attempts waits exactly 30s),
+                            # but the early retries (1s, 2s, 4s, ...) can still
+                            # synchronize across clients that all failed on the
+                            # same transient backend blip. Add a small ±20% jitter
+                            # so concurrent retries are spread out.
+                            backoff = min(2**server_error_retries, 30)
+                            backoff += random.uniform(-0.2 * backoff, 0.2 * backoff)  # noqa: S311  # nosec B311 — jitter, not crypto
+                            backoff = max(0.1, backoff)
+                            status_label = (
+                                f"HTTP {exc.response.status_code}"  # type: ignore[union-attr]
+                                if is_server_error
+                                else type(exc).__name__
+                            )
+                            logger.warning(
+                                "%s server/network error (%s); backing off %.1fs then retrying (%d/%d)",
+                                log_label,
+                                status_label,
+                                backoff,
+                                server_error_retries + 1,
+                                self._server_error_max_retries,
+                            )
+                            await asyncio.sleep(backoff)
+                            server_error_retries += 1
+                            continue
+                        if is_server_error:
+                            status_error = cast(httpx.HTTPStatusError, exc)
+                            raise _TransportServerError(
+                                f"{log_label} server error "
+                                f"(HTTP {status_error.response.status_code}) after "
+                                f"{server_error_retries} retries",
+                                original=status_error,
+                                response=status_error.response,
+                                status_code=status_error.response.status_code,
+                            ) from exc
+                        raise _TransportServerError(
+                            f"{log_label} network error after {server_error_retries} retries: {exc}",
+                            original=exc,
+                        ) from exc
 
-            # Success
-            return response
+                    # --- Anything else: propagate the raw transport error ----
+                    elapsed = time.perf_counter() - start
+                    logger.debug(
+                        "%s transport error after %.3fs: %s",
+                        log_label,
+                        elapsed,
+                        exc,
+                    )
+                    raise
+
+                # Success
+                return response
 
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.

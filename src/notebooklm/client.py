@@ -35,6 +35,7 @@ from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
 from ._core import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
+    DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
     ClientCore,
@@ -99,6 +100,7 @@ class NotebookLMClient:
         server_error_max_retries: int = 3,
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+        max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
     ):
         """Initialize the NotebookLM client.
@@ -147,6 +149,23 @@ class NotebookLMClient:
                 Independent of the RPC pool sizing (uploads use their own
                 ``httpx.AsyncClient`` against the Scotty endpoint and
                 don't share the RPC connection pool).
+            max_concurrent_rpcs: Ceiling on simultaneous in-flight RPC
+                POSTs (``client.notebooks.list``, ``client.chat.ask``,
+                etc.). Defaults to ``16`` — well below the default
+                ``ConnectionLimits.max_connections=100`` so short-lived
+                helper requests (auth refresh GETs, upload preflights)
+                still have pool headroom. Pass ``None`` to disable the
+                gate entirely; useful when an external rate-limiter is
+                in front of the client or for single-shot CLI commands
+                where the throttle is overhead. Must be ``>= 1`` when
+                supplied, and must satisfy ``max_concurrent_rpcs <=
+                limits.max_connections`` — the constructor raises
+                ``ValueError`` otherwise (a semaphore that lets requests
+                through that the pool can't fulfill would surface as
+                opaque ``httpx.PoolTimeout`` rather than clean
+                back-pressure). Pre-T7.H1 no gate existed; heavy
+                fan-out workloads tripped pool timeouts before any
+                upstream throttle could intervene (audit §8).
             upload_timeout: Optional override for the ``httpx.Timeout`` used
                 by the resumable-upload start handshake and the finalize
                 POST in ``client.sources.add_file``. ``None`` (default)
@@ -189,6 +208,30 @@ class NotebookLMClient:
         if keepalive_storage_path is not None:
             keepalive_storage_path = Path(keepalive_storage_path).expanduser().resolve()
 
+        # Cross-validate the RPC throttle against the underlying httpx pool
+        # before ``ClientCore`` swallows the ``limits=None`` sentinel into
+        # its own ``ConnectionLimits()`` synthesis (audit §8 / T7.H1).
+        # Performed here so the constraint is enforced uniformly regardless
+        # of whether the caller passed an explicit ``ConnectionLimits``
+        # instance or relied on the default — ``ClientCore.__init__`` can't
+        # see the caller's intent once the default has been substituted.
+        # Skip when either side opts out (``max_concurrent_rpcs is None``
+        # means "no gate"; we deliberately don't second-guess the caller's
+        # external-throttle setup).
+        if max_concurrent_rpcs is not None:
+            from .types import ConnectionLimits
+
+            effective_limits = limits if limits is not None else ConnectionLimits()
+            if max_concurrent_rpcs > effective_limits.max_connections:
+                raise ValueError(
+                    "max_concurrent_rpcs must be <= limits.max_connections "
+                    f"(got max_concurrent_rpcs={max_concurrent_rpcs}, "
+                    f"max_connections={effective_limits.max_connections}). "
+                    "A semaphore wider than the connection pool surfaces "
+                    "saturation as opaque httpx.PoolTimeout instead of "
+                    "clean back-pressure."
+                )
+
         # Pass refresh_auth as callback for automatic retry on auth failures
         # Note: refresh_auth calls update_auth_headers internally
         self._core = ClientCore(
@@ -202,6 +245,7 @@ class NotebookLMClient:
             server_error_max_retries=server_error_max_retries,
             limits=limits,
             max_concurrent_uploads=max_concurrent_uploads,
+            max_concurrent_rpcs=max_concurrent_rpcs,
         )
 
         # Initialize sub-client APIs.
@@ -272,6 +316,7 @@ class NotebookLMClient:
         server_error_max_retries: int = 3,
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+        max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
     ) -> "NotebookLMClient":
         """Create a client from Playwright storage state file.
@@ -305,6 +350,11 @@ class NotebookLMClient:
                 ``None`` resolves to the default. See :class:`NotebookLMClient`
                 for full semantics (FD-exhaustion guard, independence from
                 the RPC pool).
+            max_concurrent_rpcs: Ceiling on simultaneous in-flight RPC
+                POSTs. Defaults to ``16``; ``None`` disables the gate.
+                Must be ``>= 1`` and ``<= limits.max_connections``. See
+                :class:`NotebookLMClient` for the cross-validation rule
+                and the audit §8 / T7.H1 rationale.
             upload_timeout: Optional override for the ``httpx.Timeout`` used
                 by the resumable-upload start handshake and the finalize
                 POST. ``None`` (default) preserves the original hardcoded
@@ -345,6 +395,7 @@ class NotebookLMClient:
             server_error_max_retries=server_error_max_retries,
             limits=limits,
             max_concurrent_uploads=max_concurrent_uploads,
+            max_concurrent_rpcs=max_concurrent_rpcs,
             upload_timeout=upload_timeout,
         )
 

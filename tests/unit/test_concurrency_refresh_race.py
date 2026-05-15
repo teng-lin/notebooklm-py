@@ -97,11 +97,24 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
-    # Locate the retry loop (the outermost ``while`` in the body).
-    while_loop = next(
-        (n for n in ast.iter_child_nodes(func) if isinstance(n, ast.While)),
-        None,
-    )
+    # Locate the retry loop (the outermost ``while`` in the body). The loop
+    # may sit directly under the function body OR one level deeper inside
+    # the T7.H1 ``async with self._get_rpc_semaphore():`` wrapper — both
+    # structures preserve the snapshot→POST invariant this guard checks
+    # (the semaphore acquire happens once per call, not per iteration).
+    def _find_first_while(parent: ast.AST) -> ast.While | None:
+        for child in ast.iter_child_nodes(parent):
+            if isinstance(child, ast.While):
+                return child
+            if isinstance(child, ast.AsyncWith | ast.With):
+                # Descend through context managers so the guard survives
+                # wrapping the loop in ``async with semaphore``.
+                found = _find_first_while(child)
+                if found is not None:
+                    return found
+        return None
+
+    while_loop = _find_first_while(func)
     assert while_loop is not None, (
         "Could not locate the retry-loop ``while`` in _perform_authed_post. "
         "If the loop was restructured, update this guard to match."

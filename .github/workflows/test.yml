@@ -52,6 +52,13 @@ jobs:
     - name: Assert CLAUDE.md paths are fresh (Phase 6 P6.6)
       run: uv run python scripts/check_claude_md_freshness.py
 
+    - name: Assert per-method RPC coverage (Strategic 9, T8.E9)
+      # Static check: each RPCMethod member must have at least one test
+      # reference AND at least one cassette body containing its RPC id.
+      # Pre-existing gaps are grandfathered via PREEXISTING_GAPS inside the
+      # script — that set is a one-way ratchet and must not grow.
+      run: uv run python tests/scripts/check_method_coverage.py
+
     - name: Verify e2e test fixtures
       run: uv run pytest tests/e2e --collect-only -q
 

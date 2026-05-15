@@ -335,6 +335,41 @@ the result with the cassette guard before committing:
 tests/check_cassettes_clean.sh
 ```
 
+### Per-method RPC coverage gate
+
+`tests/scripts/check_method_coverage.py` enforces, on every PR, that each
+member of `RPCMethod` has **both**:
+
+1. **A test reference** — at least one file under `tests/` (excluding the
+   gate script itself) mentions the enum member by its qualified name
+   (`RPCMethod.LIST_NOTEBOOKS`) OR by its raw RPC id string value
+   (`"wXbhsf"`).
+2. **A cassette covering the RPC id** — at least one cassette YAML under
+   `tests/cassettes/` contains the RPC id string in its body.
+
+The gate is a pure-text static check (no pytest, no network) and runs in the
+`quality` job of `test.yml`.
+
+**Adding a new `RPCMethod`?** Ship it with:
+- a unit or integration test that imports the enum member (or asserts on its
+  raw id), AND
+- at least one cassette whose recorded request/response body contains the
+  RPC id.
+
+**Pre-existing gaps.** A small `PREEXISTING_GAPS` set inside the script
+grandfathers methods that lacked coverage when the gate first landed
+(currently: `GET_INTERACTIVE_HTML`, `GET_SUGGESTED_REPORTS`,
+`IMPORT_RESEARCH`, `REFRESH_SOURCE`). The set is a **one-way ratchet** —
+it must not grow. When you backfill coverage for a grandfathered method,
+delete its entry from `PREEXISTING_GAPS` in the same PR. The gate prints a
+`NOTICE:` to stderr when a `PREEXISTING_GAPS` entry has acquired full
+coverage so maintainers see the prompt to remove it.
+
+```bash
+# Run locally before pushing changes that touch RPCMethod
+uv run python tests/scripts/check_method_coverage.py
+```
+
 ### E2E Fixtures
 
 | Fixture | Use Case |
