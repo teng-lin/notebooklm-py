@@ -322,11 +322,12 @@ cancellation (audit §§13, 15, 16, 21):
 - **`refresh_auth()`** runs the shared refresh task under `asyncio.shield`;
   cancelling a waiter does not kill the shared refresh (T7.C1).
 - **Upload finalize** is shielded; on cancel signal we issue a best-effort
-  Scotty cancel to release the server-side upload slot (T7.C3).
+  Scotty (Google's internal resumable upload service) cancel to release the
+  server-side upload slot (T7.C3).
 - **`notes.create`** shields the `UPDATE_NOTE` finalize step and cleans up
   the partial note on cancel (T7.C4).
 - **`wait_for_sources`** cancels sibling pollers on the first poller's
-  failure rather than letting them race to compete error messages (T7.E1).
+  failure rather than letting them race to emit error messages (T7.E1).
 - **`wait_for_completion`** uses a leader/follower polling-dedupe registry
   with a shielded leader task — follower cancellation does not kill the
   leader's poll (T7.E2).
@@ -372,7 +373,7 @@ the app lifespan:
 
 ```python
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from notebooklm import NotebookLMClient
 
 @asynccontextmanager
@@ -382,7 +383,7 @@ async def lifespan(app: FastAPI):
         yield
     # client.close() happens via __aexit__
 
-def get_client(request) -> NotebookLMClient:
+def get_client(request: Request) -> NotebookLMClient:
     return request.app.state.notebooklm
 
 app = FastAPI(lifespan=lifespan)
@@ -455,16 +456,17 @@ uploads use their own `httpx.AsyncClient` (Scotty endpoint) and do not
 share the RPC connection pool. The motivation is FD exhaustion: each
 in-flight upload holds one open file descriptor for the duration of the
 upload, so an unbounded fan-out blows the per-process FD limit. `None`
-resolves to the default — unbounded uploads are intentionally rejected.
-Must be `≥ 1`.
+resolves to the default (4); truly unbounded uploads are intentionally
+not supported. Must be `≥ 1` when set explicitly.
 
 **Rate-limit retry defaults** (T7.H2). `rate_limit_max_retries=3`,
 `server_error_max_retries=3`. The 429 path honors the `Retry-After`
 header when parseable (clamped at `MAX_RETRY_AFTER_SECONDS = 300s`);
 when the header is absent or unparseable, the loop falls back to
-exponential backoff `min(2^attempt, 30)` seconds with ±20% jitter,
-matching the 5xx path. Set either to `0` to restore the pre-T7.H2
-behavior of raising `RateLimitError` / `_TransportServerError`
+exponential backoff `min(2^attempt, 30)` seconds with ±20% jitter
+(where `attempt` starts at `0`, so the first retry sleeps ~1 s ± 20%
+before doubling), matching the 5xx path. Set either to `0` to restore
+the pre-T7.H2 behavior of raising `RateLimitError` / `ServerError`
 immediately.
 
 **Upload-timeout configuration** (T7.H3). `client.sources.add_file(...)`
