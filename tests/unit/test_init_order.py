@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -27,15 +28,17 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 # these feature APIs off ClientCore private state and then shrink this baseline
 # to an empty set. Until then, this guard blocks new direct private-state access
 # without failing the legitimate pre-extraction call sites.
-_ALLOWED_CORE_PRIVATE_ACCESSES = {
-    ("_artifacts.py", "_begin_transport_task"),
-    ("_artifacts.py", "_finish_transport_post"),
-    ("_artifacts.py", "_pending_polls"),
-    ("_sources.py", "_begin_transport_post"),
-    ("_sources.py", "_finish_transport_post"),
+_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS = {
+    ("_artifacts.py", "_begin_transport_task"): 1,
+    ("_artifacts.py", "_finish_transport_post"): 1,
+    ("_artifacts.py", "_pending_polls"): 1,
+    ("_sources.py", "_begin_transport_post"): 1,
+    ("_sources.py", "_finish_transport_post"): 1,
 }
 
 _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
+    "__init__.py",
+    "__main__.py",
     "_atomic_io.py",
     "_callbacks.py",
     "_core.py",
@@ -70,7 +73,7 @@ class _CorePrivateAccessVisitor(ast.NodeVisitor):
 
     def __init__(self, module_name: str) -> None:
         self.module_name = module_name
-        self.observed: set[tuple[str, str]] = set()
+        self.observed: list[tuple[str, str]] = []
         self._core_alias_stack: list[set[str]] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -83,24 +86,24 @@ class _CorePrivateAccessVisitor(ast.NodeVisitor):
         self._visit_function_scope(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        if _is_self_core(node.value):
+        if self._is_core_access_base(node.value):
             for target in node.targets:
                 self._record_alias_target(target)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        if node.value is not None and _is_self_core(node.value):
+        if node.value is not None and self._is_core_access_base(node.value):
             self._record_alias_target(node.target)
         self.generic_visit(node)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
-        if _is_self_core(node.value):
+        if self._is_core_access_base(node.value):
             self._record_alias_target(node.target)
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         if _is_private_attr(node) and self._is_core_access_base(node.value):
-            self.observed.add((self.module_name, node.attr))
+            self.observed.append((self.module_name, node.attr))
         self.generic_visit(node)
 
     def _visit_function_scope(
@@ -116,9 +119,13 @@ class _CorePrivateAccessVisitor(ast.NodeVisitor):
             self._core_alias_stack[-1].add(target.id)
 
     def _is_core_access_base(self, node: ast.AST) -> bool:
-        return _is_self_core(node) or (
-            isinstance(node, ast.Name)
-            and any(node.id in aliases for aliases in reversed(self._core_alias_stack))
+        return (
+            _is_self_core(node)
+            or (
+                isinstance(node, ast.Name)
+                and any(node.id in aliases for aliases in reversed(self._core_alias_stack))
+            )
+            or (isinstance(node, ast.NamedExpr) and self._is_core_access_base(node.value))
         )
 
 
@@ -130,7 +137,7 @@ def _feature_modules_for_core_private_guard() -> list[Path]:
     ]
 
 
-def _collect_core_private_accesses(path: Path) -> set[tuple[str, str]]:
+def _collect_core_private_accesses(path: Path) -> list[tuple[str, str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     visitor = _CorePrivateAccessVisitor(path.name)
     visitor.visit(tree)
@@ -139,15 +146,29 @@ def _collect_core_private_accesses(path: Path) -> set[tuple[str, str]]:
 
 def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
     """Pending guard: no new feature API reaches directly into ClientCore internals."""
-    observed: set[tuple[str, str]] = set()
+    observed_counts: Counter[tuple[str, str]] = Counter()
     for path in _feature_modules_for_core_private_guard():
-        observed.update(_collect_core_private_accesses(path))
+        observed_counts.update(_collect_core_private_accesses(path))
 
-    unexpected = observed - _ALLOWED_CORE_PRIVATE_ACCESSES
+    unexpected = {
+        access: count
+        for access, count in observed_counts.items()
+        if count > _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS.get(access, 0)
+    }
     assert not unexpected, (
         "Feature APIs must not add new direct `self._core._private` accesses. "
         "Add a public ClientCore capability first, or temporarily extend the "
-        f"TODO baseline with a migration note. New accesses: {sorted(unexpected)}"
+        f"TODO baseline with a migration note. New accesses: {unexpected}"
+    )
+
+    stale = {
+        access: allowed_count - observed_counts.get(access, 0)
+        for access, allowed_count in _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS.items()
+        if observed_counts.get(access, 0) < allowed_count
+    }
+    assert not stale, (
+        "Core-private access baseline has entries no longer present in code. "
+        f"Remove them from _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS: {stale}"
     )
 
 
@@ -162,7 +183,22 @@ class Example:
     )
     visitor = _CorePrivateAccessVisitor("example.py")
     visitor.visit(tree)
-    assert visitor.observed == {("example.py", "_pending_polls")}
+    assert visitor.observed == [("example.py", "_pending_polls")]
+
+
+def test_core_private_access_guard_detects_chained_aliases() -> None:
+    tree = ast.parse(
+        """
+class Example:
+    def method(self):
+        core = self._core
+        same = core
+        return same._pending_polls
+"""
+    )
+    visitor = _CorePrivateAccessVisitor("example.py")
+    visitor.visit(tree)
+    assert visitor.observed == [("example.py", "_pending_polls")]
 
 
 def test_core_private_access_guard_detects_closure_aliases() -> None:
@@ -178,7 +214,7 @@ class Example:
     )
     visitor = _CorePrivateAccessVisitor("example.py")
     visitor.visit(tree)
-    assert visitor.observed == {("example.py", "_pending_polls")}
+    assert visitor.observed == [("example.py", "_pending_polls")]
 
 
 def test_core_private_access_guard_detects_direct_access() -> None:
@@ -191,7 +227,38 @@ class Example:
     )
     visitor = _CorePrivateAccessVisitor("example.py")
     visitor.visit(tree)
-    assert visitor.observed == {("example.py", "_pending_polls")}
+    assert visitor.observed == [("example.py", "_pending_polls")]
+
+
+def test_core_private_access_guard_counts_duplicate_call_sites() -> None:
+    tree = ast.parse(
+        """
+class Example:
+    def method(self):
+        first = self._core._pending_polls
+        second = self._core._pending_polls
+        return first, second
+"""
+    )
+    visitor = _CorePrivateAccessVisitor("example.py")
+    visitor.visit(tree)
+    assert visitor.observed == [
+        ("example.py", "_pending_polls"),
+        ("example.py", "_pending_polls"),
+    ]
+
+
+def test_core_private_access_guard_detects_walrus_aliases() -> None:
+    tree = ast.parse(
+        """
+class Example:
+    def method(self):
+        return (core := self._core)._pending_polls
+"""
+    )
+    visitor = _CorePrivateAccessVisitor("example.py")
+    visitor.visit(tree)
+    assert visitor.observed == [("example.py", "_pending_polls")]
 
 
 def test_core_private_access_guard_ignores_public_core_methods() -> None:
@@ -204,7 +271,7 @@ class Example:
     )
     visitor = _CorePrivateAccessVisitor("example.py")
     visitor.visit(tree)
-    assert visitor.observed == set()
+    assert visitor.observed == []
 
 
 @pytest.fixture
