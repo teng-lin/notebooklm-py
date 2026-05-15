@@ -1,0 +1,419 @@
+interactions:
+- request:
+    body: f.req=%5Bnull%2C%22%5B%5B%5B%5B%5C%22ff969d2c-66ca-4ab4-9a12-0340243ec89b%5C%22%5D%5D%2C%5B%5B%5C%221f17eb66-f138-4593-96ec-4b9483a04438%5C%22%5D%5D%2C%5B%5B%5C%22d6d693fc-f902-46b6-84dd-8ff6bedd3d0e%5C%22%5D%5D%2C%5B%5B%5C%22effd61f0-228a-48ce-9635-c3b67506ec52%5C%22%5D%5D%2C%5B%5B%5C%22223c7a95-00fb-4bcd-ad61-e49824879945%5C%22%5D%5D%5D%2C%5C%22Summarize%20all%20sources%20in%20one%20short%20paragraph.%5C%22%2Cnull%2C%5B2%2Cnull%2C%5B1%5D%2C%5B1%5D%5D%2C%5C%22c8c0a30c-530e-48ba-9b7e-09acc8c44078%5C%22%2Cnull%2Cnull%2C%5C%224b5a0e0d-e72f-45b5-9787-1d49dc74e9fb%5C%22%2C1%5D%22%5D&at=SCRUBBED_CSRF%3A1778873169928&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '634'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
+        __Secure-OSID=SCRUBBED; _gcl_au=1.1.1583381276.1778846987; _ga=GA1.1.1567240762.1778846987;
+        _ga_W0LDH41ZCB=GS2.1.s1778846986$o1$g0$t1778846986$j60$l0$h0
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GenerateFreeFormStreamed?bl=boq_labs-tailwind-frontend_20260301.03_p0&hl=en&_reqid=200000&rt=c&f.sid=SCRUBBED
+  response:
+    body:
+      string: ")]}'\n\n914\n[[\"wrb.fr\",null,\"[[\\\"**Assessing the Language**\\\\n\\\\nI'm
+        currently focused on the language of the request. The system instructions
+        state French as the default, but the query is in English. I'm evaluating how
+        to handle this apparent discrepancy \u2013 I'm leaning toward prioritizing
+        English for this particular summary, as it is the language of the request.\\\\n\\\\n\\\\n\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,22,[[[0,22,[\\\"Assessing
+        the Language\\\",[true]]]]]],[22,321,[[[22,321,[\\\"I'm currently focused
+        on the language of the request. The system instructions state French as the
+        default, but the query is in English. I'm evaluating how to handle this apparent
+        discrepancy \u2013 I'm leaning toward prioritizing English for this particular
+        summary, as it is the language of the request.\\\"]]]]]]],null,null,null,2]],null,null,null,false,null,false]\"]]\n872\n[[\"wrb.fr\",null,\"[[\\\"**Refining
+        the Response**\\\\n\\\\nI've clarified the language requirements and confirmed
+        I should respond in English, the language of the query. I'm now drafting the
+        summary, keeping the diverse nature of the source material in mind. I'm aiming
+        for a concise paragraph, as requested. The prompt should be respected.\\\\n\\\\n\\\\n\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,21,[[[0,21,[\\\"Refining
+        the Response\\\",[true]]]]]],[21,302,[[[21,302,[\\\"I've clarified the language
+        requirements and confirmed I should respond in English, the language of the
+        query. I'm now drafting the summary, keeping the diverse nature of the source
+        material in mind. I'm aiming for a concise paragraph, as requested. The prompt
+        should be respected.\\\"]]]]]]],null,null,null,2]],null,null,null,false,null,false]\"]]\n1251\n[[\"wrb.fr\",null,\"[[\\\"**Synthesizing
+        Diverse Content**\\\\n\\\\nI'm now integrating the diverse topics into a cohesive
+        summary. I've focused on the variety of the sources: bicycles [1], lighthouses
+        [2], tea [3], sourdough [4], and origami [5]. I\u2019m making sure to cite
+        the sources correctly. I\u2019m also making sure that the writing is in the
+        first person. I'm focusing on the requested tone and format: I'm keeping the
+        paragraph concise and avoiding introductory phrases. I'm finalizing the structure,
+        ensuring citations are in place.\\\\n\\\\n\\\\n\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,28,[[[0,28,[\\\"SCRUBBED_NAME\\\",[true]]]]]],[28,495,[[[28,495,[\\\"I'm
+        now integrating the diverse topics into a cohesive summary. I've focused on
+        the variety of the sources: bicycles [1], lighthouses [2], tea [3], sourdough
+        [4], and origami [5]. I\u2019m making sure to cite the sources correctly.
+        I\u2019m also making sure that the writing is in the first person. I'm focusing
+        on the requested tone and format: I'm keeping the paragraph concise and avoiding
+        introductory phrases. I'm finalizing the structure, ensuring citations are
+        in place.\\\"]]]]]]],null,null,null,2]],null,null,null,false,null,false]\"]]\n439\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven,\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,112,[[[0,112,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven,\\\"]]]]]]],null,null,null,1]],null,null,null,false,null,false]\"]]\n1552\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,232,[[[0,232,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed\\\"]]]]]],[[[\\\"73987912-8027-4ae0-bbc1-2116ab576846\\\"],[null,0,172]]]],null,null,[[[\\\"73987912-8027-4ae0-bbc1-2116ab576846\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"73987912-8027-4ae0-bbc1-2116ab576846\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"73987912-8027-4ae0-bbc1-2116ab576846\\\"]]],[[[null,0,172],[0]]],null,false,null,false]\"]]\n2743\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis*\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,356,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]]]]]],[[[\\\"5a9a4760-642c-476a-83de-aa9dd305209e\\\"],[null,0,172]],[[\\\"11e3c33d-3a0b-4d10-9734-37cd6cd30fee\\\"],[null,172,266]]]],null,null,[[[\\\"5a9a4760-642c-476a-83de-aa9dd305209e\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"5a9a4760-642c-476a-83de-aa9dd305209e\\\"]]],[[\\\"11e3c33d-3a0b-4d10-9734-37cd6cd30fee\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"11e3c33d-3a0b-4d10-9734-37cd6cd30fee\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"5a9a4760-642c-476a-83de-aa9dd305209e\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"11e3c33d-3a0b-4d10-9734-37cd6cd30fee\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]]],null,false,null,false]\"]]\n3944\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis* leaves to create various
+        blends [3], alongside the natural yeast and lactobacilli fermentation process
+        that gives sourdough bread its signature\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,496,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]],[356,496,[\\\"
+        leaves to create various blends, alongside the natural yeast and lactobacilli
+        fermentation process that gives sourdough bread its signature\\\"]]]]]],[[[\\\"fa240a0f-2e61-4c77-9f76-293b1f9e5eec\\\"],[null,0,172]],[[\\\"43a61940-0abf-490b-8f18-9df0d7ec8495\\\"],[null,172,266]],[[\\\"c30e6b04-b727-4a89-a633-6b481c806bf6\\\"],[null,357,388]]]],null,null,[[[\\\"fa240a0f-2e61-4c77-9f76-293b1f9e5eec\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"fa240a0f-2e61-4c77-9f76-293b1f9e5eec\\\"]]],[[\\\"43a61940-0abf-490b-8f18-9df0d7ec8495\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"43a61940-0abf-490b-8f18-9df0d7ec8495\\\"]]],[[\\\"c30e6b04-b727-4a89-a633-6b481c806bf6\\\"],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"c30e6b04-b727-4a89-a633-6b481c806bf6\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"fa240a0f-2e61-4c77-9f76-293b1f9e5eec\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"43a61940-0abf-490b-8f18-9df0d7ec8495\\\"]],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"c30e6b04-b727-4a89-a633-6b481c806bf6\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]],[[null,357,388],[2]]],null,false,null,false]\"]]\n5134\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis* leaves to create various
+        blends [3], alongside the natural yeast and lactobacilli fermentation process
+        that gives sourdough bread its signature tangy flavor and chewy crumb [4].
+        Finally, the sources highlight origami, the traditional Japanese art of folding
+        a single sheet of paper into\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,635,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]],[356,635,[\\\"
+        leaves to create various blends, alongside the natural yeast and lactobacilli
+        fermentation process that gives sourdough bread its signature tangy flavor
+        and chewy crumb. Finally, the sources highlight origami, the traditional Japanese
+        art of folding a single sheet of paper into\\\"]]]]]],[[[\\\"a45043bb-fd9e-47ee-b572-b5f2925d469a\\\"],[null,0,172]],[[\\\"a635c12b-249f-409e-a4ab-2d3e3e50d391\\\"],[null,172,266]],[[\\\"b671f67b-157d-4338-8b93-cbafe4668638\\\"],[null,357,388]],[[\\\"76cf9916-1618-4a0c-b57b-29bf73f05be4\\\"],[null,388,525]]]],null,null,[[[\\\"a45043bb-fd9e-47ee-b572-b5f2925d469a\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"a45043bb-fd9e-47ee-b572-b5f2925d469a\\\"]]],[[\\\"a635c12b-249f-409e-a4ab-2d3e3e50d391\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"a635c12b-249f-409e-a4ab-2d3e3e50d391\\\"]]],[[\\\"b671f67b-157d-4338-8b93-cbafe4668638\\\"],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b671f67b-157d-4338-8b93-cbafe4668638\\\"]]],[[\\\"76cf9916-1618-4a0c-b57b-29bf73f05be4\\\"],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"76cf9916-1618-4a0c-b57b-29bf73f05be4\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"a45043bb-fd9e-47ee-b572-b5f2925d469a\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"a635c12b-249f-409e-a4ab-2d3e3e50d391\\\"]],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b671f67b-157d-4338-8b93-cbafe4668638\\\"]],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"76cf9916-1618-4a0c-b57b-29bf73f05be4\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]],[[null,357,388],[2]],[[null,388,525],[3]]],null,false,null,false]\"]]\n6114\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis* leaves to create various
+        blends [3], alongside the natural yeast and lactobacilli fermentation process
+        that gives sourdough bread its signature tangy flavor and chewy crumb [4].
+        Finally, the sources highlight origami, the traditional Japanese art of folding
+        a single sheet of paper into simple figures or complex geometric forms [5].\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,678,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]],[356,678,[\\\"
+        leaves to create various blends, alongside the natural yeast and lactobacilli
+        fermentation process that gives sourdough bread its signature tangy flavor
+        and chewy crumb. Finally, the sources highlight origami, the traditional Japanese
+        art of folding a single sheet of paper into simple figures or complex geometric
+        forms.\\\"]]]]]],[[[\\\"ba67288e-ab02-40dd-9844-f8b13e64402e\\\"],[null,0,172]],[[\\\"fa29a8f1-ed91-481e-8e27-b3e9755ce7f6\\\"],[null,172,266]],[[\\\"33d18c9c-7a1e-461d-8a2b-efff51a28ce1\\\"],[null,357,388]],[[\\\"3e603d89-c895-478e-89fe-3a043ec9e54f\\\"],[null,388,525]],[[\\\"943f28f9-677e-4e80-9d16-5be1ff4152be\\\"],[null,525,677]]]],null,null,[[[\\\"ba67288e-ab02-40dd-9844-f8b13e64402e\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"ba67288e-ab02-40dd-9844-f8b13e64402e\\\"]]],[[\\\"fa29a8f1-ed91-481e-8e27-b3e9755ce7f6\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"fa29a8f1-ed91-481e-8e27-b3e9755ce7f6\\\"]]],[[\\\"33d18c9c-7a1e-461d-8a2b-efff51a28ce1\\\"],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"33d18c9c-7a1e-461d-8a2b-efff51a28ce1\\\"]]],[[\\\"3e603d89-c895-478e-89fe-3a043ec9e54f\\\"],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"3e603d89-c895-478e-89fe-3a043ec9e54f\\\"]]],[[\\\"943f28f9-677e-4e80-9d16-5be1ff4152be\\\"],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"943f28f9-677e-4e80-9d16-5be1ff4152be\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"ba67288e-ab02-40dd-9844-f8b13e64402e\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"fa29a8f1-ed91-481e-8e27-b3e9755ce7f6\\\"]],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"33d18c9c-7a1e-461d-8a2b-efff51a28ce1\\\"]],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"3e603d89-c895-478e-89fe-3a043ec9e54f\\\"]],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"943f28f9-677e-4e80-9d16-5be1ff4152be\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]],[[null,357,388],[2]],[[null,388,525],[3]],[[null,525,677],[4]]],null,false,null,false]\"]]\n6114\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis* leaves to create various
+        blends [3], alongside the natural yeast and lactobacilli fermentation process
+        that gives sourdough bread its signature tangy flavor and chewy crumb [4].
+        Finally, the sources highlight origami, the traditional Japanese art of folding
+        a single sheet of paper into simple figures or complex geometric forms [5].\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,678,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]],[356,678,[\\\"
+        leaves to create various blends, alongside the natural yeast and lactobacilli
+        fermentation process that gives sourdough bread its signature tangy flavor
+        and chewy crumb. Finally, the sources highlight origami, the traditional Japanese
+        art of folding a single sheet of paper into simple figures or complex geometric
+        forms.\\\"]]]]]],[[[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"],[null,0,172]],[[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"],[null,172,266]],[[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"],[null,357,388]],[[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"],[null,388,525]],[[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"],[null,525,677]]]],null,null,[[[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"]]],[[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"]]],[[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"]]],[[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"]]],[[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"]],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"]],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"]],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]],[[null,357,388],[2]],[[null,388,525],[3]],[[null,525,677],[4]]],null,false,null,false]\"]]\n6113\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis* leaves to create various
+        blends [3], alongside the natural yeast and lactobacilli fermentation process
+        that gives sourdough bread its signature tangy flavor and chewy crumb [4].
+        Finally, the sources highlight origami, the traditional Japanese art of folding
+        a single sheet of paper into simple figures or complex geometric forms [5].\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,678,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]],[356,678,[\\\"
+        leaves to create various blends, alongside the natural yeast and lactobacilli
+        fermentation process that gives sourdough bread its signature tangy flavor
+        and chewy crumb. Finally, the sources highlight origami, the traditional Japanese
+        art of folding a single sheet of paper into simple figures or complex geometric
+        forms.\\\"]]]]]],[[[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"],[null,0,172]],[[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"],[null,172,266]],[[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"],[null,357,388]],[[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"],[null,388,525]],[[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"],[null,525,677]]]],null,null,[[[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"]]],[[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"]]],[[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"]]],[[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"]]],[[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"]],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"]],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"]],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]],[[null,357,388],[2]],[[null,388,525],[3]],[[null,525,677],[4]]],null,false,null,true]\"]]\n6512\n[[\"wrb.fr\",null,\"[[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise [1], and the function of lighthouses as coastal towers designed
+        to warn ships of dangerous shoals [2]. Culinary topics are also explored through
+        the preparation of tea using *Camellia sinensis* leaves to create various
+        blends [3], alongside the natural yeast and lactobacilli fermentation process
+        that gives sourdough bread its signature tangy flavor and chewy crumb [4].
+        Finally, the sources highlight origami, the traditional Japanese art of folding
+        a single sheet of paper into simple figures or complex geometric forms [5].\\\",null,[\\\"c8c0a30c-530e-48ba-9b7e-09acc8c44078\\\",\\\"1c945f6d-e655-4476-ba8b-8237c8d2f462\\\",3614020932],null,[[[[0,678,[[[0,339,[\\\"The
+        provided texts cover a diverse array of subjects, beginning with the definition
+        of bicycles as pedal-driven, two-wheeled vehicles widely used for transport
+        and exercise, and the function of lighthouses as coastal towers designed to
+        warn ships of dangerous shoals. Culinary topics are also explored through
+        the preparation of tea using \\\"]],[339,356,[\\\"Camellia sinensis\\\",[null,true]]],[356,678,[\\\"
+        leaves to create various blends, alongside the natural yeast and lactobacilli
+        fermentation process that gives sourdough bread its signature tangy flavor
+        and chewy crumb. Finally, the sources highlight origami, the traditional Japanese
+        art of folding a single sheet of paper into simple figures or complex geometric
+        forms.\\\"]]]]]],[[[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"],[null,0,172]],[[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"],[null,172,266]],[[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"],[null,357,388]],[[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"],[null,388,525]],[[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"],[null,525,677]]]],null,null,[[[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"],[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"]]],[[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"]]],[[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"]]],[[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"]]],[[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"]]]],1]],[[null,null,0.672048879626009,[[null,0,170]],[[[0,170,[[[0,170,[\\\"Bicycles
+        are human-powered, pedal-driven vehicles with two wheels attached to a frame.
+        They are widely used for transport, recreation, and exercise across many countries.\\\"]]]]]]],[[[\\\"ff969d2c-66ca-4ab4-9a12-0340243ec89b\\\"],\\\"dc8b1733-9426-4eac-b217-5c3c6e0a191a\\\"]],[\\\"94dd4a15-d5e7-4498-bf41-3f8e6249615d\\\"]],[null,null,0.673591688455816,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Lighthouses
+        are towers built near coastlines to emit light and warn ships of dangerous
+        shoals. Their construction varies with terrain but the navigational role is
+        consistent worldwide.\\\"]]]]]]],[[[\\\"1f17eb66-f138-4593-96ec-4b9483a04438\\\"],\\\"80a52d7b-a6c0-4ba7-943a-3ded663830af\\\"]],[\\\"f4ea645d-6c6b-4f7c-bb1d-202bec1916d1\\\"]],[null,null,0.6842956020470552,[[null,0,179]],[[[0,179,[[[0,179,[\\\"Tea
+        is a beverage prepared by pouring hot water over cured leaves of the Camellia
+        sinensis plant. Different processing methods yield green, black, oolong, and
+        white tea varieties.\\\"]]]]]]],[[[\\\"d6d693fc-f902-46b6-84dd-8ff6bedd3d0e\\\"],\\\"849b0bb9-14d5-4ba8-bff1-a126d9703f28\\\"]],[\\\"b8823962-7f92-4c53-880a-8e56a30c7a01\\\"]],[null,null,0.676517677401691,[[null,0,184]],[[[0,184,[[[0,184,[\\\"Sourdough
+        bread is leavened by naturally occurring yeasts and lactobacilli in a flour-and-water
+        starter. The long fermentation produces the characteristic tangy flavor and
+        chewy crumb.\\\"]]]]]]],[[[\\\"effd61f0-228a-48ce-9635-c3b67506ec52\\\"],\\\"868def75-a325-4326-8b4e-538b00bb4ce7\\\"]],[\\\"74e62eee-863f-41a6-9825-21f7c5b8ae14\\\"]],[null,null,0.6665746004957217,[[null,0,174]],[[[0,174,[[[0,174,[\\\"Origami
+        is the Japanese art of paper folding. Starting from a single sheet, a sequence
+        of folds produces shapes ranging from simple cranes to complex modular geometric
+        forms.\\\"]]]]]]],[[[\\\"223c7a95-00fb-4bcd-ad61-e49824879945\\\"],\\\"ccd2fca8-9768-469b-b330-a72436ccd8b5\\\"]],[\\\"296dab92-9b15-407e-a9c1-732e2204a531\\\"]]],[[[null,0,172],[0]],[[null,172,266],[1]],[[null,357,388],[2]],[[null,388,525],[3]],[[null,525,677],[4]]],[[\\\"Quelles
+        sont les diff\xE9rentes vari\xE9t\xE9s de th\xE9 mentionn\xE9es ?\\\",\\\"Comment
+        fonctionne la fermentation naturelle du pain au levain ?\\\",\\\"Quels types
+        de formes peut-on cr\xE9er avec l'origami ?\\\"]],true,[[[\\\"Quelles sont
+        les diff\xE9rentes vari\xE9t\xE9s de th\xE9 mentionn\xE9es ?\\\",9],[\\\"Comment
+        fonctionne la fermentation naturelle du pain au levain ?\\\",9],[\\\"Quels
+        types de formes peut-on cr\xE9er avec l'origami ?\\\",9]]],true]\"]]\n60\n[[\"di\",10146],[\"af.httprm\",10146,\"-3035937372872614014\",13]]\n26\n[[\"e\",15,null,null,41886]]\n"
+    headers:
+      Accept-CH:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Security-Policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      Content-Type:
+      - application/json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin-allow-popups
+      Cross-Origin-Resource-Policy:
+      - same-site
+      Date:
+      - Fri, 15 May 2026 19:26:17 GMT
+      Expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      Permissions-Policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      Pragma:
+      - no-cache
+      Server:
+      - ESF
+      Set-Cookie:
+      - SIDCC=SCRUBBED; expires=Sat, 15-May-2027 19:26:20 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 19:26:20 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 19:26:20 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Sat, 15-May-2027 19:26:20 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 19:26:20 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 19:26:20 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '41886'
+    status:
+      code: 200
+      message: OK
+version: 1
