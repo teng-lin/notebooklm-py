@@ -44,6 +44,12 @@ import pytest
 
 from notebooklm import auth as auth_mod
 
+# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
+# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
+# was missed when this file landed (PR #621 T7.F4 merged the same day
+# as PR #622 T8.D11 tier-enforcement).
+pytestmark = pytest.mark.allow_no_vcr
+
 
 @pytest.fixture(autouse=True)
 def _clear_refresh_state():

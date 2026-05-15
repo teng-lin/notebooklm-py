@@ -1,9 +1,9 @@
-"""Phase 3 P3.5 — opt-in 429 retry budget on `ClientCore.rpc_call`.
+"""Phase 3 P3.5 / T7.H2 — 429 retry budget on ``ClientCore.rpc_call``.
 
-Default behavior (`rate_limit_max_retries=0`) preserves the pre-Phase-3
-contract: raise ``RateLimitError`` on the first 429. Opting in to a positive
-budget enables bounded automatic retries that sleep for the (clamped)
-``Retry-After`` value.
+T7.H2 raises the ``rate_limit_max_retries`` default from ``0`` to ``3``
+and adds capped exponential backoff as the sleep fallback when 429
+arrives without a parseable ``Retry-After`` header (audit §11). Setting
+``rate_limit_max_retries=0`` still restores raise-immediately behavior.
 """
 
 from __future__ import annotations
@@ -110,12 +110,44 @@ async def test_rate_limit_no_retry_if_disabled(auth_tokens):
 
 
 @pytest.mark.asyncio
-async def test_rate_limit_no_retry_without_header(auth_tokens):
-    """No Retry-After header → raise immediately even with budget>0."""
+async def test_rate_limit_exp_backoff_fallback_without_header(auth_tokens):
+    """No Retry-After header → fall back to capped exponential backoff (T7.H2).
+
+    Pre-T7.H2, a 429 without ``Retry-After`` raised immediately even with
+    budget>0. Audit §11 widened the retry circle: when the header is
+    missing, the loop sleeps for ``min(2 ** attempt, 30)`` seconds with
+    ±20% jitter and retries until the budget is exhausted, matching the
+    5xx path.
+    """
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.post.return_value = _build_429(retry_after=None)
 
     core = ClientCore(auth_tokens, rate_limit_max_retries=2)
+    core._http_client = mock_client
+
+    sleeps: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    with patch("asyncio.sleep", side_effect=_record_sleep), pytest.raises(RateLimitError):
+        await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
+
+    # Initial + 2 retries = 3 POSTs before RateLimitError raises.
+    assert mock_client.post.call_count == 3
+    # 2 retries -> 2 backoff sleeps. Schedule: 2**0=1, 2**1=2, ±20% jitter.
+    assert len(sleeps) == 2
+    assert 0.8 <= sleeps[0] <= 1.2, f"attempt 1 backoff out of range: {sleeps[0]}"
+    assert 1.6 <= sleeps[1] <= 2.4, f"attempt 2 backoff out of range: {sleeps[1]}"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_no_retry_without_header_when_disabled(auth_tokens):
+    """``rate_limit_max_retries=0`` short-circuits even without a header."""
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_client.post.return_value = _build_429(retry_after=None)
+
+    core = ClientCore(auth_tokens, rate_limit_max_retries=0)
     core._http_client = mock_client
 
     with pytest.raises(RateLimitError):

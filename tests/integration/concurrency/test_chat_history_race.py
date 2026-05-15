@@ -35,6 +35,12 @@ import pytest
 
 from notebooklm import NotebookLMClient
 
+# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
+# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
+# was missed when this file landed (PR #616 T7.F1 merged the same day
+# as PR #622 T8.D11 tier-enforcement).
+pytestmark = pytest.mark.allow_no_vcr
+
 
 def _build_chat_response_body(answer_text: str, conversation_id: str) -> str:
     """Build a minimal streamed-chat response containing ``answer_text``.

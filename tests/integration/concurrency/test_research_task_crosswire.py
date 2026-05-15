@@ -46,6 +46,12 @@ from notebooklm import NotebookLMClient
 from notebooklm.exceptions import ResearchTaskMismatchError
 from notebooklm.rpc import RPCMethod
 
+# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
+# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
+# was missed when this file landed (PR #619 T7.F3 merged the same day
+# as PR #622 T8.D11 tier-enforcement).
+pytestmark = pytest.mark.allow_no_vcr
+
 
 def _build_completed_task_payload(query: str, source_url: str, source_title: str) -> list:
     """Build a single ``POLL_RESEARCH`` task_info entry for a completed task.

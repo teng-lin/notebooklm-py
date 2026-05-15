@@ -282,7 +282,7 @@ class NotebookLMClient:
         profile: str | None = None,
         keepalive: float | None = None,
         keepalive_min_interval: float = 60.0,
-        rate_limit_max_retries: int = 0,
+        rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: ConnectionLimits | None = None,
     ) -> "NotebookLMClient"
@@ -292,7 +292,7 @@ class NotebookLMClient:
         storage_path: Path | None = None,
         keepalive: float | None = None,
         keepalive_min_interval: float = 60.0,
-        rate_limit_max_retries: int = 0,
+        rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: ConnectionLimits | None = None,
     )
@@ -315,11 +315,18 @@ for the full layered story.
   `httpx.RequestError` (timeouts, connect errors) with exponential backoff
   capped at 30 seconds (`min(2 ** attempt, 30)`, plus ±20% jitter to
   desynchronize concurrent retries). Set to `0` to disable.
-- `rate_limit_max_retries` (default `0`) retries HTTP 429 responses when the
-  `Retry-After` header is parseable. The default of `0` preserves the
-  pre-Phase-3 contract of raising `RateLimitError` immediately so callers
-  can implement their own back-off policy; bump to a positive value to opt
-  into automatic retry.
+- `rate_limit_max_retries` (default `3` since T7.H2 — audit §11) retries
+  HTTP 429 responses. Each retry sleeps for the server's `Retry-After`
+  value when parseable; otherwise the loop falls back to the same
+  capped-exponential-backoff schedule used for 5xx (`min(2 ** attempt,
+  30)` seconds with ±20% jitter) so the positive default is still
+  useful when Google omits the hint. Set to `0` to restore the
+  pre-T7.H2 contract of raising `RateLimitError` immediately (e.g. when
+  the calling code implements its own bespoke back-off policy). Mutating
+  create RPCs (`notebooks.create`, `sources.add_url`,
+  `sources.add_youtube`) opt out of this loop via `disable_internal_retries`
+  so the API-layer `idempotent_create` wrapper can own probe-then-retry
+  recovery — see T7.B2.
 - `limits` accepts a `ConnectionLimits` dataclass to tune the underlying
   `httpx` connection pool. The default (`ConnectionLimits()`) sets
   `max_connections=100`, `max_keepalive_connections=50`,
@@ -330,11 +337,14 @@ for the full layered story.
 ```python
 from notebooklm import ConnectionLimits, NotebookLMClient
 
-# Allow up to 3 retries on rate limits, widen the pool for a heavy worker
+# Default ``rate_limit_max_retries=3`` is on; widen the pool for a heavy worker
 async with await NotebookLMClient.from_storage(
-    rate_limit_max_retries=3,
     limits=ConnectionLimits(max_connections=200, max_keepalive_connections=100),
 ) as client:
+    ...
+
+# Opt out of automatic 429 retries (e.g. for a bespoke back-off layer)
+async with await NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
     ...
 ```
 

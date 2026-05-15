@@ -55,6 +55,12 @@ from notebooklm._core import ClientCore
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
+# Mock-only test (no real HTTP, no cassette) — opt out of the T8.D11
+# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
+# was missed when this file landed (PR #620 T7.F2 merged the same day
+# as PR #622 T8.D11 tier-enforcement).
+pytestmark = pytest.mark.allow_no_vcr
+
 # -- Generation tagging -----------------------------------------------------
 #
 # Each "generation" of credentials is a monotonic integer N. We encode N
