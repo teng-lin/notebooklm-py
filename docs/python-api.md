@@ -241,7 +241,7 @@ Main client class providing access to all APIs.
 class NotebookLMClient:
     notebooks: NotebooksAPI    # Notebook operations
     sources: SourcesAPI        # Source management
-    artifacts: ArtifactsAPI    # AI-generated content
+    artifacts: ArtifactsAPI    # Artifact operations (audio, video, reports, etc.)
     chat: ChatAPI              # Conversations
     research: ResearchAPI      # Web/Drive research
     notes: NotesAPI            # User notes
@@ -316,6 +316,8 @@ async with await NotebookLMClient.from_storage(
 
 ### NotebooksAPI (`client.notebooks`)
 
+**CLI equivalent:** [Notebook Commands](cli-reference.md#notebook-commands) — `notebooklm list`, `create`, `delete`, `rename`, `summary`.
+
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `list()` | - | `list[Notebook]` | List all notebooks |
@@ -369,6 +371,8 @@ print(url)
 ---
 
 ### SourcesAPI (`client.sources`)
+
+**CLI equivalent:** [Source Commands](cli-reference.md#source-commands-notebooklm-source-cmd) — `notebooklm source add`, `list`, `get`, `fulltext`, `guide`, `rename`, `refresh`, `delete`, `wait`.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -442,6 +446,8 @@ print(f"Keywords: {guide['keywords']}")
 
 ### ArtifactsAPI (`client.artifacts`)
 
+**CLI equivalent:** [Artifact Commands](cli-reference.md#artifact-commands-notebooklm-artifact-cmd) — `notebooklm artifact list`, `get`, `rename`, `delete`, `export`, `poll`, `wait`. Generation methods map to [Generate Commands](cli-reference.md#generate-commands-notebooklm-generate-type) (`notebooklm generate <type>`); download methods map to [Download Commands](cli-reference.md#download-commands-notebooklm-download-type) (`notebooklm download <type>`).
+
 #### Core Methods
 
 | Method | Parameters | Returns | Description |
@@ -454,6 +460,8 @@ print(f"Keywords: {guide['keywords']}")
 | `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation |
 
 #### Type-Specific List Methods
+
+**CLI equivalent:** `notebooklm artifact list --type <audio|video|slide-deck|quiz|flashcard|infographic|data-table|mind-map|report>` (see [Artifact Commands](cli-reference.md#artifact-commands-notebooklm-artifact-cmd)).
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -468,6 +476,8 @@ print(f"Keywords: {guide['keywords']}")
 
 #### Generation Methods
 
+**CLI equivalent:** [Generate Commands](cli-reference.md#generate-commands-notebooklm-generate-type) — `notebooklm generate audio`, `video`, `slide-deck`, `quiz`, `flashcards`, `infographic`, `data-table`, `mind-map`, `report`.
+
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `generate_audio(...)` | See below | `GenerationStatus` | Generate podcast |
@@ -481,6 +491,8 @@ print(f"Keywords: {guide['keywords']}")
 | `generate_mind_map(...)` | See below | `dict` | Generate mind map |
 
 #### Downloading Artifacts
+
+**CLI equivalent:** [Download Commands](cli-reference.md#download-commands-notebooklm-download-type) — `notebooklm download audio`, `video`, `slide-deck`, `infographic`, `report`, `mind-map`, `data-table`, `quiz`, `flashcards`.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -551,6 +563,8 @@ path = await client.artifacts.download_flashcards(nb_id, "cards.md", output_form
 #### Export Methods
 
 Export artifacts to Google Docs or Google Sheets.
+
+**CLI equivalent:** `notebooklm artifact export <id> --title TEXT --type [docs|sheets]` (see [Artifact Commands](cli-reference.md#artifact-commands-notebooklm-artifact-cmd)).
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -673,6 +687,8 @@ else:
 
 ### ChatAPI (`client.chat`)
 
+**CLI equivalent:** [Chat Commands](cli-reference.md#chat-commands) — `notebooklm ask`, `configure`, `history`.
+
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `ask(notebook_id, question, ...)` | `str, str, ...` | `AskResult` | Ask a question |
@@ -728,6 +744,8 @@ await client.chat.configure(
 ---
 
 ### ResearchAPI (`client.research`)
+
+**CLI equivalent:** [Research Commands](cli-reference.md#research-commands-notebooklm-research-cmd) (`notebooklm research status`, `wait`) plus `notebooklm source add-research` ([Source: `add-research`](cli-reference.md#source-add-research)) for the combined start-and-import workflow.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -826,6 +844,8 @@ print(f"Imported {len(imported)} sources")
 
 ### NotesAPI (`client.notes`)
 
+**CLI equivalent:** [Note Commands](cli-reference.md#note-commands-notebooklm-note-cmd) — `notebooklm note list`, `create`, `get`, `save`, `rename`, `delete`.
+
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `list(notebook_id)` | `str` | `list[Note]` | List text notes (excludes mind maps) |
@@ -870,6 +890,8 @@ await client.notes.delete_mind_map(nb_id, mind_map_id)
 
 ### SettingsAPI (`client.settings`)
 
+**CLI equivalent:** [Language Commands](cli-reference.md#language-commands-notebooklm-language-cmd) — `notebooklm language get`, `set`, `list`. Account limits and tier do not yet have a dedicated CLI surface; use `notebooklm status` for context.
+
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `get_output_language()` | none | `Optional[str]` | Get current output language setting |
@@ -904,6 +926,8 @@ print(f"Language set to: {result}")
 ---
 
 ### SharingAPI (`client.sharing`)
+
+**CLI equivalent:** [Share commands](cli-reference.md#share-status-public-view-level-add-update-remove) — `notebooklm share status`, `public`, `view-level`, `add`, `update`, `remove`.
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
@@ -1006,6 +1030,8 @@ class Source:
         """status == SourceStatus.ERROR"""
 ```
 
+> **Deprecated:** `Source.source_type` emits `DeprecationWarning` and will be removed in v0.5.0 — use `Source.kind` instead. See [stability.md → Currently Deprecated](stability.md#currently-deprecated) for the full migration table.
+
 **Type Identification:**
 
 Use the `.kind` property to identify source types. It returns a `SourceType` enum which is also a `str`, enabling both enum and string comparisons:
@@ -1063,6 +1089,8 @@ class Artifact:
 ```
 
 **Note on `_artifact_type` / `_variant`:** these are private (leading-underscore) fields with `repr=False` and are part of the dataclass for `from_api_response()` round-tripping. Always consume them via the public `.kind`, `.is_quiz`, `.is_flashcards`, and `.report_subtype` accessors — the underscore prefix signals that direct access is unsupported and subject to change without notice.
+
+> **Deprecated:** `Artifact.artifact_type` and `Artifact.variant` emit `DeprecationWarning` and will be removed in v0.5.0 — use `Artifact.kind` (plus `.is_quiz` / `.is_flashcards`) instead. See [stability.md → Currently Deprecated](stability.md#currently-deprecated) for the full migration table.
 
 **Type Identification:**
 
@@ -1258,6 +1286,8 @@ class SourceFulltext:
     ) -> list[tuple[str, int]]:
         """Search for citation text, return list of (context, position) tuples."""
 ```
+
+> **Deprecated:** `SourceFulltext.source_type` emits `DeprecationWarning` and will be removed in v0.5.0 — use `SourceFulltext.kind` instead. See [stability.md → Currently Deprecated](stability.md#currently-deprecated) for the full migration table.
 
 **Type Identification:**
 
