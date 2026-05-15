@@ -364,6 +364,17 @@ def _lint_cassette(path: Path) -> list[str]:
     # and response bodies, before YAML re-quoting strips escapes).
     failures.extend(f"leak: {leak}" for leak in _find_leaks(raw_text))
 
+    # T8.E4 — synthetic-error cassettes (``error_synthetic_*.yaml``) carry
+    # canonical error bodies from
+    # ``tests.cassette_patterns.build_synthetic_error_response``: JSON
+    # ``{"error": {...}}`` shapes whose ONLY purpose is to drive the client's
+    # exception-mapping branches. They never contain a WRB envelope (real
+    # Google error responses don't either) and they don't carry a chunked
+    # XSSI body, so assertion A (rpcids ↔ WRB id alignment) and assertion C
+    # (chunked byte-count accuracy) are not applicable. The B (f.req decode)
+    # and D (leak patterns) checks still run.
+    is_synthetic_error = path.name.startswith("error_synthetic_")
+
     interactions = data.get("interactions") or []
     for idx, interaction in enumerate(interactions):
         req = interaction.get("request") or {}
@@ -394,6 +405,11 @@ def _lint_cassette(path: Path) -> list[str]:
             shape_err = _check_chat_ask_shape(freq)
             if shape_err:
                 failures.append(f"interaction[{idx}] {shape_err}")
+
+        if is_synthetic_error:
+            # Synthetic error cassettes carry a JSON error body, not a WRB
+            # envelope or chunked XSSI body — assertions A and C don't apply.
+            continue
 
         # A — rpcids in URL must match WRB ids in response
         wrb_ids = _wrb_ids_from_response(resp_body)
