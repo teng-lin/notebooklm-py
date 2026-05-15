@@ -37,15 +37,18 @@ that yield the heartbeat could be terminated before it ever recorded
 the "after" timestamp, and the gap detector would see only pre-block
 samples and report a misleadingly small gap.
 
-``MAX_GAP_MS`` is set to 50 ms (5x the nominal heartbeat). CI scheduling
-jitter can produce occasional 20-40 ms gaps; a 200 ms blocking stub
-produces gaps >> 100 ms. The gap between those two regimes is wide.
+``MAX_GAP_MS`` is set to 100 ms (10x the nominal heartbeat). CI
+scheduling jitter on green runs has been observed up to ~55 ms on
+slower runners (macos-3.14 GHA); the 200 ms blocking stub produces
+gaps >> 200 ms post-regression. 100 ms gives a 2x margin over
+observed jitter while staying clearly below the regression signal.
 
-Tightness note: the spec named 50 ms as an example bound; on a busy
-runner an occasional 30-40 ms gap from the asyncio scheduler is normal
-even with no blocking call, so 50 ms is the floor below which we'd see
-false positives. We assert ``max_gap_ms < 50`` rather than a percentile
-because a single >= 100 ms gap is the signal we're hunting.
+Tightness note: the spec named 50 ms as an example bound, but the
+first CI cycle on PR #579 surfaced a 55 ms green-run jitter on
+macos-3.14. We assert ``max_gap_ms < MAX_GAP_MS`` rather than a
+percentile because a single >= 200 ms gap is the signal we're hunting
+— a too-tight bound trades false positives against detection delta,
+and at 100 ms the regression signal is still 2x above the bound.
 """
 
 from __future__ import annotations
@@ -62,11 +65,21 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
 # A "slow filesystem" or "slow auth store" simulation. 200 ms is well
-# above any plausible scheduler hiccup on CI and far above the 50 ms
-# assertion bound, so a regression where the call moves back onto the
-# loop is unambiguous.
+# above any plausible scheduler hiccup on CI and far above the
+# ``MAX_GAP_MS`` assertion bound, so a regression where the call
+# moves back onto the loop is unambiguous (the gap balloons to
+# ~200 ms+ post-regression).
 BLOCKING_SLEEP_S = 0.2
-MAX_GAP_MS = 50.0
+# Heartbeat-gap regression threshold. Picking a tight bound:
+#   - heartbeat ticks at 10 ms cadence
+#   - the macos-3.14 GHA runner observed 55 ms scheduling jitter on
+#     a green run (PR #579 first CI cycle) — so 50 ms is too tight
+#     for that runner
+#   - 100 ms gives a 2x safety margin over the worst observed jitter
+#     while still leaving a 100 ms gap below the regression signal
+#     (~200 ms). The two regimes (40-60 ms jitter vs. 200 ms block)
+#     stay clearly separated.
+MAX_GAP_MS = 100.0
 # Time we yield to the loop after the download completes so the heartbeat
 # can record at least one post-block timestamp before we stop it. Must be
 # (a) larger than the heartbeat's 10 ms tick interval and (b) much smaller
@@ -429,9 +442,18 @@ async def test_download_urls_batch_cookie_load_does_not_block_event_loop(
     await asyncio.sleep(SETTLE_S)
 
     try:
+        # Use ``new=`` (direct function replacement) instead of
+        # ``side_effect=`` so the patched symbol is a plain Python
+        # function. On Windows CI we observed MagicMock-with-side_effect
+        # produce 200 ms loop blocks even when wrapped in
+        # ``asyncio.to_thread`` — the Mock invocation machinery (lock
+        # acquisition, attribute access) appears to leak back onto the
+        # event-loop thread under the GIL on some Python/OS combos.
+        # A plain function in the worker thread is the simplest fix and
+        # produces consistent behavior across all matrix entries.
         with patch(
             "notebooklm._artifacts.load_httpx_cookies",
-            side_effect=slow_load_httpx_cookies,
+            new=slow_load_httpx_cookies,
         ):
             # Empty URL list: the cookie-load runs (the thing we're
             # measuring), then the per-URL ``for`` loop exits without
