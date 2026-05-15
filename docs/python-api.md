@@ -53,13 +53,7 @@ notebooks, sources = await asyncio.gather(
 )
 ```
 
-The client is **not thread-safe**. Do not share a `NotebookLMClient` across threads or across multiple event loops. Create one client per loop.
-
-#### Behavior under concurrent token refresh
-
-The current implementation does not snapshot auth state at the start of each RPC. If a token refresh completes while an RPC is in flight, the in-flight call may observe a mix of pre-refresh and post-refresh credentials between its URL build (`_build_url`), body build (`build_request_body`), and HTTP send (`_http_client.post`). The typical visible symptom is a 401 that triggers a retry — which the client handles transparently.
-
-A consistent `(csrf_token, session_id, cookies)` snapshot per `rpc_call` is planned for a later phase of the remediation work; the snapshot will eliminate the mixed-credential window. Until then, treat the auth-refresh path as best-effort: concurrent RPCs across a refresh boundary may individually fail and retry, but state will not become silently corrupted.
+The client is **not thread-safe**. Do not share a `NotebookLMClient` across threads or across multiple event loops. Create one client per loop. The loop-affinity guard added in T7.G2 raises a clear `RuntimeError` on the authed POST hot path if you do — see the [Concurrency contract](#concurrency-contract) section below for the full guarantees, non-guarantees, and production patterns.
 
 If we ever provide thread-safety, it will be a versioned, opt-in API change. Do not assume it.
 
@@ -257,6 +251,265 @@ except NonIdempotentRetryError:
 
 ---
 
+## Concurrency contract
+
+This section is the canonical answer to "is `NotebookLMClient` safe to use from
+multiple coroutines / threads / processes / event loops?" — synthesizing the
+guarantees, non-guarantees, and production patterns established by the
+Tier 7 thread-safety remediation arc (Waves 2–5, ~30 PRs merged 2026-05-14/15;
+see `.sisyphus/plans/tier-7-thread-safety-concurrency.md` for the audit trail).
+
+If you only read one subsection, read **[Non-guarantees](#non-guarantees)** —
+the guard rails are narrow.
+
+### Guarantees
+
+**Per-loop async safety.** A `NotebookLMClient` instance is bound to the
+event loop on which it was opened. A loop-affinity guard (T7.G2) checks
+the active loop on the authed POST hot path — `rpc_call()` →
+`query_post()` → `_perform_authed_post()` — and raises a clear `RuntimeError`
+when the instance is re-used from a different loop. **Scope limitation:** the
+guard fires on the hot path only. Two cold paths reach asyncio primitives
+before the guard runs:
+
+- `ChatAPI.ask` calls `next_reqid()` before its `query_post() →
+  _perform_authed_post` chain. The first cross-loop call's `_reqid_lock` will
+  raise a deep asyncio `RuntimeError` (not the friendly G2 message).
+- `close()` awaits `save_cookies` + `aclose` and never routes through
+  `_perform_authed_post`; cross-loop close gets a deep asyncio error.
+
+In both cases you still get a `RuntimeError` — just an opaque one. **Best
+practice:** one client per loop, full stop.
+
+**Refresh deduplication** (T7.C1, audit §13). Concurrent RPCs that all
+trigger a token refresh share a single underlying refresh attempt via
+`_refresh_lock` + `asyncio.shield`. Waiter cancellation does not kill the
+shared refresh task; the next caller in line picks up the finished tokens.
+
+**Reqid monotonicity** (T7.A2, existing). `next_reqid()` returns a monotonic
+sequence across concurrent coroutines on the same client. Guarded by
+`_reqid_lock`.
+
+**Per-attempt and across-attempt auth snapshot atomicity** (T7.F2,
+audit §12). `_auth_snapshot_lock` serializes `_AuthSnapshot` reads against
+the refresh-side mutation block. `_build_url` consumes the snapshot rather
+than reading live `session_id` / `authuser` / `account_email` fields, so a
+refresh completing mid-RPC no longer produces a URL built from a mix of
+pre- and post-refresh credentials. (This obsoletes the warning in the
+older "Concurrency model" subsection above.)
+
+**Idempotent create RPCs** (T7.B2, audit §5). The following calls are
+idempotent under retry via probe-then-create (when `idempotent=True`,
+which is the default):
+
+- `client.notebooks.create(title)`
+- `client.sources.add_url(notebook_id, url)` (YouTube URLs are auto-detected
+  and routed through the YouTube source pathway internally)
+
+`client.sources.add_text(notebook_id, title, content)` is **declared
+non-idempotent**: text sources lack a reliable server-side dedupe key
+(Google permits duplicate titles, and content is not exposed in source
+listings). With `idempotent=True` it raises `NonIdempotentRetryError`. If
+you set `disable_internal_retries=True` on the client, the probe-then-retry
+wrapper is skipped entirely and the caller is responsible for retry
+semantics.
+
+**Cancellation safety.** Several paths are now shielded against
+cancellation (audit §§13, 15, 16, 21):
+
+- **`close()`** is shielded; Ctrl-C during shutdown will not leak the
+  underlying `httpx.AsyncClient` (T7.B4 — subsumes T7.C2).
+- **`refresh_auth()`** runs the shared refresh task under `asyncio.shield`;
+  cancelling a waiter does not kill the shared refresh (T7.C1).
+- **Upload finalize** is shielded; on cancel signal we issue a best-effort
+  Scotty (Google's internal resumable upload service) cancel to release the
+  server-side upload slot (T7.C3).
+- **`notes.create`** shields the `UPDATE_NOTE` finalize step and cleans up
+  the partial note on cancel (T7.C4).
+- **`wait_for_sources`** cancels sibling pollers on the first poller's
+  failure rather than letting them race to emit error messages (T7.E1).
+- **`wait_for_completion`** uses a leader/follower polling-dedupe registry
+  with a shielded leader task — follower cancellation does not kill the
+  leader's poll (T7.E2).
+
+**Idempotent file uploads.** `SourcesAPI.add_file` closes its file handle
+under a TOCTOU-safe path and gates concurrent uploads via the
+`max_concurrent_uploads` semaphore so a large fan-out can't exhaust the
+per-process file descriptor limit (T7.D3, audit §23).
+
+### Non-guarantees
+
+**NOT thread-safe.** A `NotebookLMClient` instance must not be shared
+across OS threads. The internal locks (`_refresh_lock`, `_reqid_lock`,
+`_auth_snapshot_lock`) are `asyncio.Lock` instances and do not protect
+against concurrent OS-thread access. If you need a client per thread,
+construct one per thread.
+
+**NOT reusable across event loops.** Per the loop-affinity guard above
+(T7.G2), the hot path raises `RuntimeError` when an instance is re-used
+on a different loop. Cold paths (`next_reqid()`, `close()`) raise an
+opaque asyncio `RuntimeError` instead — same outcome, less helpful
+message.
+
+**`_conversation_cache` is per-instance.** Chat-conversation IDs cached
+inside a `NotebookLMClient` are not shared across clients in the same
+process and never persisted across processes. Two clients pointed at the
+same notebook will not share follow-up context.
+
+**Cookies in storage are eventually-consistent across processes.** When
+multiple processes share a storage path, an OS-level file lock plus a
+snapshot/delta merge (see `docs/auth-keepalive.md` §3.4) keep concurrent
+writers from corrupting the file. They may, however, observe brief
+staleness — a write committed by process A may not be visible to a
+sibling read in process B until the next refresh cycle. Within a single
+process, in-process dedupe ensures only one keepalive task runs per
+canonicalized storage path (T7.G6).
+
+### Production patterns
+
+**One client per app, dependency-injected.** A `NotebookLMClient` is
+designed to be a long-lived process resource. In FastAPI, attach it to
+the app lifespan:
+
+```python
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Depends, Request
+from notebooklm import NotebookLMClient
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with await NotebookLMClient.from_storage() as client:
+        app.state.notebooklm = client
+        yield
+    # client.close() happens via __aexit__
+
+def get_client(request: Request) -> NotebookLMClient:
+    return request.app.state.notebooklm
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/notebooks")
+async def list_notebooks(client: NotebookLMClient = Depends(get_client)):
+    return await client.notebooks.list()
+```
+
+Constraint: FastAPI runs on a single event loop per worker, so one client
+per worker is correct. If you run multiple Uvicorn workers, each worker
+owns its own client. **Do not** stash a `NotebookLMClient` on a
+process-global outside the lifespan — multi-worker servers fork the
+process and you will end up with the same client object referencing
+different event loops.
+
+**`ConnectionLimits` tuning** (T7.B3). The HTTP pool defaults
+(`max_connections=100`, `max_keepalive_connections=50`,
+`keepalive_expiry=30.0`) are sized for typical batchexecute fan-out: a
+few dozen concurrent RPCs against a single host with keep-alives held
+for an interactive session. Tune via `notebooklm.types.ConnectionLimits`:
+
+```python
+from notebooklm import NotebookLMClient
+from notebooklm.types import ConnectionLimits
+
+limits = ConnectionLimits(
+    max_connections=200,         # widen the pool for a heavy worker
+    max_keepalive_connections=100,
+    keepalive_expiry=60.0,
+)
+client = NotebookLMClient(auth, limits=limits, max_concurrent_rpcs=64)
+```
+
+For single-request CLI workloads the defaults are wasteful but harmless.
+
+**`max_concurrent_rpcs` knob** (T7.H1, audit §8). A semaphore at
+`_perform_authed_post` caps simultaneous in-flight RPC POSTs. Default
+`16` — well below the default pool size so short-lived helper requests
+(refresh GETs, upload preflights) still have pool headroom. Pass `None`
+to opt out entirely (e.g. when an external rate-limiter handles
+back-pressure). The backoff for 429 / 5xx retries is held **inside** the
+semaphore for a circuit-breaker effect: a slow request keeps its slot
+while it waits, so the gate naturally throttles fan-out when the server
+is unhappy.
+
+Worst-case slot hold time:
+
+| Path | Bound | Default |
+|---|---|---|
+| 429 retry loop | `rate_limit_max_retries × MAX_RETRY_AFTER_SECONDS` | 3 × 300 = 900s |
+| 5xx / network retry loop | `server_error_max_retries × 30s` (capped backoff) | 3 × 30 = 90s |
+
+If your workload's tail latency is sensitive, lower
+`rate_limit_max_retries` or tighten the semaphore — slot hold time on
+the 429 path is the load-bearing variable.
+
+**Constraint** (enforced at construction): `max_concurrent_rpcs ≤
+ConnectionLimits.max_connections`. A higher RPC ceiling than the pool
+capacity would let the semaphore admit requests the pool can't fulfill,
+producing opaque `httpx.PoolTimeout` errors instead of clean
+back-pressure. The `NotebookLMClient.__init__` / `from_storage()`
+constructor raises `ValueError` if this constraint is violated. The
+semaphore floor (`max_concurrent_rpcs ≥ 1` when not `None`) is enforced
+inside `ClientCore`.
+
+**`max_concurrent_uploads` knob** (T7.D3, audit §23). Default `4`. Gates
+file-upload streaming independently from the RPC throttle because
+uploads use their own `httpx.AsyncClient` (Scotty endpoint) and do not
+share the RPC connection pool. The motivation is FD exhaustion: each
+in-flight upload holds one open file descriptor for the duration of the
+upload, so an unbounded fan-out blows the per-process FD limit. `None`
+resolves to the default (4); truly unbounded uploads are intentionally
+not supported. Must be `≥ 1` when set explicitly.
+
+**Rate-limit retry defaults** (T7.H2). `rate_limit_max_retries=3`,
+`server_error_max_retries=3`. The 429 path honors the `Retry-After`
+header when parseable (clamped at `MAX_RETRY_AFTER_SECONDS = 300s`);
+when the header is absent or unparseable, the loop falls back to
+exponential backoff `min(2^attempt, 30)` seconds with ±20% jitter
+(where `attempt` starts at `0`, so the first retry sleeps ~1 s ± 20%
+before doubling), matching the 5xx path. Set either to `0` to restore
+the pre-T7.H2 behavior of raising `RateLimitError` / `ServerError`
+immediately.
+
+**Upload-timeout configuration** (T7.H3). `client.sources.add_file(...)`
+and the related upload entry points accept an `upload_timeout` argument
+that is decoupled from the global `timeout`. A long-running upload of
+a large file should not have to widen the global HTTP timeout to
+succeed; pass `upload_timeout=600.0` (or larger) to the relevant call
+sites instead.
+
+### Single-process multi-tenant guidance
+
+For a service that handles multiple NotebookLM tenants (different
+`AuthTokens`, typically one per user), spin up **one
+`NotebookLMClient` per tenant**. There is no cross-tenant
+`_conversation_cache` bleed (the cache is per-instance), and the
+loop-affinity guard plus the per-instance refresh state means tenants
+cannot accidentally observe each other's auth.
+
+Cookie storage paths must be canonicalized so two clients pointing at
+the same logical storage file don't run racing keepalive loops; T7.G6
+handles this automatically for the keepalive code path.
+
+### Constraints enforced at construction
+
+These validations run in `NotebookLMClient.__init__` /
+`NotebookLMClient.from_storage()` (and `ClientCore.__init__` for the
+floor checks). All raise `ValueError`:
+
+- `max_concurrent_rpcs ≤ ConnectionLimits.max_connections` when both are
+  set (skipped when either is `None`).
+- `max_concurrent_rpcs ≥ 1` when not `None`.
+- `max_concurrent_uploads ≥ 1` when not `None`.
+- `rate_limit_max_retries ≥ 0`.
+- `server_error_max_retries ≥ 0`.
+- `keepalive` must be `None` or a positive finite number; values below
+  `keepalive_min_interval` (default `60s`) are clamped up to that floor.
+
+---
+
+**Last full audit**: 2026-05-15, HEAD `<placeholder-z1-will-fill>`
+
+---
+
 ## API Reference
 
 ### NotebookLMClient
@@ -323,10 +576,9 @@ for the full layered story.
   useful when Google omits the hint. Set to `0` to restore the
   pre-T7.H2 contract of raising `RateLimitError` immediately (e.g. when
   the calling code implements its own bespoke back-off policy). Mutating
-  create RPCs (`notebooks.create`, `sources.add_url`,
-  `sources.add_youtube`) opt out of this loop via `disable_internal_retries`
-  so the API-layer `idempotent_create` wrapper can own probe-then-retry
-  recovery — see T7.B2.
+  create RPCs (`notebooks.create`, `sources.add_url`) opt out of this loop
+  via `disable_internal_retries` so the API-layer `idempotent_create`
+  wrapper can own probe-then-retry recovery — see T7.B2.
 - `limits` accepts a `ConnectionLimits` dataclass to tune the underlying
   `httpx` connection pool. The default (`ConnectionLimits()`) sets
   `max_connections=100`, `max_keepalive_connections=50`,
