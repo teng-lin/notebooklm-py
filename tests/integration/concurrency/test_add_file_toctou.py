@@ -53,6 +53,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import os
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -71,6 +72,18 @@ pytestmark = pytest.mark.allow_no_vcr
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "POSIX rename-over-open-FD semantics. The test swaps the path via "
+        "os.replace while a validated FD is held; on Windows that raises "
+        "PermissionError because Python opens files without FILE_SHARE_DELETE, "
+        "so the file with an open handle cannot be the rename target. The "
+        "TOCTOU attack vector this guards against is also POSIX-specific — "
+        "Windows itself blocks the rename. POSIX matrix entries cover the "
+        "regression."
+    ),
+)
 async def test_add_file_holds_validated_fd_across_swap(
     auth_tokens,
     tmp_path: Path,

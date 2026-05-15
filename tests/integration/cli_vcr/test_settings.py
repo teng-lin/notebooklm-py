@@ -38,18 +38,18 @@ class TestLanguageSetCommand:
     def test_language_set(self, runner, mock_auth_for_vcr, tmp_path, monkeypatch):
         """``language set en`` writes locally and syncs the single SET RPC.
 
-        Redirects ``HOME`` to ``tmp_path`` so the test never touches the real
-        user's ``~/.notebooklm/config.json``. ``get_config_path`` derives the
-        config path from ``get_home_dir`` which respects ``$HOME``, so the
-        ``set_language(code)`` write lands inside ``tmp_path/.notebooklm/``.
+        Redirects ``NOTEBOOKLM_HOME`` to ``tmp_path`` so the test never touches
+        the real user's ``~/.notebooklm/config.json``. ``get_home_dir`` honors
+        ``$NOTEBOOKLM_HOME`` first; using ``HOME`` would be a no-op on Windows
+        where ``Path.home()`` consults ``%USERPROFILE%`` instead.
         """
-        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         with notebooklm_vcr.use_cassette("cli_settings_set_language.yaml"):
             result = runner.invoke(cli, ["language", "set", "en"])
             assert_command_success(result, allow_no_context=False)
 
         # The local config should now hold the chosen language.
-        config_path = tmp_path / ".notebooklm" / "config.json"
+        config_path = tmp_path / "config.json"
         assert config_path.exists(), "language set must persist config.json locally"
         import json as _json
 
@@ -58,7 +58,7 @@ class TestLanguageSetCommand:
 
     def test_language_set_json(self, runner, mock_auth_for_vcr, tmp_path, monkeypatch):
         """``language set en --json`` emits machine-readable success payload."""
-        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         with notebooklm_vcr.use_cassette("cli_settings_set_language.yaml"):
             result = runner.invoke(cli, ["language", "set", "en", "--json"])
             assert_command_success(result, allow_no_context=False)
@@ -78,7 +78,7 @@ class TestLanguageSetCommand:
         command ever regresses and tries to sync, VCR (in ``record_mode="none"``)
         will raise on the unmatched POST, failing the test loudly.
         """
-        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         # No ``with notebooklm_vcr.use_cassette(...):`` — any HTTP traffic here
         # is a regression. CliRunner traps the exception and surfaces it via
         # ``result.exception`` / non-zero exit code.
