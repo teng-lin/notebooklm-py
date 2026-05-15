@@ -30,6 +30,11 @@ import pytest
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 
+# T8.D11 tier-enforcement opt-out — pure path-canonicalization tests
+# (no HTTP, no client construction beyond keepalive-path argument
+# parsing). No cassette required.
+pytestmark = pytest.mark.allow_no_vcr
+
 
 @pytest.fixture
 def _auth_tokens() -> AuthTokens:

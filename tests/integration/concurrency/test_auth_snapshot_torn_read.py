@@ -55,6 +55,10 @@ from notebooklm._core import ClientCore
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
+# T8.D11 tier-enforcement opt-out — sealed from the network via an
+# in-process ``httpx.MockTransport`` handler. No cassette required.
+pytestmark = pytest.mark.allow_no_vcr
+
 # -- Generation tagging -----------------------------------------------------
 #
 # Each "generation" of credentials is a monotonic integer N. We encode N

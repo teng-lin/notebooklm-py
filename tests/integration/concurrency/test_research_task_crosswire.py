@@ -46,6 +46,11 @@ from notebooklm import NotebookLMClient
 from notebooklm.exceptions import ResearchTaskMismatchError
 from notebooklm.rpc import RPCMethod
 
+# T8.D11 tier-enforcement opt-out — every scenario installs a custom
+# ``httpx.AsyncBaseTransport`` that returns canned POLL_RESEARCH and
+# IMPORT_SOURCES payloads; no cassette required.
+pytestmark = pytest.mark.allow_no_vcr
+
 
 def _build_completed_task_payload(query: str, source_url: str, source_title: str) -> list:
     """Build a single ``POLL_RESEARCH`` task_info entry for a completed task.

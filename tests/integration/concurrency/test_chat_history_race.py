@@ -35,6 +35,11 @@ import pytest
 
 from notebooklm import NotebookLMClient
 
+# T8.D11 tier-enforcement opt-out — every test installs a custom
+# ``httpx.AsyncBaseTransport`` that returns canned responses; no
+# cassette required.
+pytestmark = pytest.mark.allow_no_vcr
+
 
 def _build_chat_response_body(answer_text: str, conversation_id: str) -> str:
     """Build a minimal streamed-chat response containing ``answer_text``.

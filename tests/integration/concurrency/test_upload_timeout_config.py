@@ -29,6 +29,11 @@ import pytest
 
 from notebooklm import NotebookLMClient
 
+# T8.D11 tier-enforcement opt-out — every test patches
+# ``httpx.AsyncClient`` to capture the constructor's timeout argument;
+# no real HTTP traffic, no cassette required.
+pytestmark = pytest.mark.allow_no_vcr
+
 
 @pytest.fixture
 def tmp_upload_file(tmp_path: Path) -> Path:
