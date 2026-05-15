@@ -487,6 +487,20 @@ class ClientCore:
         # would re-introduce the reentrancy ambiguity T7.F2 set out to
         # avoid.
         self._auth_snapshot_lock: asyncio.Lock | None = None
+        # Event-loop affinity guard (audit §14 / T7.G2). Captured in
+        # :meth:`open` and checked in :meth:`_perform_authed_post`; a cheap
+        # ``is`` comparison fails fast when a caller drives the same
+        # ``ClientCore`` from a different loop (typical mistake: instantiating
+        # under ``asyncio.run`` in one thread, then handing the client to
+        # another thread's loop). Each client is per-loop — the asyncio
+        # primitives we hold (``_reqid_lock``, ``_refresh_lock``,
+        # ``_auth_snapshot_lock``, ``_upload_semaphore``, ``_rpc_semaphore``,
+        # the ``httpx.AsyncClient`` pool, in-flight tasks like
+        # ``_refresh_task``/``_keepalive_task``) are all bound to the loop
+        # that ``open()`` ran on; reusing them under a different loop
+        # produces hangs and ``RuntimeError`` deep in httpx instead of an
+        # actionable message at the call site.
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
         # OrderedDict for FIFO eviction when cache exceeds MAX_CONVERSATION_CACHE_SIZE
         self._conversation_cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
         # Keepalive background task configuration
@@ -666,8 +680,19 @@ class ClientCore:
         Called automatically by NotebookLMClient.__aenter__.
         Uses httpx.Cookies jar to properly handle cross-domain redirects
         (e.g., to accounts.google.com for auth token refresh).
+
+        Captures the running event loop in ``self._bound_loop`` so
+        :meth:`_perform_authed_post` can fail fast if the same client is
+        later driven from a different loop (audit §14 / T7.G2). Re-opening
+        on a different loop intentionally replaces the binding — ``open()``
+        is the only binding moment; ``close()`` does not unbind so an
+        accidental cross-loop call after close still raises actionably.
         """
         if self._http_client is None:
+            # Capture event-loop affinity before any awaitable resource is
+            # built so the binding is consistent with the loop that owns
+            # every primitive constructed below (T7.G2 / audit §14).
+            self._bound_loop = asyncio.get_running_loop()
             # Use granular timeouts: shorter connect timeout helps detect network issues
             # faster, while longer read/write timeouts accommodate slow responses
             timeout = httpx.Timeout(
@@ -1109,6 +1134,18 @@ class ClientCore:
         """
         assert self._http_client is not None
         client = self._http_client
+
+        # Event-loop affinity guard (audit §14 / T7.G2). Cheap ``is``
+        # comparison — no per-call list traversal, no extra await. Fails
+        # fast with an actionable message instead of a deep httpx /
+        # asyncio.Lock error when the same client is reused across loops.
+        # Placed BEFORE ``_get_rpc_semaphore()`` so a cross-loop misuse
+        # never even reserves a semaphore slot.
+        if self._bound_loop is not None and asyncio.get_running_loop() is not self._bound_loop:
+            raise RuntimeError(
+                "NotebookLMClient is bound to a different event loop. "
+                "Each client is per-loop; create a new client in the target loop."
+            )
 
         refreshed_this_call = False
         rate_limit_retries = 0
