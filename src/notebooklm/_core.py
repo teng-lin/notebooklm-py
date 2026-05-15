@@ -438,6 +438,16 @@ class ClientCore:
         # so that newer state always wins. Without this, an in-flight keepalive
         # save kicked off before close() can finish *after* close()'s own save
         # and clobber it (an older snapshot overwriting the freshest state).
+        #
+        # Contract (audit §17 / T7.G5):
+        # ``_save_lock`` is acquired ONLY inside ``_save()`` (run on a worker
+        # thread via ``asyncio.to_thread``); never held by an async context to
+        # prevent priority inversion against the event loop. A blocking
+        # ``threading.Lock`` held on the loop thread would stall every other
+        # coroutine — including the keepalive heartbeat and the cancellation
+        # path — while a sibling worker thread does file I/O. Keep all
+        # acquisitions inside the worker closure passed to ``asyncio.to_thread``.
+        # See ``tests/unit/test_save_lock_contract.py`` for the regression guard.
         self._save_lock = threading.Lock()
         # Open-time cookie snapshot — the input to the dirty-flag/delta merge
         # in save_cookies_to_storage. Captured in ``open()`` and forwarded
