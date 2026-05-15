@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 from types import ModuleType
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -176,6 +177,77 @@ def test_log_shim_exposes_install_redaction():
     from notebooklm.log import install_redaction
 
     assert callable(install_redaction)
+
+
+# ---------------------------------------------------------------------------
+# PR-T1 API contract section: public raw-RPC and documented facade imports
+# ---------------------------------------------------------------------------
+
+
+def test_rpc_method_uses_documented_power_user_import_path() -> None:
+    """Raw-RPC examples use notebooklm.rpc.RPCMethod, not notebooklm.types."""
+    from notebooklm.rpc import RPCMethod
+    from notebooklm.rpc.types import RPCMethod as CanonicalRPCMethod
+
+    assert RPCMethod is CanonicalRPCMethod
+
+
+def test_rpc_method_is_not_reexported_from_notebooklm_types() -> None:
+    """RPCMethod is intentionally not part of notebooklm.types in this phase."""
+    import notebooklm.types as public_types
+
+    assert "RPCMethod" not in public_types.__all__
+    assert not hasattr(public_types, "RPCMethod")
+
+
+def test_auth_cookie_domain_constants_are_facade_exports() -> None:
+    """Cookie-domain tiers remain importable from notebooklm.auth."""
+    from notebooklm.auth import (
+        OPTIONAL_COOKIE_DOMAINS,
+        OPTIONAL_COOKIE_DOMAINS_BY_LABEL,
+        REQUIRED_COOKIE_DOMAINS,
+    )
+
+    assert isinstance(REQUIRED_COOKIE_DOMAINS, frozenset)
+    assert isinstance(OPTIONAL_COOKIE_DOMAINS, frozenset)
+    assert isinstance(OPTIONAL_COOKIE_DOMAINS_BY_LABEL, dict)
+    assert frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values()) == OPTIONAL_COOKIE_DOMAINS
+
+
+@pytest.mark.asyncio
+async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
+    """NotebookLMClient.rpc_call is a public delegator to ClientCore.rpc_call."""
+    from notebooklm import NotebookLMClient
+    from notebooklm.auth import AuthTokens
+    from notebooklm.rpc import RPCMethod
+
+    client = NotebookLMClient(
+        AuthTokens(
+            cookies={"SID": "test"},
+            csrf_token="csrf",
+            session_id="session",
+        )
+    )
+    client._core.rpc_call = AsyncMock(return_value={"ok": True})
+
+    result = await client.rpc_call(
+        RPCMethod.CREATE_NOTEBOOK,
+        ["My Notebook"],
+        source_path="/notebook/abc",
+        allow_null=True,
+        _is_retry=True,
+        disable_internal_retries=True,
+    )
+
+    assert result == {"ok": True}
+    client._core.rpc_call.assert_awaited_once_with(
+        method=RPCMethod.CREATE_NOTEBOOK,
+        params=["My Notebook"],
+        source_path="/notebook/abc",
+        allow_null=True,
+        _is_retry=True,
+        disable_internal_retries=True,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -27,11 +27,12 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 if TYPE_CHECKING:
+    from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
 from ._artifacts import ArtifactsAPI
@@ -348,6 +349,35 @@ class NotebookLMClient:
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client."""
         return self._core.metrics_snapshot()
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any:
+        """Make a raw NotebookLM RPC call.
+
+        This is the public escape hatch for advanced callers who need an
+        undocumented RPC before a typed API exists. Prefer the namespaced APIs
+        (``client.notebooks``, ``client.sources``, etc.) when possible. Import
+        ``RPCMethod`` from ``notebooklm.rpc``. The ``_is_retry`` parameter is
+        exposed only to mirror ``ClientCore.rpc_call`` exactly; callers should
+        leave it at the default unless they are intentionally reproducing core
+        retry behavior.
+        """
+        return await self._core.rpc_call(
+            method=method,
+            params=params,
+            source_path=source_path,
+            allow_null=allow_null,
+            _is_retry=_is_retry,
+            disable_internal_retries=disable_internal_retries,
+        )
 
     @property
     def is_connected(self) -> bool:

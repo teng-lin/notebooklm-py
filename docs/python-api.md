@@ -586,7 +586,22 @@ class NotebookLMClient:
     )
 
     async def refresh_auth(self) -> AuthTokens
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any
 ```
+
+`RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
+`typing.Any`. `_is_retry` is present only to preserve parity with the core
+delegator and should normally be left as `False`.
 
 **Long-lived clients:** pass `keepalive=<seconds>` to spawn a background task
 that periodically pokes `accounts.google.com` and persists any rotated
@@ -1851,10 +1866,9 @@ For undocumented features, you can make raw RPC calls:
 from notebooklm.rpc import RPCMethod
 
 async with await NotebookLMClient.from_storage() as client:
-    # Access the core client for raw RPC. Each RPCMethod member has its own
-    # params shape (a nested list) and `source_path`; mirror the call sites in
-    # the higher-level APIs (e.g. _notebooks.py for CREATE_NOTEBOOK) when in doubt.
-    result = await client._core.rpc_call(
+    # Each RPCMethod member has its own params shape (a nested list) and
+    # source_path; mirror the higher-level APIs when in doubt.
+    result = await client.rpc_call(
         RPCMethod.CREATE_NOTEBOOK,
         params=["My Notebook", None, None, [2], [1]],
     )

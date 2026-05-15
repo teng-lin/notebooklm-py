@@ -66,6 +66,7 @@ NotebookLMClient.research
 NotebookLMClient.notes
 NotebookLMClient.settings
 NotebookLMClient.sharing
+NotebookLMClient.rpc_call()
 
 # Types
 Notebook, Source, Artifact, Note
@@ -105,6 +106,11 @@ AuthTokens
 
 # Helpers (cookies extra) - imported from notebooklm.auth
 notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"` — see docs/installation.md#optional-extras-matrix
+
+# Cookie-domain tiers - imported from notebooklm.auth
+notebooklm.auth.REQUIRED_COOKIE_DOMAINS
+notebooklm.auth.OPTIONAL_COOKIE_DOMAINS
+notebooklm.auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL
 ```
 
 ### Internal helpers exported for compatibility
@@ -128,16 +134,15 @@ StudioContentType         # ⚠️ Deprecated — use ArtifactType (see "Current
 
 ```python
 # These are NOT part of the public API:
-notebooklm.rpc.*          # RPC protocol internals
+notebooklm.rpc.*          # RPC protocol internals, except the documented RPCMethod import path for NotebookLMClient.rpc_call()
 notebooklm._core.*        # Core infrastructure
 notebooklm._*.py          # All underscore-prefixed modules
-notebooklm.auth.*         # Auth internals (except AuthTokens and convert_rookiepy_cookies_to_storage_state)
+notebooklm.auth.*         # Auth internals (except documented AuthTokens, cookie conversion, and cookie-domain constants)
 ```
 
-To use internal APIs, import them explicitly:
+For raw-RPC power-user calls, import the method enum explicitly:
 ```python
-# Explicit import for power users (may break)
-from notebooklm.rpc import RPCMethod, encode_rpc_request
+from notebooklm.rpc import RPCMethod
 ```
 
 ## Deprecation Policy
@@ -315,7 +320,8 @@ If the library breaks before we release a fix:
 4. Temporarily patch your local copy:
    ```python
    # In your code, before using the library
-   from notebooklm.rpc.types import RPCMethod
+   from notebooklm.rpc import RPCMethod
+
    RPCMethod.SOME_METHOD._value_ = "NewMethodId"
    ```
 
