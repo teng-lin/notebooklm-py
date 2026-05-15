@@ -386,17 +386,30 @@ async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
 async def test_download_url_cookie_load_runs_off_loop_thread(
     mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
     tmp_path: Path,
+    httpx_mock,
 ) -> None:
     """``_download_url`` must offload its ``load_httpx_cookies`` call.
 
-    The subsequent network call against an unreachable URL fails with
-    ``ArtifactDownloadError`` (intentional — the test only needs the
-    pre-network cookie-load probe), but the thread-id capture has
-    already happened by then.
+    The subsequent HTTP request is intercepted by ``httpx_mock`` with a
+    404 so ``_download_url`` raises ``ArtifactDownloadError`` (and the
+    test stays sealed from the real network — the URL must still match
+    the production trusted-domain whitelist to clear validation, but no
+    bytes hit the wire). The thread-id capture has already happened by
+    the time the HTTP step runs.
     """
     api, _ = mock_artifacts_api
     api._storage_path = tmp_path / "fake_storage_state.json"
     output_path = tmp_path / "download.bin"
+
+    # URL must clear the production trusted-domain check
+    # (``.googleapis.com``) BEFORE ``load_httpx_cookies`` runs — the
+    # validation happens first, and a rejected URL would raise
+    # ``ArtifactDownloadError("Untrusted download domain")`` before the
+    # cookie load and leave ``captured`` empty (turning this test into
+    # a false negative). The path is arbitrary because ``httpx_mock``
+    # intercepts the request before it leaves the process.
+    url = "https://storage.googleapis.com/never-resolved-t7d4.bin"
+    httpx_mock.add_response(url=url, status_code=404)
 
     loop_thread_id = threading.get_ident()
     captured: list[int] = []
@@ -412,10 +425,7 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
         ),
         pytest.raises(ArtifactDownloadError),
     ):
-        await api._download_url(
-            "https://storage.googleapis.com/never-resolved-t7d4.bin",
-            str(output_path),
-        )
+        await api._download_url(url, str(output_path))
 
     _assert_offloaded_to_worker_thread(
         captured[0] if captured else None,
