@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from rich.console import Console
 
     from ..auth import Account
+    from ._chromium_profiles import ChromiumProfile
 
 from ..auth import (
     GOOGLE_REGIONAL_CCTLDS,
@@ -346,7 +347,7 @@ def _enumerate_browser_accounts(
 
 def _enumerate_chromium_profiles_fanout(
     browser_name: str,
-    profiles: list[Any],
+    profiles: list[ChromiumProfile],
     *,
     verbose: bool,
     include_domains: set[str] | None,
