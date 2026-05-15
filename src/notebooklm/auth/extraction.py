@@ -69,28 +69,10 @@ def convert_rookiepy_cookies_to_storage_state(
 
 
 def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str]:
-    """Extract Google cookies from Playwright storage state for NotebookLM auth.
+    """Extract Google cookies from Playwright storage state.
 
-    Filters cookies to include those from .google.com, notebooklm.google.com,
-    .googleusercontent.com domains, and regional Google domains
-    (e.g., .google.com.sg, .google.com.au). The regional domains are needed
-    because Google sets SID cookies on country-specific domains for users
-    in those regions.
-
-    Cookie Priority Rules:
-        When the same cookie name exists on multiple domains (e.g., SID on both
-        .google.com and .google.com.sg), we use this priority order:
-
-        1. .google.com (base domain) - ALWAYS preferred when present
-        2. .notebooklm.google.com (Playwright canonical NotebookLM subdomain)
-        3. notebooklm.google.com (no-dot NotebookLM subdomain)
-        4. Regional domains (e.g. .google.de, .google.com.sg, .google.co.uk)
-        5. Other allowlisted domains (e.g. .googleusercontent.com)
-
-        Within a single priority tier, the first occurrence in the list wins;
-        later duplicates at the same tier are ignored. Tiers are distinct so the
-        outcome is deterministic regardless of storage_state ordering. See PR #34
-        for the bug this fixes.
+    Filters cookies to allowed Google domains, resolving duplicates
+    based on domain priority (base .google.com > notebooklm > regional).
 
     Args:
         storage_state: Parsed JSON from Playwright's storage state file.
@@ -120,8 +102,7 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         if not _is_allowed_auth_domain(domain) or not name:
             continue
 
-        # Prioritize stable domain classes over storage_state ordering to prevent
-        # wrong cookie values when the same name exists in multiple domains.
+        # Resolve duplicates using domain priority.
         priority = _auth_domain_priority(domain)
         if name not in cookies or priority > cookie_priorities[name]:
             if name in cookies:
@@ -151,9 +132,7 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         if "SID" in cookie_domains:
             logger.debug("SID cookie from domain: %s", cookie_domains["SID"])
 
-    # Build diagnostic extras only on the failure path. The successful path is
-    # by far the common case; iterating the cookie list to compute found-names
-    # and Google domains every call would be wasted work.
+    # Build diagnostics lazily for failure paths only.
     cookie_names = set(cookies.keys())
     extras: list[str] = []
     if not MINIMUM_REQUIRED_COOKIES.issubset(cookie_names):
@@ -170,24 +149,10 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
 
 
 def _build_wiz_field_patterns(key: str) -> list[re.Pattern[str]]:
-    """Build the ordered list of regex patterns used to locate a Wiz field.
-
-    Patterns are tried in priority order: canonical double-quoted form first,
-    then single-quoted, then HTML-escaped. Each pattern captures the value
-    (which may be empty — empty tokens are legitimate, not a drift signal).
-
-    All three variants tolerate backslash-escaped delimiters inside the value
-    so JSON-style escapes like ``"key":"a\\"b"`` parse correctly. The inner
-    character class ``[^"\\\\]*(?:\\\\.[^"\\\\]*)*`` is the standard
-    "string with escapes" idiom: consume runs of non-quote/non-backslash
-    chars, optionally followed by an escape pair (``\\.``) and another run.
-
-    The HTML-escaped variant uses a tempered-dot lookahead so the capture
-    stops only at a literal ``&quot;`` terminator (not at any ``&`` — values
-    legitimately contain ``&amp;`` and similar entities).
-
-    Whitespace tolerance (``\\s*``) around the colon mirrors the original
-    ``extract_csrf_from_html`` regex so we don't regress.
+    """Build regex patterns to locate a Wiz field.
+    
+    Tries canonical double-quoted, single-quoted, and HTML-escaped formats
+    in priority order, handling JSON escapes correctly.
     """
     escaped = re.escape(key)
     return [
@@ -203,25 +168,10 @@ def _build_wiz_field_patterns(key: str) -> list[re.Pattern[str]]:
 
 
 def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None:
-    """Extract a ``WIZ_global_data[key]`` value from a NotebookLM HTML response.
-
-    NotebookLM (and other Google products) embed a JavaScript object literal
-    named ``WIZ_global_data`` in the page chrome. Tokens like ``SNlM0e``
-    (CSRF) and ``FdrFJe`` (session ID) live inside that object. This helper
-    is the single place that knows how to parse the embedding so all callers
-    benefit from the same drift tolerance and diagnostics.
-
-    Tolerated input variants, tried in priority order:
-
-    1. Canonical double-quoted ``"key":"value"`` (typical raw HTML).
-    2. Single-quoted ``'key':'value'`` (rare, observed in some debug renders).
-    3. HTML-escaped ``&quot;key&quot;:&quot;value&quot;`` (when the script
-       block is rendered inside an attribute or escaped fragment).
-
-    Empty values are passed through verbatim: ``"SNlM0e":""`` returns the
-    empty string. Some Google endpoints legitimately emit empty tokens (e.g.
-    for unauthenticated probes) and the caller — not this helper — should
-    decide whether an empty value is acceptable.
+    """Extract a value from the embedded WIZ_global_data object in HTML.
+    
+    Tolerates various quoting formats (double, single, HTML-escaped).
+    Returns the value, or None if strict=False and no match is found.
 
     Args:
         html: The page HTML to search.
@@ -261,21 +211,13 @@ def extract_csrf_from_html(html: str, final_url: str = "") -> str:
         CSRF token value (typically starts with "AF1_QpN-")
 
     Raises:
-        ValueError: Preserved for backward compatibility — raised both when
-            redirected to a Google login page and when the token is missing
-            from a non-redirect response. Existing callers and tests rely on
-            the ``"CSRF token not found"`` / ``"Authentication expired"``
-            message substrings, so we intentionally keep the legacy type.
-            Internally we delegate to :func:`extract_wiz_field` so the regex
-            matrix (double-quoted / single-quoted / HTML-escaped) is shared.
+        ValueError: Raised if the token is missing or if the page is a login redirect.
     """
-    # Tolerant extraction via the unified helper — accepts canonical,
-    # single-quoted, and HTML-escaped variants of the WIZ_global_data field.
+    # Try extracting with multiple quoting variants
     token = extract_wiz_field(html, "SNlM0e", strict=False)
     if token is not None:
         return token
-    # Drift path: differentiate "auth expired" from "shape changed" because
-    # the remediation differs (re-login vs file a bug).
+    # Distinguish between auth expiration and page structure changes
     if is_google_auth_redirect(final_url) or contains_google_auth_redirect(html):
         raise ValueError(
             "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
@@ -301,10 +243,7 @@ def extract_session_id_from_html(html: str, final_url: str = "") -> str:
         Session ID value
 
     Raises:
-        ValueError: Preserved for backward compatibility — raised both when
-            redirected to a Google login page and when the session ID is
-            missing from a non-redirect response. See
-            :func:`extract_csrf_from_html` for the rationale.
+        ValueError: Raised if the session ID is missing or if the page is a login redirect.
     """
     sid = extract_wiz_field(html, "FdrFJe", strict=False)
     if sid is not None:
@@ -343,16 +282,10 @@ class Account:
     browser_profile: str | None = None
 
 
-# Hard cap on how many ``authuser`` indices to probe before giving up.
-# Google supports up to ~10 simultaneously signed-in accounts in a browser
-# session; ten covers every realistic case and bounds the worst-case probe.
+# Max authuser indices to probe (Google supports ~10 concurrent accounts).
 MAX_AUTHUSER_PROBE = 10
 
-# Local-parts of well-known non-user emails that NotebookLM may embed in page
-# chrome (footer links, support contacts) and must not be misread as the
-# active account. Combined with ``_NON_USER_EMAIL_DOMAINS`` so we only drop
-# the address when *both* match — otherwise legitimate Workspace users like
-# ``support@customer.com`` would be filtered out.
+# System email locals to ignore (must match with _NON_USER_EMAIL_DOMAINS).
 _NON_USER_EMAIL_LOCALS = frozenset(
     {
         "abuse",
@@ -369,8 +302,7 @@ _NON_USER_EMAIL_LOCALS = frozenset(
 )
 _NON_USER_EMAIL_DOMAINS = frozenset({"google.com", "accounts.google.com", "gmail.com"})
 
-# Match a quoted email address, e.g. ``"alice@example.com"``. Mirrors how
-# emails appear in the page's WIZ_global_data JSON.
+# Matches email inside WIZ_global_data JSON.
 _EMAIL_RE = re.compile(r'"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"')
 
 
@@ -378,8 +310,7 @@ def extract_email_from_html(html: str) -> str | None:
     """Extract the active user's email from a NotebookLM page response.
 
     Returns the first plausible Google account email found in the HTML,
-    skipping addresses that look like Google's own contact endpoints
-    (e.g. ``support@google.com``, ``noreply@accounts.google.com``).
+    skipping system contact endpoints.
 
     Args:
         html: Page HTML from ``notebooklm.google.com/?authuser=N``.
@@ -398,11 +329,7 @@ def extract_email_from_html(html: str) -> str | None:
     return None
 
 
-# Chromium-style User-Agent for ``enumerate_accounts``. Without a real-browser
-# UA, Google serves a stripped-down page that omits the WIZ_global_data block
-# (and therefore the active user's email), and ``extract_email_from_html``
-# returns None — looking like "no signed-in account". Empirically validated
-# against ``notebooklm.google.com/?authuser=N``.
+# Requires a real-browser UA to ensure Google serves the WIZ_global_data block.
 _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
@@ -410,16 +337,9 @@ _BROWSER_UA = (
 
 
 async def _probe_authuser(client: httpx.AsyncClient, n: int) -> str | None:
-    """Probe one ``authuser`` index and return the active email or ``None``.
-
-    Returns ``None`` for auth-redirect or unparseable responses; lets the
-    caller decide whether that means "past the last account" or a real error.
-    HTTP transport errors propagate.
-
-    Only checks the *final* URL for an auth redirect. The page body is not
-    scanned because a healthy NotebookLM page legitimately contains many
-    ``accounts.google.com`` links (account chooser, manage-account menu)
-    that would fool ``contains_google_auth_redirect``.
+    """Probe one ``authuser`` index to find the active email.
+    
+    Returns ``None`` if redirected or parsing fails.
     """
     from . import authuser_query
     response = await client.get(
@@ -436,16 +356,10 @@ async def _probe_authuser(client: httpx.AsyncClient, n: int) -> str | None:
 async def enumerate_accounts(
     cookie_jar: httpx.Cookies, *, max_authuser: int = MAX_AUTHUSER_PROBE
 ) -> list[Account]:
-    """Enumerate Google accounts visible to the given cookie jar.
-
-    Probes ``https://notebooklm.google.com/?authuser=N`` for ``N`` in
-    ``0..max_authuser`` and parses the active user's email from each response.
-
-    Stop condition: when the email at index ``N>0`` matches the email at
-    index 0, Google has silently fallen back to the default account, meaning
-    ``N`` is past the real count. Without this check the caller would record
-    duplicate phantom accounts; Google does not redirect to login in this
-    case.
+    """Enumerate Google accounts by probing ?authuser=N.
+    
+    Stops probing when a duplicate email is found, indicating a fallback
+    to the default account.
 
     Args:
         cookie_jar: ``httpx.Cookies`` jar with auth cookies. Not mutated.
@@ -466,13 +380,8 @@ async def enumerate_accounts(
         follow_redirects=True,
         timeout=httpx.Timeout(10.0, read=60.0),
     ) as client:
-        # The browser's on-disk cookie DB rotates ``__Secure-1PSIDTS`` every
-        # few minutes, but only when Chrome itself is actively running. A
-        # ``--browser-cookies`` extraction against an idle Chrome lands here
-        # with a stale SIDTS — the SID is fine, but ``notebooklm.google.com``
-        # responds with a redirect to ``accounts.google.com`` and we'd
-        # incorrectly conclude the user is signed out. Poke once to fetch
-        # fresh SIDTS via Set-Cookie before the probes start.
+        # Poke once to refresh potentially stale __Secure-1PSIDTS cookies
+        # to prevent immediate auth redirects.
         from . import _poke_session
         await _poke_session(client, None)
         default_email = await _probe_authuser(client, 0)
