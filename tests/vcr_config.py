@@ -30,13 +30,41 @@ When to use VCR vs pytest-httpx:
     - VCR.py: Recorded real responses for regression testing
 """
 
+import importlib.util
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import vcr
+
+
+def _load_sibling(module_name: str, file_name: str) -> Any:
+    """Load a sibling module under ``tests/`` by file path.
+
+    The ``tests`` directory is not a Python package (no ``__init__.py``), so
+    ``from tests.cassette_patterns import ...`` only works when the repo root
+    happens to be on ``sys.path``. That holds in a fresh REPL but NOT inside
+    pytest's per-module import, where the loader uses an isolated path that
+    omits the repo root. Loading by file path bypasses ``sys.path`` entirely
+    and is the same idiom ``tests/unit/test_cookie_redaction.py`` uses to
+    import this very file.
+    """
+    spec = importlib.util.spec_from_file_location(
+        module_name, Path(__file__).resolve().parent / file_name
+    )
+    assert spec is not None and spec.loader is not None, (
+        f"Could not load {file_name} next to vcr_config.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_cassette_patterns = _load_sibling("tests_cassette_patterns", "cassette_patterns.py")
+recompute_chunk_prefix = _cassette_patterns.recompute_chunk_prefix
 
 # =============================================================================
 # Sensitive data patterns to scrub from cassettes
@@ -205,6 +233,16 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     - Response body (may contain tokens in JSON or echoed headers)
     - Response headers (Set-Cookie headers may contain session tokens)
     - Both string and bytes response bodies
+
+    After string scrubbing runs, ``recompute_chunk_prefix`` is invoked on the
+    body to re-derive the ``<count>\\n<payload>\\n`` byte-count prefixes used
+    by Google's chunked batchexecute responses. Scrubbing frequently changes
+    payload length (e.g. ``21_digit_account_id`` -> ``SCRUBBED_USER_ID``); if
+    we left the original counts in place the cassette would fail the byte-count
+    assertion in ``tests/unit/test_cassette_shapes.py`` and the decoder's
+    tolerance branch would log a warning on every replay. The helper is a
+    no-op on bodies that don't look chunked, so it's safe to call
+    unconditionally.
     """
     # Scrub response body
     body = response.get("body", {})
@@ -213,11 +251,16 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
         if isinstance(content, bytes):
             try:
                 decoded = content.decode("utf-8")
-                body["string"] = scrub_string(decoded).encode("utf-8")
+                scrubbed = scrub_string(decoded)
+                # Re-derive chunk byte-counts after scrubbing (T8.D7).
+                rederived = recompute_chunk_prefix(scrubbed)
+                body["string"] = rederived.encode("utf-8")
             except UnicodeDecodeError:
                 pass  # Binary content (audio, images), skip scrubbing
         else:
-            body["string"] = scrub_string(content)
+            scrubbed = scrub_string(content)
+            # Re-derive chunk byte-counts after scrubbing (T8.D7).
+            body["string"] = recompute_chunk_prefix(scrubbed)
 
     # Scrub Set-Cookie headers (may contain session tokens)
     headers = response.get("headers", {})
