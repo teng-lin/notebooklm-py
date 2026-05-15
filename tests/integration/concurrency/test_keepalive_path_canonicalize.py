@@ -30,6 +30,12 @@ import pytest
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 
+# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
+# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
+# was missed when this file landed (PR #612 T7.G6 merged the same day
+# as PR #622 T8.D11 tier-enforcement).
+pytestmark = pytest.mark.allow_no_vcr
+
 
 @pytest.fixture
 def _auth_tokens() -> AuthTokens:
