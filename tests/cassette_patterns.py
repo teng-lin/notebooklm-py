@@ -35,8 +35,9 @@ _XSSI_PREFIX = ")]}'\n\n"
 # A "chunk header" line is a line consisting of ONLY ASCII digits — that's the
 # advertised byte count for the next payload line. Restricting to ASCII digits
 # avoids accidentally treating a JSON payload line that happens to start with a
-# digit-like character as a header.
-_CHUNK_HEADER_RE = re.compile(r"\A\d+\Z")
+# digit-like character as a header. ``fullmatch`` anchors at both ends so we
+# don't need explicit ``\A`` / ``\Z`` (claude-bot review on PR #554).
+_CHUNK_HEADER_RE = re.compile(r"\d+")
 
 
 def recompute_chunk_prefix(body: str) -> str:
@@ -122,8 +123,8 @@ def recompute_chunk_prefix(body: str) -> str:
         #  - JSON payloads that happen to be a single integer literal
         #    immediately preceded by another digit-only line (unlikely in
         #    practice but we'd rather be conservative)
-        is_header = _CHUNK_HEADER_RE.match(line) is not None
-        has_payload = i + 1 < len(lines) and not _CHUNK_HEADER_RE.match(lines[i + 1])
+        is_header = _CHUNK_HEADER_RE.fullmatch(line) is not None
+        has_payload = i + 1 < len(lines) and not _CHUNK_HEADER_RE.fullmatch(lines[i + 1])
         if is_header and has_payload:
             payload = lines[i + 1]
             new_count = len(payload.encode("utf-8"))

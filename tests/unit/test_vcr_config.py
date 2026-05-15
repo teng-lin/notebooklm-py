@@ -198,12 +198,14 @@ def test_recompute_chunk_prefix_corrects_synthetic_shrinkage():
     Models the exact T8.D7 acceptance scenario: a header advertising the
     pre-scrub byte count is rewritten to match the post-scrub payload.
     """
-    # Before scrub: payload was 21 bytes (long_user_id_value_x), header said 21.
-    # After scrub: payload is now 16 bytes (SCRUBBED_USER_ID); header still 21.
+    # Pre-scrub the JSON-wrapped payload was 21 bytes (e.g.
+    # ``[["long_user_id_xyz"]]`` is 21 chars/bytes) so the header said ``21``.
+    # After scrub the payload is ``[["SCRUBBED_USER_ID"]]`` which is 22 bytes
+    # (the JSON brackets and quotes count, not just the inner 16-char
+    # placeholder). The helper must rewrite ``21`` -> ``22`` accordingly.
     stale = '21\n[["SCRUBBED_USER_ID"]]'
     rewritten = recompute_chunk_prefix(stale)
-    # Payload length: len('[["SCRUBBED_USER_ID"]]') == 22 (the brackets count).
-    expected_len = len('[["SCRUBBED_USER_ID"]]')
+    expected_len = len('[["SCRUBBED_USER_ID"]]')  # == 22
     assert rewritten == f"{expected_len}\n" + '[["SCRUBBED_USER_ID"]]'
 
 

@@ -260,7 +260,8 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
         else:
             scrubbed = scrub_string(content)
             # Re-derive chunk byte-counts after scrubbing (T8.D7).
-            body["string"] = recompute_chunk_prefix(scrubbed)
+            rederived = recompute_chunk_prefix(scrubbed)
+            body["string"] = rederived
 
     # Scrub Set-Cookie headers (may contain session tokens)
     headers = response.get("headers", {})
