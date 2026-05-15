@@ -511,7 +511,11 @@ class TestResearch:
         httpx_mock.add_response(content=response_body.encode(), method="POST")
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.research.poll("nb_123")
+            # T7.F3: poll() without task_id when >1 task is in flight is the
+            # ambiguous case — pin that the DeprecationWarning fires on this
+            # exact path so a future change can't silently drop it.
+            with pytest.warns(DeprecationWarning, match="task_id"):
+                result = await client.research.poll("nb_123")
 
         assert result["task_id"] == "task_latest"
         assert result["query"] == "latest query"
