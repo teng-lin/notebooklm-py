@@ -10,23 +10,18 @@ Demonstrates that:
 3. All 100 fan-out RPC calls complete successfully (each returns the
    default empty-list response).
 
-Future-knob note (max_concurrent_rpcs)
---------------------------------------
-The eventual ``ClientCore(max_concurrent_rpcs=...)`` knob is added in
-PR T7.H1. When that lands, this smoke test should be updated to
-construct the core with ``max_concurrent_rpcs=None`` so the asyncio
-semaphore is *explicitly* disabled — proving the harness still
-demonstrates true 100-way fan-out at the transport boundary even when
-the production default may have been clamped to a lower bound.
-
-Until T7.H1 lands the knob doesn't exist, so this test uses the
-current ``ClientCore.__init__`` signature unchanged. Future contributors
-who modify this file should:
-
-  - Pass ``max_concurrent_rpcs=None`` explicitly to ``ClientCore``.
-  - Keep the 100-way ``asyncio.gather``.
-  - Keep the ``>= 80`` peak-inflight assertion (asyncio scheduling is
-    not perfectly parallel; the margin absorbs CI jitter).
+Semaphore opt-out (max_concurrent_rpcs=None)
+--------------------------------------------
+T7.H1 added a default ``max_concurrent_rpcs=16`` ceiling on in-flight
+RPC POSTs. To preserve the *harness* claim that 100 truly-concurrent
+RPCs reach the transport simultaneously (this test's whole point),
+the core is constructed with ``max_concurrent_rpcs=None`` here —
+*explicitly disabling* the semaphore so the recorded peak reflects the
+gather width rather than the production cap. The dedicated
+``test_max_concurrent_rpcs.py`` suite covers the semaphore semantics
+themselves; this smoke test exists purely to prove the
+``ConcurrentMockTransport`` + ``ClientCore`` plumbing fans out the way
+fan-out integration tests expect when the cap is intentionally off.
 
 Performance budget
 ------------------
@@ -77,10 +72,12 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Clien
     normally, then close-and-replace the underlying client with one
     that routes through our recording transport.
 
-    Once ``ClientCore(transport=...)`` exists (or ``max_concurrent_rpcs``
-    grows a transport hook) this can be simplified.
+    Passes ``max_concurrent_rpcs=None`` to explicitly disable the
+    T7.H1 RPC-fan-out semaphore so the smoke test continues to
+    prove the harness fans out at the *transport* boundary (the
+    cap-on semantics are covered by ``test_max_concurrent_rpcs.py``).
     """
-    core = ClientCore(auth=_make_auth())
+    core = ClientCore(auth=_make_auth(), max_concurrent_rpcs=None)
     await core.open()
     assert core._http_client is not None
     prior_cookies = core._http_client.cookies
