@@ -13,7 +13,7 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 if TYPE_CHECKING:
     import httpx
@@ -112,6 +112,41 @@ class ConnectionLimits:
             max_keepalive_connections=self.max_keepalive_connections,
             keepalive_expiry=self.keepalive_expiry,
         )
+
+
+@dataclass(frozen=True)
+class RpcTelemetryEvent:
+    """One logical RPC completion event emitted by ``NotebookLMClient``.
+
+    The event is intentionally backend-agnostic: applications can forward it
+    to Prometheus, OpenTelemetry, logs, or a custom counter without this
+    package taking a dependency on any metrics framework.
+    """
+
+    method: str
+    status: Literal["success", "error"]
+    elapsed_seconds: float
+    request_id: str | None = None
+    error_type: str | None = None
+
+
+@dataclass(frozen=True)
+class ClientMetricsSnapshot:
+    """Cumulative in-process observability counters for a client instance."""
+
+    rpc_calls_started: int = 0
+    rpc_calls_succeeded: int = 0
+    rpc_calls_failed: int = 0
+    rpc_rate_limit_retries: int = 0
+    rpc_server_error_retries: int = 0
+    rpc_auth_retries: int = 0
+    rpc_latency_seconds_total: float = 0.0
+    rpc_queue_wait_seconds_total: float = 0.0
+    rpc_queue_wait_seconds_max: float = 0.0
+    upload_queue_wait_seconds_total: float = 0.0
+    upload_queue_wait_seconds_max: float = 0.0
+    lock_wait_seconds_total: float = 0.0
+    lock_wait_seconds_max: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -463,6 +498,8 @@ __all__ = [
     # Dataclasses
     "CitedSourceSelection",
     "ConnectionLimits",
+    "ClientMetricsSnapshot",
+    "RpcTelemetryEvent",
     "Notebook",
     "NotebookDescription",
     "NotebookMetadata",

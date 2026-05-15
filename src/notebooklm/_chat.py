@@ -15,7 +15,7 @@ from urllib.parse import quote, urlencode
 
 from ._core import ClientCore, _AuthSnapshot
 from ._env import get_default_bl, get_default_language
-from ._logging import reset_request_id, set_request_id
+from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import format_authuser_value
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (
@@ -234,14 +234,15 @@ class ChatAPI:
             # duplicate inline. The request-id context lives here so retries
             # inside the helper share the same ``[req=<id>]`` log prefix as the
             # initial attempt.
-            reqid_token = set_request_id()
+            reqid_token = None if get_request_id() is not None else set_request_id()
             try:
                 response = await self._core.query_post(
                     build_request=build_request,
                     parse_label="chat.ask",
                 )
             finally:
-                reset_request_id(reqid_token)
+                if reqid_token is not None:
+                    reset_request_id(reqid_token)
 
             answer_text, references, server_conv_id = self._parse_ask_response_with_references(
                 response.text

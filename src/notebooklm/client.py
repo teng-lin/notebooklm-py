@@ -19,9 +19,12 @@ Example:
         result = await client.chat.ask(notebook_id, "What is this about?")
 """
 
+from __future__ import annotations
+
 import dataclasses
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING
@@ -29,7 +32,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 if TYPE_CHECKING:
-    from .types import ConnectionLimits
+    from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
 from ._artifacts import ArtifactsAPI
 from ._chat import ChatAPI
@@ -98,10 +101,11 @@ class NotebookLMClient:
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
         rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
-        limits: "ConnectionLimits | None" = None,
+        limits: ConnectionLimits | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
+        on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
     ):
         """Initialize the NotebookLM client.
 
@@ -177,6 +181,11 @@ class NotebookLMClient:
                 fields will fall back to httpx's own 5.0s defaults rather
                 than the original 10.0s connect. Defaults are NOT changed
                 silently for back-compat (audit §20 / T7.H3).
+            on_rpc_event: Optional sync or async callback invoked after each
+                logical RPC succeeds or fails. The callback receives a
+                backend-agnostic ``RpcTelemetryEvent`` so applications can
+                forward telemetry to logging, Prometheus, OpenTelemetry, or
+                another metrics backend without this package depending on one.
         """
         # Normalize the effective storage path onto the auth object so every
         # downstream code path (refresh_auth, ClientCore.close on-close save,
@@ -246,6 +255,7 @@ class NotebookLMClient:
             limits=limits,
             max_concurrent_uploads=max_concurrent_uploads,
             max_concurrent_rpcs=max_concurrent_rpcs,
+            on_rpc_event=on_rpc_event,
         )
 
         # Initialize sub-client APIs.
@@ -266,7 +276,7 @@ class NotebookLMClient:
         """Get the authentication tokens."""
         return self._core.auth
 
-    async def __aenter__(self) -> "NotebookLMClient":
+    async def __aenter__(self) -> NotebookLMClient:
         """Open the client connection."""
         logger.debug("Opening NotebookLM client")
         await self._core.open()
@@ -289,7 +299,7 @@ class NotebookLMClient:
         """
         logger.debug("Closing NotebookLM client")
         try:
-            await self._core.close()
+            await self.close()
         except BaseException as close_exc:
             if exc_val is not None:
                 logger.warning(
@@ -298,6 +308,35 @@ class NotebookLMClient:
                 )
                 return
             raise
+
+    async def drain(self, timeout: float | None = None) -> None:
+        """Stop accepting new operations and wait for in-flight operations to finish."""
+        await self._core.drain(timeout=timeout)
+
+    async def close(
+        self,
+        *,
+        drain: bool = False,
+        drain_timeout: float | None = None,
+    ) -> None:
+        """Close the client.
+
+        Pass ``drain=True`` to stop accepting new operations and wait for
+        in-flight operations to finish before closing the transport. If the
+        drain deadline is exceeded, the transport is still closed and the
+        timeout is re-raised.
+        """
+        if drain:
+            try:
+                await self.drain(timeout=drain_timeout)
+            finally:
+                await self._core.close()
+            return
+        await self._core.close()
+
+    def metrics_snapshot(self) -> ClientMetricsSnapshot:
+        """Return cumulative observability counters for this client."""
+        return self._core.metrics_snapshot()
 
     @property
     def is_connected(self) -> bool:
@@ -314,11 +353,12 @@ class NotebookLMClient:
         keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
         rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
-        limits: "ConnectionLimits | None" = None,
+        limits: ConnectionLimits | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
-    ) -> "NotebookLMClient":
+        on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+    ) -> NotebookLMClient:
         """Create a client from Playwright storage state file.
 
         This is the recommended way to create a client for programmatic use.
@@ -360,6 +400,8 @@ class NotebookLMClient:
                 POST. ``None`` (default) preserves the original hardcoded
                 values for back-compat. See :class:`NotebookLMClient` for
                 full semantics.
+            on_rpc_event: Optional sync or async callback invoked after each
+                logical RPC succeeds or fails.
 
         Returns:
             NotebookLMClient instance (not yet connected).
@@ -397,6 +439,7 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
             max_concurrent_rpcs=max_concurrent_rpcs,
             upload_timeout=upload_timeout,
+            on_rpc_event=on_rpc_event,
         )
 
     async def refresh_auth(self) -> AuthTokens:

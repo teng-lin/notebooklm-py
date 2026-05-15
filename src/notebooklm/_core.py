@@ -7,10 +7,11 @@ import random
 import threading
 import time
 import warnings
+import weakref
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -19,8 +20,9 @@ from urllib.parse import urlencode
 
 import httpx
 
+from ._callbacks import maybe_await_callback
 from ._env import get_default_language
-from ._logging import reset_request_id, set_request_id
+from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import (
     AuthTokens,
     CookieSaveResult,
@@ -32,6 +34,7 @@ from .auth import (
     save_cookies_to_storage,
     snapshot_cookie_jar,
 )
+from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 if TYPE_CHECKING:
     from .types import ConnectionLimits
@@ -53,6 +56,15 @@ from .rpc import (
 )
 
 logger = logging.getLogger(__name__)
+_OBSERVABILITY_INIT_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True)
+class _TransportOperationToken:
+    """Token for one accepted transport operation on a specific asyncio task."""
+
+    task: asyncio.Task[Any] | None
+
 
 # Maximum number of conversations to cache (FIFO eviction)
 MAX_CONVERSATION_CACHE_SIZE = 100
@@ -483,6 +495,7 @@ class ClientCore:
         limits: "ConnectionLimits | None" = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
+        on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
     ):
         """Initialize the core client.
 
@@ -558,6 +571,10 @@ class ClientCore:
                 the ``NotebookLMClient`` boundary (so the constraint
                 applies whether ``limits`` is explicit or auto-defaulted
                 inside ``ClientCore``).
+            on_rpc_event: Optional callback invoked after each logical
+                ``rpc_call`` succeeds or fails. The callback receives a
+                backend-agnostic :class:`RpcTelemetryEvent`; exceptions raised
+                by the callback are logged and never mask the RPC result.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
@@ -638,6 +655,15 @@ class ClientCore:
         self._refresh_lock: asyncio.Lock | None = None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
+        self._on_rpc_event = on_rpc_event
+        self._metrics_lock = threading.Lock()
+        self._metrics = ClientMetricsSnapshot()
+        self._draining = False
+        self._in_flight_posts = 0
+        self._drain_condition: asyncio.Condition | None = None
+        self._operation_depths: weakref.WeakKeyDictionary[asyncio.Task[Any], int] = (
+            weakref.WeakKeyDictionary()
+        )
         # Request ID counter for chat API (must be unique per request).
         # Access via the ``next_reqid()`` async method, which guards mutation
         # under ``_reqid_lock``. Direct mutation through the ``_reqid_counter``
@@ -785,9 +811,165 @@ class ClientCore:
             # Lazy init — safe to construct here because we're already in an
             # async context (caller is awaiting us).
             self._reqid_lock = asyncio.Lock()
-        async with self._reqid_lock:
+        wait_start = time.perf_counter()
+        await self._reqid_lock.acquire()
+        self._record_lock_wait(time.perf_counter() - wait_start)
+        try:
             self._reqid_counter_value += step
             return self._reqid_counter_value
+        finally:
+            self._reqid_lock.release()
+
+    def metrics_snapshot(self) -> ClientMetricsSnapshot:
+        """Return cumulative observability counters for this client instance."""
+        self._ensure_observability_state()
+        with self._metrics_lock:
+            return replace(self._metrics)
+
+    def _ensure_observability_state(self) -> None:
+        """Backfill observability fields for tests that construct via ``__new__``."""
+        if (
+            hasattr(self, "_on_rpc_event")
+            and hasattr(self, "_metrics_lock")
+            and hasattr(self, "_metrics")
+            and hasattr(self, "_draining")
+            and hasattr(self, "_in_flight_posts")
+            and hasattr(self, "_drain_condition")
+            and hasattr(self, "_operation_depths")
+        ):
+            return
+        with _OBSERVABILITY_INIT_LOCK:
+            if not hasattr(self, "_on_rpc_event"):
+                self._on_rpc_event = None
+            if not hasattr(self, "_metrics_lock"):
+                self._metrics_lock = threading.Lock()
+            if not hasattr(self, "_metrics"):
+                self._metrics = ClientMetricsSnapshot()
+            if not hasattr(self, "_draining"):
+                self._draining = False
+            if not hasattr(self, "_in_flight_posts"):
+                self._in_flight_posts = 0
+            if not hasattr(self, "_drain_condition"):
+                self._drain_condition = None
+            if not hasattr(self, "_operation_depths"):
+                self._operation_depths = weakref.WeakKeyDictionary()
+
+    def _increment_metrics(self, **increments: int | float) -> None:
+        """Increment numeric metrics fields under the metrics lock."""
+        self._ensure_observability_state()
+        with self._metrics_lock:
+            values = {
+                field_name: getattr(self._metrics, field_name) + increment
+                for field_name, increment in increments.items()
+            }
+            self._metrics = replace(self._metrics, **values)
+
+    def _record_rpc_queue_wait(self, wait_seconds: float) -> None:
+        self._ensure_observability_state()
+        with self._metrics_lock:
+            self._metrics = replace(
+                self._metrics,
+                rpc_queue_wait_seconds_total=(
+                    self._metrics.rpc_queue_wait_seconds_total + wait_seconds
+                ),
+                rpc_queue_wait_seconds_max=max(
+                    self._metrics.rpc_queue_wait_seconds_max,
+                    wait_seconds,
+                ),
+            )
+
+    def record_upload_queue_wait(self, wait_seconds: float) -> None:
+        """Record time spent waiting for the upload semaphore."""
+        self._ensure_observability_state()
+        with self._metrics_lock:
+            self._metrics = replace(
+                self._metrics,
+                upload_queue_wait_seconds_total=(
+                    self._metrics.upload_queue_wait_seconds_total + wait_seconds
+                ),
+                upload_queue_wait_seconds_max=max(
+                    self._metrics.upload_queue_wait_seconds_max,
+                    wait_seconds,
+                ),
+            )
+
+    def _record_lock_wait(self, wait_seconds: float) -> None:
+        self._ensure_observability_state()
+        with self._metrics_lock:
+            self._metrics = replace(
+                self._metrics,
+                lock_wait_seconds_total=self._metrics.lock_wait_seconds_total + wait_seconds,
+                lock_wait_seconds_max=max(self._metrics.lock_wait_seconds_max, wait_seconds),
+            )
+
+    async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
+        """Invoke the optional telemetry callback without affecting RPC behavior."""
+        self._ensure_observability_state()
+        if self._on_rpc_event is None:
+            return
+        try:
+            await maybe_await_callback(self._on_rpc_event, event)
+        except Exception as exc:  # noqa: BLE001 - observability must not alter behavior
+            logger.warning("RPC telemetry callback failed: %s", exc)
+
+    def _get_drain_condition(self) -> asyncio.Condition:
+        self._ensure_observability_state()
+        if self._drain_condition is None:
+            self._drain_condition = asyncio.Condition()
+        return self._drain_condition
+
+    def _current_operation_depth(self, task: asyncio.Task[Any] | None) -> int:
+        if task is None:
+            return 0
+        return self._operation_depths.get(task, 0)
+
+    async def _begin_transport_post(self, log_label: str) -> _TransportOperationToken:
+        """Reject new top-level transport work once graceful drain has started."""
+        condition = self._get_drain_condition()
+        task = asyncio.current_task()
+        depth = self._current_operation_depth(task)
+        async with condition:
+            if self._draining and depth == 0:
+                raise RuntimeError(
+                    "NotebookLMClient is draining; new client operations are not accepted "
+                    f"({log_label})."
+                )
+            if task is not None:
+                self._operation_depths[task] = depth + 1
+            self._in_flight_posts += 1
+        return _TransportOperationToken(task=task)
+
+    async def _finish_transport_post(self, token: _TransportOperationToken) -> None:
+        condition = self._get_drain_condition()
+        async with condition:
+            if token.task is not None:
+                depth = self._operation_depths.get(token.task, 0)
+                if depth <= 1:
+                    self._operation_depths.pop(token.task, None)
+                else:
+                    self._operation_depths[token.task] = depth - 1
+            self._in_flight_posts -= 1
+            if self._in_flight_posts == 0:
+                condition.notify_all()
+
+    async def drain(self, timeout: float | None = None) -> None:
+        """Stop accepting new client operations and wait for in-flight ones to finish.
+
+        If ``timeout`` expires, ``TimeoutError`` is raised and the client
+        remains in draining mode so shutdown callers do not accidentally admit
+        new work after a missed deadline.
+        """
+        if timeout is not None and timeout < 0:
+            raise ValueError(f"timeout must be >= 0 or None, got {timeout!r}")
+        condition = self._get_drain_condition()
+        async with condition:
+            self._draining = True
+            if self._in_flight_posts == 0:
+                return
+            await asyncio.wait_for(
+                condition.wait_for(lambda: self._in_flight_posts == 0),
+                timeout=timeout,
+            )
 
     def get_upload_semaphore(self) -> asyncio.Semaphore:
         """Return the per-instance upload semaphore, creating it on first use.
@@ -865,6 +1047,7 @@ class ClientCore:
             # built so the binding is consistent with the loop that owns
             # every primitive constructed below (T7.G2 / audit §14).
             self._bound_loop = asyncio.get_running_loop()
+            self._draining = False
             # Use granular timeouts: shorter connect timeout helps detect network issues
             # faster, while longer read/write timeouts accommodate slow responses
             timeout = httpx.Timeout(
@@ -1203,7 +1386,9 @@ class ClientCore:
         each other; the no-await rule keeps the cookie axis aligned with
         them.
         """
+        wait_start = time.perf_counter()
         async with self._get_auth_snapshot_lock():
+            self._record_lock_wait(time.perf_counter() - wait_start)
             return _AuthSnapshot(
                 csrf_token=self.auth.csrf_token,
                 session_id=self.auth.session_id,
@@ -1390,7 +1575,10 @@ class ClientCore:
         # through this same critical section on its post-refresh retry
         # iteration — that's the contract callers depend on.
         # ---------------------------------------------------------------
-        async with self._get_rpc_semaphore():
+        semaphore = self._get_rpc_semaphore()
+        queue_wait_start = time.perf_counter()
+        async with semaphore:
+            self._record_rpc_queue_wait(time.perf_counter() - queue_wait_start)
             while True:
                 snapshot = await self._snapshot()
                 url, body, headers = build_request(snapshot)
@@ -1429,6 +1617,7 @@ class ClientCore:
                             await asyncio.sleep(self._refresh_retry_delay)
                         logger.info("Token refresh successful, retrying %s", log_label)
                         refreshed_this_call = True
+                        self._increment_metrics(rpc_auth_retries=1)
                         # Loop around: next iteration takes a FRESH snapshot,
                         # rebuilds the request body with the new csrf/sid, and
                         # re-POSTs.
@@ -1469,6 +1658,7 @@ class ClientCore:
                             )
                             await asyncio.sleep(sleep_seconds)
                             rate_limit_retries += 1
+                            self._increment_metrics(rpc_rate_limit_retries=1)
                             continue
                         raise _TransportRateLimited(
                             f"{log_label} rate-limited (HTTP 429)",
@@ -1523,6 +1713,7 @@ class ClientCore:
                             )
                             await asyncio.sleep(backoff)
                             server_error_retries += 1
+                            self._increment_metrics(rpc_server_error_retries=1)
                             continue
                         if is_server_error:
                             status_error = cast(httpx.HTTPStatusError, exc)
@@ -1576,7 +1767,11 @@ class ClientCore:
         # Every concurrent caller resolves to the same instance because
         # ``_get_refresh_lock`` runs synchronously in a single-threaded
         # asyncio loop, so single-flight task creation below is preserved.
-        async with self._get_refresh_lock():
+        lock = self._get_refresh_lock()
+        wait_start = time.perf_counter()
+        await lock.acquire()
+        self._record_lock_wait(time.perf_counter() - wait_start)
+        try:
             if self._refresh_task is not None and not self._refresh_task.done():
                 refresh_task = self._refresh_task
                 logger.debug("Joining existing refresh task")
@@ -1584,6 +1779,8 @@ class ClientCore:
                 coro = cast(Coroutine[Any, Any, AuthTokens], self._refresh_callback())
                 self._refresh_task = asyncio.create_task(coro)
                 refresh_task = self._refresh_task
+        finally:
+            lock.release()
 
         await asyncio.shield(refresh_task)
 
@@ -1613,60 +1810,64 @@ class ClientCore:
         # this module's siblings.
         from .exceptions import ChatError, NetworkError
 
+        operation_token = await self._begin_transport_post(parse_label)
         try:
-            return await self._perform_authed_post(
-                build_request=build_request,
-                log_label=parse_label,
-            )
-        except _TransportAuthExpired as exc:
-            raise ChatError(
-                f"{parse_label} failed: authentication expired and refresh did not recover"
-            ) from exc
-        except _TransportRateLimited as exc:
-            raise ChatError(
-                f"{parse_label} rate-limited (HTTP 429)."
-                + (
-                    f" Retry after {exc.retry_after} seconds."
-                    if exc.retry_after is not None
-                    else ""
+            try:
+                return await self._perform_authed_post(
+                    build_request=build_request,
+                    log_label=parse_label,
                 )
-            ) from exc
-        except _TransportServerError as exc:
-            if isinstance(exc.original, httpx.HTTPStatusError):
+            except _TransportAuthExpired as exc:
                 raise ChatError(
-                    f"{parse_label} failed with HTTP {exc.original.response.status_code} "
-                    f"after retries: {exc.original}"
+                    f"{parse_label} failed: authentication expired and refresh did not recover"
                 ) from exc
-            # Network-layer failure (RequestError / Timeout).
-            # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
-            # ``_TransportServerError`` on the network path; this guard keeps
-            # the contract enforced under ``python -O`` (where ``assert``
-            # would be stripped) and gives a clear diagnostic if the
-            # invariant ever drifts.
-            if not isinstance(exc.original, httpx.RequestError):
-                raise TypeError(
-                    f"Unexpected _TransportServerError.original type: {type(exc.original)}"
+            except _TransportRateLimited as exc:
+                raise ChatError(
+                    f"{parse_label} rate-limited (HTTP 429)."
+                    + (
+                        f" Retry after {exc.retry_after} seconds."
+                        if exc.retry_after is not None
+                        else ""
+                    )
                 ) from exc
-            # Preserve the timeout-specific message: TimeoutException is a
-            # subclass of RequestError, so without this branch read/connect
-            # timeouts would surface as a generic "network error after
-            # retries" line and lose the "timed out" signal callers rely on.
-            if isinstance(exc.original, httpx.TimeoutException):
+            except _TransportServerError as exc:
+                if isinstance(exc.original, httpx.HTTPStatusError):
+                    raise ChatError(
+                        f"{parse_label} failed with HTTP {exc.original.response.status_code} "
+                        f"after retries: {exc.original}"
+                    ) from exc
+                # Network-layer failure (RequestError / Timeout).
+                # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
+                # ``_TransportServerError`` on the network path; this guard keeps
+                # the contract enforced under ``python -O`` (where ``assert``
+                # would be stripped) and gives a clear diagnostic if the
+                # invariant ever drifts.
+                if not isinstance(exc.original, httpx.RequestError):
+                    raise TypeError(
+                        f"Unexpected _TransportServerError.original type: {type(exc.original)}"
+                    ) from exc
+                # Preserve the timeout-specific message: TimeoutException is a
+                # subclass of RequestError, so without this branch read/connect
+                # timeouts would surface as a generic "network error after
+                # retries" line and lose the "timed out" signal callers rely on.
+                if isinstance(exc.original, httpx.TimeoutException):
+                    raise NetworkError(
+                        f"{parse_label} timed out after retries: {exc.original}",
+                        original_error=exc.original,
+                    ) from exc
                 raise NetworkError(
-                    f"{parse_label} timed out after retries: {exc.original}",
+                    f"{parse_label} network error after retries: {exc.original}",
                     original_error=exc.original,
                 ) from exc
-            raise NetworkError(
-                f"{parse_label} network error after retries: {exc.original}",
-                original_error=exc.original,
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            # Non-5xx / non-401 / non-429 status errors fall through
-            # ``_perform_authed_post``'s "Anything else" branch (e.g. a 404
-            # or unhandled 4xx).
-            raise ChatError(
-                f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
-            ) from exc
+            except httpx.HTTPStatusError as exc:
+                # Non-5xx / non-401 / non-429 status errors fall through
+                # ``_perform_authed_post``'s "Anything else" branch (e.g. a 404
+                # or unhandled 4xx).
+                raise ChatError(
+                    f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
+                ) from exc
+        finally:
+            await self._finish_transport_post(operation_token)
         # NOTE: bare ``httpx.TimeoutException`` / ``httpx.RequestError``
         # handlers were removed here because ``_perform_authed_post`` always
         # either retries those errors or wraps them in
@@ -1731,9 +1932,13 @@ class ClientCore:
                 disable_internal_retries=disable_internal_retries,
             )
 
-        _reqid_token = set_request_id()
+        method_name = getattr(method, "name", str(method))
+        operation_token = await self._begin_transport_post(f"RPC {method_name}")
+        self._increment_metrics(rpc_calls_started=1)
+        start = time.perf_counter()
+        _reqid_token = None if get_request_id() is not None else set_request_id()
         try:
-            return await self._rpc_call_impl(
+            result = await self._rpc_call_impl(
                 method,
                 params,
                 source_path,
@@ -1741,8 +1946,35 @@ class ClientCore:
                 _is_retry,
                 disable_internal_retries=disable_internal_retries,
             )
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            self._increment_metrics(rpc_calls_failed=1, rpc_latency_seconds_total=elapsed)
+            await self._emit_rpc_event(
+                RpcTelemetryEvent(
+                    method=method_name,
+                    status="error",
+                    elapsed_seconds=elapsed,
+                    request_id=get_request_id(),
+                    error_type=type(exc).__name__,
+                )
+            )
+            raise
+        else:
+            elapsed = time.perf_counter() - start
+            self._increment_metrics(rpc_calls_succeeded=1, rpc_latency_seconds_total=elapsed)
+            await self._emit_rpc_event(
+                RpcTelemetryEvent(
+                    method=method_name,
+                    status="success",
+                    elapsed_seconds=elapsed,
+                    request_id=get_request_id(),
+                )
+            )
+            return result
         finally:
-            reset_request_id(_reqid_token)
+            if _reqid_token is not None:
+                reset_request_id(_reqid_token)
+            await self._finish_transport_post(operation_token)
 
     async def _rpc_call_impl(
         self,

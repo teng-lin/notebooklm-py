@@ -102,6 +102,9 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     cookie_jar = MagicMock(name="cookie_jar")
     core.auth.cookie_jar = cookie_jar
     core.get_http_client.return_value.cookies = cookie_jar
+    core._begin_transport_post = AsyncMock(return_value=object())
+    core._finish_transport_post = AsyncMock()
+    core.record_upload_queue_wait = MagicMock()
     return SourcesAPI(core), core
 
 

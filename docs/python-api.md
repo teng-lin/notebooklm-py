@@ -469,6 +469,41 @@ before doubling), matching the 5xx path. Set either to `0` to restore
 the pre-T7.H2 behavior of raising `RateLimitError` / `ServerError`
 immediately.
 
+**Observability hooks.** The client exposes stdlib-only observability so
+applications can choose their own metrics backend:
+
+```python
+from notebooklm import correlation_id
+
+events = []
+
+async with await NotebookLMClient.from_storage(on_rpc_event=events.append) as client:
+    with correlation_id("batch-import-42"):
+        await client.notebooks.list()
+
+    snapshot = client.metrics_snapshot()
+    print(snapshot.rpc_calls_succeeded, snapshot.rpc_queue_wait_seconds_max)
+```
+
+`on_rpc_event` receives a `RpcTelemetryEvent` for each logical RPC
+completion. `metrics_snapshot()` returns cumulative counters for RPC
+success/failure, retry counts, semaphore queue waits, upload queue waits,
+and internal lock wait time. The package does not depend on Prometheus or
+OpenTelemetry; forward these values to whichever backend your service uses.
+
+**Graceful shutdown.** Long-lived services can stop admitting new client
+operations and wait for in-flight operations before closing:
+
+```python
+await client.close(drain=True, drain_timeout=30.0)
+```
+
+`client.drain(timeout=...)` is also available when your framework owns
+transport shutdown separately. Once drain starts, new operations raise
+`RuntimeError`; if the timeout expires, the client remains in draining mode.
+`close(drain=True, ...)` still closes the transport after a drain timeout and
+then re-raises the timeout.
+
 **Upload-timeout configuration** (T7.H3). `client.sources.add_file(...)`
 and the related upload entry points accept an `upload_timeout` argument
 that is decoupled from the global `timeout`. A long-running upload of
@@ -670,7 +705,7 @@ print(url)
 | `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
 | `add_url(notebook_id, url, wait=False, wait_timeout=120.0)` | `str, str, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately) |
 | `add_text(notebook_id, title, content, wait=False, wait_timeout=120.0)` | `str, str, str, bool, float` | `Source` | Add text content |
-| `add_file(notebook_id, file_path, mime_type=None, wait=False, wait_timeout=120.0, *, title=None)` | `str, str \| Path, str \| None, bool, float, *, str \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` raises `DeprecationWarning`. `title` (keyword-only) sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. |
+| `add_file(notebook_id, file_path, mime_type=None, wait=False, wait_timeout=120.0, *, title=None, on_progress=None)` | `str, str \| Path, str \| None, bool, float, *, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` raises `DeprecationWarning`. `title` (keyword-only) sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type)` | `str, str, str, str` | `Source` | Add Google Drive doc |
 | `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
@@ -745,7 +780,7 @@ print(f"Keywords: {guide['keywords']}")
 | `delete(notebook_id, artifact_id)` | `str, str` | `bool` | Delete artifact |
 | `rename(notebook_id, artifact_id, new_title)` | `str, str, str` | `None` | Rename artifact |
 | `poll_status(notebook_id, task_id)` | `str, str` | `GenerationStatus` | Check generation status |
-| `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation |
+| `wait_for_completion(notebook_id, task_id, ...)` | `str, str, ...` | `GenerationStatus` | Wait for generation. Pass `on_status_change(status)` for sync or async progress callbacks. |
 
 #### Type-Specific List Methods
 

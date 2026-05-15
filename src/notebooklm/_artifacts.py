@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -23,6 +24,7 @@ from urllib.parse import urlparse
 import httpx
 
 from . import _mind_map
+from ._callbacks import maybe_await_callback
 from ._core import ClientCore
 from ._env import get_default_language
 from .auth import load_httpx_cookies
@@ -1840,6 +1842,7 @@ class ArtifactsAPI:
         poll_interval: float | None = None,  # Deprecated, use initial_interval
         max_not_found: int = 5,
         min_not_found_window: float = 10.0,
+        on_status_change: Callable[[GenerationStatus], object] | None = None,
     ) -> GenerationStatus:
         """Wait for a generation task to complete.
 
@@ -1884,6 +1887,10 @@ class ArtifactsAPI:
                 run triggers failure.  This avoids false positives on
                 slow or unreliable networks.  Defaults to 10.0.
                 (Leader only.)
+            on_status_change: Optional sync or async callback invoked with a
+                ``GenerationStatus`` when the leader observes a new status.
+                Followers that attach to an existing poll receive only the
+                final status through this callback.
 
         Returns:
             Final GenerationStatus.
@@ -1910,7 +1917,10 @@ class ArtifactsAPI:
             # Follower path. ``asyncio.shield`` ensures that *this* caller's
             # cancellation does not propagate into the shared future; the
             # leader's poll task continues on behalf of every other follower.
-            return await asyncio.shield(existing[0])
+            result = await asyncio.shield(existing[0])
+            if on_status_change is not None:
+                await maybe_await_callback(on_status_change, result)
+            return result
 
         # Leader path. Create the shared future, spawn the poll task,
         # register the pair so any follower can attach. Both the future
@@ -1944,6 +1954,7 @@ class ArtifactsAPI:
                 timeout=timeout,
                 max_not_found=max_not_found,
                 min_not_found_window=min_not_found_window,
+                on_status_change=on_status_change,
             ),
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
@@ -1994,6 +2005,7 @@ class ArtifactsAPI:
         timeout: float,
         max_not_found: int,
         min_not_found_window: float,
+        on_status_change: Callable[[GenerationStatus], object] | None,
     ) -> GenerationStatus:
         """The actual polling loop. Driven by the leader's shielded task.
 
@@ -2008,6 +2020,7 @@ class ArtifactsAPI:
         poll_retry_count = 0
         first_not_found_time: float | None = None
         last_status: str | None = None
+        last_emitted_status: str | None = None
 
         while True:
             try:
@@ -2035,6 +2048,10 @@ class ArtifactsAPI:
 
             poll_retry_count = 0  # reset on success
             last_status = status.status
+            if status.status != last_emitted_status:
+                last_emitted_status = status.status
+                if on_status_change is not None:
+                    await maybe_await_callback(on_status_change, status)
 
             if status.is_complete or status.is_failed:
                 return status
@@ -2076,7 +2093,7 @@ class ArtifactsAPI:
                         trigger,
                         f"elapsed={not_found_elapsed:.1f}s",
                     )
-                    return GenerationStatus(
+                    failed_status = GenerationStatus(
                         task_id=task_id,
                         status="failed",
                         error=(
@@ -2086,6 +2103,9 @@ class ArtifactsAPI:
                             "Try again later."
                         ),
                     )
+                    if on_status_change is not None and last_emitted_status != "failed":
+                        await maybe_await_callback(on_status_change, failed_status)
+                    return failed_status
             else:
                 consecutive_not_found = 0
 

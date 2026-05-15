@@ -20,7 +20,13 @@ _check_python_version()
 del _check_python_version
 
 # Configure logging (must run before other imports that create loggers)
-from ._logging import configure_logging
+from ._logging import (
+    configure_logging,
+    correlation_id,
+    get_request_id,
+    reset_request_id,
+    set_request_id,
+)
 
 configure_logging()
 
@@ -103,6 +109,7 @@ from .types import (
     ChatReference,
     ChatResponseLength,
     CitedSourceSelection,
+    ClientMetricsSnapshot,
     ConnectionLimits,
     ConversationTurn,
     DriveMimeType,
@@ -119,6 +126,7 @@ from .types import (
     QuizQuantity,
     ReportFormat,
     ReportSuggestion,
+    RpcTelemetryEvent,
     ShareAccess,
     SharedUser,
     SharePermission,
@@ -145,10 +153,17 @@ __all__ = [
     "NotebookLMClient",
     # Auth
     "AuthTokens",
+    # Observability
+    "correlation_id",
+    "get_request_id",
+    "set_request_id",
+    "reset_request_id",
     # Types
     "AccountLimits",
     "AccountTier",
     "ConnectionLimits",
+    "ClientMetricsSnapshot",
+    "RpcTelemetryEvent",
     "Notebook",
     "NotebookDescription",
     "NotebookMetadata",

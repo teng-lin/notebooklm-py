@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import warnings
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
@@ -14,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from ._callbacks import maybe_await_callback
 from ._core import ClientCore
 from ._env import get_base_url
 from ._idempotency import idempotent_create
@@ -674,6 +676,7 @@ class SourcesAPI:
         wait_timeout: float = 120.0,
         *,
         title: str | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
         """Add a file source to a notebook using resumable upload.
 
@@ -731,6 +734,10 @@ class SourcesAPI:
                 that wait returns on the first PROCESSING/READY poll so it
                 completes in seconds for typical sources regardless of this
                 value. Default: 120.
+            on_progress: Optional sync or async callback invoked as
+                ``on_progress(bytes_sent, total_bytes)`` during the streaming
+                upload body. Callback exceptions propagate and abort the
+                upload, matching normal application callback semantics.
 
         Returns:
             The created Source object. If wait=False, status may be PROCESSING.
@@ -781,7 +788,9 @@ class SourcesAPI:
         # hold more than ``max_concurrent_uploads`` open FDs at once. The
         # semaphore is per-instance; see ClientCore.get_upload_semaphore.
         upload_sem = self._core.get_upload_semaphore()
+        upload_wait_start = monotonic()
         async with upload_sem:
+            self._core.record_upload_queue_wait(monotonic() - upload_wait_start)
             # Open the file ONCE here. The FD lives across:
             #   - the os.fstat() size check (so the size we send to
             #     ``_start_resumable_upload`` matches the bytes we will
@@ -814,12 +823,16 @@ class SourcesAPI:
             # the ``finally`` below).
             file_obj = open(file_path, "rb")  # noqa: SIM115
             handed_off = False
+            operation_token = None
             try:
                 # ``os.fstat(fd.fileno())`` reads inode metadata via the
                 # FD itself, not the path — even if the path has been
                 # relinked since ``open()``, this returns the inode we're
                 # about to upload.
                 file_size = os.fstat(file_obj.fileno()).st_size
+                operation_token = await self._core._begin_transport_post(
+                    f"source upload {filename}"
+                )
 
                 # Step 1: Register source intent with RPC → get SOURCE_ID
                 source_id = await self._register_file_source(notebook_id, filename)
@@ -836,12 +849,20 @@ class SourcesAPI:
                 # post-finalize cancel branch). ``handed_off=True``
                 # prevents the local ``finally`` from double-closing.
                 handed_off = True
-                await self._upload_file_streaming(upload_url, file_obj, filename=filename)
+                await self._upload_file_streaming(
+                    upload_url,
+                    file_obj,
+                    filename=filename,
+                    on_progress=on_progress,
+                    total_bytes=file_size,
+                )
             finally:
                 # Close locally ONLY if ownership never transferred —
                 # i.e. ``_upload_file_streaming`` was never invoked
                 # (size-check or RPC raised). After hand-off the
                 # streaming helper owns the close.
+                if operation_token is not None:
+                    await self._core._finish_transport_post(operation_token)
                 if not handed_off:
                     file_obj.close()
 
@@ -1528,6 +1549,8 @@ class SourcesAPI:
         file_obj: IO[bytes] | Path,
         *,
         filename: str | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+        total_bytes: int | None = None,
     ) -> None:
         """Stream upload file content to the resumable upload URL.
 
@@ -1580,6 +1603,11 @@ class SourcesAPI:
                 ``add_file``.
             filename: Optional filename used for diagnostic logging.
                 Defaults to ``"<file>"`` when not supplied.
+            on_progress: Optional sync or async callback invoked as
+                ``on_progress(bytes_sent, total_bytes)`` as chunks are yielded.
+            total_bytes: Total bytes expected. Required for the add_file FD
+                path; inferred from the path for legacy direct-call tests when
+                omitted.
         """
         # Discriminate: caller passed an open FD (the T7.D3 add_file path),
         # or a Path (legacy direct-call test path — opens locally). The
@@ -1610,6 +1638,13 @@ class SourcesAPI:
             }
             diag_name = filename or (path_fallback.name if path_fallback is not None else "<file>")
             logger.debug("Streaming upload to %s for %s", upload_url, diag_name)
+            if total_bytes is None and path_fallback is not None:
+                total_bytes = path_fallback.stat().st_size
+            progress_total = total_bytes if total_bytes is not None else 0
+            uploaded_bytes = 0
+
+            if on_progress is not None:
+                await maybe_await_callback(on_progress, uploaded_bytes, progress_total)
 
             # Stream the file content instead of loading it all into memory.
             # When the caller passed an FD, we read directly from it (single
@@ -1617,6 +1652,7 @@ class SourcesAPI:
             # (legacy direct-call), we open here as a one-off helper whose
             # ``with`` closes the locally-opened FD when the generator ends.
             async def file_stream():
+                nonlocal uploaded_bytes
                 # T7.D2 / audit §22: chunk reads are synchronous file I/O.
                 # On slow storage (network FS, encrypted home, large PDFs
                 # served from a cold cache) a bare ``f.read(65536)`` from
@@ -1629,6 +1665,11 @@ class SourcesAPI:
                 if path_fallback is not None:
                     with open(path_fallback, "rb") as f:
                         while chunk := await asyncio.to_thread(f.read, 65536):  # 64KB chunks
+                            uploaded_bytes += len(chunk)
+                            if on_progress is not None:
+                                await maybe_await_callback(
+                                    on_progress, uploaded_bytes, progress_total
+                                )
                             yield chunk
                     return
                 # FD path: caller transferred ownership to this helper; we
@@ -1638,6 +1679,9 @@ class SourcesAPI:
                 # cancel.
                 assert not isinstance(file_obj, Path)  # narrowed by branch above
                 while chunk := await asyncio.to_thread(file_obj.read, 65536):  # 64KB chunks
+                    uploaded_bytes += len(chunk)
+                    if on_progress is not None:
+                        await maybe_await_callback(on_progress, uploaded_bytes, progress_total)
                     yield chunk
 
             # `finalize_started` flips after the local ``httpx.AsyncClient``

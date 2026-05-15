@@ -20,7 +20,8 @@ import logging
 import os
 import re
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any
 
@@ -29,6 +30,7 @@ __all__ = [
     "RedactingFormatter",
     "apply_redaction",
     "configure_logging",
+    "correlation_id",
     "get_request_id",
     "install_redaction",
     "reset_request_id",
@@ -63,6 +65,23 @@ def reset_request_id(token: Token[str | None]) -> None:
 def get_request_id() -> str | None:
     """Return the current correlation id, or None if unset."""
     return _current_request_id.get()
+
+
+@contextmanager
+def correlation_id(req_id: str | None = None) -> Iterator[str]:
+    """Scope log records and RPC telemetry under a caller-chosen correlation id.
+
+    Pass ``req_id=None`` to generate a fresh 8-character id. Nested scopes
+    restore the previous id on exit.
+    """
+    token = set_request_id(req_id)
+    try:
+        current = get_request_id()
+        # ``set_request_id(None)`` always generates a string; the fallback keeps
+        # static checkers happy if that implementation ever changes.
+        yield current or ""
+    finally:
+        reset_request_id(token)
 
 
 # Patterns are immutable. Adding a new pattern requires a unit test.
