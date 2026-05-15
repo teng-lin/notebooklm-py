@@ -355,6 +355,70 @@ async def test_concurrent_downloads_keep_loop_responsive(
 
 
 @pytest.mark.asyncio
+async def test_download_urls_batch_cookie_load_does_not_block_event_loop(
+    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    tmp_path: Path,
+) -> None:
+    """``_download_urls_batch`` must offload its ``load_httpx_cookies`` call.
+
+    Mirror of the ``_download_url`` test, but exercises the batch
+    sibling. The batch helper is reachable from ``download_audio`` /
+    ``download_video`` / ``download_image`` so its cookie-load path
+    also needs the offload. We patch the imported symbol to sleep
+    ``BLOCKING_SLEEP_S`` seconds and assert the heartbeat stayed
+    alive while the cookies were "loading".
+
+    The batch then proceeds into the HTTP path. We pass an EMPTY URL
+    list so the per-URL loop exits immediately and the test stays
+    sealed from the network — the only work between the cookie load
+    and the return is opening + closing an ``httpx.AsyncClient``,
+    which doesn't touch the network until the first request.
+
+    Added in response to PR #579 review feedback from claude[bot]:
+    each of the four T7.D4 wrap sites should have a direct regression
+    test, not just three of them.
+    """
+    api, _ = mock_artifacts_api
+    api._storage_path = tmp_path / "fake_storage_state.json"
+
+    def slow_load_httpx_cookies(path: object = None) -> dict:
+        time.sleep(BLOCKING_SLEEP_S)
+        return {}
+
+    samples: list[float] = []
+    stop = asyncio.Event()
+    heartbeat = asyncio.create_task(_heartbeat(stop, samples))
+
+    # Warm-up: let the heartbeat record pre-block samples.
+    await asyncio.sleep(SETTLE_S)
+
+    try:
+        with patch(
+            "notebooklm._artifacts.load_httpx_cookies",
+            side_effect=slow_load_httpx_cookies,
+        ):
+            # Empty URL list: the cookie-load runs (the thing we're
+            # measuring), then the per-URL ``for`` loop exits without
+            # ever issuing a request.
+            result = await api._download_urls_batch([])
+        await asyncio.sleep(SETTLE_S)  # let heartbeat record a post-block sample
+    finally:
+        stop.set()
+        await heartbeat
+
+    # Sanity: empty input → empty result, no failures fabricated.
+    assert result.succeeded == []
+    assert result.failed == []
+
+    gap_ms = _max_gap_ms(samples)
+    assert gap_ms < MAX_GAP_MS, (
+        f"_download_urls_batch's load_httpx_cookies blocked the event loop "
+        f"for {gap_ms:.1f} ms (threshold {MAX_GAP_MS} ms). "
+        f"The load_httpx_cookies call must be wrapped in asyncio.to_thread."
+    )
+
+
+@pytest.mark.asyncio
 async def test_download_url_cookie_load_does_not_block_event_loop(
     mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
     tmp_path: Path,

@@ -1510,11 +1510,14 @@ class ArtifactsAPI:
 
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
+
             # Offload the synchronous write to a worker thread so a slow
-            # filesystem doesn't stall the event loop for every sibling
-            # task. Mirrors the pattern used in download_data_table /
-            # download_audio (T7.D4, audit §30).
-            await asyncio.to_thread(output.write_text, markdown_content, encoding="utf-8")
+            # filesystem can't stall the loop (T7.D4, audit §30).
+            # Closure pattern mirrors _write_csv in download_data_table.
+            def _write_markdown() -> None:
+                output.write_text(markdown_content, encoding="utf-8")
+
+            await asyncio.to_thread(_write_markdown)
             return str(output)
 
         except (IndexError, TypeError) as e:
@@ -1568,11 +1571,8 @@ class ArtifactsAPI:
 
             # Offload both the serialization AND the write to a worker
             # thread. ``json.dump`` streams into the file handle so we
-            # never materialize a large intermediate string on the loop
-            # thread (per gemini-code-assist review on PR #579), and
-            # the disk write stays off the event loop. Mirrors the
-            # ``_write_csv`` helper pattern in download_data_table
-            # (T7.D4, audit §30).
+            # never materialize the full JSON string on the loop
+            # (T7.D4, audit §30). Mirrors _write_csv in download_data_table.
             def _write_json() -> None:
                 with output.open("w", encoding="utf-8") as f:
                     json.dump(json_data, f, indent=2, ensure_ascii=False)
@@ -2226,10 +2226,8 @@ class ArtifactsAPI:
         result = DownloadResult()
 
         # Load cookies with domain info for cross-domain redirect handling.
-        # ``load_httpx_cookies`` does a synchronous JSON read of the
-        # storage-state file — offload to a worker thread so slow auth
-        # storage doesn't stall every concurrent task on the loop
-        # (T7.D4, audit §30).
+        # Offloaded because load_httpx_cookies does a synchronous JSON read
+        # of the storage-state file (T7.D4, audit §30).
         cookies = await asyncio.to_thread(load_httpx_cookies, path=self._storage_path)
 
         async with httpx.AsyncClient(
