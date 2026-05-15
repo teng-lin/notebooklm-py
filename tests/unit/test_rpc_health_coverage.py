@@ -104,15 +104,11 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
 PATH_NOT_METHOD_SKIP: frozenset[str] = frozenset()
 
 
-UNAVAILABLE_SKIP_LIST: frozenset[str] = frozenset(
-    {
-        # Not fully rolled out by Google — the canary's call fails for any
-        # input IDs, so the script lists it in ALWAYS_SKIP_METHODS rather
-        # than risking a false MISMATCH. Move back into get_test_params
-        # once Google ships the feature widely.
-        "DISCOVER_SOURCES",
-    }
-)
+UNAVAILABLE_SKIP_LIST: frozenset[str] = frozenset()
+"""Reserved for ``RPCMethod`` members that exist but aren't currently
+exercisable by the canary (e.g. unreleased / rolled-back Google features).
+Empty for now; the scaffolding is preserved so a future "exists but cannot
+probe" entry can be classified without re-introducing the constant."""
 
 
 def _probed_method_names() -> frozenset[str]:

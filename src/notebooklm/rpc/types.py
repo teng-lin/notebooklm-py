@@ -197,7 +197,6 @@ class RPCMethod(str, Enum):
     REFRESH_SOURCE = "FLmJqe"
     CHECK_SOURCE_FRESHNESS = "yR9Yof"
     UPDATE_SOURCE = "b7Wfje"
-    DISCOVER_SOURCES = "qXyaNe"
 
     # Summary and query
     SUMMARIZE = "VfAZjd"
