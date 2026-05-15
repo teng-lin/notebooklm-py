@@ -191,19 +191,19 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 
 `quiz`, `flashcards`, and `revise-slide` do not accept `--language`.
 
-| Command | Arguments | Options | Example |
-|---------|-----------|---------|---------|
-| `audio` | `[description]` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | `generate audio "Focus on history"` |
-| `video` | `[description]` | `--format [explainer\|brief\|cinematic]`, `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt TEXT` (required with `--style custom`; rejected with `--format cinematic`) | `generate video "Explainer for kids"` |
-| `cinematic-video` | `[description]` | Alias for `video --format cinematic`; passing a non-cinematic `--format` exits `2`. Supports the same options as `video`. | `generate cinematic-video "Documentary about quantum physics"` |
-| `slide-deck` | `[description]` | `--format [detailed\|presenter]`, `--length [default\|short]` | `generate slide-deck` |
-| `revise-slide` | `[description]` | `-a/--artifact <id>` (required), `--slide N` (required) | `generate revise-slide "Move title up" --artifact <id> --slide 0` |
-| `quiz` | `[description]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate quiz --difficulty hard` |
-| `flashcards` | `[description]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate flashcards` |
-| `infographic` | `[description]` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
-| `data-table` | `[description]` | (uniform options only) | `generate data-table "compare concepts"` |
-| `mind-map` | - | `--instructions TEXT` *(sync, no `--wait` / `--timeout` / `--interval` / `--retry`)* | `generate mind-map` |
-| `report` | `[description]` | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append "extra instructions"` (no effect with `--format custom`) | `generate report --format study-guide` |
+| Command | Arguments | Type-specific options | Example |
+|---------|-----------|-----------------------|---------|
+| `audio [description]` | Instructions | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | `generate audio "Focus on history"` |
+| `video [description]` | Instructions | `--format [explainer\|brief\|cinematic]`, `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt TEXT` (required with `--style custom`; rejected with `--format cinematic`) | `generate video "Explainer for kids"` |
+| `cinematic-video [description]` | Instructions | Alias for `video --format cinematic` | `generate cinematic-video "Documentary about quantum physics"` |
+| `slide-deck [description]` | Instructions | `--format [detailed\|presenter]`, `--length [default\|short]` | `generate slide-deck` |
+| `revise-slide <description>` | Revision instructions | `-a/--artifact <id>` (required), `--slide N` (required) | `generate revise-slide "Move title up" --artifact <id> --slide 0` |
+| `quiz [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate quiz --difficulty hard` |
+| `flashcards [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate flashcards` |
+| `infographic [description]` | Instructions | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
+| `data-table <description>` | Instructions | (uniform options only) | `generate data-table "compare concepts"` |
+| `mind-map` | - | `--instructions TEXT` *(sync, no `--wait` / `--timeout` / `--interval` / `--retry` / `--prompt-file`)* | `generate mind-map` |
+| `report [description]` | Instructions | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append TEXT` (no effect with `--format custom`) | `generate report --format study-guide` |
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 
@@ -701,7 +701,7 @@ For `-s` and `-a` the active notebook is resolved with the same precedence the c
 
 File-source uploads reject symlinks by default. If the path you pass (or any ancestor directory) is a symbolic link, `source add` refuses the upload rather than silently following it — a workspace symlink could otherwise exfiltrate the file it points at (e.g. `~/Downloads/foo.pdf -> /etc/passwd`). Pass `--follow-symlinks` to opt in explicitly.
 
-> **Python equivalent:** [`client.sources.add_file(nb_id, path, follow_symlinks=True)`](python-api.md#sourcesapi-clientsources).
+> **Python equivalent:** [`client.sources.add_file(nb_id, path, title=...)`](python-api.md#sourcesapi-clientsources). The symlink gate is a CLI-only safeguard; callers using the Python API are responsible for resolving symbolic links before passing the path.
 
 ```bash
 # Default — symlink rejected with: "Path is a symlink; pass --follow-symlinks to follow it explicitly."
@@ -1179,7 +1179,7 @@ notebooklm download flashcards --format html cards.html
 
 Read, create, and update notebook notes (the "Notes" panel in the web UI). Mind-map artifacts surface as notes in the underlying API but are filtered out of `note list` — use `artifact list --type mind-map` for those.
 
-> **Python equivalent:** [`client.notes.list/create/get/update/rename/delete(...)`](python-api.md#notesapi-clientnotes). Mind-map helpers (`list_mind_maps`, `delete_mind_map`) live on the same API.
+> **Python equivalent:** [`client.notes.list/create/get/update/delete(...)`](python-api.md#notesapi-clientnotes). The CLI's `note save` and `note rename` both map to `client.notes.update(...)` (title and/or content). Mind-map helpers (`list_mind_maps`, `delete_mind_map`) live on the same API.
 
 ```bash
 notebooklm note <list|create|get|save|rename|delete> [OPTIONS]
