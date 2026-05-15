@@ -44,6 +44,11 @@ import pytest
 
 from notebooklm import auth as auth_mod
 
+# T8.D11 tier-enforcement opt-out — this module patches the refresh
+# subprocess and the underlying httpx transport, so the assertions are
+# fully sealed from the network. No cassette is required.
+pytestmark = pytest.mark.allow_no_vcr
+
 
 @pytest.fixture(autouse=True)
 def _clear_refresh_state():
