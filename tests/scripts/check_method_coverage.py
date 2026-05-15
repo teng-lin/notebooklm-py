@@ -93,15 +93,20 @@ _TEST_REFERENCE_EXCLUDES: frozenset[Path] = frozenset(
 # script's bootstrap step (run once locally before commit) populated this
 # set. Each entry is the ``RPCMethod.<NAME>`` member name (without the
 # ``RPCMethod.`` prefix).
-PREEXISTING_GAPS: set[str] = {
-    # Captured by the bootstrap run at T8.E9 landing. See module docstring
-    # for the one-way-ratchet policy: shrink this set when you backfill
-    # coverage; never add new entries when introducing a new RPCMethod.
-    "GET_INTERACTIVE_HTML",  # no test imports the enum or its id 'v9rmvd'
-    "GET_SUGGESTED_REPORTS",  # no cassette body contains id 'ciyUvf'
-    "IMPORT_RESEARCH",  # no cassette body contains id 'LBwxtb'
-    "REFRESH_SOURCE",  # no cassette body contains id 'FLmJqe'
-}
+PREEXISTING_GAPS: frozenset[str] = frozenset(
+    {
+        # Captured by the bootstrap run at T8.E9 landing. See module docstring
+        # for the one-way-ratchet policy: shrink this set when you backfill
+        # coverage; never add new entries when introducing a new RPCMethod.
+        # ``frozenset`` (not ``set``) so the module-level constant cannot be
+        # mutated at runtime, matching ``_TEST_REFERENCE_EXCLUDES`` above and
+        # reinforcing the "only shrinks" contract structurally.
+        "GET_INTERACTIVE_HTML",  # no test imports the enum or its id 'v9rmvd'
+        "GET_SUGGESTED_REPORTS",  # no cassette body contains id 'ciyUvf'
+        "IMPORT_RESEARCH",  # no cassette body contains id 'LBwxtb'
+        "REFRESH_SOURCE",  # no cassette body contains id 'FLmJqe'
+    }
+)
 
 
 def _iter_test_files() -> list[Path]:
@@ -118,6 +123,13 @@ def _iter_test_files() -> list[Path]:
             continue
         # Skip cassettes — they're covered by the separate cassette check.
         if CASSETTES_DIR in path.parents or path == CASSETTES_DIR:
+            continue
+        # Skip compiled bytecode under ``__pycache__``: ``.pyc`` files inline
+        # source-level string constants like ``"wXbhsf"`` as raw UTF-8 bytes,
+        # which would let a stale bytecode file silently satisfy the test-
+        # reference check after the source was deleted. Cheap to skip, avoids
+        # the spurious-match class entirely.
+        if "__pycache__" in path.parts:
             continue
         if path.resolve() in _TEST_REFERENCE_EXCLUDES:
             continue
@@ -172,15 +184,16 @@ def _has_cassette_coverage(method: RPCMethod, cassette_files: list[Path]) -> boo
     return any(_file_contains(p, needles) for p in cassette_files)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main() -> int:
     """Run the gate and return the process exit code.
 
-    ``argv`` is accepted for parity with ``check_cassettes_clean.py`` but is
-    currently unused — the gate has no flags. We sort enum members by name
-    before iterating so the failure output is stable across runs/machines.
+    No CLI flags today — the gate is a pure pass/fail static check. We sort
+    enum members by name before iterating so the failure output is stable
+    across runs/machines. (The sister script ``check_cassettes_clean.py``
+    accepts ``argv`` because it has ``--strict``/``--allowlist`` flags; this
+    one has nothing to parse so we keep the signature flag-free rather than
+    carrying an unused ``argv`` parameter.)
     """
-    del argv  # No CLI flags yet; reserved for future allowlist tooling.
-
     test_files = _iter_test_files()
     cassette_files = _iter_cassette_files()
 
@@ -229,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    total = len(list(RPCMethod))
+    total = len(RPCMethod)  # ``EnumMeta`` defines ``__len__`` directly.
     grandfathered = len(PREEXISTING_GAPS)
     checked = total - grandfathered
     print(
