@@ -1852,15 +1852,18 @@ class ArtifactsAPI:
             # Follower path. ``asyncio.shield`` ensures that *this* caller's
             # cancellation does not propagate into the shared future; the
             # leader's poll task continues on behalf of every other follower.
-            return await asyncio.shield(existing)
+            return await asyncio.shield(existing[0])
 
-        # Leader path. Create the shared future, spawn a shielded poll task,
-        # then await the future. The poll task survives this leader's
-        # cancellation: its done-callback resolves the future and pops the
-        # registry regardless of who (if anyone) is still awaiting.
+        # Leader path. Create the shared future, spawn the poll task,
+        # register the pair so any follower can attach. Both the future
+        # and the task live in the registry entry — the task reference
+        # alone is what anchors the running poll against GC (Python's
+        # task-GC contract is permissive; see asyncio C4 lesson /
+        # Python 3.11+ task GC fix). The done-callback pops the entry
+        # on every termination path (success / exception / cancel) so
+        # the registry cannot leak.
         loop = asyncio.get_running_loop()
         future: asyncio.Future[GenerationStatus] = loop.create_future()
-        pending[key] = future
 
         # Consume any exception set on the future if no caller ever
         # retrieves it (e.g. leader cancelled with no followers). Without
@@ -1874,8 +1877,8 @@ class ArtifactsAPI:
 
         future.add_done_callback(_consume_orphan_exception)
 
-        async def _poll_loop_inner() -> GenerationStatus:
-            return await self._run_poll_loop(
+        poll_task = asyncio.create_task(
+            self._run_poll_loop(
                 notebook_id,
                 task_id,
                 initial_interval=initial_interval,
@@ -1883,59 +1886,45 @@ class ArtifactsAPI:
                 timeout=timeout,
                 max_not_found=max_not_found,
                 min_not_found_window=min_not_found_window,
-            )
-
-        poll_task = asyncio.create_task(
-            _poll_loop_inner(),
+            ),
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
 
-        # Hold a strong reference to the poll task on the future itself.
-        # Without this, if the leader is cancelled before the task
-        # completes AND no follower attached, the only remaining
-        # reference would be the loop's internal task scheduling, which
-        # the GC docs do NOT guarantee is strong (see asyncio C4 lesson
-        # / Python 3.11+ task GC fix). Stashing on the future ensures the
-        # task lives at least as long as the registry entry, which lives
-        # until the done-callback fires.
-        future._t7e2_poll_task = poll_task  # type: ignore[attr-defined]
+        pending[key] = (future, poll_task)
 
         def _on_poll_done(task: asyncio.Task[GenerationStatus]) -> None:
-            # Always pop the registry entry first so a follower that
-            # arrives concurrently with completion either (a) attaches
-            # to the already-resolved future and gets the cached result,
-            # or (b) misses the entry entirely and starts a fresh poll
-            # for the *next* generation. Either is correct.
+            # Pop the registry entry first so a follower that arrives
+            # concurrently with completion either (a) attaches to the
+            # already-resolved future and gets the cached result, or
+            # (b) misses the entry entirely and starts a fresh poll for
+            # the *next* generation. Either is correct.
             pending.pop(key, None)
+            # Inside this callback there are no ``await`` points, so
+            # the single-threaded asyncio model guarantees ``future`` is
+            # still pending — assert that invariant rather than guard
+            # silently. A regression in callback ordering would surface
+            # loudly instead of dropping a result on the floor.
+            assert not future.done(), "future resolved before poll task done-callback"
             if task.cancelled():
-                # The poll task itself was cancelled. This should be
-                # exceedingly rare — followers shield the future, and
-                # the leader's cancel doesn't propagate to the task.
-                # Surface as CancelledError to any still-attached
-                # waiters. ``Future.cancel()`` is the right primitive.
+                # The poll task itself was cancelled. Followers shield
+                # the future and the leader's cancel doesn't propagate
+                # to the task, so this is exceedingly rare — but if it
+                # happens, surface ``CancelledError`` to attached waiters.
                 future.cancel()
                 return
             exc = task.exception()
             if exc is not None:
-                if not future.done():
-                    future.set_exception(exc)
+                future.set_exception(exc)
                 return
-            if not future.done():
-                future.set_result(task.result())
+            future.set_result(task.result())
 
         poll_task.add_done_callback(_on_poll_done)
 
-        # Leader awaits via shield so that *its* cancellation also
-        # unwinds locally without taking down the shared poll. The
-        # shielded poll task continues until the done-callback fires.
-        try:
-            return await asyncio.shield(future)
-        except asyncio.CancelledError:
-            # Leader cancelled before the poll completed. The poll task
-            # continues running on behalf of any followers; eventually
-            # its done-callback will resolve the future and pop the
-            # registry. We just unwind our own coroutine.
-            raise
+        # Leader awaits via ``asyncio.shield`` so that the leader's
+        # cancellation unwinds locally without taking down the shared
+        # poll. The shielded poll task continues until the done-callback
+        # fires; remaining followers still receive the result.
+        return await asyncio.shield(future)
 
     async def _run_poll_loop(
         self,

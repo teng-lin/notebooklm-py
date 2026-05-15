@@ -13,7 +13,7 @@ shielded poll task; *followers* await the shared future via
 cancelled caller's await raises; the underlying poll continues; remaining
 followers still receive the result.
 
-Four scenarios:
+Five scenarios:
 
 A. Dedupe — two concurrent waiters; only ONE poll loop runs; both receive
    the same ``GenerationStatus``.
@@ -23,6 +23,11 @@ C. Cleanup on success — after both waiters return, ``_pending_polls`` is
    empty.
 D. Cleanup on exception — poll raises; both waiters see the exception;
    ``_pending_polls`` is empty.
+E. Orphan-exception suppression — leader cancels with no follower
+   attached AND the poll subsequently fails. The
+   ``_consume_orphan_exception`` callback must retrieve the exception
+   from the unawaited future so asyncio does not log
+   "Future exception was never retrieved" at GC time.
 
 Implementation strategy: monkey-patch ``ArtifactsAPI.poll_status`` to a
 controllable async function so the test owns the poll-loop's progression
@@ -114,10 +119,13 @@ async def test_scenario_a_two_waiters_share_one_poll_loop(_auth_tokens):
         w1 = asyncio.create_task(waiter())
         w2 = asyncio.create_task(waiter())
 
-        # Spin until both have registered (one as leader, one as follower).
-        # We assert via the pending-polls registry, which is the public
-        # invariant the fix introduces. Cap iterations to avoid a hang
-        # if the fix isn't applied at all.
+        # Spin until the leader has registered. The follower's
+        # ``asyncio.shield`` attach happens within the same
+        # ``wait_for_completion`` call, so by the time the registry
+        # has one entry and neither task is done, the follower is
+        # parked at the shield. We yield additional times below to
+        # ensure both have been scheduled before releasing the poll —
+        # extra yields are safer than too few.
         for _ in range(50):
             if len(client._core._pending_polls) >= 1 and (
                 w1.done() is False and w2.done() is False
@@ -125,8 +133,13 @@ async def test_scenario_a_two_waiters_share_one_poll_loop(_auth_tokens):
                 # Both have parked; allow the poll to fire.
                 break
             await asyncio.sleep(0.01)
+        # Yield a few times to be sure both leader and follower have
+        # entered their ``await asyncio.shield(future)``. CPython's
+        # task scheduling makes one yield reliable in practice; a
+        # handful is defensive against future event-loop changes.
+        for _ in range(3):
+            await asyncio.sleep(0)
         both_waiters_attached.set()
-        # Tiny yield so the poll enters its await.
         await asyncio.sleep(0)
         release_first_poll.set()
 
@@ -281,4 +294,98 @@ async def test_scenario_d_pending_polls_empty_after_exception(_auth_tokens):
         )
         assert poll_call_count == 1, (
             f"expected 1 poll, got {poll_call_count} (dedupe must hold on exception path)"
+        )
+
+
+@pytest.mark.asyncio
+async def test_scenario_e_orphan_exception_does_not_log_unraisable(_auth_tokens, caplog, recwarn):
+    """E. Orphan-exception suppression: leader cancelled, no followers, poll raises.
+
+    Sequence:
+
+    1. A single waiter (leader) starts ``wait_for_completion``; the
+       poll task is in flight.
+    2. The leader is cancelled before any follower attaches.
+    3. The poll task subsequently fails with an exception.
+    4. The future is resolved via ``set_exception`` with nobody
+       awaiting it.
+
+    Without ``_consume_orphan_exception`` registered on the future,
+    asyncio's ``Future.__del__`` would log a
+    ``Future exception was never retrieved`` traceback at GC time
+    (visible as a logger.error from ``asyncio`` or as an unraisable
+    hook event). This test confirms the suppression is in place.
+
+    We assert two things:
+      * the registry is empty after teardown (cleanup path holds);
+      * no ``Future exception was never retrieved`` log record fires.
+    """
+
+    class _Boom(RuntimeError):
+        pass
+
+    async with _opened_client(_auth_tokens) as client:
+        poll_started = asyncio.Event()
+        release_poll = asyncio.Event()
+        poll_call_count = 0
+
+        async def fake_poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+            nonlocal poll_call_count
+            poll_call_count += 1
+            poll_started.set()
+            await release_poll.wait()
+            raise _Boom("orphan poll failure")
+
+        client.artifacts.poll_status = fake_poll_status  # type: ignore[method-assign]
+
+        leader = asyncio.create_task(
+            client.artifacts.wait_for_completion(
+                "nb_001", "task_e", initial_interval=0.01, timeout=TEST_TIMEOUT_S
+            )
+        )
+        await asyncio.wait_for(poll_started.wait(), timeout=TEST_TIMEOUT_S)
+
+        # Cancel the leader BEFORE releasing the poll. No follower
+        # ever attaches.
+        leader.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await leader
+
+        # Now let the poll task fail. The done-callback will set the
+        # exception on the orphan future; the ``_consume_orphan_exception``
+        # callback should retrieve it so no GC-time warning fires.
+        release_poll.set()
+
+        # Yield until the poll task has actually run and resolved the
+        # future. The registry is the readiness signal.
+        for _ in range(50):
+            if not client._core._pending_polls:
+                break
+            await asyncio.sleep(0.01)
+
+        # Force a GC pass so any unretrieved-exception warning would
+        # surface NOW rather than at unspecified later teardown.
+        import gc
+
+        gc.collect()
+        await asyncio.sleep(0)
+
+        assert client._core._pending_polls == {}, (
+            "registry leaked on leader-cancel-with-orphan-exception path: "
+            f"{client._core._pending_polls!r}"
+        )
+
+        # The poll ran exactly once; the suppression callback consumed
+        # the orphan exception so no log record nor warning should mention
+        # an unretrieved future exception.
+        assert poll_call_count == 1
+        unretrieved_records = [r for r in caplog.records if "never retrieved" in r.getMessage()]
+        assert not unretrieved_records, (
+            f"orphan future exception logged 'never retrieved': "
+            f"{[r.getMessage() for r in unretrieved_records]}"
+        )
+        unretrieved_warnings = [w for w in recwarn.list if "never retrieved" in str(w.message)]
+        assert not unretrieved_warnings, (
+            f"orphan future exception warning fired: "
+            f"{[str(w.message) for w in unretrieved_warnings]}"
         )
