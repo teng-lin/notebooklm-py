@@ -30,15 +30,13 @@
 # ``--strict`` flip a no-op.
 
 # --- illustrative documentation fixtures (not real recordings) -------------
-# These two files are committed as illustrative examples of the cassette
-# format, not real recorded sessions.  They contain YAML strings that
-# happen to end on a closing double-quote immediately after the canonical
-# ``SCRUBBED`` placeholder (``HSID=SCRUBBED"``), and the line-by-line
-# guard captures the trailing ``"`` as part of the cookie value — making
-# it look like a leak.  The cassettes themselves are clean; the line
-# boundary is a YAML-serialization artifact.
-example_batchexecute_pattern.yaml
-example_scrubbed_cookies.yaml
+# ``example_batchexecute_pattern.yaml`` + ``example_scrubbed_cookies.yaml``
+# were relocated to ``tests/cassettes/examples/`` in T8.E2 per the cassette
+# naming convention in ``tests/cassettes/README.md``. The default guard scan
+# (``tests/scripts/check_cassettes_clean.py``) globs ``tests/cassettes/*.yaml``
+# non-recursively, so files under ``examples/`` are no longer scanned — and
+# the allowlist entries that previously suppressed their (false-positive)
+# trailing-quote line-boundary "leak" became dead code. Removed in T8.E2.
 
 # --- spec-explicit entries (none remaining) -------------------------------
 # All spec-explicit phase-2 cassettes have been repaired or removed:

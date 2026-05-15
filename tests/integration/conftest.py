@@ -13,7 +13,17 @@ from notebooklm.auth import AuthTokens
 
 CASSETTES_DIR = Path(__file__).parent.parent / "cassettes"
 
-# Check if cassettes are available (more than just example files)
+# Real cassettes live at the top level of ``tests/cassettes/``; illustrative
+# fixtures (``example_*.yaml``) live in ``tests/cassettes/examples/`` per the
+# naming convention documented in ``tests/cassettes/README.md`` (T8.E2).
+#
+# This filter decides whether the VCR integration tier has anything to replay:
+# - Globbing ``*.yaml`` (non-recursive) naturally skips the ``examples/``
+#   subdirectory, so example fixtures cannot inflate the "real cassettes
+#   present" signal.
+# - The ``startswith("example_")`` guard is retained as a belt-and-braces
+#   filter — if a future contributor lands an ``example_*.yaml`` file at the
+#   top level by mistake, it still won't count as a real recording.
 _real_cassettes = (
     [f for f in CASSETTES_DIR.glob("*.yaml") if not f.name.startswith("example_")]
     if CASSETTES_DIR.exists()
