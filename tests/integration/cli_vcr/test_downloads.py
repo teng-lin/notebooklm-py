@@ -7,7 +7,12 @@ import pytest
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import assert_command_success, notebooklm_vcr, skip_no_cassettes
+from .conftest import (
+    VCR_READONLY_NOTEBOOK_ID,
+    assert_command_success,
+    notebooklm_vcr,
+    skip_no_cassettes,
+)
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
@@ -46,5 +51,15 @@ class TestDownloadCommands:
         """Download commands work with real client."""
         output_file = tmp_path / filename
         with notebooklm_vcr.use_cassette(cassette):
-            result = runner.invoke(cli, ["download", command, *extra_args, str(output_file)])
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    command,
+                    "-n",
+                    VCR_READONLY_NOTEBOOK_ID,
+                    *extra_args,
+                    str(output_file),
+                ],
+            )
             assert_command_success(result)

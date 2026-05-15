@@ -1655,4 +1655,58 @@ interactions:
     status:
       code: 200
       message: OK
+- request:
+    body: f.req=%5B%5B%5B%22khqZz%22%2C%22%5B%5B%5D%2Cnull%2Cnull%2C%5C%22b1556695-010e-4fe3-a841-a6efa7fe0697%5C%22%2C2%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312296889&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '182'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
+        __Secure-3PSIDCC=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=khqZz&source-path=%2Fnotebook%2Ff59447f4-2a13-4d64-9df8-bc89c615c7bd&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ')]}''
+
+        412
+
+        [["wrb.fr","khqZz","[[[null,null,2,null,[[\"Based on the sources provided,
+        you can ask about the main topics and themes covered in these documents. For
+        example, you might ask about the key concepts, the authors main arguments,
+        or how the different sources relate to each other.\"]]],[null,null,1,\"What
+        question should I ask?\"]]]",null,null,null,"generic"],["di",308],["af.httprm",308,"5918204557847671595",10]]
+
+        23
+
+        [["e",4,null,null,188]]
+
+        '
+    headers:
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Type:
+      - application/json; charset=utf-8
+      Transfer-Encoding:
+      - chunked
+      content-length:
+      - '451'
+    status:
+      code: 200
+      message: OK
 version: 1

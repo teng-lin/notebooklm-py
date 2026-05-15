@@ -80,57 +80,6 @@ async def get_vcr_auth() -> AuthTokens:
         )
 
 
-# =============================================================================
-# T8.A1 — xfail cassettes whose recorded ``rpcids`` order does not match live
-# call order under the new default matcher (``method, scheme, host, port,
-# path, rpcids``). These cassettes were previously selected by play-count
-# ordering alone; tightening the matcher in T8.A1 surfaces the drift.
-# Each entry MUST be removed in its phase-2 cassette-repair PR (T8.B*).
-# Tracking issue: tier-8-followup label.
-# =============================================================================
-_T8_A1_XFAIL_NODEIDS = frozenset(
-    {
-        # test_artifacts.py
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListCommand::test_artifact_list[False]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListCommand::test_artifact_list[True]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[quiz-artifacts_list_quizzes.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[report-artifacts_list_reports.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[video-artifacts_list_video.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[flashcard-artifacts_list_flashcards.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[infographic-artifacts_list_infographics.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[slide-deck-artifacts_list_slide_decks.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[data-table-artifacts_list_data_tables.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactListByType::test_artifact_list_by_type[mind-map-notes_list_mind_maps.yaml]",
-        "tests/integration/cli_vcr/test_artifacts.py::TestArtifactSuggestionsCommand::test_artifact_suggestions",
-        # test_chat.py
-        "tests/integration/cli_vcr/test_chat.py::TestAskCommand::test_ask_question",
-        "tests/integration/cli_vcr/test_chat.py::TestAskCommand::test_ask_question_json",
-        "tests/integration/cli_vcr/test_chat.py::TestHistoryCommand::test_history",
-        # test_generate.py
-        "tests/integration/cli_vcr/test_generate.py::TestGenerateCommands::test_generate[quiz-artifacts_generate_quiz.yaml-extra_args0]",
-        "tests/integration/cli_vcr/test_generate.py::TestGenerateCommands::test_generate[flashcards-artifacts_generate_flashcards.yaml-extra_args1]",
-        "tests/integration/cli_vcr/test_generate.py::TestGenerateCommands::test_generate[report-artifacts_generate_report.yaml-extra_args2]",
-        "tests/integration/cli_vcr/test_generate.py::TestGenerateCommands::test_generate[report-artifacts_generate_study_guide.yaml-extra_args3]",
-        # ``test_revise_slide`` was repaired in T8.B1 — cassette re-recorded
-        # against the live REVISE_SLIDE RPC.
-        # test_notebooks.py
-        "tests/integration/cli_vcr/test_notebooks.py::TestSummaryCommand::test_summary",
-        # test_notes.py
-        "tests/integration/cli_vcr/test_notes.py::TestNoteCommands::test_note_command[notes_list.yaml-args0]",
-        "tests/integration/cli_vcr/test_notes.py::TestNoteCommands::test_note_command[notes_create.yaml-args1]",
-        # test_sources.py
-        "tests/integration/cli_vcr/test_sources.py::TestSourceListCommand::test_source_list[False]",
-        "tests/integration/cli_vcr/test_sources.py::TestSourceListCommand::test_source_list[True]",
-        "tests/integration/cli_vcr/test_sources.py::TestSourceAddCommand::test_source_add[sources_add_url.yaml-args0]",
-        "tests/integration/cli_vcr/test_sources.py::TestSourceAddCommand::test_source_add[sources_add_text.yaml-args1]",
-        "tests/integration/cli_vcr/test_sources.py::TestSourceContentCommands::test_source_content[guide-sources_get_guide.yaml]",
-        "tests/integration/cli_vcr/test_sources.py::TestSourceContentCommands::test_source_content[fulltext-sources_get_fulltext.yaml]",
-        # test_vcr_comprehensive.py
-        "tests/integration/test_vcr_comprehensive.py::TestArtifactsListAPI::test_suggest_reports",
-    }
-)
-
-
 def _has_use_cassette_decorator(item) -> bool:
     """Detect ``@notebooklm_vcr.use_cassette(...)`` on a test callable.
 
@@ -158,17 +107,9 @@ def _has_use_cassette_decorator(item) -> bool:
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-apply xfail to T8.A1-surfaced cassette-drift failures, then
-    enforce the integration tier-VCR rule (T8.D11).
+    """Enforce the integration tier-VCR rule (T8.D11).
 
-    **T8.A1 xfail layer.** Adding ``rpcids`` to the default VCR matcher
-    surfaces cassettes whose recorded rpc-call order doesn't match live call
-    order. Re-recording is phase-2 work (T8.B*); until then, mark these
-    tests xfail so CI stays green and the phase-2 PRs that re-record each
-    cassette can simply remove the entry from ``_T8_A1_XFAIL_NODEIDS``.
-
-    **T8.D11 tier-enforcement layer.** After xfail-tagging, every collected
-    test under ``tests/integration/`` MUST be VCR-tier: it must carry
+    Every collected test under ``tests/integration/`` MUST be VCR-tier: it must carry
     ``@pytest.mark.vcr``, be decorated with ``@notebooklm_vcr.use_cassette``,
     or explicitly opt out with ``@pytest.mark.allow_no_vcr`` (for mock-only
     or no-network tests that legitimately live under ``tests/integration/``
@@ -176,15 +117,6 @@ def pytest_collection_modifyitems(config, items):
     raise ``pytest.UsageError`` so the test suite refuses to collect rather
     than silently letting a new mock test slip into the integration tier.
     """
-    marker = pytest.mark.xfail(
-        reason="T8.A1 matcher tightening surfaced cassette drift; phase-2 T8.B* re-records",
-        strict=False,
-    )
-    for item in items:
-        if item.nodeid in _T8_A1_XFAIL_NODEIDS:
-            item.add_marker(marker)
-
-    # T8.D11 — tier enforcement.
     violations: list[str] = []
     for item in items:
         nodeid = item.nodeid

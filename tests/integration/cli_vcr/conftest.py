@@ -26,7 +26,12 @@ __all__ = [
     "notebooklm_vcr",
     "assert_command_success",
     "parse_json_output",
+    "VCR_READONLY_NOTEBOOK_ID",
+    "VCR_READONLY_SOURCE_ID",
 ]
+
+VCR_READONLY_NOTEBOOK_ID = "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e"
+VCR_READONLY_SOURCE_ID = "fdfc8ac4-3237-4f2a-8a79-3e24297a7040"
 
 
 @pytest.fixture
@@ -40,10 +45,13 @@ def mock_context(tmp_path: Path):
     """Mock context file with a test notebook ID.
 
     CLI commands that require a notebook ID will use this context.
-    The notebook ID doesn't matter for VCR replay - cassettes have recorded responses.
+    Use a full recorded notebook UUID rather than a short placeholder. A
+    placeholder is treated as a partial ID by the CLI and triggers an extra
+    LIST_NOTEBOOKS RPC before the command under test, which breaks replay now
+    that VCR matches batchexecute calls by ``rpcids``.
     """
     context_file = tmp_path / "context.json"
-    context_file.write_text(json.dumps({"notebook_id": "test_notebook_id"}))
+    context_file.write_text(json.dumps({"notebook_id": VCR_READONLY_NOTEBOOK_ID}))
 
     with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
         yield context_file

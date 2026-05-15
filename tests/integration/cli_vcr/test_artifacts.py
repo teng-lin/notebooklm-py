@@ -56,11 +56,7 @@ class TestArtifactListByType:
         For INFOGRAPHIC and DATA_TABLE we additionally assert the rendered
         JSON output exposes the parsed ``type_id`` matching the requested
         filter — proving the parser, not just the transport, agrees on the
-        kind. T8.C6 / audit-I21. Today the cli_vcr suite is blanket-xfailed
-        under T8.A1 because the recorded rpcids order does not match the
-        live call order; once a phase-2 PR re-records these cassettes the
-        xfail entry in ``tests/integration/conftest.py`` will be removed
-        and these assertions will become enforcing.
+        kind. T8.C6 / audit-I21.
         """
         # T8.C6: only the INFOGRAPHIC + DATA_TABLE rows opt into ``--json``.
         # The other rows stay on the table renderer to preserve their

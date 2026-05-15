@@ -41,8 +41,8 @@ pytest_plugins = ["pytester"]
 # Faithful copy of the hook + helper from
 # ``tests/integration/conftest.py``. Kept inline so ``pytester`` can drop it
 # into a synthetic conftest without importing the real one (which carries
-# unrelated keepalive-fixture and xfail-tagging code that's not under test
-# here). If the production hook's detection logic changes, update this copy.
+# unrelated keepalive-fixture code that's not under test here). If the
+# production hook's detection logic changes, update this copy.
 HOOK_SOURCE = textwrap.dedent(
     """
     import pytest

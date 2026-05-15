@@ -1555,7 +1555,7 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: f.req=%5B%5B%5B%22cFji9%22%2C%22%5B%5C%22167481cd-23a3-4331-9a45-c8948900bf91%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768348453672&
+    body: f.req=%5B%5B%5B%22cFji9%22%2C%22%5B%5C%22c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768348453672&
     headers:
       Accept:
       - '*/*'
@@ -1578,7 +1578,7 @@ interactions:
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2F167481cd-23a3-4331-9a45-c8948900bf91&f.sid=SCRUBBED&rt=c
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ')]}''
@@ -1694,6 +1694,689 @@ interactions:
       - '0'
       content-length:
       - '3988'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5B%5B%5B%22gArtLc%22%2C%22%5B%5B2%5D%2C%5C%22c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e%5C%22%2C%5C%22NOT%20artifact.status%20%3D%20%5C%5C%5C%22ARTIFACT_STATUS_SUGGESTED%5C%5C%5C%22%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312235923&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '275'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
+        __Secure-3PSIDCC=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ")]}'\n\n79405\n[[\"wrb.fr\",\"gArtLc\",\"[[[\\\"575a9e5d-40fb-44a4-b2d3-21a573bdb547\\\",\\\"Reverse
+        Engineering an AI Coding Agent\\\",1,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,[null,[null,null,null,[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"],[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"],[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"],[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"],[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"],[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"],[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"],[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]],\\\"en\\\",true],\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqtmyUwFDoxEL5_5-yOiK4fG0x_BSz-ihyJ9v_A9nsQvoqv60URfozdfTAdyhj4HA9nMnDn06OM0dqV_OwCg4C3oQnCdFjSueHB25FHV6ATARLAvA5-eAwB4KqdKIcFXCDZQCvx3SU0k7KNY3aXFa8_-FtW8KA\\\\u003dm140\\\",\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqtmyUwFDoxEL5_5-yOiK4fG0x_BSz-ihyJ9v_A9nsQvoqv60URfozdfTAdyhj4HA9nMnDn06OM0dqV_OwCg4C3oQnCdFjSueHB25FHV6ATARLAvA5-eAwB4KqdKIcFXCDZQCvx3SU0k7KNY3aXFa8_-FtW8KA\\\\u003dm140-dv\\\",true,[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqtmyUwFDoxEL5_5-yOiK4fG0x_BSz-ihyJ9v_A9nsQvoqv60URfozdfTAdyhj4HA9nMnDn06OM0dqV_OwCg4C3oQnCdFjSueHB25FHV6ATARLAvA5-eAwB4KqdKIcFXCDZQCvx3SU0k7KNY3aXFa8_-FtW8KA\\\\u003dm140-dv\\\",4,\\\"audio/mp4\\\"],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqtmyUwFDoxEL5_5-yOiK4fG0x_BSz-ihyJ9v_A9nsQvoqv60URfozdfTAdyhj4HA9nMnDn06OM0dqV_OwCg4C3oQnCdFjSueHB25FHV6ATARLAvA5-eAwB4KqdKIcFXCDZQCvx3SU0k7KNY3aXFa8_-FtW8KA\\\\u003dm140\\\",1,\\\"audio/mp4\\\"],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqtmyUwFDoxEL5_5-yOiK4fG0x_BSz-ihyJ9v_A9nsQvoqv60URfozdfTAdyhj4HA9nMnDn06OM0dqV_OwCg4C3oQnCdFjSueHB25FHV6ATARLAvA5-eAwB4KqdKIcFXCDZQCvx3SU0k7KNY3aXFa8_-FtW8KA\\\\u003dmm,hls\\\",2],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqtmyUwFDoxEL5_5-yOiK4fG0x_BSz-ihyJ9v_A9nsQvoqv60URfozdfTAdyhj4HA9nMnDn06OM0dqV_OwCg4C3oQnCdFjSueHB25FHV6ATARLAvA5-eAwB4KqdKIcFXCDZQCvx3SU0k7KNY3aXFa8_-FtW8KA\\\\u003dmm,dash\\\",3]],[734]],null,null,null,[1768311531,99748000],null,null,null,null,[1768310985,133261000],null,null,null,1],[\\\"0b9bb718-2749-4d3e-8448-42c94019c6a5\\\",\\\"AI
+        Agent Step-by-Step Evolution\\\",7,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,null,null,[1768311181,982128000],null,null,null,[[null,\\\"en\\\",null,1,2],\\\"AI
+        Agent Step-by-Step Evolution\\\",[[\\\"AI Agent Step-by-Step Evolution\\\",[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOriqqIeC8jIVpyuQtGrcBYyGuxUKG7Mz4YLm-jih3G3cZZeLmjWL7qJD2i-BfgCA2UIJQgTcUztRB_-rrvn4JhSbnMrsEYb9kiI53gb4kTTK1BBdgj3vYK6-yA7hluK7ibrYkuueY-6_L3xR-T8O2vhZYhbBAs\\\\u003dw2752-d-h1536\\\",2752,1536],\\\"Infographic
+        showing the five-stage evolution of a modern AI agent, progressing from a
+        simple tool (v0) to a complex expert system (v4).\\\",\\\"TITLE\\\\nBuilding
+        a Modern AI Agent: A Step-by-Step Evolution\\\\n\\\\nSTAGE 1: THE MINIMALIST
+        AGENT (V0)\\\\nEstablishes that a single 'bash' tool is enough to read, write,
+        search, and even create subagents.\\\\n[The path starts at a terminal command
+        prompt icon.]\\\\n\\\\nSTAGE 2: THE CORE AGENT (V1)\\\\nIntroduces 4 essential
+        tools (bash, read, write, edit) to form the basic, repeating agent loop.\\\\n[The
+        path connects Stage 1 to a circular process involving four small icons representing
+        the essential tools.]\\\\n\\\\nSTAGE 3: THE PLANNER (V2)\\\\nAdds a 'TodoWrite'
+        tool to make plans explicit, tracking multi-step tasks to maintain focus.\\\\n[The
+        flow moves to a blueprint/clipboard icon, where a process shows task planning
+        with checkmarks and an arrow loop.]\\\\n\\\\nSTAGE 4: THE DELEGATOR (V3)\\\\nThe
+        'Task' tool spawns child agents with isolated context to handle complex jobs
+        without confusion.\\\\n[The flow leads into a central mechanical gear icon,
+        which represents the core engine. Below the engine, smaller agent icons branch
+        off, illustrating delegation.]\\\\n\\\\nSTAGE 5: THE EXPERT (V4)\\\\n[The
+        final stage shows the flow connecting to a large desktop monitor setup with
+        an internal diagram of a processing brain.]\\\\n\\\\n- Concept: Tool\\\\n-
+        What it is: CAN DO\\\\n- Example: 'bash', 'read_file'\\\\n\\\\n- Concept:
+        Skill\\\\n- What it is: How an agent KNOWS TO DO it\\\\n- Example: A guide
+        on PDF processing\\\\n\\\\nA 'Skill' tool loads domain expertise, educating
+        the agent on \\\\\\\"how\\\\\\\" to perform specific tasks.\\\"]]],[1768311055,334226000],null,null,null,1],[\\\"835a5938-4a60-43a0-b2c3-6f01b435664a\\\",\\\"Agent
+        Architecture Quiz\\\",4,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,null,[\\\"\\\",[2,null,null,\\\"en\\\",null,null,null,[2,2],true]],[1768311105,796819000],null,null,null,null,[1768311059,696595000],null,null,null,1],[\\\"fdd20d4a-f422-42b3-896c-60997035f4ca\\\",\\\"Study
+        Guide for \\\\\\\"Learn Claude Code\\\\\\\"\\\",2,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,[\\\"#
+        Study Guide for \\\\\\\"Learn Claude Code\\\\\\\"\\\\n\\\\nThis study guide
+        is designed to assess and reinforce understanding of the concepts, architecture,
+        and philosophy behind the AI agent development tutorial presented in the \\\\\\\"learn-claude-code\\\\\\\"
+        repository. It covers the progressive evolution of the agent through its five
+        versions, from a minimal bash-based implementation to a sophisticated system
+        incorporating skills and subagents.\\\\n\\\\n## Short-Answer Quiz\\\\n\\\\n*Instructions:
+        Provide a concise answer (2-3 sentences) for each of the following questions
+        based on the provided source material.*\\\\n\\\\n1.  What is the core philosophy
+        of the `v0_bash_agent.py` and how does it implement subagents?\\\\n2.  According
+        to the `v1_basic_agent.py` documentation, what is the fundamental secret of
+        modern AI agents, and what are the four essential tools that cover 90% of
+        use cases?\\\\n3.  Explain the problem of \\\\\\\"Context Fade\\\\\\\" that
+        `v2_todo_agent.py` is designed to solve. How does the `TodoWrite` tool address
+        this issue?\\\\n4.  What is \\\\\\\"Context Pollution,\\\\\\\" and how does
+        the subagent mechanism introduced in `v3` solve this problem?\\\\n5.  Differentiate
+        between a \\\\\\\"Tool\\\\\\\" and a \\\\\\\"Skill\\\\\\\" as defined in the
+        `v4` documentation.\\\\n6.  What is the paradigm shift of \\\\\\\"Knowledge
+        Externalization\\\\\\\" introduced in `v4`? Why is it considered a more democratic
+        approach than traditional model training?\\\\n7.  Describe the three layers
+        of \\\\\\\"Progressive Disclosure\\\\\\\" used by the `v4` skills mechanism.
+        What is the purpose of this layered approach?\\\\n8.  According to the `v4`
+        documentation on \\\\\\\"Caching Economics,\\\\\\\" why is it more cost-effective
+        to inject skill content as a `tool_result` rather than modifying the system
+        prompt?\\\\n9.  What is the purpose of the `Agent Type Registry` in the `v3`
+        subagent mechanism? Name the three default agent types and their primary functions.\\\\n10.
+        Describe the core agent loop pattern that, according to the repository's `README.md`,
+        all coding agents share.\\\\n\\\\n---\\\\n\\\\n## Answer Key\\\\n\\\\n1.  The
+        core philosophy of `v0` is \\\\\\\"Bash is All You Need.\\\\\\\" It posits
+        that a single `bash` tool is sufficient for all agent capabilities, including
+        reading, writing, and searching files. Subagents are implemented through recursive
+        self-calls, where the agent executes `python v0_bash_agent.py \\\\\\\"subtask\\\\\\\"`
+        as a bash command, spawning an isolated child process with a fresh context.\\\\n2.
+        \ The fundamental secret is that \\\\\\\"The Model IS the Agent,\\\\\\\" meaning
+        the model itself is the primary decision-maker, and the code simply provides
+        tools and a loop. The four essential tools are `bash` (run any command), `read_file`
+        (view file contents), `write_file` (create or overwrite files), and `edit_file`
+        (make surgical changes to files).\\\\n3.  \\\\\\\"Context Fade\\\\\\\" is
+        the problem where an agent loses track of its plan during complex, multi-step
+        tasks because the plan exists only in the model's transient memory. The `TodoWrite`
+        tool solves this by making the plan explicit and visible as a structured to-do
+        list, allowing both the user and the model to track progress and maintain
+        focus.\\\\n4.  \\\\\\\"Context Pollution\\\\\\\" occurs when a single agent's
+        message history becomes cluttered with intermediate details from one subtask
+        (like file exploration), leaving little context window space for subsequent
+        subtasks (like refactoring). The `v3` subagent mechanism solves this by delegating
+        tasks to child agents with isolated, fresh message histories, which then return
+        only a concise summary to the parent agent.\\\\n5.  A \\\\\\\"Tool\\\\\\\"
+        is a capability, defining what the model *CAN do* (e.g., `bash`, `read_file`).
+        A \\\\\\\"Skill\\\\\\\" is knowledge, defining how the model *KNOWS to do*
+        a domain-specific task (e.g., PDF processing, code review). Tools provide
+        the agent with actions, while skills provide it with expertise.\\\\n6.  \\\\\\\"Knowledge
+        Externalization\\\\\\\" is the shift from storing knowledge within a model's
+        parameters (requiring expensive training to modify) to storing it in external,
+        human-editable documents like `SKILL.md`. This is more democratic because
+        anyone can \\\\\\\"teach\\\\\\\" the agent by simply editing a text file,
+        eliminating the need for ML expertise, GPU clusters, and large training datasets.\\\\n7.
+        \ The three layers are: Layer 1 (Metadata), which includes the skill's name
+        and description and is always loaded; Layer 2 (`SKILL.md` body), which contains
+        detailed instructions and is loaded on trigger; and Layer 3 (Resources), which
+        includes optional scripts and reference files. This approach keeps the agent's
+        initial context lean while allowing for arbitrary depth of knowledge on-demand.\\\\n8.
+        \ Injecting skill content as a `tool_result` appends it to the conversation
+        history, which preserves the exact prefix of previous messages. This allows
+        API providers to use a KV Cache for the unchanged prefix, drastically reducing
+        computation and cost. Modifying the system prompt invalidates the entire cache,
+        forcing an expensive re-computation of the full context every time.\\\\n9.
+        \ The `Agent Type Registry` defines different types of subagents with specific
+        capabilities by filtering their available tools and providing them with a
+        specialized system prompt. The three default types are `explore` (a read-only
+        agent for searching and analysis), `code` (a full agent with all tools for
+        implementation), and `plan` (a read-only agent for designing strategies without
+        modifying files).\\\\n10. The core agent loop is a `while True` loop where
+        the agent repeatedly cycles through a simple process. First, the model is
+        called with the current message history and available tools. If the model's
+        response includes tool calls, those tools are executed, the results are appended
+        to the message history, and the loop continues. The loop only terminates when
+        the model's response does not request a tool use.\\\\n\\\\n---\\\\n\\\\n##
+        Essay Questions\\\\n\\\\n*Instructions: The following questions are designed
+        for longer, more detailed analysis. No answers are provided.*\\\\n\\\\n1.
+        \ Analyze the architectural evolution of the agent from v0 to v4. Discuss
+        how each version's \\\\\\\"Core Insight\\\\\\\" (e.g., \\\\\\\"Bash is All
+        You Need,\\\\\\\" \\\\\\\"Structured Planning,\\\\\\\" \\\\\\\"Knowledge Externalization\\\\\\\")
+        directly addresses a specific limitation of the previous version.\\\\n2.  The
+        v4 documentation makes a strong case for \\\\\\\"Knowledge Externalization\\\\\\\"
+        as a paradigm shift from \\\\\\\"training AI\\\\\\\" to \\\\\\\"educating
+        AI.\\\\\\\" Elaborate on this argument, detailing the practical and economic
+        differences between modifying agent behavior via fine-tuning versus editing
+        a `SKILL.md` file.\\\\n3.  Discuss the importance of \\\\\\\"Context Caching
+        Economics\\\\\\\" in the design of cost-effective and scalable AI agents.
+        Explain the concept of a KV Cache, identify at least three anti-patterns described
+        in the documentation that invalidate the cache, and articulate the principles
+        of the recommended \\\\\\\"append-only\\\\\\\" architecture.\\\\n4.  The v2
+        documentation states, \\\\\\\"Structure constrains AND enables.\\\\\\\" Using
+        the `TodoManager` from v2 and the `Agent Type Registry` from v3 as primary
+        examples, explain how imposing specific rules and limitations on an AI agent's
+        behavior can lead to more focused, reliable, and capable systems for complex
+        tasks.\\\\n5.  Compare and contrast the two methods of implementing subagents
+        presented in the repository: the implicit, recursive process spawning in `v0_bash_agent.py`
+        and the explicit `Task` tool in `v3_subagent.py`. Evaluate the trade-offs
+        between these two approaches in terms of simplicity, control, context isolation,
+        and overall capability.\\\\n\\\\n---\\\\n\\\\n## Glossary\\\\n\\\\n| Term
+        | Definition |\\\\n| :--- | :--- |\\\\n| **Agent** | An AI system that operates
+        in a loop, repeatedly using tools to interact with an environment until a
+        task is complete, rather than just providing a single text response. |\\\\n|
+        **Agent Skills Spec** | An official specification that agents like Kode CLI,
+        Claude Code, and Cursor can support, likely related to the format and use
+        of Skills. |\\\\n| **Agent Type Registry** | A configuration in v3 that defines
+        different types of subagents (e.g., `explore`, `code`, `plan`) with specialized
+        prompts and a limited set of tools to ensure focused behavior. |\\\\n| **Append-Only**
+        | The recommended architectural pattern for managing conversation history,
+        where new messages and tool results are always added to the end. This preserves
+        the message prefix, enabling significant cost savings through KV Caching.
+        |\\\\n| **Context Caching Economics** | The study of how different agent architectures
+        impact API costs, primarily focusing on the use or invalidation of the provider-side
+        KV Cache. |\\\\n| **Context Fade** | The problem where an agent loses track
+        of its high-level plan during a long, multi-step task because the plan is
+        not explicitly stored or tracked. Addressed in v2 with the `TodoManager`.
+        |\\\\n| **Context Isolation** | The key principle behind the subagent mechanism,
+        where a child agent is given its own fresh message history, preventing it
+        from being influenced by or polluting the parent agent's context. |\\\\n|
+        **Context Pollution** | The problem where a single agent's context window
+        becomes filled with low-level details from one subtask (e.g., exploring files),
+        degrading its performance on subsequent subtasks. Addressed in v3 with subagents.
+        |\\\\n| **Knowledge Externalization** | A paradigm shift where domain-specific
+        knowledge is stored in external, human-editable documents (`SKILL.md`) instead
+        of being locked inside a model's trained parameters. This democratizes the
+        process of customizing AI behavior. |\\\\n| **KV Cache** | A mechanism used
+        by LLM providers to store the intermediate computational states (key-value
+        pairs) of a prompt's prefix. If a subsequent API call uses the same exact
+        prefix, the cached states can be reused, avoiding redundant computation and
+        reducing costs. |\\\\n| **Progressive Disclosure** | A three-layer approach
+        to loading skills that keeps the agent's context lean. It starts by loading
+        only metadata (Layer 1), then the full skill body when triggered (Layer 2),
+        and provides access to associated resources as needed (Layer 3). |\\\\n| **Skill**
+        | A package of on-demand domain expertise that tells an agent *HOW* to perform
+        a task. It is distinct from a tool, which is a raw capability. Skills are
+        stored in `SKILL.md` files. |\\\\n| **SKILL.md** | A standardized file format
+        for defining a Skill. It consists of YAML frontmatter for metadata (name,
+        description) and a Markdown body containing detailed instructions, best practices,
+        and code examples. |\\\\n| **Subagent** | A child agent spawned by a parent
+        agent to perform a focused, isolated subtask. Subagents have their own context,
+        system prompt, and a potentially filtered set of tools. |\\\\n| **Tool** |
+        A function or capability that the model can call to interact with its environment.
+        Examples include `bash`, `read_file`, and `write_file`. Tools define what
+        an agent *CAN do*. |\\\\n| **TodoManager** | A class introduced in v2 to manage
+        a structured, visible task list. It enforces constraints (e.g., only one task
+        `in_progress`) to help the agent maintain focus on complex, multi-step projects.
+        |\\\",[\\\"Study Guide\\\",\\\"Quiz with answer key plus glossary\\\",null,[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"],[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"],[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"],[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"],[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"],[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"],[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"],[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]],\\\"en\\\",\\\"You
+        are a highly capable research assistant and tutor. Create a detailed study
+        guide designed to review understanding of the sources. Create a quiz with
+        ten short-answer questions (2-3 sentences each) and include a separate answer
+        key. Suggest five essay format questions, but do not supply answers. Also
+        conclude with a comprehensive glossary of key terms with definitions.\\\",null,true],[[[[0,35,[[[0,35,[\\\"Study
+        Guide for \\\\\\\"Learn Claude Code\\\\\\\"\\\"]]],[null,4]]],[35,416,[[[35,416,[\\\"This
+        study guide is designed to assess and reinforce understanding of the concepts,
+        architecture, and philosophy behind the AI agent development tutorial presented
+        in the \\\\\\\"learn-claude-code\\\\\\\" repository. It covers the progressive
+        evolution of the agent through its five versions, from a minimal bash-based
+        implementation to a sophisticated system incorporating skills and subagents.\\\"]]]]],[416,433,[[[416,433,[\\\"Short-Answer
+        Quiz\\\"]]],[null,5]]],[433,562,[[[433,562,[\\\"Instructions: Provide a concise
+        answer (2-3 sentences) for each of the following questions based on the provided
+        source material.\\\",[null,true]]]]]],[562,650,[[[562,597,[\\\"What is the
+        core philosophy of the \\\"]],[597,613,[\\\"v0_bash_agent.py\\\",[null,null,null,null,null,null,null,true]]],[613,650,[\\\"
+        and how does it implement subagents?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"1.\\\",2,1,1]]],[650,818,[[[650,667,[\\\"According
+        to the \\\"]],[667,684,[\\\"v1_basic_agent.py\\\",[null,null,null,null,null,null,null,true]]],[684,818,[\\\"
+        documentation, what is the fundamental secret of modern AI agents, and what
+        are the four essential tools that cover 90% of use cases?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"2.\\\",2,2,2]]],[818,947,[[[818,861,[\\\"Explain
+        the problem of \\\\\\\"Context Fade\\\\\\\" that \\\"]],[861,877,[\\\"v2_todo_agent.py\\\",[null,null,null,null,null,null,null,true]]],[877,913,[\\\"
+        is designed to solve. How does the \\\"]],[913,922,[\\\"TodoWrite\\\",[null,null,null,null,null,null,null,true]]],[922,947,[\\\"
+        tool address this issue?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"3.\\\",2,3,3]]],[947,1048,[[[947,1026,[\\\"What
+        is \\\\\\\"Context Pollution,\\\\\\\" and how does the subagent mechanism
+        introduced in \\\"]],[1026,1028,[\\\"v3\\\",[null,null,null,null,null,null,null,true]]],[1028,1048,[\\\"
+        solve this problem?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"4.\\\",2,4,4]]],[1048,1128,[[[1048,1111,[\\\"Differentiate
+        between a \\\\\\\"Tool\\\\\\\" and a \\\\\\\"Skill\\\\\\\" as defined in the
+        \\\"]],[1111,1113,[\\\"v4\\\",[null,null,null,null,null,null,null,true]]],[1113,1128,[\\\"
+        documentation.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"5.\\\",2,5,5]]],[1128,1284,[[[1128,1200,[\\\"What
+        is the paradigm shift of \\\\\\\"Knowledge Externalization\\\\\\\" introduced
+        in \\\"]],[1200,1202,[\\\"v4\\\",[null,null,null,null,null,null,null,true]]],[1202,1284,[\\\"?
+        Why is it considered a more democratic approach than traditional model training?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"6.\\\",2,6,6]]],[1284,1416,[[[1284,1350,[\\\"Describe
+        the three layers of \\\\\\\"Progressive Disclosure\\\\\\\" used by the \\\"]],[1350,1352,[\\\"v4\\\",[null,null,null,null,null,null,null,true]]],[1352,1416,[\\\"
+        skills mechanism. What is the purpose of this layered approach?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"7.\\\",2,7,7]]],[1416,1585,[[[1416,1433,[\\\"According
+        to the \\\"]],[1433,1435,[\\\"v4\\\",[null,null,null,null,null,null,null,true]]],[1435,1533,[\\\"
+        documentation on \\\\\\\"Caching Economics,\\\\\\\" why is it more cost-effective
+        to inject skill content as a \\\"]],[1533,1544,[\\\"tool_result\\\",[null,null,null,null,null,null,null,true]]],[1544,1585,[\\\"
+        rather than modifying the system prompt?\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"8.\\\",2,8,8]]],[1585,1725,[[[1585,1612,[\\\"What
+        is the purpose of the \\\"]],[1612,1631,[\\\"Agent Type Registry\\\",[null,null,null,null,null,null,null,true]]],[1631,1639,[\\\"
+        in the \\\"]],[1639,1641,[\\\"v3\\\",[null,null,null,null,null,null,null,true]]],[1641,1725,[\\\"
+        subagent mechanism? Name the three default agent types and their primary functions.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"9.\\\",2,9,9]]],[1725,1833,[[[1725,1798,[\\\"Describe
+        the core agent loop pattern that, according to the repository's \\\"]],[1798,1807,[\\\"README.md\\\",[null,null,null,null,null,null,null,true]]],[1807,1833,[\\\",
+        all coding agents share.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"10.\\\",2,10,10]]],[1833,1915,[[[1833,1915,[\\\"\\\\n--------------------------------------------------------------------------------\\\\n\\\"]]]]],[1915,1925,[[[1915,1925,[\\\"Answer
+        Key\\\"]]],[null,5]]],[1925,2293,[[[1925,1948,[\\\"The core philosophy of
+        \\\"]],[1948,1950,[\\\"v0\\\",[null,null,null,null,null,null,null,true]]],[1950,2002,[\\\"
+        is \\\\\\\"Bash is All You Need.\\\\\\\" It posits that a single \\\"]],[2002,2006,[\\\"bash\\\",[null,null,null,null,null,null,null,true]]],[2006,2184,[\\\"
+        tool is sufficient for all agent capabilities, including reading, writing,
+        and searching files. Subagents are implemented through recursive self-calls,
+        where the agent executes \\\"]],[2184,2217,[\\\"python v0_bash_agent.py \\\\\\\"subtask\\\\\\\"\\\",[null,null,null,null,null,null,null,true]]],[2217,2293,[\\\"
+        as a bash command, spawning an isolated child process with a fresh context.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"1.\\\",2,1,1]]],[2293,2625,[[[2293,2482,[\\\"The
+        fundamental secret is that \\\\\\\"The Model IS the Agent,\\\\\\\" meaning
+        the model itself is the primary decision-maker, and the code simply provides
+        tools and a loop. The four essential tools are \\\"]],[2482,2486,[\\\"bash\\\",[null,null,null,null,null,null,null,true]]],[2486,2506,[\\\"
+        (run any command), \\\"]],[2506,2515,[\\\"read_file\\\",[null,null,null,null,null,null,null,true]]],[2515,2538,[\\\"
+        (view file contents), \\\"]],[2538,2548,[\\\"write_file\\\",[null,null,null,null,null,null,null,true]]],[2548,2582,[\\\"
+        (create or overwrite files), and \\\"]],[2582,2591,[\\\"edit_file\\\",[null,null,null,null,null,null,null,true]]],[2591,2625,[\\\"
+        (make surgical changes to files).\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"2.\\\",2,2,2]]],[2625,2962,[[[2625,2793,[\\\"\\\\\\\"Context
+        Fade\\\\\\\" is the problem where an agent loses track of its plan during
+        complex, multi-step tasks because the plan exists only in the model's transient
+        memory. The \\\"]],[2793,2802,[\\\"TodoWrite\\\",[null,null,null,null,null,null,null,true]]],[2802,2962,[\\\"
+        tool solves this by making the plan explicit and visible as a structured to-do
+        list, allowing both the user and the model to track progress and maintain
+        focus.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"3.\\\",2,3,3]]],[2962,3368,[[[2962,3197,[\\\"\\\\\\\"Context
+        Pollution\\\\\\\" occurs when a single agent's message history becomes cluttered
+        with intermediate details from one subtask (like file exploration), leaving
+        little context window space for subsequent subtasks (like refactoring). The
+        \\\"]],[3197,3199,[\\\"v3\\\",[null,null,null,null,null,null,null,true]]],[3199,3368,[\\\"
+        subagent mechanism solves this by delegating tasks to child agents with isolated,
+        fresh message histories, which then return only a concise summary to the parent
+        agent.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"4.\\\",2,4,4]]],[3368,3646,[[[3368,3418,[\\\"A
+        \\\\\\\"Tool\\\\\\\" is a capability, defining what the model \\\"]],[3418,3424,[\\\"CAN
+        do\\\",[null,true]]],[3424,3432,[\\\" (e.g., \\\"]],[3432,3436,[\\\"bash\\\",[null,null,null,null,null,null,null,true]]],[3436,3438,[\\\",
+        \\\"]],[3438,3447,[\\\"read_file\\\",[null,null,null,null,null,null,null,true]]],[3447,3497,[\\\").
+        A \\\\\\\"Skill\\\\\\\" is knowledge, defining how the model \\\"]],[3497,3508,[\\\"KNOWS
+        to do\\\",[null,true]]],[3508,3646,[\\\" a domain-specific task (e.g., PDF
+        processing, code review). Tools provide the agent with actions, while skills
+        provide it with expertise.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"5.\\\",2,5,5]]],[3646,4019,[[[3646,3836,[\\\"\\\\\\\"Knowledge
+        Externalization\\\\\\\" is the shift from storing knowledge within a model's
+        parameters (requiring expensive training to modify) to storing it in external,
+        human-editable documents like \\\"]],[3836,3844,[\\\"SKILL.md\\\",[null,null,null,null,null,null,null,true]]],[3844,4019,[\\\".
+        This is more democratic because anyone can \\\\\\\"teach\\\\\\\" the agent
+        by simply editing a text file, eliminating the need for ML expertise, GPU
+        clusters, and large training datasets.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"6.\\\",2,6,6]]],[4019,4408,[[[4019,4140,[\\\"The
+        three layers are: Layer 1 (Metadata), which includes the skill's name and
+        description and is always loaded; Layer 2 (\\\"]],[4140,4148,[\\\"SKILL.md\\\",[null,null,null,null,null,null,null,true]]],[4148,4408,[\\\"
+        body), which contains detailed instructions and is loaded on trigger; and
+        Layer 3 (Resources), which includes optional scripts and reference files.
+        This approach keeps the agent's initial context lean while allowing for arbitrary
+        depth of knowledge on-demand.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"7.\\\",2,7,7]]],[4408,4782,[[[4408,4437,[\\\"Injecting
+        skill content as a \\\"]],[4437,4448,[\\\"tool_result\\\",[null,null,null,null,null,null,null,true]]],[4448,4782,[\\\"
+        appends it to the conversation history, which preserves the exact prefix of
+        previous messages. This allows API providers to use a KV Cache for the unchanged
+        prefix, drastically reducing computation and cost. Modifying the system prompt
+        invalidates the entire cache, forcing an expensive re-computation of the full
+        context every time.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"8.\\\",2,8,8]]],[4782,5175,[[[4782,4786,[\\\"The
+        \\\"]],[4786,4805,[\\\"Agent Type Registry\\\",[null,null,null,null,null,null,null,true]]],[4805,4986,[\\\"
+        defines different types of subagents with specific capabilities by filtering
+        their available tools and providing them with a specialized system prompt.
+        The three default types are \\\"]],[4986,4993,[\\\"explore\\\",[null,null,null,null,null,null,null,true]]],[4993,5042,[\\\"
+        (a read-only agent for searching and analysis), \\\"]],[5042,5046,[\\\"code\\\",[null,null,null,null,null,null,null,true]]],[5046,5101,[\\\"
+        (a full agent with all tools for implementation), and \\\"]],[5101,5105,[\\\"plan\\\",[null,null,null,null,null,null,null,true]]],[5105,5175,[\\\"
+        (a read-only agent for designing strategies without modifying files).\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"9.\\\",2,9,9]]],[5175,5580,[[[5175,5200,[\\\"The
+        core agent loop is a \\\"]],[5200,5210,[\\\"while True\\\",[null,null,null,null,null,null,null,true]]],[5210,5580,[\\\"
+        loop where the agent repeatedly cycles through a simple process. First, the
+        model is called with the current message history and available tools. If the
+        model's response includes tool calls, those tools are executed, the results
+        are appended to the message history, and the loop continues. The loop only
+        terminates when the model's response does not request a tool use.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"10.\\\",2,10,10]]],[5580,5662,[[[5580,5662,[\\\"\\\\n--------------------------------------------------------------------------------\\\\n\\\"]]]]],[5662,5677,[[[5662,5677,[\\\"Essay
+        Questions\\\"]]],[null,5]]],[5677,5788,[[[5677,5788,[\\\"Instructions: The
+        following questions are designed for longer, more detailed analysis. No answers
+        are provided.\\\",[null,true]]]]]],[5788,6042,[[[5788,6042,[\\\"Analyze the
+        architectural evolution of the agent from v0 to v4. Discuss how each version's
+        \\\\\\\"Core Insight\\\\\\\" (e.g., \\\\\\\"Bash is All You Need,\\\\\\\"
+        \\\\\\\"Structured Planning,\\\\\\\" \\\\\\\"Knowledge Externalization\\\\\\\")
+        directly addresses a specific limitation of the previous version.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"1.\\\",2,1,1]]],[6042,6330,[[[6042,6316,[\\\"The
+        v4 documentation makes a strong case for \\\\\\\"Knowledge Externalization\\\\\\\"
+        as a paradigm shift from \\\\\\\"training AI\\\\\\\" to \\\\\\\"educating
+        AI.\\\\\\\" Elaborate on this argument, detailing the practical and economic
+        differences between modifying agent behavior via fine-tuning versus editing
+        a \\\"]],[6316,6324,[\\\"SKILL.md\\\",[null,null,null,null,null,null,null,true]]],[6324,6330,[\\\"
+        file.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"2.\\\",2,2,2]]],[6330,6647,[[[6330,6647,[\\\"Discuss
+        the importance of \\\\\\\"Context Caching Economics\\\\\\\" in the design
+        of cost-effective and scalable AI agents. Explain the concept of a KV Cache,
+        identify at least three anti-patterns described in the documentation that
+        invalidate the cache, and articulate the principles of the recommended \\\\\\\"append-only\\\\\\\"
+        architecture.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"3.\\\",2,3,3]]],[6647,6951,[[[6647,6722,[\\\"The
+        v2 documentation states, \\\\\\\"Structure constrains AND enables.\\\\\\\"
+        Using the \\\"]],[6722,6733,[\\\"TodoManager\\\",[null,null,null,null,null,null,null,true]]],[6733,6750,[\\\"
+        from v2 and the \\\"]],[6750,6769,[\\\"Agent Type Registry\\\",[null,null,null,null,null,null,null,true]]],[6769,6951,[\\\"
+        from v3 as primary examples, explain how imposing specific rules and limitations
+        on an AI agent's behavior can lead to more focused, reliable, and capable
+        systems for complex tasks.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"4.\\\",2,4,4]]],[6951,7278,[[[6951,7087,[\\\"Compare
+        and contrast the two methods of implementing subagents presented in the repository:
+        the implicit, recursive process spawning in \\\"]],[7087,7103,[\\\"v0_bash_agent.py\\\",[null,null,null,null,null,null,null,true]]],[7103,7121,[\\\"
+        and the explicit \\\"]],[7121,7125,[\\\"Task\\\",[null,null,null,null,null,null,null,true]]],[7125,7134,[\\\"
+        tool in \\\"]],[7134,7148,[\\\"v3_subagent.py\\\",[null,null,null,null,null,null,null,true]]],[7148,7278,[\\\".
+        Evaluate the trade-offs between these two approaches in terms of simplicity,
+        control, context isolation, and overall capability.\\\"]]],[null,1],null,[null,null,0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\\\"5.\\\",2,5,5]]],[7278,7360,[[[7278,7360,[\\\"\\\\n--------------------------------------------------------------------------------\\\\n\\\"]]]]],[7360,7368,[[[7360,7368,[\\\"Glossary\\\"]]],[null,5]]],[7368,10648,null,null,[17,2,[[7368,7382,[[7368,7372,[[7368,7372,[[[7368,7372,[\\\"Term\\\"]]]]]]],[7372,7382,[[7372,7382,[[[7372,7382,[\\\"Definition\\\"]]]]]]]]],[7382,7556,[[7382,7387,[[7382,7387,[[[7382,7387,[\\\"Agent\\\",[true]]]]]]]],[7387,7556,[[7387,7556,[[[7387,7556,[\\\"An
+        AI system that operates in a loop, repeatedly using tools to interact with
+        an environment until a task is complete, rather than just providing a single
+        text response.\\\"]]]]]]]]],[7556,7710,[[7556,7573,[[7556,7573,[[[7556,7573,[\\\"Agent
+        Skills Spec\\\",[true]]]]]]]],[7573,7710,[[7573,7710,[[[7573,7710,[\\\"An
+        official specification that agents like Kode CLI, Claude Code, and Cursor
+        can support, likely related to the format and use of Skills.\\\"]]]]]]]]],[7710,7900,[[7710,7729,[[7710,7729,[[[7710,7729,[\\\"Agent
+        Type Registry\\\",[true]]]]]]]],[7729,7900,[[7729,7900,[[[7729,7800,[\\\"A
+        configuration in v3 that defines different types of subagents (e.g., \\\"]],[7800,7807,[\\\"explore\\\",[null,null,null,null,null,null,null,true]]],[7807,7809,[\\\",
+        \\\"]],[7809,7813,[\\\"code\\\",[null,null,null,null,null,null,null,true]]],[7813,7815,[\\\",
+        \\\"]],[7815,7819,[\\\"plan\\\",[null,null,null,null,null,null,null,true]]],[7819,7900,[\\\")
+        with specialized prompts and a limited set of tools to ensure focused behavior.\\\"]]]]]]]]],[7900,8137,[[7900,7911,[[7900,7911,[[[7900,7911,[\\\"Append-Only\\\",[true]]]]]]]],[7911,8137,[[7911,8137,[[[7911,8137,[\\\"The
+        recommended architectural pattern for managing conversation history, where
+        new messages and tool results are always added to the end. This preserves
+        the message prefix, enabling significant cost savings through KV Caching.\\\"]]]]]]]]],[8137,8303,[[8137,8162,[[8137,8162,[[[8137,8162,[\\\"Context
+        Caching Economics\\\",[true]]]]]]]],[8162,8303,[[8162,8303,[[[8162,8303,[\\\"The
+        study of how different agent architectures impact API costs, primarily focusing
+        on the use or invalidation of the provider-side KV Cache.\\\"]]]]]]]]],[8303,8499,[[8303,8315,[[8303,8315,[[[8303,8315,[\\\"Context
+        Fade\\\",[true]]]]]]]],[8315,8499,[[8315,8499,[[[8315,8487,[\\\"The problem
+        where an agent loses track of its high-level plan during a long, multi-step
+        task because the plan is not explicitly stored or tracked. Addressed in v2
+        with the \\\"]],[8487,8498,[\\\"TodoManager\\\",[null,null,null,null,null,null,null,true]]],[8498,8499,[\\\".\\\"]]]]]]]]],[8499,8704,[[8499,8516,[[8499,8516,[[[8499,8516,[\\\"Context
+        Isolation\\\",[true]]]]]]]],[8516,8704,[[8516,8704,[[[8516,8704,[\\\"The key
+        principle behind the subagent mechanism, where a child agent is given its
+        own fresh message history, preventing it from being influenced by or polluting
+        the parent agent's context.\\\"]]]]]]]]],[8704,8932,[[8704,8721,[[8704,8721,[[[8704,8721,[\\\"Context
+        Pollution\\\",[true]]]]]]]],[8721,8932,[[8721,8932,[[[8721,8932,[\\\"The problem
+        where a single agent's context window becomes filled with low-level details
+        from one subtask (e.g., exploring files), degrading its performance on subsequent
+        subtasks. Addressed in v3 with subagents.\\\"]]]]]]]]],[8932,9183,[[8932,8957,[[8932,8957,[[[8932,8957,[\\\"Knowledge
+        Externalization\\\",[true]]]]]]]],[8957,9183,[[8957,9183,[[[8957,9055,[\\\"A
+        paradigm shift where domain-specific knowledge is stored in external, human-editable
+        documents (\\\"]],[9055,9063,[\\\"SKILL.md\\\",[null,null,null,null,null,null,null,true]]],[9063,9183,[\\\")
+        instead of being locked inside a model's trained parameters. This democratizes
+        the process of customizing AI behavior.\\\"]]]]]]]]],[9183,9448,[[9183,9191,[[9183,9191,[[[9183,9191,[\\\"KV
+        Cache\\\",[true]]]]]]]],[9191,9448,[[9191,9448,[[[9191,9448,[\\\"A mechanism
+        used by LLM providers to store the intermediate computational states (key-value
+        pairs) of a prompt's prefix. If a subsequent API call uses the same exact
+        prefix, the cached states can be reused, avoiding redundant computation and
+        reducing costs.\\\"]]]]]]]]],[9448,9709,[[9448,9470,[[9448,9470,[[[9448,9470,[\\\"Progressive
+        Disclosure\\\",[true]]]]]]]],[9470,9709,[[9470,9709,[[[9470,9709,[\\\"A three-layer
+        approach to loading skills that keeps the agent's context lean. It starts
+        by loading only metadata (Layer 1), then the full skill body when triggered
+        (Layer 2), and provides access to associated resources as needed (Layer 3).\\\"]]]]]]]]],[9709,9888,[[9709,9714,[[9709,9714,[[[9709,9714,[\\\"Skill\\\",[true]]]]]]]],[9714,9888,[[9714,9888,[[[9714,9774,[\\\"A
+        package of on-demand domain expertise that tells an agent \\\"]],[9774,9777,[\\\"HOW\\\",[null,true]]],[9777,9873,[\\\"
+        to perform a task. It is distinct from a tool, which is a raw capability.
+        Skills are stored in \\\"]],[9873,9881,[\\\"SKILL.md\\\",[null,null,null,null,null,null,null,true]]],[9881,9888,[\\\"
+        files.\\\"]]]]]]]]],[9888,10098,[[9888,9896,[[9888,9896,[[[9888,9896,[\\\"SKILL.md\\\",[true]]]]]]]],[9896,10098,[[9896,10098,[[[9896,10098,[\\\"A
+        standardized file format for defining a Skill. It consists of YAML frontmatter
+        for metadata (name, description) and a Markdown body containing detailed instructions,
+        best practices, and code examples.\\\"]]]]]]]]],[10098,10275,[[10098,10106,[[10098,10106,[[[10098,10106,[\\\"Subagent\\\",[true]]]]]]]],[10106,10275,[[10106,10275,[[[10106,10275,[\\\"A
+        child agent spawned by a parent agent to perform a focused, isolated subtask.
+        Subagents have their own context, system prompt, and a potentially filtered
+        set of tools.\\\"]]]]]]]]],[10275,10446,[[10275,10279,[[10275,10279,[[[10275,10279,[\\\"Tool\\\",[true]]]]]]]],[10279,10446,[[10279,10446,[[[10279,10379,[\\\"A
+        function or capability that the model can call to interact with its environment.
+        Examples include \\\"]],[10379,10383,[\\\"bash\\\",[null,null,null,null,null,null,null,true]]],[10383,10385,[\\\",
+        \\\"]],[10385,10394,[\\\"read_file\\\",[null,null,null,null,null,null,null,true]]],[10394,10400,[\\\",
+        and \\\"]],[10400,10410,[\\\"write_file\\\",[null,null,null,null,null,null,null,true]]],[10410,10439,[\\\".
+        Tools define what an agent \\\"]],[10439,10445,[\\\"CAN do\\\",[null,true]]],[10445,10446,[\\\".\\\"]]]]]]]]],[10446,10648,[[10446,10457,[[10446,10457,[[[10446,10457,[\\\"TodoManager\\\",[true]]]]]]]],[10457,10648,[[10457,10648,[[[10457,10570,[\\\"A
+        class introduced in v2 to manage a structured, visible task list. It enforces
+        constraints (e.g., only one task \\\"]],[10570,10581,[\\\"in_progress\\\",[null,null,null,null,null,null,null,true]]],[10581,10648,[\\\")
+        to help the agent maintain focus on complex, multi-step projects.\\\"]]]]]]]]]]]]]],null,null,null,1]],null,null,[1768311104,570557000],null,null,null,null,[1768311066,700355000],null,null,null,1],[\\\"173255d8-12b3-4c67-b925-a76ce6c71735\\\",\\\"Agent
+        Flashcards\\\",4,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,null,[\\\"\\\",[1,null,null,\\\"en\\\",null,null,[2,2],null,true]],[1768311102,683814000],null,null,null,null,[1768311058,331340000],null,null,null,1],[\\\"7e91cd58-3aff-422d-aebc-d3d6b9f551e6\\\",\\\"Evolution
+        of Claude Code Educational Agent Versions\\\",9,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,null,null,[1768311065,749827000],null,null,null,null,[1768311054,333910000],null,null,[[[[[0,1239,null,null,[6,7,[[0,109,[[0,7,[[0,7,[[[0,7,[\\\"Version\\\"]]]]]]],[7,30,[[7,30,[[[7,30,[\\\"Estimated
+        Lines of Code\\\"]]]]]]],[30,46,[[30,46,[[[30,46,[\\\"Core Tools Added\\\"]]]]]]],[46,57,[[46,57,[[[46,57,[\\\"Key
+        Insight\\\"]]]]]]],[57,74,[[57,74,[[[57,74,[\\\"Primary Mechanism\\\"]]]]]]],[74,103,[[74,103,[[[74,103,[\\\"Philosophy
+        and Problem Solved\\\"]]]]]]],[103,109,[[103,109,[[[103,109,[\\\"Source\\\"]]]]]]]]],[109,324,[[109,111,[[109,111,[[[109,111,[\\\"v0\\\"]]]]]]],[111,114,[[111,114,[[[111,114,[\\\"~50\\\"]]]]]]],[114,125,[[114,125,[[[114,125,[\\\"1
+        bash tool\\\"]]]]]]],[125,145,[[125,145,[[[125,145,[\\\"Bash is all you need\\\"]]]]]]],[145,197,[[145,197,[[[145,173,[\\\"Recursive
+        process spawning (\\\"]],[173,196,[\\\"python v0_bash_agent.py\\\",[null,null,null,null,null,null,null,true]]],[196,197,[\\\")\\\"]]]]]]],[197,318,[[197,318,[[[197,318,[\\\"Extreme
+        simplification. Solves basic task execution through a single universal interface
+        where everything is a file/pipe.\\\"]]]]]]],[318,324,[[318,324,[[[318,324,[\\\"[1,
+        2]\\\"]]]]]]]]],[324,545,[[324,326,[[324,326,[[[324,326,[\\\"v1\\\"]]]]]]],[326,330,[[326,330,[[[326,330,[\\\"~200\\\"]]]]]]],[330,383,[[330,383,[[[330,383,[\\\"4
+        core tools (bash, read_file, write_file, edit_file)\\\"]]]]]]],[383,397,[[383,397,[[[383,397,[\\\"Model
+        as Agent\\\"]]]]]]],[397,421,[[397,421,[[[397,421,[\\\"Autonomous tool-use
+        loop\\\"]]]]]]],[421,539,[[421,539,[[[421,539,[\\\"Transforms a chatbot into
+        an autonomous agent. Solves basic exploration, understanding, and modification
+        of codebases.\\\"]]]]]]],[539,545,[[539,545,[[[539,545,[\\\"[1, 3]\\\"]]]]]]]]],[545,754,[[545,547,[[545,547,[[[545,547,[\\\"v2\\\"]]]]]]],[547,551,[[547,551,[[[547,551,[\\\"~300\\\"]]]]]]],[551,581,[[551,581,[[[551,581,[\\\"TodoWrite
+        tool (+ TodoManager)\\\"]]]]]]],[581,598,[[581,598,[[[581,598,[\\\"Explicit
+        planning\\\"]]]]]]],[598,625,[[598,625,[[[598,625,[\\\"Structured todo constraints\\\"]]]]]]],[625,748,[[625,748,[[[625,748,[\\\"Addresses
+        'Context Fade' and focus loss. Structure (max items, one in_progress) enables
+        complex multi-step task completion.\\\"]]]]]]],[748,754,[[748,754,[[[748,754,[\\\"[1,
+        4]\\\"]]]]]]]]],[754,993,[[754,756,[[754,756,[[[754,756,[\\\"v3\\\"]]]]]]],[756,760,[[756,760,[[[756,760,[\\\"~450\\\"]]]]]]],[760,788,[[760,788,[[[760,788,[\\\"Task
+        tool (+ Agent Registry)\\\"]]]]]]],[788,806,[[788,806,[[[788,806,[\\\"Divide
+        and conquer\\\"]]]]]]],[806,843,[[806,843,[[[806,843,[\\\"Fresh sub_messages
+        (isolated context)\\\"]]]]]]],[843,984,[[843,984,[[[843,984,[\\\"Solves 'Context
+        Pollution' where exploration details drown out the main task. Uses process/context
+        isolation to keep the coordinator focused.\\\"]]]]]]],[984,993,[[984,993,[[[984,993,[\\\"[1,
+        5, 6]\\\"]]]]]]]]],[993,1239,[[993,995,[[993,995,[[[993,995,[\\\"v4\\\"]]]]]]],[995,999,[[995,999,[[[995,999,[\\\"~550\\\"]]]]]]],[999,1025,[[999,1025,[[[999,1025,[\\\"Skill
+        tool (+ SkillLoader)\\\"]]]]]]],[1025,1051,[[1025,1051,[[[1025,1051,[\\\"Domain
+        expertise on-demand\\\"]]]]]]],[1051,1081,[[1051,1081,[[[1051,1081,[\\\"SKILL.md
+        tool_result injection\\\"]]]]]]],[1081,1230,[[1081,1230,[[[1081,1230,[\\\"Solves
+        the 'Knowledge Internalization' problem. Externalizes expertise as documents
+        to avoid expensive retraining/fine-tuning while preserving cache.\\\"]]]]]]],[1230,1239,[[1230,1239,[[[1230,1239,[\\\"[1,
+        7, 8]\\\"]]]]]]]]]]]],[1239,1334,[[[1239,1334,[\\\"[1] GitHub - shareAI-lab/learn-claude-code:
+        How can we build a true AI agent? Like Claude Code.\\\"]]]]],[1334,1423,[[[1334,1423,[\\\"[2]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v0_bash_agent.py\\\"]]]]],[1423,1513,[[[1423,1513,[\\\"[3]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v1_basic_agent.py\\\"]]]]],[1513,1602,[[[1513,1602,[\\\"[4]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v2_todo_agent.py\\\"]]]]],[1602,1704,[[[1602,1704,[\\\"[5]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/docs/v3-subagent-mechanism.md\\\"]]]]],[1704,1791,[[[1704,1791,[\\\"[6]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v3_subagent.py\\\"]]]]],[1791,1891,[[[1791,1891,[\\\"[7]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/docs/v4-skills-mechanism.md\\\"]]]]],[1891,1982,[[[1891,1982,[\\\"[8]
+        https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v4_skills_agent.py\\\"]]]]]]],null,null,null,1],[null,\\\"en\\\"]],1],[\\\"0ad1abb9-f37c-4094-83e9-52c816d69132\\\",\\\"How
+        AI Agents Work\\\",3,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,[null,\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJO8lkNJJ5KZkxWp3HbbNGgtQd415-8K2NdrKa4c07RV-ZFQoYGpJmAsO0MX36KhuveWUYdSx8MF0pxNReK2UtTJ-cWKN1B-JLaoJ7qyrWNpFrfcMKrGuNTAQWNVItnDRv9mulMzwqL3VwLdBzpG1u8vB2cMU\\\\u003dm22\\\",[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"],[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"],[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"],[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"],[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"],[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"],[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"],[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"],[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]],\\\"en\\\",\\\"Create
+        an educational video for high school students (ages 14-18) about Claude Code
+        and AI agents. Make it visually engaging and easy to understand. Explain what
+        AI agents are, how they work with the think-act-observe loop, and how Claude
+        Code helps developers.\\\",null,1,1],\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJO8lkNJJ5KZkxWp3HbbNGgtQd415-8K2NdrKa4c07RV-ZFQoYGpJmAsO0MX36KhuveWUYdSx8MF0pxNReK2UtTJ-cWKN1B-JLaoJ7qyrWNpFrfcMKrGuNTAQWNVItnDRv9mulMzwqL3VwLdBzpG1u8vB2cMU\\\\u003dm22-dv\\\",[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJO8lkNJJ5KZkxWp3HbbNGgtQd415-8K2NdrKa4c07RV-ZFQoYGpJmAsO0MX36KhuveWUYdSx8MF0pxNReK2UtTJ-cWKN1B-JLaoJ7qyrWNpFrfcMKrGuNTAQWNVItnDRv9mulMzwqL3VwLdBzpG1u8vB2cMU\\\\u003dm22\\\",1,\\\"video/mp4\\\"],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJO8lkNJJ5KZkxWp3HbbNGgtQd415-8K2NdrKa4c07RV-ZFQoYGpJmAsO0MX36KhuveWUYdSx8MF0pxNReK2UtTJ-cWKN1B-JLaoJ7qyrWNpFrfcMKrGuNTAQWNVItnDRv9mulMzwqL3VwLdBzpG1u8vB2cMU\\\\u003dmm,hls\\\",2],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJO8lkNJJ5KZkxWp3HbbNGgtQd415-8K2NdrKa4c07RV-ZFQoYGpJmAsO0MX36KhuveWUYdSx8MF0pxNReK2UtTJ-cWKN1B-JLaoJ7qyrWNpFrfcMKrGuNTAQWNVItnDRv9mulMzwqL3VwLdBzpG1u8vB2cMU\\\\u003dmm,dash\\\",3],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJO8lkNJJ5KZkxWp3HbbNGgtQd415-8K2NdrKa4c07RV-ZFQoYGpJmAsO0MX36KhuveWUYdSx8MF0pxNReK2UtTJ-cWKN1B-JLaoJ7qyrWNpFrfcMKrGuNTAQWNVItnDRv9mulMzwqL3VwLdBzpG1u8vB2cMU\\\\u003dm22-dv\\\",4,\\\"video/mp4\\\"]],[462,291666000]],null,[1768270597,120624000],null,null,null,null,[1768269715,833360000],null,null,null,1],[\\\"c26f1079-c5cd-4094-87b7-59fc73d68bd3\\\",\\\"Level
+        Up Your Code\\\",3,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,[null,\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoV8G9RAGOk5-fnl3JXOkXmwHLtSOWoct4tV7d5HEF9S4KkZmDqsgPBoTYjy9tpoutNkGFCONCkNHSH_GWcX_aLrbEnZkewsqElVhfiHPUb0GS5aOeOm3_0_LH6nk-yU6Wk1kvJ3E8jLTqjdCRG4oSQ3oy8kqs\\\\u003dm22\\\",[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"],[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"],[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"],[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"],[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"],[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"],[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"],[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"],[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]],\\\"en\\\",\\\"Create
+        an educational video for high school students (ages 14-18) about Claude Code
+        and AI agents. Make it visually engaging and easy to understand. Explain:
+        What are AI agents, how they work (the loop of thinking, taking action, observing
+        results), what tools agents use, how Claude Code helps developers write code,
+        and why this matters for the future. Use simple language and make it interesting
+        for teenagers considering tech careers.\\\",null,1,1],\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoV8G9RAGOk5-fnl3JXOkXmwHLtSOWoct4tV7d5HEF9S4KkZmDqsgPBoTYjy9tpoutNkGFCONCkNHSH_GWcX_aLrbEnZkewsqElVhfiHPUb0GS5aOeOm3_0_LH6nk-yU6Wk1kvJ3E8jLTqjdCRG4oSQ3oy8kqs\\\\u003dm22-dv\\\",[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoV8G9RAGOk5-fnl3JXOkXmwHLtSOWoct4tV7d5HEF9S4KkZmDqsgPBoTYjy9tpoutNkGFCONCkNHSH_GWcX_aLrbEnZkewsqElVhfiHPUb0GS5aOeOm3_0_LH6nk-yU6Wk1kvJ3E8jLTqjdCRG4oSQ3oy8kqs\\\\u003dm22\\\",1,\\\"video/mp4\\\"],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoV8G9RAGOk5-fnl3JXOkXmwHLtSOWoct4tV7d5HEF9S4KkZmDqsgPBoTYjy9tpoutNkGFCONCkNHSH_GWcX_aLrbEnZkewsqElVhfiHPUb0GS5aOeOm3_0_LH6nk-yU6Wk1kvJ3E8jLTqjdCRG4oSQ3oy8kqs\\\\u003dmm,hls\\\",2],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoV8G9RAGOk5-fnl3JXOkXmwHLtSOWoct4tV7d5HEF9S4KkZmDqsgPBoTYjy9tpoutNkGFCONCkNHSH_GWcX_aLrbEnZkewsqElVhfiHPUb0GS5aOeOm3_0_LH6nk-yU6Wk1kvJ3E8jLTqjdCRG4oSQ3oy8kqs\\\\u003dmm,dash\\\",3],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoV8G9RAGOk5-fnl3JXOkXmwHLtSOWoct4tV7d5HEF9S4KkZmDqsgPBoTYjy9tpoutNkGFCONCkNHSH_GWcX_aLrbEnZkewsqElVhfiHPUb0GS5aOeOm3_0_LH6nk-yU6Wk1kvJ3E8jLTqjdCRG4oSQ3oy8kqs\\\\u003dm22-dv\\\",4,\\\"video/mp4\\\"]],[413,291666000]],null,[1768269821,415555000],null,null,null,null,[1768268991,469299000],null,null,null,1],[\\\"848df2ec-4916-4dea-aa20-3dc02954cfd0\\\",\\\"Building
+        Digital Workers\\\",8,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,null,null,null,null,[1768269532,531387000],null,null,null,null,[1768268999,921957000],[[\\\"Create
+        a presentation slide deck for high school students (ages 14-18) explaining
+        how Claude Code and AI agents work. Structure: 1) Title slide - 'How AI Agents
+        Like Claude Code Work', 2) What is AI vs AI Agents - key differences, 3) The
+        Agent Loop - think, act, observe, repeat, 4) Tools and Capabilities - what
+        agents can do, 5) Claude Code Demo - how it helps programmers, 6) Building
+        Your Own Agent - simplified steps from the v0-v4 code examples, 7) Future
+        of AI Agents, 8) Getting Started - resources for curious students. Use simple
+        language, engaging visuals, and relatable examples.\\\",\\\"en\\\",1,1],\\\"Building
+        Digital Workers\\\",[[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrvyEwE-urDZVmtsJm6Rm568ZtTCcO9K3avKuXwARDPehmNoQNwTBp4AzNAxmhS408WxJXXcXCTAeMvpkke6wvKk5Kwd0BFm1iFxLF2B5urA_ON4cg3HDwSIKdE_45z0Td-AsiG5TPGOMMhbUzDzS7i2JlIPB8Ou9hUI8Y\\\\u003dw1376-h768\\\",1376,768],\\\"Title
+        slide contrasting the past of chatbots (speech bubble) with the present of
+        agents (robot executing code on a computer).\\\",\\\"HOW AI AGENTS WORK (AND
+        HOW TO BUILD ONE)\\\\nDeconstructing Claude Code: From Chatbot to Digital
+        Intern.\\\\n\\\\n[The slide is split into two main sections with dashed lines,
+        labeled 'The Past' and 'The Present'.]\\\\n\\\\nThe Past: Chatbots\\\\n[Icon
+        of a speech bubble with three dots, surrounded by dashed lines representing
+        measurement/bounding box.]\\\\n\\\\nThe Present: Agents\\\\n[Illustration
+        of a robot sitting at a desk interacting with a computer setup.]\\\\n[The
+        monitor shows Python code executing a client call to Anthropic and an array
+        of messages.]\\\\n[Arrows point from the scene to action labels:]\\\\n- EXECUTE
+        CODE\\\\n- ACCESS FILE SYSTEM\\\\n- PERFORM TASKS\\\\n- EXECUTE CODE (pointed
+        at the keyboard)\\\\n\\\\nMost people use AI to ask questions. But what if
+        the AI could use a computer the way you do? We are going to deconstruct \\\\\\\"Claude
+        Code\\\\\\\"\u2014a powerful coding agent\u2014and learn how to build a digital
+        coworker from scratch using Python.\\\\n\\\\n\\\\u003e python build_agent.py\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrn3GP2-IIRmOzMAy_mNeyAcUV14MlhJ9GuHYhB3YQQhDnrMBHJPUGdGc3SIqFAveh_2kVUa8kqOZ7-m5qne85RB8nnqHluCpXJBEZ_-1HenHrSvkSvQ-h7oh_JoN9PKkV82o_RKWG6IvwZSErr7oHDZVZqpIl05adQb40\\\\u003dw1376-h768\\\",1376,768],\\\"Diagram
+        comparing Thinking (Passive Chatbot, a brain in a jar) to Doing (Active Agent,
+        a robot with an Observe-Act-Think loop).\\\",\\\"THE DIFFERENCE BETWEEN THINKING
+        AND DOING\\\\n\\\\nTHINKING (Passive)\\\\n\\\\n[Illustration shows a user
+        asking a QUESTION to a Passive (Chatbot), depicted as a geometric brain sealed
+        in a glass jar, which then provides an ANSWER.]\\\\n\\\\nPassive (Chatbot)\\\\n\\\\nSpace
+        Mono\\\\nCHATBOT\\\\n- Like a wise librarian who can only talk.\\\\n- Takes
+        a User Question -\\\\u003e Gives an Answer.\\\\n- Cannot see files or run
+        programs.\\\\n\\\\nDOING (Active)\\\\n\\\\n[Illustration shows an Active (Agent)
+        robot holding a wrench and a file folder.]\\\\n[An orange loop around the
+        robot shows the flow: THINK, ACT, OBSERVE.]\\\\n\\\\nActive (Agent)\\\\n\\\\nSpace
+        Mono\\\\nAGENT\\\\n- Like a research intern who can fetch books and file reports.\\\\n-
+        Takes a User Goal -\\\\u003e Thinks -\\\\u003e Acts -\\\\u003e Observes -\\\\u003e
+        Achieves Result.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOprICQIJeXmWO0I_5Q5dr5tjdeHTOmULAJE41pYjNanDKSINmu22PuPj9n0DISbHB2Db2CBMArzly8tFPh3za2h8RXNdhzgXRGEsi8QKL2SbvC4To-vgD1j1sNClJiO2YjQxjVCNSa9zw24bEXAAqDGbKQvYXTO9uQD4Q\\\\u003dw1376-h768\\\",1376,768],\\\"Diagram
+        illustrating the Agent Loop: AI progresses through continuous cycles of THINK,
+        ACT (call a tool), and OBSERVE (get results).\\\",\\\"THE SECRET SAUCE: THE
+        AGENT LOOP\\\\n\\\\n[Diagram shows a continuous circular flow labeled THE
+        LOOP.]\\\\n\\\\nTHINK\\\\n[Icon of a brain]\\\\nAI decides next step based
+        on history.\\\\n\\\\n[Arrow points from THINK to ACT.]\\\\n\\\\nACT\\\\n[Icon
+        of a command prompt]\\\\nAI calls a Tool (e.g., run command).\\\\n\\\\n[Arrow
+        points from ACT to OBSERVE.]\\\\n\\\\nOBSERVE\\\\n[Icon of a document with
+        charts]\\\\nComputer returns result (Success/Error).\\\\n\\\\n[Arrow points
+        from OBSERVE back to THINK.]\\\\n\\\\n[Code snippet in a window:]\\\\nwhile
+        True:\\\\ndecision \\\\u003d model(history)\\\\nif decision \\\\u003d\\\\u003d
+        \\\\\\\"stop\\\\\\\": break\\\\nresult \\\\u003d execute_tool(decision)\\\\nhistory.append(result)\\\\n#
+        The Agent Loop in Python\\\\n\\\\nThe Model is 80%. Code is 20%. The \\\\\\\"magic\\\\\\\"
+        is just a while loop that runs until the job is done.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoi5mlZIzlzOTipW9YQ0fkfmVYYQtTe7nKtvSc_qmlnkwysfgaObSXYQnK_P8N84Ew2wfblQ81s527AGG4UHGUmKFBD1KdJw2Tbw2SHasW8ECZNAdVsZrbtuWKH5OV1UXFtUvxXbTUxWR1Y3SDRWvtJpDyl3YizXzc4uN4\\\\u003dw1376-h768\\\",1376,768],\\\"Illustration
+        of a high-tech Swiss Army knife detailing the four core tools an AI Agent
+        uses: bash, read_file, write_file, and edit_file.\\\",\\\"THE AGENT'S UTILITY
+        BELT\\\\n\\\\n[Illustration of a high-tech circuit-themed Swiss Army knife
+        with four tools extended.]\\\\n\\\\nbash\\\\n- Runs terminal commands. Installs
+        software, moves files, runs scripts.\\\\n\\\\nread_file\\\\n- Allows the agent
+        to see code or documents.\\\\n\\\\nwrite_file\\\\n- Creates new files or overwrites
+        existing ones.\\\\n\\\\nedit_file\\\\n- Makes surgical changes to specific
+        parts of a file.\\\\n\\\\nTakeaway: With just these four tools, an agent can
+        build software, write essays, or analyze data.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOo74EO6dbjbAmTNTUXd1RvxzFA5OU61UxkMLJ2DG3A4Cg6d_QZvQ4PhwG6MXqP0M4epmCKMD2dUEV9T_WRux1wH-EZyCkR15tFWWm9dd1iUUmaTnLjEDmPWNbopE-7Z3Ib8jaBHqXEgBeOIKukfvYN4lZlpLwduJK3Wv-Q\\\\u003dw1376-h768\\\",1376,768],\\\"Terminal
+        demonstration of Claude Code refactoring a login system, showing the agent
+        using read_file, bash, and edit_file tools sequentially.\\\",\\\"SEE IT IN
+        ACTION: CLAUDE CODE\\\\n\\\\n[Terminal output log showing the agent executing
+        a complex task.]\\\\n\\\\nUser: Refactor the login system to use secure tokens.\\\\n\\\\u003e
+        Agent is thinking...\\\\n\\\\u003e read_file src/login.py Reading 50 lines...\\\\n\\\\u003e
+        bash pip install jwt Requirement already satisfied...\\\\n\\\\u003e edit_file
+        src/login.py Replacing lines 12-15...\\\\n\\\\u003e bash python test_login.py
+        Tests passed.\\\\n\\\\u003e Done. The login system now uses JWT tokens.\\\\n\\\\n[Annotation
+        text]: Real-world automation. Tasks that take 20 minutes are done in seconds.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoFyzH-GIU9MI7zrZqebz794O2zeQJYv7Z8Zdp5T-9rjjxUQP8aCKS5bRIen8TZSDyGdLJk7-F2QQ1ezU9oS3d_bCmukdTxrgdDNtF0tW2YLxHzA8icyypEULNWnKHiv4l1zPVcD9yrobWiMkIVxOfUMdHZrFkp4NgHBg\\\\u003dw1376-h768\\\",1376,768],\\\"A
+        roadmap showing the five levels of agent development, from Level 0 (Skeleton/50
+        lines) to Level 4 (Expert/550 lines).\\\",\\\"THE BUILDER'S JOURNEY: LEVEL
+        0 TO LEVEL 4\\\\n\\\\n[Flow diagram showing an upward path through five development
+        stages.]\\\\n\\\\nThe Skeleton\\\\nLevel 0\\\\n- Bash Only\\\\n- (~50 lines)\\\\n\\\\nThe
+        Body\\\\nLevel 1\\\\n- Core Tools\\\\n- (~200 lines)\\\\n\\\\nThe Planner\\\\nLevel
+        2\\\\n- Memory/Todo\\\\n- (~300 lines)\\\\n\\\\nThe Manager\\\\nLevel 3\\\\n-
+        Subagents\\\\n- (~450 lines)\\\\n\\\\nThe Expert\\\\nLevel 4\\\\n- Skills/Knowledge\\\\n-
+        (~550 lines)\\\\n\\\\nWe are going to virtually build this agent line-by-line.
+        Starting with a 50-line skeleton, we will upgrade it to solve specific problems
+        like \\\\\\\"forgetfulness\\\\\\\" and \\\\\\\"messiness\\\\\\\".\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqgWBChoO2WgGjlqnuYUXgOjU4Ugu9perRXN8jeupwxRW0fiJXGxJGeYXkWKbbE_LTkKq4JxFiL41dYvdn_FNDLwBIZ5_PD8RmZJkC2rTU-2rO8SCnkoi2lHQKXMWmK-C_rCexeWKWii6TCTwavebQuIZ0q95sDLVI-G5g\\\\u003dw1376-h768\\\",1376,768],\\\"Level
+        0: The Skeleton, defined by 50 lines of code and a single Bash tool, using
+        the \\\\\\\"Inception Trick\\\\\\\" to run itself as a sub-agent.\\\",\\\"Level
+        0: The Skeleton (Bash is All You Need)\\\\n\\\\nTHE SPECS\\\\n- Lines of Code:
+        ~50\\\\n- Tools: 1 (Bash)\\\\n- Philosophy: If you can run a command, you
+        can do anything.\\\\n\\\\nTHE VISUALIZATION\\\\n[Illustration of a robotic
+        arm poised over an ENTER key.]\\\\n\\\\n- THE INCEPTION TRICK\\\\n- [Flow
+        diagram showing recursion]: Agent -\\\\u003e bash [Arrow] python agent.py
+        (Sub-agent) -\\\\u003e bash [Arrow] Result\\\\n\\\\n\\\\\\\"The essence of
+        an agent is ONE tool + ONE loop.\\\\\\\"\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqwKwzRYb4J-4SH0yUWhTiBYFuVg2ylnMB0-UzR6_u8XM47cld9Y6IOyh4mUaZCIV8lwPJ64eBwiScI3yZ4yzYEJMmDVz3JTFwaweUHSj2E3J3ZhN0laZz2ybbr9xtXzCieFY2mK4CXPAgQP5DASArGbCvvdBRcYLpev48\\\\u003dw1376-h768\\\",1376,768],\\\"Level
+        1: The Body, where the agent gains file reading and writing tools and the
+        core Model-Tool-Result loop logic is established.\\\",\\\"Level 1: The Body
+        (Model as Agent)\\\\n\\\\nTHE SPECS\\\\n- Lines of Code: ~200\\\\n- New Tools:
+        read_file, write_file, edit_file\\\\n- Why Upgrade? Safer, surgical edits.\\\\n\\\\nTHE
+        VISUALIZATION\\\\n[Illustration of a futuristic humanoid robot holding a document.]\\\\n\\\\nTHE
+        LOOP LOGIC\\\\n[Flow diagram of the core agent loop.]\\\\nUser -\\\\u003e
+        Model -\\\\u003e Tool -\\\\u003e Result -\\\\u003e [Asterisk showing loop
+        back to Model] -\\\\u003e Final Response\\\\nCritical: The model loops repeatedly
+        until the task is complete.\\\\n\\\\n\\\\\\\"The body is built. Now it can
+        see and touch the world (read \\\\u0026 write).\\\\\\\"\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrJ_fwAB-dNt8l0Q4M4_mTyKD2ZpWJOl_huRiKxOKhKfbcGzJuHbpHs-WtvoZ7bI1xquSM2q8g0L88LKsLLxifQ1k-5IxfrqdiQwglimbBl2WSDilgUjWzD4_PYevbRHEDVsjwoSIHkE-5O5D8ExvqCk6vclBDdUfSo9es\\\\u003dw1376-h768\\\",1376,768],\\\"Level
+        2: The Planner, which cures forgetfulness by introducing the Todo Tool, forcing
+        the AI to maintain a checklist for focus.\\\",\\\"Level 2: The Planner (Curing
+        Amnesia)\\\\n\\\\nTHE SPECS\\\\n- Problem: On complex tasks, the AI forgets
+        the plan or gets distracted.\\\\n\\\\nTHE VISUALIZATION\\\\n[Illustration
+        of a humanoid robot holding a clipboard.]\\\\n\\\\nTHE UPGRADE: The Todo Tool\\\\n[Image
+        showing a digital checklist on a clipboard.]\\\\n- Step 1: Analyze database
+        [Checked]\\\\n- Step 2: Write migration script in_progress [Highlighted]\\\\n-
+        Step 3: Run tests [Unchecked]\\\\n\\\\n\\\\\\\"Structure constrains AND enables.
+        By forcing the AI to write a checklist, we prevent hallucination and keep
+        it focused.\\\\\\\"\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoKAysDBIneRm6D87cNZ2SyO__NAnmqaCk0bAqSM1z31P3C48QwEk84xKvEQ_OdE-ZmMj7L3rvTG1bDt7hXR9mNGiPVrPghlmaEy3S7duWpC1blX-T-FfMm4GihA44_KPjHFI9WET7Ybp0iFXIrNr73J909u_Pk3mSOdvQ\\\\u003dw1376-h768\\\",1376,768],\\\"Level
+        3: The Manager, which solves Context Pollution by using The Task Tool to spawn
+        specialized subagents like Researcher Bot and Coder Bot.\\\",\\\"Level 3:
+        The Manager (Divide and Conquer)\\\\n\\\\nProblem: Context Pollution. Too
+        much text in history confuses the AI.\\\\n\\\\n[Diagram shows the Main Agent
+        connecting to two specialized Subagents.]\\\\n\\\\nMain Agent [Icon of a central
+        robot]\\\\n\\\\nResearcher Bot [Icon of a robot researching at a desktop]\\\\n-
+        Runs in fresh window.\\\\n- Returns 1 sentence summary.\\\\n\\\\nCoder Bot
+        [Icon of a robot coding]\\\\n- Executes task.\\\\n- Returns result.\\\\n\\\\nThe
+        Task Tool:\\\\nSpawns a subagent to do a specific job, keeping the Main Agent's
+        memory clean and focused.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOoKJ4IKdK8fDXR970PKSuTJHif5OpeeJhJ-0DrxGy-Rf3eFVuyNSgrHM1sr4MLhchin2wv9yAzFHRdhHq51L12mXrcw8jLx1gSEKFyrcMSgs6gXHZqtvkqtwz4dqVF0jDbXFxKOps2lNoFc4hTjPjpemvbjZ1QXQ9Abxt0\\\\u003dw1376-h768\\\",1376,768],\\\"Level
+        4: The Expert introduces plug-and-play Skills, written in text files like
+        SKILL.md, allowing the agent to gain instant expertise without retraining.\\\",\\\"Level
+        4: The Expert (The Matrix Moment)\\\\n\\\\n[Illustration of a humanoid robot
+        inserting a floppy disk labeled \\\\\\\"PDF Skill\\\\\\\" into a slot on its
+        head.]\\\\n\\\\nTHE SPECS\\\\n- Tools \\\\u003d Hands (What the model CAN
+        do.)\\\\n- Skills \\\\u003d Knowledge (How the model KNOWS to do it.)\\\\n\\\\nTHE
+        UPGRADE: Instant Expertise\\\\n- Problem: You can't train an AI on every niche
+        topic.\\\\n- Solution: \\\\\\\"Skills\\\\\\\". You write a text file (SKILL.md)
+        with instructions. The agent reads it and instantly becomes an expert in that
+        topic. No training required.\\\\n\\\\nSkills are plug-and-play knowledge modules.
+        They allow the AI to adapt to any domain *without* being retraining.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOosdGenl416ht8Y3a4exUR5P6GrvaWWR4rHDVMi6ciEZuuGQQ6dSLn5OsiausMnyPksq3r_QnjvikxzYzahciwvbWEuozJGtvEGgB8u-aeeYd_8OC30DerEDMzLbWCoKtnZ8LLhn1w92MDkI3ZPakmL0k2EU_tU7EL4Vy0\\\\u003dw1376-h768\\\",1376,768],\\\"Comparison
+        showing the shift from expensive Traditional AI Training (server racks) to
+        cost-free, fast AI Skills (writing instructions in SKILL.md).\\\",\\\"From
+        Training to Teaching\\\\n\\\\nTraditional AI Training\\\\n[Illustration of
+        large server racks.]\\\\n- Cost: $10,000+. Time: Weeks. Requirement: PhD +
+        GPU Cluster.\\\\n\\\\nAI Skills\\\\n[Illustration of a monitor displaying
+        instructions within a file named SKILL.md.]\\\\n- Cost: $0. Time: 5 Minutes.
+        Requirement: English Language.\\\\n- SKILL.md content:\\\\n- # AI Skill: Data
+        Analysis\\\\n- ## Instructions\\\\n- 1. Read the CSV file.\\\\n- 2. Calculate
+        the average.\\\\n- 3. Summarize the findings in a report.\\\\n\\\\nDemocratization:
+        You don't need to be an engineer to customize an agent. You just need to be
+        able to write clear instructions.\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOqqC6BdedxkVsOcEflsEwmsV2nTb3_bwyHWR7Pm5Ktn3KCfrzZC_c2zUB21MwrXC6JpBFOW2bzFLBx6VW_lVjX68JsfysEiX6-Cb-ReHtkzwTn7LYglg6v5YaZQe0mHcIX1UxtVqbnL7Iy8KOr6uwEU9A-Mf96KbVOMJKg\\\\u003dw1376-h768\\\",1376,768],\\\"Schematic
+        showing a human conductor orchestrating an agent orchestra, highlighting trends
+        like Managing, Agent Teams, and Hyper-Personalization.\\\",\\\"The Future
+        of Agents\\\\n\\\\nHUMAN CONDUCTOR \\\\u0026 AGENT ORCHESTRA (SCHEMATIC VIEW)\\\\n[Illustration
+        showing a human figure standing on a podium directing many specialized robots
+        (Build Agent, Research Agent, Analyst Agent) that are working collaboratively
+        at desks.]\\\\n\\\\nTRENDS.md\\\\n// TRENDS.md - The Future of Agents\\\\n\\\\u003e
+        From Chatting to Managing:\\\\n- Humans will define goals, agents will execute
+        the work.\\\\n- _Moving beyond simple Q\\\\u0026A to autonomous task completion_\\\\n\\\\n\\\\u003e
+        Agent Teams:\\\\n- Agents will hire Subagents to solve problems we didn't
+        anticipate.\\\\n- _Collaborative swarms for complex, multi-step challenges_\\\\n\\\\n\\\\u003e
+        Hyper-Personalization:\\\\n- Your agent will be unique, loaded with your custom
+        Skills.\\\\n- _A personal digital extension, perfectly aligned with your needs_\\\"],[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOpGc3JXHrnVZj-84t1aRga-jfbB0ySYwIZsk-6zn_Z4qqwQberBItR__v2yZ4MRsB60n_5cilGEst9yQPqJc73CU3Cwz4BwmxXKsU1GHGwT6XUNB7UuR9Z7JF21Yvb8arEUx0cMu6cZz5DSe0YoudChBT-7taQOHBv7ys0\\\\u003dw1376-h768\\\",1376,768],\\\"Final
+        slide encouraging building, providing the GitHub repository link and noting
+        that the Level 0 agent is only 50 lines of Python code.\\\",\\\"Start Building\\\\n\\\\nSTARTER
+        KIT (ISOMETRIC VIEW)\\\\n[Illustration of a box labeled Starter Kit containing
+        symbols for Python, an Anthropic API Key, and GitHub.]\\\\n\\\\nCODE.md\\\\n-
+        Repository: github.com/shareAI-lab/learn-claude-code\\\\n- Prerequisites:
+        Python basics + API Key\\\\n\\\\nThe Level 0 agent is only 50 lines of code.
+        Download it. Break it. Rebuild it.\\\\nThe model is the brain. The code is
+        just the way we let it out. What will you build?\\\"]],\\\"https://contribution.usercontent.google.com/download?c\\\\u003dCgpub3RlYm9va2xtEkYSD2FydGlmYWN0c19tZWRpYRozCiQ5NmZhMjQwZS1hZDM2LTRjZjgtODhhMi01MmUxOGIzYjNmMjUSCxIHEOXwnYDTCxgB\\\\u0026filename\\\\u003dBuilding_Digital_Workers.pdf\\\\u0026opi\\\\u003d96797242\\\"],null,null,1],[\\\"9ca94236-8568-4b24-bde1-fa7bc48db6de\\\",\\\"Think
+        Act Observe The Agent Loop\\\",1,[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"]],[[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]]],3,null,[null,[\\\"Create
+        an engaging podcast for high school students (ages 14-18) explaining how Claude
+        Code and AI agents work. Use simple language, relatable analogies (like comparing
+        agents to video game NPCs or virtual assistants), and make it fun and educational.
+        Cover: 1) What is an AI agent vs regular AI, 2) The agent loop (think-act-observe),
+        3) Tools and how agents use them, 4) How Claude Code specifically helps programmers,
+        5) Future possibilities. Keep it accessible and exciting for teens who might
+        be curious about AI careers.\\\",2,null,[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"],[\\\"d4d1f671-0cd1-493a-bbf4-f64e9d6d42e6\\\"],[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"],[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"],[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"],[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"],[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"],[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"],[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"]],\\\"en\\\",true,1],\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrW1u4L7g9PDl9_g_cAhJPAU0yvsqZALAOICc9_CtK5Qx_X_2oYYGQKLM8OWN0nPXOy1MYzJ1EO5ZGoqpJgEjDOEFa_MthhN-rTrLTNmEaZmMqtHh6pr6CnzfAQkPtfQi445cRC4EcG_-HPZsCxrIjGxgghe7M\\\\u003dm140\\\",\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrW1u4L7g9PDl9_g_cAhJPAU0yvsqZALAOICc9_CtK5Qx_X_2oYYGQKLM8OWN0nPXOy1MYzJ1EO5ZGoqpJgEjDOEFa_MthhN-rTrLTNmEaZmMqtHh6pr6CnzfAQkPtfQi445cRC4EcG_-HPZsCxrIjGxgghe7M\\\\u003dm140-dv\\\",true,[[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrW1u4L7g9PDl9_g_cAhJPAU0yvsqZALAOICc9_CtK5Qx_X_2oYYGQKLM8OWN0nPXOy1MYzJ1EO5ZGoqpJgEjDOEFa_MthhN-rTrLTNmEaZmMqtHh6pr6CnzfAQkPtfQi445cRC4EcG_-HPZsCxrIjGxgghe7M\\\\u003dm140-dv\\\",4,\\\"audio/mp4\\\"],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrW1u4L7g9PDl9_g_cAhJPAU0yvsqZALAOICc9_CtK5Qx_X_2oYYGQKLM8OWN0nPXOy1MYzJ1EO5ZGoqpJgEjDOEFa_MthhN-rTrLTNmEaZmMqtHh6pr6CnzfAQkPtfQi445cRC4EcG_-HPZsCxrIjGxgghe7M\\\\u003dm140\\\",1,\\\"audio/mp4\\\"],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrW1u4L7g9PDl9_g_cAhJPAU0yvsqZALAOICc9_CtK5Qx_X_2oYYGQKLM8OWN0nPXOy1MYzJ1EO5ZGoqpJgEjDOEFa_MthhN-rTrLTNmEaZmMqtHh6pr6CnzfAQkPtfQi445cRC4EcG_-HPZsCxrIjGxgghe7M\\\\u003dmm,hls\\\",2],[\\\"https://lh3.googleusercontent.com/notebooklm/AG60hOrW1u4L7g9PDl9_g_cAhJPAU0yvsqZALAOICc9_CtK5Qx_X_2oYYGQKLM8OWN0nPXOy1MYzJ1EO5ZGoqpJgEjDOEFa_MthhN-rTrLTNmEaZmMqtHh6pr6CnzfAQkPtfQi445cRC4EcG_-HPZsCxrIjGxgghe7M\\\\u003dmm,dash\\\",3]],[700,960000000]],null,null,null,[1768269272,813975000],null,null,null,null,[1768268977,542107000],null,null,null,1]]]\",null,null,null,\"generic\"]]\n56\n[[\"di\",434],[\"af.httprm\",434,\"-2218994149832434410\",10]]\n25\n[[\"e\",4,null,null,79507]]\n"
+    headers:
+      Accept-CH:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Security-Policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      Content-Type:
+      - application/json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin
+      Cross-Origin-Resource-Policy:
+      - same-site
+      Date:
+      - Tue, 13 Jan 2026 13:50:36 GMT
+      Expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      P3P:
+      - CP="This is not a P3P policy! See g.co/p3phelp for more info."
+      Permissions-Policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      Pragma:
+      - no-cache
+      Server:
+      - ESF
+      Set-Cookie:
+      - NID=SCRUBBED; expires=Wed, 15-Jul-2026 13:50:36 GMT; path=/; domain=.google.com;
+        HttpOnly
+      - SIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '79507'
     status:
       code: 200
       message: OK

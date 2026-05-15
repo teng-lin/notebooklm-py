@@ -43,7 +43,10 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 # ``MUTABLE_NOTEBOOK_ID`` to the canonical Tier-8 generation notebook UUID
 # used to record the chat cassettes (T8.B2); recording-time runs override
 # this with the real env var.
-READONLY_NOTEBOOK_ID = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID", "")
+READONLY_NOTEBOOK_ID = os.environ.get(
+    "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID",
+    "c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e",
+)
 MUTABLE_NOTEBOOK_ID = os.environ.get(
     "NOTEBOOKLM_GENERATION_NOTEBOOK_ID",
     "bb00c9e3-656c-4fd2-b890-2b71e1cf3814",

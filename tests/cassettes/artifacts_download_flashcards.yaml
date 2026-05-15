@@ -1555,7 +1555,7 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: f.req=%5B%5B%5B%22gArtLc%22%2C%22%5B%5B2%5D%2C%5C%22167481cd-23a3-4331-9a45-c8948900bf91%5C%22%2C%5C%22NOT%20artifact.status%20%3D%20%5C%5C%5C%22ARTIFACT_STATUS_SUGGESTED%5C%5C%5C%22%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768359838558&
+    body: f.req=%5B%5B%5B%22gArtLc%22%2C%22%5B%5B2%5D%2C%5C%22c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e%5C%22%2C%5C%22NOT%20artifact.status%20%3D%20%5C%5C%5C%22ARTIFACT_STATUS_SUGGESTED%5C%5C%5C%22%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768359838558&
     headers:
       Accept:
       - '*/*'
@@ -1578,7 +1578,7 @@ interactions:
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2F167481cd-23a3-4331-9a45-c8948900bf91&f.sid=SCRUBBED&rt=c
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n79986\n[[\"wrb.fr\",\"gArtLc\",\"[[[\\\"a0e4dca6-3bb0-4ed0-aea1-dfa91cf89767\\\",\\\"Agent
@@ -2262,7 +2262,7 @@ interactions:
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=v9rmvd&source-path=%2Fnotebook%2F167481cd-23a3-4331-9a45-c8948900bf91&f.sid=SCRUBBED&rt=c
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=v9rmvd&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ')]}''
@@ -9065,6 +9065,149 @@ interactions:
       - '0'
       content-length:
       - '1357207'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5B%5B%5B%22cFji9%22%2C%22%5B%5C%22c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312235923&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '170'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
+        __Secure-3PSIDCC=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=cFji9&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ')]}''
+
+
+        3888
+
+        [["wrb.fr","cFji9","[[[\"608891fc-71f7-421f-86a6-dcc2a3125633\",[\"608891fc-71f7-421f-86a6-dcc2a3125633\",\"{\\n  \\\"name\\\":
+        \\\"Building a True AI Agent (Learn Claude Code)\\\",\\n  \\\"children\\\":
+        [\\n    {\\n      \\\"name\\\": \\\"Core Philosophy\\\",\\n      \\\"children\\\":
+        [\\n        { \\\"name\\\": \\\"Model as Agent\\\" },\\n        { \\\"name\\\":
+        \\\"Model is 80%, Code is 20%\\\" },\\n        { \\\"name\\\": \\\"Tools let
+        models act; Skills let models know how\\\" },\\n        { \\\"name\\\": \\\"Knowledge
+        Externalization\\\" }\\n      ]\\n    },\\n    {\\n      \\\"name\\\": \\\"Agent
+        Development Stages\\\",\\n      \\\"children\\\": [\\n        {\\n          \\\"name\\\":
+        \\\"v0: Bash is All You Need\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"Single tool (bash) for all tasks\\\" },\\n            {
+        \\\"name\\\": \\\"Recursive process spawning for subagents\\\" }\\n          ]\\n        },\\n        {\\n          \\\"name\\\":
+        \\\"v1: Basic Agent Loop\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"Think -\\u003e Use Tools -\\u003e Report Results\\\" },\\n            {
+        \\\"name\\\": \\\"Core tools: bash, read_file, write_file, edit_file\\\" }\\n          ]\\n        },\\n        {\\n          \\\"name\\\":
+        \\\"v2: Structured Planning\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"TodoManager for visible plans\\\" },\\n            { \\\"name\\\":
+        \\\"Constraint: One task in_progress at a time\\\" }\\n          ]\\n        },\\n        {\\n          \\\"name\\\":
+        \\\"v3: Subagent Mechanism\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"Task tool for isolated context\\\" },\\n            { \\\"name\\\":
+        \\\"Agent Types: explore, code, plan\\\" },\\n            { \\\"name\\\":
+        \\\"Prevents context pollution\\\" }\\n          ]\\n        },\\n        {\\n          \\\"name\\\":
+        \\\"v4: Skills Mechanism\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"SKILL.md as expertise packages\\\" },\\n            { \\\"name\\\":
+        \\\"Domain knowledge on-demand\\\" },\\n            { \\\"name\\\": \\\"Progressive
+        disclosure (Metadata vs Body)\\\" }\\n          ]\\n        }\\n      ]\\n    },\\n    {\\n      \\\"name\\\":
+        \\\"Technical Optimization\\\",\\n      \\\"children\\\": [\\n        {\\n          \\\"name\\\":
+        \\\"Caching Economics\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"Append-only logs preserve KV cache\\\" },\\n            {
+        \\\"name\\\": \\\"Dynamic system prompts cause 100% cache miss\\\" },\\n            {
+        \\\"name\\\": \\\"Cache hits reduce costs by up to 90%\\\" }\\n          ]\\n        },\\n        {\\n          \\\"name\\\":
+        \\\"Security Measures\\\",\\n          \\\"children\\\": [\\n            {
+        \\\"name\\\": \\\"Safe path resolution\\\" },\\n            { \\\"name\\\":
+        \\\"Dangerous command blocking\\\" },\\n            { \\\"name\\\": \\\"Output
+        truncation (50KB limit)\\\" }\\n          ]\\n        }\\n      ]\\n    },\\n    {\\n      \\\"name\\\":
+        \\\"Skill Structure\\\",\\n      \\\"children\\\": [\\n        { \\\"name\\\":
+        \\\"YAML Frontmatter (Metadata)\\\" },\\n        { \\\"name\\\": \\\"Markdown
+        Body (Instructions)\\\" },\\n        { \\\"name\\\": \\\"External Resources
+        (Scripts, Refs, Assets)\\\" }\\n      ]\\n    }\\n  ]\\n}\",[2,\"400237754469\",[1768311078,286553000],5,[[\"a474cd35-6c21-4e72-94a0-c38b5491b449\"],[\"735fcfef-9fbd-4c89-9789-6a9760587bec\"],[\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\"],[\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\"],[\"c361a555-5c2d-42e2-94d0-a65da95be660\"],[\"48f71a82-08d3-46fa-a37f-d657fb2f0723\"],[\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\"],[\"ef358221-3904-4dbc-be6f-e1e8dea63954\"]]],null,\"Architecting
+        Autonomous Intelligence: The Claude Code Framework\"]]],[1768312236,701321000]]",null,null,null,"generic"]]
+
+        55
+
+        [["di",148],["af.httprm",148,"2705767798633468954",10]]
+
+        24
+
+        [["e",4,null,null,3987]]
+
+        '
+    headers:
+      Accept-CH:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Security-Policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      Content-Type:
+      - application/json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin
+      Cross-Origin-Resource-Policy:
+      - same-site
+      Date:
+      - Tue, 13 Jan 2026 13:50:36 GMT
+      Expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      P3P:
+      - CP="This is not a P3P policy! See g.co/p3phelp for more info."
+      Permissions-Policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      Pragma:
+      - no-cache
+      Server:
+      - ESF
+      Set-Cookie:
+      - NID=SCRUBBED; expires=Wed, 15-Jul-2026 13:50:36 GMT; path=/; domain=.google.com;
+        HttpOnly
+      - SIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:36 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '3987'
     status:
       code: 200
       message: OK

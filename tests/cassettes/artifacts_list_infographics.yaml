@@ -1555,7 +1555,7 @@ interactions:
       code: 200
       message: OK
 - request:
-    body: f.req=%5B%5B%5B%22gArtLc%22%2C%22%5B%5B2%5D%2C%5C%22167481cd-23a3-4331-9a45-c8948900bf91%5C%22%2C%5C%22NOT%20artifact.status%20%3D%20%5C%5C%5C%22ARTIFACT_STATUS_SUGGESTED%5C%5C%5C%22%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312240829&
+    body: f.req=%5B%5B%5B%22gArtLc%22%2C%22%5B%5B2%5D%2C%5C%22c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e%5C%22%2C%5C%22NOT%20artifact.status%20%3D%20%5C%5C%5C%22ARTIFACT_STATUS_SUGGESTED%5C%5C%5C%22%5C%22%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312240829&
     headers:
       Accept:
       - '*/*'
@@ -1578,7 +1578,7 @@ interactions:
       User-Agent:
       - python-httpx/0.28.1
     method: POST
-    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2F167481cd-23a3-4331-9a45-c8948900bf91&f.sid=SCRUBBED&rt=c
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=gArtLc&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
   response:
     body:
       string: ")]}'\n\n79405\n[[\"wrb.fr\",\"gArtLc\",\"[[[\\\"575a9e5d-40fb-44a4-b2d3-21a573bdb547\\\",\\\"Reverse
@@ -2234,6 +2234,99 @@ interactions:
       - '0'
       content-length:
       - '79507'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: f.req=%5B%5B%5B%22rLM1Ne%22%2C%22%5B%5C%22c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e%5C%22%2Cnull%2C%5B2%5D%2Cnull%2C0%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1768312221241&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '199'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        OSID=SCRUBBED; __Secure-OSID=SCRUBBED; SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED;
+        __Secure-3PSIDCC=SCRUBBED
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=rLM1Ne&source-path=%2Fnotebook%2Fc3f6285f-1709-44c4-9cd6-e95cf0ea4f5e&f.sid=SCRUBBED&rt=c
+  response:
+    body:
+      string: ")]}'\n\n3133\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"READ ONLY: Learn Claude
+        Code \\\\u0026 AI Agents for High School Students\\\",[[[\\\"a474cd35-6c21-4e72-94a0-c38b5491b449\\\"],\\\"GitHub
+        - shareAI-lab/learn-claude-code: How can we build a true AI agent? Like Claude
+        Code.\\\",[null,1105,[1768268904,969842000],[\\\"59732f07-bb2d-4c52-982c-f30a405ee2c2\\\",[1768268904,722716000]],5,null,1,[\\\"https://github.com/shareAI-lab/learn-claude-code\\\"]],[null,2]],[[\\\"735fcfef-9fbd-4c89-9789-6a9760587bec\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/docs/v3-subagent-mechanism.md\\\",[null,649,[1768268936,841702000],[\\\"353e2480-1ab2-4f10-b4ef-33d4fd931e21\\\",[1768268936,552638000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/docs/v3-subagent-mechanism.md\\\"]],[null,2]],[[\\\"4d3f7b07-e9e6-43d3-ab8b-184fa27a9f1e\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/docs/v4-skills-mechanism.md\\\",[null,1894,[1768268939,620097000],[\\\"63170d6b-f335-4f62-ba95-8f9455c2466b\\\",[1768268939,269895000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/docs/v4-skills-mechanism.md\\\"]],[null,2]],[[\\\"a5ec927b-12eb-45d1-989f-12eb3db4ce53\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v0_bash_agent.py\\\",[null,781,[1768268914,461842000],[\\\"21de4c3f-3323-4563-8307-3749f6c39616\\\",[1768268914,116348000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v0_bash_agent.py\\\"]],[null,2]],[[\\\"c361a555-5c2d-42e2-94d0-a65da95be660\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v1_basic_agent.py\\\",[null,1452,[1768268917,15523000],[\\\"a6cbd772-2811-499f-bc31-6dd0b74ca7fd\\\",[1768268916,689238000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v1_basic_agent.py\\\"]],[null,2]],[[\\\"48f71a82-08d3-46fa-a37f-d657fb2f0723\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v2_todo_agent.py\\\",[null,1702,[1768268919,610537000],[\\\"a65b88ec-b154-4633-8c74-b2487b30c1e5\\\",[1768268919,248383000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v2_todo_agent.py\\\"]],[null,2]],[[\\\"d6ce2ec3-f98a-4529-acd5-08bff271cb3b\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v3_subagent.py\\\",[null,1967,[1768268922,541555000],[\\\"a719762f-4b05-4c77-bb72-eab7a603b4a6\\\",[1768268922,151851000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v3_subagent.py\\\"]],[null,2]],[[\\\"ef358221-3904-4dbc-be6f-e1e8dea63954\\\"],\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v4_skills_agent.py\\\",[null,2410,[1768268925,379830000],[\\\"f3afdf07-2d63-404f-84d5-955eadba6d91\\\",[1768268925,17659000]],4,null,1,[\\\"https://raw.githubusercontent.com/shareAI-lab/learn-claude-code/main/v4_skills_agent.py\\\"]],[null,2]]],\\\"c3f6285f-1709-44c4-9cd6-e95cf0ea4f5e\\\",\\\"\U0001F916\\\",null,[1,true,true,null,null,[1768312221,635381000],1,false,[1768268884,276629000],null,null,null,true,true,1,false],null,null,[false],[true,true,true],[6,500,300,500000]]]\",null,null,null,\"generic\"]]\n56\n[[\"di\",301],[\"af.httprm\",300,\"-8917822050262652730\",10]]\n24\n[[\"e\",4,null,null,3233]]\n"
+    headers:
+      Accept-CH:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Security-Policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      Content-Type:
+      - application/json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin
+      Cross-Origin-Resource-Policy:
+      - same-site
+      Date:
+      - Tue, 13 Jan 2026 13:50:21 GMT
+      Expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      P3P:
+      - CP="This is not a P3P policy! See g.co/p3phelp for more info."
+      Permissions-Policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      Pragma:
+      - no-cache
+      Server:
+      - ESF
+      Set-Cookie:
+      - NID=SCRUBBED; expires=Wed, 15-Jul-2026 13:50:21 GMT; path=/; domain=.google.com;
+        HttpOnly
+      - SIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:21 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:21 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:21 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:21 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:21 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Wed, 13-Jan-2027 13:50:21 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      Transfer-Encoding:
+      - chunked
+      Vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+      content-length:
+      - '3233'
     status:
       code: 200
       message: OK
