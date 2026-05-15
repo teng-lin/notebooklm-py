@@ -9,6 +9,9 @@ from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 @pytest.fixture
 def api():
     core = MagicMock()
+    # ClientCore._pending_polls (T7.E2) — real dict so the leader/follower
+    # dedupe in ``wait_for_completion`` can ``dict.get(key)`` against it.
+    core._pending_polls = {}
     notes_api = MagicMock()
     return ArtifactsAPI(core, notes_api)
 

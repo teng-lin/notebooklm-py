@@ -391,6 +391,16 @@ class ClientCore:
         # clobber sibling-process writes (docs/auth-keepalive.md §3.4.1).
         # Per-instance, never module-global.
         self._loaded_cookie_snapshot: CookieSnapshot | None = None
+        # Leader/follower polling-dedupe registry for
+        # ``ArtifactsAPI.wait_for_completion`` (audit §21 / T7.E2).
+        # Keyed by ``(notebook_id, task_id)``. The first caller for a key is
+        # the *leader* and spawns a shielded ``_poll_loop`` task; subsequent
+        # callers (*followers*) attach to the shared future via
+        # ``asyncio.shield(future)`` so their per-caller cancellations don't
+        # propagate to the underlying poll. Per-instance — never module-global,
+        # so a fresh ``ClientCore`` cannot inherit a dangling entry from a
+        # prior instance.
+        self._pending_polls: dict[tuple[str, str], asyncio.Future[Any]] = {}
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).

@@ -30,6 +30,9 @@ def _make_api():
     core = MagicMock()
     core.rpc_call = AsyncMock()
     core.get_source_ids = AsyncMock(return_value=[])
+    # ClientCore._pending_polls (T7.E2) — real dict so the leader/follower
+    # dedupe in ``wait_for_completion`` can ``dict.get(key)`` against it.
+    core._pending_polls = {}
     notes = MagicMock()
     notes.list_mind_maps = AsyncMock(return_value=[])
     notes.create = AsyncMock(return_value=MagicMock(id="note_1"))
