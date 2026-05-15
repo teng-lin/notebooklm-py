@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Status:** Active
-**Last Updated:** 2026-05-15 (T5 Part B)
+**Last Updated:** 2026-05-15 (T6 Part C)
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
@@ -9,11 +9,12 @@ Complete command reference for the `notebooklm` CLI—providing full programmati
 
 ## Command Structure
 
-```
+```bash
 notebooklm [-p PROFILE] [--storage PATH] [--version] [-v|--quiet] <command> [OPTIONS] [ARGS]
 ```
 
-**Global Options:**
+### Global Options
+
 - `-p, --profile NAME` - Use a named profile (overrides `NOTEBOOKLM_PROFILE` env var)
 - `--storage PATH` - Override the default storage location
 - `-v, --verbose` - Increase verbosity (`-v` for INFO, `-vv` for DEBUG)
@@ -21,7 +22,8 @@ notebooklm [-p PROFILE] [--storage PATH] [--version] [-v|--quiet] <command> [OPT
 - `--version` - Show version and exit
 - `--help` - Show help message
 
-**Environment Variables:**
+### Environment Variables
+
 - `NOTEBOOKLM_HOME` - Base directory for all config files (default: `~/.notebooklm`)
 - `NOTEBOOKLM_PROFILE` - Active profile name (default: `default`)
 - `NOTEBOOKLM_NOTEBOOK` - Default notebook ID for any command exposing `-n/--notebook`. Resolution order: `-n/--notebook` flag > `NOTEBOOKLM_NOTEBOOK` env > active context (`notebooklm use`) > error. Empty/whitespace values are treated as unset.
@@ -33,7 +35,8 @@ notebooklm [-p PROFILE] [--storage PATH] [--version] [-v|--quiet] <command> [OPT
 
 See [Configuration](configuration.md) for full env-var precedence and CI/CD setup.
 
-**Command Organization:**
+### Command Organization
+
 - **Session commands** - Authentication and context management
 - **Notebook commands** - CRUD operations on notebooks
 - **Chat commands** - Querying and conversation management
@@ -142,7 +145,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 | Command | Arguments | Options | Example |
 |---------|-----------|---------|---------|
 | `list` | - | `--json`, `--limit N`, `--no-truncate` | `source list --limit 20 --no-truncate` |
-| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--mime-type` (deprecated for files), `--timeout`, `--follow-symlinks`, `--json` | `source add "https://..." --timeout 90` |
+| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--json` (file-source `--mime-type` is deprecated — see [detailed section](#source-add---mime-type-deprecation)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
 | `add-research [query]` | Search query (or `--prompt-file -` for stdin) | `--mode [fast\|deep]`, `--from [web\|drive]`, `--import-all`, `--cited-only`, `--no-wait`, `--timeout`, `--prompt-file PATH` | `source add-research "AI" --mode deep --no-wait` |
 | `get <id>` | Source ID | `--json` | `source get src123` |
@@ -188,19 +191,19 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 
 `quiz`, `flashcards`, and `revise-slide` do not accept `--language`.
 
-| Command | Type-specific options | Example |
-|---------|-----------------------|---------|
-| `audio [description]` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | `generate audio "Focus on history"` |
-| `video [description]` | `--format [explainer\|brief\|cinematic]`, `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt TEXT` (required with `--style custom`; rejected with `--format cinematic`) | `generate video "Explainer for kids"` |
-| `cinematic-video [description]` | Alias for `video --format cinematic`; passing a non-cinematic `--format` exits `2`. Supports the same options as `video`. | `generate cinematic-video "Documentary about quantum physics"` |
-| `slide-deck [description]` | `--format [detailed\|presenter]`, `--length [default\|short]` | `generate slide-deck` |
-| `revise-slide [description]` | `-a/--artifact <id>` (required), `--slide N` (required) | `generate revise-slide "Move title up" --artifact <id> --slide 0` |
-| `quiz [description]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate quiz --difficulty hard` |
-| `flashcards [description]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate flashcards` |
-| `infographic [description]` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
-| `data-table [description]` | (uniform options only) | `generate data-table "compare concepts"` |
-| `mind-map` | `--instructions TEXT` *(sync, no `--wait` / `--timeout` / `--interval` / `--retry`)* | `generate mind-map` |
-| `report [description]` | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append "extra instructions"` (no effect with `--format custom`) | `generate report --format study-guide` |
+| Command | Arguments | Options | Example |
+|---------|-----------|---------|---------|
+| `audio` | `[description]` | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | `generate audio "Focus on history"` |
+| `video` | `[description]` | `--format [explainer\|brief\|cinematic]`, `--style [auto\|custom\|classic\|whiteboard\|kawaii\|anime\|watercolor\|retro-print\|heritage\|paper-craft]`, `--style-prompt TEXT` (required with `--style custom`; rejected with `--format cinematic`) | `generate video "Explainer for kids"` |
+| `cinematic-video` | `[description]` | Alias for `video --format cinematic`; passing a non-cinematic `--format` exits `2`. Supports the same options as `video`. | `generate cinematic-video "Documentary about quantum physics"` |
+| `slide-deck` | `[description]` | `--format [detailed\|presenter]`, `--length [default\|short]` | `generate slide-deck` |
+| `revise-slide` | `[description]` | `-a/--artifact <id>` (required), `--slide N` (required) | `generate revise-slide "Move title up" --artifact <id> --slide 0` |
+| `quiz` | `[description]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate quiz --difficulty hard` |
+| `flashcards` | `[description]` | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]` | `generate flashcards` |
+| `infographic` | `[description]` | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
+| `data-table` | `[description]` | (uniform options only) | `generate data-table "compare concepts"` |
+| `mind-map` | - | `--instructions TEXT` *(sync, no `--wait` / `--timeout` / `--interval` / `--retry`)* | `generate mind-map` |
+| `report` | `[description]` | `--format [briefing-doc\|study-guide\|blog-post\|custom]`, `--append "extra instructions"` (no effect with `--format custom`) | `generate report --format study-guide` |
 
 ### Artifact Commands (`notebooklm artifact <cmd>`)
 
@@ -330,9 +333,11 @@ These CLI capabilities are not available in NotebookLM's web interface:
 
 ## Detailed Command Reference
 
-### Session: `login`
+### Authentication: `login`
 
 Authenticate with Google NotebookLM via browser.
+
+> **Python equivalent:** load saved credentials with [`AuthTokens.from_storage()` / `NotebookLMClient.from_storage(...)`](python-api.md#authentication). The CLI's interactive browser-login flow has no Python counterpart — run `notebooklm login` once to seed `storage_state.json`, then drive the API from Python.
 
 ```bash
 notebooklm login [OPTIONS]
@@ -536,7 +541,7 @@ notebooklm share remove user@example.com -y   # Skip confirmation
 | `full` | Chat, sources, and notes |
 | `chat` | Chat interface only |
 
-### Session: `auth check`
+### Authentication: `auth check`
 
 Diagnose authentication issues by validating storage file, cookies, and optionally testing token fetch.
 
@@ -579,7 +584,7 @@ notebooklm auth check --json
 - Check if cookies are from correct domain (regional vs .google.com)
 - Diagnose NOTEBOOKLM_AUTH_JSON environment variable issues
 
-### Session: `auth refresh`
+### Authentication: `auth refresh`
 
 One-shot keepalive: open a session, trigger the layer-1 SIDTS rotation poke against `accounts.google.com`, persist the rotated cookies to `storage_state.json`, and exit. Designed to be invoked by the OS scheduler (launchd / systemd / cron / Task Scheduler / k8s CronJob) so an otherwise-idle profile does not stale out between user-driven calls.
 
@@ -621,7 +626,7 @@ notebooklm --profile work auth refresh --quiet
 
 See [Troubleshooting](troubleshooting.md) for full per-OS scheduler recipes (launchd plist, systemd user timer, cron, Task Scheduler, k8s CronJob).
 
-### Session: `auth inspect`
+### Authentication: `auth inspect`
 
 List Google accounts visible to a browser's cookie store. **Read-only — never writes to disk.** Use this before `notebooklm login --browser-cookies <browser> --account <email>` to see which account emails are available.
 
@@ -640,7 +645,7 @@ notebooklm auth inspect --browser chrome
 notebooklm auth inspect --browser firefox --json
 ```
 
-### Session: `auth logout`
+### Authentication: `auth logout`
 
 Log out by clearing saved authentication. Removes both the saved cookie file (`storage_state.json`) and the cached browser profile. After logout, run `notebooklm login` to authenticate with a different Google account.
 
@@ -696,6 +701,8 @@ For `-s` and `-a` the active notebook is resolved with the same precedence the c
 
 File-source uploads reject symlinks by default. If the path you pass (or any ancestor directory) is a symbolic link, `source add` refuses the upload rather than silently following it — a workspace symlink could otherwise exfiltrate the file it points at (e.g. `~/Downloads/foo.pdf -> /etc/passwd`). Pass `--follow-symlinks` to opt in explicitly.
 
+> **Python equivalent:** [`client.sources.add_file(nb_id, path, follow_symlinks=True)`](python-api.md#sourcesapi-clientsources).
+
 ```bash
 # Default — symlink rejected with: "Path is a symlink; pass --follow-symlinks to follow it explicitly."
 notebooklm source add ./link-to-doc.pdf --type file
@@ -706,7 +713,7 @@ notebooklm source add ./link-to-doc.pdf --type file --follow-symlinks
 
 The same gate applies on the explicit `--type file` path (no auto-detect), so typing the source type as `file` does not bypass the check.
 
-### Source: `add` — `--mime-type` deprecation
+### Source: `add` `--mime-type` deprecation
 
 The `--mime-type` flag on `notebooklm source add` (file-source path) is a
 **no-op** and is deprecated. The upload pipeline never consumed it; the MIME
@@ -735,6 +742,8 @@ repeat across pipeline invocations), set `NOTEBOOKLM_QUIET_DEPRECATIONS=1`
 ### Source: `add-research`
 
 Perform AI-powered research and add discovered sources to the notebook.
+
+> **Python equivalent:** [`client.research.start(nb_id, query, source="web", mode="deep")`](python-api.md#researchapi-clientresearch) followed by `client.research.poll(...)` / `client.research.import_sources(...)`.
 
 ```bash
 notebooklm source add-research [query] [OPTIONS]
@@ -778,6 +787,8 @@ echo "very long query..." | notebooklm source add-research --prompt-file -
 
 Check research status for the current notebook (non-blocking).
 
+> **Python equivalent:** [`client.research.poll(nb_id)`](python-api.md#researchapi-clientresearch).
+
 ```bash
 notebooklm research status [OPTIONS]
 ```
@@ -803,6 +814,8 @@ notebooklm research status --json
 ### Research: `wait`
 
 Wait for research to complete (blocking).
+
+> **Python equivalent:** loop on [`client.research.poll(nb_id)`](python-api.md#researchapi-clientresearch) until the returned status is terminal, then optionally call `client.research.import_sources(...)` (matches the CLI's `--import-all` / `--cited-only` behavior).
 
 ```bash
 notebooklm research wait [OPTIONS]
@@ -839,6 +852,8 @@ notebooklm research wait --json --import-all
 ### Generate: `audio`
 
 Generate an audio overview (podcast).
+
+> **Python equivalent:** [`client.artifacts.generate_audio(nb_id, ...)`](python-api.md#generation-methods).
 
 ```bash
 notebooklm generate audio [description] [OPTIONS]
@@ -882,6 +897,8 @@ notebooklm generate audio --prompt-file instructions.txt --format debate
 ### Generate: `video`
 
 Generate a video overview. Use `--format cinematic` for AI-generated documentary footage (Veo 3); cinematic videos ignore `--style` and take ~30-40 min (requires AI Ultra). For non-cinematic formats, see `generate cinematic-video` for the alias subcommand.
+
+> **Python equivalent:** [`client.artifacts.generate_video(nb_id, ...)`](python-api.md#generation-methods).
 
 ```bash
 notebooklm generate video [description] [OPTIONS]
@@ -928,6 +945,8 @@ notebooklm generate video --json
 
 Revise an individual slide in an existing slide deck using a natural-language prompt.
 
+> **Python equivalent:** [`client.artifacts.revise_slide(nb_id, artifact_id, slide_index, instructions)`](python-api.md#generation-methods).
+
 ```bash
 notebooklm generate revise-slide [description] --artifact <id> --slide N [OPTIONS]
 ```
@@ -961,6 +980,8 @@ notebooklm generate revise-slide "Remove taxonomy table" --artifact art123 --sli
 ### Generate: `report`
 
 Generate a text report (briefing doc, study guide, blog post, or custom).
+
+> **Python equivalent:** [`client.artifacts.generate_report(nb_id, format=..., ...)`](python-api.md#generation-methods).
 
 ```bash
 notebooklm generate report [description] [OPTIONS]
@@ -1001,6 +1022,8 @@ notebooklm generate report --prompt-file custom_report.txt
 ### Artifact: `list`, `get`, `rename`, `delete`, `export`, `poll`, `wait`, `suggestions`
 
 Manage existing artifacts (audio, video, slide decks, quizzes, reports, etc.). Every subcommand resolves the notebook via the standard precedence (`-n/--notebook` flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
+
+> **Python equivalent:** [`client.artifacts.list/get/rename/delete/poll_status/wait_for_completion/suggest_reports(...)`](python-api.md#artifactsapi-clientartifacts) for management; [`export_report` / `export_data_table` / `export(...)`](python-api.md#export-methods) for export.
 
 ```bash
 notebooklm artifact <list|get|rename|delete|export|poll|wait|suggestions> [OPTIONS]
@@ -1055,6 +1078,8 @@ notebooklm artifact suggestions --json
 ### Download: `audio`, `video`, `slide-deck`, `infographic`, `report`, `mind-map`, `data-table`
 
 Download generated artifacts to your local machine.
+
+> **Python equivalent:** the per-type [`client.artifacts.download_audio/video/slide_deck/infographic/report/mind_map/data_table(nb_id, path, ...)`](python-api.md#downloading-artifacts) methods.
 
 ```bash
 notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
@@ -1115,6 +1140,8 @@ notebooklm download data-table ./research-data.csv
 
 Download quiz questions or flashcard decks in various formats.
 
+> **Python equivalent:** [`client.artifacts.download_quiz(nb_id, path, output_format="json|markdown|html")`](python-api.md#downloading-artifacts) and `download_flashcards(...)` with the same signature.
+
 ```bash
 notebooklm download quiz [OUTPUT_PATH] [OPTIONS]
 notebooklm download flashcards [OUTPUT_PATH] [OPTIONS]
@@ -1151,6 +1178,8 @@ notebooklm download flashcards --format html cards.html
 ### Note: `list`, `create`, `get`, `save`, `rename`, `delete`
 
 Read, create, and update notebook notes (the "Notes" panel in the web UI). Mind-map artifacts surface as notes in the underlying API but are filtered out of `note list` — use `artifact list --type mind-map` for those.
+
+> **Python equivalent:** [`client.notes.list/create/get/update/rename/delete(...)`](python-api.md#notesapi-clientnotes). Mind-map helpers (`list_mind_maps`, `delete_mind_map`) live on the same API.
 
 ```bash
 notebooklm note <list|create|get|save|rename|delete> [OPTIONS]
@@ -1285,6 +1314,8 @@ Codex does not consume the `skill` subcommand. In this repository it reads the r
 
 Add a Google Drive document, slide deck, sheet, or PDF as a source. The Drive `--mime-type` is **live and functional** on this subcommand (unlike the deprecated file-source `--mime-type` documented above) — it tells the backend which Drive document type to import.
 
+> **Python equivalent:** [`client.sources.add_drive(nb_id, file_id, title, mime_type=...)`](python-api.md#sourcesapi-clientsources).
+
 ```bash
 notebooklm source add-drive [OPTIONS] FILE_ID TITLE
 ```
@@ -1309,6 +1340,8 @@ notebooklm source add-drive 1AbcD...XyZ "Whitepaper" --mime-type pdf --json
 ### Source: `stale`, `clean`
 
 `source stale` is a shell-friendly predicate that reports whether a URL/Drive source needs a refresh; `source clean` removes duplicate, error, or access-blocked sources in bulk.
+
+> **Python equivalent:** [`client.sources.check_freshness(nb_id, source_id)`](python-api.md#sourcesapi-clientsources) returns the same staleness verdict. There is no single bulk "clean" call — combine `client.sources.list(...)` with a filter on duplicate/error/blocked status and call `client.sources.delete(...)` per match.
 
 ```bash
 notebooklm source stale [OPTIONS] SOURCE_ID
