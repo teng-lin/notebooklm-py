@@ -96,9 +96,12 @@ synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
 SYNTHETIC_ERROR_CASSETTE_PREFIX = _cassette_patterns.SYNTHETIC_ERROR_CASSETTE_PREFIX
 VALID_ERROR_MODES = _cassette_patterns.VALID_ERROR_MODES
 
-# T8.E10 — env var name shared with ``src/notebooklm/_core.py``. Kept in sync as
-# a local copy so the unit tests can import it from either side without taking
-# a runtime dependency on the production module.
+# T8.E10 — env var name shared with ``src/notebooklm/_core.py``. Kept in sync
+# as a local copy so the VCR-only replay path (which does not import
+# ``notebooklm._core``) can still parse the env var without dragging the
+# production module in. The unit tests in ``tests/unit/test_vcr_config.py``
+# import ``ERROR_INJECT_ENV_VAR`` directly from ``notebooklm._core`` — the
+# duplication here covers ONLY the VCR-replay path, not the unit-test path.
 ERROR_INJECT_ENV_VAR = "NOTEBOOKLM_VCR_RECORD_ERRORS"
 
 

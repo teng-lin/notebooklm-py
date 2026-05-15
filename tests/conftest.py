@@ -71,7 +71,13 @@ def _synthetic_error_mode(request, monkeypatch):
         raise pytest.UsageError(
             f"@pytest.mark.synthetic_error: invalid mode {mode!r}; valid modes are {sorted(valid)}."
         )
-    monkeypatch.setenv("NOTEBOOKLM_VCR_RECORD_ERRORS", mode)
+    # Import the env-var name from the production module so a future rename
+    # in ``_core.py`` cascades automatically; the constant is also exposed
+    # from ``tests/vcr_config.py`` but going through ``_core`` is the
+    # production-faithful path.
+    from notebooklm._core import ERROR_INJECT_ENV_VAR
+
+    monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
 
 
 @pytest.fixture(autouse=True)

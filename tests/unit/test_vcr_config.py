@@ -484,7 +484,9 @@ def test_scrub_response_substitutes_when_env_var_set(monkeypatch, mode):
     out = scrub_response(incoming)
     expected_status, expected_body, _ = build_synthetic_error_response(mode)
     assert out["status"]["code"] == expected_status
-    assert expected_body in out["body"]["string"] or out["body"]["string"] == expected_body
+    # Byte-for-byte equality — synthetic bodies never trigger scrub patterns or
+    # chunk-prefix rewrites, so any mutation downstream is a regression.
+    assert out["body"]["string"] == expected_body
     # Content-Type was overlaid with the synthetic value.
     assert any("json" in v.lower() for v in out["headers"]["Content-Type"])
 

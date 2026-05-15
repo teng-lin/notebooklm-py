@@ -120,8 +120,14 @@ def _get_error_injection_mode() -> str | None:
     cassette-recording run on a typo — the unit tests catch the typo path,
     and the VCR config validates the value separately).
 
-    Recognized values are imported from ``tests.cassette_patterns`` lazily so
-    this module never depends on the test tree at import time.
+    The valid-mode set is hardcoded here (rather than imported from
+    ``tests.cassette_patterns``) so production import time never reaches into
+    the test tree. The same set is mirrored in
+    ``tests.cassette_patterns.VALID_ERROR_MODES`` and the
+    ``synthetic_error`` marker validator in ``tests/conftest.py``; the
+    duplication is intentional and bounded — adding a fourth mode requires
+    updating all three sites, which the unit tests in ``tests/unit/
+    test_vcr_config.py`` will surface immediately.
     """
     import os
 
@@ -137,23 +143,26 @@ def _get_error_injection_mode() -> str | None:
 
 
 class _SyntheticErrorTransport(httpx.AsyncBaseTransport):
-    """Test-only httpx transport that substitutes a synthetic error on first use.
+    """Test-only httpx transport that substitutes synthetic error responses.
 
-    Wraps an inner ``httpx.AsyncBaseTransport`` and, for the FIRST outgoing
-    batchexecute POST, returns a synthetic error response built by
-    ``tests.cassette_patterns.build_synthetic_error_response``. Subsequent
-    requests pass through to the inner transport unchanged.
+    Wraps an inner ``httpx.AsyncBaseTransport`` and substitutes a synthetic
+    error response on outgoing batchexecute POSTs, built by
+    ``tests.cassette_patterns.build_synthetic_error_response``. Non-batchexecute
+    traffic (Scotty uploads, ``RotateCookies`` pokes, the homepage GET that
+    extracts CSRF) passes through unchanged because none of those endpoints
+    are in scope for error-shape cassettes.
 
-    The "first batchexecute POST" gate is deliberate: most ``ClientCore``
-    operations make one RPC call, but a few make two (e.g. an auth refresh
-    re-issues the same RPC). We want the SAME error to fire on every retry
-    inside the recording window — so when ``always`` is True (the default for
-    record-mode use), every batchexecute POST is substituted, not just the
-    first.
+    Substitution scope is controlled by ``always``:
 
-    Non-batchexecute traffic (Scotty uploads, ``RotateCookies`` pokes, the
-    homepage GET that extracts CSRF) passes through unchanged because none of
-    those endpoints are in scope for error-shape cassettes.
+    - ``always=True`` (the default for record-mode use): every batchexecute
+      POST is substituted. This matters because the client's auth-refresh
+      path re-issues the same RPC; we want the SAME error to fire on every
+      retry inside the recording window so the cassette captures the full
+      retry-and-fail sequence rather than substituting once and then letting
+      a real response slip through on the retry.
+    - ``always=False``: only the FIRST batchexecute POST is substituted; later
+      POSTs fall through to the inner transport. Useful for tests that want
+      to assert the client recovers after a single transient failure.
 
     This class is OPT-IN — ``ClientCore`` only wraps the transport when
     ``_get_error_injection_mode()`` returns a non-``None`` value, so removing
@@ -208,7 +217,15 @@ class _SyntheticErrorTransport(httpx.AsyncBaseTransport):
                 f"to restore normal behavior."
             )
         spec = importlib.util.spec_from_file_location("_notebooklm_cassette_patterns", target)
-        assert spec is not None and spec.loader is not None
+        # NOT ``assert`` — runtime invariant must survive ``python -O``. The
+        # check is defensive (spec_from_file_location on an existing .py file
+        # virtually always succeeds) but if it ever fails the user has clear
+        # remediation via the env var.
+        if spec is None or spec.loader is None:
+            raise RuntimeError(
+                f"Failed to load module spec for {target}. "
+                f"Unset {ERROR_INJECT_ENV_VAR} to restore normal behavior."
+            )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         self._builder = cast(
@@ -861,6 +878,11 @@ class ClientCore:
             error_mode = _get_error_injection_mode()
             synthetic_transport: httpx.AsyncBaseTransport | None = None
             if error_mode is not None:
+                # When we supply a custom ``transport=`` to ``AsyncClient``,
+                # httpx no longer constructs its own internal transport from
+                # the ``limits=`` kwarg below — those limits are consumed by
+                # the inner transport here instead, so connection-pool sizing
+                # remains identical to the no-injection path.
                 inner_transport = httpx.AsyncHTTPTransport(
                     limits=self._limits.to_httpx_limits(),
                 )
@@ -877,6 +899,12 @@ class ClientCore:
                 cookies=cookies,
                 timeout=timeout,
                 follow_redirects=True,
+                # ``limits=`` is honored when ``transport=None`` (default) —
+                # httpx builds its own default transport with these limits.
+                # When ``transport=synthetic_transport`` (T8.E10 record mode)
+                # this kwarg is ignored by httpx and the inner_transport above
+                # carries the limits instead. The redundant pass is harmless
+                # and avoids a branch on the AsyncClient construction site.
                 limits=self._limits.to_httpx_limits(),
                 transport=synthetic_transport,
             )
