@@ -445,10 +445,35 @@ class SourcesAPI:
                 nb_id, [s.id for s in sources]
             )
         """
+        # T7.E1: a bare ``asyncio.gather(*coros)`` propagates the first
+        # exception but does NOT await the sibling tasks it cancels. The
+        # cancelled siblings are left in a "cancellation requested but not
+        # yet observed" state — their ``finally`` blocks may not have run by
+        # the time we re-raise. That race lets a slow poll keep ticking
+        # against the network after ``wait_for_sources`` already raised to
+        # its caller (audit §5).
+        #
+        # Fix: drive the fan-out as explicit tasks. On any exception, cancel
+        # every pending task and drain them via ``return_exceptions=True``
+        # before re-raising the first failure. The drain guarantees each
+        # sibling has reached its ``except CancelledError`` block before we
+        # return control to the caller.
         tasks = [
-            self.wait_until_ready(notebook_id, sid, timeout=timeout, **kwargs) for sid in source_ids
+            asyncio.create_task(self.wait_until_ready(notebook_id, sid, timeout=timeout, **kwargs))
+            for sid in source_ids
         ]
-        return list(await asyncio.gather(*tasks))
+        try:
+            return list(await asyncio.gather(*tasks))
+        except BaseException:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Drain cancelled (and any already-failed) siblings before
+            # surfacing the original exception. ``return_exceptions=True``
+            # swallows the cancellations and concurrent failures so the
+            # outer ``raise`` still raises the first task's exception.
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
     async def add_url(
         self,
