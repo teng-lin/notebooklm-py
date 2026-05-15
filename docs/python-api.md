@@ -303,8 +303,8 @@ idempotent under retry via probe-then-create (when `idempotent=True`,
 which is the default):
 
 - `client.notebooks.create(title)`
-- `client.sources.add_url(notebook_id, url)`
-- `client.sources.add_youtube(notebook_id, youtube_url)`
+- `client.sources.add_url(notebook_id, url)` (YouTube URLs are auto-detected
+  and routed through the YouTube source pathway internally)
 
 `client.sources.add_text(notebook_id, title, content)` is **declared
 non-idempotent**: text sources lack a reliable server-side dedupe key
@@ -576,10 +576,9 @@ for the full layered story.
   useful when Google omits the hint. Set to `0` to restore the
   pre-T7.H2 contract of raising `RateLimitError` immediately (e.g. when
   the calling code implements its own bespoke back-off policy). Mutating
-  create RPCs (`notebooks.create`, `sources.add_url`,
-  `sources.add_youtube`) opt out of this loop via `disable_internal_retries`
-  so the API-layer `idempotent_create` wrapper can own probe-then-retry
-  recovery — see T7.B2.
+  create RPCs (`notebooks.create`, `sources.add_url`) opt out of this loop
+  via `disable_internal_retries` so the API-layer `idempotent_create`
+  wrapper can own probe-then-retry recovery — see T7.B2.
 - `limits` accepts a `ConnectionLimits` dataclass to tune the underlying
   `httpx` connection pool. The default (`ConnectionLimits()`) sets
   `max_connections=100`, `max_keepalive_connections=50`,
