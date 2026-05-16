@@ -9,11 +9,9 @@ import asyncio
 import builtins
 import contextlib
 import csv
-import html
 import json
 import logging
 import os
-import re
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,7 +21,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from . import _mind_map
+from . import _artifact_formatters, _mind_map
 from ._callbacks import maybe_await_callback
 from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
@@ -110,182 +108,51 @@ class DownloadResult:
         return bool(self.succeeded) and bool(self.failed)
 
 
+# Backward-compatible private helper wrappers.
 def _extract_app_data(html_content: str) -> dict:
-    """Extract JSON from data-app-data HTML attribute.
-
-    The quiz/flashcard HTML embeds JSON in a data-app-data attribute
-    with HTML-encoded content (e.g., &quot; for quotes).
-    """
-    match = re.search(r'data-app-data="([^"]+)"', html_content)
-    if not match:
-        raise ArtifactParseError(
-            "quiz/flashcard",
-            details="No data-app-data attribute found in HTML",
-        )
-
-    encoded_json = match.group(1)
-    decoded_json = html.unescape(encoded_json)
-    return json.loads(decoded_json)
+    return _artifact_formatters._extract_app_data(html_content)
 
 
 def _format_quiz_markdown(title: str, questions: list[dict]) -> str:
-    """Format quiz as markdown."""
-    lines = [f"# {title}", ""]
-    for i, q in enumerate(questions, 1):
-        lines.append(f"## Question {i}")
-        lines.append(q.get("question", ""))
-        lines.append("")
-        for opt in q.get("answerOptions", []):
-            marker = "[x]" if opt.get("isCorrect") else "[ ]"
-            lines.append(f"- {marker} {opt.get('text', '')}")
-        if q.get("hint"):
-            lines.append("")
-            lines.append(f"**Hint:** {q['hint']}")
-        lines.append("")
-    return "\n".join(lines)
+    return _artifact_formatters._format_quiz_markdown(title, questions)
 
 
 def _format_flashcards_markdown(title: str, cards: list[dict]) -> str:
-    """Format flashcards as markdown."""
-    lines = [f"# {title}", ""]
-    for i, card in enumerate(cards, 1):
-        front = card.get("f", "")
-        back = card.get("b", "")
-        lines.extend(
-            [
-                f"## Card {i}",
-                "",
-                f"**Q:** {front}",
-                "",
-                f"**A:** {back}",
-                "",
-                "---",
-                "",
-            ]
-        )
-    return "\n".join(lines)
+    return _artifact_formatters._format_flashcards_markdown(title, cards)
 
 
 def _extract_cell_text(cell: Any) -> str:
-    """Recursively extract text from a nested cell structure.
-
-    Data table cells have deeply nested arrays with position markers (integers)
-    and text content (strings). This function traverses the structure and
-    concatenates all text fragments found.
-    """
-    if isinstance(cell, str):
-        return cell
-    if isinstance(cell, int):
-        return ""
-    if isinstance(cell, list):
-        return "".join(text for item in cell if (text := _extract_cell_text(item)))
-    return ""
+    return _artifact_formatters._extract_cell_text(cell)
 
 
 def _extract_data_table_rows(raw_data: Any) -> list[Any]:
-    """Extract data-table rows from the LIST_ARTIFACTS (gArtLc) response shape.
-
-    Navigates the rich-text wrapper at ``raw_data[0][0][0][0][4][2]`` to reach
-    the rows array. The first four ``[0]`` hops are wrapper layers; ``[4]`` is
-    the table content section ``[type, flags, rows_array]``, and ``[2]`` is
-    the rows array itself.
-
-    Inner-most access goes through :func:`safe_index` so a soft-mode shape
-    drift logs a structured warning and returns ``[]`` instead of raising.
-    Strict-decode mode (``NOTEBOOKLM_STRICT_DECODE=1``) lets ``safe_index``
-    raise ``UnknownRPCMethodError`` so we fail fast.
-
-    Returns:
-        The rows array on success, or ``[]`` on shape drift / non-list inner
-        value. NEVER raises for soft-mode drift — callers (e.g.
-        :func:`_parse_data_table`) are responsible for converting an empty
-        result into a domain-level :class:`ArtifactParseError`.
-    """
-    rows_array = safe_index(
-        raw_data,
-        0,
-        0,
-        0,
-        0,
-        4,
-        2,
-        method_id=RPCMethod.LIST_ARTIFACTS.value,
-        source="_artifacts._extract_data_table_rows",
-    )
-    if not isinstance(rows_array, list):
-        # safe_index returns None on soft-mode drift, and the upstream shape
-        # is also occasionally seen as a non-list scalar — normalise both to
-        # the empty-list sentinel so the caller's "empty data table" path
-        # handles them uniformly.
-        if rows_array is not None:
-            logger.warning(
-                "data table rows_array is not a list (type=%s); treating as empty",
-                type(rows_array).__name__,
-            )
-        return []
-    return rows_array
+    return _artifact_formatters._extract_data_table_rows(raw_data)
 
 
 def _parse_data_table(raw_data: list) -> tuple[list[str], list[list[str]]]:
-    """Parse rich-text data table into headers and rows.
+    return _artifact_formatters._parse_data_table(
+        raw_data,
+        rows_extractor=_extract_data_table_rows,
+        cell_text_extractor=_extract_cell_text,
+    )
 
-    Data tables from NotebookLM have a complex nested structure with position
-    markers. This function delegates inner-most navigation to
-    :func:`_extract_data_table_rows` and then extracts text from each cell.
 
-    Each row has format: ``[start_pos, end_pos, [cell_array]]``.
-    Each cell is deeply nested: ``[pos, pos, [[pos, pos, [[pos, pos, [["text"]]]]]]]``.
-
-    Returns:
-        Tuple of (headers, rows) where headers is a list of column names
-        and rows is a list of row data (each row is a list of cell strings).
-
-    Raises:
-        ArtifactParseError: If the data structure cannot be parsed or is empty.
-    """
-    try:
-        rows_array = _extract_data_table_rows(raw_data)
-        if not rows_array:
-            # Covers both genuinely-empty tables and soft-mode shape drift
-            # (where ``_extract_data_table_rows`` returns ``[]``). The caller
-            # converts this into ArtifactParseError so the download_data_table
-            # surface stays unchanged.
-            raise ArtifactParseError("data_table", details="Empty data table")
-
-        headers: list[str] = []
-        rows: list[list[str]] = []
-
-        for i, row_section in enumerate(rows_array):
-            # Each row_section is [start_pos, end_pos, cell_array]
-            if not isinstance(row_section, list) or len(row_section) < 3:
-                continue
-
-            cell_array = row_section[2]
-            if not isinstance(cell_array, list):
-                continue
-
-            row_values = [_extract_cell_text(cell) for cell in cell_array]
-
-            if i == 0:
-                headers = row_values
-            else:
-                rows.append(row_values)
-
-        # Validate we extracted usable data
-        if not headers:
-            raise ArtifactParseError(
-                "data_table",
-                details="Failed to extract headers from data table",
-            )
-
-        return headers, rows
-
-    except (IndexError, TypeError, KeyError) as e:
-        raise ArtifactParseError(
-            "data_table",
-            details=f"Failed to parse data table structure: {e}",
-            cause=e,
-        ) from e
+def _format_interactive_content(
+    app_data: dict,
+    title: str,
+    output_format: str,
+    html_content: str,
+    is_quiz: bool,
+) -> str:
+    return _artifact_formatters._format_interactive_content(
+        app_data,
+        title,
+        output_format,
+        html_content,
+        is_quiz,
+        quiz_markdown_formatter=_format_quiz_markdown,
+        flashcards_markdown_formatter=_format_flashcards_markdown,
+    )
 
 
 class ArtifactsAPI:
@@ -1502,20 +1369,7 @@ class ArtifactsAPI:
         Returns:
             Formatted content string.
         """
-        if output_format == "html":
-            return html_content
-
-        if is_quiz:
-            questions = app_data.get("quiz", [])
-            if output_format == "markdown":
-                return _format_quiz_markdown(title, questions)
-            return json.dumps({"title": title, "questions": questions}, indent=2)
-
-        cards = app_data.get("flashcards", [])
-        if output_format == "markdown":
-            return _format_flashcards_markdown(title, cards)
-        normalized = [{"front": c.get("f", ""), "back": c.get("b", "")} for c in cards]
-        return json.dumps({"title": title, "cards": normalized}, indent=2)
+        return _format_interactive_content(app_data, title, output_format, html_content, is_quiz)
 
     async def download_report(
         self,

@@ -13,6 +13,7 @@ import logging
 
 import pytest
 
+import notebooklm._artifacts as artifacts_module
 from notebooklm._artifacts import (
     _extract_data_table_rows,
     _parse_data_table,
@@ -126,6 +127,32 @@ def test_parse_data_table_raises_on_empty_rows() -> None:
 
     with pytest.raises(ArtifactParseError, match="Empty data table"):
         _parse_data_table(raw_data)
+
+
+def test_parse_data_table_wrapper_honors_artifacts_private_helper_seams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The _artifacts wrapper keeps sibling helper monkeypatch seams intact."""
+    rows_payload = [
+        [0, 5, ["header_cell"]],
+        [5, 10, ["value_cell"]],
+    ]
+
+    monkeypatch.setattr(
+        artifacts_module,
+        "_extract_data_table_rows",
+        lambda raw_data: rows_payload,
+    )
+    monkeypatch.setattr(
+        artifacts_module,
+        "_extract_cell_text",
+        lambda cell: f"text:{cell}",
+    )
+
+    headers, rows = artifacts_module._parse_data_table(["patched raw data"])
+
+    assert headers == ["text:header_cell"]
+    assert rows == [["text:value_cell"]]
 
 
 def test_parse_data_table_happy_path() -> None:
