@@ -497,6 +497,14 @@ class SourceUploadPipeline:
                     _retain_background_cancel_task(
                         asyncio.create_task(cancel_upload_session(upload_url, base_url, auth_route))
                     )
+                    raise
+                try:
+                    await asyncio.shield(finalize_task)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "Background finalize POST failed before cancellation propagated: %r",
+                        exc,
+                    )
                 raise
         except BaseException:
             if not close_wired and path_fallback is None:

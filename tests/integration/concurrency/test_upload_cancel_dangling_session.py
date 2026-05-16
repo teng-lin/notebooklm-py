@@ -110,19 +110,22 @@ async def test_cancel_after_finalize_started_shield_completes_request(
         await asyncio.wait_for(finalize_arrived.wait(), timeout=2.0)
 
         # Cancel the outer task. With the shield in place, the inner POST
-        # keeps running; without the shield, the request is abandoned.
+        # keeps running and the outer helper stays suspended until that
+        # finalize task reaches a terminal state.
         upload_task.cancel()
+        await asyncio.sleep(0)
+        assert not upload_task.done(), (
+            "post-finalize cancel returned before finalize completed; "
+            "add_file would release upload concurrency and transport accounting too early"
+        )
 
         # Release the handler so the inner request can finish.
         # Give the cancel a beat to propagate first, mirroring the real
         # Ctrl-C interleave.
-        await asyncio.sleep(0)
         release.set()
 
-        # The outer task will see CancelledError (shield re-raises after
-        # the inner POST completes — or immediately, with the inner Task
-        # still scheduled). Either way, the captured POST must include
-        # the finalize command.
+        # The outer task sees CancelledError only after the inner POST
+        # completes. The captured POST must include the finalize command.
         with pytest.raises(asyncio.CancelledError):
             await upload_task
 
