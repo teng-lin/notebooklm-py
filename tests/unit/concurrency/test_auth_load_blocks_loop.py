@@ -1,6 +1,6 @@
 """Regression test for the offload save_cookies_to_storage off the loop.
 
-Pre-fix : ``AuthTokens.from_storage`` and
+Pre-fix: ``AuthTokens.from_storage`` and
 ``fetch_tokens_with_domains`` called the *synchronous*
 ``save_cookies_to_storage`` directly from an ``async`` context. The
 function performs file I/O (atomic-replace + fsync + flock); when the

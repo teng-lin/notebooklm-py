@@ -415,7 +415,7 @@ async def test_waiter_cancellation_does_not_kill_inflight_subprocess(monkeypatch
     assert csrf == "csrf-token"
     assert sid == "session-id"
 
-    # Critical assertion 3 failure #2: no second subprocess
+    # Critical assertion 3 — no second subprocess
     # may run CONCURRENTLY with the in-flight one. If the leader's
     # cancellation released the lock mid-subprocess, a second caller
     # would acquire it and start a duplicate subprocess overlapping
