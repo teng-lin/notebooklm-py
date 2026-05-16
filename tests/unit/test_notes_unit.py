@@ -1,10 +1,14 @@
 """Unit tests for NotesAPI private helpers and edge cases."""
 
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
+from notebooklm import _mind_map
 from notebooklm._notes import NotesAPI
+from notebooklm.rpc import RPCMethod
+from notebooklm.types import Note
 
 
 @pytest.fixture
@@ -19,6 +23,106 @@ def mock_core():
 def notes_api(mock_core):
     """Create NotesAPI with mocked core."""
     return NotesAPI(mock_core)
+
+
+class TestMindMapCreateNotePrimitive:
+    """Characterize the shared mind-map note primitive before Phase 9 movement."""
+
+    @pytest.mark.asyncio
+    async def test_create_note_uses_create_then_update_and_returns_note(self, mock_core):
+        mock_core.rpc_call.side_effect = [[["note_123"]], None]
+
+        note = await _mind_map.create_note(
+            mock_core,
+            "nb_123",
+            title="Mind Map",
+            content='{"children":[]}',
+        )
+
+        assert note == Note(
+            id="note_123",
+            notebook_id="nb_123",
+            title="Mind Map",
+            content='{"children":[]}',
+        )
+        assert mock_core.rpc_call.await_args_list == [
+            call(
+                RPCMethod.CREATE_NOTE,
+                ["nb_123", "", [1], None, "Mind Map"],
+                source_path="/notebook/nb_123",
+            ),
+            call(
+                RPCMethod.UPDATE_NOTE,
+                ["nb_123", "note_123", [[['{"children":[]}', "Mind Map", [], 0]]]],
+                source_path="/notebook/nb_123",
+                allow_null=True,
+            ),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_create_note_cancellation_schedules_best_effort_cleanup(
+        self,
+        mock_core,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        mock_core.rpc_call.return_value = [["note_123"]]
+        update_started = asyncio.Event()
+        update_can_finish = asyncio.Event()
+        update_finished = asyncio.Event()
+        cleanup_started = asyncio.Event()
+        cleanup_can_finish = asyncio.Event()
+        cleanup_finished = asyncio.Event()
+
+        async def fake_update_note(
+            core,
+            notebook_id: str,
+            note_id: str,
+            content: str,
+            title: str,
+        ) -> None:
+            assert core is mock_core
+            assert (notebook_id, note_id, content, title) == (
+                "nb_123",
+                "note_123",
+                "body",
+                "Title",
+            )
+            update_started.set()
+            try:
+                await update_can_finish.wait()
+            finally:
+                update_finished.set()
+
+        async def fake_delete_note_best_effort(core, notebook_id: str, note_id: str) -> None:
+            assert core is mock_core
+            assert (notebook_id, note_id) == ("nb_123", "note_123")
+            cleanup_started.set()
+            try:
+                await cleanup_can_finish.wait()
+            finally:
+                cleanup_finished.set()
+
+        monkeypatch.setattr(_mind_map, "update_note", fake_update_note)
+        monkeypatch.setattr(_mind_map, "_delete_note_best_effort", fake_delete_note_best_effort)
+
+        task = asyncio.create_task(
+            _mind_map.create_note(mock_core, "nb_123", title="Title", content="body")
+        )
+        await asyncio.wait_for(update_started.wait(), timeout=1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=1)
+
+        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
+        assert not cleanup_finished.is_set()
+        # ``asyncio.shield`` keeps UPDATE_NOTE running after the outer task is cancelled.
+        assert not update_finished.is_set()
+
+        update_can_finish.set()
+        await asyncio.wait_for(update_finished.wait(), timeout=1)
+        cleanup_can_finish.set()
+        await asyncio.wait_for(cleanup_finished.wait(), timeout=1)
 
 
 # =============================================================================

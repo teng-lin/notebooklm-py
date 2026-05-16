@@ -376,6 +376,56 @@ def test_source_service_modules_do_not_runtime_import_facades_or_core() -> None:
     assert forbidden_by_module == {}
 
 
+def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
+    """Phase 9 notebook metadata work depends on the final Phase 8 lister name."""
+    from notebooklm._source_listing import SourceLister
+    from notebooklm._sources import SourcesAPI
+
+    core = MagicMock()
+    api = SourcesAPI(core)
+
+    assert isinstance(api._lister, SourceLister)
+
+
+def test_phase7_artifact_mind_map_patch_seams_are_current() -> None:
+    """Final artifact services must still resolve mind-map seams via ``_artifacts``."""
+    import notebooklm._artifact_downloads as artifact_downloads
+    import notebooklm._artifact_generation as artifact_generation
+    import notebooklm._artifacts as artifacts
+    import notebooklm._mind_map as mind_map
+
+    assert artifacts._mind_map is mind_map
+    assert artifact_generation._artifact_seams()._mind_map is mind_map
+    assert artifact_downloads._artifact_seams()._mind_map is mind_map
+
+
+@pytest.mark.xfail(
+    raises=AssertionError,
+    strict=True,
+    reason="T10a removes hidden SourcesAPI construction from NotebooksAPI.",
+)
+def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
+    """TODO(T10a): remove xfail after direct metadata fallback no longer uses SourcesAPI."""
+    tree = ast.parse((SRC_ROOT / "_notebooks.py").read_text(encoding="utf-8"))
+    visitor = _RuntimeImportVisitor(
+        forbidden_names={"SourcesAPI"},
+        forbidden_modules={"_sources", "notebooklm._sources"},
+    )
+    visitor.visit(tree)
+
+    sources_api_constructions: list[int] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "SourcesAPI"
+        ):
+            sources_api_constructions.append(node.lineno)
+
+    assert visitor.forbidden == []
+    assert sources_api_constructions == []
+
+
 def test_core_private_access_guard_detects_simple_aliases() -> None:
     tree = ast.parse(
         """
