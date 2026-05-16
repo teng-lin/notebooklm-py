@@ -138,17 +138,18 @@ class RpcExecutor:
                 )
                 self.raise_rpc_error_from_http_status(exc.original, method)
 
-            if not isinstance(exc.original, httpx.RequestError):
-                raise TypeError(
-                    f"Unexpected _TransportServerError.original type: {type(exc.original)}"
-                ) from exc
-            logger.error(
-                "RPC %s failed after %.3fs: %s (server-error retries exhausted)",
-                method.name,
-                elapsed,
-                exc.original,
-            )
-            self.raise_rpc_error_from_request_error(exc.original, method)
+            if isinstance(exc.original, httpx.RequestError):
+                logger.error(
+                    "RPC %s failed after %.3fs: %s (server-error retries exhausted)",
+                    method.name,
+                    elapsed,
+                    exc.original,
+                )
+                self.raise_rpc_error_from_request_error(exc.original, method)
+
+            raise TypeError(
+                f"Unexpected _TransportServerError.original type: {type(exc.original)}"
+            ) from exc
         except httpx.HTTPStatusError as exc:
             elapsed = time.perf_counter() - start
             logger.error(
