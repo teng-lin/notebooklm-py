@@ -59,6 +59,17 @@ def test_failed_preserves_url_and_exception():
     assert isinstance(err, httpx.HTTPError)
 
 
+def test_artifacts_module_preserves_download_patch_targets():
+    """Private compatibility names remain available through _artifacts."""
+    import notebooklm._artifacts as artifacts_module
+
+    assert artifacts_module.DownloadResult is DownloadResult
+    assert artifacts_module.ArtifactDownloadError is not None
+    assert artifacts_module.load_httpx_cookies is not None
+    assert artifacts_module._mind_map is not None
+    assert artifacts_module.json.dump is not None
+
+
 # ---------------------------------------------------------------------------
 # Integration with _download_urls_batch
 # ---------------------------------------------------------------------------

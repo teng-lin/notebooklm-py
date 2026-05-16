@@ -8,20 +8,14 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 import asyncio
 import builtins
 import contextlib
-import csv
 import json
 import logging
-import os
-import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
-
-import httpx
 
 from . import _artifact_formatters, _mind_map
+from ._artifact_downloads import ArtifactDownloadService, DownloadResult
 from ._artifact_listing import ArtifactListingService
 from ._callbacks import maybe_await_callback
 from ._capabilities import ClientCoreCapabilities
@@ -84,29 +78,18 @@ _MEDIA_ARTIFACT_TYPES = frozenset(
 if TYPE_CHECKING:
     from ._notes import NotesAPI  # retained for backward-compatible type hints
 
-
-@dataclass(frozen=False)
-class DownloadResult:
-    """Outcome of a multi-URL download batch.
-
-    Replaces the v0 silent-partial-failure behavior where `_download_urls_batch`
-    returned only successful paths. Callers can now distinguish "all succeeded"
-    from "partial" via the properties below.
-
-    `succeeded`: paths that downloaded cleanly (matches existing list[str] shape).
-    `failed`: (url, exception) tuples for transient httpx / ValueError failures.
-    """
-
-    succeeded: list[str] = field(default_factory=list)
-    failed: list[tuple[str, Exception]] = field(default_factory=list)
-
-    @property
-    def all_succeeded(self) -> bool:
-        return not self.failed
-
-    @property
-    def partial(self) -> bool:
-        return bool(self.succeeded) and bool(self.failed)
+# Private compatibility exports. Tests and downstream code patch these names
+# through ``notebooklm._artifacts`` even though download implementation now
+# lives in ``_artifact_downloads``.
+_DOWNLOAD_COMPAT_EXPORTS = (
+    DownloadResult,
+    ArtifactDownloadError,
+    ArtifactNotFoundError,
+    ArtifactNotReadyError,
+    ArtifactParseError,
+    json,
+    load_httpx_cookies,
+)
 
 
 # Backward-compatible private helper wrappers.
@@ -203,6 +186,7 @@ class ArtifactsAPI:
         del notes_api
         self._storage_path = storage_path
         self._listing = ArtifactListingService()
+        self._downloads = ArtifactDownloadService(self)
 
     # =========================================================================
     # List/Get Operations
@@ -1046,111 +1030,20 @@ class ArtifactsAPI:
     async def download_audio(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
-        """Download an Audio Overview to a file.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the audio file (MP4/MP3).
-            artifact_id: Specific artifact ID, or uses first completed audio.
-
-        Returns:
-            The output path.
-        """
-        artifacts_data = await self._list_raw(notebook_id)
-
-        audio_art = self._select_artifact(
-            artifacts_data,
-            artifact_id,
-            "Audio",
-            "audio",
-            type_code=ArtifactTypeCode.AUDIO,
-        )
-
-        # Route through the shared extractor so readiness checks, Artifact.url,
-        # GenerationStatus.url, and downloads all agree on the same URL.
-        url = _extract_artifact_url(audio_art, ArtifactTypeCode.AUDIO.value)
-        if not url:
-            raise ArtifactParseError(
-                "audio",
-                artifact_id=artifact_id,
-                details="Could not extract download URL from artifact metadata",
-            )
-
-        return await self._download_url(url, output_path)
+        """Download an Audio Overview to a file."""
+        return await self._downloads.download_audio(notebook_id, output_path, artifact_id)
 
     async def download_video(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
-        """Download a Video Overview to a file.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the video file (MP4).
-            artifact_id: Specific artifact ID, or uses first completed video.
-
-        Returns:
-            The output path.
-        """
-        artifacts_data = await self._list_raw(notebook_id)
-
-        # Note: distinct error keys preserved — specific-ID miss raises
-        # "video" (from type_name="Video"); empty-list raises
-        # "video_overview" (from type_name_lower).
-        video_art = self._select_artifact(
-            artifacts_data,
-            artifact_id,
-            "Video",
-            "video_overview",
-            type_code=ArtifactTypeCode.VIDEO,
-        )
-
-        # Route through the shared extractor so readiness checks, Artifact.url,
-        # GenerationStatus.url, and downloads all agree on the same URL.
-        url = _extract_artifact_url(video_art, ArtifactTypeCode.VIDEO.value)
-        if not url:
-            raise ArtifactParseError(
-                "video_artifact",
-                artifact_id=artifact_id,
-                details="Could not extract download URL from artifact metadata",
-            )
-
-        return await self._download_url(url, output_path)
+        """Download a Video Overview to a file."""
+        return await self._downloads.download_video(notebook_id, output_path, artifact_id)
 
     async def download_infographic(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
-        """Download an Infographic to a file.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the image file (PNG).
-            artifact_id: Specific artifact ID, or uses first completed infographic.
-
-        Returns:
-            The output path.
-        """
-        artifacts_data = await self._list_raw(notebook_id)
-
-        info_art = self._select_artifact(
-            artifacts_data,
-            artifact_id,
-            "Infographic",
-            "infographic",
-            type_code=ArtifactTypeCode.INFOGRAPHIC,
-        )
-
-        # Route through the shared extractor so readiness checks and downloads
-        # agree on which URL to select.
-        try:
-            url = _extract_artifact_url(info_art, ArtifactTypeCode.INFOGRAPHIC.value)
-            if not url:
-                raise ArtifactParseError("infographic", details="Could not find metadata")
-            return await self._download_url(url, output_path)
-
-        except (IndexError, TypeError) as e:
-            raise ArtifactParseError(
-                "infographic", details=f"Failed to parse structure: {e}", cause=e
-            ) from e
+        """Download an Infographic to a file."""
+        return await self._downloads.download_infographic(notebook_id, output_path, artifact_id)
 
     async def download_slide_deck(
         self,
@@ -1159,63 +1052,10 @@ class ArtifactsAPI:
         artifact_id: str | None = None,
         output_format: str = "pdf",
     ) -> str:
-        """Download a slide deck as PDF or PPTX.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the file.
-            artifact_id: Specific artifact ID, or uses first completed slide deck.
-            output_format: Download format: "pdf" (default) or "pptx".
-
-        Returns:
-            The output path.
-        """
-        if output_format not in ("pdf", "pptx"):
-            raise ValidationError(f"Invalid format '{output_format}'. Must be 'pdf' or 'pptx'.")
-
-        artifacts_data = await self._list_raw(notebook_id)
-
-        slide_art = self._select_artifact(
-            artifacts_data,
-            artifact_id,
-            "Slide deck",
-            "slide_deck",
-            type_code=ArtifactTypeCode.SLIDE_DECK,
+        """Download a slide deck as PDF or PPTX."""
+        return await self._downloads.download_slide_deck(
+            notebook_id, output_path, artifact_id, output_format
         )
-
-        # Extract download URL from metadata at index 16
-        # Structure: artifact[16] = [config, title, slides_list, pdf_url, pptx_url]
-        try:
-            if len(slide_art) <= 16:
-                raise ArtifactParseError("slide_deck_artifact", details="Invalid structure")
-
-            metadata = slide_art[16]
-            if not isinstance(metadata, list):
-                raise ArtifactParseError("slide_deck_metadata", details="Invalid structure")
-
-            if output_format == "pptx":
-                if len(metadata) < 5:
-                    raise ArtifactDownloadError(
-                        "slide_deck", details="PPTX URL not available in artifact data"
-                    )
-                url = metadata[4]
-            else:
-                if len(metadata) < 4:
-                    raise ArtifactParseError("slide_deck_metadata", details="Invalid structure")
-                url = metadata[3]
-
-            if not isinstance(url, str) or not url.startswith("http"):
-                raise ArtifactDownloadError(
-                    "slide_deck",
-                    details=f"Could not find {output_format.upper()} download URL",
-                )
-
-        except (IndexError, TypeError) as e:
-            raise ArtifactParseError(
-                "slide_deck", details=f"Failed to parse structure: {e}", cause=e
-            ) from e
-
-        return await self._download_url(url, output_path)
 
     async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
         """Fetch artifact HTML content for quiz/flashcard types."""
@@ -1240,81 +1080,10 @@ class ArtifactsAPI:
         output_format: str,
         artifact_type: str,
     ) -> str:
-        """Download quiz or flashcard artifact.
-
-        Args:
-            notebook_id: Notebook ID.
-            output_path: Output file path.
-            artifact_id: Specific artifact ID (optional).
-            output_format: Output format - json, markdown, or html.
-            artifact_type: Either "quiz" or "flashcards".
-
-        Returns:
-            Path to downloaded file.
-
-        Raises:
-            ValueError: If no completed artifact found or invalid output_format.
-        """
-        # Validate output format
-        valid_formats = ("json", "markdown", "html")
-        if output_format not in valid_formats:
-            raise ValidationError(
-                f"Invalid output_format: {output_format!r}. Use one of: {', '.join(valid_formats)}"
-            )
-
-        # Type-specific configuration
-        is_quiz = artifact_type == "quiz"
-        default_title = "Untitled Quiz" if is_quiz else "Untitled Flashcards"
-
-        # Fetch and filter artifacts
-        artifacts = (
-            await self.list_quizzes(notebook_id)
-            if is_quiz
-            else await self.list_flashcards(notebook_id)
+        """Download quiz or flashcard artifact."""
+        return await self._downloads.download_interactive_artifact(
+            notebook_id, output_path, artifact_id, output_format, artifact_type
         )
-        completed = [a for a in artifacts if a.is_completed]
-        if not completed:
-            raise ArtifactNotReadyError(artifact_type)
-
-        # Sort by creation date to ensure we get the latest by default
-        completed.sort(key=lambda a: a.created_at.timestamp() if a.created_at else 0, reverse=True)
-
-        # Select artifact
-        if artifact_id:
-            artifact = next((a for a in completed if a.id == artifact_id), None)
-            if not artifact:
-                raise ArtifactNotFoundError(artifact_id, artifact_type=artifact_type)
-        else:
-            artifact = completed[0]
-
-        # Fetch and parse HTML content
-        html_content = await self._get_artifact_content(notebook_id, artifact.id)
-        if not html_content:
-            raise ArtifactDownloadError(artifact_type, details="Failed to fetch content")
-
-        try:
-            app_data = _extract_app_data(html_content)
-        except (ValueError, json.JSONDecodeError) as e:
-            raise ArtifactParseError(
-                artifact_type, details=f"Failed to parse content: {e}", cause=e
-            ) from e
-
-        # Format output
-        title = artifact.title or default_title
-        content = self._format_interactive_content(
-            app_data, title, output_format, html_content, is_quiz
-        )
-
-        # Create parent directories and write file
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        def _write_file() -> None:
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-        await asyncio.to_thread(_write_file)
-        return output_path
 
     def _format_interactive_content(
         self,
@@ -1344,53 +1113,8 @@ class ArtifactsAPI:
         output_path: str,
         artifact_id: str | None = None,
     ) -> str:
-        """Download a report artifact as markdown.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the markdown file.
-            artifact_id: Specific artifact ID, or uses first completed report.
-
-        Returns:
-            The output path where the file was saved.
-        """
-        artifacts_data = await self._list_raw(notebook_id)
-
-        report_art = self._select_artifact(
-            artifacts_data,
-            artifact_id,
-            "Report",
-            "report",
-            type_code=ArtifactTypeCode.REPORT,
-        )
-
-        try:
-            content_wrapper = report_art[7]
-            markdown_content = (
-                content_wrapper[0]
-                if isinstance(content_wrapper, list) and content_wrapper
-                else content_wrapper
-            )
-
-            if not isinstance(markdown_content, str):
-                raise ArtifactParseError("report_content", details="Invalid structure")
-
-            output = Path(output_path)
-            output.parent.mkdir(parents=True, exist_ok=True)
-
-            # Offload the synchronous write to a worker thread so a slow
-            # filesystem can't stall the loop (T7.D4, audit §30).
-            # Closure pattern mirrors _write_csv in download_data_table.
-            def _write_markdown() -> None:
-                output.write_text(markdown_content, encoding="utf-8")
-
-            await asyncio.to_thread(_write_markdown)
-            return str(output)
-
-        except (IndexError, TypeError) as e:
-            raise ArtifactParseError(
-                "report", details=f"Failed to parse structure: {e}", cause=e
-            ) from e
+        """Download a report artifact as markdown."""
+        return await self._downloads.download_report(notebook_id, output_path, artifact_id)
 
     async def download_mind_map(
         self,
@@ -1398,59 +1122,8 @@ class ArtifactsAPI:
         output_path: str,
         artifact_id: str | None = None,
     ) -> str:
-        """Download a mind map as JSON.
-
-        Mind maps are stored in the notes system, not the regular artifacts list.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the JSON file.
-            artifact_id: Specific mind map ID (note ID), or uses first available.
-
-        Returns:
-            The output path where the file was saved.
-        """
-        mind_maps = await _mind_map.list_mind_maps(self._core, notebook_id)
-        if not mind_maps:
-            raise ArtifactNotReadyError("mind_map")
-
-        if artifact_id:
-            mind_map = next((mm for mm in mind_maps if mm[0] == artifact_id), None)
-            if not mind_map:
-                raise ArtifactNotFoundError(artifact_id, artifact_type="mind_map")
-        else:
-            mind_map = mind_maps[0]
-
-        try:
-            # Use the shared extractor so legacy ``[id, content_str]`` rows
-            # work too — direct ``[1][1]`` indexing into a legacy item would
-            # string-index the content (``"…"[1] == "…"`` of length 1) and
-            # then fail downstream JSON parsing instead of returning the real
-            # payload.
-            json_string = _mind_map.extract_content(mind_map)
-            if json_string is None:
-                raise ArtifactParseError("mind_map_content", details="Invalid structure")
-
-            json_data = json.loads(json_string)
-
-            output = Path(output_path)
-            output.parent.mkdir(parents=True, exist_ok=True)
-
-            # Offload both the serialization AND the write to a worker
-            # thread. ``json.dump`` streams into the file handle so we
-            # never materialize the full JSON string on the loop
-            # (T7.D4, audit §30). Mirrors _write_csv in download_data_table.
-            def _write_json() -> None:
-                with output.open("w", encoding="utf-8") as f:
-                    json.dump(json_data, f, indent=2, ensure_ascii=False)
-
-            await asyncio.to_thread(_write_json)
-            return str(output)
-
-        except (IndexError, TypeError, json.JSONDecodeError) as e:
-            raise ArtifactParseError(
-                "mind_map", details=f"Failed to parse structure: {e}", cause=e
-            ) from e
+        """Download a mind map as JSON."""
+        return await self._downloads.download_mind_map(notebook_id, output_path, artifact_id)
 
     async def download_data_table(
         self,
@@ -1458,51 +1131,8 @@ class ArtifactsAPI:
         output_path: str,
         artifact_id: str | None = None,
     ) -> str:
-        """Download a data table as CSV.
-
-        Args:
-            notebook_id: The notebook ID.
-            output_path: Path to save the CSV file.
-            artifact_id: Specific artifact ID, or uses first completed data table.
-
-        Returns:
-            The output path where the file was saved.
-        """
-        artifacts_data = await self._list_raw(notebook_id)
-
-        table_art = self._select_artifact(
-            artifacts_data,
-            artifact_id,
-            "Data table",
-            # Unified to "data_table" so both empty-list and explicit-id-miss
-            # paths raise ArtifactNotReadyError with the same artifact_type
-            # key. The pre-refactor inline code used "data table" (space) for
-            # the empty case, which made `except` filtering inconsistent.
-            "data_table",
-            type_code=ArtifactTypeCode.DATA_TABLE,
-        )
-
-        try:
-            raw_data = table_art[18]
-            headers, rows = _parse_data_table(raw_data)
-
-            output = Path(output_path)
-            output.parent.mkdir(parents=True, exist_ok=True)
-
-            def _write_csv() -> None:
-                with output.open("w", newline="", encoding="utf-8-sig") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(headers)
-                    writer.writerows(rows)
-
-            await asyncio.to_thread(_write_csv)
-
-            return str(output)
-
-        except (IndexError, TypeError, ValueError) as e:
-            raise ArtifactParseError(
-                "data_table", details=f"Failed to parse structure: {e}", cause=e
-            ) from e
+        """Download a data table as CSV."""
+        return await self._downloads.download_data_table(notebook_id, output_path, artifact_id)
 
     async def download_quiz(
         self,
@@ -1511,20 +1141,7 @@ class ArtifactsAPI:
         artifact_id: str | None = None,
         output_format: str = "json",
     ) -> str:
-        """Download quiz questions.
-
-        Args:
-            notebook_id: Notebook ID.
-            output_path: Output file path.
-            artifact_id: Specific quiz artifact ID (optional).
-            output_format: Output format - json, markdown, or html.
-
-        Returns:
-            Path to downloaded file.
-
-        Raises:
-            ValueError: If no completed quiz artifact found.
-        """
+        """Download quiz questions."""
         return await self._download_interactive_artifact(
             notebook_id, output_path, artifact_id, output_format, "quiz"
         )
@@ -1536,20 +1153,7 @@ class ArtifactsAPI:
         artifact_id: str | None = None,
         output_format: str = "json",
     ) -> str:
-        """Download flashcard deck.
-
-        Args:
-            notebook_id: Notebook ID.
-            output_path: Output file path.
-            artifact_id: Specific flashcard artifact ID (optional).
-            output_format: Output format - json, markdown, or html.
-
-        Returns:
-            Path to downloaded file.
-
-        Raises:
-            ValueError: If no completed flashcard artifact found.
-        """
+        """Download flashcard deck."""
         return await self._download_interactive_artifact(
             notebook_id, output_path, artifact_id, output_format, "flashcards"
         )
@@ -2205,284 +1809,12 @@ class ArtifactsAPI:
     async def _download_urls_batch(
         self, urls_and_paths: builtins.list[tuple[str, str]]
     ) -> "DownloadResult":
-        """Download multiple files using httpx with proper cookie handling.
-
-        Args:
-            urls_and_paths: List of (url, output_path) tuples.
-
-        Returns:
-            DownloadResult with succeeded (paths) and failed ((url, exception)
-            tuples) lists. Transient httpx/ValueError failures land in `failed`
-            so the caller can act on partial success; ArtifactDownloadError
-            (auth / untrusted-domain / HTML response) still propagates and
-            aborts the batch — those are security signals, not transient.
-        """
-        result = DownloadResult()
-
-        # Load cookies with domain info for cross-domain redirect handling.
-        # Offloaded because load_httpx_cookies does a synchronous JSON read
-        # of the storage-state file (T7.D4, audit §30).
-        cookies = await asyncio.to_thread(load_httpx_cookies, path=self._storage_path)
-
-        async with httpx.AsyncClient(
-            cookies=cookies,
-            follow_redirects=True,
-            timeout=60.0,
-        ) as client:
-            for url, output_path in urls_and_paths:
-                try:
-                    # Validate URL scheme and domain before sending auth cookies
-                    parsed = urlparse(url)
-                    if parsed.scheme != "https":
-                        raise ArtifactDownloadError(
-                            "media", details=f"Download URL must use HTTPS: {url[:80]}"
-                        )
-                    trusted = (".google.com", ".googleusercontent.com", ".googleapis.com")
-                    if not any(
-                        parsed.netloc == d.lstrip(".") or parsed.netloc.endswith(d) for d in trusted
-                    ):
-                        raise ArtifactDownloadError(
-                            "media", details=f"Untrusted download domain: {parsed.netloc}"
-                        )
-
-                    response = await client.get(url)
-                    if response.status_code in (401, 403):
-                        # Auth-shaped failures are security signals, not
-                        # transient. Surface them so callers re-auth.
-                        raise ArtifactDownloadError(
-                            "media",
-                            details=(
-                                f"Authentication failed (HTTP {response.status_code}) "
-                                f"on {parsed.netloc}{parsed.path}"
-                            ),
-                        )
-                    response.raise_for_status()
-
-                    content_type = response.headers.get("content-type", "")
-                    if "text/html" in content_type:
-                        raise ArtifactDownloadError(
-                            "media", details="Received HTML instead of media file"
-                        )
-
-                    output_file = Path(output_path)
-                    output_file.parent.mkdir(parents=True, exist_ok=True)
-                    await asyncio.to_thread(output_file.write_bytes, response.content)
-                    result.succeeded.append(output_path)
-                    # Log host+path only; download URLs may carry capability
-                    # tokens in query params that aren't covered by the
-                    # standard redaction patterns.
-                    logger.debug(
-                        "Downloaded %s%s (%d bytes)",
-                        parsed.netloc,
-                        parsed.path,
-                        len(response.content),
-                    )
-
-                except (httpx.HTTPError, ValueError) as e:
-                    # str(e) for httpx errors can include the full request URL
-                    # (with capability tokens in query params). Log a safe
-                    # identifier instead.
-                    if isinstance(e, httpx.HTTPStatusError) and e.response is not None:
-                        reason = f"HTTP {e.response.status_code}"
-                    else:
-                        reason = e.__class__.__name__
-                    logger.warning(
-                        "Download failed for %s%s: %s",
-                        parsed.netloc,
-                        parsed.path,
-                        reason,
-                    )
-                    result.failed.append((url, e))
-
-        return result
+        """Download multiple files using httpx with proper cookie handling."""
+        return await self._downloads.download_urls_batch(urls_and_paths)
 
     async def _download_url(self, url: str, output_path: str) -> str:
-        """Download a file from URL using streaming with proper cookie handling.
-
-        Uses streaming download to handle large files (audio/video) without
-        loading entire file into memory, and with per-chunk timeouts instead
-        of a single timeout for the entire download.
-
-        Args:
-            url: URL to download from.
-            output_path: Path to save the file.
-
-        Returns:
-            The output path on success.
-
-        Raises:
-            ArtifactDownloadError: On any HTTP or network failure. For 401/403
-                responses the message indicates that re-authentication is
-                needed (``try `notebooklm login```), and the exception's
-                ``status_code`` attribute carries the HTTP status. For other
-                HTTP errors ``status_code`` is set to the response code; for
-                transport failures (timeouts, DNS, connection resets) the
-                ``status_code`` is ``None``. Callers no longer see raw
-                ``httpx.HTTPError`` subclasses from this method.
-        """
-        # Validate URL scheme and domain before sending auth cookies.
-        # httpx sends cookies to every request made by the client regardless of
-        # domain, so we must ensure the URL belongs to a trusted Google domain.
-        parsed = urlparse(url)
-        if parsed.scheme != "https":
-            raise ArtifactDownloadError("media", details=f"Download URL must use HTTPS: {url[:80]}")
-        trusted = (".google.com", ".googleusercontent.com", ".googleapis.com")
-        if not any(parsed.netloc == d.lstrip(".") or parsed.netloc.endswith(d) for d in trusted):
-            raise ArtifactDownloadError(
-                "media", details=f"Untrusted download domain: {parsed.netloc}"
-            )
-
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Use a unique temp file per call (not ``<output>.tmp``) so two
-        # concurrent downloads targeting the same ``output_path`` cannot
-        # interleave bytes into a shared file or have one task's
-        # ``rename`` clobber the other's. ``mkstemp`` creates+opens an
-        # exclusive FD; we close it immediately and re-open via ``open``
-        # in the worker-thread write loop below — passing the raw FD
-        # into ``asyncio.to_thread(f.write, ...)`` would risk Windows
-        # sharing violations and FD leaks across the rename.
-        fd, temp_path_str = tempfile.mkstemp(
-            dir=output_file.parent,
-            prefix=output_file.name + ".",
-            suffix=".tmp",
-        )
-        os.close(fd)
-        temp_file = Path(temp_path_str)
-
-        # NOTE: outer try MUST start here, immediately after the temp file
-        # exists on disk, so the ``except BaseException`` cleanup at the
-        # bottom unlinks the empty temp if anything between mkstemp and the
-        # download (e.g. ``load_httpx_cookies``) raises. Pre-existing code
-        # had `temp_file = output_file.with_suffix(...)` which only built a
-        # ``Path`` (no filesystem entry); switching to mkstemp creates the
-        # file immediately, so the cleanup window must widen.
-        try:
-            # Load cookies with domain info for cross-domain redirect handling.
-            # ``load_httpx_cookies`` does a synchronous JSON read of the
-            # storage-state file — offload to a worker thread so slow auth
-            # storage doesn't stall every concurrent task on the loop
-            # (T7.D4, audit §30).
-            cookies = await asyncio.to_thread(load_httpx_cookies, path=self._storage_path)
-
-            # Use granular timeouts: 10s to connect, 30s per chunk read/write
-            # This allows large files to download without timeout while still
-            # detecting network failures quickly
-            timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
-
-            try:
-                # Nested context managers required: client.stream() returns an
-                # async context manager that must run within the client's scope
-                async with httpx.AsyncClient(  # noqa: SIM117
-                    cookies=cookies,
-                    follow_redirects=True,
-                    timeout=timeout,
-                ) as client:
-                    async with client.stream("GET", url) as response:
-                        response.raise_for_status()
-
-                        content_type = response.headers.get("content-type", "")
-                        if "text/html" in content_type:
-                            raise ArtifactDownloadError(
-                                "media",
-                                details="Download failed: received HTML instead of media file. "
-                                "Authentication may have expired. Run 'notebooklm login'.",
-                            )
-
-                        # Stream to file in chunks to handle large files efficiently.
-                        # Each per-chunk write is dispatched to a worker thread so the
-                        # event loop isn't blocked on disk I/O; the loop body awaits
-                        # each write before reading the next chunk so the shared file
-                        # handle is never accessed concurrently in normal execution.
-                        #
-                        # Cancellation: ``asyncio.shield`` keeps the in-flight write
-                        # alive across a CancelledError; the except block awaits the
-                        # shielded task to completion BEFORE letting the with-block
-                        # close the file. Without this, the worker thread could touch
-                        # ``f`` after the with-block has started closing it.
-                        total_bytes = 0
-                        with open(temp_file, "wb") as f:
-                            async for chunk in response.aiter_bytes(chunk_size=65536):
-                                write_task = asyncio.create_task(asyncio.to_thread(f.write, chunk))
-                                try:
-                                    await asyncio.shield(write_task)
-                                except asyncio.CancelledError:
-                                    # Narrow to (CancelledError, Exception) so genuine
-                                    # process-level signals (KeyboardInterrupt, SystemExit)
-                                    # still propagate during cleanup.
-                                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                                        await write_task
-                                    raise
-                                total_bytes += len(chunk)
-
-                        if total_bytes == 0:
-                            raise ArtifactDownloadError(
-                                "media",
-                                details=(
-                                    "Download produced 0 bytes -- the remote file may "
-                                    "be missing or empty"
-                                ),
-                            )
-
-                        # Only move to final location on success.
-                        # ``os.replace`` is atomic on POSIX and overwrites on
-                        # Windows; ``Path.rename`` would raise on Windows when
-                        # ``output_file`` already exists.
-                        os.replace(temp_file, output_file)
-                        # Log host+path only; full URLs may carry capability
-                        # tokens in query params (see _download_urls_batch for
-                        # the same redaction pattern).
-                        logger.debug(
-                            "Downloaded %s%s (%d bytes)",
-                            parsed.netloc,
-                            parsed.path,
-                            total_bytes,
-                        )
-                        return output_path
-            except httpx.HTTPStatusError as e:
-                # HTTP-level failure (4xx/5xx). Translate to ArtifactDownloadError
-                # so callers see a consistent exception type instead of a raw
-                # httpx subclass. 401/403 get an explicit "re-login" hint,
-                # mirroring the message style used by _download_urls_batch.
-                #
-                # Error details use ``parsed.netloc + parsed.path`` rather than
-                # ``url[:N]`` so capability tokens in query params can't leak
-                # into log lines or wrapped exception messages. ``status_code``
-                # rides on the exception attribute, so the message text doesn't
-                # repeat it.
-                if e.response.status_code in (401, 403):
-                    raise ArtifactDownloadError(
-                        "media",
-                        details=(
-                            f"Authentication required for {parsed.netloc}{parsed.path}"
-                            " -- try `notebooklm login`"
-                        ),
-                        cause=e,
-                        status_code=e.response.status_code,
-                    ) from e
-                raise ArtifactDownloadError(
-                    "media",
-                    details=f"HTTP error downloading {parsed.netloc}{parsed.path}",
-                    cause=e,
-                    status_code=e.response.status_code,
-                ) from e
-            except httpx.RequestError as e:
-                # Transport-level failure: timeouts, DNS, TLS, connection
-                # resets, etc. No HTTP response was received, so no status_code.
-                # ``str(e)`` for httpx errors can include the full request URL
-                # (with capability tokens in query params); rely on ``cause=e``
-                # to carry the original exception and keep the message redacted.
-                raise ArtifactDownloadError(
-                    "media",
-                    details=f"Network error downloading {parsed.netloc}{parsed.path}",
-                    cause=e,
-                ) from e
-        except BaseException:
-            # Clean up partial temp file on any failure, including asyncio.CancelledError
-            # (which is a BaseException, not an Exception, in Python 3.8+).
-            temp_file.unlink(missing_ok=True)
-            raise
+        """Download a file from URL using streaming with proper cookie handling."""
+        return await self._downloads.download_url(url, output_path)
 
     def _parse_generation_result(
         self,
