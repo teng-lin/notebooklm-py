@@ -200,14 +200,11 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
         def _record_if_save_lock(self, expr: ast.expr) -> None:
             # Match ``self.save_lock`` directly.
             if (
-                (
-                    isinstance(expr, ast.Attribute)
-                    and expr.attr == "save_lock"
-                    and isinstance(expr.value, ast.Name)
-                    and expr.value.id == "self"
-                )
-                or (isinstance(expr, ast.Name) and expr.id == "lock")
-            ):
+                isinstance(expr, ast.Attribute)
+                and expr.attr == "save_lock"
+                and isinstance(expr.value, ast.Name)
+                and expr.value.id == "self"
+            ) or (isinstance(expr, ast.Name) and expr.id == "lock"):
                 where = ".".join(self._enclosing_func) or "<module>"
                 acquisition_sites.append((where, expr.lineno))
 

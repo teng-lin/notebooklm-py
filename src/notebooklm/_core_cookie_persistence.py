@@ -28,8 +28,7 @@ class SaveCookiesToStorage(Protocol):
         *,
         original_snapshot: CookieSnapshot | None = None,
         return_result: bool = False,
-    ) -> bool | CookieSaveResult:
-        ...
+    ) -> bool | CookieSaveResult: ...
 
 
 ToThread = Callable[[Callable[[], None]], Awaitable[None]]
