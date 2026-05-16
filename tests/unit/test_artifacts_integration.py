@@ -450,6 +450,27 @@ class TestArtifactsAPI:
         assert [artifact.id for artifact in artifacts] == ["art_001"]
 
     @pytest.mark.asyncio
+    async def test_get_uses_public_list_callback(self):
+        """get() delegates through the public list callback."""
+        core = MagicMock()
+        api = ArtifactsAPI(core)
+        other = MagicMock()
+        other.id = "art_other"
+        found = MagicMock()
+        found.id = "art_found"
+
+        with patch.object(
+            api, "list", new=AsyncMock(return_value=[other, found])
+        ) as list_artifacts:
+            result = await api.get("nb_123", "art_found")
+            missing = await api.get("nb_123", "art_missing")
+
+        assert result is found
+        assert missing is None
+        assert list_artifacts.await_count == 2
+        list_artifacts.assert_awaited_with("nb_123")
+
+    @pytest.mark.asyncio
     async def test_rename_artifact(
         self,
         auth_tokens,

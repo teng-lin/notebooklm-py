@@ -118,14 +118,13 @@ class ArtifactListingService:
         if not filtered:
             raise ArtifactNotReadyError(no_result_error_key)
 
-        latest_first = sorted(
-            filtered,
+        filtered.sort(
             key=lambda a: (
                 (a[15][0] or 0) if len(a) > 15 and isinstance(a[15], list) and a[15] else 0
             ),
             reverse=True,
         )
-        return latest_first[0]
+        return filtered[0]
 
     def _filter_studio_artifacts(
         self,

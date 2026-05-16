@@ -2135,6 +2135,8 @@ class ArtifactsAPI:
 
     async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw mind-map rows through the patchable module seam."""
+        # Resolve the module seam at call time so tests patching
+        # ``notebooklm._artifacts._mind_map`` affect public listing paths.
         return await _mind_map.list_mind_maps(self._core, notebook_id)
 
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
