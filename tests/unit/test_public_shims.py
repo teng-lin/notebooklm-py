@@ -9,6 +9,7 @@ Plan: .sisyphus/plans/private-module-boundary.md
 from __future__ import annotations
 
 import importlib
+import logging
 import warnings
 from types import ModuleType
 from unittest.mock import AsyncMock
@@ -343,14 +344,18 @@ def test_auth_cookie_domain_constants_are_facade_exports() -> None:
 
 _AUTH_FIRST_PARTY_COMPATIBILITY_NAMES = [
     "_auth_domain_priority",
+    "_EXTRACTION_HINT",
     "_find_cookie_for_storage",
+    "_has_valid_secondary_binding",
     "_is_allowed_auth_domain",
     "_is_allowed_cookie_domain",
     "_is_google_domain",
     "_rotate_cookies",
     "_run_refresh_cmd",
+    "_SECONDARY_BINDING_WARNED",
     "_split_refresh_cmd",
     "_update_cookie_input",
+    "_validate_required_cookies",
     "Account",
     "advance_cookie_snapshot_after_save",
     "ALLOWED_COOKIE_DOMAINS",
@@ -408,6 +413,83 @@ def test_auth_first_party_compatibility_manifest_has_no_duplicates() -> None:
     assert len(_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES) == len(
         set(_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES)
     )
+
+
+def test_auth_cookie_policy_facade_delegates_to_private_module() -> None:
+    """Policy constants/helpers live in _auth while notebooklm.auth stays compatible."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import cookie_policy
+
+    assert auth.REQUIRED_COOKIE_DOMAINS is cookie_policy.REQUIRED_COOKIE_DOMAINS
+    assert auth.OPTIONAL_COOKIE_DOMAINS is cookie_policy.OPTIONAL_COOKIE_DOMAINS
+    assert auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL is cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL
+    assert auth.ALLOWED_COOKIE_DOMAINS is cookie_policy.ALLOWED_COOKIE_DOMAINS
+    assert auth.GOOGLE_REGIONAL_CCTLDS is cookie_policy.GOOGLE_REGIONAL_CCTLDS
+    assert auth.MINIMUM_REQUIRED_COOKIES is cookie_policy.MINIMUM_REQUIRED_COOKIES
+    assert auth._auth_domain_priority is cookie_policy._auth_domain_priority
+    assert auth._is_google_domain is cookie_policy._is_google_domain
+    assert auth._is_allowed_auth_domain is cookie_policy._is_allowed_auth_domain
+    assert auth._is_allowed_cookie_domain is cookie_policy._is_allowed_cookie_domain
+
+
+def test_auth_secondary_binding_reset_syncs_to_cookie_policy(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resetting notebooklm.auth._SECONDARY_BINDING_WARNED still controls validation."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import cookie_policy
+
+    monkeypatch.setattr(cookie_policy, "_SECONDARY_BINDING_WARNED", True)
+    monkeypatch.setattr(auth, "_SECONDARY_BINDING_WARNED", False)
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm.auth"):
+        auth._validate_required_cookies({"SID", "__Secure-1PSIDTS"})
+
+    assert auth._SECONDARY_BINDING_WARNED is True
+    assert cookie_policy._SECONDARY_BINDING_WARNED is True
+    assert "Cookie set lacks a secondary binding" in caplog.text
+
+
+def test_auth_validation_preserves_private_warning_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Facade validation must not clobber a private validation's warning state."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import cookie_policy
+
+    monkeypatch.setattr(auth, "_SECONDARY_BINDING_WARNED", False)
+    cookie_policy._validate_required_cookies({"SID", "__Secure-1PSIDTS"})
+
+    auth._validate_required_cookies({"SID", "__Secure-1PSIDTS", "OSID"})
+
+    assert auth._SECONDARY_BINDING_WARNED is True
+    assert cookie_policy._SECONDARY_BINDING_WARNED is True
+
+
+def test_auth_validation_uses_facade_policy_rebindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validation keeps auth.py monkeypatch compatibility after delegation."""
+    import notebooklm.auth as auth
+
+    monkeypatch.setattr(auth, "MINIMUM_REQUIRED_COOKIES", {"SID"})
+    monkeypatch.setattr(auth, "_has_valid_secondary_binding", lambda names: True)
+
+    auth._validate_required_cookies({"SID"})
+
+
+def test_auth_validation_uses_facade_extraction_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tier-1 errors still read the compatibility facade's extraction hint."""
+    import notebooklm.auth as auth
+
+    monkeypatch.setattr(auth, "MINIMUM_REQUIRED_COOKIES", {"SID", "SIDTS"})
+    monkeypatch.setattr(auth, "_EXTRACTION_HINT", "custom extraction hint")
+
+    with pytest.raises(ValueError, match="custom extraction hint"):
+        auth._validate_required_cookies({"SID"})
 
 
 @pytest.mark.asyncio
