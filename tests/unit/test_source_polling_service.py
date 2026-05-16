@@ -10,7 +10,13 @@ import pytest
 
 from notebooklm._source_polling import SourcePoller
 from notebooklm._sources import SourcesAPI
-from notebooklm.types import Source, SourceStatus, SourceTimeoutError
+from notebooklm.types import (
+    Source,
+    SourceNotFoundError,
+    SourceProcessingError,
+    SourceStatus,
+    SourceTimeoutError,
+)
 
 
 @pytest.fixture
@@ -79,6 +85,73 @@ async def test_wait_until_ready_checks_timeout_after_get(
 
 
 @pytest.mark.asyncio
+async def test_wait_until_ready_raises_source_not_found_when_get_returns_none(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    get_source = AsyncMock(return_value=None)
+
+    with pytest.raises(SourceNotFoundError) as exc_info:
+        await poller.wait_until_ready(
+            "nb_1",
+            "src_missing",
+            get_source=get_source,
+            sleep=AsyncMock(),
+            monotonic=MagicMock(return_value=0.0),
+            logger=logger,
+        )
+
+    assert exc_info.value.source_id == "src_missing"
+
+
+@pytest.mark.asyncio
+async def test_wait_until_ready_raises_processing_error_for_terminal_error_type(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    terminal_error = Source(id="src_pdf", status=SourceStatus.ERROR, _type_code=3)
+    get_source = AsyncMock(return_value=terminal_error)
+
+    with pytest.raises(SourceProcessingError) as exc_info:
+        await poller.wait_until_ready(
+            "nb_1",
+            "src_pdf",
+            get_source=get_source,
+            sleep=AsyncMock(),
+            monotonic=MagicMock(return_value=0.0),
+            logger=logger,
+        )
+
+    assert exc_info.value.source_id == "src_pdf"
+    assert exc_info.value.status == SourceStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_wait_until_ready_tolerates_transient_error_for_audio(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    transient_error = Source(id="src_audio", status=SourceStatus.ERROR, _type_code=10)
+    ready = Source(id="src_audio", status=SourceStatus.READY, _type_code=10)
+    get_source = AsyncMock(side_effect=[transient_error, ready])
+    sleep = AsyncMock()
+
+    result = await poller.wait_until_ready(
+        "nb_1",
+        "src_audio",
+        timeout=10.0,
+        initial_interval=0.25,
+        get_source=get_source,
+        sleep=sleep,
+        monotonic=MagicMock(return_value=0.0),
+        logger=logger,
+    )
+
+    assert result is ready
+    sleep.assert_awaited_once_with(0.25)
+
+
+@pytest.mark.asyncio
 async def test_wait_until_registered_tolerates_transient_error(
     poller: SourcePoller,
     logger: logging.Logger,
@@ -102,6 +175,54 @@ async def test_wait_until_registered_tolerates_transient_error(
 
     assert result is processing
     sleep.assert_awaited_once_with(0.5)
+
+
+@pytest.mark.asyncio
+async def test_wait_until_registered_waits_while_source_is_none(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    processing = Source(id="src_1", status=SourceStatus.PROCESSING)
+    get_source = AsyncMock(side_effect=[None, processing])
+    sleep = AsyncMock()
+
+    result = await poller.wait_until_registered(
+        "nb_1",
+        "src_1",
+        timeout=10.0,
+        initial_interval=0.5,
+        get_source=get_source,
+        sleep=sleep,
+        monotonic=MagicMock(return_value=0.0),
+        logger=logger,
+    )
+
+    assert result is processing
+    sleep.assert_awaited_once_with(0.5)
+
+
+@pytest.mark.asyncio
+async def test_wait_until_registered_raises_timeout(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    get_source = AsyncMock(return_value=None)
+    sleep = AsyncMock()
+    monotonic = MagicMock(side_effect=[0.0, 0.5, 1.5])
+
+    with pytest.raises(SourceTimeoutError) as exc_info:
+        await poller.wait_until_registered(
+            "nb_1",
+            "src_1",
+            timeout=1.0,
+            get_source=get_source,
+            sleep=sleep,
+            monotonic=monotonic,
+            logger=logger,
+        )
+
+    assert exc_info.value.last_status is None
+    sleep.assert_not_awaited()
 
 
 @pytest.mark.asyncio
