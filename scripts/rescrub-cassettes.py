@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 """Bulk re-scrub VCR cassettes for ``lh3.googleusercontent.com/(a|ogw)/`` avatar URLs.
 
-T8.B6 — collapses every ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` avatar
-URL to the canonical ``SCRUBBED_AVATAR_URL`` placeholder and re-derives the
-chunked ``<count>\\n<payload>\\n`` byte-count prefixes inside every recorded
-response body. Writes back only if anything changed; idempotent on a clean
-tree.
+Collapses every ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` avatar URL to
+the canonical ``SCRUBBED_AVATAR_URL`` placeholder and re-derives the chunked
+``<count>\\n<payload>\\n`` byte-count prefixes inside every recorded response
+body. Writes back only if anything changed; idempotent on a clean tree.
 
 Why this script exists
 ----------------------
-The T8.A6a avatar-URL scrubber (PR #565) added
+The avatar-URL scrubber (PR #565) added
 ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` → ``SCRUBBED_AVATAR_URL`` to
 the canonical pattern registry, but the ~67 cassettes recorded BEFORE that
-pattern landed still embed the raw avatar URLs. The phase-1 audit listed
-them in ``tests/scripts/cassette_repair_allowlist.txt`` under the "/ogw/
-avatar URL group" header; this script is the one-off tool that walks each
-of those cassettes, re-scrubs them in place, and reports a byte-level diff
-so reviewers can verify the change set.
+pattern landed still embed the raw avatar URLs. They were enumerated in
+``tests/scripts/cassette_repair_allowlist.txt`` under the "/ogw/ avatar URL
+group" header; this script is the one-off tool that walks each of those
+cassettes, re-scrubs them in place, and reports a byte-level diff so reviewers
+can verify the change set.
 
 Why we DON'T call ``scrub_string`` here
 ---------------------------------------
 ``cassette_patterns.scrub_string`` applies every pattern in
-:data:`SENSITIVE_PATTERNS` — including the T8.A6a escaped-display-name
+:data:`SENSITIVE_PATTERNS` — including the escaped-display-name
 scrubber that anchors on ``\\"First Last\\"`` inside double-encoded WRB
 payloads. That pattern carries a small false-positive allowlist
 (``DISPLAY_NAME_FALSE_POSITIVES``) covering font families, UI titles, and

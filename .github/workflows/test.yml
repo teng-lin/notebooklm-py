@@ -40,19 +40,19 @@ jobs:
     - name: Run type checking
       run: uv run mypy src/notebooklm --ignore-missing-imports
 
-    - name: Assert workflow permissions are scoped (Phase 1 T4)
+    - name: Assert workflow permissions are scoped
       run: uv run python scripts/check_workflow_permissions.py
 
-    - name: Assert coverage thresholds match (Phase 1 T5)
+    - name: Assert coverage thresholds match
       run: uv run python scripts/check_coverage_thresholds.py
 
-    - name: Assert CI install matches CONTRIBUTING.md (Phase 6 P6.4)
+    - name: Assert CI install matches CONTRIBUTING.md
       run: uv run python scripts/check_ci_install_parity.py
 
-    - name: Assert CLAUDE.md paths are fresh (Phase 6 P6.6)
+    - name: Assert CLAUDE.md paths are fresh
       run: uv run python scripts/check_claude_md_freshness.py
 
-    - name: Assert per-method RPC coverage (Strategic 9, T8.E9)
+    - name: Assert per-method RPC coverage
       # Static check: each RPCMethod member must have at least one test
       # reference AND at least one cassette body containing its RPC id.
       # Pre-existing gaps are grandfathered via PREEXISTING_GAPS inside the
@@ -115,10 +115,10 @@ jobs:
           echo "::warning::Continuing so the non-browser test matrix can run."
         fi
 
-    - name: Assert cassettes are sanitized (T5.E, T8.A5a, T8.A5b)
+    - name: Assert cassettes are sanitized
       # Runs on all matrix entries (ubuntu, macos, windows × 5 Python versions).
-      # The legacy bash gate was lifted in T8.A5b after T8.A5a replaced the
-      # shell script with a portable Python invocation.
+      # The legacy bash gate was replaced by a portable Python invocation so the
+      # check runs uniformly across the cross-platform test matrix.
       run: uv run python tests/scripts/check_cassettes_clean.py
 
     - name: Run tests with coverage
@@ -127,7 +127,7 @@ jobs:
       # still show the missing-lines summary.
       run: uv run pytest --cov=src/notebooklm --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=90
 
-    - name: Assert per-file coverage floors (T6.C)
+    - name: Assert per-file coverage floors
       # Linux-only because ``coverage.json`` on Windows records backslash
       # paths (e.g. ``src\notebooklm\cli\doctor.py``) that won't match the
       # forward-slash keys in ``[tool.notebooklm.per_file_coverage_floors]``

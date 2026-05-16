@@ -1,13 +1,12 @@
 """Assert pyproject.toml `fail_under` matches `.github/workflows/test.yml` `--cov-fail-under`.
 
-Phase 1 / T5: prevents the drift bug that was discovered during the multi-agent
-audit. CI claimed 70%, pyproject claimed 90% — until they were aligned manually.
+Prevents the drift bug where CI claimed 70% and pyproject claimed 90% until
+they were aligned manually.
 
-Phase 6 / T6.C extension: when ``--coverage-json`` is provided, additionally
-enforces per-file floors declared in ``[tool.notebooklm.per_file_coverage_floors]``.
-Coverage.py's ``[tool.coverage.report]`` only supports a global ``fail_under``,
-so individual files that historically lag the project-wide 90% are guarded by
-this script.
+When ``--coverage-json`` is provided, additionally enforces per-file floors
+declared in ``[tool.notebooklm.per_file_coverage_floors]``. Coverage.py's
+``[tool.coverage.report]`` only supports a global ``fail_under``, so individual
+files that historically lag the project-wide 90% are guarded by this script.
 
 Usage:
     python scripts/check_coverage_thresholds.py
@@ -41,7 +40,7 @@ else:
 
 
 def _check_global_drift(pyproject_path: str, workflow_path: str) -> int:
-    """Original Phase-1 check: pyproject ``fail_under`` vs CI ``--cov-fail-under``."""
+    """Compare pyproject ``fail_under`` against CI ``--cov-fail-under``."""
     try:
         with open(pyproject_path, "rb") as f:
             pp = tomllib.load(f)
@@ -96,7 +95,7 @@ def _check_global_drift(pyproject_path: str, workflow_path: str) -> int:
 
 
 def _check_per_file_floors(pyproject_path: str, coverage_json_path: str) -> int:
-    """T6.C: enforce per-file floors from ``[tool.notebooklm.per_file_coverage_floors]``.
+    """Enforce per-file floors from ``[tool.notebooklm.per_file_coverage_floors]``.
 
     Floors live in pyproject.toml so they're checked into the repo and bumped
     via PR (the commit message documents the new minimum). The script reads
