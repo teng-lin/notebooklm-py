@@ -14,7 +14,6 @@ from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
-from urllib.parse import urlencode
 
 import httpx
 
@@ -27,6 +26,7 @@ from ._core_cache import (
 )
 from ._core_cookie_persistence import CookiePersistence
 from ._core_polling import PendingPolls, PollRegistry
+from ._core_rpc import RpcExecutor
 from ._core_transport import (
     MAX_RETRY_AFTER_SECONDS as MAX_RETRY_AFTER_SECONDS,
 )
@@ -34,19 +34,19 @@ from ._core_transport import (
     AuthedTransport,
     _AuthSnapshot,
     _BuildRequest,
-    _parse_retry_after,
     _TransportAuthExpired,
     _TransportRateLimited,
     _TransportServerError,
 )
-from ._env import get_default_language
+from ._core_transport import (
+    _parse_retry_after as _parse_retry_after,
+)
 from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import (
     AuthTokens,
     CookieSnapshot,
     _rotate_cookies,
     build_cookie_jar,
-    format_authuser_value,
     save_cookies_to_storage,
 )
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
@@ -63,11 +63,7 @@ from .rpc import (
     RPCMethod,
     RPCTimeoutError,
     ServerError,
-    build_request_body,
     decode_response,
-    encode_rpc_request,
-    get_batchexecute_url,
-    resolve_rpc_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -349,6 +345,14 @@ def is_auth_error(error: Exception) -> bool:
     return False
 
 
+def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
+    return decode_response(raw, rpc_id, allow_null=allow_null)
+
+
+def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
+    return asyncio.sleep(seconds)
+
+
 class ClientCore:
     """Core client infrastructure for HTTP and RPC operations.
 
@@ -598,6 +602,7 @@ class ClientCore:
         self.cookie_persistence = CookiePersistence(self.auth, self._keepalive_storage_path)
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
+        self._rpc_executor: RpcExecutor | None = None
 
     @property
     def _save_lock(self) -> threading.Lock:
@@ -949,6 +954,26 @@ class ClientCore:
             self._authed_transport = transport
         return transport
 
+    def _get_rpc_executor(self) -> RpcExecutor:
+        """Return the RPC execution collaborator, lazily initialized.
+
+        The adapters resolve through this module at call time so existing
+        monkeypatches of ``notebooklm._core.decode_response``,
+        ``notebooklm._core.is_auth_error``, and
+        ``notebooklm._core.asyncio.sleep`` keep affecting live RPC behavior
+        after the collaborator has been constructed.
+        """
+        executor = getattr(self, "_rpc_executor", None)
+        if executor is None:
+            executor = RpcExecutor(
+                self,
+                decode_response_late_bound=_decode_response_late_bound,
+                is_auth_error=lambda exc: is_auth_error(exc),
+                sleep=_sleep_late_bound,
+            )
+            self._rpc_executor = executor
+        return executor
+
     async def open(self) -> None:
         """Open the HTTP client connection.
 
@@ -1264,48 +1289,13 @@ class ClientCore:
         source_path: str = "/",
         rpc_id_override: str | None = None,
     ) -> str:
-        """Build the batchexecute URL for an RPC call.
-
-        Args:
-            rpc_method: The RPC method to call.
-            snapshot: Frozen ``_AuthSnapshot`` captured by :meth:`_snapshot`
-                under ``_auth_snapshot_lock``. The URL is built entirely
-                from snapshot fields (``session_id``, ``authuser``,
-                ``account_email``) so the URL and body for one attempt
-                stay coherent across a concurrent refresh. Audit §12 /
-                T7.F2: pre-fix this method read ``self.auth`` LIVE on
-                each call, which let a refresh's write to
-                ``self.auth.session_id`` slip between ``_snapshot()`` and
-                ``_build_url()`` — producing a URL stamped with the new
-                generation while the body still carried the old CSRF.
-            source_path: The source path parameter (usually notebook path).
-            rpc_id_override: Optional resolved RPC id string used in the
-                ``rpcids=`` query param. When provided, the SAME string must
-                also be passed to :func:`encode_rpc_request` so the URL and
-                body stay in sync. See ``resolve_rpc_id`` for the
-                ``NOTEBOOKLM_RPC_OVERRIDES`` plumbing.
-
-        Returns:
-            Full URL with query parameters.
-        """
-        rpc_id = rpc_id_override if rpc_id_override is not None else rpc_method.value
-        params: dict[str, str] = {
-            "rpcids": rpc_id,
-            "source-path": source_path,
-            "f.sid": snapshot.session_id,
-            "hl": get_default_language(),
-            "rt": "c",
-        }
-        # Multi-account: route batchexecute to the same Google account the
-        # auth tokens were minted for. Email is preferred when known because
-        # Google's integer account indices can change as browser accounts are
-        # added or removed.
-        if snapshot.account_email or snapshot.authuser:
-            params["authuser"] = format_authuser_value(
-                snapshot.authuser,
-                snapshot.account_email,
-            )
-        return f"{get_batchexecute_url()}?{urlencode(params)}"
+        """Compatibility wrapper around :class:`RpcExecutor` URL building."""
+        return self._get_rpc_executor().build_url(
+            rpc_method,
+            snapshot,
+            source_path,
+            rpc_id_override=rpc_id_override,
+        )
 
     async def _perform_authed_post(
         self,
@@ -1564,243 +1554,31 @@ class ClientCore:
         *,
         disable_internal_retries: bool = False,
     ) -> Any:
-        # Caller (rpc_call) has already verified self._http_client is not None;
-        # re-assert for mypy narrowing through this helper.
-        assert self._http_client is not None
-        start = time.perf_counter()
-        logger.debug("RPC %s starting", method.name)
-
-        # Resolve the RPC id ONCE per logical call. ``NOTEBOOKLM_RPC_OVERRIDES``
-        # lets users self-patch when Google rotates an obfuscated method id;
-        # the resolved value MUST flow into both the URL's ``rpcids=`` query
-        # param and the request body's ``f.req`` payload (the wire format
-        # treats a mismatch as malformed). Resolving once also means decode
-        # below uses the same id we asked the server for.
-        resolved_id = resolve_rpc_id(method.name, method.value)
-
-        # ``_perform_authed_post`` calls this factory once per HTTP attempt;
-        # on retry it passes a fresh snapshot so the body is rebuilt with the
-        # refreshed CSRF and the URL with the refreshed session id /
-        # authuser. Capturing ``self.auth.csrf_token`` here directly would
-        # snapshot at outer-call time and replay a stale token on retry.
-        rpc_request = encode_rpc_request(method, params, rpc_id_override=resolved_id)
-
-        def _build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            # T7.F2: both the URL (via ``_build_url(snapshot, ...)``) and
-            # the body (via ``snapshot.csrf_token``) now consume the
-            # *same* frozen ``_AuthSnapshot`` captured under
-            # ``_auth_snapshot_lock``. Pre-fix this factory passed only
-            # ``snapshot.csrf_token`` to the body while ``_build_url``
-            # re-read ``self.auth.session_id`` LIVE — a torn read that
-            # let a concurrent refresh slip a new sid into the URL while
-            # the body still carried the old csrf. Now URL + body are
-            # generation-coherent for the lifetime of this attempt; cookie
-            # coherence with the snapshot is still upheld by the no-await
-            # invariant between ``_snapshot()`` returning and the
-            # ``client.post(...)`` call inside ``_perform_authed_post``
-            # (see the AST guards in
-            # ``tests/unit/test_concurrency_refresh_race.py``).
-            url = self._build_url(method, snapshot, source_path, rpc_id_override=resolved_id)
-            body = build_request_body(rpc_request, snapshot.csrf_token)
-            return url, body, {}
-
-        try:
-            response = await self._perform_authed_post(
-                build_request=_build,
-                log_label=f"RPC {method.name}",
-                disable_internal_retries=disable_internal_retries,
-            )
-        except _TransportAuthExpired as exc:
-            # Refresh callback raised. Historical contract:
-            # the *original* transport exception escapes with the refresh
-            # error attached via ``__cause__`` (already chained inside
-            # ``_perform_authed_post``). No status-code mapping happens for
-            # this path — callers that catch :class:`httpx.HTTPStatusError`
-            # see exactly what they used to see pre-extraction.
-            raise exc.original from exc.__cause__
-        except _TransportRateLimited as exc:
-            elapsed = time.perf_counter() - start
-            logger.error(
-                "RPC %s failed after %.3fs: HTTP 429",
-                method.name,
-                elapsed,
-            )
-            msg = f"API rate limit exceeded calling {method.name}"
-            if exc.retry_after:
-                msg += f". Retry after {exc.retry_after} seconds"
-            raise RateLimitError(
-                msg,
-                method_id=method.value,
-                retry_after=exc.retry_after,
-            ) from exc.original
-        except _TransportServerError as exc:
-            elapsed = time.perf_counter() - start
-            # Translate the budget-exhaustion signal back into the historical
-            # RPC error shape: 5xx → ServerError; network → NetworkError /
-            # RPCTimeoutError. ``_raise_rpc_error_from_*`` already does the
-            # right mapping for the underlying ``original`` exception.
-            if isinstance(exc.original, httpx.HTTPStatusError):
-                logger.error(
-                    "RPC %s failed after %.3fs: HTTP %s (server-error retries exhausted)",
-                    method.name,
-                    elapsed,
-                    exc.original.response.status_code,
-                )
-                self._raise_rpc_error_from_http_status(exc.original, method)
-            else:
-                # ``_perform_authed_post`` only wraps ``httpx.RequestError``
-                # into ``_TransportServerError`` on the network path; this
-                # guard keeps the contract enforced under ``python -O``
-                # (where ``assert`` would be stripped).
-                if not isinstance(exc.original, httpx.RequestError):
-                    raise TypeError(
-                        f"Unexpected _TransportServerError.original type: {type(exc.original)}"
-                    ) from exc
-                logger.error(
-                    "RPC %s failed after %.3fs: %s (server-error retries exhausted)",
-                    method.name,
-                    elapsed,
-                    exc.original,
-                )
-                self._raise_rpc_error_from_request_error(exc.original, method)
-        except httpx.HTTPStatusError as exc:
-            elapsed = time.perf_counter() - start
-            logger.error(
-                "RPC %s failed after %.3fs: HTTP %s",
-                method.name,
-                elapsed,
-                exc.response.status_code,
-            )
-            self._raise_rpc_error_from_http_status(exc, method)
-        # NOTE: bare ``httpx.RequestError`` handler was removed here because
-        # ``_perform_authed_post`` always either retries network-layer
-        # errors or wraps them in ``_TransportServerError`` (handled above),
-        # so they cannot reach this scope.
-
-        # ---------- Decode -------------------------------------------------
-        # Decode-time auth retry stays RPC-specific: Google sometimes
-        # returns a 200 with an auth-shaped RPCError payload (the body says
-        # "authentication expired" instead of a 401 status code). The chat
-        # streaming format doesn't have this pattern, so the retry lives
-        # here, not in ``_perform_authed_post``.
-        try:
-            # The server echoes back whatever RPC id we sent on the wire, so
-            # decode against the resolved id (override-aware) rather than the
-            # canonical ``method.value`` — otherwise an override would parse
-            # as "RPC id not found in response".
-            result = decode_response(response.text, resolved_id, allow_null=allow_null)
-            elapsed = time.perf_counter() - start
-            logger.debug("RPC %s completed in %.3fs", method.name, elapsed)
-            return result
-        except RPCError as e:
-            elapsed = time.perf_counter() - start
-
-            # Check if this is an auth error and we can retry
-            if not _is_retry and self._refresh_callback and is_auth_error(e):
-                refreshed = await self._try_refresh_and_retry(
-                    method,
-                    params,
-                    source_path,
-                    allow_null,
-                    e,
-                    disable_internal_retries=disable_internal_retries,
-                )
-                if refreshed is not None:
-                    return refreshed
-
-            logger.error("RPC %s failed after %.3fs", method.name, elapsed)
-            raise
-        except Exception as e:
-            elapsed = time.perf_counter() - start
-            logger.error("RPC %s failed after %.3fs: %s", method.name, elapsed, e)
-            raise RPCError(
-                f"Failed to decode response for {method.name}: {e}",
-                method_id=method.value,
-            ) from e
+        """Compatibility wrapper around :class:`RpcExecutor`."""
+        return await self._get_rpc_executor().execute(
+            method,
+            params,
+            source_path,
+            allow_null,
+            _is_retry,
+            disable_internal_retries=disable_internal_retries,
+        )
 
     def _raise_rpc_error_from_http_status(
         self,
         exc: httpx.HTTPStatusError,
         method: RPCMethod,
     ) -> NoReturn:
-        """Map an HTTP-status failure onto the RPC error hierarchy.
-
-        Centralizes the status-to-exception mapping that historically lived
-        inline in ``_rpc_call_impl``. Always raises — typed ``NoReturn`` so
-        mypy sees the caller's control flow terminates here.
-        """
-        status = exc.response.status_code
-
-        if status == 429:
-            # _perform_authed_post normally raises ``_TransportRateLimited``
-            # before reaching here. This branch covers callers that bypass
-            # the helper or a 429 surfacing after an auth retry.
-            retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
-            msg = f"API rate limit exceeded calling {method.name}"
-            if retry_after:
-                msg += f". Retry after {retry_after} seconds"
-            raise RateLimitError(msg, method_id=method.value, retry_after=retry_after) from exc
-
-        if 500 <= status < 600:
-            raise ServerError(
-                f"Server error {status} calling {method.name}: {exc.response.reason_phrase}",
-                method_id=method.value,
-                status_code=status,
-            ) from exc
-
-        if 400 <= status < 500 and status not in (401, 403):
-            raise ClientError(
-                f"Client error {status} calling {method.name}: {exc.response.reason_phrase}",
-                method_id=method.value,
-                status_code=status,
-            ) from exc
-
-        # 401/403 or other: Generic RPCError (auth retry already attempted by
-        # _perform_authed_post when a refresh callback was configured).
-        raise RPCError(
-            f"HTTP {status} calling {method.name}: {exc.response.reason_phrase}",
-            method_id=method.value,
-        ) from exc
+        """Compatibility wrapper around :class:`RpcExecutor`."""
+        self._get_rpc_executor().raise_rpc_error_from_http_status(exc, method)
 
     def _raise_rpc_error_from_request_error(
         self,
         exc: httpx.RequestError,
         method: RPCMethod,
     ) -> NoReturn:
-        """Map a non-HTTPStatus transport failure onto NetworkError/RPCTimeoutError.
-
-        Always raises — typed ``NoReturn`` so mypy treats the caller's
-        control flow as terminating here, preventing an unbound-``response``
-        warning in the decode block of ``_rpc_call_impl``.
-        """
-        # Check ConnectTimeout first (more specific than general TimeoutException)
-        if isinstance(exc, httpx.ConnectTimeout):
-            raise NetworkError(
-                f"Connection timed out calling {method.name}: {exc}",
-                method_id=method.value,
-                original_error=exc,
-            ) from exc
-
-        if isinstance(exc, httpx.TimeoutException):
-            raise RPCTimeoutError(
-                f"Request timed out calling {method.name}",
-                method_id=method.value,
-                timeout_seconds=self._timeout,
-                original_error=exc,
-            ) from exc
-
-        if isinstance(exc, httpx.ConnectError):
-            raise NetworkError(
-                f"Connection failed calling {method.name}: {exc}",
-                method_id=method.value,
-                original_error=exc,
-            ) from exc
-
-        raise NetworkError(
-            f"Request failed calling {method.name}: {exc}",
-            method_id=method.value,
-            original_error=exc,
-        ) from exc
+        """Compatibility wrapper around :class:`RpcExecutor`."""
+        self._get_rpc_executor().raise_rpc_error_from_request_error(exc, method)
 
     async def _try_refresh_and_retry(
         self,
@@ -1812,59 +1590,13 @@ class ClientCore:
         *,
         disable_internal_retries: bool = False,
     ) -> Any | None:
-        """Attempt to refresh auth tokens and retry the RPC call.
-
-        Uses a shared task pattern to ensure only one refresh operation runs
-        at a time. Concurrent callers wait on the same task, preventing
-        redundant refresh calls under high concurrency.
-
-        Args:
-            method: The RPC method to retry.
-            params: Original parameters.
-            source_path: Original source path.
-            allow_null: Original allow_null setting.
-            original_error: The auth error that triggered this retry.
-            disable_internal_retries: When True, suppress the inner 5xx /
-                429 / network retry loop on the post-refresh ``rpc_call``,
-                so transport failures are surfaced immediately for the
-                caller's idempotency wrapper to handle.
-
-        Returns:
-            The RPC result if retry succeeds, None if refresh failed.
-
-        Raises:
-            The original error (with refresh error as cause) if refresh fails.
-        """
-        logger.info(
-            "RPC %s auth error detected, attempting token refresh",
-            method.name,
-        )
-
-        # Delegate the shared-task + lock dance to ``_await_refresh`` so this
-        # decode-time retry path stays in lockstep with the transport-time
-        # path inside ``_perform_authed_post``. On refresh failure, surface
-        # the *original* RPC decode error (not the refresh error) so callers
-        # see the symptom they originally hit — refresh failure is attached
-        # as ``__cause__``.
-        try:
-            await self._await_refresh()
-        except Exception as refresh_error:
-            logger.warning("Token refresh failed: %s", refresh_error)
-            raise original_error from refresh_error
-
-        # Brief delay before retry to avoid hammering the API
-        if self._refresh_retry_delay > 0:
-            await asyncio.sleep(self._refresh_retry_delay)
-
-        logger.info("Token refresh successful, retrying RPC %s", method.name)
-
-        # Retry with refreshed tokens
-        return await self.rpc_call(
+        """Compatibility wrapper around :class:`RpcExecutor`."""
+        return await self._get_rpc_executor().try_refresh_and_retry(
             method,
             params,
             source_path,
             allow_null,
-            _is_retry=True,
+            original_error,
             disable_internal_retries=disable_internal_retries,
         )
 

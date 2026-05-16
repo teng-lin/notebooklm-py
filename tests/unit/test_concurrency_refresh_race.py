@@ -37,7 +37,7 @@ This file *locks* the invariant in three ways:
 
 2. ``test_build_url_does_not_read_self_auth`` — static AST guard
    against any ``self.auth.<field>`` attribute access in
-   ``ClientCore._build_url``. The method MUST consume only its
+   ``RpcExecutor.build_url``. The method MUST consume only its
    ``snapshot: _AuthSnapshot`` parameter; reverting to ``self.auth``
    would silently un-do T7.F2's atomicity fix.
 
@@ -63,6 +63,7 @@ import httpx
 import pytest
 
 from notebooklm._core import ClientCore
+from notebooklm._core_rpc import RpcExecutor
 from notebooklm._core_transport import AuthedTransport
 from notebooklm.rpc import RPCMethod
 
@@ -202,7 +203,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
 
 
 def test_build_url_does_not_read_self_auth():
-    """``ClientCore._build_url`` must consume only its ``snapshot`` parameter.
+    """``RpcExecutor.build_url`` must consume only its ``snapshot`` parameter.
 
     T7.F2 / audit §12: pre-fix, ``_build_url`` reached into ``self.auth``
     on every call to read ``session_id``, ``authuser``, and
@@ -223,7 +224,7 @@ def test_build_url_does_not_read_self_auth():
     rooted at ``self.auth``. Forbidden: any ``self.auth.<field>``
     attribute access, regardless of which field.
     """
-    src = textwrap.dedent(inspect.getsource(ClientCore._build_url))
+    src = textwrap.dedent(inspect.getsource(RpcExecutor.build_url))
     tree = ast.parse(src)
     # ``_build_url`` is a sync method, not async.
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
@@ -239,7 +240,7 @@ def test_build_url_does_not_read_self_auth():
             forbidden.append((node.lineno, ast.dump(node)))
 
     assert not forbidden, (
-        f"_build_url reads self.auth — torn-read regression (T7.F2 / audit §12). "
+        f"RpcExecutor.build_url reads self.auth — torn-read regression (T7.F2 / audit §12). "
         f"Read every auth scalar off the ``snapshot`` parameter instead. "
         f"Occurrences: {forbidden}"
     )
