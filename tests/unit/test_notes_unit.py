@@ -115,6 +115,7 @@ class TestMindMapCreateNotePrimitive:
             await asyncio.wait_for(task, timeout=1)
 
         await asyncio.wait_for(cleanup_started.wait(), timeout=1)
+        # Cleanup is scheduled but not awaited before the outer cancellation propagates.
         assert not cleanup_finished.is_set()
         # ``asyncio.shield`` keeps UPDATE_NOTE running after the outer task is cancelled.
         assert not update_finished.is_set()

@@ -142,6 +142,23 @@ async def test_get_metadata_warns_when_notebook_reports_sources_but_listing_is_e
 
 
 @pytest.mark.asyncio
+async def test_get_metadata_does_not_warn_when_empty_notebook_listing_is_empty(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    core = _make_core()
+    source_lister = MagicMock()
+    source_lister.list = AsyncMock(return_value=[])
+    api = NotebooksAPI(core, sources_api=source_lister)
+    api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Empty", sources_count=0))
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
+        metadata = await api.get_metadata("nb_123")
+
+    assert metadata.sources == []
+    assert caplog.records == []
+
+
+@pytest.mark.asyncio
 async def test_share_sends_exact_share_artifact_payload_and_returns_deep_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
