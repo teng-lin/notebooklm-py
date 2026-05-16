@@ -202,6 +202,49 @@ def test_build_request_uses_authuser_index_when_email_absent() -> None:
     assert parse_qs(urlparse(url).query)["authuser"] == ["3"]
 
 
+def test_build_request_sends_null_conversation_id_for_new_conversations() -> None:
+    """Regression for issue #659.
+
+    New-conversation asks must send JSON ``null`` in ``params[4]`` so the
+    server assigns a conversation_id that is visible in the web UI's
+    conversation list. The previous behavior generated ``uuid.uuid4()``
+    client-side and orphaned the conversation from the UI.
+    """
+    _, body, _ = build_streaming_chat_request(
+        snapshot=_snapshot(),
+        notebook_id="nb-123",
+        question="Q?",
+        source_ids=["s1"],
+        conversation_history=None,
+        conversation_id=None,
+        reqid=1,
+    )
+
+    params, _ = _decode_body(body)
+    assert params[4] is None, (
+        "params[4] must be null for new conversations so the server assigns "
+        f"the conversation_id; got {params[4]!r}"
+    )
+    # Notebook id still pinned to slot 7 — the fix only touches slot 4.
+    assert params[7] == "nb-123"
+
+
+def test_build_request_passes_through_caller_conversation_id_for_follow_ups() -> None:
+    """Follow-ups must forward the caller-supplied conversation_id verbatim."""
+    _, body, _ = build_streaming_chat_request(
+        snapshot=_snapshot(),
+        notebook_id="nb-123",
+        question="Q?",
+        source_ids=["s1"],
+        conversation_history=[["prior answer", None, 2], ["prior question", None, 1]],
+        conversation_id="caller-supplied-conv",
+        reqid=1,
+    )
+
+    params, _ = _decode_body(body)
+    assert params[4] == "caller-supplied-conv"
+
+
 def test_parse_response_handles_xssi_length_prefix_raw_json_and_server_conversation_id() -> None:
     first = _chunk("First answer.", conversation_id="server-conv")
     second = _chunk("Raw JSON answer.", conversation_id="server-conv-2")

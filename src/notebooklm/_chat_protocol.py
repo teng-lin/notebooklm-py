@@ -62,10 +62,16 @@ def build_streaming_chat_request(
     question: str,
     source_ids: list[str],
     conversation_history: list | None,
-    conversation_id: str,
+    conversation_id: str | None,
     reqid: int,
 ) -> tuple[str, str, dict[str, str]]:
-    """Assemble ``(url, body, extra_headers)`` for one streamed-chat attempt."""
+    """Assemble ``(url, body, extra_headers)`` for one streamed-chat attempt.
+
+    ``conversation_id=None`` is the new-conversation signal: the server then
+    assigns a fresh id that is visible in the web UI's conversation list
+    (issue #659). Non-None values are follow-up asks and are forwarded
+    verbatim into ``params[4]``.
+    """
     sources_array = nest_source_ids(source_ids, 2)
 
     params: list[Any] = [

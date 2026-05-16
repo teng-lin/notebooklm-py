@@ -531,7 +531,7 @@ class TestAskWithReferences:
             [
                 "This is an answer without any citations.",
                 None,
-                [12345],
+                ["server-no-refs-conv", 12345],
                 None,
                 [[], None, None, [], 1],
             ]

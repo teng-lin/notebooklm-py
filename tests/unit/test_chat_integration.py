@@ -400,7 +400,7 @@ class TestChatReferences:
             [
                 "This is a simple answer without any source citations.",
                 None,
-                [12345],
+                ["server-simple-conv", 12345],
                 None,
                 [[], None, None, [], 1],
             ]
@@ -708,7 +708,7 @@ class TestChatAskErrorHandling:
             [
                 "Answer without csrf.",
                 None,
-                [12345],
+                ["server-no-csrf-conv", 12345],
                 None,
                 [[], None, None, [], 1],
             ]
@@ -753,7 +753,7 @@ class TestChatAskErrorHandling:
             [
                 "Answer with session.",
                 None,
-                [12345],
+                ["server-with-session-conv", 12345],
                 None,
                 [[], None, None, [], 1],
             ]
@@ -780,12 +780,18 @@ class TestChatAskErrorHandling:
         assert "f.sid" in str(request.url)
 
     @pytest.mark.asyncio
-    async def test_ask_empty_answer_does_not_cache_turn(
+    async def test_ask_empty_answer_does_not_cache_turn_for_follow_up(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
     ):
-        """Test that empty answer response does not cache a turn (lines 150-158)."""
+        """Empty answer on a follow-up must not append a turn to the cache.
+
+        After issue #659, empty responses on new conversations raise
+        ``ChatError`` (no server conv_id to attach to). The cache-poison
+        guard now only matters on follow-ups, where the caller-supplied
+        conversation_id stays stable across an empty response.
+        """
         import re
 
         # Return totally empty/unparseable response
@@ -802,13 +808,14 @@ class TestChatAskErrorHandling:
                 "nb_123",
                 "What is this?",
                 source_ids=["src_001"],
+                conversation_id="existing-conv-id",
             )
 
         # Empty answer: turn_number equals len(turns) (0), not len(turns)+1
         assert result.answer == ""
         assert result.turn_number == 0
-        # Conversation ID is still generated
-        assert result.conversation_id is not None
+        # Caller-supplied conversation_id is preserved across the empty response.
+        assert result.conversation_id == "existing-conv-id"
 
     @pytest.mark.asyncio
     async def test_ask_follow_up_sets_is_follow_up(
@@ -848,6 +855,167 @@ class TestChatAskErrorHandling:
             )
 
         assert result.is_follow_up is True
+        assert result.conversation_id == "existing-conv-id"
+
+
+class TestAskServerAssignedConversationId:
+    """Regression tests for issue #659.
+
+    CLI-created conversations must be visible in the NotebookLM web UI. The
+    only way to achieve that is to let the server assign the conversation_id:
+    send ``null`` in ``params[4]`` on the first ask, and read the assigned
+    id from the response. The previous behavior generated a client-side
+    ``uuid.uuid4()`` and the server never linked the conversation into the
+    web UI's conversation list.
+    """
+
+    @staticmethod
+    def _decode_params(request) -> list:
+        """Decode the params list from a chat POST request body."""
+        import json
+        from urllib.parse import parse_qs, unquote
+
+        body = request.content.decode("utf-8")
+        body_qs = parse_qs(body, keep_blank_values=True)
+        f_req = json.loads(unquote(body_qs["f.req"][0]))
+        return json.loads(f_req[1])
+
+    @pytest.mark.asyncio
+    async def test_new_conversation_sends_null_conversation_id_in_request(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """New conversations must send ``params[4] == null`` (Issue #659)."""
+        import json
+        import re
+
+        server_conv = "11111111-2222-3333-4444-555555555555"
+        inner_data = [
+            [
+                "Server-assigned answer.",
+                None,
+                [server_conv, 12345],
+                None,
+                [[], None, None, [], 1],
+            ]
+        ]
+        inner_json = json.dumps(inner_data)
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
+
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=response_body.encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask(
+                "nb_123",
+                "What is this?",
+                source_ids=["src_001"],
+            )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        params = self._decode_params(request)
+        assert params[4] is None, (
+            "New conversations must send null in params[4]; got "
+            f"{params[4]!r}. Sending a client-generated UUID orphans the "
+            "conversation from the web UI conversation list (issue #659)."
+        )
+        # The server-assigned id from the response is the authoritative
+        # conversation_id surfaced to the caller.
+        assert result.conversation_id == server_conv
+        assert result.is_follow_up is False
+
+    @pytest.mark.asyncio
+    async def test_new_conversation_raises_when_server_returns_no_conversation_id(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """A new-conversation ask whose response omits a server_conv_id must
+        raise ``ChatError`` rather than silently falling back to a
+        client-generated UUID (issue #659 — no silent regressions).
+        """
+        import json
+        import re
+
+        from notebooklm.exceptions import ChatError
+
+        inner_data = [
+            [
+                "Answer without server conv_id.",
+                None,
+                [12345],  # no string in slot 0 -> server_conv_id parsed as None
+                None,
+                [[], None, None, [], 1],
+            ]
+        ]
+        inner_json = json.dumps(inner_data)
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
+
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=response_body.encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            with pytest.raises(ChatError, match="conversation_id"):
+                await client.chat.ask(
+                    "nb_123",
+                    "Q?",
+                    source_ids=["src_001"],
+                )
+
+    @pytest.mark.asyncio
+    async def test_follow_up_sends_caller_conversation_id_in_request(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+    ):
+        """Follow-up asks must continue to forward the caller-supplied
+        conversation_id verbatim — the bugfix only changes the new-conversation
+        path.
+        """
+        import json
+        import re
+
+        inner_data = [
+            [
+                "Follow-up answer.",
+                None,
+                ["existing-conv-id", 12345],
+                None,
+                [[], None, None, [], 1],
+            ]
+        ]
+        inner_json = json.dumps(inner_data)
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
+
+        httpx_mock.add_response(
+            url=re.compile(r".*GenerateFreeFormStreamed.*"),
+            content=response_body.encode(),
+            method="POST",
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            result = await client.chat.ask(
+                "nb_123",
+                "Q?",
+                source_ids=["src_001"],
+                conversation_id="existing-conv-id",
+            )
+
+        request = httpx_mock.get_request()
+        assert request is not None
+        params = self._decode_params(request)
+        assert params[4] == "existing-conv-id"
         assert result.conversation_id == "existing-conv-id"
 
 
@@ -1839,7 +2007,7 @@ class TestChatHL:
             [
                 "answer",
                 None,
-                [12345],
+                ["server-hl-env-conv", 12345],
                 None,
                 [[], None, None, [], 1],
             ]
@@ -1881,7 +2049,7 @@ class TestChatHL:
             [
                 "answer",
                 None,
-                [12345],
+                ["server-hl-default-conv", 12345],
                 None,
                 [[], None, None, [], 1],
             ]

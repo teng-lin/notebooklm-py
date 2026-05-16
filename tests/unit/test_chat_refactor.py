@@ -37,9 +37,18 @@ from notebooklm.auth import AuthTokens
 # ---------------------------------------------------------------------------
 
 
-def _make_answer_response_body(answer: str = "Refactor answer is long enough.") -> bytes:
-    """Build a minimal valid streaming chat response."""
-    inner_json = json.dumps([[answer, None, None, None, [1]]])
+def _make_answer_response_body(
+    answer: str = "Refactor answer is long enough.",
+    *,
+    server_conv_id: str = "server-refactor-conv",
+) -> bytes:
+    """Build a minimal valid streaming chat response.
+
+    A ``server_conv_id`` is always present at ``first[2][0]`` because
+    ``ChatAPI.ask`` requires the server to assign the id for new
+    conversations (issue #659); responses lacking one raise ``ChatError``.
+    """
+    inner_json = json.dumps([[answer, None, [server_conv_id, 12345], None, [1]]])
     chunk_json = json.dumps([["wrb.fr", None, inner_json]])
     return f")]}}'\n{len(chunk_json)}\n{chunk_json}\n".encode()
 

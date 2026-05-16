@@ -5,8 +5,8 @@ retrieving conversation history.
 """
 
 import asyncio
+import contextlib
 import logging
-import uuid
 import weakref
 from typing import Any
 
@@ -154,20 +154,33 @@ class ChatAPI:
     ) -> AskResult:
         """Ask the notebook a question.
 
+        For a new conversation (``conversation_id=None``), the server assigns
+        the conversation_id and it is returned on ``AskResult.conversation_id``.
+        Conversations created this way are visible in the NotebookLM web UI's
+        conversation list (issue #659). The previous behavior — minting a
+        client-side ``uuid.uuid4()`` — orphaned the conversation from the UI.
+
         Args:
             notebook_id: The notebook ID.
             question: The question to ask.
             source_ids: Specific source IDs to query. If None, uses all sources.
             conversation_id: Existing conversation ID for follow-up questions.
+                Omit for a new conversation so the server can assign the id.
 
         Returns:
-            AskResult with answer, conversation_id, and turn info.
+            AskResult with answer, server-assigned conversation_id, and turn info.
+
+        Raises:
+            ChatError: For a new conversation, if the server response did not
+                include a conversation_id (e.g. malformed response or API
+                shape drift). Surfacing this prevents the silent regression
+                that issue #659 fixed.
 
         Example:
-            # New conversation
+            # New conversation — server assigns the conversation_id.
             result = await client.chat.ask(notebook_id, "What is machine learning?")
 
-            # Follow-up
+            # Follow-up — pass the server-assigned id back.
             result = await client.chat.ask(
                 notebook_id,
                 "How does it differ from deep learning?",
@@ -183,30 +196,38 @@ class ChatAPI:
             source_ids = await self._core.get_source_ids(notebook_id)
 
         is_new_conversation = conversation_id is None
-        if is_new_conversation:
-            conversation_id = str(uuid.uuid4())
-        assert conversation_id is not None  # Type narrowing for mypy
 
-        # Hold the per-``conversation_id`` lock across history-build, the
-        # network round-trip, and the cache append (audit §10 / T7.F1).
-        # Without this, two ``asyncio.gather``'d follow-ups on the same
-        # conversation read identical pre-update history at the top, both
-        # POST that history, and the server sees two follow-ups both
-        # claiming to be turn N+1. New conversations use a fresh UUID so
-        # the lookup is uncontested — the overhead is a no-op
-        # ``WeakValueDictionary`` insert + a single uncontested
-        # ``asyncio.Lock`` acquire.
-        async with self._get_conversation_lock(conversation_id):
+        # Acquire the per-conversation lock only for follow-ups (audit §10 /
+        # T7.F1). Two concurrent gather'd follow-ups on the same conversation
+        # would otherwise read identical pre-update history, both POST it, and
+        # the server would see two follow-ups both claiming to be turn N+1.
+        # New conversations skip the lock entirely: there is no pre-existing
+        # server-assigned id to lock on yet, and each new ask gets a fresh
+        # server-assigned id so there is no concurrent-write target. The
+        # client-side UUID this code used to mint (issue #659) is gone — the
+        # server now assigns the id so the conversation lands in the web UI
+        # conversation list.
+        lock_cm: contextlib.AbstractAsyncContextManager[Any]
+        if is_new_conversation:
+            lock_cm = contextlib.nullcontext()
+        else:
+            assert conversation_id is not None  # narrowed by is_new_conversation
+            lock_cm = self._get_conversation_lock(conversation_id)
+
+        async with lock_cm:
             if is_new_conversation:
                 conversation_history = None
             else:
+                # Re-assert: mypy loses the narrowing across the lock-setup
+                # block above, even though ``is_new_conversation`` is False
+                # here so ``conversation_id`` must be non-None.
+                assert conversation_id is not None
                 conversation_history = self._build_conversation_history(conversation_id)
-            # Rebind to non-Optional locals so the build_request closure below
-            # carries the narrowed types — mypy doesn't propagate flow-narrowing
-            # of ``conversation_id`` / ``source_ids`` through a nested-function
-            # capture. ``_build_chat_request`` declares both as non-Optional, so
-            # the closure capture would otherwise be a latent type error.
-            active_conversation_id: str = conversation_id
+            # Capture into closure-local variables so the nested ``build_request``
+            # closure carries explicit types — mypy doesn't propagate flow
+            # narrowing through nested-function captures, and the wire
+            # builder accepts ``conversation_id: str | None``.
+            active_conversation_id: str | None = conversation_id
             active_source_ids: list[str] = source_ids
 
             # Mint the request-id under the asyncio-safe counter helper so two
@@ -245,11 +266,26 @@ class ChatAPI:
             answer_text, references, server_conv_id = self._parse_ask_response_with_references(
                 response.text
             )
-            # Prefer the conversation ID returned by the server over our locally
-            # generated UUID, so that get_conversation_id() and
-            # get_conversation_turns() stay in sync.
-            if server_conv_id:
+            # Issue #659: new conversations rely entirely on the server-assigned
+            # id. A missing id means the conversation was never registered
+            # (or the response shape drifted) — surface it instead of silently
+            # falling back to a client UUID that would orphan the conversation
+            # from the web UI conversation list.
+            if is_new_conversation:
+                if not server_conv_id:
+                    raise ChatError(
+                        "Server did not return a conversation_id for a new "
+                        "conversation. The response may have been malformed or "
+                        "the API shape may have changed. Please file an issue "
+                        "at https://github.com/teng-lin/notebooklm-py/issues."
+                    )
                 conversation_id = server_conv_id
+            elif server_conv_id:
+                # Follow-up: the server may echo a refreshed id; keep us in
+                # sync with get_conversation_id() / get_conversation_turns().
+                conversation_id = server_conv_id
+
+            assert conversation_id is not None  # narrowed by the branches above
 
             turns = self._core.get_cached_conversation(conversation_id)
             if answer_text:
@@ -525,7 +561,7 @@ class ChatAPI:
         question: str,
         source_ids: list[str],
         conversation_history: list | None,
-        conversation_id: str,
+        conversation_id: str | None,
         reqid: int,
     ) -> tuple[str, str, dict[str, str]]:
         """Compatibility wrapper for streamed-chat request construction."""

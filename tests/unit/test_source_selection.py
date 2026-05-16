@@ -63,7 +63,19 @@ def mock_core():
         url, body, headers = build_request(snapshot)
         core._last_chat_request = {"url": url, "body": body, "headers": headers}
         resp = MagicMock()
-        inner = json.dumps([["Default answer long enough to be valid.", None, None, None, [1]]])
+        # ``first[2][0]`` carries the server-assigned conversation_id; new
+        # conversations require this slot (issue #659).
+        inner = json.dumps(
+            [
+                [
+                    "Default answer long enough to be valid.",
+                    None,
+                    ["server-source-selection-conv", 12345],
+                    None,
+                    [1],
+                ]
+            ]
+        )
         chunk = json.dumps([["wrb.fr", None, inner]])
         resp.text = f")]}}'\n{len(chunk)}\n{chunk}\n"
         return resp

@@ -14,13 +14,14 @@ class TestAsk:
     async def test_ask_new_conversation(self, auth_tokens, httpx_mock):
         import re
 
-        # Mock ask response (streaming chunks)
+        # Mock ask response (streaming chunks). ``first[2][0]`` is the
+        # server-assigned conversation_id (issue #659).
         inner_json = json.dumps(
             [
                 [
                     "This is the answer. It is now long enough to be valid.",
                     None,
-                    None,
+                    ["server-new-conv", 12345],
                     None,
                     [1],
                 ]
@@ -50,12 +51,13 @@ class TestAsk:
 
     @pytest.mark.asyncio
     async def test_ask_follow_up(self, auth_tokens, httpx_mock):
+        _TEST_CONV_ID = "a1b2c3d4-0000-0000-0000-000000000002"
         inner_json = json.dumps(
             [
                 [
                     "Follow-up answer. This also needs to be longer than twenty characters.",
                     None,
-                    None,
+                    [_TEST_CONV_ID, 12345],
                     None,
                     [1],
                 ]
@@ -66,7 +68,6 @@ class TestAsk:
 
         httpx_mock.add_response(content=response_body.encode(), method="POST")
 
-        _TEST_CONV_ID = "a1b2c3d4-0000-0000-0000-000000000002"
         async with NotebookLMClient(auth_tokens) as client:
             # Seed cache via core client
             client._core._conversation_cache[_TEST_CONV_ID] = [
