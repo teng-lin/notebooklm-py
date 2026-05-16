@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Protocol
 
 import httpx
@@ -49,7 +50,22 @@ class CookieJarProvider(Protocol):
         ...
 
 
-class ClientCoreCapabilities(PollRegistryProvider, AuthRouteProvider, CookieJarProvider):
+class TransportOperationProvider(Protocol):
+    async def begin_transport_post(self, log_label: str) -> object: ...
+    async def begin_transport_task(
+        self,
+        task: asyncio.Task[Any],
+        log_label: str,
+    ) -> object: ...
+    async def finish_transport_post(self, token: object) -> None: ...
+
+
+class ClientCoreCapabilities(
+    PollRegistryProvider,
+    AuthRouteProvider,
+    CookieJarProvider,
+    TransportOperationProvider,
+):
     """Narrow capability adapter around a ``ClientCore``-shaped object.
 
     Construction is intentionally lazy: only store the core. Individual
@@ -79,3 +95,16 @@ class ClientCoreCapabilities(PollRegistryProvider, AuthRouteProvider, CookieJarP
 
     def live_cookies(self) -> httpx.Cookies:
         return self._core.get_http_client().cookies
+
+    async def begin_transport_post(self, log_label: str) -> object:
+        return await self._core._begin_transport_post(log_label)
+
+    async def begin_transport_task(
+        self,
+        task: asyncio.Task[Any],
+        log_label: str,
+    ) -> object:
+        return await self._core._begin_transport_task(task, log_label)
+
+    async def finish_transport_post(self, token: object) -> None:
+        await self._core._finish_transport_post(token)

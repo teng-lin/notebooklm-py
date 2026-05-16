@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
-from notebooklm._capabilities import ClientCoreCapabilities
+from notebooklm._capabilities import ClientCoreCapabilities, TransportOperationProvider
 from notebooklm._core_polling import PollRegistry
 from notebooklm.auth import authuser_query, format_authuser_value
 
@@ -75,6 +76,70 @@ def test_client_core_capabilities_live_cookies_come_from_http_client() -> None:
 
     assert adapter.live_cookies() is live_cookies
     assert adapter.live_cookies() is not auth_cookies
+
+
+@pytest.mark.asyncio
+async def test_client_core_capabilities_begin_transport_post_delegates_to_core() -> None:
+    token = object()
+    core = MagicMock()
+    core._begin_transport_post = AsyncMock(return_value=token)
+    adapter = ClientCoreCapabilities(core)
+
+    result = await adapter.begin_transport_post("artifact generate")
+
+    assert result is token
+    core._begin_transport_post.assert_awaited_once_with("artifact generate")
+
+
+@pytest.mark.asyncio
+async def test_client_core_capabilities_begin_transport_task_delegates_to_core() -> None:
+    token = object()
+    task: asyncio.Task[object] = asyncio.create_task(asyncio.sleep(0, result=object()))
+    core = MagicMock()
+    core._begin_transport_task = AsyncMock(return_value=token)
+    adapter = ClientCoreCapabilities(core)
+
+    try:
+        result = await adapter.begin_transport_task(task, "artifact wait task_123")
+    finally:
+        await task
+
+    assert result is token
+    core._begin_transport_task.assert_awaited_once_with(task, "artifact wait task_123")
+
+
+@pytest.mark.asyncio
+async def test_client_core_capabilities_finish_transport_post_delegates_exact_token() -> None:
+    token = object()
+    core = MagicMock()
+    core._finish_transport_post = AsyncMock(return_value=None)
+    adapter = ClientCoreCapabilities(core)
+
+    await adapter.finish_transport_post(token)
+
+    core._finish_transport_post.assert_awaited_once_with(token)
+
+
+@pytest.mark.asyncio
+async def test_transport_operation_provider_accepts_magicmock_shape() -> None:
+    post_token = object()
+    task_token = object()
+    task: asyncio.Task[object] = asyncio.create_task(asyncio.sleep(0, result=object()))
+    provider = MagicMock(spec=TransportOperationProvider)
+    provider.begin_transport_post = AsyncMock(return_value=post_token)
+    provider.begin_transport_task = AsyncMock(return_value=task_token)
+    provider.finish_transport_post = AsyncMock(return_value=None)
+
+    try:
+        assert await provider.begin_transport_post("artifact generate") is post_token
+        assert await provider.begin_transport_task(task, "artifact wait task_123") is task_token
+        await provider.finish_transport_post(task_token)
+    finally:
+        await task
+
+    provider.begin_transport_post.assert_awaited_once_with("artifact generate")
+    provider.begin_transport_task.assert_awaited_once_with(task, "artifact wait task_123")
+    provider.finish_transport_post.assert_awaited_once_with(task_token)
 
 
 def test_capabilities_module_does_not_import_client_core_at_runtime() -> None:

@@ -29,10 +29,14 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 # to an empty set. Until then, this guard blocks new direct private-state access
 # without failing the legitimate pre-extraction call sites.
 _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS = {
-    ("_artifacts.py", "_begin_transport_task"): 1,
-    ("_artifacts.py", "_finish_transport_post"): 1,
     ("_sources.py", "_begin_transport_post"): 1,
     ("_sources.py", "_finish_transport_post"): 1,
+}
+
+_CAPABILITIES_TRANSPORT_PRIVATE_METHODS = {
+    "_begin_transport_post",
+    "_begin_transport_task",
+    "_finish_transport_post",
 }
 
 _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
@@ -40,6 +44,7 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "__main__.py",
     "_atomic_io.py",
     "_callbacks.py",
+    "_capabilities.py",
     "_core.py",
     "_env.py",
     "_idempotency.py",
@@ -47,6 +52,29 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "_mind_map.py",
     "_url_utils.py",
     "_version_check.py",
+}
+
+_ARTIFACT_SERVICE_MODULES = [
+    "_artifact_formatters.py",
+    "_artifact_listing.py",
+    "_artifact_downloads.py",
+    "_artifact_generation.py",
+    "_artifact_polling.py",
+]
+
+_FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_NAMES = {
+    "NotebookLMClient",
+    "ClientCore",
+    "ArtifactsAPI",
+}
+
+_FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_MODULES = {
+    "_artifacts",
+    "_core",
+    "client",
+    "notebooklm._artifacts",
+    "notebooklm._core",
+    "notebooklm.client",
 }
 
 
@@ -169,6 +197,97 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
         "Core-private access baseline has entries no longer present in code. "
         f"Remove them from _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS: {stale}"
     )
+
+
+def test_capabilities_is_the_only_private_transport_adapter() -> None:
+    observed = _collect_core_private_accesses(SRC_ROOT / "_capabilities.py")
+    observed_counts = Counter(attr for _, attr in observed)
+
+    assert observed_counts == Counter(
+        {
+            "_begin_transport_post": 1,
+            "_begin_transport_task": 1,
+            "_finish_transport_post": 1,
+        }
+    )
+    unexpected = set(observed_counts) - _CAPABILITIES_TRANSPORT_PRIVATE_METHODS
+    assert unexpected == set()
+
+
+def test_capabilities_does_not_import_transport_operation_token() -> None:
+    tree = ast.parse((SRC_ROOT / "_capabilities.py").read_text(encoding="utf-8"))
+    forbidden_imports: list[str] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            forbidden_imports.extend(
+                alias.name for alias in node.names if alias.name == "_TransportOperationToken"
+            )
+        elif isinstance(node, ast.Import):
+            forbidden_imports.extend(
+                alias.name
+                for alias in node.names
+                if alias.name.endswith("._TransportOperationToken")
+            )
+
+    assert forbidden_imports == []
+
+
+def _is_type_checking_guard(node: ast.AST) -> bool:
+    return (
+        (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING")
+        or (
+            isinstance(node, ast.Attribute)
+            and node.attr == "TYPE_CHECKING"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "typing"
+        )
+    )
+
+
+class _RuntimeImportVisitor(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.forbidden: list[str] = []
+
+    def visit_If(self, node: ast.If) -> None:
+        if _is_type_checking_guard(node.test):
+            for child in node.orelse:
+                self.visit(child)
+            return
+        self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        self.forbidden.extend(
+            alias.name
+            for alias in node.names
+            if alias.name in _FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_MODULES
+        )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = node.module or ""
+        if module in _FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_MODULES:
+            self.forbidden.extend(f"{module}.{alias.name}" for alias in node.names)
+            return
+
+        self.forbidden.extend(
+            alias.name
+            for alias in node.names
+            if alias.name in _FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_NAMES
+            or alias.name in _FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_MODULES
+        )
+
+
+def test_artifact_service_modules_do_not_runtime_import_facades_or_core() -> None:
+    """Guard future artifact service extraction modules against facade/core imports."""
+    forbidden_by_module: dict[str, list[str]] = {}
+    for module_name in _ARTIFACT_SERVICE_MODULES:
+        tree = ast.parse((SRC_ROOT / module_name).read_text(encoding="utf-8"))
+        visitor = _RuntimeImportVisitor()
+        visitor.visit(tree)
+        if visitor.forbidden:
+            forbidden_by_module[module_name] = visitor.forbidden
+
+    assert forbidden_by_module == {}
 
 
 def test_core_private_access_guard_detects_simple_aliases() -> None:
