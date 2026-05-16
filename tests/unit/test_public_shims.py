@@ -332,6 +332,12 @@ def test_auth_cookie_domain_constants_are_facade_exports() -> None:
 # Phase 2 is free to move auth internals underneath ``notebooklm._auth``.
 # Removing one of these names from ``notebooklm.auth`` requires a separate
 # deprecation/migration plan, not an internal-module move PR.
+#
+# Underscored entries are compatibility-only for non-CLI first-party callers;
+# the CLI boundary test still forbids CLI modules from importing private names
+# out of ``notebooklm.auth``. Other auth names, such as ``flatten_cookie_map``,
+# are intentionally outside this enforced move-safety manifest unless added by
+# a separate public or first-party compatibility decision.
 # ---------------------------------------------------------------------------
 
 

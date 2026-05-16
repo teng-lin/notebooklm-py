@@ -147,6 +147,7 @@ def test_no_private_module_imports_in_cli():
         ),
         ("import notebooklm._auth.tokens", "import notebooklm._auth.tokens"),
         ("from .._auth.tokens import AuthTokens", "from .._auth.tokens import ..."),
+        ("from .. import _auth", "from .. import _auth"),
     ],
 )
 def test_cli_boundary_blocks_auth_internal_import_shapes(source: str, expected: str) -> None:
