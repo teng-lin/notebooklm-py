@@ -160,7 +160,7 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, limit, no_trunca
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             # artifacts.list() already includes mind maps from notes system
             artifacts = await client.artifacts.list(nb_id_resolved, artifact_type=type_filter)
-            # client-side offset slicing.
+            # Client-side offset slicing.
             if limit is not None and limit >= 0:
                 artifacts = artifacts[:limit]
 

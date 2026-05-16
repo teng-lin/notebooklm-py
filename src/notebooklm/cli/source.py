@@ -127,7 +127,7 @@ _GATEWAY_TITLE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# path-shape heuristic for ``source add``. When the user passes a
+# Path-shape heuristic for ``source add``. When the user passes a
 # string that *looks like* a path (contains ``/`` OR ends in a recognized
 # document extension) but the path does not exist on disk, the CLI silently
 # falls through to inline-text ingestion. That's a common typo footgun
@@ -449,7 +449,7 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             sources = await client.sources.list(nb_id_resolved)
-            # client-side offset slicing.
+            # Client-side offset slicing.
             if limit is not None and limit >= 0:
                 sources = sources[:limit]
             nb = None
@@ -614,7 +614,7 @@ def source_add(
             upload_path = _validate_upload_path(content, follow_symlinks)
             detected_type = "file"
         else:
-            # warn when the user passed a path-shaped string that
+            # Warn when the user passed a path-shaped string that
             # doesn't exist on disk. Without this, ``source add ./missin.md``
             # silently sends the literal string ``./missin.md`` as note content
             # — the success line ("Added source: src_xxx") is indistinguishable
@@ -1418,7 +1418,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
 
             try:
                 # Wrap the blocking poll in a transient spinner so interactive
-                # users see progress feedback during the wait.
+                # Users see progress feedback during the wait.
                 # Replaces the prior static "[dim]Waiting for source ...[/dim]"
                 # print — the spinner conveys the same information AND a live
                 # elapsed-seconds counter, then disappears so the final

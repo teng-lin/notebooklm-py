@@ -132,7 +132,7 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
       cat notes.md | notebooklm note create --content -    # Content from stdin
       cat notes.md | notebooklm note create -              # Same, positional form
     """
-    # resolve content from one of (positional CONTENT, --content,
+    # Resolve content from one of (positional CONTENT, --content,
     # stdin). Positional and --content are mutually exclusive so the failure
     # mode on accidental double-pass is loud instead of a silent precedence.
     # ``content`` defaults to ``""`` (Click's ``default=""``) so we can't
