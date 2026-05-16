@@ -465,7 +465,7 @@ class TestAskWithReferences:
     """Integration-style unit tests for ask() with references."""
 
     @pytest.mark.asyncio
-    async def test_ask_returns_references(self, auth_tokens, httpx_mock):
+    async def test_ask_returns_references(self, auth_tokens, httpx_mock, mock_get_conversation_id):
         """Test that ask() returns properly parsed references."""
         import re
 
@@ -507,6 +507,7 @@ class TestAskWithReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -523,7 +524,7 @@ class TestAskWithReferences:
         assert result.references[0].citation_number == 1
 
     @pytest.mark.asyncio
-    async def test_ask_no_references(self, auth_tokens, httpx_mock):
+    async def test_ask_no_references(self, auth_tokens, httpx_mock, mock_get_conversation_id):
         """Test that ask() works when there are no references."""
         import re
 
@@ -545,6 +546,7 @@ class TestAskWithReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -557,7 +559,9 @@ class TestAskWithReferences:
         assert len(result.references) == 0
 
     @pytest.mark.asyncio
-    async def test_ask_deduplicates_references(self, auth_tokens, httpx_mock):
+    async def test_ask_deduplicates_references(
+        self, auth_tokens, httpx_mock, mock_get_conversation_id
+    ):
         """Test that duplicate source IDs are deduplicated."""
         import re
 
@@ -613,6 +617,7 @@ class TestAskWithReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(

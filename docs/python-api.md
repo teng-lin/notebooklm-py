@@ -1044,6 +1044,21 @@ async def ask(
 ) -> AskResult
 ```
 
+**Conversation semantics (issue #659):**
+
+- `conversation_id=None` matches the web UI's default: the server attaches the
+  question to your current conversation on this notebook (or creates one if
+  none exists). Repeated `ask()` calls without `conversation_id` extend the
+  same conversation; they do not start fresh ones. The SDK fetches the
+  server-recorded conversation_id via `hPTbtc` after each new-conversation
+  ask and surfaces it on `AskResult.conversation_id`, so passing it back as
+  `conversation_id=` for follow-ups works as expected.
+- `conversation_id=<existing-id>` is a follow-up: the question is appended
+  to the named conversation.
+- There is no public API to force a brand-new conversation today — the
+  required "create conversation" RPC has not been reverse-engineered. If
+  you need a fresh thread, create a new notebook.
+
 **Example:**
 ```python
 from notebooklm import ChatGoal, ChatResponseLength
@@ -1051,6 +1066,7 @@ from notebooklm import ChatGoal, ChatResponseLength
 # Ask questions (uses all sources)
 result = await client.chat.ask(nb_id, "What are the main themes?")
 print(result.answer)
+print(result.conversation_id)  # server-recorded id, fetched via hPTbtc
 
 # Access source references (cited in answer as [1], [2], etc.)
 for ref in result.references:
@@ -1063,7 +1079,8 @@ result = await client.chat.ask(
     source_ids=["src_001", "src_002"]
 )
 
-# Continue conversation
+# Continue conversation explicitly (or omit conversation_id — same effect
+# while the most-recent conversation on the notebook stays unchanged).
 result = await client.chat.ask(
     nb_id,
     "Can you elaborate on the first point?",

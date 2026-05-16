@@ -119,7 +119,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `ask -` | Read question from stdin (Unix `-` convention) | `echo "what is X?" \| notebooklm ask -` |
 | `ask --prompt-file PATH` | Read question from file (use `-` for stdin) | `notebooklm ask --prompt-file q.txt` |
 | `ask -c <id>` | Continue a specific conversation | `notebooklm ask -c conv_abc "..."` |
-| `ask --new` | Start fresh (skip auto-resume of last conversation) | `notebooklm ask --new "ignore last"` |
+| `ask --new` | Skip the local cached conversation_id (the server still attaches the turn to the user's current conversation on this notebook — see [issue #659](https://github.com/teng-lin/notebooklm-py/issues/659)) | `notebooklm ask --new "ignore last"` |
 | `ask -s <id>` | Limit to specific source IDs (repeatable) | `notebooklm ask "Summarize" -s src1 -s src2` |
 | `ask --json` | Get answer with source references | `notebooklm ask "Explain X" --json` |
 | `ask --timeout N` | Per-invocation HTTP timeout in seconds (default: library default 30s) | `notebooklm ask "long prompt" --timeout 120` |

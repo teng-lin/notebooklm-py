@@ -154,38 +154,47 @@ class ChatAPI:
     ) -> AskResult:
         """Ask the notebook a question.
 
-        For a new conversation (``conversation_id=None``), the server assigns
-        the conversation_id and it is returned on ``AskResult.conversation_id``.
-        Conversations created this way are visible in the NotebookLM web UI's
-        conversation list (issue #659). The previous behavior — minting a
-        client-side ``uuid.uuid4()`` — orphaned the conversation from the UI.
-
         Args:
             notebook_id: The notebook ID.
             question: The question to ask.
             source_ids: Specific source IDs to query. If None, uses all sources.
             conversation_id: Existing conversation ID for follow-up questions.
-                Omit for a new conversation so the server can assign the id.
+                Omit (or pass ``None``) to continue the user's current
+                conversation on this notebook (or create one if none
+                exists) — matching the web UI's default behavior.
 
         Returns:
-            AskResult with answer, server-assigned conversation_id, and turn info.
+            AskResult with answer, server-recorded conversation_id, and
+            turn info. For new conversations the conversation_id is
+            fetched via ``hPTbtc`` post-ask (issue #659).
 
         Raises:
-            ChatError: For a new conversation, if the server response did not
-                include a conversation_id (e.g. malformed response or API
-                shape drift). Surfacing this prevents the silent regression
-                that issue #659 fixed.
+            ChatError: For a new conversation, if ``hPTbtc`` returns no
+                conversation_id after the ask (the server failed to record
+                the turn, or the API shape drifted). The full answer text
+                is logged at ERROR level before the raise so it survives
+                in the audit trail.
+            NetworkError / ChatError: If the post-ask ``hPTbtc`` round-trip
+                itself fails (transient network or auth issue). Same
+                logging contract — answer is logged before the raise.
 
         Example:
-            # New conversation — server assigns the conversation_id.
+            # New conversation — SDK fetches the real id post-ask via hPTbtc.
             result = await client.chat.ask(notebook_id, "What is machine learning?")
 
-            # Follow-up — pass the server-assigned id back.
+            # Follow-up — pass the real, hPTbtc-fetched conversation_id back.
             result = await client.chat.ask(
                 notebook_id,
                 "How does it differ from deep learning?",
                 conversation_id=result.conversation_id
             )
+
+        Note:
+            Repeated ``ask()`` calls without ``conversation_id`` all extend
+            the same most-recent conversation. To force a fresh
+            conversation, no public API exists yet — this would require a
+            dedicated ``create conversation`` RPC that has not been
+            reverse-engineered. See issue #659.
         """
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
@@ -201,12 +210,10 @@ class ChatAPI:
         # T7.F1). Two concurrent gather'd follow-ups on the same conversation
         # would otherwise read identical pre-update history, both POST it, and
         # the server would see two follow-ups both claiming to be turn N+1.
-        # New conversations skip the lock entirely: there is no pre-existing
-        # server-assigned id to lock on yet, and each new ask gets a fresh
-        # server-assigned id so there is no concurrent-write target. The
-        # client-side UUID this code used to mint (issue #659) is gone — the
-        # server now assigns the id so the conversation lands in the web UI
-        # conversation list.
+        # New conversations skip the lock entirely: there is no caller-supplied
+        # id to lock on yet, and parallel null-asks all attach to the same
+        # server-current conversation anyway (verified live), so post-ask
+        # hPTbtc fetches will agree on the conversation_id.
         lock_cm: contextlib.AbstractAsyncContextManager[Any]
         if is_new_conversation:
             lock_cm = contextlib.nullcontext()
@@ -263,27 +270,69 @@ class ChatAPI:
                 if reqid_token is not None:
                     reset_request_id(reqid_token)
 
-            answer_text, references, server_conv_id = self._parse_ask_response_with_references(
+            # ``_parse_ask_response_with_references`` returns a third tuple
+            # element historically called ``server_conv_id``. Live API tests
+            # (issue #659) proved that field is a per-stream/per-query id,
+            # not a real conversation_id: querying ``khqZz`` with it returns
+            # 0 turns, and passing it back as ``params[4]`` for a follow-up
+            # produces a ghost turn the server does not register. We discard
+            # it here and fetch the real id via ``hPTbtc`` below.
+            answer_text, references, _ignored_stream_id = self._parse_ask_response_with_references(
                 response.text
             )
-            # Issue #659: new conversations rely entirely on the server-assigned
-            # id. A missing id means the conversation was never registered
-            # (or the response shape drifted) — surface it instead of silently
-            # falling back to a client UUID that would orphan the conversation
-            # from the web UI conversation list.
+
             if is_new_conversation:
-                if not server_conv_id:
-                    raise ChatError(
-                        "Server did not return a conversation_id for a new "
-                        "conversation. The response may have been malformed or "
-                        "the API shape may have changed. Please file an issue "
-                        "at https://github.com/teng-lin/notebooklm-py/issues."
+                # The real conversation_id is not present anywhere in the
+                # streamed chat response. The only way to recover it is to
+                # query ``hPTbtc`` (GET_LAST_CONVERSATION_ID), which returns
+                # the user's current conversation for this notebook — i.e.
+                # the one our null-at-params[4] ask just attached to.
+                #
+                # Wrap the call in try/except so that if hPTbtc itself fails
+                # (network, auth, etc.), we log the answer text before
+                # surfacing the exception — otherwise the caller loses an
+                # answer they already paid for.
+                try:
+                    real_conversation_id = await self.get_conversation_id(notebook_id)
+                except (ChatError, NetworkError):
+                    logger.error(
+                        "Chat ask succeeded but post-ask get_conversation_id "
+                        "failed. Answer (%d chars, may be truncated): %r",
+                        len(answer_text or ""),
+                        (answer_text or "")[:500],
                     )
-                conversation_id = server_conv_id
-            elif server_conv_id:
-                # Follow-up: the server may echo a refreshed id; keep us in
-                # sync with get_conversation_id() / get_conversation_turns().
-                conversation_id = server_conv_id
+                    raise
+                if real_conversation_id is None:
+                    if answer_text:
+                        # Server returned an answer but hPTbtc has no id.
+                        # The conversation may have been recorded but is
+                        # invisible to hPTbtc, OR the API shape drifted.
+                        # Log the answer so it survives the raise.
+                        logger.error(
+                            "Server returned a non-empty answer but hPTbtc "
+                            "returned no conversation_id (%d chars). Answer "
+                            "preview: %r",
+                            len(answer_text),
+                            answer_text[:500],
+                        )
+                    raise ChatError(
+                        "Server did not register a conversation for this ask "
+                        "(hPTbtc returned no id). The response may have been "
+                        "empty, or the API shape may have changed. Please file "
+                        "an issue at https://github.com/teng-lin/notebooklm-py/issues."
+                    )
+                conversation_id = real_conversation_id
+            # Follow-up: keep the caller-supplied id. (We used to rebind to
+            # ``server_conv_id`` here, but that field is a stream id not a
+            # conv_id — see comment above.)
+            #
+            # Known limitation (deferred): concurrent ``asyncio.gather``'d
+            # new-conversation asks on the same notebook can race on the
+            # local cache because both resolve to the same hPTbtc id and
+            # both read empty turns before writing turn_number=1. The
+            # server side is fine (it attaches both turns to the same
+            # conversation). Fixing this requires a notebook-scoped lock
+            # for new-conversation asks; tracked separately.
 
             assert conversation_id is not None  # narrowed by the branches above
 

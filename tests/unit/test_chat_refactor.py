@@ -68,7 +68,9 @@ class TestChatAuthuserParam:
     """``authuser=`` was previously omitted entirely on the chat endpoint."""
 
     @pytest.mark.asyncio
-    async def test_authuser_set_when_account_email_provided(self, httpx_mock):
+    async def test_authuser_set_when_account_email_provided(
+        self, httpx_mock, mock_get_conversation_id
+    ):
         """When ``account_email`` is set on auth, chat URL carries authuser=email."""
         auth = AuthTokens(
             cookies={"SID": "x"},
@@ -83,18 +85,25 @@ class TestChatAuthuserParam:
             content=_make_answer_response_body(),
             method="POST",
         )
+        mock_get_conversation_id()  # issue #659 post-ask round-trip
 
         async with NotebookLMClient(auth) as client:
             await client.chat.ask("nb_x", "Q?", source_ids=["s1"])
 
-        request = httpx_mock.get_request()
-        assert request is not None
+        # Filter for the chat-ask request — the post-ask hPTbtc request also
+        # lands on the same authuser query, but we want to assert the chat
+        # leg specifically.
+        request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
         # Email is preferred over the integer index because it survives
         # browser-account reordering.
         assert _extract_query_param(str(request.url), "authuser") == "user@example.com"
 
     @pytest.mark.asyncio
-    async def test_authuser_set_when_only_authuser_index(self, httpx_mock):
+    async def test_authuser_set_when_only_authuser_index(
+        self, httpx_mock, mock_get_conversation_id
+    ):
         """When only ``authuser`` is non-zero (no email), still emit the index."""
         auth = AuthTokens(
             cookies={"SID": "x"},
@@ -108,16 +117,18 @@ class TestChatAuthuserParam:
             content=_make_answer_response_body(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth) as client:
             await client.chat.ask("nb_x", "Q?", source_ids=["s1"])
 
-        request = httpx_mock.get_request()
-        assert request is not None
+        request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
         assert _extract_query_param(str(request.url), "authuser") == "3"
 
     @pytest.mark.asyncio
-    async def test_authuser_absent_for_default_profile(self, httpx_mock):
+    async def test_authuser_absent_for_default_profile(self, httpx_mock, mock_get_conversation_id):
         """No ``authuser=`` on the URL when authuser=0 and no email — matches the
         pre-T2.D default-profile behavior (don't churn the existing single-account
         contract)."""
@@ -133,12 +144,14 @@ class TestChatAuthuserParam:
             content=_make_answer_response_body(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth) as client:
             await client.chat.ask("nb_x", "Q?", source_ids=["s1"])
 
-        request = httpx_mock.get_request()
-        assert request is not None
+        request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
         assert _extract_query_param(str(request.url), "authuser") is None
 
 
@@ -152,7 +165,9 @@ class TestChatReqid:
     ``_reqid_counter`` directly, which would emit ``DeprecationWarning``."""
 
     @pytest.mark.asyncio
-    async def test_ask_uses_next_reqid_no_deprecation_warning(self, httpx_mock):
+    async def test_ask_uses_next_reqid_no_deprecation_warning(
+        self, httpx_mock, mock_get_conversation_id
+    ):
         """No ``DeprecationWarning`` is emitted by ``_chat.py`` during ask()."""
         auth = AuthTokens(
             cookies={"SID": "x"},
@@ -165,6 +180,7 @@ class TestChatReqid:
             content=_make_answer_response_body(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -184,7 +200,9 @@ class TestChatReqid:
         )
 
     @pytest.mark.asyncio
-    async def test_concurrent_asks_produce_distinct_reqids(self, httpx_mock):
+    async def test_concurrent_asks_produce_distinct_reqids(
+        self, httpx_mock, mock_get_conversation_id
+    ):
         """``asyncio.gather(ask*3)`` → three distinct ``_reqid`` URL values.
 
         Pre-T2.D the body did ``self._core._reqid_counter += 100000`` under
@@ -198,13 +216,15 @@ class TestChatReqid:
             session_id="sid",
         )
 
-        # One response per gathered request. pytest_httpx replays in order.
+        # One response per gathered chat-ask. pytest_httpx replays in order.
         for _ in range(3):
             httpx_mock.add_response(
                 url=re.compile(r".*GenerateFreeFormStreamed.*"),
                 content=_make_answer_response_body(),
                 method="POST",
             )
+        # Plus the three post-ask hPTbtc round-trips (issue #659).
+        mock_get_conversation_id(reusable=True)
 
         async with NotebookLMClient(auth) as client:
             await asyncio.gather(
@@ -256,7 +276,21 @@ class TestChatRefreshRetry:
             call_count = {"n": 0}
 
             async def fake_post(url, *args, **kwargs):  # type: ignore[no-untyped-def]
-                # Capture the body that ``_build_chat_request`` produced for this attempt.
+                # The post-ask ``hPTbtc`` request from issue #659 also goes
+                # through this fake_post. Identify it by URL and return a
+                # minimal RPC response that decodes to a valid conv_id.
+                if "batchexecute" in str(url):
+                    rpc_body = (
+                        ")]}'\n"
+                        '63\n[["wrb.fr","hPTbtc","[[[\\"real-conv-id-from-hptbtc\\"]]]",null,null]]'
+                    )
+                    return httpx.Response(
+                        200,
+                        request=httpx.Request("POST", url),
+                        content=rpc_body.encode(),
+                    )
+
+                # Chat-ask path: capture the body and exercise the retry contract.
                 body = kwargs.get("content")
                 if isinstance(body, bytes):
                     body = body.decode()
@@ -307,7 +341,9 @@ class TestChatBlOverride:
     """
 
     @pytest.mark.asyncio
-    async def test_custom_bl_env_appears_in_url(self, httpx_mock, monkeypatch):
+    async def test_custom_bl_env_appears_in_url(
+        self, httpx_mock, monkeypatch, mock_get_conversation_id
+    ):
         monkeypatch.setenv("NOTEBOOKLM_BL", "boq_labs-custom_99999999.00_p0")
 
         auth = AuthTokens(
@@ -321,16 +357,20 @@ class TestChatBlOverride:
             content=_make_answer_response_body(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth) as client:
             await client.chat.ask("nb_x", "Q?", source_ids=["s1"])
 
-        request = httpx_mock.get_request()
-        assert request is not None
+        request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
         assert _extract_query_param(str(request.url), "bl") == "boq_labs-custom_99999999.00_p0"
 
     @pytest.mark.asyncio
-    async def test_default_bl_is_pinned_constant(self, httpx_mock, monkeypatch):
+    async def test_default_bl_is_pinned_constant(
+        self, httpx_mock, monkeypatch, mock_get_conversation_id
+    ):
         """With ``NOTEBOOKLM_BL`` unset, the URL falls back to ``DEFAULT_BL``."""
         from notebooklm._env import DEFAULT_BL
 
@@ -347,12 +387,14 @@ class TestChatBlOverride:
             content=_make_answer_response_body(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth) as client:
             await client.chat.ask("nb_x", "Q?", source_ids=["s1"])
 
-        request = httpx_mock.get_request()
-        assert request is not None
+        request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
         assert _extract_query_param(str(request.url), "bl") == DEFAULT_BL
 
 

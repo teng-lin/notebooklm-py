@@ -266,6 +266,7 @@ class TestChatReferences:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() returns references when citations are present."""
         import json
@@ -358,6 +359,7 @@ class TestChatReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()  # issue #659 post-ask round-trip
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -391,6 +393,7 @@ class TestChatReferences:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() works when no citations are in the response."""
         import json
@@ -414,6 +417,7 @@ class TestChatReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -430,6 +434,7 @@ class TestChatReferences:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test that references include character position information."""
         import json
@@ -480,6 +485,7 @@ class TestChatReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -499,6 +505,7 @@ class TestChatReferences:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() extracts answer when API response lacks type_info[-1]==1 marker.
 
@@ -527,6 +534,7 @@ class TestChatReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -544,6 +552,7 @@ class TestChatReferences:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() picks the marked answer when response has both marked and unmarked chunks.
 
@@ -586,6 +595,7 @@ class TestChatReferences:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             result = await client.chat.ask(
@@ -690,6 +700,7 @@ class TestChatAskErrorHandling:
     async def test_ask_without_csrf_token_skips_at_param(
         self,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() without csrf_token omits the 'at' param (line 127 branch)."""
         import json
@@ -722,6 +733,7 @@ class TestChatAskErrorHandling:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_no_csrf) as client:
             result = await client.chat.ask(
@@ -736,6 +748,7 @@ class TestChatAskErrorHandling:
     async def test_ask_with_session_id_adds_fsid_param(
         self,
         httpx_mock: HTTPXMock,
+        mock_get_conversation_id,
     ):
         """Test ask() with session_id adds f.sid param (line 140-143)."""
         import json
@@ -767,6 +780,7 @@ class TestChatAskErrorHandling:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_with_session) as client:
             result = await client.chat.ask(
@@ -776,8 +790,12 @@ class TestChatAskErrorHandling:
             )
 
         assert result.answer == "Answer with session."
-        request = httpx_mock.get_request()
-        assert "f.sid" in str(request.url)
+        # Two HTTP calls now fire (chat-ask + post-ask hPTbtc, issue #659);
+        # assert f.sid is on the chat-ask leg specifically.
+        chat_request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
+        assert "f.sid" in str(chat_request.url)
 
     @pytest.mark.asyncio
     async def test_ask_empty_answer_does_not_cache_turn_for_follow_up(
@@ -861,12 +879,23 @@ class TestChatAskErrorHandling:
 class TestAskServerAssignedConversationId:
     """Regression tests for issue #659.
 
-    CLI-created conversations must be visible in the NotebookLM web UI. The
-    only way to achieve that is to let the server assign the conversation_id:
-    send ``null`` in ``params[4]`` on the first ask, and read the assigned
-    id from the response. The previous behavior generated a client-side
-    ``uuid.uuid4()`` and the server never linked the conversation into the
-    web UI's conversation list.
+    CLI-created conversations must be visible in the NotebookLM web UI. Live
+    API investigation revealed two facts that drive this contract:
+
+    1. ``params[4]`` (the conversation_id slot in the streamed-chat request)
+       must be ``null`` for new conversations. A client-minted UUID there
+       orphans the turn from the web UI conversation list.
+    2. The streamed-chat response's ``first[2][0]`` field is a per-stream
+       query id, **not** a real conversation_id (querying ``khqZz`` with it
+       returns 0 turns). The real conversation_id can only be obtained from
+       ``hPTbtc`` (``ChatAPI.get_conversation_id``) after the ask completes.
+
+    So ``ask()`` for a new conversation must:
+      - send ``null`` at ``params[4]`` (verified at the wire level here)
+      - call ``hPTbtc`` after the ask and surface that id as
+        ``AskResult.conversation_id`` (so follow-ups using it actually work)
+      - raise ``ChatError`` if ``hPTbtc`` returns ``None`` (the server
+        failed to record the turn, or the API shape drifted)
     """
 
     @staticmethod
@@ -885,28 +914,46 @@ class TestAskServerAssignedConversationId:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        build_rpc_response,
     ):
-        """New conversations must send ``params[4] == null`` (Issue #659)."""
+        """New conversations: ``params[4] == null`` AND the post-ask
+        ``hPTbtc`` result becomes ``AskResult.conversation_id``.
+        """
         import json
         import re
 
-        server_conv = "11111111-2222-3333-4444-555555555555"
+        # The "stream id" the parser used to mislabel as server_conv_id.
+        # It must NOT end up as AskResult.conversation_id.
+        stream_id = "stream-aaaa-bbbb-cccc-dddddddddddd"
         inner_data = [
             [
                 "Server-assigned answer.",
                 None,
-                [server_conv, 12345],
+                [stream_id, 12345],
                 None,
                 [[], None, None, [], 1],
             ]
         ]
         inner_json = json.dumps(inner_data)
         chunk_json = json.dumps([["wrb.fr", None, inner_json]])
-        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
+        chat_response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
 
         httpx_mock.add_response(
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
-            content=response_body.encode(),
+            content=chat_response_body.encode(),
+            method="POST",
+        )
+
+        # Post-ask hPTbtc returns the REAL conversation_id. AskResult
+        # must adopt this, NOT first[2][0].
+        real_conv = "real-1111-2222-3333-444444444444"
+        hptbtc_response = build_rpc_response(
+            RPCMethod.GET_LAST_CONVERSATION_ID,
+            [[[real_conv]]],
+        )
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*"),
+            content=hptbtc_response.encode(),
             method="POST",
         )
 
@@ -917,28 +964,41 @@ class TestAskServerAssignedConversationId:
                 source_ids=["src_001"],
             )
 
-        request = httpx_mock.get_request()
-        assert request is not None
-        params = self._decode_params(request)
+        # Wire shape check on the first request (chat-ask)
+        chat_request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
+        params = self._decode_params(chat_request)
         assert params[4] is None, (
             "New conversations must send null in params[4]; got "
             f"{params[4]!r}. Sending a client-generated UUID orphans the "
             "conversation from the web UI conversation list (issue #659)."
         )
-        # The server-assigned id from the response is the authoritative
-        # conversation_id surfaced to the caller.
-        assert result.conversation_id == server_conv
+
+        # AskResult adopts the hPTbtc id, not the stream id.
+        assert result.conversation_id == real_conv
+        assert result.conversation_id != stream_id, (
+            "AskResult.conversation_id must be the hPTbtc-fetched id, not "
+            "first[2][0] (which is a stream id; live API tests proved "
+            "follow-ups using it produce ghost turns — issue #659)."
+        )
         assert result.is_follow_up is False
 
+        # And the SDK must have made the hPTbtc call.
+        assert any("batchexecute" in str(r.url) for r in httpx_mock.get_requests()), (
+            "SDK must call hPTbtc after a new-conversation ask to obtain the real conversation_id."
+        )
+
     @pytest.mark.asyncio
-    async def test_new_conversation_raises_when_server_returns_no_conversation_id(
+    async def test_new_conversation_raises_when_hptbtc_returns_no_conversation(
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        build_rpc_response,
     ):
-        """A new-conversation ask whose response omits a server_conv_id must
-        raise ``ChatError`` rather than silently falling back to a
-        client-generated UUID (issue #659 — no silent regressions).
+        """If ``hPTbtc`` returns no conversation_id after the ask, raise
+        ``ChatError`` — the turn was not recorded server-side. Silent
+        fallback to a client UUID is the original bug class (issue #659).
         """
         import json
         import re
@@ -947,25 +1007,33 @@ class TestAskServerAssignedConversationId:
 
         inner_data = [
             [
-                "Answer without server conv_id.",
+                "Answer text.",
                 None,
-                [12345],  # no string in slot 0 -> server_conv_id parsed as None
+                ["some-stream-id", 12345],
                 None,
                 [[], None, None, [], 1],
             ]
         ]
         inner_json = json.dumps(inner_data)
         chunk_json = json.dumps([["wrb.fr", None, inner_json]])
-        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
+        chat_response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
 
         httpx_mock.add_response(
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
-            content=response_body.encode(),
+            content=chat_response_body.encode(),
+            method="POST",
+        )
+
+        # hPTbtc returns an empty result -> get_conversation_id() -> None
+        empty_hptbtc = build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [])
+        httpx_mock.add_response(
+            url=re.compile(r".*batchexecute.*"),
+            content=empty_hptbtc.encode(),
             method="POST",
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ChatError, match="conversation_id"):
+            with pytest.raises(ChatError, match="hPTbtc"):
                 await client.chat.ask(
                     "nb_123",
                     "Q?",
@@ -978,9 +1046,8 @@ class TestAskServerAssignedConversationId:
         auth_tokens,
         httpx_mock: HTTPXMock,
     ):
-        """Follow-up asks must continue to forward the caller-supplied
-        conversation_id verbatim — the bugfix only changes the new-conversation
-        path.
+        """Follow-up asks forward the caller-supplied conversation_id
+        verbatim and do NOT call hPTbtc — the caller already has the real id.
         """
         import json
         import re
@@ -989,7 +1056,7 @@ class TestAskServerAssignedConversationId:
             [
                 "Follow-up answer.",
                 None,
-                ["existing-conv-id", 12345],
+                ["some-stream-id", 12345],
                 None,
                 [[], None, None, [], 1],
             ]
@@ -1012,11 +1079,18 @@ class TestAskServerAssignedConversationId:
                 conversation_id="existing-conv-id",
             )
 
-        request = httpx_mock.get_request()
-        assert request is not None
-        params = self._decode_params(request)
+        chat_request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
+        params = self._decode_params(chat_request)
         assert params[4] == "existing-conv-id"
+        # AskResult preserves the caller-supplied id; we no longer rebind
+        # to first[2][0] because that field is a stream id, not a conv_id.
         assert result.conversation_id == "existing-conv-id"
+        # And no hPTbtc round-trip: the caller already supplied a real id.
+        assert not any("batchexecute" in str(r.url) for r in httpx_mock.get_requests()), (
+            "Follow-ups must not call hPTbtc — caller already has the id."
+        )
 
 
 class TestGetConversationIdEdgeCases:
@@ -1996,6 +2070,7 @@ class TestChatHL:
         auth_tokens,
         httpx_mock: HTTPXMock,
         monkeypatch,
+        mock_get_conversation_id,
     ):
         """When NOTEBOOKLM_HL=ja, the chat POST URL carries hl=ja."""
         import json
@@ -2021,6 +2096,9 @@ class TestChatHL:
             content=response_body.encode(),
             method="POST",
         )
+        # Configure hPTbtc with hl=ja too so the post-ask request also
+        # honors the env var via the same code path.
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.chat.ask(
@@ -2029,8 +2107,10 @@ class TestChatHL:
                 source_ids=["src_001"],
             )
 
-        request = httpx_mock.get_requests()[-1]
-        assert "hl=ja" in str(request.url)
+        chat_request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
+        assert "hl=ja" in str(chat_request.url)
 
     @pytest.mark.asyncio
     async def test_ask_url_defaults_hl_to_en(
@@ -2038,6 +2118,7 @@ class TestChatHL:
         auth_tokens,
         httpx_mock: HTTPXMock,
         monkeypatch,
+        mock_get_conversation_id,
     ):
         """When NOTEBOOKLM_HL is unset, the chat URL carries hl=en."""
         import json
@@ -2063,6 +2144,7 @@ class TestChatHL:
             content=response_body.encode(),
             method="POST",
         )
+        mock_get_conversation_id()
 
         async with NotebookLMClient(auth_tokens) as client:
             await client.chat.ask(
@@ -2071,5 +2153,7 @@ class TestChatHL:
                 source_ids=["src_001"],
             )
 
-        request = httpx_mock.get_requests()[-1]
-        assert "hl=en" in str(request.url)
+        chat_request = next(
+            r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
+        )
+        assert "hl=en" in str(chat_request.url)

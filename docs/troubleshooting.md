@@ -396,6 +396,39 @@ async def retry_with_backoff(coro, max_retries=3):
     raise Exception("Max retries exceeded")
 ```
 
+### Cannot start a brand-new conversation from the SDK (issue #659)
+
+`client.chat.ask(notebook_id, question)` with `conversation_id=None`
+(and the CLI's `notebooklm ask --new`) attach the question to the user's
+**current** conversation on the notebook — they do not start a brand-new
+one. This matches the web UI's default behavior: the UI continues the
+most-recent conversation unless you explicitly click "New conversation"
+in the UI.
+
+The SDK fetches the server-recorded conversation_id via `hPTbtc` after
+each new-conversation ask and returns it on `AskResult.conversation_id`,
+so follow-ups using that id work correctly. Repeated `ask()` calls
+without `conversation_id` extend the same conversation; they do not
+restart.
+
+If you need a truly fresh conversation, create a new notebook:
+
+```bash
+notebooklm create "Fresh thread"
+notebooklm use <new-notebook-id>
+notebooklm ask "Starting question"
+```
+
+The dedicated "create conversation" RPC the web UI's "+ New" button
+calls has not been reverse-engineered. PRs welcome.
+
+**History:** Before this fix, the SDK minted a client-side `uuid.uuid4()`
+at the wire `conversation_id` slot. The server accepted the question and
+returned an answer, but the conversation was orphaned from the web UI
+conversation list and follow-ups using `result.conversation_id` produced
+ghost turns the server never recorded. Live API testing confirmed the
+correct contract is to send `null` and recover the id via `hPTbtc`.
+
 ### Quota Restrictions
 
 Some features have daily/hourly quotas:

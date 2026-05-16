@@ -48,7 +48,17 @@ class AuthSnapshotLike(Protocol):
 
 @dataclass(frozen=True)
 class StreamingChatParseResult:
-    """Parsed streamed-chat answer payload."""
+    """Parsed streamed-chat answer payload.
+
+    The third field is named ``conversation_id`` for backward compatibility
+    with the prior parser contract, but live API tests (issue #659) proved
+    it is actually a per-stream/per-query identifier, **not** a real
+    conversation_id: ``khqZz`` returns 0 turns when queried with it, and
+    passing it back as a follow-up ``conversation_id`` produces a ghost
+    turn the server does not record. The real conversation_id must be
+    fetched separately via ``hPTbtc`` (``ChatAPI.get_conversation_id``)
+    after the ask. Callers should generally ignore this field.
+    """
 
     answer: str
     references: list[ChatReference]
@@ -67,10 +77,14 @@ def build_streaming_chat_request(
 ) -> tuple[str, str, dict[str, str]]:
     """Assemble ``(url, body, extra_headers)`` for one streamed-chat attempt.
 
-    ``conversation_id=None`` is the new-conversation signal: the server then
-    assigns a fresh id that is visible in the web UI's conversation list
-    (issue #659). Non-None values are follow-up asks and are forwarded
-    verbatim into ``params[4]``.
+    ``conversation_id=None`` tells the server to use the user's current
+    conversation on this notebook, creating one if none exists. The
+    server-recorded id is NOT returned in the streaming response — it
+    must be recovered separately via ``hPTbtc``
+    (``ChatAPI.get_conversation_id``) after the ask. Non-None values are
+    follow-up asks and are forwarded verbatim into ``params[4]``.
+
+    See issue #659 for the bug class that motivated this contract.
     """
     sources_array = nest_source_ids(source_ids, 2)
 
