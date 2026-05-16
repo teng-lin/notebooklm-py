@@ -285,15 +285,28 @@ def _build_source_passage_descriptor(ref: ChatReference) -> list[Any]:
     the server accepts ``chunk_id`` here and citation anchors still work.
     """
     cited_text = ref.cited_text or ""
-    start = ref.start_char if ref.start_char is not None else 0
-    end = ref.end_char if ref.end_char is not None else len(cited_text)
+    # Source-document span (slot [3]) is absolute in the source's char
+    # offsets. Text-wrapper offsets (slot [4]) are LOCAL to cited_text —
+    # they always start at 0 and end at len(cited_text). The captured
+    # fixture has start_char=0 + end_char==len(cited_text), masking this
+    # in the golden test; real chat refs commonly have non-zero source
+    # offsets, so the two ``end`` values diverge.
+    if cited_text:
+        source_start = ref.start_char if ref.start_char is not None else 0
+        source_end = ref.end_char if ref.end_char is not None else len(cited_text)
+    else:
+        # Empty cited_text: collapse the source span to [0, 0] to avoid
+        # emitting an invalid ``[None, start, 0]`` when start>0.
+        source_start = 0
+        source_end = 0
+    local_end = len(cited_text)
     fourth_uuid = ref.passage_id or ref.chunk_id
     return [
         None,
         None,
         None,
-        [[None, start, end]],
-        [_build_passage_group(cited_text, end)],
+        [[None, source_start, source_end]],
+        [_build_passage_group(cited_text, local_end)],
         [[[fourth_uuid], ref.source_id]],
         [ref.chunk_id],
     ]

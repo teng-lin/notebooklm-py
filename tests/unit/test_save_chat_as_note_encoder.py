@@ -171,19 +171,30 @@ class TestBuildSaveChatAsNoteParamsGolden:
         assert passage_descriptor[5][0][0] == ["passage-real-uuid"]
         assert passage_descriptor[5][0][1] == "src-1"
 
-    def test_golden_serializes_booleans_as_zero_not_false(self):
-        """Regression guard: every "rendering flags" slot must serialize
-        to ``0`` (integer), never ``false`` (boolean). Python's
-        ``json.dumps`` treats ``True``/``False`` and ``1``/``0``
-        differently — the wire payload uses ``0``."""
-        fixture = _load_request_fixture()
-        expected_json = json.dumps(fixture["params"], separators=(",", ":"))
-        # The flags trailer pattern appears in the captured request; if
-        # any encoder slot starts emitting `false`, we'd see it here.
-        assert "false" not in expected_json
-        assert "true" not in expected_json
-        # And it must contain the flag sequence with literal zeros.
-        assert "[0,0,0,null,null,null,null,0,0]" in expected_json
+    def test_encoder_serializes_booleans_as_zero_not_false(self):
+        """Regression guard: every "rendering flags" slot the ENCODER
+        emits must serialize to ``0`` (integer), never ``false`` (boolean).
+        Python's ``json.dumps(False)`` emits ``false`` while
+        ``json.dumps(0)`` emits ``0`` — the wire payload uses ``0``, and
+        the server's strict request channel won't normalize this. We
+        assert on the encoder's actual output (not on the static fixture)
+        so the check can't pass tautologically: if a future change makes
+        any slot emit ``True``/``False``, this test catches it."""
+        ref = ChatReference(
+            source_id="src-1",
+            citation_number=1,
+            cited_text="passage text",
+            start_char=0,
+            end_char=12,
+            chunk_id="chunk-1",
+        )
+        params = build_save_chat_as_note_params(
+            "nb-id", "Answer with citation [1].", [ref], "Title"
+        )
+        actual_json = json.dumps(params, separators=(",", ":"))
+        assert "false" not in actual_json
+        assert "true" not in actual_json
+        assert "[0,0,0,null,null,null,null,0,0]" in actual_json
 
 
 class TestBuildSaveChatAsNoteParamsBehavior:
@@ -266,6 +277,56 @@ class TestBuildSaveChatAsNoteParamsBehavior:
         assert rich[1] is None  # always-null slot
         assert rich[2] is None  # always-null slot
         assert rich[4] == 1  # trailer flag
+
+    def test_source_span_and_local_text_wrapper_diverge_for_nonzero_start(self):
+        """Regression: source-document span (slot [3]) uses ref.start_char
+        / ref.end_char (absolute offsets in the source), but the text-passage
+        wrapper (slot [4]) uses LOCAL offsets [0, len(cited_text)]. The
+        captured single-citation fixture has start_char=0 and end_char ==
+        len(cited_text), so they coincidentally match — but real refs from
+        the chat parser commonly have non-zero source offsets (e.g.
+        chars 100..200 in a long document). If the encoder used ref.end_char
+        for both, the local wrapper would emit ``[[0, 200, ...]]`` for a
+        100-char passage, breaking server-side hover anchoring."""
+        ref = ChatReference(
+            source_id="src-1",
+            citation_number=1,
+            cited_text="exactly-ten",  # 11 chars, deliberately != source span
+            start_char=100,
+            end_char=111,  # source offsets
+            chunk_id="chunk-1",
+        )
+        params = build_save_chat_as_note_params("nb-id", "X [1].", [ref], "Title")
+        passage = params[3][0]
+        # Source span uses absolute offsets.
+        assert passage[3] == [[None, 100, 111]]
+        # Text wrapper uses LOCAL offsets — [0, len(cited_text)].
+        passage_group = passage[4][0]
+        assert passage_group[0][0] == 0
+        assert passage_group[0][1] == 11  # len("exactly-ten")
+        # The deeply-nested inner mirror must also use the local end.
+        inner_offsets = passage_group[0][2][0][0]
+        assert inner_offsets[0] == 0
+        assert inner_offsets[1] == 11
+
+    def test_empty_cited_text_collapses_span(self):
+        """Regression: when ref.cited_text is empty, span must collapse to
+        [0, 0] rather than emitting an invalid [None, start, 0] where
+        start > 0 (e.g. start_char=10 + cited_text='')."""
+        ref = ChatReference(
+            source_id="src-1",
+            citation_number=1,
+            cited_text="",
+            start_char=10,
+            end_char=20,
+            chunk_id="chunk-1",
+        )
+        params = build_save_chat_as_note_params("nb-id", "X [1].", [ref], "Title")
+        passage = params[3][0]
+        # Source span collapses to [0, 0], not [10, 0].
+        assert passage[3] == [[None, 0, 0]]
+        # Local text wrapper end is also 0.
+        assert passage[4][0][0][1] == 0
 
     def test_title_passthrough(self):
         refs = [self._make_ref(1, "c1", "s1")]
