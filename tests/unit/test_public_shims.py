@@ -324,6 +324,86 @@ def test_auth_cookie_domain_constants_are_facade_exports() -> None:
     assert frozenset().union(*OPTIONAL_COOKIE_DOMAINS_BY_LABEL.values()) == OPTIONAL_COOKIE_DOMAINS
 
 
+# ---------------------------------------------------------------------------
+# PR-T3A section: notebooklm.auth first-party compatibility surface
+#
+# This is narrower than a future public API decision. It only freezes the names
+# that current first-party modules, CLI code, tests, and docs may rely on while
+# Phase 2 is free to move auth internals underneath ``notebooklm._auth``.
+# Removing one of these names from ``notebooklm.auth`` requires a separate
+# deprecation/migration plan, not an internal-module move PR.
+# ---------------------------------------------------------------------------
+
+
+_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES = [
+    "_auth_domain_priority",
+    "_find_cookie_for_storage",
+    "_is_allowed_auth_domain",
+    "_is_allowed_cookie_domain",
+    "_is_google_domain",
+    "_rotate_cookies",
+    "_run_refresh_cmd",
+    "_split_refresh_cmd",
+    "_update_cookie_input",
+    "Account",
+    "advance_cookie_snapshot_after_save",
+    "ALLOWED_COOKIE_DOMAINS",
+    "authuser_query",
+    "AuthTokens",
+    "build_cookie_jar",
+    "build_httpx_cookies_from_storage",
+    "clear_account_metadata",
+    "convert_rookiepy_cookies_to_storage_state",
+    "CookieSaveResult",
+    "CookieSnapshot",
+    "CookieSnapshotKey",
+    "CookieSnapshotValue",
+    "enumerate_accounts",
+    "extract_cookies_from_storage",
+    "extract_cookies_with_domains",
+    "extract_csrf_from_html",
+    "extract_email_from_html",
+    "extract_session_id_from_html",
+    "extract_wiz_field",
+    "fetch_tokens",
+    "fetch_tokens_with_domains",
+    "format_authuser_value",
+    "get_account_email_for_storage",
+    "get_authuser_for_storage",
+    "GOOGLE_REGIONAL_CCTLDS",
+    "KEEPALIVE_ROTATE_URL",
+    "load_auth_from_storage",
+    "load_httpx_cookies",
+    "MINIMUM_REQUIRED_COOKIES",
+    "normalize_cookie_map",
+    "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
+    "NOTEBOOKLM_REFRESH_CMD_ENV",
+    "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
+    "OPTIONAL_COOKIE_DOMAINS",
+    "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+    "read_account_metadata",
+    "REQUIRED_COOKIE_DOMAINS",
+    "save_cookies_to_storage",
+    "snapshot_cookie_jar",
+    "write_account_metadata",
+]
+
+
+@pytest.mark.parametrize("name", _AUTH_FIRST_PARTY_COMPATIBILITY_NAMES)
+def test_auth_first_party_compatibility_manifest_resolves(name: str) -> None:
+    """Phase 2 internals may move, but first-party callers keep notebooklm.auth."""
+    import notebooklm.auth as auth
+
+    assert hasattr(auth, name), f"notebooklm.auth.{name} disappeared"
+
+
+def test_auth_first_party_compatibility_manifest_has_no_duplicates() -> None:
+    """The enforced compatibility manifest should stay reviewable."""
+    assert len(_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES) == len(
+        set(_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES)
+    )
+
+
 @pytest.mark.asyncio
 async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
     """NotebookLMClient.rpc_call is a public delegator to ClientCore.rpc_call."""

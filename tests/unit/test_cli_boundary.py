@@ -32,6 +32,8 @@ from __future__ import annotations
 import ast
 import pathlib
 
+import pytest
+
 CLI_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "cli"
 
 
@@ -134,3 +136,16 @@ def test_no_private_module_imports_in_cli():
         "Promote needed symbols to a public module (config/urls/log/research/types) "
         f"and import from there.\nOffenders: {offenders}"
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("from notebooklm._auth.tokens import AuthTokens", "from notebooklm._auth.tokens import ..."),
+        ("import notebooklm._auth.tokens", "import notebooklm._auth.tokens"),
+        ("from .._auth.tokens import AuthTokens", "from .._auth.tokens import ..."),
+    ],
+)
+def test_cli_boundary_blocks_auth_internal_import_shapes(source: str, expected: str) -> None:
+    """CLI auth imports must stay on notebooklm.auth, even if internals move to _auth."""
+    assert expected in _violations(ast.parse(source))

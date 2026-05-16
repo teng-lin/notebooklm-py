@@ -93,6 +93,11 @@ The architecture tests encode the current layer contract:
   names exposed by public modules. Promote needed symbols through a public
   facade (`notebooklm.types`, `notebooklm.auth`, `notebooklm.research`, etc.)
   before using them from the CLI.
+- Auth internals may move under `notebooklm._auth` during architecture work,
+  but first-party callers continue to import through `notebooklm.auth`. The
+  compatibility manifest in `tests/unit/test_public_shims.py` enforces the
+  current first-party surface for that move; it is not a broader public API
+  decision, and removing a listed name needs a separate deprecation plan.
 - `tests/unit/test_init_order.py` records the temporary baseline of feature
   APIs that still access `ClientCore` private state directly. Future capability
   migration PRs should reduce that baseline as private state moves behind
