@@ -432,6 +432,28 @@ def test_auth_cookie_policy_facade_delegates_to_private_module() -> None:
     assert auth._is_allowed_cookie_domain is cookie_policy._is_allowed_cookie_domain
 
 
+def test_auth_cookie_conversion_facade_delegates_to_private_module() -> None:
+    """Cookie conversion/jar helpers live in _auth while auth.py stays compatible."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import cookies
+
+    assert auth.normalize_cookie_map is cookies.normalize_cookie_map
+    assert auth.flatten_cookie_map is cookies.flatten_cookie_map
+    assert auth.convert_rookiepy_cookies_to_storage_state is (
+        cookies.convert_rookiepy_cookies_to_storage_state
+    )
+    assert auth.extract_cookies_from_storage is cookies.extract_cookies_from_storage
+    assert auth.extract_cookies_with_domains is cookies.extract_cookies_with_domains
+    assert auth.load_httpx_cookies is cookies.load_httpx_cookies
+    assert auth.build_httpx_cookies_from_storage is cookies.build_httpx_cookies_from_storage
+    assert auth.build_cookie_jar is cookies.build_cookie_jar
+    assert auth._cookie_to_storage_state is cookies._cookie_to_storage_state
+    assert auth._storage_entry_to_cookie is cookies._storage_entry_to_cookie
+    assert auth._cookie_key_variants is cookies._cookie_key_variants
+    assert auth._find_cookie_for_storage is cookies._find_cookie_for_storage
+    assert auth._replace_cookie_jar is cookies._replace_cookie_jar
+
+
 def test_auth_secondary_binding_reset_syncs_to_cookie_policy(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
