@@ -5,7 +5,7 @@ Before the fix, ``@with_client`` ran its own ad-hoc ``try/except FileNotFoundErr
 generic ``"ERROR"`` payload (or a plain "Error: ..." stderr line) with no
 actionable hint.
 
-After the with_client refactor, :
+After the with_client refactor:
 
 * ``AuthError`` → "Run 'notebooklm login' to re-authenticate." hint, exit 1
 * ``RateLimitError`` → "Retry after Ns" hint, exit 1
