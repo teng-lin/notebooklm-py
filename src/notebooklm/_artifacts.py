@@ -45,6 +45,7 @@ from .types import (
     ArtifactType,
     GenerationStatus,
     ReportSuggestion,
+    _extract_artifact_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ _DOWNLOAD_COMPAT_EXPORTS = (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    _extract_artifact_url,
     json,
     load_httpx_cookies,
 )
