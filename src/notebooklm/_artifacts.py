@@ -2139,6 +2139,8 @@ class ArtifactsAPI:
 
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw artifact list data."""
+        # Keep this facade hop so callers/tests that patch ``api._list_raw``
+        # still affect public listing paths that delegate into the service.
         return await self._listing.list_raw(notebook_id, rpc_call=self._core.rpc_call)
 
     def _select_artifact(
