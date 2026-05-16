@@ -4154,6 +4154,47 @@ class TestChromiumExplicitProfileSelector:
         assert sid["value"] == "SID-from-Profile 1"
         assert read_calls == ["Profile 1"]
 
+    def test_login_account_mismatch_does_not_fall_back_to_other_profile(self, runner, tmp_path):
+        profiles, cookies, accounts = _chromium_fanout_setup(
+            tmp_path,
+            [
+                (
+                    "Default",
+                    "Personal",
+                    [{"authuser": 0, "email": "a.b@gmail.com", "is_default": True}],
+                ),
+                (
+                    "Profile 1",
+                    "my-profile",
+                    [{"authuser": 0, "email": "c.d@gmail.com", "is_default": True}],
+                ),
+            ],
+        )
+        read_calls: list[str] = []
+
+        with (
+            _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls),
+            patch(
+                "notebooklm.cli.session._write_extracted_cookies",
+                side_effect=AssertionError("must not write cookies for an account mismatch"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "login",
+                    "--browser-cookies",
+                    "chrome::my-profile",
+                    "--account",
+                    "a.b@gmail.com",
+                ],
+            )
+
+        assert result.exit_code != 0, result.output
+        assert "Account a.b@gmail.com not found among signed-in accounts" in result.output
+        assert "Available accounts: c.d@gmail.com" in result.output
+        assert read_calls == ["Profile 1"]
+
     def test_unknown_profile_selector_lists_available_profiles(self, runner, tmp_path):
         profiles, _cookies, _accounts = _chromium_fanout_setup(
             tmp_path,
