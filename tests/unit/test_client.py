@@ -236,6 +236,9 @@ class TestRefreshAuth:
         assert calls == [("new_csrf_token_123", "new_session_id_456")]
         assert refreshed_auth.csrf_token == "new_csrf_token_123"
         assert refreshed_auth.session_id == "new_session_id_456"
+        assert client._core.auth is refreshed_auth
+        assert client._core.auth.csrf_token == "new_csrf_token_123"
+        assert client._core.auth.session_id == "new_session_id_456"
 
     @pytest.mark.asyncio
     async def test_refresh_auth_routes_to_account_email(self, httpx_mock: HTTPXMock):

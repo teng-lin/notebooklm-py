@@ -192,6 +192,18 @@ async def test_authed_transport_reads_live_retry_budget(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_authed_transport_requires_open_client():
+    core = _make_core()
+    transport = core._get_authed_transport()
+
+    def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        return "https://example.test/x", "payload", {}
+
+    with pytest.raises(RuntimeError, match="Client not initialized"):
+        await transport.perform_authed_post(build_request=build, log_label="test")
+
+
+@pytest.mark.asyncio
 async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
     refresh_calls: list[bool] = []
 

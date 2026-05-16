@@ -167,7 +167,8 @@ class AuthedTransport:
     ) -> httpx.Response:
         """Run an authed POST through the shared retry/refresh pipeline."""
         host = self._host
-        assert host._http_client is not None
+        if host._http_client is None:
+            raise RuntimeError("Client not initialized. Use 'async with' context.")
         client = host._http_client
 
         # Event-loop affinity guard (audit section 14 / T7.G2). Placed before
