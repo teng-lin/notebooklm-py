@@ -31,7 +31,6 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS = {
     ("_artifacts.py", "_begin_transport_task"): 1,
     ("_artifacts.py", "_finish_transport_post"): 1,
-    ("_artifacts.py", "_pending_polls"): 1,
     ("_sources.py", "_begin_transport_post"): 1,
     ("_sources.py", "_finish_transport_post"): 1,
 }

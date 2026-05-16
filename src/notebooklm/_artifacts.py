@@ -25,6 +25,7 @@ import httpx
 
 from . import _mind_map
 from ._callbacks import maybe_await_callback
+from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
 from ._env import get_default_language
 from .auth import load_httpx_cookies
@@ -327,6 +328,7 @@ class ArtifactsAPI:
             storage_path: Path to storage state file for loading download cookies.
         """
         self._core = core
+        self._capabilities = ClientCoreCapabilities(core)
         # ``notes_api`` is intentionally not stored — it is accepted only
         # so that existing call sites (tests, third-party code) keep
         # working through the deprecation cycle.
@@ -1849,14 +1851,13 @@ class ArtifactsAPI:
         Uses exponential backoff for polling to reduce API load.
 
         Concurrent callers for the same ``(notebook_id, task_id)`` share a
-        single underlying poll loop via the leader/follower registry on
-        ``ClientCore._pending_polls`` (audit §21 / T7.E2). The first
-        caller is the *leader* and drives the poll loop; subsequent
-        *followers* attach to the leader's future without issuing their
-        own ``LIST_ARTIFACTS`` requests. Cancellation is per-caller —
-        only the cancelled caller's ``await`` raises ``CancelledError``;
-        the underlying poll continues and remaining followers still
-        receive the result.
+        single underlying poll loop through the ``PollRegistry`` exposed by
+        this API's capabilities. The first caller is the *leader* and drives
+        the poll loop; subsequent *followers* attach to the leader's future
+        without issuing their own ``LIST_ARTIFACTS`` requests. Cancellation is
+        per-caller — only the cancelled caller's ``await`` raises
+        ``CancelledError``; the underlying poll continues and remaining
+        followers still receive the result.
 
         Because followers attach to the leader's already-running poll,
         only the *leader's* ``initial_interval`` / ``max_interval`` /
@@ -1909,7 +1910,7 @@ class ArtifactsAPI:
             )
             initial_interval = poll_interval
 
-        pending = self._core._pending_polls
+        pending = self._capabilities.poll_registry.pending
         key = (notebook_id, task_id)
 
         existing = pending.get(key)

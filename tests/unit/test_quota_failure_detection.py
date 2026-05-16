@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc.types import ArtifactStatus
 from notebooklm.types import GenerationStatus
 
@@ -30,9 +31,9 @@ def _make_api():
     core = MagicMock()
     core.rpc_call = AsyncMock()
     core.get_source_ids = AsyncMock(return_value=[])
-    # ClientCore._pending_polls (T7.E2) — real dict so the leader/follower
-    # dedupe in ``wait_for_completion`` can ``dict.get(key)`` against it.
-    core._pending_polls = {}
+    # Real registry backing so wait_for_completion can ``dict.get(key)``.
+    core.poll_registry = PollRegistry()
+    core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     notes = MagicMock()
