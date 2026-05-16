@@ -27,6 +27,7 @@ from ._core_cache import (
 from ._core_cache import (
     ConversationCache,
 )
+from ._core_polling import PendingPolls, PollRegistry
 from ._env import get_default_language
 from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import (
@@ -736,22 +737,7 @@ class ClientCore:
         # clobber sibling-process writes (docs/auth-keepalive.md §3.4.1).
         # Per-instance, never module-global.
         self._loaded_cookie_snapshot: CookieSnapshot | None = None
-        # Leader/follower polling-dedupe registry for
-        # ``ArtifactsAPI.wait_for_completion`` (audit §21 / T7.E2).
-        # Keyed by ``(notebook_id, task_id)``. Each entry is a
-        # ``(future, task)`` pair: the first caller for a key is the
-        # *leader* and spawns the ``task`` (a shielded ``_poll_loop`` task);
-        # subsequent callers (*followers*) attach to ``future`` via
-        # ``asyncio.shield(future)`` so their per-caller cancellations
-        # don't propagate to the underlying poll. The task reference is
-        # kept alongside the future so the running poll task can't be
-        # GC'd if the leader is cancelled with no followers attached
-        # (Python's task-GC contract is permissive). Per-instance —
-        # never module-global, so a fresh ``ClientCore`` cannot inherit
-        # a dangling entry from a prior instance.
-        self._pending_polls: dict[
-            tuple[str, str], tuple[asyncio.Future[Any], asyncio.Task[Any]]
-        ] = {}
+        self.poll_registry: PollRegistry = PollRegistry()
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
@@ -784,6 +770,20 @@ class ClientCore:
             stacklevel=2,
         )
         self._reqid_counter_value = value
+
+    @property
+    def _pending_polls(self) -> PendingPolls:
+        """Deprecated compatibility view of ``poll_registry.pending``.
+
+        ``ArtifactsAPI.wait_for_completion`` still uses this bridge until the
+        later feature-migration slices move polling behind a public core
+        capability.
+        """
+        return self.poll_registry.pending
+
+    @_pending_polls.setter
+    def _pending_polls(self, value: PendingPolls) -> None:
+        self.poll_registry.pending = value
 
     async def next_reqid(self, step: int = 100000) -> int:
         """Atomically increment the request-id counter and return the new value.
