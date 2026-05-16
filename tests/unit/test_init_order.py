@@ -234,14 +234,11 @@ def test_capabilities_does_not_import_transport_operation_token() -> None:
 
 
 def _is_type_checking_guard(node: ast.AST) -> bool:
-    return (
-        (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING")
-        or (
-            isinstance(node, ast.Attribute)
-            and node.attr == "TYPE_CHECKING"
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "typing"
-        )
+    return (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
+        isinstance(node, ast.Attribute)
+        and node.attr == "TYPE_CHECKING"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "typing"
     )
 
 
