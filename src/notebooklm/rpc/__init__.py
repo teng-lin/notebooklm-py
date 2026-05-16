@@ -19,6 +19,7 @@ from .decoder import (
     strip_anti_xssi,
 )
 from .encoder import build_request_body, encode_rpc_request, nest_source_ids
+from .overrides import resolve_rpc_id
 from .types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
@@ -47,7 +48,6 @@ from .types import (
     get_batchexecute_url,
     get_query_url,
     get_upload_url,
-    resolve_rpc_id,
 )
 
 __all__ = [

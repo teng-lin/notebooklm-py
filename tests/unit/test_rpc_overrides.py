@@ -18,18 +18,35 @@ import pytest
 from notebooklm._core import ClientCore
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
+from notebooklm.rpc import overrides as rpc_overrides
 from notebooklm.rpc import types as rpc_types
-from notebooklm.rpc.types import _load_rpc_overrides, _parse_rpc_overrides, resolve_rpc_id
+from notebooklm.rpc.overrides import _load_rpc_overrides, _parse_rpc_overrides, resolve_rpc_id
 
 
 @pytest.fixture(autouse=True)
 def _clear_override_caches():
     """Clear parser cache + INFO-dedup set between tests so warnings reproduce."""
     _parse_rpc_overrides.cache_clear()
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
     yield
     _parse_rpc_overrides.cache_clear()
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
+
+
+def test_rpc_overrides_direct_smoke_import() -> None:
+    """The new private owner module exposes the runtime resolver and cached parser."""
+    from notebooklm.rpc.overrides import _parse_rpc_overrides, resolve_rpc_id
+
+    assert callable(resolve_rpc_id)
+    assert hasattr(_parse_rpc_overrides, "cache_clear")
+
+
+def test_rpc_types_override_aliases_are_identity_compatible() -> None:
+    """Legacy private imports from rpc.types must keep pointing at the new owner objects."""
+    assert rpc_types.resolve_rpc_id is rpc_overrides.resolve_rpc_id
+    assert rpc_types._parse_rpc_overrides is rpc_overrides._parse_rpc_overrides
+    assert rpc_types._load_rpc_overrides is rpc_overrides._load_rpc_overrides
+    assert rpc_types._logged_override_hashes is rpc_overrides._logged_override_hashes
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +81,7 @@ def test_load_rpc_overrides_valid_json(monkeypatch):
 def test_load_rpc_overrides_invalid_json_warns(monkeypatch, caplog):
     """Malformed JSON → WARNING logged, empty dict returned."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", "{not-valid")
-    with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+    with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
         result = _load_rpc_overrides()
     assert result == {}
     assert any("not valid JSON" in r.message for r in caplog.records)
@@ -73,7 +90,7 @@ def test_load_rpc_overrides_invalid_json_warns(monkeypatch, caplog):
 def test_load_rpc_overrides_non_dict_warns(monkeypatch, caplog):
     """Non-dict top-level (array) → WARNING logged, empty dict returned."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '["LIST_NOTEBOOKS", "AbCdEf"]')
-    with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+    with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
         result = _load_rpc_overrides()
     assert result == {}
     assert any("must be a JSON object" in r.message for r in caplog.records)
@@ -82,7 +99,7 @@ def test_load_rpc_overrides_non_dict_warns(monkeypatch, caplog):
 def test_load_rpc_overrides_string_top_level_warns(monkeypatch, caplog):
     """Top-level JSON string (also non-dict) → WARNING + empty dict."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '"just_a_string"')
-    with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+    with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
         result = _load_rpc_overrides()
     assert result == {}
     assert any("must be a JSON object" in r.message for r in caplog.records)
@@ -105,7 +122,7 @@ def test_load_rpc_overrides_drops_null_values_with_warning(monkeypatch, caplog):
         "NOTEBOOKLM_RPC_OVERRIDES",
         '{"LIST_NOTEBOOKS": null, "CREATE_NOTEBOOK": "valid"}',
     )
-    with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+    with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
         result = _load_rpc_overrides()
     assert result == {"CREATE_NOTEBOOK": "valid"}
     assert "LIST_NOTEBOOKS" not in result
@@ -123,7 +140,7 @@ def test_load_rpc_overrides_drops_unknown_keys_with_warning(monkeypatch, caplog)
         "NOTEBOOKLM_RPC_OVERRIDES",
         '{"LIST_NOTEBOOK": "typo", "LIST_NOTEBOOKS": "real"}',
     )
-    with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+    with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
         result = _load_rpc_overrides()
     assert result == {"LIST_NOTEBOOKS": "real"}
     assert "LIST_NOTEBOOK" not in result
@@ -140,7 +157,7 @@ def test_load_rpc_overrides_drops_unknown_keys_with_warning(monkeypatch, caplog)
 def test_resolve_rpc_id_no_env_var_returns_canonical(monkeypatch):
     """With no env var set, resolve returns the canonical id verbatim."""
     monkeypatch.delenv("NOTEBOOKLM_RPC_OVERRIDES", raising=False)
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
     assert (
         resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)
         == RPCMethod.LIST_NOTEBOOKS.value
@@ -150,14 +167,14 @@ def test_resolve_rpc_id_no_env_var_returns_canonical(monkeypatch):
 def test_resolve_rpc_id_with_override(monkeypatch):
     """An override mapped to the method name replaces the canonical id."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "NEW_ID_v2"}')
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
     assert resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value) == "NEW_ID_v2"
 
 
 def test_resolve_rpc_id_unknown_method_unaffected(monkeypatch):
     """Override map entry for a method we never call → no impact on other calls."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"SOME_RENAMED_METHOD": "x9x9x9"}')
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
     assert (
         resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)
         == RPCMethod.LIST_NOTEBOOKS.value
@@ -167,7 +184,7 @@ def test_resolve_rpc_id_unknown_method_unaffected(monkeypatch):
 def test_resolve_rpc_id_host_not_allowlisted_ignores_override(monkeypatch):
     """Host gate: if get_base_host() returns a non-allowed host, overrides are dropped."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "shouldNOTApply"}')
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
     # The host gate uses ``_env.get_base_host`` — patch it inline so we don't
     # depend on a real off-allowlist URL (which the validator would reject).
     monkeypatch.setattr("notebooklm._env.get_base_host", lambda: "evil.example.com")
@@ -180,7 +197,7 @@ def test_resolve_rpc_id_host_not_allowlisted_ignores_override(monkeypatch):
 def test_resolve_rpc_id_host_resolver_raises_falls_back(monkeypatch):
     """If get_base_host() raises (malformed env), override is silently skipped."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "shouldNOTApply"}')
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
 
     def _boom() -> str:
         raise ValueError("malformed NOTEBOOKLM_BASE_URL")
@@ -195,7 +212,7 @@ def test_resolve_rpc_id_host_resolver_raises_falls_back(monkeypatch):
 def test_resolve_rpc_id_enterprise_host_allowed(monkeypatch):
     """The enterprise host (notebooklm.cloud.google.com) also passes the gate."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "ENT_ID"}')
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
     monkeypatch.setattr("notebooklm._env.get_base_host", lambda: "notebooklm.cloud.google.com")
     assert resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value) == "ENT_ID"
 
@@ -203,8 +220,8 @@ def test_resolve_rpc_id_enterprise_host_allowed(monkeypatch):
 def test_resolve_rpc_id_logs_once_per_unique_set(monkeypatch, caplog):
     """A given override mapping is logged at INFO exactly once per distinct set."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "X"}')
-    rpc_types._logged_override_hashes.clear()
-    with caplog.at_level("INFO", logger="notebooklm.rpc.types"):
+    rpc_overrides._logged_override_hashes.clear()
+    with caplog.at_level("INFO", logger="notebooklm.rpc.overrides"):
         for _ in range(5):
             resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)
     info_lines = [r for r in caplog.records if r.levelname == "INFO" and "OVERRIDES" in r.message]
@@ -213,8 +230,8 @@ def test_resolve_rpc_id_logs_once_per_unique_set(monkeypatch, caplog):
 
 def test_resolve_rpc_id_logs_again_for_different_set(monkeypatch, caplog):
     """Two distinct override sets each emit one INFO line."""
-    rpc_types._logged_override_hashes.clear()
-    with caplog.at_level("INFO", logger="notebooklm.rpc.types"):
+    rpc_overrides._logged_override_hashes.clear()
+    with caplog.at_level("INFO", logger="notebooklm.rpc.overrides"):
         monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "v1"}')
         resolve_rpc_id("LIST_NOTEBOOKS", RPCMethod.LIST_NOTEBOOKS.value)
         monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "v2"}')
@@ -312,7 +329,7 @@ async def test_rpc_call_resolved_id_at_both_sites(monkeypatch, env_value, expect
         monkeypatch.delenv("NOTEBOOKLM_RPC_OVERRIDES", raising=False)
     else:
         monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", env_value)
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
 
     core = _make_core()
     await core.open()
@@ -349,7 +366,7 @@ async def test_rpc_call_host_off_allowlist_ignores_override(monkeypatch):
     """
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"LIST_NOTEBOOKS": "shouldNOTApply"}')
     monkeypatch.setattr("notebooklm._env.get_base_host", lambda: "evil.example.com")
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
 
     core = _make_core()
     await core.open()
@@ -376,7 +393,7 @@ async def test_rpc_call_host_off_allowlist_ignores_override(monkeypatch):
 async def test_rpc_call_invalid_json_falls_back_with_warning(monkeypatch, caplog):
     """Invalid JSON in env var → WARNING + canonical ids on the wire."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", "{not-json")
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
 
     core = _make_core()
     await core.open()
@@ -390,7 +407,7 @@ async def test_rpc_call_invalid_json_falls_back_with_warning(monkeypatch, caplog
 
         monkeypatch.setattr(core._http_client, "post", fake_post)
 
-        with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+        with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
 
         assert any("not valid JSON" in r.message for r in caplog.records)
@@ -403,7 +420,7 @@ async def test_rpc_call_invalid_json_falls_back_with_warning(monkeypatch, caplog
 async def test_rpc_call_non_dict_json_falls_back_with_warning(monkeypatch, caplog):
     """Top-level array → WARNING + canonical ids on the wire."""
     monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '["LIST_NOTEBOOKS", "ignored"]')
-    rpc_types._logged_override_hashes.clear()
+    rpc_overrides._logged_override_hashes.clear()
 
     core = _make_core()
     await core.open()
@@ -417,7 +434,7 @@ async def test_rpc_call_non_dict_json_falls_back_with_warning(monkeypatch, caplo
 
         monkeypatch.setattr(core._http_client, "post", fake_post)
 
-        with caplog.at_level("WARNING", logger="notebooklm.rpc.types"):
+        with caplog.at_level("WARNING", logger="notebooklm.rpc.overrides"):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [None, 1])
 
         assert any("must be a JSON object" in r.message for r in caplog.records)

@@ -1,5 +1,10 @@
 """Unit tests for RPC types and constants."""
 
+import ast
+import subprocess
+import sys
+from pathlib import Path
+
 from notebooklm.rpc.types import (
     BATCHEXECUTE_URL,
     QUERY_URL,
@@ -12,6 +17,59 @@ from notebooklm.rpc.types import (
     get_query_url,
     source_status_to_str,
 )
+
+
+def test_rpc_types_does_not_own_runtime_override_policy() -> None:
+    """Runtime override env parsing belongs in rpc.overrides, not rpc.types."""
+    path = Path(__file__).parents[2] / "src/notebooklm/rpc/types.py"
+    tree = ast.parse(path.read_text())
+
+    imported_os: list[int] = []
+    environ_access: list[int] = []
+    direct_override_defs: list[int] = []
+    override_aliases: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "os":
+                    imported_os.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "os":
+                    imported_os.append(node.lineno)
+                if (node.module, node.level) == ("overrides", 1):
+                    override_aliases.add(alias.asname or alias.name)
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr == "environ"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        ):
+            environ_access.append(node.lineno)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
+            "_parse_rpc_overrides",
+            "_load_rpc_overrides",
+        }:
+            direct_override_defs.append(node.lineno)
+
+    assert imported_os == []
+    assert environ_access == []
+    assert direct_override_defs == []
+    assert {"_parse_rpc_overrides", "_load_rpc_overrides"} <= override_aliases
+
+
+def test_rpc_override_import_order_smoke() -> None:
+    """Both public and compatibility import orders must resolve cleanly."""
+    snippets = [
+        "from notebooklm.rpc import RPCMethod, resolve_rpc_id; "
+        "assert resolve_rpc_id(RPCMethod.LIST_NOTEBOOKS.name, RPCMethod.LIST_NOTEBOOKS.value)",
+        "from notebooklm.rpc.types import RPCMethod, resolve_rpc_id, _parse_rpc_overrides; "
+        "assert resolve_rpc_id(RPCMethod.LIST_NOTEBOOKS.name, RPCMethod.LIST_NOTEBOOKS.value); "
+        "assert hasattr(_parse_rpc_overrides, 'cache_clear')",
+    ]
+    for snippet in snippets:
+        subprocess.run([sys.executable, "-c", snippet], check=True)
 
 
 class TestRPCConstants:

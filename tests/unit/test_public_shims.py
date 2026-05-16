@@ -117,12 +117,14 @@ def test_public_facade_imports_are_identity_reexports() -> None:
     import notebooklm
     import notebooklm.auth as public_auth
     import notebooklm.rpc as public_rpc
+    import notebooklm.rpc.overrides as rpc_overrides
     import notebooklm.rpc.types as rpc_types
     import notebooklm.types as public_types
 
     assert notebooklm.AuthTokens is public_auth.AuthTokens
     assert notebooklm.ConnectionLimits is public_types.ConnectionLimits
     assert public_rpc.RPCMethod is rpc_types.RPCMethod
+    assert public_rpc.resolve_rpc_id is rpc_overrides.resolve_rpc_id
 
 
 # ---------------------------------------------------------------------------
