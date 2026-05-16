@@ -39,6 +39,8 @@ def _artifact_seams() -> Any:
     try:
         return sys.modules["notebooklm._artifacts"]
     except KeyError as e:
+        # Normal construction imports this service from _artifacts first; the
+        # lookup exists only so call sites can preserve _artifacts patch seams.
         raise RuntimeError("notebooklm._artifacts must be imported before generation runs") from e
 
 
@@ -299,6 +301,8 @@ class ArtifactGenerationService:
         """Generate a study guide report."""
         if language is None:
             language = get_default_language()
+        # Preserve the historical facade seam for callers/tests that patch
+        # ArtifactsAPI.generate_report.
         return await self._api.generate_report(
             notebook_id,
             report_format=ReportFormat.STUDY_GUIDE,
@@ -525,6 +529,8 @@ class ArtifactGenerationService:
             raise
         if result is None:
             logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
+        # Call through the facade so patches on ArtifactsAPI._parse_generation_result
+        # remain effective after extraction.
         return api._parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
 
     async def generate_data_table(
@@ -690,6 +696,8 @@ class ArtifactGenerationService:
                     error_code=str(e.rpc_code) if e.rpc_code is not None else None,
                 )
             raise
+        # Call through the facade so patches on ArtifactsAPI._parse_generation_result
+        # remain effective after extraction.
         return api._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
     def _parse_generation_result(
