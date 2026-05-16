@@ -206,8 +206,7 @@ async def test_bound_loop_captured_on_open(
     """
     core = ClientCore(auth=_make_auth())
     assert core._bound_loop is None, (
-        "ClientCore must not bind to a loop at construction time — "
-        "open() is the binding moment."
+        "ClientCore must not bind to a loop at construction time — open() is the binding moment."
     )
 
     await core.open()

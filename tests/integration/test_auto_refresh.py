@@ -29,9 +29,9 @@ class TestAutoRefreshIntegration:
         # Bound methods aren't identical, so compare underlying function
         assert client._core._refresh_callback is not None
         assert client._core._refresh_callback.__func__ is NotebookLMClient.refresh_auth
-        # ``_refresh_lock`` is lazily created on first ``_await_refresh``
-        #. At construction time it is ``None`` so the client can
-        # be instantiated outside a running loop; the helper allocates the
+        # ``_refresh_lock`` is lazily created on first ``_await_refresh``.
+        # At construction time it is ``None`` so the client can be
+        # instantiated outside a running loop; the helper allocates the
         # lock on demand inside the async refresh path.
         assert client._core._refresh_lock is None
 
