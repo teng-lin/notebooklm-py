@@ -943,7 +943,7 @@ class ClientCore:
                 self,
                 is_auth_error=lambda exc: is_auth_error(exc),
                 sleep=lambda seconds: asyncio.sleep(seconds),
-                uniform=lambda low, high: random.uniform(low, high),
+                uniform=lambda low, high: random.uniform(low, high),  # noqa: S311 # nosec B311
                 logger=logger,
             )
             self._authed_transport = transport
