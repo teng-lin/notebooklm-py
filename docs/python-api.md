@@ -286,7 +286,7 @@ trigger a token refresh share a single underlying refresh attempt via
 `_refresh_lock` + `asyncio.shield`. Waiter cancellation does not kill the
 shared refresh task; the next caller in line picks up the finished tokens.
 
-**Reqid monotonicity**. `next_reqid()` returns a monotonic
+**Request-ID monotonicity**. `next_reqid()` returns a monotonic
 sequence across concurrent coroutines on the same client. Guarded by
 `_reqid_lock`.
 

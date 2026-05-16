@@ -166,7 +166,8 @@ def transform_text(text: str) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[1] not in PHASE_SCOPES:
-        print(f"usage: {argv[0]} {{phase1|phase2|phase3}}", file=sys.stderr)
+        valid_phases = "|".join(sorted(PHASE_SCOPES.keys()))
+        print(f"usage: {argv[0]} {{{valid_phases}}}", file=sys.stderr)
         return 2
 
     phase = argv[1]

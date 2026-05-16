@@ -985,22 +985,22 @@ def resolve_prompt(
 ) -> str:
     """Resolve prompt text from a positional argument or ``--prompt-file``.
 
-     Exactly one source may be provided. The file is read as UTF-8 with surrounding
-     whitespace stripped. When ``required`` is True and neither source yields
-     text, a ``UsageError`` is raised; otherwise an empty string is returned.
+    Exactly one source may be provided. The file is read as UTF-8 with surrounding
+    whitespace stripped. When ``required`` is True and neither source yields
+    text, a ``UsageError`` is raised; otherwise an empty string is returned.
 
-     The literal ``-`` is recognized as "read stdin" for either source
-    , matching the Unix convention.
+    The literal ``-`` is recognized as "read stdin" for either source,
+    matching the Unix convention.
 
-     Args:
-         argument_value: Value of the positional CLI argument (may be empty).
-         prompt_file: Path passed via ``--prompt-file`` (may be ``None``).
-         param_name: Name of the positional argument, used in error messages.
-         required: When True, raise ``UsageError`` if both sources are empty.
+    Args:
+        argument_value: Value of the positional CLI argument (may be empty).
+        prompt_file: Path passed via ``--prompt-file`` (may be ``None``).
+        param_name: Name of the positional argument, used in error messages.
+        required: When True, raise ``UsageError`` if both sources are empty.
 
-     Raises:
-         click.UsageError: Both sources provided, or ``required`` and both empty.
-         click.ClickException: Prompt file unreadable or not valid UTF-8.
+    Raises:
+        click.UsageError: Both sources provided, or ``required`` and both empty.
+        click.ClickException: Prompt file unreadable or not valid UTF-8.
     """
     if argument_value and prompt_file:
         raise click.UsageError(
