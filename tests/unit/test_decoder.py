@@ -1,6 +1,7 @@
 """Unit tests for RPC response decoder."""
 
 import json
+import logging
 
 import pytest
 
@@ -114,17 +115,42 @@ class TestParseChunkedResponse:
         assert chunks[0] == ["valid0"]
         assert chunks[9] == ["valid9"]
 
-    def test_warns_but_parses_mismatched_byte_count_with_valid_json(self, caplog):
-        """Mismatched byte counts are tolerated when the payload is valid JSON."""
+    def test_logs_debug_but_parses_mismatched_byte_count_with_valid_json(self, caplog):
+        """Mismatched byte counts are tolerated when the payload is valid JSON.
+
+        The mismatch is logged at DEBUG (not WARNING) because Google's
+        batchexecute declares a count in a different unit than UTF-8 bytes, so
+        every multi-chunk live response would otherwise flood CI logs.
+        """
         valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
         payload = json.dumps(["wrong-size"])
         response = f"{valid_parts}\n{len(payload) + 1}\n{payload}\n"
 
-        chunks = parse_chunked_response(response)
+        with caplog.at_level(logging.DEBUG, logger="notebooklm.rpc.decoder"):
+            chunks = parse_chunked_response(response)
 
         assert chunks == [[f"valid{i}"] for i in range(10)] + [["wrong-size"]]
-        assert "declares" in caplog.text
-        assert "payload is" in caplog.text
+        mismatch_records = [
+            r
+            for r in caplog.records
+            if r.name == "notebooklm.rpc.decoder" and "declares" in r.message
+        ]
+        assert len(mismatch_records) == 1
+        assert mismatch_records[0].levelno == logging.DEBUG
+        assert "payload is" in mismatch_records[0].message
+
+    def test_does_not_warn_on_byte_count_mismatch_with_valid_json(self, caplog):
+        """Byte-count mismatch with valid JSON must not log at WARNING or above."""
+        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
+        payload = json.dumps(["wrong-size"])
+        response = f"{valid_parts}\n{len(payload) + 1}\n{payload}\n"
+
+        with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
+            parse_chunked_response(response)
+
+        assert not any(
+            "declares" in r.message and r.levelno >= logging.WARNING for r in caplog.records
+        )
 
     def test_skips_byte_count_without_payload_below_threshold(self, caplog):
         """A trailing byte-count line without a payload is malformed and skipped."""

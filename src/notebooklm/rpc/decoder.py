@@ -190,10 +190,13 @@ def parse_chunked_response(response: str) -> list[Any]:
     Note:
         Malformed chunks are skipped with a warning logged. A byte-count line
         without a following payload is malformed. A byte-count mismatch is
-        logged but tolerated when the following payload is still valid JSON,
-        because recorded and proxy-transformed streams may not preserve Google's
-        original byte count. If the malformed-record rate exceeds 10%, raises
-        RPCError as this likely indicates API changes.
+        logged at DEBUG and tolerated when the following payload is still
+        valid JSON, because recorded and proxy-transformed streams may not
+        preserve Google's original byte count and live Google responses use a
+        different unit (likely UTF-16 codepoints) than ``len(s.encode("utf-8"))``.
+        A JSONDecodeError on the payload still emits a WARNING on the
+        subsequent parse-failure path. If the malformed-record rate exceeds
+        10%, raises RPCError as this likely indicates API changes.
     """
     if not response or not response.strip():
         return []
@@ -227,7 +230,12 @@ def parse_chunked_response(response: str) -> list[Any]:
             json_str = lines[i]
             actual_byte_count = len(json_str.encode("utf-8"))
             if actual_byte_count != byte_count:
-                logger.warning(
+                # Demoted to DEBUG: Google's batchexecute declares a count in a
+                # different unit than ``len(s.encode("utf-8"))`` (likely UTF-16
+                # codepoints), so every multi-chunk live response trips this on
+                # every chunk. The JSONDecodeError branch below still WARNs on
+                # real corruption.
+                logger.debug(
                     "Chunk at line %d declares %d bytes but payload is %d bytes; "
                     "parsing valid JSON payload anyway. Preview: %s",
                     i + 1,

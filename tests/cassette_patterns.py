@@ -126,8 +126,9 @@ def recompute_chunk_prefix(body: str) -> str:
 
     1. ``test_cassette_shapes.py`` byte-count assertion failures.
     2. ``decoder.py`` to emit ``Chunk at line N declares X bytes but payload is
-       Y bytes`` warnings during replay (the JSON is still parsed — see the
-       tolerance block at decoder.py:217-237 — but the warning is noise).
+       Y bytes`` DEBUG logs during replay (the JSON is still parsed — see the
+       tolerance block at decoder.py:217-237 — but well-formed cassettes
+       shouldn't trip the log at all).
 
     This helper walks the body, identifies every digit-only "header" line that
     is immediately followed by a non-header line, and replaces the header with
