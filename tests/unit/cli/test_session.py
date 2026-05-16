@@ -4191,9 +4191,15 @@ class TestChromiumExplicitProfileSelector:
             ],
         )
 
-        with patch(
-            "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
-            return_value=profiles,
+        with (
+            patch(
+                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+                return_value=profiles,
+            ),
+            patch(
+                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+                side_effect=AssertionError("must not read cookies for an ambiguous selector"),
+            ),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome::Work"])
 

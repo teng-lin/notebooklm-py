@@ -229,6 +229,21 @@ class TestDiscoverChromiumProfiles:
 
 
 class TestResolveChromiumProfile:
+    def test_unsupported_browser_is_rejected(self):
+        with pytest.raises(ValueError, match="not a Chromium-family browser"):
+            resolve_chromium_profile("firefox", "Default")
+
+    def test_no_populated_profiles_is_rejected(self, patched_user_data_dir):
+        chrome_root = patched_user_data_dir / "chrome"
+        _make_chromium_user_data(
+            chrome_root,
+            profiles={"Default": "empty", "Profile 1": "empty"},
+            local_state_names={"Default": "Personal", "Profile 1": "Work"},
+        )
+
+        with pytest.raises(ValueError, match="No populated chrome profiles were found"):
+            resolve_chromium_profile("chrome", "Default")
+
     def test_resolves_by_stable_directory_name(self, patched_user_data_dir):
         chrome_root = patched_user_data_dir / "chrome"
         _make_chromium_user_data(

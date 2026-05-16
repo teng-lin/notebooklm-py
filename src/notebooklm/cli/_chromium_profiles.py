@@ -23,7 +23,6 @@ This module:
 
 Public surface:
 
-* :data:`CHROMIUM_BROWSER_USER_DATA_DIRS` — per-platform, per-browser roots
 * :class:`ChromiumProfile`
 * :func:`discover_chromium_profiles`
 * :func:`resolve_chromium_profile`
