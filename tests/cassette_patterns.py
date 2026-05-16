@@ -302,7 +302,7 @@ SCRUB_PLACEHOLDERS: frozenset[str] = frozenset(
         # ``SCRUBBED_EMAIL@example.com`` is the rendered form of the email
         # replacement; ``is_clean`` checks the full token, so we list it too.
         "SCRUBBED_EMAIL@example.com",
-        # upload + Drive token placeholders (audit I17).
+        # upload + Drive token placeholders.
         "SCRUBBED_UPLOAD_ID",
         "SCRUBBED_UPLOAD_URL",
         "SCRUBBED_AONS",
