@@ -2268,8 +2268,9 @@ class TestGenerateWaitSigintResumeHint:
         assert result.exit_code == 130, (
             f"expected SIGINT exit 130, got {result.exit_code}; output={result.output!r}"
         )
-        # Canonical phrasing from the M2 audit row. Hard-coded so any drift in
-        # the user-visible string is caught here, not by a downstream user.
+        # Specification: SIGINT under --wait must display exactly this resume
+        # hint. Hard-coded here so any drift in the user-visible string is
+        # caught at this layer, not by a downstream user.
         combined = result.output + (result.stderr if result.stderr_bytes else "")
         assert "Cancelled. Resume with: notebooklm artifact poll task_sigint_1" in combined, (
             f"expected resume hint with task_id; got: {combined!r}"

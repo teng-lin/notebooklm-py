@@ -67,11 +67,12 @@ scrub_string: Callable[[str], str] = _vcr_config.scrub_string
 # Protected cookie names that MUST be scrubbed in any cassette payload, in the
 # specific JSON ``storage_state`` shape Playwright emits. The set spans:
 #
-# * The Tier-5 synthesis list (``SID``/``SAPISID``/``HSID``/``SSID``/``APISID``
-#   + the four ``__Secure-`` 1P/3P SID variants).
+# * The core protected set (``SID``/``SAPISID``/``HSID``/``SSID``/``APISID``
+#   + the four ``__Secure-`` 1P/3P SID variants) called out by the
+#   cookie-redaction hardening.
 # * ``OSID`` and ``NID`` — enumerated explicitly in the ``SENSITIVE_PATTERNS``
 #   JSON regex, so exercising them in the round-trip closes a documentation
-#   gap that the Tier-5 synthesis listed neither for nor against.
+#   gap (the original protected list named neither for nor against them).
 PROTECTED: list[str] = [
     "SID",
     "SAPISID",
@@ -135,8 +136,8 @@ def test_storage_state_cookie_values_are_scrubbed() -> None:
             f"Cookie name {name!r} should be preserved in scrubbed output"
         )
 
-    # Cross-check with the regex the Tier-5 plan called out: scan for any
-    # surviving ``"value": "<original-secret>"`` pair.
+    # Cross-check with the regex that the cookie-redaction hardening pinned:
+    # scan for any surviving ``"value": "<original-secret>"`` pair.
     surviving = re.findall(r'"value":\s*"([^"]+)"', scrubbed)
     assert SECRET not in surviving, f"Found unredacted cookie values: {surviving!r}"
 
@@ -158,7 +159,7 @@ def test_scrub_string_is_idempotent_on_storage_state() -> None:
 def test_unrelated_cookie_names_are_not_scrubbed() -> None:
     """False-positive guard: cookies outside the protected set survive intact.
 
-    ``BSID`` and ``SAPISIDS`` are NOT in the Tier-5 synthesis protected list
+    ``BSID`` and ``SAPISIDS`` are NOT in the cookie-redaction protected list
     (and not in any existing ``SENSITIVE_PATTERNS`` regex, when those regexes
     are anchored to the JSON storage_state shape). Their values must round-trip
     unchanged so that a future contributor's legitimate fixture cookie isn't
@@ -191,11 +192,11 @@ def test_unrelated_cookie_names_are_not_scrubbed() -> None:
 def test_sidcc_remains_protected_in_storage_state() -> None:
     """Documents that ``SIDCC`` IS scrubbed via the JSON pattern.
 
-    The Tier-5 plan notes ``SIDCC`` was not in the synthesis-listed protected
-    set but is captured by the existing Cookie-header ``SIDCC=[^;]+`` regex.
-    The structural JSON pattern added in this PR keeps ``SIDCC`` covered for
-    consistency. This test pins that behavior so future edits to the pattern
-    list don't silently flip it.
+    ``SIDCC`` was not in the original core protected name list but is captured
+    by the existing Cookie-header ``SIDCC=[^;]+`` regex. The structural JSON
+    pattern added in this PR keeps ``SIDCC`` covered for consistency. This
+    test pins that behavior so future edits to the pattern list don't
+    silently flip it.
     """
     dumped = _build_storage_state(["SIDCC"])
     scrubbed = scrub_string(dumped)

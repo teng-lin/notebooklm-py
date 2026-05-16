@@ -284,8 +284,8 @@ class TestEmitCancelledAndExit:
     """Tests for the M2 / P5.T3 SIGINT-with-resume-hint helper.
 
     ``emit_cancelled_and_exit`` is the canonical exit point for Ctrl-C during
-    a long-running ``--wait`` poll. The helper enforces the audit's required
-    phrasing: ``Cancelled. Resume with: <resume_hint>`` and exit 130.
+    a long-running ``--wait`` poll. The helper enforces the required user-
+    visible phrasing: ``Cancelled. Resume with: <resume_hint>`` and exit 130.
     """
 
     def test_emit_cancelled_with_hint_writes_to_stderr_and_exits_130(self, capsys):
@@ -295,8 +295,9 @@ class TestEmitCancelledAndExit:
 
         assert exc_info.value.code == 130
         captured = capsys.readouterr()
-        # Canonical phrasing from the M2 audit row — used as a literal so a
-        # future cosmetic tweak can't silently drift the user-facing string.
+        # Specification: SIGINT under --wait emits exactly this resume line.
+        # Used as a literal so a future cosmetic tweak can't silently drift
+        # the user-facing string.
         assert "Cancelled. Resume with: notebooklm artifact poll task_abc" in captured.err
         assert captured.out == "", "resume hint must NOT leak onto stdout in text mode"
 

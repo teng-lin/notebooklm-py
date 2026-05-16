@@ -230,16 +230,18 @@ class TestCrossLoopGenerationGuard:
         per-loop asyncio lock (the registry hands out distinct locks per
         loop), then race the check-and-claim under ``_REFRESH_STATE_LOCK``.
 
-        Pre-T7.F4: this test asserted ``run_count == 1`` because the old
-        code bumped ``_REFRESH_GENERATIONS`` EAGERLY pre-subprocess; the
-        cross-loop loser saw the bump and skipped. That eager-bump
-        behavior was the root cause of audit §27 failure #1 — when the
-        subprocess failed, the phantom bump fooled concurrent waiters
-        into skipping with stale storage.
+        Legacy contract (before the gated-generation fix): this test
+        asserted ``run_count == 1`` because the old code bumped
+        ``_REFRESH_GENERATIONS`` EAGERLY pre-subprocess; the cross-loop
+        loser saw the bump and skipped. That eager-bump behavior was the
+        root cause of the phantom-bump failure — when the subprocess
+        failed, the bump fooled concurrent waiters into skipping with
+        stale storage.
 
-        Post-T7.F4: generation is bumped ONLY after the subprocess
-        succeeds. Cross-loop callers cannot signal "in flight" to each
-        other (``asyncio.Future`` is loop-bound). In the rare
+        Current contract (gated-generation fix): generation is bumped
+        ONLY after the subprocess succeeds. Cross-loop callers cannot
+        signal "in flight" to each other (``asyncio.Future`` is
+        loop-bound). In the rare
         cross-loop-concurrent-refresh case both loops may run their own
         subprocess — equivalent to two ``RotateCookies`` POSTs against
         the same storage. The end-state is correct (fresh cookies on
@@ -356,17 +358,18 @@ class TestCrossLoopGenerationGuard:
         for r in results:
             assert not isinstance(r, BaseException), f"Refresh raised: {r!r}"
 
-        # The critical assertion under T7.F4: AT MOST one subprocess
-        # invocation per loop (== 2 across two loops). Pre-T7.F4 this
-        # asserted ``run_count == 1`` (eager-bump cross-loop coalescing);
-        # T7.F4 dropped eager-bump to fix the audit §27 phantom-bump
-        # failure, accepting that two cross-loop callers may both run
-        # their subprocess in the rare concurrent-refresh case (correct
-        # end-state: fresh cookies on disk).
+        # The critical assertion under the gated-generation contract:
+        # AT MOST one subprocess invocation per loop (== 2 across two
+        # loops). Under the legacy eager-bump contract this asserted
+        # ``run_count == 1`` (cross-loop coalescing); the fix dropped
+        # eager-bump to close the phantom-bump failure mode, accepting
+        # that two cross-loop callers may both run their subprocess in
+        # the rare concurrent-refresh case (correct end-state: fresh
+        # cookies on disk).
         assert 1 <= run_count <= 2, (
             f"Expected 1–2 refresh invocations across loops, observed "
             f"{run_count}. ``run_count == 0`` would mean the cross-loop "
-            "generation guard SKIPPED both refreshes (bug §27 regression). "
+            "generation guard SKIPPED both refreshes (phantom-bump regression). "
             "``run_count > 2`` means each loop ran refresh more than once "
             "(per-loop coalescing broken)."
         )

@@ -1,10 +1,4 @@
-"""Tests for the public shim modules introduced by the private-module boundary plan.
-
-Each section is owned by a different PR; please keep the markers below intact when
-appending so concurrent PRs can merge cleanly.
-
-Plan: .sisyphus/plans/private-module-boundary.md
-"""
+"""Tests for the public shim modules and the documented public-import surface."""
 
 from __future__ import annotations
 
@@ -17,11 +11,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 # ---------------------------------------------------------------------------
-# PR-T2 section: documented public import manifest
+# Documented public import manifest (stability spec)
 #
-# This is the public import surface documented by PR-T1. Keep this manifest
-# explicit: if docs add a new supported import path, add it here in the same PR;
-# if docs intentionally remove one, remove it here with the docs change.
+# This is the public import surface documented in the user-facing API docs.
+# Keep this manifest explicit: if docs add a new supported import path, add it
+# here in the same PR; if docs intentionally remove one, remove it here with
+# the docs change.
 # ---------------------------------------------------------------------------
 
 
@@ -92,7 +87,7 @@ def test_documented_public_import_manifest_resolves(
     module_name: str,
     public_name: str,
 ) -> None:
-    """Every documented public import from PR-T1 must remain importable."""
+    """Every documented public import must remain importable."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         module = __import__(module_name, fromlist=[public_name])
@@ -181,7 +176,7 @@ def test_research_api_reexports_cited_source_selection_for_back_compat():
 
 
 # ---------------------------------------------------------------------------
-# PR-T4.2 section: RPC enums re-exported via notebooklm.types
+# RPC enums re-exported via notebooklm.types
 #
 # CLI modules import these enums from ``notebooklm.types`` (the public surface)
 # rather than reaching into ``notebooklm.rpc`` directly. The re-exports must be
@@ -293,7 +288,7 @@ def test_log_shim_exposes_install_redaction():
 
 
 # ---------------------------------------------------------------------------
-# PR-T1 API contract section: public raw-RPC and documented facade imports
+# API contract: public raw-RPC and documented facade imports
 # ---------------------------------------------------------------------------
 
 
@@ -328,11 +323,11 @@ def test_auth_cookie_domain_constants_are_facade_exports() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PR-T3A section: notebooklm.auth first-party compatibility surface
+# notebooklm.auth first-party compatibility surface
 #
 # This is narrower than a future public API decision. It only freezes the names
 # that current first-party modules, CLI code, tests, and docs may rely on while
-# Phase 2 is free to move auth internals underneath ``notebooklm._auth``.
+# auth internals continue to live underneath ``notebooklm._auth``.
 # Removing one of these names from ``notebooklm.auth`` requires a separate
 # deprecation/migration plan, not an internal-module move PR.
 #
@@ -509,7 +504,7 @@ def test_auth_validation_uses_facade_policy_rebindings(
 def test_auth_validation_uses_facade_extraction_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tier-1 errors still read the compatibility facade's extraction hint."""
+    """Authentication errors still read the compatibility facade's extraction hint."""
     import notebooklm.auth as auth
 
     monkeypatch.setattr(auth, "MINIMUM_REQUIRED_COOKIES", {"SID", "SIDTS"})
@@ -587,7 +582,7 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PR-T1.D section: __all__ contract tests for the public shim modules.
+# __all__ contract tests for the public shim modules.
 #
 # Enforces, for each shim, that:
 #   1. ``__all__`` exists.
