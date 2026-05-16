@@ -35,9 +35,9 @@ def test_rpc_types_does_not_own_runtime_override_policy() -> None:
                 if alias.name == "os":
                     imported_os.append(node.lineno)
         elif isinstance(node, ast.ImportFrom):
+            if node.module == "os":
+                imported_os.append(node.lineno)
             for alias in node.names:
-                if alias.name == "os":
-                    imported_os.append(node.lineno)
                 if (node.module, node.level) == ("overrides", 1):
                     override_aliases.add(alias.asname or alias.name)
         elif (
