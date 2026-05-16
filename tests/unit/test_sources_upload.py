@@ -1,7 +1,11 @@
 """Unit tests for SourcesAPI file upload pipeline and YouTube detection."""
 
+import ast
+import inspect
+import textwrap
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -17,13 +21,15 @@ def mock_core():
     core = MagicMock()
     core.rpc_call = AsyncMock()
     core.auth = MagicMock()
+    core.auth.authuser = 0
+    core.auth.account_email = None
     # Upload paths pass the live http client's cookie jar to httpx so cookies
-    # are scoped by Domain attribute (#373). The mock makes auth.cookie_jar and
-    # get_http_client().cookies the same sentinel so existing assertions still
-    # work against either reference.
-    cookie_jar = MagicMock(name="cookie_jar")
-    core.auth.cookie_jar = cookie_jar
-    core.get_http_client.return_value.cookies = cookie_jar
+    # are scoped by Domain attribute (#373). Keep this distinct from
+    # auth.cookie_jar so upload tests prove the live jar is used.
+    auth_cookie_jar = MagicMock(name="auth_cookie_jar")
+    live_cookie_jar = MagicMock(name="live_cookie_jar")
+    core.auth.cookie_jar = auth_cookie_jar
+    core.get_http_client.return_value.cookies = live_cookie_jar
     core._begin_transport_post = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.record_upload_queue_wait = MagicMock()
@@ -34,6 +40,63 @@ def mock_core():
 def sources_api(mock_core):
     """Create SourcesAPI with mocked core."""
     return SourcesAPI(mock_core)
+
+
+def _self_core_auth_attr_read(node: ast.AST, attr: str) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == attr
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "auth"
+        and isinstance(node.value.value, ast.Attribute)
+        and node.value.value.attr == "_core"
+        and isinstance(node.value.value.value, ast.Name)
+        and node.value.value.value.id == "self"
+    )
+
+
+def _self_core_http_client_cookies_read(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "cookies"
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == "get_http_client"
+        and isinstance(node.value.func.value, ast.Attribute)
+        and node.value.func.value.attr == "_core"
+        and isinstance(node.value.func.value.value, ast.Name)
+        and node.value.func.value.value.id == "self"
+    )
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [
+        SourcesAPI._start_resumable_upload,
+        SourcesAPI._upload_file_streaming,
+        SourcesAPI._cancel_upload_session,
+    ],
+)
+def test_upload_helpers_do_not_read_core_auth_or_live_cookies_directly(helper):
+    """Upload helpers must route through ClientCoreCapabilities, not broad core internals."""
+    tree = ast.parse(textwrap.dedent(inspect.getsource(helper)))
+    violations = [
+        ast.unparse(node)
+        for node in ast.walk(tree)
+        if _self_core_auth_attr_read(node, "authuser")
+        or _self_core_auth_attr_read(node, "account_email")
+        or _self_core_http_client_cookies_read(node)
+    ]
+
+    assert violations == []
+
+
+def _assert_async_client_uses_live_cookies(mock_client_cls, mock_core) -> None:
+    assert (
+        mock_client_cls.call_args.kwargs["cookies"]
+        is mock_core.get_http_client.return_value.cookies
+    )
+    assert mock_client_cls.call_args.kwargs["cookies"] is not mock_core.auth.cookie_jar
 
 
 # =============================================================================
@@ -398,7 +461,57 @@ class TestStartResumableUpload:
             # Cookie header is no longer set manually; httpx scopes cookies
             # by Domain attribute via the cookie_jar kwarg (#373).
             assert "Cookie" not in headers
-            assert mock_client_cls.call_args.kwargs["cookies"] is mock_core.auth.cookie_jar
+            _assert_async_client_uses_live_cookies(mock_client_cls, mock_core)
+
+    @pytest.mark.asyncio
+    async def test_start_resumable_upload_uses_integer_authuser_query_and_header(
+        self, sources_api, mock_core
+    ):
+        """Integer selected-account routing is preserved in URL and header."""
+        mock_core.auth.authuser = 2
+        mock_core.auth.account_email = None
+        mock_response = MagicMock()
+        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
+            await sources_api._start_resumable_upload("nb_123", "test.pdf", 2048, "src_789")
+
+        url = mock_client.post.call_args.args[0]
+        assert parse_qs(urlparse(url).query) == {"authuser": ["2"]}
+        assert mock_client.post.call_args.kwargs["headers"]["x-goog-authuser"] == "2"
+
+    @pytest.mark.asyncio
+    async def test_start_resumable_upload_uses_encoded_account_email_query_and_header(
+        self, sources_api, mock_core
+    ):
+        """Account email wins over integer routing and is URL-encoded in the query."""
+        mock_core.auth.authuser = 2
+        mock_core.auth.account_email = "user+test@example.com"
+        mock_response = MagicMock()
+        mock_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
+            await sources_api._start_resumable_upload("nb_123", "test.pdf", 2048, "src_789")
+
+        url = mock_client.post.call_args.args[0]
+        assert "authuser=user%2Btest%40example.com" in urlparse(url).query
+        assert parse_qs(urlparse(url).query) == {"authuser": ["user+test@example.com"]}
+        assert (
+            mock_client.post.call_args.kwargs["headers"]["x-goog-authuser"]
+            == "user+test@example.com"
+        )
 
     @pytest.mark.asyncio
     async def test_start_resumable_upload_includes_json_body(self, sources_api, mock_core):
@@ -519,7 +632,58 @@ class TestUploadFileStreaming:
             # Cookie header is no longer set manually; httpx scopes cookies
             # by Domain attribute via the cookie_jar kwarg (#373).
             assert "Cookie" not in headers
-            assert mock_client_cls.call_args.kwargs["cookies"] is mock_core.auth.cookie_jar
+            _assert_async_client_uses_live_cookies(mock_client_cls, mock_core)
+
+    @pytest.mark.asyncio
+    async def test_upload_file_streaming_preserves_authuser_header(
+        self, sources_api, mock_core, tmp_path
+    ):
+        """Finalize upload sends the same selected-account header value."""
+        mock_core.auth.authuser = 2
+        mock_core.auth.account_email = "user+test@example.com"
+        test_file = tmp_path / "test.txt"
+        test_file.write_bytes(b"content")
+        mock_response = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client.post.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
+            await sources_api._upload_file_streaming(
+                "https://upload.example.com/session", test_file
+            )
+
+        assert (
+            mock_client.post.call_args.kwargs["headers"]["x-goog-authuser"]
+            == "user+test@example.com"
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_upload_session_preserves_authuser_header_and_live_cookies(
+        self, sources_api, mock_core
+    ):
+        """Best-effort Scotty cancel keeps the provided auth route and live cookie jar."""
+        auth_route = "user+test@example.com"
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aexit__.return_value = None
+            mock_client_cls.return_value = mock_client
+
+            await sources_api._cancel_upload_session(
+                "https://upload.example.com/session",
+                "https://notebooklm.google.com",
+                auth_route,
+            )
+
+        headers = mock_client.post.call_args.kwargs["headers"]
+        assert headers["x-goog-authuser"] == auth_route
+        assert headers["x-goog-upload-command"] == "cancel"
+        _assert_async_client_uses_live_cookies(mock_client_cls, mock_core)
 
     @pytest.mark.asyncio
     async def test_upload_file_streaming_uses_generator(self, sources_api, mock_core, tmp_path):

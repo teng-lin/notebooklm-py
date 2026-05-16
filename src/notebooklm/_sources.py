@@ -16,11 +16,11 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from ._callbacks import maybe_await_callback
+from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
 from ._env import get_base_url
 from ._idempotency import idempotent_create
 from ._url_utils import is_youtube_url
-from .auth import authuser_query, format_authuser_value
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -152,6 +152,7 @@ class SourcesAPI:
                 avoid surprises.
         """
         self._core = core
+        self._capabilities = ClientCoreCapabilities(core)
         self._upload_timeout = upload_timeout
 
     def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
@@ -1492,15 +1493,9 @@ class SourcesAPI:
         """Start a resumable upload session and get the upload URL."""
         import json
 
-        auth_route = format_authuser_value(
-            self._core.auth.authuser,
-            self._core.auth.account_email,
-        )
+        auth_route = self._capabilities.authuser_header()
         base_url = get_base_url()
-        url = (
-            f"{get_upload_url()}?"
-            f"{authuser_query(self._core.auth.authuser, self._core.auth.account_email)}"
-        )
+        url = f"{get_upload_url()}?{self._capabilities.authuser_query()}"
 
         headers = {
             "Accept": "*/*",
@@ -1532,7 +1527,7 @@ class SourcesAPI:
         # pick up SIDCC/SIDTS rotations applied during the live session. See #373.
         async with httpx.AsyncClient(
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
-            cookies=self._core.get_http_client().cookies,
+            cookies=self._capabilities.live_cookies(),
         ) as client:
             response = await client.post(url, headers=headers, content=body)
             response.raise_for_status()
@@ -1625,10 +1620,7 @@ class SourcesAPI:
         close_wired = False
         try:
             base_url = get_base_url()
-            auth_route = format_authuser_value(
-                self._core.auth.authuser,
-                self._core.auth.account_email,
-            )
+            auth_route = self._capabilities.authuser_header()
             headers = {
                 "Accept": "*/*",
                 "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
@@ -1702,7 +1694,7 @@ class SourcesAPI:
                 # OSID against host and rejects foreign-host cookies. (#373)
                 async with httpx.AsyncClient(
                     timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
-                    cookies=self._core.get_http_client().cookies,
+                    cookies=self._capabilities.live_cookies(),
                 ) as client:
                     finalize_started = True
                     response = await client.post(upload_url, headers=headers, content=file_stream())
@@ -1796,7 +1788,7 @@ class SourcesAPI:
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, read=10.0),
-                cookies=self._core.get_http_client().cookies,
+                cookies=self._capabilities.live_cookies(),
             ) as client:
                 await client.post(upload_url, headers=headers)
         except Exception as exc:  # noqa: BLE001 — best-effort cleanup

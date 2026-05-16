@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
+import pytest
 
 from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core_polling import PollRegistry
@@ -35,14 +36,33 @@ def test_client_core_capabilities_returns_existing_poll_registry_and_pending_map
     assert adapter.poll_registry.pending is pending
 
 
-def test_client_core_capabilities_exposes_auth_route_helpers() -> None:
+@pytest.mark.parametrize(
+    ("authuser", "account_email"),
+    [
+        (2, None),
+        (2, "user+test@example.com"),
+        (3, " selected.account@example.com "),
+    ],
+)
+def test_client_core_capabilities_exposes_auth_route_helpers(
+    authuser: int,
+    account_email: str | None,
+) -> None:
+    core = SimpleNamespace(auth=SimpleNamespace(authuser=authuser, account_email=account_email))
+    adapter = ClientCoreCapabilities(core)
+
+    assert adapter.authuser == authuser
+    assert adapter.account_email == account_email
+    assert adapter.authuser_query() == authuser_query(authuser, account_email)
+    assert adapter.authuser_header() == format_authuser_value(authuser, account_email)
+
+
+def test_client_core_capabilities_authuser_query_url_encodes_account_email() -> None:
     core = SimpleNamespace(auth=SimpleNamespace(authuser=2, account_email="user+test@example.com"))
     adapter = ClientCoreCapabilities(core)
 
-    assert adapter.authuser == 2
-    assert adapter.account_email == "user+test@example.com"
-    assert adapter.authuser_query() == authuser_query(2, "user+test@example.com")
-    assert adapter.authuser_header() == format_authuser_value(2, "user+test@example.com")
+    assert adapter.authuser_header() == "user+test@example.com"
+    assert adapter.authuser_query() == "authuser=user%2Btest%40example.com"
 
 
 def test_client_core_capabilities_live_cookies_come_from_http_client() -> None:
