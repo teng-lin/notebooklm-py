@@ -468,7 +468,7 @@ def register_chat_commands(cli):
                     console.print(f"\n[dim]── {conv_id} ──[/dim]")
                 table = Table()
                 table.add_column("#", style="dim", width=4)
-                # P6.T1 / I16: ``--no-truncate`` lifts both the column-level
+                # ``--no-truncate`` lifts both the column-level
                 # ``max_width=50`` constraint and the ``[:50]`` cell slice so
                 # the table view can render long Q/A turns in full. Default
                 # behavior is unchanged — the 50-char preview is preserved

@@ -259,7 +259,7 @@ Every `download` subcommand accepts the same selection / safety / output flag se
 
 All `note` subcommands also accept `-n/--notebook ID`.
 
-> **`source get` / `artifact get` / `note get` exit `1` on not-found (BREAKING, landed in Phase 3).** All three `get` commands now exit `1` when the requested ID does not resolve to an existing item, matching the rest of the CLI's user-error convention. Under `--json` the failure body is the standard typed error envelope (`{"error": true, "code": "NOT_FOUND", "message": "...", "id": "...", "notebook_id": "..."}`); without `--json` the message is written to stderr. The previous behavior was exit `0` with a "not found" line on stdout. The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id` as a `ClickException`) was already exit `1` and is unchanged. See [CLI Exit-Code Convention → C1](cli-exit-codes.md#c1--get-on-not-found-exits-1-was-0--landed-in-phase-3) for migration guidance.
+> **`source get` / `artifact get` / `note get` exit `1` on not-found (BREAKING).** All three `get` commands now exit `1` when the requested ID does not resolve to an existing item, matching the rest of the CLI's user-error convention. Under `--json` the failure body is the standard typed error envelope (`{"error": true, "code": "NOT_FOUND", "message": "...", "id": "...", "notebook_id": "..."}`); without `--json` the message is written to stderr. The previous behavior was exit `0` with a "not found" line on stdout. The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id` as a `ClickException`) was already exit `1` and is unchanged. See [CLI Exit-Code Convention](cli-exit-codes.md#get-on-not-found-exits-1-was-0--landed) for migration guidance.
 
 ### Metadata Command
 
@@ -687,7 +687,7 @@ echo 'source ~/.notebooklm-complete.bash' >> ~/.bashrc
 notebooklm completion fish > ~/.config/fish/completions/notebooklm.fish
 ```
 
-**ID-aware tab completion (P7.T1 / M1):** Once the script is installed, `-n/--notebook`, `-s/--source`, and `-a/--artifact` complete from the active profile's live IDs:
+**ID-aware tab completion:** Once the script is installed, `-n/--notebook`, `-s/--source`, and `-a/--artifact` complete from the active profile's live IDs:
 
 ```bash
 notebooklm ask -n <TAB>            # lists notebook IDs (filtered by what you've typed)

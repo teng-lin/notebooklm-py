@@ -37,9 +37,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 T_ID = r"T\d+\.[A-Z][0-9a-z]*"
 PR_T_ID = r"PR-" + T_ID
+PHASE_T_ID = r"P\d+\.T\d+"
 AUDIT_SEC = r"audit §\d+[a-z]?"
 AUDIT_ROW = r"audit row [A-Z]?\d+[A-Za-z0-9]*"
 AUDIT_SECTION = r"audit section \d+"
+# CLI UX audit row IDs (``cli-ux-audit.md``): C1, C2, I1..I16, M1..M5.
+# Match in parentheticals only; the bare letters are too common to strip
+# unconditionally.
+CLI_UX_ROW_ID = r"(?:[ICM]\d+(?:,\s*[ICM]\d+)*)"
+# Phase markers (e.g. ``F8.T4``) used to coordinate landed-in-arc work.
+PHASE_F_ID = r"F\d+\.T\d+"
 
 
 # Parenthetical patterns — order matters: longest/most-specific first.
@@ -61,6 +68,17 @@ PAREN_PATTERNS: list[tuple[str, str]] = [
     # Standalone T-tier and PR-T (must come last to avoid stealing combined matches)
     (rf" \({T_ID}\)", ""),
     (rf" \({PR_T_ID}\)", ""),
+    (rf" \({PHASE_T_ID}\)", ""),
+    (rf" \({PHASE_F_ID}\)", ""),
+    # CLI UX audit row IDs in parentheticals (cli-ux-audit.md):
+    # ``(I1)``, ``(I3, I4)``, ``(C1)``, ``(M2)``, etc.
+    (rf" \({CLI_UX_ROW_ID}\)", ""),
+    # Phase task ID paired with a CLI-UX row ID, with or without leading
+    # ``-`` and with a ``/`` separator: ``(P5.T2 / I7)``, ``(M2 / P5.T3)``.
+    (rf" \({PHASE_T_ID}\s*/\s*{CLI_UX_ROW_ID}\)", ""),
+    (rf" \({CLI_UX_ROW_ID}\s*/\s*{PHASE_T_ID}\)", ""),
+    # Multi-section audit references: ``(audit §§13, 15, 16, 21)``.
+    (r" \(audit §§\d+(?:,\s*\d+)*\)", ""),
 ]
 
 
@@ -98,10 +116,19 @@ PHASE_1_FILES: list[str] = [
     "src/notebooklm/_source_polling.py",
     "src/notebooklm/_sources.py",
     "src/notebooklm/auth.py",
+    "src/notebooklm/cli/artifact.py",
+    "src/notebooklm/cli/chat.py",
     "src/notebooklm/cli/download.py",
+    "src/notebooklm/cli/error_handler.py",
+    "src/notebooklm/cli/generate.py",
+    "src/notebooklm/cli/helpers.py",
+    "src/notebooklm/cli/note.py",
+    "src/notebooklm/cli/notebook.py",
     "src/notebooklm/cli/options.py",
     "src/notebooklm/cli/research.py",
     "src/notebooklm/cli/session.py",
+    "src/notebooklm/cli/source.py",
+    "src/notebooklm/notebooklm_cli.py",
     "src/notebooklm/client.py",
     "src/notebooklm/exceptions.py",
     "src/notebooklm/types.py",
@@ -110,6 +137,7 @@ PHASE_1_FILES: list[str] = [
     "docs/development.md",
     "docs/auth-keepalive.md",
     "docs/cli-exit-codes.md",
+    "docs/cli-reference.md",
     # root
     "CHANGELOG.md",
     "pyproject.toml",

@@ -2,7 +2,7 @@
 
 Provides reusable option decorators to reduce boilerplate in commands.
 
-Shell completion (P7.T1 / M1)
+Shell completion
 -----------------------------
 
 The ``-n/--notebook``, ``-s/--source``, and ``-a/--artifact`` options below
@@ -168,7 +168,7 @@ def notebook_option(f: FC) -> FC:
     """Add --notebook/-n option for notebook ID.
 
     The option defaults to None and falls back to the ``NOTEBOOKLM_NOTEBOOK``
-    environment variable (P7.T3 / M4) before context-based resolution kicks in
+    environment variable before context-based resolution kicks in
     inside ``helpers.require_notebook``. Click's native ``envvar=`` wiring is
     used so the binding shows up in ``--help`` automatically (``show_envvar=True``)
     and so the env value reaches the command body via the same ``notebook_id``
@@ -176,7 +176,7 @@ def notebook_option(f: FC) -> FC:
 
     Supports partial ID matching (e.g., 'abc' matches 'abc123...').
 
-    Tab completion (P7.T1 / M1): when shell completion is activated for
+    Tab completion: when shell completion is activated for
     ``notebooklm`` (see ``docs/cli-reference.md``), ``-n <TAB>`` lists real
     notebook IDs from the active profile. Best-effort — returns no
     suggestions on auth / network failure.
@@ -277,7 +277,7 @@ def source_option(f: FC) -> FC:
 
     Supports partial ID matching (e.g., 'abc' matches 'abc123...').
 
-    Tab completion (P7.T1 / M1): when shell completion is activated, ``-s
+    Tab completion: when shell completion is activated, ``-s
     <TAB>`` lists source IDs from the resolved active notebook. Resolution
     follows the same precedence as the command body (``-n`` flag > env >
     persisted context); without a resolvable notebook the completer returns
@@ -298,7 +298,7 @@ def artifact_option(f: FC) -> FC:
 
     Supports partial ID matching (e.g., 'abc' matches 'abc123...').
 
-    Tab completion (P7.T1 / M1): when shell completion is activated, ``-a
+    Tab completion: when shell completion is activated, ``-a
     <TAB>`` lists artifact IDs from the resolved active notebook. See
     ``source_option`` for the resolution rules.
     """
@@ -328,7 +328,7 @@ class _PromptFilePath(click.ParamType):
     """``--prompt-file`` value: a regular file OR the literal ``-`` (stdin).
 
     Replaces ``click.Path(exists=True, dir_okay=False)`` so the Unix ``-``
-    convention works (P7.T2 / M3). For real paths we still want
+    convention works. For real paths we still want
     ``click.Path``'s existence + dir-check guarantees so a typo surfaces at
     parse time instead of inside the command body. ``-`` is passed through
     untouched and the downstream ``resolve_prompt`` helper interprets it as
@@ -349,7 +349,7 @@ def prompt_file_option(f: FC) -> FC:
     """Add --prompt-file option for reading prompt/query text from a file.
 
     Accepts a path to a regular file OR the literal ``-`` to read from
-    stdin (P7.T2 / M3).
+    stdin.
     """
     return click.option(
         "--prompt-file",
@@ -377,11 +377,11 @@ def retry_option(f: FC) -> FC:
 def list_options(f: FC) -> FC:
     """Add ``--limit`` and ``--no-truncate`` flags shared by every ``list``-style command.
 
-    Audit row I16 / Phase 6 (P6.T1). Used by the top-level ``notebooklm list``,
-    ``notebooklm source list``, and ``notebooklm artifact list`` so the
-    output-shaping flag surface stays uniform across list-style commands as
-    notebooks grow large enough that the default rendering becomes unreadable
-    or unparseable. The wrapped function gains two kwargs:
+    Used by the top-level ``notebooklm list``, ``notebooklm source list``,
+    and ``notebooklm artifact list`` so the output-shaping flag surface
+    stays uniform across list-style commands as notebooks grow large
+    enough that the default rendering becomes unreadable or unparseable.
+    The wrapped function gains two kwargs:
 
     - ``limit`` (``int | None``) — when non-``None``, the command must slice
       its result set to the first ``limit`` rows BEFORE rendering (and before

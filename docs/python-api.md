@@ -319,7 +319,7 @@ wrapper is skipped entirely and the caller is responsible for retry
 semantics.
 
 **Cancellation safety.** Several paths are now shielded against
-cancellation (audit §§13, 15, 16, 21):
+cancellation:
 
 - **`close()`** is shielded; Ctrl-C during shutdown will not leak the
   underlying `httpx.AsyncClient`.
@@ -541,10 +541,6 @@ floor checks). All raise `ValueError`:
 - `server_error_max_retries ≥ 0`.
 - `keepalive` must be `None` or a positive finite number; values below
   `keepalive_min_interval` (default `60s`) are clamped up to that floor.
-
----
-
-**Last full audit**: 2026-05-15, HEAD `bbcfe69` (0 new CRITICAL findings vs the 2026-05-14 baseline at HEAD `89773ec`).
 
 ---
 

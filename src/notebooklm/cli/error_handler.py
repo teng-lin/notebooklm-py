@@ -62,7 +62,7 @@ def emit_cancelled_and_exit(
 ) -> NoReturn:
     """Emit a Ctrl-C cancellation message with an optional resume hint and exit 130.
 
-    Used by the long-running ``--wait`` paths (M2) so SIGINT during a poll
+    Used by the long-running ``--wait`` paths so SIGINT during a poll
     surfaces a friendly resume hint instead of a Python traceback. The hint
     follows the canonical phrasing from the audit:
 

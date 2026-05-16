@@ -167,7 +167,7 @@ def cli(ctx, storage, profile, verbose, quiet):
     # ``--quiet`` and ``-v/-vv`` resolve to incompatible log-level intents
     # (ERROR vs INFO/DEBUG). Honoring either silently would surprise the
     # other caller; reject the conflict explicitly so the user can drop one
-    # flag (P7.T3 / M4).
+    # flag.
     if quiet and verbose:
         raise click.UsageError("--quiet and -v are mutually exclusive.")
 
@@ -239,7 +239,7 @@ cli.add_command(profile)
 
 
 # =============================================================================
-# SHELL COMPLETION (P7.T1 / M1)
+# SHELL COMPLETION
 # =============================================================================
 
 

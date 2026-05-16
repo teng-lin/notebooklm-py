@@ -50,7 +50,7 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 notebooks = await client.notebooks.list()
 
-                # P6.T1 / I16: client-side offset slicing. No server-side
+                # client-side offset slicing. No server-side
                 # cursors in scope for this phase — `client.notebooks.list()`
                 # always returns the full result set, we just trim before
                 # rendering / counting.
@@ -76,7 +76,7 @@ def register_notebook_commands(cli):
 
                 table = Table(title="Notebooks")
                 table.add_column("ID", style="cyan")
-                # P6.T1 / I16: keep the legacy unconstrained Title rendering
+                # keep the legacy unconstrained Title rendering
                 # by default and rely on the explicit --no-truncate to also
                 # disable Rich's auto-ellipsis at narrow terminals via
                 # overflow="fold".

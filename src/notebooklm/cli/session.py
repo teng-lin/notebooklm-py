@@ -1614,7 +1614,7 @@ def register_session_commands(cli):
         # Wrap entire body in handle_errors so unexpected failures (e.g.
         # Playwright internal crashes that bubble out of the catch-all
         # except-block below) emit a friendly 'Unexpected error: <msg>'
-        # line + exit 2 instead of a Python traceback (I15). Existing
+        # line + exit 2 instead of a Python traceback. Existing
         # ``raise SystemExit(N)`` calls inside the body propagate
         # unchanged — handle_errors does not intercept SystemExit.
         with handle_errors():
@@ -1950,7 +1950,7 @@ def register_session_commands(cli):
                                 "Or use the default Chromium browser: notebooklm login"
                             )
                             raise SystemExit(1) from e
-                    # Downgraded from ``logger.error(..., exc_info=True)`` (I15):
+                    # Downgraded from ``logger.error(..., exc_info=True)``:
                     # the previous traceback dump duplicated whatever ``handle_errors``
                     # already shows the user. Keep the diagnostic available at
                     # debug level (-vv) without flooding stderr by default. The

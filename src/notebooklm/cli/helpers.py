@@ -756,7 +756,7 @@ def validate_id(entity_id: str, entity_name: str = "ID") -> str:
 def require_notebook(notebook_id: str | None) -> str:
     """Get notebook ID from argument, env var, or active context.
 
-    Resolution order (P7.T3 / M4 — env-var precedence):
+    Resolution order (env-var precedence):
 
     1. ``notebook_id`` argument (the resolved value of the ``-n/--notebook``
        Click flag — already env-var-aware via ``cli/options.py:notebook_option``,
@@ -958,7 +958,7 @@ def read_stdin_text(*, source_label: str = "stdin") -> str:
     """Read all of stdin as UTF-8 text and strip surrounding whitespace.
 
     Centralizes the Unix ``-`` (stdin) convention used by ``ask``, ``note
-    create``, ``source add``, and ``--prompt-file -`` (P7.T2 / M3). Uses
+    create``, ``source add``, and ``--prompt-file -``. Uses
     ``click.get_text_stream("stdin").read()`` so ``CliRunner.invoke(input=...)``
     in tests is honored without monkey-patching ``sys.stdin``.
 
@@ -985,22 +985,22 @@ def resolve_prompt(
 ) -> str:
     """Resolve prompt text from a positional argument or ``--prompt-file``.
 
-    Exactly one source may be provided. The file is read as UTF-8 with surrounding
-    whitespace stripped. When ``required`` is True and neither source yields
-    text, a ``UsageError`` is raised; otherwise an empty string is returned.
+     Exactly one source may be provided. The file is read as UTF-8 with surrounding
+     whitespace stripped. When ``required`` is True and neither source yields
+     text, a ``UsageError`` is raised; otherwise an empty string is returned.
 
-    The literal ``-`` is recognized as "read stdin" for either source
-    (P7.T2 / M3), matching the Unix convention.
+     The literal ``-`` is recognized as "read stdin" for either source
+    , matching the Unix convention.
 
-    Args:
-        argument_value: Value of the positional CLI argument (may be empty).
-        prompt_file: Path passed via ``--prompt-file`` (may be ``None``).
-        param_name: Name of the positional argument, used in error messages.
-        required: When True, raise ``UsageError`` if both sources are empty.
+     Args:
+         argument_value: Value of the positional CLI argument (may be empty).
+         prompt_file: Path passed via ``--prompt-file`` (may be ``None``).
+         param_name: Name of the positional argument, used in error messages.
+         required: When True, raise ``UsageError`` if both sources are empty.
 
-    Raises:
-        click.UsageError: Both sources provided, or ``required`` and both empty.
-        click.ClickException: Prompt file unreadable or not valid UTF-8.
+     Raises:
+         click.UsageError: Both sources provided, or ``required`` and both empty.
+         click.ClickException: Prompt file unreadable or not valid UTF-8.
     """
     if argument_value and prompt_file:
         raise click.UsageError(

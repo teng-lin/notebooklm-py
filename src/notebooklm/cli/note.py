@@ -132,7 +132,7 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
       cat notes.md | notebooklm note create --content -    # Content from stdin
       cat notes.md | notebooklm note create -              # Same, positional form
     """
-    # P7.T2 / M3 — resolve content from one of (positional CONTENT, --content,
+    # resolve content from one of (positional CONTENT, --content,
     # stdin). Positional and --content are mutually exclusive so the failure
     # mode on accidental double-pass is loud instead of a silent precedence.
     # ``content`` defaults to ``""`` (Click's ``default=""``) so we can't
@@ -214,9 +214,9 @@ def note_get(ctx, note_id, notebook_id, json_output, client_auth):
             )
             n = await client.notes.get(nb_id_resolved, resolved_id)
 
-            # C1 (Phase 3, BREAKING): not-found exits 1 with a typed error
-            # instead of the previous exit-0 ``found: false`` placeholder. The
-            # backend may return ``None`` (or any non-``Note`` sentinel) when
+            # BREAKING: not-found exits 1 with a typed error instead of
+            # the previous exit-0 ``found: false`` placeholder. The backend
+            # may return ``None`` (or any non-``Note`` sentinel) when
             # the row was deleted between the partial-ID resolve and this
             # ``get``; treat any non-``Note`` as missing. See
             # ``docs/cli-exit-codes.md`` and the BREAKING entry in

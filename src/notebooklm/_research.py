@@ -361,7 +361,7 @@ class ResearchAPI:
                 :meth:`start` and held onto the returned ``task_id`` should
                 pass it here on every subsequent ``poll`` to remove
                 ambiguity. The ``None`` default will be removed in a future
-                major release (Tier 8).
+                major release.
 
         Returns:
             Dictionary representing the parsed research task for the

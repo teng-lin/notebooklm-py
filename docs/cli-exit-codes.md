@@ -201,7 +201,7 @@ The following shifts have landed (or are about to land) as part of the CLI
 UX overhaul and are documented here for callers preparing for — or recovering
 from — the contract change.
 
-### C1 — `get`-on-not-found exits `1` (was `0`) ✅ **Landed in Phase 3**
+### `get`-on-not-found exits `1` (was `0`) ✅ **Landed**
 
 `notebooklm source get`, `notebooklm artifact get`, and `notebooklm note get`
 **now exit `1`** with the typed JSON error envelope (`{error, code:
@@ -212,7 +212,7 @@ the CLI's user-error convention and lets scripts branch on the exit code
 without parsing output text:
 
 ```sh
-# Idiomatic post-C1
+# Idiomatic
 if ! notebooklm source get "$SRC_ID"; then
     handle_missing "$SRC_ID"
 fi
@@ -239,7 +239,7 @@ race where partial-resolve succeeds but the subsequent `get` returns
 The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id`
 as a `ClickException`) was already exit `1` and is unchanged.
 
-### I14 — `download` exception paths will route through the typed handler
+### `download` exception paths will route through the typed handler
 
 The `download` command group currently catches some exceptions in
 command-local `try/except` blocks that bypass the central `handle_errors`
@@ -247,8 +247,8 @@ context. Concretely, generic `Exception` bubbles do not always honor `--json`
 (emitting plain stderr text instead of the JSON error document) and the exit
 code may not match the standard exception → exit-code mapping.
 
-Phase 3 will route all `download` exception paths through `handle_errors` so
-that:
+An upcoming change will route all `download` exception paths through
+`handle_errors` so that:
 
 - `--json` consistently produces the JSON error document on every failure.
 - Exit codes match the standard table above (`1` for known library errors,

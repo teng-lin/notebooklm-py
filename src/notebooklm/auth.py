@@ -630,8 +630,8 @@ _REFRESH_GENERATIONS: dict[str, int] = {}
 # ``_REFRESH_GENERATIONS`` counter guarded by ``_REFRESH_STATE_LOCK``.
 #
 # The strong-ref ``_REFRESH_INFLIGHT_TASKS`` set keeps the shielded subprocess
-# Tasks alive so the asyncio GC does not collect them (audit C4 lesson). The
-# task self-removes via ``add_done_callback(set.discard)`` once settled.
+# Tasks alive so the asyncio GC does not collect them. The task self-removes
+# via ``add_done_callback(set.discard)`` once settled.
 _REFRESH_INFLIGHT_BY_LOOP: "weakref.WeakKeyDictionary[Any, dict[str, asyncio.Future[None]]]" = (
     weakref.WeakKeyDictionary()
 )
@@ -694,9 +694,9 @@ async def _coalesced_run_refresh_cmd(
 
     if leader:
         task = asyncio.create_task(_run_refresh_cmd(resolved_storage_path, profile))
-        # Strong-ref pattern (audit C4): without ``add_done_callback`` the
-        # task can be collected by the asyncio GC before completion if no
-        # awaiter is holding a reference.
+        # Strong-ref pattern: without ``add_done_callback`` the task can be
+        # collected by the asyncio GC before completion if no awaiter is
+        # holding a reference.
         _REFRESH_INFLIGHT_TASKS.add(task)
         task.add_done_callback(_REFRESH_INFLIGHT_TASKS.discard)
 

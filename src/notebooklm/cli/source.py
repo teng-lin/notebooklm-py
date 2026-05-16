@@ -69,7 +69,7 @@ async def _status_with_elapsed(
     """Show a Rich spinner with a periodically updated elapsed timer.
 
     Used by ``source wait`` so interactive callers see live feedback during
-    the blocking poll (P5.T2 / I7). No-op (for the spinner) when
+    the blocking poll. No-op (for the spinner) when
     ``json_output`` is True so stdout stays pure JSON for automation. The
     spinner is transient — it disappears on exit, leaving only the final
     ready / failure / timeout line.
@@ -79,7 +79,7 @@ async def _status_with_elapsed(
     the wrapped block raises, the ticker is cancelled in ``finally`` and the
     exception propagates unchanged.
 
-    SIGINT handling (M2 / P5.T3): when ``resume_hint`` is provided, a
+    SIGINT handling: when ``resume_hint`` is provided, a
     ``KeyboardInterrupt`` raised inside the wrapped block is caught and
     converted into a friendly cancellation message via
     :func:`emit_cancelled_and_exit`. ``source wait`` uses the parallel
@@ -127,7 +127,7 @@ _GATEWAY_TITLE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# P4.T4 / I8: path-shape heuristic for ``source add``. When the user passes a
+# path-shape heuristic for ``source add``. When the user passes a
 # string that *looks like* a path (contains ``/`` OR ends in a recognized
 # document extension) but the path does not exist on disk, the CLI silently
 # falls through to inline-text ingestion. That's a common typo footgun
@@ -449,7 +449,7 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             sources = await client.sources.list(nb_id_resolved)
-            # P6.T1 / I16: client-side offset slicing.
+            # client-side offset slicing.
             if limit is not None and limit >= 0:
                 sources = sources[:limit]
             nb = None
@@ -579,7 +579,7 @@ def source_add(
     the warning when the input is genuinely text content that happens to look
     path-shaped.
     """
-    # P7.T2 / M3 — Unix ``-`` convention: ``source add -`` reads inline text
+    # Unix ``-`` convention: ``source add -`` reads inline text
     # from stdin and forces the text-source path. Intercepted here BEFORE
     # the URL / file / path-shaped auto-detection branches so a single dash
     # never falls into the path-shaped warning ("'-' looks like a path...")
@@ -614,7 +614,7 @@ def source_add(
             upload_path = _validate_upload_path(content, follow_symlinks)
             detected_type = "file"
         else:
-            # P4.T4 / I8: warn when the user passed a path-shaped string that
+            # warn when the user passed a path-shaped string that
             # doesn't exist on disk. Without this, ``source add ./missin.md``
             # silently sends the literal string ``./missin.md`` as note content
             # — the success line ("Added source: src_xxx") is indistinguishable
@@ -727,8 +727,8 @@ def source_get(ctx, source_id, notebook_id, json_output, client_auth):
             )
             src = await client.sources.get(nb_id_resolved, resolved_id)
 
-            # C1 (Phase 3, BREAKING): not-found exits 1 with a typed error
-            # instead of the previous exit-0 ``found: false`` placeholder. The
+            # BREAKING: not-found exits 1 with a typed error instead of
+            # the previous exit-0 ``found: false`` placeholder. The
             # ``_output_error`` helper writes the message to stderr (text mode)
             # or emits ``{error, code, message, source_id}`` to stdout (json
             # mode) and raises ``SystemExit(1)``. See ``docs/cli-exit-codes.md``
@@ -1418,7 +1418,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
 
             try:
                 # Wrap the blocking poll in a transient spinner so interactive
-                # users see progress feedback during the wait (P5.T2 / I7).
+                # users see progress feedback during the wait.
                 # Replaces the prior static "[dim]Waiting for source ...[/dim]"
                 # print — the spinner conveys the same information AND a live
                 # elapsed-seconds counter, then disappears so the final
@@ -1427,7 +1427,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
                 async with _status_with_elapsed(
                     f"Waiting for source {resolved_id} to finish processing...",
                     json_output=json_output,
-                    # Parallel hint for ``source wait`` (M2 / P5.T3): there is
+                    # Parallel hint for ``source wait``: there is
                     # no separate ``source poll`` command, so the resume IS
                     # re-running the same wait. Keeps the ``Cancelled. Resume
                     # with: ...`` phrasing consistent across the three

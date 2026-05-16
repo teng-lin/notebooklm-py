@@ -83,7 +83,7 @@ _INFOGRAPHIC_STYLE_MAP = {
 }
 
 
-# Typical-duration hints for the spinner status line (P5.T2 / I7).
+# Typical-duration hints for the spinner status line.
 # Empirical observation; the API exposes no progress channel so these are
 # user-facing wall-clock heuristics, not authoritative ETAs. Missing keys fall
 # back to no hint — the spinner still renders kind + elapsed seconds.
@@ -104,7 +104,7 @@ _TYPICAL_DURATIONS: dict[str, str] = {
 def _format_status_message(artifact_type: str, elapsed: float | None = None) -> str:
     """Build the spinner status line for a long-running generation.
 
-    Mirrors the format suggested in the audit (I7) — kind + typical-duration
+    Mirrors the format suggested in the audit — kind + typical-duration
     hint + optional elapsed timer. ``elapsed`` is ``None`` on first paint and
     an integer seconds value once the periodic ticker starts updating.
     """
@@ -134,7 +134,7 @@ async def _status_with_elapsed(
     the wrapped block raises, the ticker is cancelled in ``finally`` and the
     exception propagates unchanged.
 
-    SIGINT handling (M2 / P5.T3): when ``resume_hint`` is provided, a
+    SIGINT handling: when ``resume_hint`` is provided, a
     ``KeyboardInterrupt`` raised inside the wrapped block is caught and
     converted into a friendly cancellation message via
     :func:`emit_cancelled_and_exit`, which prints
@@ -306,7 +306,7 @@ async def handle_generation_result(
             ``wait_for_completion`` use its built-in default
             (``initial_interval=2.0``); when supplied, the value is forwarded
             as ``initial_interval`` so callers can tighten or loosen the
-            cadence (P5.T1 / I6).
+            cadence.
 
     Returns:
         Final GenerationStatus, or None if generation failed.
@@ -358,7 +358,7 @@ async def handle_generation_result(
         if interval is not None:
             wait_kwargs["initial_interval"] = interval
         # Wrap the blocking poll in a transient spinner so interactive users see
-        # progress feedback during long generations (P5.T2 / I7). The status
+        # progress feedback during long generations. The status
         # line includes the artifact kind, a typical-duration hint, and a
         # live elapsed-seconds counter. No-op under --json.
         #
