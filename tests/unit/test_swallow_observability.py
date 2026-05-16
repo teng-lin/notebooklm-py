@@ -95,7 +95,7 @@ def test_qa_pairs_warns_on_unguarded_shape(caplog):
 
     # Got at least the question (answer is empty due to except)
     assert pairs == [("what?", "")]
-    # After T8.D2b, _chat._extract_next_turn_content delegates to safe_index,
+    # After the fix, _chat._extract_next_turn_content delegates to safe_index,
     # which emits its own canonical "safe_index drift" warning (rather than
     # the older _chat-specific "schema drift" wording). Accept either so
     # this test survives future helper renames.
@@ -179,7 +179,7 @@ async def test_description_partial_summary_logs_debug(caplog):
 def test_migration_config_unparseable_logs_debug(caplog, tmp_path, monkeypatch):
     """migration.py — unparseable migration config logs at DEBUG.
 
-    After T3.E the lock-protected ``atomic_update_json`` surfaces the
+    After the fix the lock-protected ``atomic_update_json`` surfaces the
     parse failure as a ``json.JSONDecodeError`` which the helper catches
     and reports as "Migration config update failed".
     """

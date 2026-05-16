@@ -1,4 +1,4 @@
-"""T7.F3 — ``ResearchAPI.poll`` and ``import_sources`` task-id discriminator.
+"""``ResearchAPI.poll`` and ``import_sources`` task-id discriminator.
 
 Regression test for the audit §26 finding: when two research tasks are in
 flight against the same notebook (e.g. an end-user kicks off a deep-research

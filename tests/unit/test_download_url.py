@@ -1,6 +1,6 @@
 """Unit tests for ``ArtifactsAPI._download_url`` httpx-error wrapping.
 
-These tests pin the T3.F contract: every httpx failure (auth, generic HTTP,
+These tests pin the contract: every httpx failure (auth, generic HTTP,
 timeout, connection error) is surfaced as :class:`ArtifactDownloadError`,
 never as a raw ``httpx`` subclass. 401/403 carry an explicit
 ``Authentication required ... try `notebooklm login``` hint plus the

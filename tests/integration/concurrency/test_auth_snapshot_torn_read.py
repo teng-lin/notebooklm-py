@@ -1,4 +1,4 @@
-"""T7.F2 — atomic ``(csrf, sid, cookies)`` snapshot during refresh.
+"""atomic ``(csrf, sid, cookies)`` snapshot during refresh.
 
 The race fixed here is a torn read of the auth-headers triple
 ``(csrf_token, session_id, cookies)`` while a refresh runs concurrently

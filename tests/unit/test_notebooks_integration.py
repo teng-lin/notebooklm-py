@@ -88,7 +88,7 @@ class TestCreateNotebook:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        # T7.B2: ``create`` snapshots the notebook list before issuing
+        # ``create`` snapshots the notebook list before issuing
         # CREATE_NOTEBOOK so the probe-then-retry wrapper can detect a
         # server-side commit on a transport failure. Stub the baseline
         # list response first; then the create response.
@@ -121,7 +121,7 @@ class TestCreateNotebook:
         httpx_mock: HTTPXMock,
         build_rpc_response,
     ):
-        # T7.B2: see ``test_create_notebook`` for baseline-list rationale.
+        # see ``test_create_notebook`` for baseline-list rationale.
         baseline_list = build_rpc_response(RPCMethod.LIST_NOTEBOOKS, [[]])
         httpx_mock.add_response(content=baseline_list.encode())
         response = build_rpc_response(

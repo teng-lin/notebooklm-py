@@ -30,9 +30,9 @@ the new 9-param outer shape ``[null, "<inner-json-string>"]`` whose inner
 JSON-decoded list carries at least 9 params (C3).
 
 Cassettes flagged by the audit's "needs re-recording" set are marked xfail
-with explicit reasons referencing the phase-2 follow-up tasks (T8.B1..B5).
-When the corresponding phase-2 PR lands and re-records the cassette, the
-xfail marker MUST be removed in that PR.
+with explicit reasons referencing their follow-up repair work. When the
+corresponding follow-up PR lands and re-records the cassette, the xfail
+marker MUST be removed in that PR.
 
 Non-batchexecute interactions (e.g. the streaming-query endpoint
 ``GenerateFreeFormStreamed``, GETs against the SPA shell, the legacy
@@ -65,35 +65,34 @@ def _real_cassettes() -> list[Path]:
     return sorted(CASSETTE_DIR.glob("*.yaml"))
 
 
-# Cassettes that the Tier-8 audit flagged for re-recording or re-scrubbing in
-# phase 2. Each entry carries the follow-up task ID and the regression class
-# so the xfail message points reviewers at the eventual fix.
+# Cassettes that the cassette-hardening audit flagged for re-recording or
+# re-scrubbing. Each entry carries the regression class so the xfail
+# message points reviewers at the eventual fix.
 #
-# This is the audit's explicit "needs re-recording" set (see phase-1 plan,
-# T8.A5a acceptance line 254). The "67 cassettes with /ogw/" dynamic set
-# that used to surface here was cleared in T8.B6: the bulk re-scrub script
-# in ``scripts/rescrub-cassettes.py`` collapsed every remaining avatar URL
+# The "67 cassettes with /ogw/" dynamic set that used to surface here was
+# cleared by a bulk re-scrub pass: the script in
+# ``scripts/rescrub-cassettes.py`` collapsed every remaining avatar URL
 # to ``SCRUBBED_AVATAR_URL`` and re-derived the chunked byte-counts in the
 # same pass, so the dynamic ``/ogw/`` detector and its accompanying xfail
 # branch are now dead code — both were removed.
 AUDIT_REPAIR_LIST: dict[str, str] = {
-    # artifacts_revise_slide.yaml was repaired in T8.B1 (this PR) — the
-    # cassette was re-recorded against the live REVISE_SLIDE RPC so f.req
-    # carries the real urlencoded JSON payload again (only sensitive scalars
-    # scrubbed inside, not the whole body collapsed to ``"SCRUBBED"``).
-    # chat_ask.yaml + chat_ask_with_references.yaml were repaired in T8.B2 —
-    # re-recorded against the current 9-param streaming-chat builder
+    # artifacts_revise_slide.yaml was re-recorded against the live
+    # REVISE_SLIDE RPC so f.req carries the real urlencoded JSON payload
+    # again (only sensitive scalars scrubbed inside, not the whole body
+    # collapsed to ``"SCRUBBED"``).
+    # chat_ask.yaml + chat_ask_with_references.yaml were re-recorded
+    # against the current 9-param streaming-chat builder
     # (src/notebooklm/_chat.py:459-469) with the ``freq`` body matcher
     # opted in per-cassette in tests/integration/test_vcr_comprehensive.py.
-    # sources_add_file.yaml was repaired in T8.B4 — upload tokens (I17)
-    # scrubbed in place. sources_add_drive.yaml +
-    # sources_check_freshness_drive.yaml were repaired in T8.B5 — Drive AONS
-    # tokens scrubbed in place. example_httpbin_{get,post}.yaml were deleted
-    # in T8.B7 — the I-misc origin-IP leak was in illustrative VCR examples,
-    # not real NotebookLM cassettes. The example tests in test_vcr_example.py
-    # that used them were also removed in the same PR.
-    # The 61 ``/ogw/`` avatar URL cassettes were bulk re-scrubbed in T8.B6 —
-    # the dynamic detector / xfail branch that used to live here was removed
+    # sources_add_file.yaml was repaired — upload tokens scrubbed in
+    # place. sources_add_drive.yaml + sources_check_freshness_drive.yaml
+    # were repaired — Drive AONS tokens scrubbed in place.
+    # example_httpbin_{get,post}.yaml were deleted — the origin-IP leak
+    # was in illustrative VCR examples, not real NotebookLM cassettes.
+    # The example tests in test_vcr_example.py that used them were
+    # removed in the same PR.
+    # The 61 ``/ogw/`` avatar URL cassettes were bulk re-scrubbed — the
+    # dynamic detector / xfail branch that used to live here was removed
     # in the same PR.
 }
 
@@ -105,9 +104,9 @@ def _has_bytecount_drift(cassette: Path) -> bool:
     ``\\r\\n`` line endings, the byte-count was computed against the
     pre-strip bytes but the cassette stores the ``\\r``-stripped form, so
     every chunk prefix overshoots by exactly the number of stripped
-    carriage returns. T8.D7 (byte-count re-derivation) plus T8.B6 (bulk
-    re-scrub) fix this; until then we xfail affected cassettes so the
-    rest of the lint stays enforceable.
+    carriage returns. Byte-count re-derivation plus the bulk re-scrub
+    fix this; until then we xfail affected cassettes so the rest of the
+    lint stays enforceable.
     """
     try:
         data, _ = _load_cassette(cassette)
@@ -122,15 +121,15 @@ def _has_bytecount_drift(cassette: Path) -> bool:
 
 # ---------------------------------------------------------------------------
 # Leak patterns (assertion D — applies to ALL interactions, including
-# non-batchexecute). Kept minimal here; the canonical scrub registry is
-# T8.A4's tests/cassette_patterns.py (not yet landed in origin/main).
+# non-batchexecute). Kept minimal here; the canonical scrub registry
+# lives in tests/cassette_patterns.py.
 # ---------------------------------------------------------------------------
 
 # Escaped JSON display name: \"Two Capitalized Words\" inside a quoted JSON
 # string. Anchored on the escape `\"` so we don't fire on legitimate
 # capitalized prose appearing in plain text. Hyphenated tokens are *not*
 # matched (to skip HTTP header names like `Content-Type` and font families
-# like `Google-Sans-Text`). The broader T8.A6a registry will tighten this
+# like `Google-Sans-Text`). The broader scrub registry tightens this
 # further by requiring an adjacent JSON-key context.
 LEAK_DISPLAY_NAME = re.compile(r'\\"(?:[A-Z][a-z]+)(?: [A-Z][a-z]+)+\\"')
 # Two-capitalized-word strings that are legitimate UI / artifact / notebook
@@ -462,13 +461,14 @@ def _xfail_reason(cassette: Path) -> str | None:
 
     Resolution order (most specific first):
       1. Explicit AUDIT_REPAIR_LIST — the cassettes the audit named.
-      2. Byte-count drift present — audit class I9, fixed by T8.D7.
+      2. Byte-count drift present — chunked byte-count prefix drifted
+         from payload length after sanitization.
 
-    Each branch returns a different reason so phase-2 PRs can identify
-    which xfail markers their work should clear.
+    Each branch returns a different reason so future repair PRs can
+    identify which xfail markers their work should clear.
 
     The ``/ogw/`` avatar URL branch that used to sit between (1) and (2)
-    was removed in T8.B6 — the bulk re-scrub script in
+    was removed — the bulk re-scrub script in
     ``scripts/rescrub-cassettes.py`` collapsed every remaining avatar URL
     and re-derived the affected chunk byte-counts in a single pass, so
     no real cassette can satisfy the old detector anymore.
@@ -477,8 +477,8 @@ def _xfail_reason(cassette: Path) -> str | None:
         return AUDIT_REPAIR_LIST[cassette.name]
     if _has_bytecount_drift(cassette):
         return (
-            "Phase 2 T8.D7 will fix (audit I9: chunked byte-count "
-            "prefix drifted from payload length after sanitization)"
+            "Byte-count re-derivation will fix: chunked byte-count "
+            "prefix drifted from payload length after sanitization"
         )
     return None
 

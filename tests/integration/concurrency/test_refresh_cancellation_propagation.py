@@ -1,4 +1,4 @@
-"""T7.C1 — shielded shared refresh task survives waiter cancellation.
+"""shielded shared refresh task survives waiter cancellation.
 
 Regression test for the cancellation-propagation bug at
 ``src/notebooklm/_core.py:_await_refresh``: prior to T7.C1, a caller

@@ -1,11 +1,11 @@
 """``with_client`` routes errors through ``handle_errors``.
 
-Before T1.G, ``@with_client`` ran its own ad-hoc ``try/except FileNotFoundError``
+Before the fix, ``@with_client`` ran its own ad-hoc ``try/except FileNotFoundError``
 + broad ``except Exception``, so typed library exceptions got squashed into a
 generic ``"ERROR"`` payload (or a plain "Error: ..." stderr line) with no
 actionable hint.
 
-After T1.G:
+After the with_client refactor, :
 
 * ``AuthError`` → "Run 'notebooklm login' to re-authenticate." hint, exit 1
 * ``RateLimitError`` → "Retry after Ns" hint, exit 1

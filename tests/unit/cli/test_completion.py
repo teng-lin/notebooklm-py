@@ -112,7 +112,7 @@ class TestCompletionCommand:
         result = runner.invoke(cli, ["completion", "--help"])
         assert result.exit_code == 0, result.output
         # Must show the canonical zsh install path (the example pinned in
-        # the audit row M1 spec) so regressions in the docstring rewrite
+        # the spec) so regressions in the docstring rewrite
         # don't drop the most-asked-for snippet.
         assert "zsh" in result.output.lower()
         assert "_notebooklm" in result.output or ".bashrc" in result.output

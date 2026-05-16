@@ -1,4 +1,4 @@
-"""T8.D11 — pytester regression test for the integration tier-enforcement hook.
+"""pytester regression test for the integration tier-enforcement hook.
 
 ``tests/integration/conftest.py`` registers a ``pytest_collection_modifyitems``
 hook that REFUSES to collect a test under ``tests/integration/`` unless it is

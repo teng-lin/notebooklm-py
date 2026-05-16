@@ -93,7 +93,7 @@ async def test_save_lock_acquired_off_event_loop_thread(
         "event-loop thread. It must only be acquired inside the _save() "
         "closure dispatched via asyncio.to_thread, otherwise a blocking "
         "threading.Lock on the loop will stall every other coroutine "
-        "(priority inversion — audit §17 / T7.G5)."
+        "(priority inversion / T7.G5)."
     )
     # Belt-and-braces: also compare ident in case some future Thread
     # subclass overrides ``__eq__``/``is`` semantics around object identity.

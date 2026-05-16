@@ -1,4 +1,4 @@
-"""T7.G6 — Canonicalize keepalive storage path for in-process dedupe.
+"""Canonicalize keepalive storage path for in-process dedupe.
 
 Regression test for audit §29: the keepalive rotation throttle keys the
 in-process dedupe (``_LAST_POKE_ATTEMPT_MONOTONIC`` /

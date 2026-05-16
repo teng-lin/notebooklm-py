@@ -1124,7 +1124,7 @@ class TestUseCommand:
     def test_use_without_auth_fails_closed(self, runner, mock_context_file):
         """'use' fails closed (exit 1) when no auth is available — fix for T3.D.
 
-        Pre-T3.D behavior persisted unverified IDs after auth failure, poisoning
+        Previously, behavior persisted unverified IDs after auth failure, poisoning
         saved state for downstream commands. The new contract: refuse to write
         context.json and emit a clear "run notebooklm login" message.
         """
@@ -1533,7 +1533,7 @@ class TestAuthCheckCommand:
     def test_auth_check_storage_not_found_json(self, runner, mock_storage_path):
         """Test auth check --json when storage file doesn't exist.
 
-        Per T1.F: failure paths in --json mode must exit nonzero so automation
+        Spec: failure paths in --json mode must exit nonzero so automation
         can fail-fast on `notebooklm auth check --json`.
         """
         if mock_storage_path.exists():
@@ -1560,7 +1560,7 @@ class TestAuthCheckCommand:
     def test_auth_check_invalid_json_output(self, runner, mock_storage_path):
         """Test auth check --json when storage contains invalid JSON.
 
-        Per T1.F: failure paths in --json mode must exit nonzero.
+        Spec: failure paths in --json mode must exit nonzero.
         """
         mock_storage_path.write_text("not valid json at all")
 
@@ -1904,7 +1904,7 @@ class TestSessionEdgeCases:
     def test_use_handles_api_error_fails_closed(self, runner, mock_auth, mock_context_file):
         """'use' fails closed when the API errors — fix for T3.D.
 
-        Pre-T3.D: an exception during ``client.notebooks.get`` was swallowed
+        Previously: an exception during ``client.notebooks.get`` was swallowed
         and the unverified ID was persisted with a "Warning" tag, poisoning
         downstream commands. New contract: exit 1, leave context.json untouched.
         """

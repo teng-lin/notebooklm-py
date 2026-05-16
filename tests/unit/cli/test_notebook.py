@@ -361,7 +361,7 @@ class TestNotebookCreate:
     def test_notebook_create_with_use_json(self, runner, mock_auth, mock_context_file):
         """`create --use --json` switches context AND emits JSON (consistent with text mode).
 
-        Per audit row I12 (P4.T5), the JSON envelope MUST surface the
+        the JSON envelope MUST surface the
         `active_notebook_id` alongside the create result so script callers
         can pick up the new context without scraping any "Context set to ..."
         text or shelling out to `notebooklm status --json`.

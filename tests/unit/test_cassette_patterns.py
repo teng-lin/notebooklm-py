@@ -1,4 +1,4 @@
-"""Tests for the canonical cassette sanitization registry (T8.A4, I6, I7).
+"""Tests for the canonical cassette sanitization registry.
 
 The registry lives in :mod:`tests.cassette_patterns` and exports a single
 :func:`scrub_string` sanitizer plus an :func:`is_clean` validator. These
@@ -7,13 +7,14 @@ tests assert:
 - Every cookie shape we know about scrubs cleanly (positive)
 - Scrubbing is idempotent on already-scrubbed input (no double-scrub)
 - Every placeholder in ``SCRUB_PLACEHOLDERS`` is recognised as clean
-- A real cookie value starting with ``S`` IS still flagged as a leak (closes
-  audit finding I7 — the legacy bash guard used a ``[^S"]`` character class
-  that exempted any real secret whose first character was ``S``)
+- A real cookie value starting with ``S`` IS still flagged as a leak —
+  the legacy bash guard used a ``[^S"]`` character class that exempted
+  any real secret whose first character was ``S``; the consolidated
+  registry uses exact-match placeholder membership to close that hole.
 - Registry stays in sync with :mod:`tests.vcr_config`
-- Bad-cassette regressions (the shape-lint inputs from T8.A3) are caught by
-  :func:`is_clean`. Inline payloads are used so this test does not depend on
-  T8.A3 filesystem fixtures — when A3 lands, both layers cooperate.
+- Bad-cassette regressions (the shape-lint inputs) are caught by
+  :func:`is_clean`. Inline payloads are used so this test does not depend
+  on filesystem fixtures.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ from cassette_patterns import (  # noqa: E402
 
 
 def test_registry_exports_required_constants() -> None:
-    """Every constant called out in the T8.A4 task spec is exported."""
+    """Every constant called out in the sanitization-registry spec is exported."""
     assert isinstance(SESSION_COOKIES, list) and SESSION_COOKIES
     assert isinstance(SECURE_COOKIES, list) and SECURE_COOKIES
     assert isinstance(HOST_COOKIES, list) and HOST_COOKIES
@@ -411,10 +412,9 @@ def test_vcr_config_has_no_inline_sensitive_patterns() -> None:
 def test_registry_session_cookies_all_scrubbed_by_vcr_config() -> None:
     """Each :data:`SESSION_COOKIES` name has a working scrubber.
 
-    This is the registry-sync test required by the T8.A4 spec: if either the
-    registry's cookie list or ``vcr_config``'s scrubber pipeline drifts so
-    that a declared cookie name no longer gets its value scrubbed, this test
-    fails.
+    This is the registry-sync invariant: if either the registry's cookie list
+    or ``vcr_config``'s scrubber pipeline drifts so that a declared cookie
+    name no longer gets its value scrubbed, this test fails.
     """
     for name in SESSION_COOKIES:
         header = f"Cookie: {name}=REAL_SECRET_TOKEN_HERE"
@@ -451,8 +451,8 @@ def test_filter_headers_disjoint_from_cookies() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Bad-cassette regression sanity check (A3 cooperation; inline payloads so
-# this test does not depend on T8.A3 filesystem fixtures landing first)
+# Bad-cassette regression sanity check (inline payloads so this test does
+# not depend on filesystem fixtures)
 # ---------------------------------------------------------------------------
 
 
@@ -555,8 +555,8 @@ def test_drive_file_id_in_drive_url_scrubbed() -> None:
 def test_drive_file_id_negative_regression_non_drive_ids_not_scrubbed() -> None:
     """Bare 36-char UUIDs outside Drive contexts must NOT be scrubbed.
 
-    This is the load-bearing test for T8.A6b. The codebase emits many
-    ``[A-Za-z0-9-]`` identifiers that LOOK like Drive file IDs but are
+    This is the load-bearing test for Drive-file-ID scrubbing. The codebase
+    emits many ``[A-Za-z0-9-]`` identifiers that LOOK like Drive file IDs but are
     NotebookLM-internal (artifact IDs, conversation IDs, source IDs). A
     naive ``[A-Za-z0-9_-]{33,44}`` pattern would corrupt cassette replay by
     mangling them; DRIVE_FILE_ID is intentionally anchored to ``"file_id":``
@@ -585,7 +585,7 @@ def test_drive_file_id_negative_regression_non_drive_ids_not_scrubbed() -> None:
 
 
 def test_upload_drive_scrubbing_is_idempotent() -> None:
-    """Scrubbing an already-scrubbed string is a no-op for T8.A6b patterns."""
+    """Scrubbing an already-scrubbed string is a no-op for upload/Drive patterns."""
     inputs = [
         "X-GUploader-UploadID: ABPj22qXYZ_-abc123",
         "https://notebooklm.google.com/upload/_/?upload_id=AJRbA5XZ_-12345",
@@ -631,8 +631,8 @@ def test_is_clean_flags_unscrubbed_upload_url() -> None:
     assert not ok
 
 
-def test_is_clean_recognizes_t8a6b_placeholders() -> None:
-    """The four T8.A6b placeholders register as clean."""
+def test_is_clean_recognizes_upload_drive_placeholders() -> None:
+    """The four upload + Drive placeholders register as clean."""
     for placeholder in [
         "X-GUploader-UploadID: SCRUBBED_UPLOAD_ID",
         "upload_id=SCRUBBED_UPLOAD_ID",
@@ -806,7 +806,7 @@ def test_display_name_negative_regression_escaped_titles_in_allowlist_preserved(
 
 
 def test_display_name_and_avatar_scrubbing_is_idempotent() -> None:
-    """Scrubbing an already-scrubbed string is a no-op for T8.A6a patterns."""
+    """Scrubbing an already-scrubbed string is a no-op for display-name/avatar patterns."""
     inputs = [
         _esc("Alice Smith"),
         _esc("People Conf"),
@@ -858,8 +858,8 @@ def test_is_clean_flags_unscrubbed_avatar_url() -> None:
         assert any("avatar URL" in leak for leak in leaks)
 
 
-def test_is_clean_recognizes_t8a6a_placeholders() -> None:
-    """The T8.A6a placeholders register as clean."""
+def test_is_clean_recognizes_display_name_avatar_placeholders() -> None:
+    """The display-name + avatar placeholders register as clean."""
     placeholders = [
         "SCRUBBED_AVATAR_URL",
         _esc("SCRUBBED_NAME"),
@@ -873,7 +873,7 @@ def test_is_clean_recognizes_t8a6a_placeholders() -> None:
 
 
 def test_display_name_false_positives_mirror_shape_lint() -> None:
-    """A6a's allowlist must stay in sync with A3's shape-lint allowlist.
+    """The scrub-registry allowlist must stay in sync with the shape-lint allowlist.
 
     ``tests/unit/test_cassette_shapes.py`` carries the same set under a
     slightly different name (``DISPLAY_NAME_FALSE_POSITIVES``), with each
@@ -883,12 +883,12 @@ def test_display_name_false_positives_mirror_shape_lint() -> None:
     """
     from test_cassette_shapes import DISPLAY_NAME_FALSE_POSITIVES as SHAPE_LINT_FPS
 
-    # Shape-lint stores entries as ``\"Name\"``; A6a stores bare names.
-    # Strip the escape wrapping to compare apples-to-apples.
+    # Shape-lint stores entries as ``\"Name\"``; the scrub registry stores
+    # bare names. Strip the escape wrapping to compare apples-to-apples.
     shape_lint_bare = frozenset(
         entry.removeprefix('\\"').removesuffix('\\"') for entry in SHAPE_LINT_FPS
     )
     assert shape_lint_bare == DISPLAY_NAME_FALSE_POSITIVES, (
-        "T8.A6a false-positive allowlist drifted from T8.A3 shape-lint allowlist; "
+        "Display-name false-positive allowlist drifted from shape-lint allowlist; "
         "update BOTH tests/cassette_patterns.py and tests/unit/test_cassette_shapes.py"
     )

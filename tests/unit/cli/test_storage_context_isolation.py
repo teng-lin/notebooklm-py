@@ -136,7 +136,7 @@ class TestUseWritesSiblingContext:
         # ``use --force`` skips the existence-check RPC and writes context
         # immediately — that's the right primitive for an isolation test that
         # doesn't care whether the notebook exists, only WHERE the write lands.
-        # Post-T3.D, the unverified-but-saved fallback no longer exists; we
+        # After the fix, the unverified-but-saved fallback no longer exists; we
         # use ``--force`` to express the same intent explicitly.
         result = runner.invoke(
             cli, ["--storage", str(storage_a), "use", "--force", "nb_abc123def456"]
@@ -214,7 +214,7 @@ class TestDefaultBehaviorUnchanged:
 
         # ``--force`` keeps this test focused on *where* the write lands
         # (default profile vs. sibling) rather than dragging in a full
-        # auth/RPC mock. Post-T3.D, ``use`` without ``--force`` fails closed
+        # auth/RPC mock. After the fix, ``use`` without ``--force`` fails closed
         # on RPC errors, so the prior "best-effort fallback" wording no
         # longer applies.
         result = runner.invoke(cli, ["use", "--force", "nb_default_path"])

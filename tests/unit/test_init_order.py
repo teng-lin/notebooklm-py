@@ -1,6 +1,6 @@
 """Init-order regression tests for ``ArtifactsAPI`` / ``NotesAPI``.
 
-Before T6.F, :class:`ArtifactsAPI` required ``notes_api=client.notes`` at
+Before the fix, :class:`ArtifactsAPI` required ``notes_api=client.notes`` at
 construction time, so :class:`NotesAPI` had to be built first. The shared
 :mod:`_mind_map` module decouples the two APIs — these tests pin that
 invariant down so the load-bearing init order can't silently come back.

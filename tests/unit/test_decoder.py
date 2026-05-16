@@ -824,7 +824,7 @@ class TestUnknownRPCMethodErrorRouting:
 
 
 class TestMalformedChunkResilience:
-    """T8.D1: safe_index hot-path traversal must tolerate malformed chunks.
+    """safe_index hot-path traversal must tolerate malformed chunks.
 
     None of these inputs should raise; the decoder API surface (collect_rpc_ids,
     extract_rpc_result) must degrade gracefully when Google's response shape

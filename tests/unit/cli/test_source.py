@@ -308,7 +308,7 @@ class TestSourceAdd:
             assert result.exit_code == 0
 
     def test_source_add_file_with_mime_type_emits_deprecation(self, runner, mock_auth, tmp_path):
-        """T6.E: ``--mime-type`` on the file-source path is a no-op; warn user.
+        """``--mime-type`` on the file-source path is a no-op; warn user.
 
         The Drive path keeps ``--mime-type`` as a live, functional option, so
         the deprecation echo MUST be gated on ``detected_type == 'file'`` and

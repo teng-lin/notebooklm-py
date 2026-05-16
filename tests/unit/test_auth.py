@@ -2454,7 +2454,7 @@ class TestSiblingGoogleProductExtraction:
 
     @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
     def test_extract_cookies_with_domains_keeps_opted_in_youtube(self, domain):
-        """T5.G contract: ``extract_cookies_with_domains`` keeps YouTube cookies.
+        """Contract: ``extract_cookies_with_domains`` keeps YouTube cookies.
 
         Blast radius is reduced at extraction time (rookiepy does not
         return YouTube cookies by default). When a user has opted in via
@@ -2821,7 +2821,7 @@ class TestPathAwareCookieIdentity:
 class TestRookiepyDomainsCoverage:
     """Confirm ``_login_with_browser_cookies`` knows about every sibling product.
 
-    Post-T5.G the rookiepy ``domains`` list defaults to REQUIRED only, but
+    After the fix the rookiepy ``domains`` list defaults to REQUIRED only, but
     the ``--include-domains`` opt-in still has to cover every sibling
     product. Pin that every known sibling label resolves to at least one
     domain, so future contributors can't forget to wire up a new label.
@@ -2985,7 +2985,7 @@ class TestConvertRookiepyCookies:
         assert result["cookies"][0]["name"] == "OSID"
 
     def test_sibling_google_product_subdomains_kept(self):
-        """Auth conversion keeps sibling Google subdomain cookies (post-T5.G).
+        """Auth conversion keeps sibling Google subdomain cookies (after the fix).
 
         T5.G narrowed the runtime gate from the union to REQUIRED, but the
         ``.google.com`` suffix branch of :func:`_is_allowed_cookie_domain`

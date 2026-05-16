@@ -120,7 +120,7 @@ class _NoteCancelTransport(httpx.AsyncBaseTransport):
 async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> None:
     """Cancel after CREATE_NOTE / before UPDATE_NOTE completes.
 
-    The acceptance invariant from the T7.C4 plan: assert EITHER both writes
+    The acceptance invariant from the plan: assert EITHER both writes
     succeed (shield wins) OR a DELETE_NOTE cleanup task fired on the
     transport. Either branch proves the orphan-note bug is gone.
     """

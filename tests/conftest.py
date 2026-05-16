@@ -42,7 +42,7 @@ def _reset_poke_state():
 
 @pytest.fixture(autouse=True)
 def _synthetic_error_mode(request, monkeypatch):
-    """T8.E10 — opt a test into ``NOTEBOOKLM_VCR_RECORD_ERRORS=<mode>``.
+    """opt a test into ``NOTEBOOKLM_VCR_RECORD_ERRORS=<mode>``.
 
     When a test (or its enclosing module/class) carries
     ``@pytest.mark.synthetic_error("429"|"5xx"|"expired_csrf")``, this fixture

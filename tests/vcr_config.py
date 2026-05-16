@@ -168,7 +168,7 @@ def scrub_request(request: Any) -> Any:
 
 
 def _substitute_synthetic_error(response: dict[str, Any]) -> dict[str, Any]:
-    """T8.E10 — defense-in-depth synthetic-error substitution.
+    """defense-in-depth synthetic-error substitution.
 
     When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` resolves to a valid mode (see
     :data:`VALID_ERROR_MODES`), rewrite the response shape to the canonical

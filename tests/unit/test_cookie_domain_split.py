@@ -103,7 +103,7 @@ class TestRuntimeGate:
     """
 
     def test_runtime_gate_accepts_youtube_for_opt_in(self):
-        """T5.G contract: the runtime gate accepts every OPTIONAL domain.
+        """Contract: the runtime gate accepts every OPTIONAL domain.
 
         If it rejected ``.youtube.com`` here, ``--include-domains=youtube``
         cookies would be extracted by rookiepy and then immediately
@@ -160,7 +160,7 @@ class TestBuildGoogleCookieDomains:
         assert not (OPTIONAL_COOKIE_DOMAINS & domains)
 
     def test_include_optional_returns_union(self):
-        """``include_optional=True`` restores the pre-T5.G broad set."""
+        """``include_optional=True`` restores the previous broad set."""
         domains = set(_build_google_cookie_domains(include_optional=True))
         assert REQUIRED_COOKIE_DOMAINS.issubset(domains)
         assert OPTIONAL_COOKIE_DOMAINS.issubset(domains)

@@ -101,7 +101,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     ``await self._await_refresh()`` followed by ``continue``) are fine
     because each iteration takes a fresh snapshot.
 
-    T7.F2 note: the lock acquisition inside ``_snapshot`` is the only
+    Note: the lock acquisition inside ``_snapshot`` is the only
     pre-POST ``await``, and it lives *before* the try block — so this
     guard (which only walks the try body) remains valid.
     """
@@ -205,7 +205,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
 def test_build_url_does_not_read_self_auth():
     """``RpcExecutor.build_url`` must consume only its ``snapshot`` parameter.
 
-    T7.F2 / audit §12: pre-fix, ``_build_url`` reached into ``self.auth``
+    pre-fix, ``_build_url`` reached into ``self.auth``
     on every call to read ``session_id``, ``authuser``, and
     ``account_email``. With ``_snapshot()`` and ``_build_url`` running
     on separate Python statements, a concurrent ``refresh_auth`` could

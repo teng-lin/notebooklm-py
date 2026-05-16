@@ -1,4 +1,4 @@
-"""T7.G7 — exactly-once warning dedupe under a single event loop.
+"""exactly-once warning dedupe under a single event loop.
 
 These tests pin the **single-event-loop** case of the documented "best-effort
 under threads, exactly-once on a single loop" contract for the two module-level

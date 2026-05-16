@@ -1,9 +1,9 @@
-"""T7.G1 — regression tests for ``ClientCore._refresh_lock`` lazy-init.
+"""regression tests for ``ClientCore._refresh_lock`` lazy-init.
 
 Pins two behaviors:
 
 1. ``ClientCore`` can be constructed outside a running event loop even when
-   a ``refresh_callback`` is wired. Before T7.G1 the constructor created
+   a ``refresh_callback`` is wired. Before the fix, the constructor created
    ``asyncio.Lock()`` eagerly, which fails under some Python versions when
    no loop is running.
 
@@ -57,7 +57,7 @@ async def _noop_refresh() -> AuthTokens:
 def test_construct_outside_event_loop_with_callback() -> None:
     """``ClientCore(refresh_callback=...)`` must succeed with no running loop.
 
-    Pre-T7.G1 the eager ``asyncio.Lock()`` in ``__init__`` could raise
+    Previously, the eager ``asyncio.Lock()`` in ``__init__`` could raise
     ``RuntimeError: no running event loop`` on some interpreters / asyncio
     versions when the client was constructed from sync code. Lazy-init
     moves that allocation to the first ``_await_refresh`` call.

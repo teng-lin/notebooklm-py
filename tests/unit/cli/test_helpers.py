@@ -834,7 +834,7 @@ class TestWithClientDecorator:
         missing file was incorrectly showing 'Not logged in' because the
         with_client decorator caught all FileNotFoundError as auth errors.
 
-        After T1.G, ``with_client`` routes body errors through ``handle_errors``,
+        After the with_client refactor, ``with_client`` routes body errors through ``handle_errors``,
         so an unexpected FileNotFoundError surfaces as an UNEXPECTED_ERROR
         (exit 2) — still NOT an auth error.
         """

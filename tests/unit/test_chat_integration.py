@@ -646,7 +646,7 @@ class TestChatAskErrorHandling:
     ):
         """Test ask() raises ChatError on httpx.HTTPStatusError.
 
-        After T2.D, the chat path uses ``core.query_post`` which routes
+        After the chat-path refactor, the chat path uses ``core.query_post`` which routes
         through the shared transport pipeline. Auth-shaped statuses (400/401/
         403) go through the refresh path before surfacing; this test uses
         500 to exercise the plain ``HTTPStatusError → ChatError`` mapping

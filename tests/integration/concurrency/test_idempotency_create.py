@@ -163,7 +163,7 @@ def _rpc_id_in_request(request: httpx.Request) -> str | None:
 async def test_notebooks_create_idempotent_on_5xx_retry(auth_tokens) -> None:
     """A 5xx on CREATE_NOTEBOOK followed by a probe finding the title returns the existing notebook.
 
-    Before T7.B2: the inner retry loop would re-POST CREATE_NOTEBOOK and
+    Before the fix, : the inner retry loop would re-POST CREATE_NOTEBOOK and
     duplicate the notebook. After T7.B2: the create RPC fires once, the
     probe (LIST_NOTEBOOKS) returns the new notebook, and we return it
     without re-issuing the create.

@@ -135,7 +135,7 @@ class TestNoOrphanCommands:
 
     The "Other" safety-net bin in :class:`SectionedGroup` is reserved for
     commands explicitly tagged ``category="misc"``. Any unbinned-and-untagged
-    command is a discoverability regression — see audit row I10 (Phase 4).
+    command is a discoverability regression.
     """
 
     def _binned_names(self) -> set[str]:

@@ -367,24 +367,24 @@ def test_python_guard_repo_allowlist_is_explicit_basename_list() -> None:
         if line.strip() and not line.strip().startswith("#")
     }
     # Spec-explicit entries that must always be in the allowlist while
-    # phase-2 repair is outstanding.
-    # ``sources_add_file.yaml`` is NOT in this required-set anymore — it was
-    # repaired in T8.B4 (the audit's I17 upload-token leak scrubbed in place).
-    # ``sources_add_drive.yaml`` + ``sources_check_freshness_drive.yaml`` are
-    # NOT in this required-set anymore — they were repaired in T8.B5 (the
-    # audit's I17 Drive AONS-token leak scrubbed in place).
-    # ``example_httpbin_{get,post}.yaml`` are NOT in this required-set anymore —
-    # they were deleted in T8.B7 (the audit's I-misc origin-IP leak was in
-    # illustrative VCR fixtures, not real NotebookLM cassettes).
+    # cassette repair is outstanding.
+    # ``sources_add_file.yaml`` is NOT in this required-set anymore — it
+    # was repaired (upload-token leak scrubbed in place).
+    # ``sources_add_drive.yaml`` + ``sources_check_freshness_drive.yaml``
+    # are NOT in this required-set anymore — they were repaired (Drive
+    # AONS-token leak scrubbed in place).
+    # ``example_httpbin_{get,post}.yaml`` are NOT in this required-set
+    # anymore — they were deleted (the origin-IP leak was in illustrative
+    # VCR fixtures, not real NotebookLM cassettes).
     # ``chat_ask.yaml`` + ``chat_ask_with_references.yaml`` are NOT in this
-    # required-set anymore — they were re-recorded in T8.B2 against the
-    # current 9-param streaming-chat builder (C3 stale-shape regression).
-    # ``artifacts_revise_slide.yaml`` is NOT in this required-set anymore —
-    # it was repaired in T8.B1 (re-recorded so f.req carries a real
-    # urlencoded JSON payload with only sensitive scalars scrubbed inside).
-    # ``sharing_get_status.yaml`` + ``sharing_set_public.yaml`` are NOT in
-    # this required-set anymore — they were re-scrubbed in T8.B3.
-    # With all phase-2 cassette repairs landed, this loop has nothing to
-    # assert; future regressions would re-introduce entries here.
+    # required-set anymore — they were re-recorded against the current
+    # 9-param streaming-chat builder (stale-shape regression).
+    # ``artifacts_revise_slide.yaml`` is NOT in this required-set anymore
+    # — it was repaired (re-recorded so f.req carries a real urlencoded
+    # JSON payload with only sensitive scalars scrubbed inside).
+    # ``sharing_get_status.yaml`` + ``sharing_set_public.yaml`` are NOT
+    # in this required-set anymore — they were re-scrubbed.
+    # With all cassette repairs landed, this loop has nothing to assert;
+    # future regressions would re-introduce entries here.
     for required in ():
         assert required in entries, f"missing required allowlist entry: {required}"

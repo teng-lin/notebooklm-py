@@ -1,4 +1,4 @@
-"""T7.E2 — leader/follower polling dedupe for ``wait_for_completion``.
+"""leader/follower polling dedupe for ``wait_for_completion``.
 
 Regression test for the audit §21 finding: when N callers concurrently
 invoke ``ArtifactsAPI.wait_for_completion`` for the *same* ``(notebook_id,

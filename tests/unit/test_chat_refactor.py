@@ -130,7 +130,7 @@ class TestChatAuthuserParam:
     @pytest.mark.asyncio
     async def test_authuser_absent_for_default_profile(self, httpx_mock, mock_get_conversation_id):
         """No ``authuser=`` on the URL when authuser=0 and no email — matches the
-        pre-T2.D default-profile behavior (don't churn the existing single-account
+        previous-contract default-profile behavior (don't churn the existing single-account
         contract)."""
         auth = AuthTokens(
             cookies={"SID": "x"},
@@ -161,7 +161,7 @@ class TestChatAuthuserParam:
 
 
 class TestChatReqid:
-    """T2.D: ``ChatAPI.ask`` must call ``core.next_reqid()`` — not poke
+    """``ChatAPI.ask`` must call ``core.next_reqid()`` — not poke
     ``_reqid_counter`` directly, which would emit ``DeprecationWarning``."""
 
     @pytest.mark.asyncio
@@ -205,7 +205,7 @@ class TestChatReqid:
     ):
         """``asyncio.gather(ask*3)`` → three distinct ``_reqid`` URL values.
 
-        Pre-T2.D the body did ``self._core._reqid_counter += 100000`` under
+        Previously, the body did ``self._core._reqid_counter += 100000`` under
         a read-modify-write race; under concurrent gather() this collapsed
         to a single reqid value. ``core.next_reqid()`` serializes the
         increment under an asyncio.Lock, restoring monotonic distinct ids.
