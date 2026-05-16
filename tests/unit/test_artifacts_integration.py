@@ -401,8 +401,9 @@ class TestArtifactsAPI:
         ]
 
         with (
-            patch.object(api, "_list_raw", new=AsyncMock(return_value=[studio_artifact]))
-            as list_raw,
+            patch.object(
+                api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])
+            ) as list_raw,
             patch(
                 "notebooklm._artifacts._mind_map.list_mind_maps",
                 new=AsyncMock(return_value=[mind_map]),
