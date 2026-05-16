@@ -104,7 +104,16 @@ def register_chat_commands(cli):
     @click.option(
         "--json", "json_output", is_flag=True, help="Output as JSON (includes references)"
     )
-    @click.option("--save-as-note", is_flag=True, help="Save response as a note")
+    @click.option(
+        "--save-as-note",
+        is_flag=True,
+        help=(
+            "Save response as a note. When the answer has citations, the saved "
+            "note preserves interactive [N] hover-anchor links (matching the "
+            "NotebookLM web UI's 'Save to note' behavior); otherwise falls "
+            "back to a plain-text note."
+        ),
+    )
     @click.option("--note-title", default=None, help="Note title (use with --save-as-note)")
     @click.option(
         "--timeout",
@@ -223,7 +232,19 @@ def register_chat_commands(cli):
                         return
                     try:
                         title = note_title or f"Chat: {question[:50]}"
-                        note = await client.notes.create(nb_id_resolved, title, result.answer)
+                        if result.references:
+                            # Citation-rich path: server stores [N] markers as
+                            # hover-anchored references (issue #660).
+                            note = await client.notes.create_from_chat(
+                                nb_id_resolved, result, title=title
+                            )
+                        else:
+                            # No citations to preserve — fall back to the
+                            # plain-text path so the save still succeeds.
+                            console.print(
+                                "[dim]No citations in answer; saving as plain-text note.[/dim]"
+                            )
+                            note = await client.notes.create(nb_id_resolved, title, result.answer)
                         console.print(
                             f"\n[dim]Saved as note: {note.title} ({note.id[:8]}...)[/dim]"
                         )

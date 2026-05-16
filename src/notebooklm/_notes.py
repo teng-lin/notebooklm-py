@@ -16,7 +16,7 @@ from typing import Any
 from . import _mind_map
 from ._core import ClientCore
 from .rpc import RPCMethod
-from .types import Note
+from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,59 @@ class NotesAPI:
             The created Note object.
         """
         return await _mind_map.create_note(self._core, notebook_id, title=title, content=content)
+
+    async def create_from_chat(
+        self,
+        notebook_id: str,
+        ask_result: AskResult,
+        *,
+        title: str | None = None,
+    ) -> Note:
+        """Save a chat answer as a citation-rich note (issue #660).
+
+        Unlike :meth:`create`, this preserves the ``[N]`` citation
+        markers as interactive hover-anchored references in the
+        NotebookLM web UI. It mirrors the wire format the web UI's
+        "Save to note" button uses.
+
+        The notebook must already have a streaming-chat response in
+        ``ask_result`` with non-empty ``references``. Callers without
+        citations should fall back to :meth:`create` for plain-text
+        notes — this method raises :class:`ValueError` rather than
+        silently degrading to plain text, so the caller can decide.
+
+        Args:
+            notebook_id: The notebook ID.
+            ask_result: Result from a prior ``client.chat.ask()`` call.
+                Must have non-empty ``references`` — otherwise this
+                method raises ``ValueError``.
+            title: Note title. When ``None`` (default), a title is
+                derived from the first 50 characters of the answer.
+                The NotebookLM server may apply smart-title generation
+                for saved-from-chat notes; the returned ``Note.title``
+                reflects what the server actually stored.
+
+        Returns:
+            The created ``Note``. ``Note.content`` holds the answer
+            text WITH ``[N]`` markers; the rich citation anchors live
+            server-side and surface via the NotebookLM web UI.
+
+        Raises:
+            ValueError: If ``ask_result.references`` is empty.
+        """
+        if not ask_result.references:
+            raise ValueError(
+                "create_from_chat requires AskResult.references to be "
+                "non-empty; use notes.create() for plain-text notes."
+            )
+        resolved_title = title if title is not None else f"Chat: {ask_result.answer[:50]}"
+        return await _mind_map.save_chat_answer_as_note(
+            self._core,
+            notebook_id,
+            ask_result.answer,
+            ask_result.references,
+            resolved_title,
+        )
 
     async def update(
         self,

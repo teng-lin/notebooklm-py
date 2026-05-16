@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
-from notebooklm.types import AskResult, Note
+from notebooklm.types import AskResult, ChatReference, Note
 
 from .conftest import create_mock_client, patch_client_for_module
 
@@ -122,6 +122,74 @@ class TestAskSaveAsNote:
 
             assert result.exit_code == 0, result.output
             mock_client.notes.create.assert_not_awaited()
+
+    def test_ask_save_as_note_with_citations_uses_rich_path(self, runner, mock_auth):
+        """When AskResult.references is non-empty, --save-as-note should
+        route through create_from_chat (the citation-rich path) rather
+        than the plain-text notes.create() path (issue #660)."""
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            ask_result = AskResult(
+                answer="Apples are mentioned [1].",
+                conversation_id="a1b2c3d4-0000-0000-0000-000000000001",
+                turn_number=1,
+                is_follow_up=False,
+                references=[
+                    ChatReference(
+                        source_id="src-1",
+                        citation_number=1,
+                        cited_text="...apples...",
+                        start_char=0,
+                        end_char=10,
+                        chunk_id="chunk-1",
+                    )
+                ],
+                raw_response="",
+            )
+            mock_client.chat.ask = AsyncMock(return_value=ask_result)
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.notes.create_from_chat = AsyncMock(return_value=make_note(title="Saved"))
+            mock_client.notes.create = AsyncMock(return_value=make_note())
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["ask", "What fruit?", "--save-as-note", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0, result.output
+            # Citation-rich path was used.
+            mock_client.notes.create_from_chat.assert_awaited_once()
+            # Plain-text path was NOT used.
+            mock_client.notes.create.assert_not_awaited()
+
+    def test_ask_save_as_note_without_citations_falls_back_to_plain(self, runner, mock_auth):
+        """When AskResult.references is empty (no citations in the
+        answer), --save-as-note falls back to plain-text notes.create()
+        rather than failing."""
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())  # empty refs
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.notes.create_from_chat = AsyncMock()
+            mock_client.notes.create = AsyncMock(return_value=make_note())
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["ask", "What is 42?", "--save-as-note", "-n", "nb_123"]
+                )
+
+            assert result.exit_code == 0, result.output
+            assert "No citations in answer" in result.output
+            mock_client.notes.create.assert_awaited_once()
+            mock_client.notes.create_from_chat.assert_not_awaited()
 
 
 class TestHistoryCommand:

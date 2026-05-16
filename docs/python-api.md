@@ -1204,7 +1204,8 @@ print(f"Imported {len(imported)} sources")
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `list(notebook_id)` | `str` | `list[Note]` | List text notes (excludes mind maps) |
-| `create(notebook_id, title="New Note", content="")` | `str, str, str` | `Note` | Create note |
+| `create(notebook_id, title="New Note", content="")` | `str, str, str` | `Note` | Create plain-text note (no citation anchors) |
+| `create_from_chat(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Raises `ValueError` if `ask_result.references` is empty. |
 | `get(notebook_id, note_id)` | `str, str` | `Optional[Note]` | Get note by ID |
 | `update(notebook_id, note_id, content, title)` | `str, str, str, str` | `None` | Update note content and title |
 | `delete(notebook_id, note_id)` | `str, str` | `bool` | Delete note |
@@ -1213,7 +1214,7 @@ print(f"Imported {len(imported)} sources")
 
 **Example:**
 ```python
-# Create and manage notes
+# Create and manage plain-text notes
 note = await client.notes.create(nb_id, title="Meeting Notes", content="Discussion points...")
 notes = await client.notes.list(nb_id)
 
@@ -1222,6 +1223,13 @@ await client.notes.update(nb_id, note.id, "Updated content", "New Title")
 
 # Delete a note
 await client.notes.delete(nb_id, note.id)
+
+# Save a chat answer as a citation-rich note (preserves [N] hover links)
+result = await client.chat.ask(nb_id, "What fruits are mentioned?")
+if result.references:
+    note = await client.notes.create_from_chat(nb_id, result, title="Fruit Citations")
+    # Note: the NotebookLM server may auto-generate a "smart" title for
+    # citation-rich notes; note.title reflects what the server stored.
 ```
 
 **Mind Maps:**

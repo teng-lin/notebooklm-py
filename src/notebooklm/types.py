@@ -1392,6 +1392,12 @@ class ChatReference:
         start_char: Start character position in the source content (if available).
         end_char: End character position in the source content (if available).
         chunk_id: Internal chunk ID (for debugging, not user-facing).
+        passage_id: Forward-compatibility slot for the per-passage UUID
+            that NotebookLM's web UI sends in its saved-from-chat
+            CREATE_NOTE payload (issue #660). The streaming chat response
+            does NOT currently expose this UUID, so it stays ``None`` in
+            production. ``build_save_chat_as_note_params`` falls back to
+            ``chunk_id`` when it's unset.
     """
 
     source_id: str
@@ -1400,6 +1406,7 @@ class ChatReference:
     start_char: int | None = None
     end_char: int | None = None
     chunk_id: str | None = None
+    passage_id: str | None = None
 
 
 @dataclass

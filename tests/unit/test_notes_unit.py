@@ -635,3 +635,115 @@ class TestDeleteMindMap:
         assert params[0] == "nb_123"
         assert params[1] is None
         assert params[2] == ["mm_456"]
+
+
+# =============================================================================
+# create_from_chat() tests (issue #660)
+# =============================================================================
+
+
+class TestCreateFromChat:
+    """Tests for the citation-rich create_from_chat() method."""
+
+    def _make_ask_result(
+        self,
+        answer: str = "One fruit mentioned is apples [1].",
+        n_refs: int = 1,
+    ):
+        from notebooklm.types import AskResult, ChatReference
+
+        refs = [
+            ChatReference(
+                source_id=f"src-{i}",
+                citation_number=i + 1,
+                cited_text=f"passage {i}",
+                start_char=0,
+                end_char=9,
+                chunk_id=f"chunk-{i}",
+            )
+            for i in range(n_refs)
+        ]
+        return AskResult(
+            answer=answer,
+            conversation_id="conv-1",
+            turn_number=1,
+            is_follow_up=False,
+            references=refs,
+            raw_response="",
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_references_raises_value_error(self, notes_api):
+        ask_result = self._make_ask_result(n_refs=0)
+        with pytest.raises(ValueError, match="non-empty"):
+            await notes_api.create_from_chat("nb-1", ask_result)
+
+    @pytest.mark.asyncio
+    async def test_default_title_derives_from_answer(self, notes_api, mock_core):
+        # Server-shaped response: note_id at [0], server-assigned title at [4].
+        mock_core.rpc_call.return_value = [
+            "note-new-id",
+            "One fruit mentioned is apples [1].",
+            [2, "user", [123, 456]],
+            [[]],
+            "ServerTitle",
+            [],
+        ]
+        ask_result = self._make_ask_result()
+        note = await notes_api.create_from_chat("nb-1", ask_result)
+        # Server-returned title is what surfaces in the Note.
+        assert note.title == "ServerTitle"
+        # The RPC call received our derived default title.
+        call_args = mock_core.rpc_call.call_args
+        sent_title = call_args[0][1][4]
+        assert sent_title.startswith("Chat: ")
+
+    @pytest.mark.asyncio
+    async def test_explicit_title_overrides_default(self, notes_api, mock_core):
+        mock_core.rpc_call.return_value = [
+            "note-new-id",
+            "answer",
+            [2, "u", [1, 2]],
+            [[]],
+            "My Title",  # server echoes the title back
+            [],
+        ]
+        ask_result = self._make_ask_result()
+        note = await notes_api.create_from_chat("nb-1", ask_result, title="My Title")
+        call_args = mock_core.rpc_call.call_args
+        assert call_args[0][1][4] == "My Title"
+        assert note.title == "My Title"
+
+    @pytest.mark.asyncio
+    async def test_uses_create_note_rpc_with_mode_flag_2(self, notes_api, mock_core):
+        from notebooklm.rpc import RPCMethod
+
+        mock_core.rpc_call.return_value = [
+            "note-id",
+            "x",
+            [2, "u", [1, 2]],
+            [[]],
+            "T",
+            [],
+        ]
+        ask_result = self._make_ask_result()
+        await notes_api.create_from_chat("nb-1", ask_result, title="T")
+        call_args = mock_core.rpc_call.call_args
+        # Args: (RPCMethod, params, source_path=...)
+        assert call_args[0][0] == RPCMethod.CREATE_NOTE
+        params = call_args[0][1]
+        # 7-element params with [2] mode flag at slot 2 (vs [1] for blank-note variant)
+        assert len(params) == 7
+        assert params[2] == [2]
+        assert params[6] == [2]
+        # Only ONE RPC call — no follow-up UPDATE_NOTE.
+        assert mock_core.rpc_call.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_note_id_in_response_raises(self, notes_api, mock_core):
+        # If the server response is malformed (note_id slot is None or not a str),
+        # surface a clear runtime error rather than returning a Note with id="".
+        mock_core.rpc_call.return_value = [None, "x", [], [], "T", []]
+        ask_result = self._make_ask_result()
+        with pytest.raises(RuntimeError, match="no note ID"):
+            await notes_api.create_from_chat("nb-1", ask_result, title="T")

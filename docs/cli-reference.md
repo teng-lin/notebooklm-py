@@ -123,8 +123,8 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `ask -s <id>` | Limit to specific source IDs (repeatable) | `notebooklm ask "Summarize" -s src1 -s src2` |
 | `ask --json` | Get answer with source references | `notebooklm ask "Explain X" --json` |
 | `ask --timeout N` | Per-invocation HTTP timeout in seconds (default: library default 30s) | `notebooklm ask "long prompt" --timeout 120` |
-| `ask --save-as-note` | Save response as a note | `notebooklm ask "Explain X" --save-as-note` |
-| `ask --save-as-note --note-title` | Save response with custom note title | `notebooklm ask "Explain X" --save-as-note --note-title "Title"` |
+| `ask --save-as-note` | Save response as a note. When the answer contains `[N]` citations, the saved note preserves interactive hover-anchored citation links matching the NotebookLM web UI's "Save to note" behavior ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)). Answers without citations fall back to a plain-text note. | `notebooklm ask "Explain X" --save-as-note` |
+| `ask --save-as-note --note-title` | Save response with custom note title. The NotebookLM server may apply smart-title generation for citation-rich saves and override the requested title; the success message reflects what the server actually stored. | `notebooklm ask "Explain X" --save-as-note --note-title "Title"` |
 | `configure --mode` | Set predefined chat mode (`default`, `learning-guide`, `concise`, `detailed`) | `notebooklm configure --mode learning-guide` |
 | `configure --persona` | Set custom persona prompt (up to 10,000 chars) | `notebooklm configure --persona "Act as a tutor"` |
 | `configure --response-length` | Response verbosity (`default`, `longer`, `shorter`) | `notebooklm configure --response-length longer` |
