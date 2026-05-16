@@ -8,6 +8,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import (
     AudioFormat,
@@ -21,6 +22,7 @@ from notebooklm.rpc import (
 from notebooklm.types import (
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactType,
 )
 
 
@@ -369,6 +371,67 @@ class TestArtifactsAPI:
             artifacts = await client.artifacts.list("nb_123")
 
         assert isinstance(artifacts, list)
+
+    @pytest.mark.asyncio
+    async def test_list_raw_preserves_rpc_call_shape(self):
+        """_list_raw keeps the exact LIST_ARTIFACTS RPC contract."""
+        core = MagicMock()
+        core.rpc_call = AsyncMock(return_value=[[]])
+        api = ArtifactsAPI(core)
+
+        result = await api._list_raw("nb_123")
+
+        assert result == []
+        core.rpc_call.assert_awaited_once_with(
+            RPCMethod.LIST_ARTIFACTS,
+            [[2], "nb_123", 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],
+            source_path="/notebook/nb_123",
+            allow_null=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_uses_facade_list_raw_callback_and_mind_map_patch_seam(self):
+        """list() resolves facade and mind-map seams at call time."""
+        core = MagicMock()
+        api = ArtifactsAPI(core)
+        studio_artifact = ["art_001", "My Report", 2, None, 3]
+        mind_map = [
+            "mind_map_001",
+            ["mind_map_001", '{"name":"Map"}', [1, "user", [1704067200, 0]], None, "Map"],
+        ]
+
+        with (
+            patch.object(api, "_list_raw", new=AsyncMock(return_value=[studio_artifact]))
+            as list_raw,
+            patch(
+                "notebooklm._artifacts._mind_map.list_mind_maps",
+                new=AsyncMock(return_value=[mind_map]),
+            ) as list_mind_maps,
+        ):
+            artifacts = await api.list("nb_123")
+
+        list_raw.assert_awaited_once_with("nb_123")
+        list_mind_maps.assert_awaited_once_with(core, "nb_123")
+        assert [artifact.id for artifact in artifacts] == ["art_001", "mind_map_001"]
+
+    @pytest.mark.asyncio
+    async def test_list_skips_mind_map_callback_for_non_mind_map_filter(self):
+        """Filtering to studio-only kinds must not fetch mind maps."""
+        core = MagicMock()
+        api = ArtifactsAPI(core)
+        studio_artifact = ["art_001", "My Report", 2, None, 3]
+
+        with (
+            patch.object(api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])),
+            patch(
+                "notebooklm._artifacts._mind_map.list_mind_maps",
+                new=AsyncMock(),
+            ) as list_mind_maps,
+        ):
+            artifacts = await api.list("nb_123", ArtifactType.REPORT)
+
+        list_mind_maps.assert_not_awaited()
+        assert [artifact.id for artifact in artifacts] == ["art_001"]
 
     @pytest.mark.asyncio
     async def test_rename_artifact(

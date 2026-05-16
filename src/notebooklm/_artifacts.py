@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import httpx
 
 from . import _artifact_formatters, _mind_map
+from ._artifact_listing import ArtifactListingService
 from ._callbacks import maybe_await_callback
 from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
@@ -201,6 +202,7 @@ class ArtifactsAPI:
         # working through the deprecation cycle.
         del notes_api
         self._storage_path = storage_path
+        self._listing = ArtifactListingService()
 
     # =========================================================================
     # List/Get Operations
@@ -227,43 +229,12 @@ class ArtifactsAPI:
             List of Artifact objects.
         """
         logger.debug("Listing artifacts in notebook %s", notebook_id)
-        artifacts: list[Artifact] = []
-
-        # Fetch studio artifacts (audio, video, reports, etc.)
-        params = [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
-        result = await self._core.rpc_call(
-            RPCMethod.LIST_ARTIFACTS,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+        return await self._listing.list_artifacts(
+            notebook_id,
+            artifact_type,
+            list_raw=self._list_raw,
+            list_mind_maps=self._list_mind_maps,
         )
-
-        artifacts_data: list[Any] = []
-        if result and isinstance(result, list) and len(result) > 0:
-            artifacts_data = result[0] if isinstance(result[0], list) else result
-
-        for art_data in artifacts_data:
-            if isinstance(art_data, list) and len(art_data) > 0:
-                artifact = Artifact.from_api_response(art_data)
-                if artifact_type is None or artifact.kind == artifact_type:
-                    artifacts.append(artifact)
-
-        # Fetch mind maps from notes system (if not filtering to non-mind-map type)
-        if artifact_type is None or artifact_type == ArtifactType.MIND_MAP:
-            try:
-                mind_maps = await _mind_map.list_mind_maps(self._core, notebook_id)
-                for mm_data in mind_maps:
-                    mind_map_artifact = Artifact.from_mind_map(mm_data)
-                    if mind_map_artifact is not None:  # None means deleted (status=2)
-                        if artifact_type is None or mind_map_artifact.kind == artifact_type:
-                            artifacts.append(mind_map_artifact)
-            except (RPCError, httpx.HTTPError) as e:
-                # Network/API errors - log and continue with studio artifacts
-                # This ensures users can see their audio/video/reports even if
-                # the mind maps endpoint is temporarily unavailable
-                logger.warning("Failed to fetch mind maps: %s", e)
-
-        return artifacts
 
     async def get(self, notebook_id: str, artifact_id: str) -> Artifact | None:
         """Get a specific artifact by ID.
@@ -276,11 +247,7 @@ class ArtifactsAPI:
             Artifact object, or None if not found.
         """
         logger.debug("Getting artifact %s from notebook %s", artifact_id, notebook_id)
-        artifacts = await self.list(notebook_id)
-        for artifact in artifacts:
-            if artifact.id == artifact_id:
-                return artifact
-        return None
+        return await self._listing.get(notebook_id, artifact_id, list_artifacts=self.list)
 
     async def list_audio(self, notebook_id: str) -> builtins.list[Artifact]:
         """List audio overview artifacts."""
@@ -2166,18 +2133,13 @@ class ArtifactsAPI:
         # errors and must surface to callers under strict decoding.
         return self._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
+    async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
+        """Get raw mind-map rows through the patchable module seam."""
+        return await _mind_map.list_mind_maps(self._core, notebook_id)
+
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw artifact list data."""
-        params = [[2], notebook_id, 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"']
-        result = await self._core.rpc_call(
-            RPCMethod.LIST_ARTIFACTS,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-        if result and isinstance(result, list) and len(result) > 0:
-            return result[0] if isinstance(result[0], list) else result
-        return []
+        return await self._listing.list_raw(notebook_id, rpc_call=self._core.rpc_call)
 
     def _select_artifact(
         self,
@@ -2228,41 +2190,13 @@ class ArtifactsAPI:
             ArtifactNotReadyError: If artifact not found or no candidates
                 available after filtering.
         """
-        # Filter by type + completed-status. Requires at least 5 elements so
-        # we can read a[2] (type) and a[4] (status); downstream parsers raise
-        # ArtifactParseError if specific deeper indices are missing.
-        filtered = [
-            a
-            for a in candidates
-            if isinstance(a, list)
-            and len(a) > 4
-            and a[2] == type_code
-            and a[4] == ArtifactStatus.COMPLETED
-        ]
-
-        if artifact_id:
-            artifact = next((a for a in filtered if a[0] == artifact_id), None)
-            if not artifact:
-                raise ArtifactNotReadyError(
-                    type_name.lower().replace(" ", "_"), artifact_id=artifact_id
-                )
-            return artifact
-
-        if not filtered:
-            raise ArtifactNotReadyError(no_result_error_key)
-
-        # Sort by creation timestamp (descending) to get the latest.
-        # Timestamp is the raw API field at index 15, position 0. Falsy
-        # values at that position (``None``, ``0``) fall back to ``0`` so we
-        # never compare ``None`` against ``int`` during the sort.
-        filtered.sort(
-            key=lambda a: (
-                (a[15][0] or 0) if len(a) > 15 and isinstance(a[15], list) and a[15] else 0
-            ),
-            reverse=True,
+        return self._listing.select_artifact(
+            candidates,
+            artifact_id,
+            type_name,
+            no_result_error_key,
+            type_code=type_code,
         )
-
-        return filtered[0]
 
     async def _download_urls_batch(
         self, urls_and_paths: builtins.list[tuple[str, str]]
