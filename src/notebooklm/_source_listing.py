@@ -13,7 +13,7 @@ from .types import Source, _extract_source_created_at, _extract_source_url
 
 # Keep source-list warnings on the historical logger so existing log filters
 # continue to see the same channel after the service extraction.
-logger = logging.getLogger("notebooklm._sources")
+logger = logging.getLogger("notebooklm").getChild("_sources")
 
 
 class RpcCall(Protocol):
