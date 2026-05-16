@@ -179,8 +179,7 @@ class RpcExecutor:
                     exc,
                     disable_internal_retries=disable_internal_retries,
                 )
-                if refreshed is not None:
-                    return refreshed
+                return refreshed
 
             logger.error("RPC %s failed after %.3fs", method.name, elapsed)
             raise

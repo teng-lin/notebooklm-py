@@ -60,6 +60,7 @@ class _Owner:
         self.perform_calls: list[dict[str, Any]] = []
         self.refresh_calls = 0
         self.rpc_retry_calls: list[dict[str, Any]] = []
+        self.rpc_retry_result: Any = {"retried": True}
         self.response = _ok_response()
         self.snapshot = _AuthSnapshot(
             csrf_token="CSRF_SNAPSHOT",
@@ -110,7 +111,7 @@ class _Owner:
                 "disable_internal_retries": disable_internal_retries,
             }
         )
-        return {"retried": True}
+        return self.rpc_retry_result
 
 
 def _executor(
@@ -364,6 +365,35 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
             "disable_internal_retries": True,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_decode_time_auth_retry_preserves_none_result() -> None:
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    owner.rpc_retry_result = None
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise RPCError("authentication expired")
+
+    result = await _executor(
+        owner,
+        decode_response_late_bound=decode,
+        is_auth_error=lambda exc: True,
+    ).execute(
+        RPCMethod.LIST_NOTEBOOKS,
+        [],
+        "/",
+        True,
+        False,
+    )
+
+    assert result is None
+    assert owner.refresh_calls == 1
+    assert owner.rpc_retry_calls[0]["allow_null"] is True
+    assert owner.rpc_retry_calls[0]["_is_retry"] is True
 
 
 @pytest.mark.asyncio
