@@ -434,9 +434,7 @@ class ArtifactDownloadService:
             notebook_id, output_path, artifact_id, output_format, "flashcards"
         )
 
-    async def download_urls_batch(
-        self, urls_and_paths: list[tuple[str, str]]
-    ) -> DownloadResult:
+    async def download_urls_batch(self, urls_and_paths: list[tuple[str, str]]) -> DownloadResult:
         """Download multiple files using httpx with proper cookie handling."""
         result = DownloadResult()
 
