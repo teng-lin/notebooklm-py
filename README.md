@@ -124,11 +124,10 @@ notebooklm login
 # notebooklm login --browser msedge
 # Or reuse cookies from an already-logged-in browser session
 # notebooklm login --browser-cookies chrome
+# notebooklm login --browser-cookies 'chrome::Profile 1'  # one Chromium profile
 # (combine with --profile to populate a specific profile;
-#  cookie import always uses the browser's active Google account
-#  for google.com / notebooklm.google.com, so switch accounts in
-#  the browser between runs to populate multiple profiles from
-#  one browser)
+#  use --account / --all-accounts after auth inspect when several
+#  Google accounts are signed in)
 
 # 2. Create a notebook and add sources
 notebooklm create "My Research"
@@ -169,6 +168,7 @@ Other useful CLI commands:
 notebooklm auth check --test         # Diagnose auth/cookie issues
 notebooklm auth refresh --quiet      # One-shot cookie keepalive (for cron / launchd / systemd)
 notebooklm auth refresh --browser-cookies chrome  # Re-extract and repair account routing
+notebooklm auth inspect --browser 'chrome::Profile 1'  # Preview one Chromium profile
 notebooklm agent show codex          # Print bundled Codex instructions
 notebooklm agent show claude         # Print bundled Claude Code skill template
 notebooklm language list             # List supported output languages

@@ -1403,6 +1403,9 @@ Two stacks, in order of preference:
 > any of the listed browsers work; Firefox just sidesteps the Keychain
 > prompt that Chrome / Brave / Edge trigger on first read. See
 > `_ROOKIEPY_BROWSER_ALIASES` in `cli/session.py` for the canonical list.
+> Chromium-family browsers also accept `chrome::<profile-name-or-directory>`
+> (for example `chrome::Profile 1` or `brave::Work`) to refresh from one
+> user-profile instead of relying on fan-out/account matching.
 
 **With cookie federation (best UX, requires self-hosting):**
 

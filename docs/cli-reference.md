@@ -348,7 +348,7 @@ By default, opens a Chromium browser with a persistent profile. Complete the Goo
 **Options:**
 - `--storage PATH` - Where to save storage_state.json (default: `$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json`)
 - `--browser [chromium|msedge|chrome]` - Browser to use for login (default: `chromium`). Use `chrome` for system Google Chrome (workaround when bundled Chromium crashes, e.g. macOS 15+); use `msedge` for Microsoft Edge. **Note:** only `chromium` is auto-installed by the CLI on first login (~170 MB Chromium download); `--browser msedge` and `--browser chrome` require the corresponding browser to be already installed on your system.
-- `--browser-cookies <auto|chrome|edge|firefox|safari|brave|arc|...>` - Read cookies from an installed browser instead of launching Playwright. Pass an explicit browser name, or `auto` to let rookiepy auto-detect. For Firefox Multi-Account Containers, use `firefox::<container-name>` to extract from a single container, or `firefox::none` for the no-container default — unscoped `firefox` merges every container's cookies (and emits a warning when that's happening). Requires `pip install "notebooklm-py[cookies]"` (full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)).
+- `--browser-cookies <auto|chrome|edge|firefox|safari|brave|arc|...>` - Read cookies from an installed browser instead of launching Playwright. Pass an explicit browser name, or `auto` to let rookiepy auto-detect. For Chromium-family user profiles, use `chrome::<profile-name-or-directory>` (for example `chrome::Profile 1` or `brave::Work`) to extract from one profile explicitly. For Firefox Multi-Account Containers, use `firefox::<container-name>` to extract from a single container, or `firefox::none` for the no-container default — unscoped `firefox` merges every container's cookies (and emits a warning when that's happening). Requires `pip install "notebooklm-py[cookies]"` (full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)).
 - `--account EMAIL` - Pick a signed-in Google account by email when several are present in the browser. Only valid with `--browser-cookies`.
 - `--all-accounts` - Extract every Google account signed in to the browser into separate profiles named from each account email. Only valid with `--browser-cookies`.
 - `--profile-name NAME` - Name the profile created by a targeted `--account` import. Defaults to the account email's local part. Only valid with `--browser-cookies`.
@@ -365,6 +365,7 @@ notebooklm login --browser msedge
 
 # Reuse cookies from your already-logged-in Chrome session
 notebooklm login --browser-cookies chrome
+notebooklm login --browser-cookies 'chrome::Profile 1'  # one Chromium profile
 
 # Auto-detect any supported browser via rookiepy
 notebooklm login --browser-cookies auto
@@ -388,8 +389,9 @@ notebooklm login --fresh
 
 **Notes on `--browser-cookies`:**
 - Honors `--profile` / `NOTEBOOKLM_PROFILE` and writes to that profile's `storage_state.json`.
-- Without `--account` or `--all-accounts`, imports the browser's default Google account into the target profile.
-- Use `notebooklm auth inspect --browser <browser>` to see available account emails before a targeted import.
+- Without `--account` or `--all-accounts`, imports the selected browser/profile's default Google account into the target profile.
+- For Chromium-family browsers, unscoped `chrome`, `brave`, `edge`, etc. fan out across populated user profiles when account selection is needed. Use `chrome::<profile-name-or-directory>` to read exactly one profile; directory names such as `Default` and `Profile 1` are stable across UI renames.
+- Use `notebooklm auth inspect --browser <browser>` to see available account emails before a targeted import; pass `-v` to show the Chromium profile directory each account came from.
 
 ### Session: `use`
 
@@ -593,7 +595,7 @@ notebooklm auth refresh [OPTIONS]
 ```
 
 **Options:**
-- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out.
+- `--browser-cookies <browser>`, `--browser-cookie <browser>` - Re-extract cookies from an installed browser and match the current profile's account from `context.json`. This repairs account routing when browser account order changes after another account logs out. Accepts the same scoped syntax as `login`: `chrome::<profile-name-or-directory>` for one Chromium profile, and `firefox::<container-name>` or `firefox::none` for one Firefox container.
 - `--include-domains LABEL[,LABEL...]` - Forward to the browser-cookie reader (only meaningful with `--browser-cookies`). Same syntax as `notebooklm login --include-domains`.
 - `--quiet`, `-q` - Suppress success output; print only on error (cron-friendly)
 
@@ -615,6 +617,7 @@ notebooklm --profile work auth refresh
 
 # Re-extract from Chrome and repair account routing if browser account order changed
 notebooklm --profile work auth refresh --browser-cookies chrome
+notebooklm --profile work auth refresh --browser-cookies 'chrome::Profile 1'
 
 # Quiet variant for cron / systemd
 notebooklm --profile work auth refresh --quiet
@@ -628,20 +631,21 @@ See [Troubleshooting](troubleshooting.md) for full per-OS scheduler recipes (lau
 
 ### Authentication: `auth inspect`
 
-List Google accounts visible to a browser's cookie store. **Read-only — never writes to disk.** Use this before `notebooklm login --browser-cookies <browser> --account <email>` to see which account emails are available.
+List Google accounts visible to a browser's cookie store. **Read-only — never writes to disk.** Use this before `notebooklm login --browser-cookies <browser> --account <email>` to see which account emails are available. Chromium-family browsers fan out across populated user profiles by default; use `chrome::<profile-name-or-directory>` to inspect only one profile.
 
 ```bash
 notebooklm auth inspect [OPTIONS]
 ```
 
 **Options:**
-- `--browser TEXT` - Browser to read cookies from (`chrome`, `firefox`, `brave`, `edge`, `safari`, `arc`, ...). `auto` picks the first one rookiepy can read. Requires `pip install "notebooklm-py[cookies]"`.
+- `--browser TEXT` - Browser to read cookies from (`chrome`, `firefox`, `brave`, `edge`, `safari`, `arc`, ...). `auto` picks the first one rookiepy can read. Use `chrome::<profile-name-or-directory>` for one Chromium profile, or `firefox::<container-name>` / `firefox::none` for one Firefox container. Requires `pip install "notebooklm-py[cookies]"`.
 - `--include-domains LABEL[,LABEL...]` - Opt in to enumerating accounts via sibling-product cookies (same syntax as `notebooklm login --include-domains`). By default this command consults only required Google auth cookies, which is sufficient for account discovery on every tested path.
 - `--json` - Output as JSON
 
 **Examples:**
 ```bash
 notebooklm auth inspect --browser chrome
+notebooklm auth inspect --browser 'chrome::Profile 1' --json
 notebooklm auth inspect --browser firefox --json
 ```
 

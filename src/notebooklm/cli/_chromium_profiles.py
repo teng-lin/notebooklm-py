@@ -26,6 +26,7 @@ Public surface:
 * :data:`CHROMIUM_BROWSER_USER_DATA_DIRS` — per-platform, per-browser roots
 * :class:`ChromiumProfile`
 * :func:`discover_chromium_profiles`
+* :func:`resolve_chromium_profile`
 * :func:`read_chromium_profile_cookies`
 * :func:`is_chromium_browser`
 """
@@ -48,9 +49,14 @@ _CHROMIUM_BROWSERS: frozenset[str] = frozenset(
 )
 
 
+def _canonical_chromium_browser_name(browser_name: str) -> str:
+    """Normalize supported chromium-family aliases to their on-disk key."""
+    return browser_name.strip().lower().replace("_", "-")
+
+
 def is_chromium_browser(browser_name: str) -> bool:
     """Return True when ``browser_name`` uses Chrome's user-data-profile layout."""
-    return browser_name.lower() in _CHROMIUM_BROWSERS
+    return _canonical_chromium_browser_name(browser_name) in _CHROMIUM_BROWSERS
 
 
 def _macos_user_data_dirs() -> dict[str, Path]:
@@ -125,7 +131,7 @@ def _user_data_dir(browser_name: str) -> Path | None:
     ``None`` means the browser isn't part of the chromium family OR the
     current platform has no documented path for it.
     """
-    return _platform_user_data_dirs().get(browser_name.lower())
+    return _platform_user_data_dirs().get(_canonical_chromium_browser_name(browser_name))
 
 
 @dataclass(frozen=True)
@@ -199,7 +205,8 @@ def discover_chromium_profiles(browser_name: str) -> list[ChromiumProfile]:
     """
     if not is_chromium_browser(browser_name):
         return []
-    user_data_dir = _user_data_dir(browser_name)
+    browser_key = _canonical_chromium_browser_name(browser_name)
+    user_data_dir = _user_data_dir(browser_key)
     if user_data_dir is None or not user_data_dir.is_dir():
         return []
 
@@ -215,7 +222,7 @@ def discover_chromium_profiles(browser_name: str) -> list[ChromiumProfile]:
             continue
         profiles.append(
             ChromiumProfile(
-                browser=browser_name.lower(),
+                browser=browser_key,
                 directory_name=entry.name,
                 human_name=human_names.get(entry.name, entry.name),
                 cookies_db=cookies_db,
@@ -233,6 +240,75 @@ def discover_chromium_profiles(browser_name: str) -> list[ChromiumProfile]:
 
     profiles.sort(key=_sort_key)
     return profiles
+
+
+def _format_chromium_profile_choice(profile: ChromiumProfile) -> str:
+    return f"{profile.human_name} (directory: {profile.directory_name})"
+
+
+def _format_chromium_profile_choices(profiles: list[ChromiumProfile]) -> str:
+    if not profiles:
+        return "none"
+    return ", ".join(_format_chromium_profile_choice(profile) for profile in profiles)
+
+
+def resolve_chromium_profile(browser_name: str, profile_selector: str) -> ChromiumProfile:
+    """Resolve a ``browser::profile`` selector to one Chromium profile.
+
+    The selector matches the stable on-disk directory name first
+    (``"Default"``, ``"Profile 1"``), then the human-readable profile name
+    from ``Local State`` (``"Work"``, ``"Personal"``). Directory names win
+    because UI names are user-editable and can collide.
+
+    Raises:
+        ValueError: When the browser is unsupported, the selector is empty,
+            no populated profiles exist, no profile matches, or the human name
+            matches more than one profile.
+    """
+    browser_key = _canonical_chromium_browser_name(browser_name)
+    selector = profile_selector.strip()
+
+    if browser_key not in _CHROMIUM_BROWSERS:
+        raise ValueError(
+            f"'{browser_name}' is not a Chromium-family browser; profile selectors "
+            "only work with chrome, chromium, brave, edge, arc, vivaldi, opera, "
+            "and opera-gx."
+        )
+    if not selector:
+        raise ValueError(
+            f"Empty Chromium profile selector for {browser_key}. Use "
+            f"'{browser_key}::<profile-name-or-directory>', for example "
+            f"'{browser_key}::Profile 1'."
+        )
+
+    profiles = discover_chromium_profiles(browser_key)
+    if not profiles:
+        raise ValueError(f"No populated {browser_key} profiles were found.")
+
+    selector_key = selector.casefold()
+    directory_matches = [
+        profile for profile in profiles if profile.directory_name.casefold() == selector_key
+    ]
+    if directory_matches:
+        return directory_matches[0]
+
+    human_name_matches = [
+        profile for profile in profiles if profile.human_name.casefold() == selector_key
+    ]
+    if len(human_name_matches) == 1:
+        return human_name_matches[0]
+    if len(human_name_matches) > 1:
+        directories = ", ".join(f"'{profile.directory_name}'" for profile in human_name_matches)
+        raise ValueError(
+            f"{browser_key} profile name '{profile_selector}' is ambiguous. "
+            f"Use the on-disk profile directory instead: {directories}. "
+            f"Available profiles: {_format_chromium_profile_choices(profiles)}."
+        )
+
+    raise ValueError(
+        f"{browser_key} profile '{profile_selector}' was not found. "
+        f"Available profiles: {_format_chromium_profile_choices(profiles)}."
+    )
 
 
 def read_chromium_profile_cookies(

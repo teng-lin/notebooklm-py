@@ -22,6 +22,7 @@ from notebooklm.cli import _chromium_profiles
 from notebooklm.cli._chromium_profiles import (
     discover_chromium_profiles,
     is_chromium_browser,
+    resolve_chromium_profile,
 )
 
 # ---------------------------------------------------------------------------
@@ -32,7 +33,19 @@ from notebooklm.cli._chromium_profiles import (
 class TestIsChromiumBrowser:
     @pytest.mark.parametrize(
         "name",
-        ["chrome", "Chrome", "CHROMIUM", "brave", "edge", "arc", "vivaldi", "opera"],
+        [
+            "chrome",
+            "Chrome",
+            "CHROMIUM",
+            "brave",
+            "edge",
+            "arc",
+            "vivaldi",
+            "opera",
+            "opera-gx",
+            "opera_gx",
+            " chrome ",
+        ],
     )
     def test_recognized(self, name):
         assert is_chromium_browser(name) is True
@@ -208,6 +221,84 @@ class TestDiscoverChromiumProfiles:
         _make_chromium_user_data(chrome_root, profiles={"Default": "populated"})
         assert len(discover_chromium_profiles("Chrome")) == 1
         assert len(discover_chromium_profiles("CHROME")) == 1
+
+
+# ---------------------------------------------------------------------------
+# resolve_chromium_profile
+# ---------------------------------------------------------------------------
+
+
+class TestResolveChromiumProfile:
+    def test_resolves_by_stable_directory_name(self, patched_user_data_dir):
+        chrome_root = patched_user_data_dir / "chrome"
+        _make_chromium_user_data(
+            chrome_root,
+            profiles={"Default": "populated", "Profile 1": "populated"},
+            local_state_names={"Default": "Personal", "Profile 1": "Work"},
+        )
+
+        profile = resolve_chromium_profile("chrome", "Profile 1")
+
+        assert profile.directory_name == "Profile 1"
+        assert profile.human_name == "Work"
+
+    def test_resolves_by_human_profile_name(self, patched_user_data_dir):
+        chrome_root = patched_user_data_dir / "chrome"
+        _make_chromium_user_data(
+            chrome_root,
+            profiles={"Default": "populated", "Profile 1": "populated"},
+            local_state_names={"Default": "Personal", "Profile 1": "Work"},
+        )
+
+        profile = resolve_chromium_profile("chrome", "work")
+
+        assert profile.directory_name == "Profile 1"
+
+    def test_directory_name_wins_when_human_names_collide(self, patched_user_data_dir):
+        chrome_root = patched_user_data_dir / "chrome"
+        _make_chromium_user_data(
+            chrome_root,
+            profiles={"Profile 1": "populated", "Profile 2": "populated"},
+            local_state_names={"Profile 1": "Work", "Profile 2": "Work"},
+        )
+
+        profile = resolve_chromium_profile("chrome", "Profile 2")
+
+        assert profile.directory_name == "Profile 2"
+
+    def test_ambiguous_human_profile_name_lists_directory_names(self, patched_user_data_dir):
+        chrome_root = patched_user_data_dir / "chrome"
+        _make_chromium_user_data(
+            chrome_root,
+            profiles={"Profile 1": "populated", "Profile 2": "populated"},
+            local_state_names={"Profile 1": "Work", "Profile 2": "Work"},
+        )
+
+        with pytest.raises(ValueError, match="ambiguous") as exc_info:
+            resolve_chromium_profile("chrome", "Work")
+
+        message = str(exc_info.value)
+        assert "Profile 1" in message
+        assert "Profile 2" in message
+
+    def test_unknown_profile_lists_available_profiles(self, patched_user_data_dir):
+        chrome_root = patched_user_data_dir / "chrome"
+        _make_chromium_user_data(
+            chrome_root,
+            profiles={"Default": "populated", "Profile 1": "populated"},
+            local_state_names={"Default": "Personal", "Profile 1": "Work"},
+        )
+
+        with pytest.raises(ValueError, match="was not found") as exc_info:
+            resolve_chromium_profile("chrome", "Missing")
+
+        message = str(exc_info.value)
+        assert "Personal (directory: Default)" in message
+        assert "Work (directory: Profile 1)" in message
+
+    def test_empty_profile_selector_is_rejected(self, patched_user_data_dir):
+        with pytest.raises(ValueError, match="Empty Chromium profile selector"):
+            resolve_chromium_profile("chrome", "")
 
 
 # ---------------------------------------------------------------------------

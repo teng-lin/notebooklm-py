@@ -296,6 +296,7 @@ def _enumerate_browser_accounts(
     For chromium-family browsers with multiple populated user-data profiles
     (``Default`` plus ``Profile 1``, ``Profile 2``, …), fans out across every
     profile and aggregates the discovered accounts, deduping by email.
+    ``chrome::<profile-name-or-directory>`` scopes discovery to one profile.
 
     For non-chromium browsers, single-profile chromium installs, and the
     legacy path, falls back to a single rookiepy call — preserving every
@@ -326,6 +327,22 @@ def _enumerate_browser_accounts(
             profile.
     """
     from ._chromium_profiles import discover_chromium_profiles, is_chromium_browser
+
+    scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
+    if scoped_chromium is not None:
+        scoped_browser, profile_selector = scoped_chromium
+        profile, raw_cookies = _read_chromium_profile_cookies_from_selector(
+            scoped_browser,
+            profile_selector,
+            verbose=verbose,
+            include_domains=include_domains,
+        )
+        accounts = _enumerate_one_jar(
+            raw_cookies,
+            profile.browser,
+            browser_profile=profile.directory_name,
+        )
+        return {profile.directory_name: raw_cookies}, accounts
 
     # Chromium multi-profile fan-out — only kicks in when discovery surfaces
     # >1 populated profile. Single-profile installs and non-chromium browsers
@@ -954,6 +971,64 @@ def _build_google_cookie_domains(
     return domains
 
 
+def _split_chromium_profile_browser_spec(browser_name: str) -> tuple[str, str] | None:
+    """Return ``(browser, profile_selector)`` for Chromium ``browser::profile`` specs."""
+    if "::" not in browser_name:
+        return None
+
+    browser_base, profile_selector = browser_name.split("::", 1)
+    browser_base = browser_base.strip()
+    if not browser_base:
+        return None
+
+    from ._chromium_profiles import is_chromium_browser
+
+    if not is_chromium_browser(browser_base):
+        return None
+    return browser_base, profile_selector.strip()
+
+
+def _read_chromium_profile_cookies_from_selector(
+    browser_name: str,
+    profile_selector: str,
+    *,
+    verbose: bool,
+    include_domains: set[str] | None,
+) -> tuple[ChromiumProfile, list[dict[str, Any]]]:
+    """Read cookies from one explicit Chromium profile selector."""
+    from ._chromium_profiles import read_chromium_profile_cookies, resolve_chromium_profile
+
+    try:
+        profile = resolve_chromium_profile(browser_name, profile_selector)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise SystemExit(1) from None
+
+    domains = _build_google_cookie_domains(include_domains=include_domains)
+    if verbose:
+        console.print(
+            f"[yellow]Reading cookies from {profile.browser} profile "
+            f"'{profile.human_name}' (directory: {profile.directory_name})...[/yellow]"
+        )
+
+    try:
+        cookies = read_chromium_profile_cookies(profile, domains=domains)
+    except ImportError:
+        console.print(
+            "[red]rookiepy is not installed.[/red]\n"
+            "Install it with:\n"
+            "  pip install 'notebooklm-py[cookies]'\n"
+            "or directly:\n"
+            "  pip install rookiepy"
+        )
+        raise SystemExit(1) from None
+    except (OSError, RuntimeError) as e:
+        _handle_rookiepy_error(e, f"{profile.browser} profile '{profile.human_name}'")
+        raise SystemExit(1) from None
+
+    return profile, cookies
+
+
 def _read_firefox_container_cookies(
     container_spec: str,
     *,
@@ -1073,6 +1148,8 @@ def _read_browser_cookies(
     Args:
         browser_name: ``"auto"`` to use ``rookiepy.load()``, a specific
             browser alias from :data:`_ROOKIEPY_BROWSER_ALIASES`, or
+            ``"chrome::<profile-name-or-directory>"`` for a single Chromium
+            user-data profile, or
             ``"firefox::<container-name>"`` (or ``"firefox::none"``) to
             extract from a single Firefox Multi-Account Container, bypassing
             rookiepy entirely.
@@ -1109,6 +1186,17 @@ def _read_browser_cookies(
         return _read_firefox_container_cookies(
             container_spec, verbose=verbose, include_domains=include_domains
         )
+
+    scoped_chromium = _split_chromium_profile_browser_spec(browser_name)
+    if scoped_chromium is not None:
+        scoped_browser, profile_selector = scoped_chromium
+        _, cookies = _read_chromium_profile_cookies_from_selector(
+            scoped_browser,
+            profile_selector,
+            verbose=verbose,
+            include_domains=include_domains,
+        )
+        return cookies
 
     try:
         import rookiepy
@@ -1429,6 +1517,8 @@ def register_session_commands(cli):
         help=(
             "Read cookies from an installed browser instead of launching Playwright. "
             "Optionally specify browser: chrome, firefox, brave, edge, safari, arc, ... "
+            "For Chromium-family profiles, target one with 'chrome::<profile>' "
+            "(e.g. 'chrome::Profile 1' or 'brave::Work'). "
             "For Firefox Multi-Account Containers, target a specific container with "
             "'firefox::<container-name>' (or 'firefox::none' for the default). "
             "Requires: pip install 'notebooklm-py[cookies]'"
@@ -2248,6 +2338,8 @@ def register_session_commands(cli):
         help=(
             "Browser to read cookies from (chrome, firefox, brave, edge, "
             "safari, arc, ...). 'auto' picks the first one rookiepy can read. "
+            "Use 'chrome::<profile>' for one Chromium profile or "
+            "'firefox::<container>' for one Firefox container. "
             "Requires: pip install 'notebooklm-py[cookies]'"
         ),
     )
@@ -2288,10 +2380,13 @@ def register_session_commands(cli):
         user-profiles, accounts from every populated profile are surfaced and
         deduped by email. Pass ``-v`` to see the originating user-profile per
         account, or ``--json`` for a structured ``browser_profile`` field.
+        Use ``chrome::<profile-name-or-directory>`` to inspect only one
+        Chromium user-profile.
 
         \b
         Examples:
           notebooklm auth inspect --browser chrome
+          notebooklm auth inspect --browser 'chrome::Profile 1'
           notebooklm auth inspect --browser chrome -v
           notebooklm auth inspect --browser firefox --json
         """
@@ -2562,7 +2657,9 @@ def register_session_commands(cli):
         help=(
             "Re-extract cookies from an installed browser and match the profile "
             "account from context.json. Optionally specify browser: chrome, "
-            "firefox, brave, edge, safari, arc, ..."
+            "firefox, brave, edge, safari, arc, ... Use 'chrome::<profile>' "
+            "for one Chromium profile or 'firefox::<container>' for one "
+            "Firefox container."
         ),
     )
     @click.option(

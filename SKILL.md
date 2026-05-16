@@ -86,12 +86,12 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 1. `notebooklm auth check --test --json` → require BOTH `"status": "ok"` AND `"checks.token_fetch": true`. Bare `"status": "ok"` (without `--test`) is a false-positive trap — a stale cookie file passes the parse check.
 2. `notebooklm list --json` → expect valid JSON (may be empty for new accounts).
 3. **If auth fails or is missing → run `notebooklm login` first.** This is the primary auth path: opens a browser, the user signs in to Google once, and the resulting `storage_state.json` is reused on every subsequent run. Works on any environment with a display.
-   - For headless contexts where opening a browser is not feasible, use `notebooklm login --browser-cookies <browser>` instead — extracts the user's already-logged-in cookies from Chrome/Firefox/etc. (requires the `[cookies]` extra; rookiepy may not install on Python 3.13+).
-   - To survey signed-in Google accounts before picking one: `notebooklm auth inspect --browser <browser>` (read-only; pass `-v` to see which Chromium user-profile each account came from, or `--json` for tooling).
+   - For headless contexts where opening a browser is not feasible, use `notebooklm login --browser-cookies <browser>` instead — extracts the user's already-logged-in cookies from Chrome/Firefox/etc. (requires the `[cookies]` extra; rookiepy may not install on Python 3.13+). Use `chrome::<profile-name-or-directory>` to target one Chromium user-profile, or `firefox::<container-name>` / `firefox::none` to target one Firefox container.
+   - To survey signed-in Google accounts before picking one: `notebooklm auth inspect --browser <browser>` (read-only; pass `-v` to see which Chromium user-profile each account came from, or `--json` for tooling). Scoped forms such as `notebooklm auth inspect --browser 'chrome::Profile 1'` inspect only that browser profile.
    - Re-run step 1 after login to confirm.
 4. **If auth was working but cookies went stale** (Google rotated SIDTS, or you signed in fresh in the browser) **→ refresh the active profile in place instead of full re-login:**
    - `notebooklm auth refresh` — server-side SIDTS refresh against the existing `storage_state.json`. Cheap and silent; safe to run on a schedule (cron / launchd / systemd) at 15–20 min cadence to keep an unattended profile warm.
-   - `notebooklm auth refresh --browser-cookies <browser>` — re-extract cookies from a running browser and match them back to the profile's recorded email in `context.json`. Use when the on-disk `storage_state.json` is too stale for the server-side refresh path but you've just signed back into Google in the browser. For Chromium-family browsers with multiple user-profiles (Chrome's `Default`, `Profile 1`, …), refresh fans out across all profiles to find the email — same path as `auth inspect` (issue #571).
+   - `notebooklm auth refresh --browser-cookies <browser>` — re-extract cookies from a running browser and match them back to the profile's recorded email in `context.json`. Use when the on-disk `storage_state.json` is too stale for the server-side refresh path but you've just signed back into Google in the browser. For Chromium-family browsers with multiple user-profiles (Chrome's `Default`, `Profile 1`, …), refresh fans out across all profiles to find the email — same path as `auth inspect` (issue #571). Use `chrome::<profile-name-or-directory>` when you already know the exact browser profile.
    - Both forms preserve the same `--profile` (no new profile is created).
 
 > **Note:** `notebooklm status` reports *context state* (selected notebook); do not use it to verify auth.
@@ -156,12 +156,16 @@ Before starting workflows, verify auth is in place. **Use `--test --json` (not b
 |------|---------|
 | Authenticate | `notebooklm login` |
 | Authenticate from browser cookies | `notebooklm login --browser-cookies <browser>` |
+| Authenticate from one Chromium profile | `notebooklm login --browser-cookies 'chrome::Profile 1'` |
+| Authenticate from one Firefox container | `notebooklm login --browser-cookies 'firefox::Work'` |
 | Import every signed-in account into its own profile | `notebooklm login --browser-cookies <browser> --all-accounts` |
 | Inspect signed-in accounts (read-only, by email) | `notebooklm auth inspect --browser <browser>` |
+| Inspect one browser profile/container | `notebooklm auth inspect --browser 'chrome::Profile 1'` |
 | Diagnose auth issues | `notebooklm auth check` |
 | Diagnose auth (full) | `notebooklm auth check --test` |
 | Refresh active profile in place (server-side) | `notebooklm auth refresh` |
 | Refresh active profile from a re-signed-in browser | `notebooklm auth refresh --browser-cookies <browser>` |
+| Refresh from one Chromium profile | `notebooklm auth refresh --browser-cookies 'chrome::Profile 1'` |
 | One-shot cookie keepalive (for cron) | `notebooklm auth refresh --quiet` |
 | List notebooks | `notebooklm list` |
 | Create notebook | `notebooklm create "Title"` |

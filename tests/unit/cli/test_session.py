@@ -3715,7 +3715,13 @@ def _chromium_fanout_setup(tmp_path, profile_specs):
 
 
 @contextlib.contextmanager
-def _install_chromium_fanout_patches(profiles, cookies_per_profile, accounts_per_profile):
+def _install_chromium_fanout_patches(
+    profiles,
+    cookies_per_profile,
+    accounts_per_profile,
+    *,
+    read_calls: list[str] | None = None,
+):
     """Context manager that installs all fan-out patches for the test body.
 
     Patches discovery, per-profile cookie reads, ``rookiepy`` (so the
@@ -3728,6 +3734,8 @@ def _install_chromium_fanout_patches(profiles, cookies_per_profile, accounts_per
         return profiles if browser_name.lower() == "chrome" else []
 
     def fake_read(profile, *, domains):
+        if read_calls is not None:
+            read_calls.append(profile.directory_name)
         return cookies_per_profile[profile.directory_name]
 
     pending = {p.directory_name: list(accounts_per_profile[p.directory_name]) for p in profiles}
@@ -4072,6 +4080,137 @@ class TestChromiumFanoutAccountSelector:
         # Critically: bob's cookies must come from Profile 1, NOT Default.
         # Before #571 the CLI couldn't see Profile 1 at all.
         assert sid["value"] == "SID-from-Profile 1"
+
+
+class TestChromiumExplicitProfileSelector:
+    """``chrome::<profile>`` scopes cookie reads to one Chromium user-profile."""
+
+    def test_auth_inspect_scopes_to_human_profile_name(self, runner, tmp_path):
+        profiles, cookies, accounts = _chromium_fanout_setup(
+            tmp_path,
+            [
+                (
+                    "Default",
+                    "Personal",
+                    [{"authuser": 0, "email": "alice@gmail.com", "is_default": True}],
+                ),
+                (
+                    "Profile 1",
+                    "Work",
+                    [{"authuser": 0, "email": "bob@gmail.com", "is_default": True}],
+                ),
+            ],
+        )
+        read_calls: list[str] = []
+
+        with _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls):
+            result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome::Work", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["accounts"] == [
+            {
+                "email": "bob@gmail.com",
+                "is_default": True,
+                "browser_profile": "Profile 1",
+            }
+        ]
+        assert read_calls == ["Profile 1"]
+
+    def test_login_direct_cookie_read_scopes_to_directory_name(self, runner, tmp_path):
+        profiles, cookies, accounts = _chromium_fanout_setup(
+            tmp_path,
+            [
+                (
+                    "Default",
+                    "Personal",
+                    [{"authuser": 0, "email": "alice@gmail.com", "is_default": True}],
+                ),
+                (
+                    "Profile 1",
+                    "Work",
+                    [{"authuser": 0, "email": "bob@gmail.com", "is_default": True}],
+                ),
+            ],
+        )
+        storage_file = tmp_path / "storage.json"
+        read_calls: list[str] = []
+
+        with (
+            _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls),
+            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch(
+                "notebooklm.cli.session.fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(cli, ["login", "--browser-cookies", "chrome::Profile 1"])
+
+        assert result.exit_code == 0, result.output
+        storage = json.loads(storage_file.read_text())
+        sid = next(c for c in storage["cookies"] if c["name"] == "SID")
+        assert sid["value"] == "SID-from-Profile 1"
+        assert read_calls == ["Profile 1"]
+
+    def test_unknown_profile_selector_lists_available_profiles(self, runner, tmp_path):
+        profiles, _cookies, _accounts = _chromium_fanout_setup(
+            tmp_path,
+            [
+                ("Default", "Personal", []),
+                ("Profile 1", "Work", []),
+            ],
+        )
+
+        with (
+            patch(
+                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+                return_value=profiles,
+            ),
+            patch(
+                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+                side_effect=AssertionError("must not read cookies for an unknown selector"),
+            ),
+        ):
+            result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome::Missing"])
+
+        assert result.exit_code != 0, result.output
+        assert "Missing" in result.output
+        assert "Personal" in result.output
+        assert "Default" in result.output
+        assert "Work" in result.output
+        assert "Profile 1" in result.output
+
+    def test_ambiguous_human_name_selector_asks_for_directory(self, runner, tmp_path):
+        profiles, _cookies, _accounts = _chromium_fanout_setup(
+            tmp_path,
+            [
+                ("Profile 1", "Work", []),
+                ("Profile 2", "Work", []),
+            ],
+        )
+
+        with patch(
+            "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+            return_value=profiles,
+        ):
+            result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome::Work"])
+
+        assert result.exit_code != 0, result.output
+        assert "ambiguous" in result.output
+        assert "Profile 1" in result.output
+        assert "Profile 2" in result.output
+
+    def test_empty_profile_selector_is_rejected_before_cookie_read(self, runner):
+        with patch(
+            "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+            side_effect=AssertionError("must not read cookies for an empty selector"),
+        ):
+            result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome::"])
+
+        assert result.exit_code != 0, result.output
+        assert "Empty Chromium profile selector" in result.output
 
 
 class TestChromiumFanoutBoundaryConditions:
