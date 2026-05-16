@@ -658,9 +658,9 @@ class ClientCore:
     def _pending_polls(self) -> PendingPolls:
         """Deprecated compatibility view of ``poll_registry.pending``.
 
-        ``ArtifactsAPI.wait_for_completion`` still uses this bridge until the
-        later feature-migration slices move polling behind a public core
-        capability, so access intentionally does not warn yet.
+        Feature APIs now access polling state through ``poll_registry`` or a
+        narrow capability adapter. This bridge remains for external callers and
+        tests that still read or assign ``ClientCore._pending_polls`` directly.
         """
         return self.poll_registry.pending
 

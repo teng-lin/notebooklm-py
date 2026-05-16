@@ -84,6 +84,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     release_poll = asyncio.Event()
     status_ready = GenerationStatus(task_id="task1", status="completed")
     poll_call_count = 0
+    test_timeout = 1.0
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         nonlocal poll_call_count
@@ -99,7 +100,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     key = ("nb1", "task1")
     later_waiter: asyncio.Task[GenerationStatus] | None = None
     try:
-        await poll_started.wait()
+        await asyncio.wait_for(poll_started.wait(), timeout=test_timeout)
         for _ in range(10):
             if key in core.poll_registry.pending:
                 break
@@ -112,7 +113,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
         await asyncio.sleep(0)
         follower.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await follower
+            await asyncio.wait_for(follower, timeout=test_timeout)
 
         assert not leader.done()
         assert key in core.poll_registry.pending
@@ -122,8 +123,8 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
         await asyncio.sleep(0)
         release_poll.set()
 
-        assert await leader == status_ready
-        assert await later_waiter == status_ready
+        assert await asyncio.wait_for(leader, timeout=test_timeout) == status_ready
+        assert await asyncio.wait_for(later_waiter, timeout=test_timeout) == status_ready
         assert poll_call_count == 1
         assert core.poll_registry.pending == {}
         assert core._pending_polls == {}
