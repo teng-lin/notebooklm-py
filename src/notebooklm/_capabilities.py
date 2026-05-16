@@ -49,7 +49,7 @@ class CookieJarProvider(Protocol):
         ...
 
 
-class ClientCoreCapabilities:
+class ClientCoreCapabilities(PollRegistryProvider, AuthRouteProvider, CookieJarProvider):
     """Narrow capability adapter around a ``ClientCore``-shaped object.
 
     Construction is intentionally lazy: only store the core. Individual
