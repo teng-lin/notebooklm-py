@@ -20,6 +20,7 @@ from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
 from ._env import get_base_url
 from ._idempotency import idempotent_create
+from ._source_listing import SourceLister
 from ._url_utils import is_youtube_url
 from .exceptions import (
     AuthError,
@@ -38,7 +39,6 @@ from .types import (
     SourceNotFoundError,
     SourceProcessingError,
     SourceTimeoutError,
-    _extract_source_created_at,
     _extract_source_url,
 )
 
@@ -153,24 +153,31 @@ class SourcesAPI:
         """
         self._core = core
         self._capabilities = ClientCoreCapabilities(core)
+        self._lister = SourceLister(self._rpc_call)
         self._upload_timeout = upload_timeout
+
+    async def _rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any:
+        return await self._core.rpc_call(
+            method,
+            params,
+            source_path=source_path,
+            allow_null=allow_null,
+            _is_retry=_is_retry,
+            disable_internal_retries=disable_internal_retries,
+        )
 
     def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
         """Return the configured upload timeout, or ``default`` if unset."""
         return self._upload_timeout if self._upload_timeout is not None else default
-
-    @staticmethod
-    def _handle_malformed_list_response(
-        notebook_id: str,
-        message: str,
-        *log_args: object,
-        strict: bool,
-        error_detail: str = "API response structure changed",
-    ) -> list[Source]:
-        logger.warning("SourcesAPI.list: " + message, notebook_id, *log_args)
-        if strict:
-            raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
-        return []
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
         """List all sources in a notebook.
@@ -184,93 +191,7 @@ class SourcesAPI:
         Returns:
             List of Source objects.
         """
-        # Get notebook data which includes sources
-        params = [notebook_id, None, [2], None, 0]
-        notebook = await self._core.rpc_call(
-            RPCMethod.GET_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
-
-        if not notebook or not isinstance(notebook, list) or len(notebook) == 0:
-            return self._handle_malformed_list_response(
-                notebook_id,
-                "Empty or invalid notebook response when listing sources for %s "
-                "(API response structure may have changed)",
-                strict=strict,
-            )
-
-        nb_info = notebook[0]
-        if not isinstance(nb_info, list) or len(nb_info) <= 1:
-            return self._handle_malformed_list_response(
-                notebook_id,
-                "Unexpected notebook structure for %s: expected list with sources at index 1 "
-                "(API structure may have changed)",
-                strict=strict,
-            )
-
-        sources_list = nb_info[1]
-        if not isinstance(sources_list, list):
-            return self._handle_malformed_list_response(
-                notebook_id,
-                "Sources data for %s is not a list (type=%s), returning empty list "
-                "(API structure may have changed)",
-                type(sources_list).__name__,
-                strict=strict,
-                error_detail=f"sources data is {type(sources_list).__name__}, not list",
-            )
-
-        # Convert raw source data to Source objects
-        sources = []
-        for src in sources_list:
-            if isinstance(src, list) and len(src) > 0:
-                # Extract basic info from source structure
-                src_id = src[0][0] if isinstance(src[0], list) else src[0]
-                title = src[1] if len(src) > 1 else None
-
-                # Extract URL via the shared helper. GET_NOTEBOOK source entries
-                # use the same medium-nested metadata shape as
-                # Source.from_api_response, which doesn't support the bare-http
-                # [0] fallback (metadata[0] can pack unrelated data). Precedence
-                # is restricted to [7] > [5]; keep the two call sites aligned.
-                url = _extract_source_url(src[2] if len(src) > 2 else None, allow_bare_http=False)
-
-                # Extract timestamp from src[2][2] - [seconds, nanoseconds]
-                created_at = _extract_source_created_at(src[2] if len(src) > 2 else None)
-
-                # Extract status from src[3][1]
-                # See SourceStatus enum for valid values
-                status = SourceStatus.READY  # Default to ready
-                if len(src) > 3 and isinstance(src[3], list) and len(src[3]) > 1:
-                    status_code = src[3][1]
-                    if status_code in (
-                        SourceStatus.PROCESSING,
-                        SourceStatus.READY,
-                        SourceStatus.ERROR,
-                        SourceStatus.PREPARING,
-                    ):
-                        status = status_code
-
-                # Extract source type code from src[2][4]
-                # See SourceType enum for valid values
-                type_code = None
-                if len(src) > 2 and isinstance(src[2], list) and len(src[2]) > 4:
-                    tc = src[2][4]
-                    if isinstance(tc, int):
-                        type_code = tc
-
-                sources.append(
-                    Source(
-                        id=str(src_id),
-                        title=title,
-                        url=url,
-                        _type_code=type_code,
-                        created_at=created_at,
-                        status=status,
-                    )
-                )
-
-        return sources
+        return await self._lister.list(notebook_id, strict=strict)
 
     async def get(self, notebook_id: str, source_id: str) -> Source | None:
         """Get details of a specific source.
@@ -282,15 +203,11 @@ class SourcesAPI:
         Returns:
             Source object with current status, or None if not found.
         """
-        # GET_SOURCE RPC (hizoJc) appears to be unreliable for source metadata lookup,
-        # especially for newly created sources. It returns None or incomplete data.
-        # Fallback to filtering from list() which uses GET_NOTEBOOK (rLM1Ne)
-        # and reliably returns all sources with their status/types.
-        sources = await self.list(notebook_id)
-        for source in sources:
-            if source.id == source_id:
-                return source
-        return None
+        return await self._lister.get(
+            notebook_id,
+            source_id,
+            list_sources=lambda current_notebook_id: self.list(current_notebook_id),
+        )
 
     async def wait_until_ready(
         self,

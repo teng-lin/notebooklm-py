@@ -148,6 +148,53 @@ class TestGetSource:
         assert source.kind == SourceType.WEB_PAGE
         assert source.kind == "web_page"
 
+    @pytest.mark.asyncio
+    async def test_get_source_uses_public_list_hook(self, auth_tokens):
+        async with NotebookLMClient(auth_tokens) as client:
+            client.sources.list = AsyncMock(
+                return_value=[
+                    Source(id="source_123", title="Other"),
+                    Source(id="source_456", title="Source Title"),
+                ]
+            )
+
+            source = await client.sources.get("nb_123", "source_456")
+
+        client.sources.list.assert_awaited_once_with("nb_123")
+        assert source is not None
+        assert source.id == "source_456"
+        assert source.title == "Source Title"
+
+    @pytest.mark.asyncio
+    async def test_list_uses_current_core_rpc_call(self, auth_tokens):
+        first_rpc = AsyncMock(return_value=[["Notebook", []]])
+        second_rpc = AsyncMock(
+            return_value=[
+                [
+                    "Notebook",
+                    [
+                        [
+                            ["source_456"],
+                            "Source Title",
+                            [None, 11, None, None, 5, None, None, ["https://example.com"]],
+                            [None, 2],
+                        ]
+                    ],
+                ]
+            ]
+        )
+
+        async with NotebookLMClient(auth_tokens) as client:
+            client._core.rpc_call = first_rpc
+            assert await client.sources.list("nb_123") == []
+
+            client._core.rpc_call = second_rpc
+            sources = await client.sources.list("nb_123")
+
+        first_rpc.assert_awaited_once()
+        second_rpc.assert_awaited_once()
+        assert [source.id for source in sources] == ["source_456"]
+
 
 class TestSourcesAPI:
     """Integration tests for SourcesAPI methods."""
