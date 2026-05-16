@@ -16,16 +16,19 @@ class _FakeTransportProvider:
         token: object | None = None,
         begin_error: BaseException | None = None,
         yield_before_begin_error: bool = False,
+        begin_release: asyncio.Event | None = None,
         finish_release: asyncio.Event | None = None,
     ) -> None:
         self.poll_registry = PollRegistry()
         self.token = object() if token is None else token
         self.begin_error = begin_error
         self.yield_before_begin_error = yield_before_begin_error
+        self.begin_release = begin_release
         self.finish_release = finish_release
         self.begin_tasks: list[asyncio.Task[object]] = []
         self.begin_labels: list[str] = []
         self.begin_task_done_states: list[bool] = []
+        self.begin_started = asyncio.Event()
         self.finish_tokens: list[object] = []
         self.finish_started = asyncio.Event()
         self.finish_finished = asyncio.Event()
@@ -41,6 +44,9 @@ class _FakeTransportProvider:
         self.begin_tasks.append(task)
         self.begin_labels.append(log_label)
         self.begin_task_done_states.append(task.done())
+        self.begin_started.set()
+        if self.begin_release is not None:
+            await self.begin_release.wait()
         if self.yield_before_begin_error:
             await asyncio.sleep(0)
         if self.begin_error is not None:
@@ -150,6 +156,63 @@ async def test_polling_service_begin_transport_task_receives_spawned_poll_task()
 
 
 @pytest.mark.asyncio
+async def test_polling_service_registers_pending_before_transport_begin_completes() -> None:
+    begin_release = asyncio.Event()
+    provider = _FakeTransportProvider(begin_release=begin_release)
+    service = ArtifactPollingService(provider)
+    poll_call_count = 0
+
+    async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        nonlocal poll_call_count
+        poll_call_count += 1
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    leader = asyncio.create_task(
+        service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
+    )
+    follower: asyncio.Task[GenerationStatus] | None = None
+    try:
+        await asyncio.wait_for(provider.begin_started.wait(), timeout=1.0)
+        assert ("nb1", "task1") in provider.poll_registry.pending
+
+        follower = asyncio.create_task(
+            service.wait_for_completion(
+                "nb1",
+                "task1",
+                initial_interval=0.0,
+                max_interval=0.0,
+                timeout=1.0,
+                poll_status=poll_status,
+            )
+        )
+        await asyncio.sleep(0)
+        begin_release.set()
+
+        leader_result = await asyncio.wait_for(leader, timeout=1.0)
+        follower_result = await asyncio.wait_for(follower, timeout=1.0)
+
+        assert leader_result.status == "completed"
+        assert follower_result.status == "completed"
+        assert poll_call_count == 1
+        await asyncio.wait_for(provider.finish_finished.wait(), timeout=1.0)
+        assert provider.poll_registry.pending == {}
+    finally:
+        begin_release.set()
+        cleanup_tasks = [task for task in (leader, follower) if task is not None and not task.done()]
+        for task in cleanup_tasks:
+            task.cancel()
+        if cleanup_tasks:
+            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_polling_service_resolves_wait_before_slow_transport_finish() -> None:
     token = object()
     finish_release = asyncio.Event()
@@ -241,6 +304,7 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
     assert poll_finally.is_set()
     assert len(provider.begin_tasks) == 1
     assert provider.begin_tasks[0].cancelled()
+    assert provider.poll_registry.pending == {}
     assert not provider.finish_started.is_set()
     assert provider.finish_tokens == []
 

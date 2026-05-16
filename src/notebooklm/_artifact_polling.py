@@ -185,18 +185,23 @@ class ArtifactPollingService:
             ),
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
+        pending[key] = (future, poll_task)
         try:
             poll_operation_token = await self._capabilities.begin_transport_task(
                 poll_task,
                 f"artifact wait {task_id}",
             )
-        except BaseException:
+        except BaseException as begin_exc:
+            pending.pop(key, None)
             poll_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await poll_task
+            if not future.done():
+                if isinstance(begin_exc, asyncio.CancelledError):
+                    future.cancel()
+                else:
+                    future.set_exception(begin_exc)
             raise
-
-        pending[key] = (future, poll_task)
 
         async def _finish_poll_operation() -> None:
             try:
@@ -209,7 +214,8 @@ class ArtifactPollingService:
             # arriving concurrently with completion either attaches to this
             # result or starts a fresh poll for a later generation.
             pending.pop(key, None)
-            assert not future.done(), "future resolved before poll task done-callback"
+            if future.done():
+                raise RuntimeError("BUG: future resolved before poll task done-callback")
             if task.cancelled():
                 future.cancel()
                 return
