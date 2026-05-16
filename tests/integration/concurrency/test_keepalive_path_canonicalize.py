@@ -1,6 +1,6 @@
 """Canonicalize keepalive storage path for in-process dedupe.
 
-Regression test for audit §29: the keepalive rotation throttle keys the
+Regression test for keepalive-path canonicalization: the rotation throttle keys the
 in-process dedupe (``_LAST_POKE_ATTEMPT_MONOTONIC`` /
 ``_POKE_LOCKS_BY_LOOP``) by the raw ``Path`` object stored on
 ``ClientCore._keepalive_storage_path``. Without canonicalization, two
@@ -30,10 +30,8 @@ import pytest
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 
-# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
-# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
-# was missed when this file landed (PR #612 T7.G6 merged the same day
-# as PR #622 T8.D11 tier-enforcement).
+# Mock-only tests (no real HTTP, no cassette) — opt out of the
+# integration-tree enforcement hook in ``tests/integration/conftest.py``.
 pytestmark = pytest.mark.allow_no_vcr
 
 
@@ -70,7 +68,7 @@ def test_relative_and_absolute_paths_share_dedupe_key(
 
     # Build a RELATIVE representation of the same file by chdir-ing into
     # tmp_path and using just the filename. This is the canonical
-    # "relative vs absolute" footgun from audit §29.
+    # "relative vs absolute" footgun for the dedupe key.
     monkeypatch.chdir(tmp_path)
     relative_path = Path("storage_state.json")
 
@@ -102,7 +100,7 @@ def test_tilde_path_is_expanded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_tokens: AuthTokens
 ) -> None:
     """A ``~``-prefixed path must expand to the same canonical form as
-    its expanded sibling — second representation flavor from audit §29.
+    its expanded sibling — second representation flavor of the same file.
     """
     # Pretend HOME lives under tmp_path so ``~`` expansion is hermetic.
     # ``Path.expanduser`` consults different env vars per platform:
@@ -145,8 +143,9 @@ def test_tilde_path_is_expanded(
 def test_public_storage_path_argument_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_tokens: AuthTokens
 ) -> None:
-    """T7.G6 must preserve the public path argument type (``str | Path |
-    None``) — only the internal-derived ``_keepalive_storage_path`` is
+    """Canonicalization must preserve the public path argument type
+    (``str | Path | None``) — only the internal-derived
+    ``_keepalive_storage_path`` is
     canonicalized. The auth object's ``storage_path`` and the argument
     passed by the caller stay as-is so external observers (logs,
     serialization, downstream callers) see the original value.
@@ -184,9 +183,10 @@ def test_public_storage_path_argument_unchanged(
 
 def test_symlink_is_resolved(tmp_path: Path, _auth_tokens: AuthTokens) -> None:
     """A symlinked path must resolve to its canonical target — the third
-    representation flavor from audit §29. CodeRabbit + Claude-bot both
-    flagged this case as a coverage gap on the initial PR; this closes
-    it. Without symlink resolution, a client opened via the symlink and
+    representation flavor that callers can construct for the same file.
+    CodeRabbit + Claude-bot both flagged this case as a coverage gap on
+    the initial PR; this closes it. Without symlink resolution, a client
+    opened via the symlink and
     another opened via the real path would each occupy a distinct
     dedupe slot and double-fire ``RotateCookies``.
     """

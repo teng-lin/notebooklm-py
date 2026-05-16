@@ -1,6 +1,5 @@
-"""Regression test for T7.H2 — default ``rate_limit_max_retries=3`` with backoff.
+"""Regression test for default ``rate_limit_max_retries=3`` with backoff.
 
-Audit item #11 (``thread-safety-concurrency-audit.md`` §11):
 Pre-fix, ``rate_limit_max_retries`` defaulted to ``0`` so any 429 raised
 ``RateLimitError`` immediately. The CLI silently bumped the value, but
 programmatic users had to discover and opt in. Diverges from "smart
@@ -37,7 +36,7 @@ import pytest
 from notebooklm import NotebookLMClient, RateLimitError
 from notebooklm.rpc import RPCMethod
 
-# T7.H2 uses synthetic HTTPX responses via mock — no cassette, no real HTTP.
+# Uses synthetic HTTPX responses via mock — no cassette, no real HTTP.
 pytestmark = pytest.mark.allow_no_vcr
 
 
@@ -84,8 +83,8 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
     # NotebookLMClient default — NO ``rate_limit_max_retries`` kwarg.
     client = NotebookLMClient(auth_tokens)
     assert client._core._rate_limit_max_retries == 3, (
-        "T7.H2 default must be 3; check that NotebookLMClient.__init__ "
-        "forwards the new ClientCore default."
+        "rate_limit_max_retries default must be 3; check that NotebookLMClient.__init__ "
+        "forwards the ClientCore default."
     )
 
     mock_http = AsyncMock(spec=httpx.AsyncClient)
@@ -138,7 +137,7 @@ async def test_default_retries_use_exponential_backoff_when_header_missing(
 ) -> None:
     """No ``Retry-After`` header on 429 → capped exponential backoff fallback.
 
-    Pre-T7.H2, a 429 without ``Retry-After`` raised immediately even
+    Pre-fix, a 429 without ``Retry-After`` raised immediately even
     with budget>0. Post-fix, the retry loop falls back to ``min(2 **
     attempt, 30)`` seconds with ±20% jitter so the new positive default
     is useful when Google omits the hint.
@@ -184,12 +183,13 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
 ) -> None:
     """B2 coordination: ``disable_internal_retries=True`` skips 429 retries.
 
-    T7.B2 introduced ``disable_internal_retries`` for mutating create
-    RPCs (CREATE_NOTEBOOK, ADD_SOURCE) where naive re-POST risks
-    duplicating the resource. T7.H2 raises the default ``rate_limit
-    _max_retries`` to 3, so B2 must continue to gate the 429 path —
-    otherwise mutating creates would silently inherit the new default
-    and the idempotency safety net would no longer apply.
+    The idempotency hardening introduced ``disable_internal_retries`` for
+    mutating create RPCs (CREATE_NOTEBOOK, ADD_SOURCE) where naive
+    re-POST risks duplicating the resource. The rate-limit fix raises
+    the default ``rate_limit_max_retries`` to 3, so the idempotency gate
+    must continue to short-circuit the 429 path — otherwise mutating
+    creates would silently inherit the new default and the idempotency
+    safety net would no longer apply.
 
     This test exercises ``_perform_authed_post`` directly with
     ``disable_internal_retries=True`` and verifies the very first 429

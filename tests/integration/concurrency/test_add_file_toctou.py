@@ -1,6 +1,6 @@
-"""Regression tests for T7.D3 — TOCTOU close + FD-exhaustion guard in add_file.
+"""Regression tests for the TOCTOU close + FD-exhaustion guard in add_file.
 
-Audit §23: pre-fix, ``SourcesAPI.add_file`` opened the source file twice — once
+Pre-fix, ``SourcesAPI.add_file`` opened the source file twice — once
 implicitly for validation via ``Path.stat()`` / ``Path.is_file()`` at the top
 of the method, and again later inside ``_upload_file_streaming`` via
 ``open(file_path, "rb")``. Between those two moments, the path could be
@@ -380,7 +380,7 @@ async def test_add_file_missing_path_raises_clear_error(
 # ---------------------------------------------------------------------------
 # Test 5 — FD ownership transfers to ``_upload_file_streaming``: the FD is
 # only closed when the streaming helper's shielded task finishes, NOT when
-# ``add_file``'s scope exits. This guards the T7.C3 dangling-session
+# ``add_file``'s scope exits. This guards the dangling-session
 # invariant: a post-finalize cancel keeps the shielded POST running in the
 # background, and that background task must still be able to read the FD.
 # ---------------------------------------------------------------------------
@@ -393,12 +393,12 @@ async def test_add_file_transfers_fd_ownership_to_streaming_helper(
     """The FD opened by ``add_file`` is closed by ``_upload_file_streaming``,
     not by ``add_file`` itself.
 
-    Why this matters (regression guard for the T7.C3 ↔ T7.D3 interaction):
-    if ``add_file`` closed the FD on its own scope exit, a post-finalize
-    cancel — which T7.C3 specifies "shields the in-flight POST so the
-    server-side session reaches a known terminal state" — would leave a
-    background task reading from a closed FD, breaking the dangling-session
-    guarantee.
+    Why this matters (regression guard for the FD-ownership ↔ post-finalize
+    cancel interaction): if ``add_file`` closed the FD on its own scope
+    exit, a post-finalize cancel — which "shields the in-flight POST so
+    the server-side session reaches a known terminal state" — would
+    leave a background task reading from a closed FD, breaking the
+    dangling-session guarantee.
 
     Strategy: stub ``_upload_file_streaming`` to capture the FD reference
     WITHOUT closing it, and verify ``add_file`` returns with the FD still
@@ -440,7 +440,7 @@ async def test_add_file_transfers_fd_ownership_to_streaming_helper(
     # guards against.
     assert hasattr(fd, "closed"), "stub captured a non-file object"
     assert not fd.closed, (
-        "T7.D3 ↔ T7.C3 regression: ``add_file`` closed the FD on its own "
+        "FD-ownership regression: ``add_file`` closed the FD on its own "
         "scope exit. The shielded post-finalize background task would now "
         "be unable to read the FD, breaking the dangling-session guarantee. "
         "Ownership of the FD must transfer to ``_upload_file_streaming``, "

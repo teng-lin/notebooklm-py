@@ -1,7 +1,7 @@
 """shielded shared refresh task survives waiter cancellation.
 
 Regression test for the cancellation-propagation bug at
-``src/notebooklm/_core.py:_await_refresh``: prior to T7.C1, a caller
+``src/notebooklm/_core.py:_await_refresh``: prior to the fix, a caller
 cancelled via ``asyncio.wait_for(timeout=...)`` while
 ``await self._refresh_task`` was pending would propagate the
 ``CancelledError`` into the *shared* refresh task itself, taking down
@@ -11,7 +11,7 @@ The fix wraps the await in ``asyncio.shield`` so the
 cancelled waiter unwinds locally while the underlying task continues
 producing a value for its siblings.
 
-Acceptance (per ``.sisyphus/plans/tier-7-thread-safety-concurrency/phase-2.md#T7.C1``):
+Acceptance criteria:
 
     Two ``asyncio.gather`` tasks await refresh; cancel one via
     ``wait_for(timeout=0.01)``; assert the other still receives a
@@ -130,7 +130,7 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
 
         # Wait for the gated callback to fire — this proves both tasks
         # are now joined on the same shared refresh task (single-flight
-        # invariant from T7.A2 / refresh state machine).
+        # invariant from the refresh state machine).
         await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
         assert call_count == 1, (
             f"Single-flight broken: callback fired {call_count} times "
@@ -149,7 +149,7 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         assert core._refresh_task is not None, "shared refresh task vanished"
         assert not core._refresh_task.done(), (
             "Shared refresh task completed/cancelled before release — "
-            "T7.C1 regression: waiter cancellation propagated into the "
+            "Shield regression: waiter cancellation propagated into the "
             "shared task."
         )
 
@@ -224,7 +224,7 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
         )
         assert not in_flight.done(), (
             "Shared task done before release — waiter cancellation "
-            "leaked into the shared task (T7.C1 regression)."
+            "leaked into the shared task (shield regression)."
         )
 
         # Clean up so the fixture teardown doesn't hang.

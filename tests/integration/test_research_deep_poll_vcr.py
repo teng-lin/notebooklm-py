@@ -1,4 +1,4 @@
-"""VCR replay of the Deep Research polling loop (T8.E7, scoped-down).
+"""VCR replay of the Deep Research polling loop (scoped-down).
 
 This module captures the Deep Research polling loop — START_DEEP_RESEARCH plus
 a handful of in-progress POLL_RESEARCH calls — and replays it with
@@ -6,7 +6,7 @@ a handful of in-progress POLL_RESEARCH calls — and replays it with
 
 Scope note
 ----------
-The original T8.E7 task was to capture the full Deep Research lifecycle
+The original recording goal was the full Deep Research lifecycle
 (START → 30+ polls → ``completed`` terminal state). In practice the local
 httpx connection pool can't sustain the multi-minute idle waits between
 polls — two consecutive recording attempts on 2026-05-15 both failed with
@@ -214,7 +214,7 @@ async def _poll_n_times(
     """Poll Deep Research ``n`` times and return every result.
 
     This is the scoped-down replacement for the original
-    ``_poll_until_complete``. T8.E7 was rescoped to exercise the polling
+    ``_poll_until_complete``. The recording was rescoped to exercise the polling
     *iteration path* rather than the full lifecycle, because the full
     lifecycle wait reliably trips ``httpx.PoolTimeout`` after ~15–20 min of
     idle polling on the maintainer's connection.
@@ -370,13 +370,14 @@ class TestDeepResearchPollReplay:
 def test_cassette_under_size_cap() -> None:
     """The cassette must stay under the 5 MB cap.
 
-    T8.E7 explicitly caps this cassette at 5 MB. If a recording grows past
-    that, the task plan documents three options in order: (1) try lossless
-    body compression, (2) scope down to a 20-poll subset (documented in the
-    PR description), (3) ship as-is with a ``defer-followup: cassette-size``
-    note in the PR. Whichever route is taken, this assertion MUST pass once
-    mitigations are applied — keeping the test green here is the gate that
-    enforces the cap on future re-records.
+    The cassette is explicitly capped at 5 MB. If a recording grows past
+    that, the original plan documented three options in order: (1) try
+    lossless body compression, (2) scope down to a 20-poll subset
+    (documented in the PR description), (3) ship as-is with a
+    ``defer-followup: cassette-size`` note in the PR. Whichever route is
+    taken, this assertion MUST pass once mitigations are applied —
+    keeping the test green here is the gate that enforces the cap on
+    future re-records.
     """
     if not CASSETTE_PATH.exists():
         pytest.skip(f"Cassette not present at {CASSETTE_PATH}; nothing to size-check.")
@@ -386,7 +387,7 @@ def test_cassette_under_size_cap() -> None:
     # exactly 5 MB also fails — the cap is intentionally a hard ceiling.
     assert size_mb < 5.0, (
         f"Cassette {CASSETTE_PATH.name} is {size_mb:.2f} MB, over the 5 MB "
-        "cap documented in T8.E7. Apply size mitigations: lossless body "
-        "compression, scope-down to 20 polls (document in PR), or call out "
-        "the breach with a defer-followup note."
+        "cap. Apply size mitigations: lossless body compression, "
+        "scope-down to 20 polls (document in PR), or call out the breach "
+        "with a defer-followup note."
     )

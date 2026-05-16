@@ -1,6 +1,6 @@
-"""Regression test for T7.F1 — per-``conversation_id`` lock for serial follow-ups.
+"""Regression test for the per-``conversation_id`` lock for serial follow-ups.
 
-Audit item §10: ``ChatAPI.ask`` rebuilds the conversation history from
+``ChatAPI.ask`` rebuilds the conversation history from
 ``_core._conversation_cache`` at the top of the request, then ``await``s
 the streamed POST, then writes the new turn back to the cache. Two
 concurrent ``ask`` calls on the *same* ``conversation_id`` interleave at
@@ -14,7 +14,7 @@ from history-build through cache-append. Two concurrent follow-ups on
 the same conversation_id serialize; the second sees the first's cached
 turn in its outgoing history payload.
 
-Acceptance invariant (per plan §T7.F1):
+Acceptance invariant:
   seed conversation ``cid`` with one Q/A turn; fire
   ``gather(ask("q2", conversation_id=cid), ask("q3", conversation_id=cid))``
   against a transport that delays each response so both requests overlap;
@@ -35,10 +35,8 @@ import pytest
 
 from notebooklm import NotebookLMClient
 
-# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
-# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
-# was missed when this file landed (PR #616 T7.F1 merged the same day
-# as PR #622 T8.D11 tier-enforcement).
+# Mock-only tests (no real HTTP, no cassette) — opt out of the
+# integration-tree enforcement hook in ``tests/integration/conftest.py``.
 pytestmark = pytest.mark.allow_no_vcr
 
 

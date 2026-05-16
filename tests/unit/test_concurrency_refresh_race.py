@@ -1,4 +1,4 @@
-"""Phase 1.5 P1.5.1 — snapshot-invariant for the shared POST helper.
+"""Snapshot-invariant for the shared POST helper.
 
 httpx merges the cookie jar into the outgoing ``httpx.Request`` synchronously
 in ``build_request()``, before any ``await``. ``_perform_authed_post`` reads
@@ -9,11 +9,12 @@ entire ``(csrf, session_id, cookies)`` snapshot is atomic from a concurrent
 coroutine standpoint: no other task can mutate state between read and the
 wire.
 
-T2.C moved the POST out of ``_rpc_call_impl`` into ``_perform_authed_post``
-so chat can share the same transport pipeline. The AST guard below
-follows the POST; the invariant still belongs at the shared site.
+The POST was extracted out of ``_rpc_call_impl`` into
+``_perform_authed_post`` so chat can share the same transport pipeline.
+The AST guard below follows the POST; the invariant still belongs at the
+shared site.
 
-T7.F2 hardened the invariant by:
+The auth-snapshot lock hardened the invariant by:
 
 - making ``_snapshot()`` ``async def`` and acquiring a dedicated
   ``_auth_snapshot_lock`` for the read, so the four scalar fields
@@ -22,9 +23,9 @@ T7.F2 hardened the invariant by:
   write-block; and
 - refactoring ``_build_url()`` to consume the resulting
   ``_AuthSnapshot`` rather than reading ``self.auth`` LIVE — that
-  prior live-read was the actual hazard called out in audit §12, since
-  it let a refresh's write to ``self.auth.session_id`` slip into the
-  URL between snapshot capture and request build.
+  prior live-read was the actual torn-read hazard, since it let a
+  refresh's write to ``self.auth.session_id`` slip into the URL between
+  snapshot capture and request build.
 
 This file *locks* the invariant in three ways:
 
@@ -39,7 +40,7 @@ This file *locks* the invariant in three ways:
    against any ``self.auth.<field>`` attribute access in
    ``RpcExecutor.build_url``. The method MUST consume only its
    ``snapshot: _AuthSnapshot`` parameter; reverting to ``self.auth``
-   would silently un-do T7.F2's atomicity fix.
+   would silently un-do the atomicity fix.
 
 3. ``test_concurrent_refresh_does_not_corrupt_inflight_rpc_request`` —
    runtime self-consistency. Drives concurrent ``refresh_auth`` against
@@ -111,7 +112,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
 
     # Locate the retry loop (the outermost ``while`` in the body). The loop
     # may sit directly under the function body OR one level deeper inside
-    # the T7.H1 ``async with self._get_rpc_semaphore():`` wrapper — both
+    # the RPC-semaphore ``async with self._get_rpc_semaphore():`` wrapper — both
     # structures preserve the snapshot→POST invariant this guard checks
     # (the semaphore acquire happens once per call, not per iteration).
     def _find_first_while(parent: ast.AST) -> ast.While | None:
@@ -249,7 +250,7 @@ def test_build_url_does_not_read_self_auth():
 def test_snapshot_acquires_auth_snapshot_lock():
     """``ClientCore._snapshot`` must acquire ``_auth_snapshot_lock``.
 
-    T7.F2: the lock is the only thing that serializes the four-scalar
+    The lock is the only thing that serializes the four-scalar
     snapshot read with the matching two-scalar write in
     ``NotebookLMClient.refresh_auth``. Removing the ``async with`` block
     here would re-open the torn-read window between
@@ -283,8 +284,8 @@ def test_snapshot_acquires_auth_snapshot_lock():
                 break
 
     assert has_lock_acquisition, (
-        "_snapshot() no longer acquires _auth_snapshot_lock. T7.F2 contract "
-        "broken — the four-scalar snapshot read is no longer atomic with the "
+        "_snapshot() no longer acquires _auth_snapshot_lock. Atomicity "
+        "contract broken — the four-scalar snapshot read is no longer atomic with the "
         "refresh-side write block in NotebookLMClient.refresh_auth, exposing "
         "torn (csrf, sid) reads."
     )

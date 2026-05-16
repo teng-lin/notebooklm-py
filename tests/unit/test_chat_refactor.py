@@ -1,4 +1,4 @@
-"""T2.D regression tests for ``ChatAPI.ask`` after the core.query_post refactor.
+"""Regression tests for ``ChatAPI.ask`` after the ``core.query_post`` refactor.
 
 These assertions pin down the new contract:
 
@@ -6,11 +6,10 @@ These assertions pin down the new contract:
   ``_reqid_counter`` mutation, so no ``DeprecationWarning``).
 - ``authuser=`` is present on the chat URL when ``account_email`` is set on
   the auth tokens, mirroring the batchexecute path in ``_core._build_url``.
-  Previously omitted entirely on the chat endpoint (audit C2 / M1).
+  Previously omitted entirely on the chat endpoint.
 - Concurrent ``asyncio.gather(ask*3)`` produces three distinct reqid values.
 - 401 mid-chat triggers a refresh, and the post-refresh attempt's body
-  carries the refreshed CSRF token (snapshot-per-attempt invariant from
-  T2.C).
+  carries the refreshed CSRF token (snapshot-per-attempt invariant).
 - ``NOTEBOOKLM_BL`` env override still works after the move to
   :mod:`notebooklm._env`.
 """
@@ -195,7 +194,7 @@ class TestChatReqid:
             and "_chat.py" in str(w.filename)
         ]
         assert chat_dep_warnings == [], (
-            f"_chat.py must not emit _reqid_counter DeprecationWarning after T2.D; "
+            f"_chat.py must not emit _reqid_counter DeprecationWarning; "
             f"got: {[(str(w.filename), str(w.message)) for w in chat_dep_warnings]}"
         )
 
@@ -249,7 +248,7 @@ class TestChatReqid:
 
 
 class TestChatRefreshRetry:
-    """T2.C invariant inherited by T2.D: ``build_request`` is invoked once
+    """Snapshot-per-attempt invariant: ``build_request`` is invoked once
     per attempt with a *fresh* ``_AuthSnapshot``, so the retry body carries
     the post-refresh CSRF token rather than replaying the stale pre-refresh
     body."""
@@ -321,7 +320,7 @@ class TestChatRefreshRetry:
             assert "at=OLD_CSRF" in observed_bodies[0]
             assert "at=NEW_CSRF" not in observed_bodies[0]
             # Second attempt body carries NEW_CSRF (post-refresh snapshot)
-            # — this is the T2.C snapshot-per-attempt contract surfacing
+            # — this is the snapshot-per-attempt contract surfacing
             # through query_post.
             assert "at=NEW_CSRF" in observed_bodies[1]
             assert "at=OLD_CSRF" not in observed_bodies[1]
@@ -335,9 +334,8 @@ class TestChatRefreshRetry:
 
 
 class TestChatBlOverride:
-    """Single-source-of-truth for the ``bl`` parameter lives in ``_env.py``
-    after T2.D. The ``NOTEBOOKLM_BL`` override must still flow through to
-    the chat URL.
+    """Single-source-of-truth for the ``bl`` parameter lives in ``_env.py``.
+    The ``NOTEBOOKLM_BL`` override must still flow through to the chat URL.
     """
 
     @pytest.mark.asyncio

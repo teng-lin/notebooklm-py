@@ -1,6 +1,6 @@
 """``ResearchAPI.poll`` and ``import_sources`` task-id discriminator.
 
-Regression test for the audit §26 finding: when two research tasks are in
+Regression test for the cross-wire bug: when two research tasks are in
 flight against the same notebook (e.g. an end-user kicks off a deep-research
 task A and a follow-up task B before A completes), the legacy
 ``ResearchAPI.poll`` API has no way to tell callers *which* task a returned
@@ -46,10 +46,8 @@ from notebooklm import NotebookLMClient
 from notebooklm.exceptions import ResearchTaskMismatchError
 from notebooklm.rpc import RPCMethod
 
-# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
-# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
-# was missed when this file landed (PR #619 T7.F3 merged the same day
-# as PR #622 T8.D11 tier-enforcement).
+# Mock-only tests (no real HTTP, no cassette) — opt out of the
+# integration-tree enforcement hook in ``tests/integration/conftest.py``.
 pytestmark = pytest.mark.allow_no_vcr
 
 
@@ -150,7 +148,7 @@ async def test_scenario_c_no_task_id_multiple_in_flight_warns(
 ):
     """C. ``poll(nb)`` with multiple in-flight tasks: warn + old return.
 
-    The actually-broken case from audit §26. We warn (don't error) to
+    The actually-broken case (cross-wire). We warn (don't error) to
     preserve back-compat — callers on the old API keep working until
     they migrate. The returned task must match the old "first task in
     list" behavior so existing consumers see no functional change.

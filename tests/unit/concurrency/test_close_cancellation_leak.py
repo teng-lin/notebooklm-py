@@ -1,15 +1,15 @@
-"""Regression test for T7.C2 — close-cancellation transport-leak shield.
+"""Regression test for the close-cancellation transport-leak shield.
 
-T7.C2 audits whether the ``asyncio.shield`` wrapped around
+The audit covered whether the ``asyncio.shield`` wrapped around
 ``self._http_client.aclose()`` inside :meth:`notebooklm._core.ClientCore.close`
 correctly survives a cancellation that lands while ``aclose`` itself is
 in flight, exercised through the user-facing ``__aexit__`` surface (not
-the bare ``close()`` task path already covered by T7.B4's
+the bare ``close()`` task path already covered by the companion
 ``test_cancel_mid_close_does_not_leak_transport``).
 
-The shield itself ships in T7.B4 (PR #526, sha ``d8b5bd6``). T7.C2's
-acceptance criterion is a complementary repro that exercises a different
-cancel-injection site:
+The shield itself ships earlier (PR #526, sha ``d8b5bd6``). The
+follow-up acceptance criterion was a complementary repro that exercises
+a different cancel-injection site:
 
 - Client opened with ``keepalive=...`` so a background poke task is alive
   and the close sequence has to drive a real keepalive teardown.
@@ -31,9 +31,9 @@ cancel-injection site:
   ``http_client_ref.is_closed`` is true afterwards — proof that the
   shielded ``aclose`` in the outer ``finally`` ran to completion.
 
-The B4 shield satisfies this invariant; the source change for T7.C2 is
+The shield satisfies this invariant; the follow-up source change was
 intentionally a no-op (the audit's job was to confirm the shield is
-positioned correctly, which it is). This test is the C2 regression
+positioned correctly, which it is). This test is the regression
 artifact — verified to fail loudly when the shield is removed (the
 cancelled-mid-``aclose`` path then leaves ``is_closed=False``).
 """
@@ -80,7 +80,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
 ) -> None:
     """``__aexit__`` cancelled mid-``aclose`` must still close the transport.
 
-    Repro per T7.C2 spec:
+    Repro setup:
     - keepalive enabled (background poke task alive),
     - ``_rotate_cookies`` patched to hang on an unset ``asyncio.Event``
       so the keepalive teardown path is non-trivial,
@@ -195,7 +195,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
         # Drive ``__aexit__`` through a short ``wait_for`` so a cancel
         # arrives while ``_slow_aclose`` is in its 0.2 s sleep — i.e.
         # the cancel lands inside the shielded await of aclose, the
-        # exact path audit §7 / T7.B4 calls out.
+        # exact path the shield was added for.
         with pytest.raises((TimeoutError, asyncio.TimeoutError)):
             await asyncio.wait_for(
                 client.__aexit__(None, None, None),

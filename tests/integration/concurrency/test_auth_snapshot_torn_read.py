@@ -37,7 +37,7 @@ materializes if a yield point slips into ``_perform_authed_post``'s
 prologue between snapshot capture and request build, which is what the
 AST guards in ``tests/unit/test_concurrency_refresh_race.py`` lock
 down statically. Together the AST guards and this runtime check form
-the regression net for T7.F2 / audit §12.
+the regression net for the auth-snapshot atomicity contract.
 """
 
 from __future__ import annotations
@@ -55,10 +55,8 @@ from notebooklm._core import ClientCore
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
-# Mock-only test (no real HTTP, no cassette) — opt out of the T8.D11
-# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
-# was missed when this file landed (PR #620 T7.F2 merged the same day
-# as PR #622 T8.D11 tier-enforcement).
+# Mock-only test (no real HTTP, no cassette) — opt out of the
+# integration-tree enforcement hook in ``tests/integration/conftest.py``.
 pytestmark = pytest.mark.allow_no_vcr
 
 # -- Generation tagging -----------------------------------------------------
@@ -252,7 +250,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
 
     # Assertion: every captured request must be coherent across all
     # three axes. Mixed generations (e.g. csrf=1, sid=2, cookies=1)
-    # indicate a torn read — the exact regression T7.F2 prevents.
+    # indicate a torn read — the exact regression the snapshot lock prevents.
     assert len(captured) == fan_out, f"Expected {fan_out} POSTs captured, got {len(captured)}"
     torn = []
     for i, req in enumerate(captured):
