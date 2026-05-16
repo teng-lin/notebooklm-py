@@ -178,6 +178,28 @@ async def test_wait_until_registered_tolerates_transient_error(
 
 
 @pytest.mark.asyncio
+async def test_wait_until_registered_raises_processing_error_for_terminal_type(
+    poller: SourcePoller,
+    logger: logging.Logger,
+) -> None:
+    terminal_error = Source(id="src_pdf", status=SourceStatus.ERROR, _type_code=3)
+    get_source = AsyncMock(return_value=terminal_error)
+
+    with pytest.raises(SourceProcessingError) as exc_info:
+        await poller.wait_until_registered(
+            "nb_1",
+            "src_pdf",
+            get_source=get_source,
+            sleep=AsyncMock(),
+            monotonic=MagicMock(return_value=0.0),
+            logger=logger,
+        )
+
+    assert exc_info.value.source_id == "src_pdf"
+    assert exc_info.value.status == SourceStatus.ERROR
+
+
+@pytest.mark.asyncio
 async def test_wait_until_registered_waits_while_source_is_none(
     poller: SourcePoller,
     logger: logging.Logger,
