@@ -226,10 +226,10 @@ def test_auth_context_unreadable_recovers_under_lock(tmp_path):
 
 
 def test_stream_parser_debug_guarded_by_isenabledfor(caplog):
-    """_chat.py:601 — non-JSON chunk debug log fires under DEBUG; suppressed otherwise."""
+    """_chat_protocol.py — non-JSON chunk debug log is guarded before it fires."""
 
     # Direct: ensure the module has a guarded debug call (structural check).
-    src = (SRC_ROOT / "_chat.py").read_text(encoding="utf-8")
+    src = (SRC_ROOT / "_chat_protocol.py").read_text(encoding="utf-8")
     assert "logger.isEnabledFor(logging.DEBUG)" in src
     assert "Stream parser" in src
 

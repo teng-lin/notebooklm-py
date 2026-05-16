@@ -5,36 +5,34 @@ retrieving conversation history.
 """
 
 import asyncio
-import json
 import logging
-import re
 import uuid
 import weakref
 from typing import Any
-from urllib.parse import quote, urlencode
 
+from ._chat_protocol import (
+    build_streaming_chat_request,
+    collect_texts_from_nested,
+    extract_answer_and_refs_from_chunk,
+    extract_text_passages,
+    extract_uuid_from_nested,
+    parse_citations,
+    parse_single_citation,
+    parse_streaming_chat_response,
+    raise_if_rate_limited,
+)
 from ._core import ClientCore, _AuthSnapshot
-from ._env import get_default_bl, get_default_language
 from ._logging import get_request_id, reset_request_id, set_request_id
-from .auth import format_authuser_value
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (
     ChatGoal,
     ChatResponseLength,
     RPCMethod,
-    get_query_url,
-    nest_source_ids,
     safe_index,
 )
 from .types import AskResult, ChatMode, ChatReference, ConversationTurn
 
 logger = logging.getLogger(__name__)
-
-# UUID pattern for validating source IDs (compiled once at module level)
-_UUID_PATTERN = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-    re.IGNORECASE,
-)
 
 
 def _extract_next_turn_content(next_turn: Any) -> str | None:
@@ -530,449 +528,50 @@ class ChatAPI:
         conversation_id: str,
         reqid: int,
     ) -> tuple[str, str, dict[str, str]]:
-        """Assemble ``(url, body, extra_headers)`` for one chat HTTP attempt.
-
-        Called by ``core.query_post`` once per attempt with a fresh
-        ``_AuthSnapshot``; on retry, a new snapshot picks up the refreshed
-        CSRF / session id / account routing so the rebuilt request matches
-        the post-refresh credentials byte-for-byte.
-
-        Args:
-            snapshot: Point-in-time auth state for this attempt. The
-                ``csrf_token`` is embedded in the body's ``at=`` field; the
-                ``session_id`` and account routing fields go into URL params.
-            notebook_id: Owning notebook id (echoed at params[7] for
-                server-side conversation persistence).
-            question: User-facing question text.
-            source_ids: Sources to scope this turn against. Encoded
-                triple-nested via :func:`nest_source_ids`.
-            conversation_history: Prior turns for follow-up Q&A, or ``None``
-                when starting a new conversation.
-            conversation_id: Stable conversation identifier. Locally minted
-                UUID for new conversations, server-assigned for follow-ups.
-            reqid: Monotonic request id from :meth:`ClientCore.next_reqid`.
-
-        Returns:
-            ``(url, body, extra_headers)``. ``extra_headers`` is empty
-            because the chat endpoint inherits Content-Type from the shared
-            httpx client.
-        """
-        sources_array = nest_source_ids(source_ids, 2)
-
-        params: list[Any] = [
-            sources_array,
-            question,
-            conversation_history,
-            [2, None, [1], [1]],
-            conversation_id,
-            None,  # [5] - always null
-            None,  # [6] - always null
-            notebook_id,  # [7] - required for server-side conversation persistence
-            1,  # [8] - always 1
-        ]
-
-        params_json = json.dumps(params, separators=(",", ":"))
-        f_req_json = json.dumps([None, params_json], separators=(",", ":"))
-        encoded_req = quote(f_req_json, safe="")
-
-        body_parts = [f"f.req={encoded_req}"]
-        if snapshot.csrf_token:
-            encoded_at = quote(snapshot.csrf_token, safe="")
-            body_parts.append(f"at={encoded_at}")
-        body = "&".join(body_parts) + "&"
-
-        url_params: dict[str, str] = {
-            "bl": get_default_bl(),
-            "hl": get_default_language(),
-            "_reqid": str(reqid),
-            "rt": "c",
-        }
-        if snapshot.session_id:
-            url_params["f.sid"] = snapshot.session_id
-        # Multi-account routing: previously omitted entirely on the chat
-        # endpoint (audit C2 / M1), which silently routed requests to the
-        # default browser account when the auth tokens were minted for a
-        # non-default profile. Mirrors the batchexecute path in
-        # ``ClientCore._build_url``.
-        if snapshot.account_email or snapshot.authuser:
-            url_params["authuser"] = format_authuser_value(
-                snapshot.authuser,
-                snapshot.account_email,
-            )
-
-        url = f"{get_query_url()}?{urlencode(url_params)}"
-        return url, body, {}
+        """Compatibility wrapper for streamed-chat request construction."""
+        return build_streaming_chat_request(
+            snapshot=snapshot,
+            notebook_id=notebook_id,
+            question=question,
+            source_ids=source_ids,
+            conversation_history=conversation_history,
+            conversation_id=conversation_id,
+            reqid=reqid,
+        )
 
     def _parse_ask_response_with_references(
         self, response_text: str
     ) -> tuple[str, list[ChatReference], str | None]:
-        """Parse the streaming response to extract answer, references, and conversation ID.
-
-        Returns:
-            Tuple of (answer_text, list of ChatReference objects, server_conversation_id).
-            server_conversation_id is None if not present in the response.
-        """
-
-        if response_text.startswith(")]}'"):
-            response_text = response_text[4:]
-
-        lines = response_text.strip().split("\n")
-        best_marked_answer = ""
-        best_marked_refs: list[ChatReference] = []
-        best_unmarked_answer = ""
-        best_unmarked_refs: list[ChatReference] = []
-        server_conv_id: str | None = None
-
-        def process_chunk(json_str: str) -> None:
-            """Process a JSON chunk, updating best answer candidates and their refs."""
-            nonlocal best_marked_answer, best_marked_refs
-            nonlocal best_unmarked_answer, best_unmarked_refs
-            nonlocal server_conv_id
-            text, is_answer, refs, conv_id = self._extract_answer_and_refs_from_chunk(json_str)
-            if text:
-                if is_answer and len(text) > len(best_marked_answer):
-                    best_marked_answer = text
-                    best_marked_refs = refs
-                elif not is_answer and len(text) > len(best_unmarked_answer):
-                    best_unmarked_answer = text
-                    best_unmarked_refs = refs
-            if conv_id:
-                server_conv_id = conv_id
-
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            if not line:
-                i += 1
-                continue
-
-            try:
-                int(line)
-                i += 1
-                if i < len(lines):
-                    process_chunk(lines[i])
-                i += 1
-            except ValueError:
-                process_chunk(line)
-                i += 1
-
-        # Prefer marked answers; fall back to longest unmarked text
-        if best_marked_answer:
-            longest_answer = best_marked_answer
-            final_refs = best_marked_refs
-        elif best_unmarked_answer:
-            logger.warning(
-                "No marked answer found; falling back to longest unmarked "
-                "text (%d chars). The API response format may have changed.",
-                len(best_unmarked_answer),
-            )
-            longest_answer = best_unmarked_answer
-            final_refs = best_unmarked_refs
-        else:
-            longest_answer = ""
-            final_refs = []
-
-        if not longest_answer:
-            logger.warning(
-                "No answer extracted from response (%d lines parsed)",
-                len(lines),
-            )
-
-        # Assign citation numbers based on order of appearance
-        for idx, ref in enumerate(final_refs, start=1):
-            if ref.citation_number is None:
-                ref.citation_number = idx
-
-        return longest_answer, final_refs, server_conv_id
+        """Compatibility wrapper preserving the old tuple return shape."""
+        result = parse_streaming_chat_response(response_text)
+        return result.answer, result.references, result.conversation_id
 
     def _extract_answer_and_refs_from_chunk(
         self, json_str: str
     ) -> tuple[str | None, bool, list[ChatReference], str | None]:
-        """Extract answer text, references, and conversation ID from a response chunk.
-
-        Response structure (discovered via reverse engineering):
-        - first[0]: answer text
-        - first[1]: None
-        - first[2]: [conversation_id, numeric_hash]
-        - first[3]: None
-        - first[4]: Citation metadata
-          - first[4][0]: Per-source citation positions with text spans
-          - first[4][3]: Detailed citation array with structure:
-            - cite[0][0]: chunk ID
-            - cite[1][2]: relevance score
-            - cite[1][4]: array of [text_passage, char_positions] items
-            - cite[1][5][0][0][0]: parent SOURCE ID (this is the real source UUID)
-
-        When item[2] is null and item[5] contains a UserDisplayableError, raises
-        ChatError with a rate-limit message.
-
-        Returns:
-            Tuple of (text, is_answer, references, server_conversation_id).
-        """
-        refs: list[ChatReference] = []
-
-        try:
-            data = json.loads(json_str)
-        except json.JSONDecodeError:
-            return None, False, refs, None
-
-        if not isinstance(data, list):
-            return None, False, refs, None
-
-        for item in data:
-            if not isinstance(item, list) or len(item) < 3:
-                continue
-            if item[0] != "wrb.fr":
-                continue
-
-            inner_json = item[2]
-            if not isinstance(inner_json, str):
-                # item[2] is null — check item[5] for a server-side error payload
-                if len(item) > 5 and isinstance(item[5], list):
-                    self._raise_if_rate_limited(item[5])
-                continue
-
-            try:
-                inner_data = json.loads(inner_json)
-                if isinstance(inner_data, list) and len(inner_data) > 0:
-                    first = inner_data[0]
-                    if isinstance(first, list) and len(first) > 0:
-                        text = first[0]
-                        if not isinstance(text, str) or not text:
-                            continue
-
-                        is_answer = (
-                            len(first) > 4
-                            and isinstance(first[4], list)
-                            and len(first[4]) > 0
-                            and first[4][-1] == 1
-                        )
-
-                        # Extract the server-assigned conversation ID from first[2]
-                        server_conv_id: str | None = None
-                        if (
-                            len(first) > 2
-                            and isinstance(first[2], list)
-                            and first[2]
-                            and isinstance(first[2][0], str)
-                        ):
-                            server_conv_id = first[2][0]
-
-                        refs = self._parse_citations(first)
-                        return text, is_answer, refs, server_conv_id
-            except json.JSONDecodeError:
-                # Hot-path stream parser: skip non-JSON chunks. Guard the
-                # debug log with isEnabledFor so the redaction regex doesn't
-                # run on every chunk when DEBUG is off.
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug("Stream parser: non-JSON chunk skipped")
-                continue
-
-        return None, False, refs, None
+        """Compatibility wrapper for streamed-chat chunk parsing."""
+        return extract_answer_and_refs_from_chunk(json_str)
 
     def _raise_if_rate_limited(self, error_payload: list) -> None:
-        """Raise ChatError if the payload contains a UserDisplayableError.
-
-        Args:
-            error_payload: The item[5] list from a wrb.fr response chunk.
-
-        Raises:
-            ChatError: When a UserDisplayableError is detected.
-        """
-        try:
-            # Structure: [8, None, [["type.googleapis.com/.../UserDisplayableError", ...]]]
-            if len(error_payload) > 2 and isinstance(error_payload[2], list):
-                for entry in error_payload[2]:
-                    if isinstance(entry, list) and entry and isinstance(entry[0], str):
-                        if "UserDisplayableError" in entry[0]:
-                            raise ChatError(
-                                "Chat request was rate limited or rejected by the API. "
-                                "Wait a few seconds and try again."
-                            )
-        except ChatError:
-            raise
-        except Exception:
-            logger.debug(
-                "Could not parse chat error payload; continuing with empty-answer handling",
-                exc_info=True,
-            )
+        """Compatibility wrapper for streamed-chat error payload parsing."""
+        raise_if_rate_limited(error_payload)
 
     def _parse_citations(self, first: list) -> list[ChatReference]:
-        """Parse citation details from response structure.
-
-        The citation data is in first[4][3], which contains an array of citations.
-        Each citation has:
-          - cite[0][0]: chunk ID (internal reference)
-          - cite[1][4]: array of text passages with character positions
-          - cite[1][5]: nested structure containing the parent SOURCE ID (UUID)
-
-        Note:
-            This parsing relies on reverse-engineered response structures that
-            Google can change at any time. Parsing failures are logged and
-            result in graceful degradation (empty references list).
-
-        Args:
-            first: The first element of the parsed response.
-
-        Returns:
-            List of ChatReference objects with source IDs and cited text.
-        """
-        try:
-            # Validate path to citations array: first[4][3]
-            if len(first) <= 4 or not isinstance(first[4], list):
-                return []
-            type_info = first[4]
-            if len(type_info) <= 3 or not isinstance(type_info[3], list):
-                return []
-
-            refs: list[ChatReference] = []
-            for cite in type_info[3]:
-                ref = self._parse_single_citation(cite)
-                if ref is not None:
-                    refs.append(ref)
-            return refs
-        except (IndexError, TypeError, AttributeError) as e:
-            logger.debug(
-                "Citation parsing failed (API structure may have changed): %s",
-                e,
-                exc_info=True,
-            )
-            return []
+        """Compatibility wrapper for streamed-chat citation parsing."""
+        return parse_citations(first)
 
     def _parse_single_citation(self, cite: Any) -> ChatReference | None:
-        """Parse a single citation entry into a ChatReference.
-
-        Args:
-            cite: A citation entry from the citations array.
-
-        Returns:
-            ChatReference if valid source ID found, None otherwise.
-        """
-        if not isinstance(cite, list) or len(cite) < 2:
-            return None
-
-        cite_inner = cite[1]
-        if not isinstance(cite_inner, list):
-            return None
-
-        # Extract source ID from cite[1][5] - required for valid reference
-        source_id_data = cite_inner[5] if len(cite_inner) > 5 else None
-        source_id = self._extract_uuid_from_nested(source_id_data)
-        if source_id is None:
-            return None
-
-        # Extract chunk ID from cite[0][0]
-        chunk_id = None
-        if isinstance(cite[0], list) and cite[0]:
-            first_item = cite[0][0]
-            if isinstance(first_item, str):
-                chunk_id = first_item
-
-        # Extract text passages and char positions from cite[1][4]
-        cited_text, start_char, end_char = self._extract_text_passages(cite_inner)
-
-        return ChatReference(
-            source_id=source_id,
-            cited_text=cited_text,
-            start_char=start_char,
-            end_char=end_char,
-            chunk_id=chunk_id,
-        )
+        """Compatibility wrapper for single streamed-chat citation parsing."""
+        return parse_single_citation(cite)
 
     def _extract_text_passages(self, cite_inner: list) -> tuple[str | None, int | None, int | None]:
-        """Extract cited text and character positions from citation data.
-
-        Structure (discovered via analysis):
-          cite_inner[4] = [[passage_data, ...], ...]
-          passage_data = [start_char, end_char, nested_passages]
-          nested_passages contains text at varying depths
-
-        Args:
-            cite_inner: The inner citation data (cite[1]).
-
-        Returns:
-            Tuple of (cited_text, start_char, end_char).
-        """
-        if len(cite_inner) <= 4 or not isinstance(cite_inner[4], list):
-            return None, None, None
-
-        texts: list[str] = []
-        start_char: int | None = None
-        end_char: int | None = None
-
-        for passage_wrapper in cite_inner[4]:
-            if not isinstance(passage_wrapper, list) or not passage_wrapper:
-                continue
-            passage_data = passage_wrapper[0]
-            if not isinstance(passage_data, list) or len(passage_data) < 3:
-                continue
-
-            # Extract char positions from first valid passage
-            if start_char is None and isinstance(passage_data[0], int):
-                start_char = passage_data[0]
-            if isinstance(passage_data[1], int):
-                end_char = passage_data[1]
-
-            # Extract text from nested structure
-            self._collect_texts_from_nested(passage_data[2], texts)
-
-        cited_text = " ".join(texts) if texts else None
-        return cited_text, start_char, end_char
+        """Compatibility wrapper for streamed-chat citation text extraction."""
+        return extract_text_passages(cite_inner)
 
     def _collect_texts_from_nested(self, nested: Any, texts: list[str]) -> None:
-        """Collect text strings from deeply nested passage structure.
-
-        The text can appear at various levels of nesting. This walks through
-        the structure looking for [start, end, text_value] triplets.
-
-        Args:
-            nested: Nested list structure to search.
-            texts: List to append found text strings to.
-        """
-        if not isinstance(nested, list):
-            return
-
-        for nested_group in nested:
-            if not isinstance(nested_group, list):
-                continue
-            for inner in nested_group:
-                if not isinstance(inner, list) or len(inner) < 3:
-                    continue
-                text_val = inner[2]
-                if isinstance(text_val, str) and text_val.strip():
-                    texts.append(text_val.strip())
-                elif isinstance(text_val, list):
-                    for item in text_val:
-                        if isinstance(item, str) and item.strip():
-                            texts.append(item.strip())
+        """Compatibility wrapper for streamed-chat nested text collection."""
+        collect_texts_from_nested(nested, texts)
 
     def _extract_uuid_from_nested(self, data: Any, max_depth: int = 10) -> str | None:
-        """Recursively extract a UUID from nested list structures.
-
-        The API returns source IDs in deeply nested list structures that can vary.
-        This walks through the nesting to find the first valid UUID string.
-
-        Args:
-            data: Nested list data to search.
-            max_depth: Maximum recursion depth to prevent stack overflow.
-
-        Returns:
-            UUID string if found, None otherwise.
-        """
-        if max_depth <= 0:
-            logger.warning("Max recursion depth reached in UUID extraction")
-            return None
-
-        if data is None:
-            return None
-
-        if isinstance(data, str):
-            return data if _UUID_PATTERN.match(data) else None
-
-        if isinstance(data, list):
-            for item in data:
-                result = self._extract_uuid_from_nested(item, max_depth - 1)
-                if result is not None:
-                    return result
-
-        return None
+        """Compatibility wrapper for streamed-chat source UUID extraction."""
+        return extract_uuid_from_nested(data, max_depth)
