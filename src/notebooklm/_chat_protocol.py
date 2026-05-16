@@ -21,6 +21,7 @@ from .rpc.encoder import nest_source_ids
 from .rpc.types import get_query_url
 from .types import ChatReference
 
+# Deliberate: preserve the pre-extraction chat parser logger namespace.
 logger = logging.getLogger("notebooklm._chat")
 
 _UUID_PATTERN = re.compile(

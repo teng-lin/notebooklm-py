@@ -352,8 +352,11 @@ def test_chat_protocol_static_import_guard() -> None:
             if node.level == 1 or node.level == 2:
                 module = f"notebooklm.{module}" if module else "notebooklm"
             imports.add(module)
+            for alias in node.names:
+                imports.add(f"{module}.{alias.name}" if module else alias.name)
 
-    assert forbidden.isdisjoint(imports)
+    violations = forbidden & imports
+    assert not violations, f"_chat_protocol.py imported forbidden modules: {violations}"
 
 
 def test_chat_protocol_runtime_import_does_not_request_forbidden_modules(monkeypatch) -> None:
@@ -380,8 +383,12 @@ def test_chat_protocol_runtime_import_does_not_request_forbidden_modules(monkeyp
             package = globals_.get("__package__") if globals_ else None
             if package:
                 resolved = importlib.util.resolve_name(f"{'.' * level}{name}", package)
-        if resolved in forbidden:
-            raise AssertionError(f"_chat_protocol imported forbidden module {resolved}")
+        candidates = {resolved}
+        if fromlist:
+            candidates.update(f"{resolved}.{item}" for item in fromlist)
+        violations = forbidden & candidates
+        if violations:
+            raise AssertionError(f"_chat_protocol imported forbidden modules {violations}")
         return real_import(name, globals_, locals_, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
@@ -418,6 +425,16 @@ def test_chat_module_keeps_only_delegating_stream_parser_wrappers() -> None:
         "_collect_texts_from_nested",
         "_extract_uuid_from_nested",
     }
+    expected_delegate = {
+        "_parse_ask_response_with_references": "parse_streaming_chat_response",
+        "_extract_answer_and_refs_from_chunk": "extract_answer_and_refs_from_chunk",
+        "_raise_if_rate_limited": "raise_if_rate_limited",
+        "_parse_citations": "parse_citations",
+        "_parse_single_citation": "parse_single_citation",
+        "_extract_text_passages": "extract_text_passages",
+        "_collect_texts_from_nested": "collect_texts_from_nested",
+        "_extract_uuid_from_nested": "extract_uuid_from_nested",
+    }
 
     wrappers = {
         node.name: node
@@ -429,6 +446,17 @@ def test_chat_module_keeps_only_delegating_stream_parser_wrappers() -> None:
     for name, node in wrappers.items():
         constants = {child.value for child in ast.walk(node) if isinstance(child, ast.Constant)}
         assert "wrb.fr" not in constants, f"{name} owns streamed wrb.fr parsing"
+        called_helpers = {
+            child.func.id
+            for child in ast.walk(node)
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+        }
+        called_helpers.update(
+            child.func.attr
+            for child in ast.walk(node)
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
+        )
+        assert expected_delegate[name] in called_helpers, f"{name} does not delegate"
         for child in ast.walk(node):
             assert not (
                 isinstance(child, ast.Call)
