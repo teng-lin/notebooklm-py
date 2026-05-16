@@ -205,7 +205,9 @@ async def test_polling_service_registers_pending_before_transport_begin_complete
         assert provider.poll_registry.pending == {}
     finally:
         begin_release.set()
-        cleanup_tasks = [task for task in (leader, follower) if task is not None and not task.done()]
+        cleanup_tasks = [
+            task for task in (leader, follower) if task is not None and not task.done()
+        ]
         for task in cleanup_tasks:
             task.cancel()
         if cleanup_tasks:
