@@ -93,37 +93,36 @@ class SourceContentRenderer:
         url = None
         content = ""
 
-        if result and isinstance(result, list):
-            if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 1:
-                title = result[0][1] if isinstance(result[0][1], str) else ""
+        if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 1:
+            title = result[0][1] if isinstance(result[0][1], str) else ""
 
-                if len(result[0]) > 2 and isinstance(result[0][2], list):
-                    metadata = result[0][2]
-                    if len(metadata) > 4:
-                        source_type = metadata[4]
-                    url = _extract_source_url(metadata, allow_bare_http=False)
+            if len(result[0]) > 2 and isinstance(result[0][2], list):
+                metadata = result[0][2]
+                if len(metadata) > 4:
+                    source_type = metadata[4]
+                url = _extract_source_url(metadata, allow_bare_http=False)
 
-            if output_format == "markdown":
-                html_content = None
-                if len(result) > 4 and isinstance(result[4], list) and len(result[4]) > 1:
-                    candidate = result[4][1]
-                    if isinstance(candidate, str):
-                        html_content = candidate
-                if html_content is not None:
-                    content = md(html_content, heading_style="ATX")
-                else:
-                    self._logger.warning(
-                        "Source %s (type=%s) has no HTML rendition for output_format='markdown'; "
-                        "returning empty content. Retry with output_format='text'.",
-                        source_id,
-                        source_type,
-                    )
+        if output_format == "markdown":
+            html_content = None
+            if len(result) > 4 and isinstance(result[4], list) and len(result[4]) > 1:
+                candidate = result[4][1]
+                if isinstance(candidate, str):
+                    html_content = candidate
+            if html_content is not None:
+                content = md(html_content, heading_style="ATX")
             else:
-                if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
-                    content_blocks = result[3][0]
-                    if isinstance(content_blocks, list):
-                        texts = self.extract_all_text(content_blocks)
-                        content = "\n".join(texts)
+                self._logger.warning(
+                    "Source %s (type=%s) has no HTML rendition for output_format='markdown'; "
+                    "returning empty content. Retry with output_format='text'.",
+                    source_id,
+                    source_type,
+                )
+        else:
+            if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
+                content_blocks = result[3][0]
+                if isinstance(content_blocks, list):
+                    texts = self.extract_all_text(content_blocks)
+                    content = "\n".join(texts)
 
         if not content:
             self._logger.warning(
