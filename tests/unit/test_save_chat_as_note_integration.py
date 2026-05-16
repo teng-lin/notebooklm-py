@@ -107,7 +107,13 @@ async def test_create_from_chat_wire_round_trip(
     rpc_id, inner_params_json, _null, _generic = outer[0][0]
     assert rpc_id == RPCMethod.CREATE_NOTE.value
     actual_params = json.loads(inner_params_json)
+    # Deep-equal first for a clear diff on failure, then byte-exact
+    # string compare to catch boolean/int divergence that == would miss
+    # (Python's `False == 0` quirk; the wire payload uses 0 not false).
     assert actual_params == request_params
+    assert json.dumps(actual_params, separators=(",", ":")) == json.dumps(
+        request_params, separators=(",", ":")
+    )
 
     # Assert the Note dataclass was populated from the response.
     # Server returns a different (smart-generated) title in slot [4];

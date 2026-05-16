@@ -231,7 +231,7 @@ def register_chat_commands(cli):
                         console.print("[yellow]Warning: No answer to save as note[/yellow]")
                         return
                     try:
-                        title = note_title or f"Chat: {question[:50]}"
+                        title = note_title or f"Chat: {question[:50].strip().replace(chr(10), ' ')}"
                         if result.references:
                             # Citation-rich path: server stores [N] markers as
                             # hover-anchored references (issue #660).

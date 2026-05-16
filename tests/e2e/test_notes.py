@@ -107,6 +107,7 @@ class TestMindMaps:
         assert isinstance(mind_maps, list)
 
 
+@pytest.mark.e2e
 @requires_auth
 class TestCreateFromChat:
     """Test saving chat answers as citation-rich notes (issue #660).

@@ -680,14 +680,19 @@ class TestCreateFromChat:
 
     @pytest.mark.asyncio
     async def test_default_title_derives_from_answer(self, notes_api, mock_core):
-        # Server-shaped response: note_id at [0], server-assigned title at [4].
+        # Wrapped response shape — matches the captured server response
+        # (slot [0] is a list whose first element is the note_id). This
+        # is the primary path; flat-shape coverage lives in the other
+        # tests below.
         mock_core.rpc_call.return_value = [
-            "note-new-id",
-            "One fruit mentioned is apples [1].",
-            [2, "user", [123, 456]],
-            [[]],
-            "ServerTitle",
-            [],
+            [
+                "note-new-id",
+                "One fruit mentioned is apples [1].",
+                [2, "user", [123, 456]],
+                [[]],
+                "ServerTitle",
+                [],
+            ]
         ]
         ask_result = self._make_ask_result()
         note = await notes_api.create_from_chat("nb-1", ask_result)

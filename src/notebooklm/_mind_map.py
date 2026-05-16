@@ -246,9 +246,13 @@ async def create_note(
 # Rendering-flag trailer used inside every text-passage wrapper of the
 # saved-from-chat CREATE_NOTE payload (issue #660). Integers, NOT booleans:
 # json.dumps(False) emits ``false`` but the captured wire payload uses ``0``,
-# and the byte-exact golden test (``test_golden_serializes_booleans_as_zero
+# and the byte-exact golden test (``test_encoder_serializes_booleans_as_zero
 # _not_false``) guards this invariant.
-_TEXT_RENDER_FLAGS: list[Any] = [0, 0, 0, None, None, None, None, 0, 0]
+#
+# Stored as a tuple so module-level identity is immutable; call sites copy
+# into a fresh list via ``list(_TEXT_RENDER_FLAGS)`` when embedding so that
+# downstream mutation of an emitted params tree can't corrupt this constant.
+_TEXT_RENDER_FLAGS: tuple[int | None, ...] = (0, 0, 0, None, None, None, None, 0, 0)
 
 # Matches a citation marker plus the single space that typically precedes it
 # in the answer text (e.g. " [1]"). The leading space is *optional* so a
@@ -268,7 +272,7 @@ def _build_passage_group(text: str, end_char: int) -> list[Any]:
         [
             0,
             end_char,
-            [[[0, end_char, [text, _TEXT_RENDER_FLAGS]]], [None, 1]],
+            [[[0, end_char, [text, list(_TEXT_RENDER_FLAGS)]]], [None, 1]],
         ]
     ]
 
@@ -300,7 +304,10 @@ def _build_source_passage_descriptor(ref: ChatReference) -> list[Any]:
         source_start = 0
         source_end = 0
     local_end = len(cited_text)
-    fourth_uuid = ref.passage_id or ref.chunk_id
+    # Use explicit `is not None` check so an empty-string passage_id
+    # (falsy but explicitly set by a caller) doesn't silently fall
+    # through to chunk_id.
+    fourth_uuid = ref.passage_id if ref.passage_id is not None else ref.chunk_id
     return [
         None,
         None,

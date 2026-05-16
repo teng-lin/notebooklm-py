@@ -153,7 +153,11 @@ class NotesAPI:
                 "create_from_chat requires AskResult.references to be "
                 "non-empty; use notes.create() for plain-text notes."
             )
-        resolved_title = title if title is not None else f"Chat: {ask_result.answer[:50]}"
+        resolved_title = (
+            title
+            if title is not None
+            else f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"
+        )
         return await _mind_map.save_chat_answer_as_note(
             self._core,
             notebook_id,
