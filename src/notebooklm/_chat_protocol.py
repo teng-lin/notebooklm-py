@@ -332,6 +332,8 @@ def parse_single_citation(cite: Any) -> ChatReference | None:
             chunk_id = first_item
 
     cited_text, start_char, end_char = extract_text_passages(cite_inner)
+    answer_start_char, answer_end_char = extract_answer_range(cite_inner)
+    score = extract_score(cite_inner)
 
     return ChatReference(
         source_id=source_id,
@@ -339,7 +341,42 @@ def parse_single_citation(cite: Any) -> ChatReference | None:
         start_char=start_char,
         end_char=end_char,
         chunk_id=chunk_id,
+        answer_start_char=answer_start_char,
+        answer_end_char=answer_end_char,
+        score=score,
     )
+
+
+def extract_answer_range(cite_inner: list) -> tuple[int | None, int | None]:
+    """Extract the answer-text range that this citation supports.
+
+    The server emits ``cite_inner[3] = [[None, answer_start, answer_end]]``
+    pointing at the span of the answer string the citation backs. This is
+    distinct from the source-side range in ``cite_inner[4]``.
+    """
+    if len(cite_inner) <= 3 or not isinstance(cite_inner[3], list):
+        return None, None
+    outer = cite_inner[3]
+    if not outer or not isinstance(outer[0], list):
+        return None, None
+    inner = outer[0]
+    if len(inner) < 3:
+        return None, None
+    start = inner[1] if isinstance(inner[1], int) else None
+    end = inner[2] if isinstance(inner[2], int) else None
+    return start, end
+
+
+def extract_score(cite_inner: list) -> float | None:
+    """Extract the server-side relevance score (0.0-1.0) at ``cite_inner[2]``."""
+    if len(cite_inner) <= 2:
+        return None
+    raw = cite_inner[2]
+    if isinstance(raw, bool):  # bool is a subclass of int in Python; reject
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    return None
 
 
 def extract_text_passages(cite_inner: list) -> tuple[str | None, int | None, int | None]:

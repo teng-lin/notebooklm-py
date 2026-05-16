@@ -22,6 +22,8 @@ from notebooklm._chat_protocol import (
     build_streaming_chat_request,
     collect_texts_from_nested,
     extract_answer_and_refs_from_chunk,
+    extract_answer_range,
+    extract_score,
     extract_text_passages,
     extract_uuid_from_nested,
     parse_citations,
@@ -86,14 +88,17 @@ def _citation(
     text: str = "cited passage",
     start: int = 10,
     end: int = 20,
+    score: float | None = 0.9,
+    answer_start: int | None = None,
+    answer_end: int | None = None,
 ) -> list[Any]:
     return [
         [chunk_id],
         [
             None,
             None,
-            0.9,
-            [[None]],
+            score,
+            [[None, answer_start, answer_end]] if answer_start is not None else [[None]],
             [[[start, end, [[[start, end, text]]]]]],
             [[[source_id]]],
             [chunk_id],
@@ -110,6 +115,8 @@ def test_module_signatures_are_stable() -> None:
         "parse_citations": inspect.signature(parse_citations),
         "parse_single_citation": inspect.signature(parse_single_citation),
         "extract_text_passages": inspect.signature(extract_text_passages),
+        "extract_answer_range": inspect.signature(extract_answer_range),
+        "extract_score": inspect.signature(extract_score),
         "collect_texts_from_nested": inspect.signature(collect_texts_from_nested),
         "extract_uuid_from_nested": inspect.signature(extract_uuid_from_nested),
     }
@@ -132,6 +139,8 @@ def test_module_signatures_are_stable() -> None:
     assert list(signatures["parse_citations"].parameters) == ["first"]
     assert list(signatures["parse_single_citation"].parameters) == ["cite"]
     assert list(signatures["extract_text_passages"].parameters) == ["cite_inner"]
+    assert list(signatures["extract_answer_range"].parameters) == ["cite_inner"]
+    assert list(signatures["extract_score"].parameters) == ["cite_inner"]
     assert list(signatures["collect_texts_from_nested"].parameters) == ["nested", "texts"]
     assert list(signatures["extract_uuid_from_nested"].parameters) == ["data", "max_depth"]
     assert signatures["extract_uuid_from_nested"].parameters["max_depth"].default == 10
@@ -298,6 +307,9 @@ def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> N
             text="first citation",
             start=1,
             end=11,
+            score=0.85,
+            answer_start=100,
+            answer_end=200,
         ),
         _citation(
             source_id="11111111-2222-3333-4444-555555555555",
@@ -305,6 +317,9 @@ def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> N
             text="second citation",
             start=12,
             end=27,
+            score=0.7,
+            answer_start=200,
+            answer_end=350,
         ),
     ]
 
@@ -318,6 +333,35 @@ def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> N
     assert [ref.chunk_id for ref in result.references] == ["chunk-1", "chunk-2"]
     assert [ref.cited_text for ref in result.references] == ["first citation", "second citation"]
     assert [(ref.start_char, ref.end_char) for ref in result.references] == [(1, 11), (12, 27)]
+    assert [(ref.answer_start_char, ref.answer_end_char) for ref in result.references] == [
+        (100, 200),
+        (200, 350),
+    ]
+    assert [ref.score for ref in result.references] == [0.85, 0.7]
+
+
+def test_extract_answer_range_handles_well_formed_and_malformed_shapes() -> None:
+    # Well-formed: [[None, start, end]]
+    assert extract_answer_range([None, None, None, [[None, 10, 20]]]) == (10, 20)
+    # Missing outer: too short
+    assert extract_answer_range([None, None, None]) == (None, None)
+    # Inner [None] only (server omitted positions)
+    assert extract_answer_range([None, None, None, [[None]]]) == (None, None)
+    # Non-int positions
+    assert extract_answer_range([None, None, None, [[None, "10", "20"]]]) == (None, None)
+    # Empty outer
+    assert extract_answer_range([None, None, None, []]) == (None, None)
+    # Outer[0] not a list
+    assert extract_answer_range([None, None, None, ["bad"]]) == (None, None)
+
+
+def test_extract_score_accepts_float_and_int_rejects_bool() -> None:
+    assert extract_score([None, None, 0.6998]) == pytest.approx(0.6998)
+    assert extract_score([None, None, 1]) == 1.0  # int coerces
+    assert extract_score([None, None, None]) is None
+    assert extract_score([None, None, True]) is None  # bool rejected
+    assert extract_score([None, None, "0.5"]) is None  # str rejected
+    assert extract_score([None, None]) is None  # missing index
 
 
 def test_missing_and_malformed_citation_shapes_degrade_without_raising() -> None:
