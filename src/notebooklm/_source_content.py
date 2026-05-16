@@ -93,7 +93,7 @@ class SourceContentRenderer:
         url = None
         content = ""
 
-        if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 1:
+        if isinstance(result[0], list) and len(result[0]) > 1:
             title = result[0][1] if isinstance(result[0][1], str) else ""
 
             if len(result[0]) > 2 and isinstance(result[0][2], list):
