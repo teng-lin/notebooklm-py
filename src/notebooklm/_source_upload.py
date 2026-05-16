@@ -142,6 +142,14 @@ class CancelUploadSession(Protocol):
     async def __call__(self, upload_url: str, base_url: str, auth_route: str) -> None: ...
 
 
+_BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _retain_background_cancel_task(task: asyncio.Task[None]) -> None:
+    _BACKGROUND_CANCEL_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_CANCEL_TASKS.discard)
+
+
 def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
     """Locate the SOURCE_ID string in an ADD_SOURCE_FILE response.
 
@@ -283,8 +291,9 @@ class SourceUploadPipeline:
                 _type_code=None,
             )
 
-        if title is not None and title != filename:
+        if needs_title_rename:
             try:
+                assert title is not None
                 renamed = await rename(notebook_id, source_id, title)
                 source = replace(source, title=renamed.title or title)
             except (RPCError, NetworkError):
@@ -333,8 +342,9 @@ class SourceUploadPipeline:
             return source_id
 
         if isinstance(result, str):
-            suffix = "..." if len(result) > 200 else ""
-            preview = repr(result[:200] + suffix)
+            preview = repr(result[:200])
+            if len(result) > 200:
+                preview += "..."
         else:
             preview = repr(result)
             if len(preview) > 200:
@@ -484,7 +494,9 @@ class SourceUploadPipeline:
             except asyncio.CancelledError:
                 if not finalize_started:
                     finalize_task.cancel()
-                    asyncio.create_task(cancel_upload_session(upload_url, base_url, auth_route))
+                    _retain_background_cancel_task(
+                        asyncio.create_task(cancel_upload_session(upload_url, base_url, auth_route))
+                    )
                 raise
         except BaseException:
             if not close_wired and path_fallback is None:
