@@ -493,7 +493,7 @@ class ResearchAPI:
                 }
             )
 
-        # Task-id discriminator (T7.F3): when supplied, filter parsed_tasks
+        # Task-id discriminator: when supplied, filter parsed_tasks
         # down to the matched task so callers iterating ``tasks`` don't see
         # un-asked-for siblings. When omitted but multiple tasks are in
         # flight, surface the latent cross-wire hazard via a

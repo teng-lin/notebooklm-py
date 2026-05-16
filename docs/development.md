@@ -358,7 +358,7 @@ the result with the cassette guard before committing:
 tests/check_cassettes_clean.sh
 ```
 
-#### Synthetic error cassettes (T8.E10)
+#### Synthetic error cassettes
 
 > [!WARNING]
 > **Error cassettes generated through this plumbing are SYNTHETIC.** They

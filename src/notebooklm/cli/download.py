@@ -716,7 +716,7 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
     ``RateLimitError.retry_after`` surfaces in the JSON body, ``AuthError``
     shows the re-authentication hint in text mode, and exit codes follow the
     typed policy (1 = library/user error, 2 = unexpected/system error).
-    See ``error_handler.py`` for the canonical exit-code table (audit row I14).
+    See ``error_handler.py`` for the canonical exit-code table.
 
     The "returned dict with an ``error`` field" path
     (``_download_artifacts_generic`` → ``{"error": ...}`` for empty artifact

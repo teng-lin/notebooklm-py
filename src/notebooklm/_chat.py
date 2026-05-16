@@ -107,7 +107,7 @@ class ChatAPI:
         """
         self._core = core
         # Per-``conversation_id`` lock that serializes follow-up asks on the
-        # same conversation (audit §10 / T7.F1). Without this, two
+        # same conversation. Without this, two
         # ``asyncio.gather``'d ``ask`` calls on the same conversation read
         # identical pre-update history at the top, both POST that history,
         # then race to append to ``_core._conversation_cache`` — the server

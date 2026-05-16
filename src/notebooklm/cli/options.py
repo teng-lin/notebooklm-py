@@ -220,7 +220,7 @@ def wait_polling_options(
 
     Used by every long-running CLI command so the flag surface stays uniform
     across ``generate <kind> --wait``, ``artifact wait``, and ``source wait``
-    (audit row I6, P5.T1). Returns a decorator so each call site can supply
+   . Returns a decorator so each call site can supply
     its own historical defaults without diverging on flag name or help text.
 
     The ``--wait`` flag is intentionally NOT bundled here. It is a *trigger*

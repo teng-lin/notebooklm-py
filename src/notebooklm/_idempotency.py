@@ -1,4 +1,4 @@
-"""Idempotency wrapper for create-RPC patterns (T7.B2).
+"""Idempotency wrapper for create-RPC patterns.
 
 A create RPC like ``NotebooksAPI.create`` or ``SourcesAPI.add_url`` is a
 mutating POST: the *server may have committed the write* even if the

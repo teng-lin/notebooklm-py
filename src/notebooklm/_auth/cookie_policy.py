@@ -27,7 +27,7 @@ _EXTRACTION_HINT = (
 # Tier 2 fires per cookie-load; a single CLI run can hit it 2-3 times across
 # the four loader entry points. One warning per process is enough signal.
 #
-# Dedupe contract (T7.G7): best-effort under threads, exactly-once on a single
+# Dedupe contract: best-effort under threads, exactly-once on a single
 # event loop. The check-then-set at the call site (``_validate_required_cookies``
 # below) reads ``_SECONDARY_BINDING_WARNED`` and sets it to ``True`` in a single
 # synchronous block with no intervening ``await``. The asyncio scheduler can
@@ -111,7 +111,7 @@ def _validate_required_cookies(
 
 # Cookie domains we extract / accept by default.
 #
-# Empirical justification (T5.G): traced cassettes
+# Empirical justification: traced cassettes
 # (``tests/cassettes/*.yaml``) and the live auth-refresh path. Only the
 # following domains are actually exercised during login + token refresh +
 # source-add + chat-ask flows:
@@ -397,7 +397,7 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     The leading-dot suffix check ensures lookalikes like ``evil-google.com``
     are rejected.
 
-    Note (T5.G): the runtime gate consults the
+    Note: the runtime gate consults the
     :data:`ALLOWED_COOKIE_DOMAINS` union (REQUIRED ∪ OPTIONAL). The
     blast-radius reduction is enforced at **extraction time** —
     ``_build_google_cookie_domains`` defaults to
@@ -417,7 +417,7 @@ def _is_allowed_cookie_domain(domain: str) -> bool:
     """
     # Exact match against the union of REQUIRED + OPTIONAL. Anything that
     # could have been validly opted in via ``--include-domains`` at
-    # extraction time must pass this gate at runtime (T5.G).
+    # extraction time must pass this gate at runtime.
     if domain in ALLOWED_COOKIE_DOMAINS:
         return True
 

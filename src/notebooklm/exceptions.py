@@ -55,7 +55,7 @@ __all__ = [
     "ServerError",
     "ClientError",
     "RPCTimeoutError",
-    # Idempotency (T7.B2)
+    # Idempotency
     "NonIdempotentRetryError",
     # Domain: Notebooks
     "NotebookError",
@@ -472,7 +472,7 @@ class RPCTimeoutError(NetworkError):
 
 
 # =============================================================================
-# Idempotency (T7.B2)
+# Idempotency
 # =============================================================================
 
 
@@ -800,7 +800,7 @@ class ArtifactDownloadError(ArtifactError):
 
 
 # =============================================================================
-# Domain: Research (T7.F3)
+# Domain: Research
 # =============================================================================
 
 

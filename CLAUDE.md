@@ -167,7 +167,7 @@ Commands are organized as:
 5. **Rate limiting**: Add delays between bulk operations
 6. **Concurrency**: One `NotebookLMClient` instance is bound to its open()-time event loop. See [Concurrency contract](docs/python-api.md#concurrency-contract). Common bugs:
    - Re-using a client across threads → not supported; create one per thread.
-   - Re-using a client across event loops → raises `RuntimeError` on first authed POST (T7.G2).
+   - Re-using a client across event loops → raises `RuntimeError` on first authed POST.
    - Sharing across `AuthTokens` tenants → never (the `_conversation_cache` is per-instance).
 
 ## Documentation

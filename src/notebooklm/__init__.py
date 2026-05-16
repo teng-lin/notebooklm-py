@@ -71,7 +71,7 @@ from .exceptions import (
     DecodingError,
     # Network
     NetworkError,
-    # Idempotency (T7.B2)
+    # Idempotency
     NonIdempotentRetryError,
     # Domain: Notebooks
     NotebookError,
@@ -80,7 +80,7 @@ from .exceptions import (
     NotebookLMError,
     NotebookNotFoundError,
     RateLimitError,
-    # Domain: Research (T7.F3)
+    # Domain: Research
     ResearchTaskMismatchError,
     RPCError,
     RPCTimeoutError,
@@ -197,7 +197,7 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "ClientError",
-    # Idempotency (T7.B2)
+    # Idempotency
     "NonIdempotentRetryError",
     # Domain Exceptions: Notebooks
     "NotebookError",
@@ -217,7 +217,7 @@ __all__ = [
     "ArtifactNotReadyError",
     "ArtifactParseError",
     "ArtifactDownloadError",
-    # Domain Exceptions: Research (T7.F3)
+    # Domain Exceptions: Research
     "ResearchTaskMismatchError",
     # Warnings
     "UnknownTypeWarning",

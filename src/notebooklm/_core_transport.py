@@ -171,7 +171,7 @@ class AuthedTransport:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
         client = host._http_client
 
-        # Event-loop affinity guard (audit section 14 / T7.G2). Placed before
+        # Event-loop affinity guard. Placed before
         # semaphore acquisition so cross-loop misuse never reserves a slot.
         if host._bound_loop is not None and asyncio.get_running_loop() is not host._bound_loop:
             raise RuntimeError(
@@ -185,7 +185,7 @@ class AuthedTransport:
         start = time.perf_counter()
 
         # ---------------------------------------------------------------
-        # Semaphore placement contract (T7.H1 / audit section 8) — DO NOT MOVE.
+        # Semaphore placement contract — DO NOT MOVE.
         #
         # The semaphore wraps the entire retry loop. Releasing during backoff
         # would let new callers burst in just as the current cohort wakes up,

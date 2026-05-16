@@ -95,7 +95,7 @@ DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
 DEFAULT_MAX_CONCURRENT_UPLOADS = 4
 
 # Default ceiling on simultaneous in-flight ``_perform_authed_post``
-# RPC POSTs (T7.H1 / audit §8). Sits *below* the default httpx pool
+# RPC POSTs. Sits *below* the default httpx pool
 # size (``ConnectionLimits.max_connections=100``) so short-lived helper
 # requests outside the RPC path — refresh GETs, resumable-upload
 # preflights — have pool headroom even when the RPC semaphore is
@@ -405,7 +405,7 @@ class ClientCore:
             keepalive_storage_path: Optional storage path to persist rotated cookies
                 to from the keepalive loop. Falls back to ``auth.storage_path``.
             rate_limit_max_retries: Max automatic retries on HTTP 429.
-                Defaults to ``3`` (T7.H2 / audit §11) so programmatic users
+                Defaults to ``3`` so programmatic users
                 inherit "smart retry" behavior without having to opt in. Set
                 to ``0`` to restore the pre-T7.H2 contract of raising
                 ``RateLimitError`` immediately. Each retry sleeps for the
@@ -452,7 +452,7 @@ class ClientCore:
                 Must be ``>= 1`` when supplied. Pre-T7.H1 the gate did
                 not exist; heavy fan-out workloads tripped opaque
                 ``httpx.PoolTimeout`` errors before the connection pool
-                could surface clean back-pressure (audit §8). Cross-
+                could surface clean back-pressure. Cross-
                 validation with ``limits.max_connections`` is enforced at
                 the ``NotebookLMClient`` boundary (so the constraint
                 applies whether ``limits`` is explicit or auto-defaulted
@@ -488,7 +488,7 @@ class ClientCore:
         # rather than meaning "unbounded" — the FD-exhaustion guard is the
         # whole point of the knob; an unbounded fan-out of ``add_file`` would
         # exhaust the per-process FD limit before the upload semaphore could
-        # save us (audit §23 / T7.D3). Reject ``<= 0`` loudly at construction
+        # save us. Reject ``<= 0`` loudly at construction
         # rather than allowing a silently-misconfigured pipeline.
         if max_concurrent_uploads is None:
             self._max_concurrent_uploads = DEFAULT_MAX_CONCURRENT_UPLOADS
@@ -505,7 +505,7 @@ class ClientCore:
         # ``NotebookLMClient`` instances in the same process have
         # independent upload budgets.
         self._upload_semaphore: asyncio.Semaphore | None = None
-        # RPC-fanout throttle (T7.H1 / audit §8). ``None`` means "no
+        # RPC-fanout throttle. ``None`` means "no
         # gate" (caller has an external rate-limiter, or this is a
         # single-shot CLI invocation). Default ``DEFAULT_MAX_CONCURRENT_RPCS``
         # (16) sits well below the default ``ConnectionLimits.max_connections``
@@ -531,7 +531,7 @@ class ClientCore:
         # (e.g. a sync-mode ``NotebookLMClient(...)`` instantiation before the
         # caller's ``asyncio.run``). Use :meth:`_get_refresh_lock` to fetch
         # the live lock on demand. Mirrors the ``_reqid_lock`` /
-        # ``_auth_snapshot_lock`` lazy-init pattern (audit §13 / T7.G1).
+        # ``_auth_snapshot_lock`` lazy-init pattern.
         # The lock gates single-flight refresh-task creation in
         # :meth:`_await_refresh` — the assert on ``_refresh_callback is not
         # None`` there is the real precondition; this lock is allocated on
@@ -561,7 +561,7 @@ class ClientCore:
         self._reqid_lock: asyncio.Lock | None = None
         # Serializes ``_AuthSnapshot`` reads in :meth:`_snapshot` with
         # :meth:`ClientCore.update_auth_tokens` during auth refresh
-        # (audit §12 / T7.F2). The lock holds only across the four
+        #. The lock holds only across the four
         # ``self.auth.*`` scalar reads / two scalar writes — never across
         # an ``await`` — so RPC throughput isn't serialized to refresh
         # latency. Lazy-init mirrors ``_reqid_lock`` because ``asyncio.Lock()``
@@ -571,7 +571,7 @@ class ClientCore:
         # would re-introduce the reentrancy ambiguity T7.F2 set out to
         # avoid.
         self._auth_snapshot_lock: asyncio.Lock | None = None
-        # Event-loop affinity guard (audit §14 / T7.G2). Captured in
+        # Event-loop affinity guard. Captured in
         # :meth:`open` and checked in :meth:`_perform_authed_post`; a cheap
         # ``is`` comparison fails fast when a caller drives the same
         # ``ClientCore`` from a different loop (typical mistake: instantiating
@@ -883,7 +883,7 @@ class ClientCore:
         uploads at ``max_concurrent_uploads`` (default
         ``DEFAULT_MAX_CONCURRENT_UPLOADS``). Each in-flight upload holds
         one open file descriptor for its duration, so the cap is also an
-        FD-exhaustion guard (audit §23 / T7.D3).
+        FD-exhaustion guard.
 
         Scope of the cap:
           - The ``async with`` block in ``add_file`` covers FD-open,
@@ -892,7 +892,7 @@ class ClientCore:
             semaphore therefore also serializes those two RPCs — a side
             effect of the FD guard, not a separate quota.
           - The cap applies to the *blocking* ``add_file`` call. On
-            post-finalize cancel (T7.C3), the shielded background
+            post-finalize cancel, the shielded background
             ``finalize_task`` continues running with the FD still open
             after ``add_file``'s ``async with`` exits, so the
             instantaneous open-FD count can briefly exceed
@@ -983,7 +983,7 @@ class ClientCore:
 
         Captures the running event loop in ``self._bound_loop`` so
         :meth:`_perform_authed_post` can fail fast if the same client is
-        later driven from a different loop (audit §14 / T7.G2). Re-opening
+        later driven from a different loop. Re-opening
         on a different loop intentionally replaces the binding — ``open()``
         is the only binding moment; ``close()`` does not unbind so an
         accidental cross-loop call after close still raises actionably.
@@ -991,7 +991,7 @@ class ClientCore:
         if self._http_client is None:
             # Capture event-loop affinity before any awaitable resource is
             # built so the binding is consistent with the loop that owns
-            # every primitive constructed below (T7.G2 / audit §14).
+            # every primitive constructed below.
             self._bound_loop = asyncio.get_running_loop()
             self._draining = False
             # Use granular timeouts: shorter connect timeout helps detect network issues
@@ -1080,7 +1080,7 @@ class ClientCore:
 
         Called automatically by NotebookLMClient.__aexit__.
 
-        Cancellation safety (T7.B4 / audit §7):
+        Cancellation safety:
         the entire close sequence is wrapped in ``try/finally`` and the
         final ``self._http_client.aclose()`` is wrapped in
         ``asyncio.shield`` — without the shield, a ``CancelledError``
@@ -1224,8 +1224,7 @@ class ClientCore:
         """Return the lazily-initialised ``_refresh_lock``.
 
         ``asyncio.Lock()`` needs a running loop in some Python versions, so
-        ``ClientCore.__init__`` leaves the field as ``None`` (audit §13 /
-        T7.G1). Callers must be inside an async context — the only call site
+        ``ClientCore.__init__`` leaves the field as ``None``. Callers must be inside an async context — the only call site
         is :meth:`_await_refresh`, which is itself a coroutine. The
         check-then-assign is safe without an outer lock because asyncio is
         single-threaded: no other coroutine can execute between the
@@ -1319,7 +1318,7 @@ class ClientCore:
         protects task-creation only; the await on the task itself happens
         outside the lock so other callers can join.
 
-        The join is wrapped in :func:`asyncio.shield` (T7.C1, audit §4) so
+        The join is wrapped in :func:`asyncio.shield` so
         that a caller cancelled while waiting — e.g. via
         ``asyncio.wait_for(..., timeout=...)`` — unwinds locally without
         propagating the ``CancelledError`` into the *shared* refresh task.
@@ -1331,7 +1330,7 @@ class ClientCore:
         """
         assert self._refresh_callback is not None
 
-        # Lazy-init the lock on first refresh attempt (audit §13 / T7.G1).
+        # Lazy-init the lock on first refresh attempt.
         # Every concurrent caller resolves to the same instance because
         # ``_get_refresh_lock`` runs synchronously in a single-threaded
         # asyncio loop, so single-flight task creation below is preserved.
@@ -1466,7 +1465,7 @@ class ClientCore:
             disable_internal_retries: When True, suppresses the inner 5xx /
                 429 / network retry loop in ``_perform_authed_post`` so that
                 the first transport-level failure surfaces immediately. Used
-                by declared mutating create RPCs (T7.B2): a naive re-POST
+                by declared mutating create RPCs: a naive re-POST
                 after a server-side commit would duplicate the resource, so
                 the API-layer ``_idempotency.idempotent_create`` wrapper
                 owns the probe-then-retry loop instead. The auth-refresh

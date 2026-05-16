@@ -621,7 +621,7 @@ _REFRESH_LOCKS_BY_LOOP: "weakref.WeakKeyDictionary[Any, dict[Path | None, asynci
 )
 _REFRESH_GENERATIONS: dict[str, int] = {}
 
-# In-flight ``asyncio.Future`` registry for refresh-cmd coalescing (T7.F4).
+# In-flight ``asyncio.Future`` registry for refresh-cmd coalescing.
 #
 # Same-loop concurrent callers that both encounter auth-expiry coalesce on a
 # single in-flight subprocess by sharing a per-resolved-storage-path
@@ -664,7 +664,7 @@ async def _coalesced_run_refresh_cmd(
 
     Same-loop concurrent callers that hit this function while a refresh is
     in flight will await the same underlying ``asyncio.Future`` rather than
-    spawning their own subprocess (T7.F4 audit §27 — failure #2).
+    spawning their own subprocess.
 
     Cancel-safety design:
 
@@ -945,7 +945,7 @@ async def _fetch_tokens_with_refresh(
                 # previous implementation bumped the generation eagerly BEFORE
                 # ``_run_refresh_cmd`` — when the subprocess failed, the
                 # phantom bump made concurrent waiters short-circuit and
-                # proceed with stale storage (audit §27 failure #1).
+                # proceed with stale storage.
                 #
                 # Re-check under the sync state lock so the read is atomic
                 # ACROSS event loops. The per-loop asyncio lock only

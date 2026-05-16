@@ -127,7 +127,7 @@ class NotebookLMClient:
                 60 s) to avoid accidentally rate-limiting Google's identity
                 surface.
             rate_limit_max_retries: Max automatic retries on HTTP 429.
-                Defaults to ``3`` (T7.H2 / audit §11) so programmatic users
+                Defaults to ``3`` so programmatic users
                 inherit "smart retry" behavior out of the box. Set to ``0``
                 to restore the pre-T7.H2 contract of raising immediately.
                 Sleeps for ``Retry-After`` when the server provides a
@@ -151,7 +151,7 @@ class NotebookLMClient:
                 duration of the upload, so the cap doubles as an
                 FD-exhaustion guard against fan-out callers that would
                 otherwise open dozens of files concurrently and exhaust
-                the per-process FD limit (audit §23 / T7.D3). ``None``
+                the per-process FD limit. ``None``
                 resolves to the default — unbounded uploads are
                 intentionally rejected. Must be ``>= 1`` when supplied.
                 Independent of the RPC pool sizing (uploads use their own
@@ -173,7 +173,7 @@ class NotebookLMClient:
                 opaque ``httpx.PoolTimeout`` rather than clean
                 back-pressure). Pre-T7.H1 no gate existed; heavy
                 fan-out workloads tripped pool timeouts before any
-                upstream throttle could intervene (audit §8).
+                upstream throttle could intervene.
             upload_timeout: Optional override for the ``httpx.Timeout`` used
                 by the resumable-upload start handshake and the finalize
                 POST in ``client.sources.add_file``. ``None`` (default)
@@ -184,7 +184,7 @@ class NotebookLMClient:
                 (e.g. ``httpx.Timeout(10.0, read=600.0)``), or partial
                 fields will fall back to httpx's own 5.0s defaults rather
                 than the original 10.0s connect. Defaults are NOT changed
-                silently for back-compat (audit §20 / T7.H3).
+                silently for back-compat.
             on_rpc_event: Optional sync or async callback invoked after each
                 logical RPC succeeds or fails. The callback receives a
                 backend-agnostic ``RpcTelemetryEvent`` so applications can
@@ -212,7 +212,7 @@ class NotebookLMClient:
         # ``Path(p).expanduser().resolve()``; this mirrors it so two clients
         # pointing at the same file via different path syntaxes share one
         # ``_LAST_POKE_ATTEMPT_MONOTONIC`` entry instead of bypassing dedupe
-        # and firing duplicate ``RotateCookies`` POSTs (audit §29 / T7.G6).
+        # and firing duplicate ``RotateCookies`` POSTs.
         # NOTE: the public ``storage_path`` argument and ``auth.storage_path``
         # are intentionally left as the caller provided them — only the
         # internal-derived ``ClientCore._keepalive_storage_path`` is
@@ -223,7 +223,7 @@ class NotebookLMClient:
 
         # Cross-validate the RPC throttle against the underlying httpx pool
         # before ``ClientCore`` swallows the ``limits=None`` sentinel into
-        # its own ``ConnectionLimits()`` synthesis (audit §8 / T7.H1).
+        # its own ``ConnectionLimits()`` synthesis.
         # Performed here so the constraint is enforced uniformly regardless
         # of whether the caller passed an explicit ``ConnectionLimits``
         # instance or relied on the default — ``ClientCore.__init__`` can't
@@ -294,7 +294,7 @@ class NotebookLMClient:
     ) -> None:
         """Close the client connection.
 
-        Exception arbitration (T7.B4 / audit §25): if the ``async with``
+        Exception arbitration: if the ``async with``
         body raised, prefer that exception and demote any ``close()``
         failure to a WARNING log so the original cause isn't masked.
         If the body succeeded, propagate ``close()`` failures normally.
@@ -418,7 +418,7 @@ class NotebookLMClient:
                 :class:`NotebookLMClient` for full semantics.
             keepalive_min_interval: Floor for ``keepalive`` (defaults to 60 s).
             rate_limit_max_retries: Max automatic retries on HTTP 429.
-                Defaults to ``3`` (T7.H2 / audit §11). Set to ``0`` to
+                Defaults to ``3``. Set to ``0`` to
                 restore raise-immediately behavior. See
                 :class:`NotebookLMClient` for full sleep semantics.
             server_error_max_retries: Max automatic retries for HTTP 5xx /

@@ -146,7 +146,7 @@ def _file_lock(lock_path: Path, *, blocking: bool, log_prefix: str) -> Iterator[
         os.close(fd)
 
 
-# Dedupe contract (T7.G7): best-effort under threads, exactly-once on a single
+# Dedupe contract: best-effort under threads, exactly-once on a single
 # event loop. ``_file_lock_exclusive`` below reads ``_FLOCK_UNAVAILABLE_WARNED``
 # and sets it to ``True`` in one synchronous block with no intervening
 # ``await``, so concurrent coroutines on one loop cannot interleave between

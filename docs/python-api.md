@@ -265,7 +265,7 @@ the guard rails are narrow.
 ### Guarantees
 
 **Per-loop async safety.** A `NotebookLMClient` instance is bound to the
-event loop on which it was opened. A loop-affinity guard (T7.G2) checks
+event loop on which it was opened. A loop-affinity guard checks
 the active loop on the authed POST hot path — `rpc_call()` →
 `query_post()` → `_perform_authed_post()` — and raises a clear `RuntimeError`
 when the instance is re-used from a different loop. **Scope limitation:** the
@@ -281,7 +281,7 @@ before the guard runs:
 In both cases you still get a `RuntimeError` — just an opaque one. **Best
 practice:** one client per loop, full stop.
 
-**Refresh deduplication** (T7.C1, audit §13). Concurrent RPCs that all
+**Refresh deduplication**. Concurrent RPCs that all
 trigger a token refresh share a single underlying refresh attempt via
 `_refresh_lock` + `asyncio.shield`. Waiter cancellation does not kill the
 shared refresh task; the next caller in line picks up the finished tokens.
@@ -290,15 +290,14 @@ shared refresh task; the next caller in line picks up the finished tokens.
 sequence across concurrent coroutines on the same client. Guarded by
 `_reqid_lock`.
 
-**Per-attempt and across-attempt auth snapshot atomicity** (T7.F2,
-audit §12). `_auth_snapshot_lock` serializes `_AuthSnapshot` reads against
+**Per-attempt and across-attempt auth snapshot atomicity**. `_auth_snapshot_lock` serializes `_AuthSnapshot` reads against
 the refresh-side mutation block. `_build_url` consumes the snapshot rather
 than reading live `session_id` / `authuser` / `account_email` fields, so a
 refresh completing mid-RPC no longer produces a URL built from a mix of
 pre- and post-refresh credentials. (This obsoletes the warning in the
 older "Concurrency model" subsection above.)
 
-**Idempotent create RPCs** (T7.B2, audit §5). The following calls are
+**Idempotent create RPCs**. The following calls are
 idempotent under retry via probe-then-create (when `idempotent=True`,
 which is the default):
 
@@ -320,22 +319,22 @@ cancellation (audit §§13, 15, 16, 21):
 - **`close()`** is shielded; Ctrl-C during shutdown will not leak the
   underlying `httpx.AsyncClient` (T7.B4 — subsumes T7.C2).
 - **`refresh_auth()`** runs the shared refresh task under `asyncio.shield`;
-  cancelling a waiter does not kill the shared refresh (T7.C1).
+  cancelling a waiter does not kill the shared refresh.
 - **Upload finalize** is shielded; on cancel signal we issue a best-effort
   Scotty (Google's internal resumable upload service) cancel to release the
-  server-side upload slot (T7.C3).
+  server-side upload slot.
 - **`notes.create`** shields the `UPDATE_NOTE` finalize step and cleans up
-  the partial note on cancel (T7.C4).
+  the partial note on cancel.
 - **`wait_for_sources`** cancels sibling pollers on the first poller's
-  failure rather than letting them race to emit error messages (T7.E1).
+  failure rather than letting them race to emit error messages.
 - **`wait_for_completion`** uses a leader/follower polling-dedupe registry
   with a shielded leader task — follower cancellation does not kill the
-  leader's poll (T7.E2).
+  leader's poll.
 
 **Idempotent file uploads.** `SourcesAPI.add_file` closes its file handle
 under a TOCTOU-safe path and gates concurrent uploads via the
 `max_concurrent_uploads` semaphore so a large fan-out can't exhaust the
-per-process file descriptor limit (T7.D3, audit §23).
+per-process file descriptor limit.
 
 ### Non-guarantees
 
@@ -363,7 +362,7 @@ writers from corrupting the file. They may, however, observe brief
 staleness — a write committed by process A may not be visible to a
 sibling read in process B until the next refresh cycle. Within a single
 process, in-process dedupe ensures only one keepalive task runs per
-canonicalized storage path (T7.G6).
+canonicalized storage path.
 
 ### Production patterns
 
@@ -400,7 +399,7 @@ process-global outside the lifespan — multi-worker servers fork the
 process and you will end up with the same client object referencing
 different event loops.
 
-**`ConnectionLimits` tuning** (T7.B3). The HTTP pool defaults
+**`ConnectionLimits` tuning**. The HTTP pool defaults
 (`max_connections=100`, `max_keepalive_connections=50`,
 `keepalive_expiry=30.0`) are sized for typical batchexecute fan-out: a
 few dozen concurrent RPCs against a single host with keep-alives held
@@ -420,7 +419,7 @@ client = NotebookLMClient(auth, limits=limits, max_concurrent_rpcs=64)
 
 For single-request CLI workloads the defaults are wasteful but harmless.
 
-**`max_concurrent_rpcs` knob** (T7.H1, audit §8). A semaphore at
+**`max_concurrent_rpcs` knob**. A semaphore at
 `_perform_authed_post` caps simultaneous in-flight RPC POSTs. Default
 `16` — well below the default pool size so short-lived helper requests
 (refresh GETs, upload preflights) still have pool headroom. Pass `None`
@@ -450,7 +449,7 @@ constructor raises `ValueError` if this constraint is violated. The
 semaphore floor (`max_concurrent_rpcs ≥ 1` when not `None`) is enforced
 inside `ClientCore`.
 
-**`max_concurrent_uploads` knob** (T7.D3, audit §23). Default `4`. Gates
+**`max_concurrent_uploads` knob**. Default `4`. Gates
 file-upload streaming independently from the RPC throttle because
 uploads use their own `httpx.AsyncClient` (Scotty endpoint) and do not
 share the RPC connection pool. The motivation is FD exhaustion: each
@@ -459,7 +458,7 @@ upload, so an unbounded fan-out blows the per-process FD limit. `None`
 resolves to the default (4); truly unbounded uploads are intentionally
 not supported. Must be `≥ 1` when set explicitly.
 
-**Rate-limit retry defaults** (T7.H2). `rate_limit_max_retries=3`,
+**Rate-limit retry defaults**. `rate_limit_max_retries=3`,
 `server_error_max_retries=3`. The 429 path honors the `Retry-After`
 header when parseable (clamped at `MAX_RETRY_AFTER_SECONDS = 300s`);
 when the header is absent or unparseable, the loop falls back to
@@ -504,7 +503,7 @@ transport shutdown separately. Once drain starts, new operations raise
 `close(drain=True, ...)` still closes the transport after a drain timeout and
 then re-raises the timeout.
 
-**Upload-timeout configuration** (T7.H3). `client.sources.add_file(...)`
+**Upload-timeout configuration**. `client.sources.add_file(...)`
 and the related upload entry points accept an `upload_timeout` argument
 that is decoupled from the global `timeout`. A long-running upload of
 a large file should not have to widen the global HTTP timeout to
