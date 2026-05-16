@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from notebooklm._core import _parse_retry_after
+from notebooklm._core import MAX_RETRY_AFTER_SECONDS, _parse_retry_after
 
 
 def test_parse_retry_after_integer():
@@ -8,6 +8,7 @@ def test_parse_retry_after_integer():
     assert _parse_retry_after(" 120 ") == 120
     assert _parse_retry_after("0") == 0
     assert _parse_retry_after("-5") == 0
+    assert _parse_retry_after(str(MAX_RETRY_AFTER_SECONDS + 1)) == MAX_RETRY_AFTER_SECONDS
 
 
 def test_parse_retry_after_http_date():

@@ -11,12 +11,22 @@ Pins three behaviors of ``ClientCore._try_refresh_and_retry``:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+from pathlib import Path
 
 import pytest
 
-from conftest import make_core  # type: ignore[import-not-found]
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import AuthError, RPCMethod
+
+_UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
+    "unit_conftest_make_core",
+    Path(__file__).resolve().parent / "conftest.py",
+)
+assert _UNIT_CONFTEST_SPEC is not None and _UNIT_CONFTEST_SPEC.loader is not None
+_unit_conftest = importlib.util.module_from_spec(_UNIT_CONFTEST_SPEC)
+_UNIT_CONFTEST_SPEC.loader.exec_module(_unit_conftest)
+make_core = _unit_conftest.make_core
 
 # Tight enough to fail fast if a regression hangs the suite, generous enough
 # not to flake on a slow CI runner. Each event-wait should resolve in <100ms;

@@ -17,9 +17,11 @@ chat-side :meth:`ClientCore.query_post`) extracted from ``_rpc_call_impl``:
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -32,6 +34,7 @@ from notebooklm._core import (
     _TransportRateLimited,
     _TransportServerError,
 )
+from notebooklm._core_transport import AuthedTransport
 from notebooklm._logging import get_request_id
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -86,9 +89,215 @@ def _status_error(code: int, *, retry_after: str | None = None) -> httpx.HTTPSta
     return httpx.HTTPStatusError(f"HTTP {code}", request=request, response=response)
 
 
+def test_core_reexports_transport_private_names():
+    """Private imports from ``notebooklm._core`` remain source compatible."""
+    from notebooklm import _core, _core_transport
+
+    moved_names = [
+        "_AuthSnapshot",
+        "_BuildRequest",
+        "_TransportAuthExpired",
+        "_TransportRateLimited",
+        "_TransportServerError",
+        "_parse_retry_after",
+    ]
+    for name in moved_names:
+        assert getattr(_core, name) is getattr(_core_transport, name)
+    assert _core.MAX_RETRY_AFTER_SECONDS == _core_transport.MAX_RETRY_AFTER_SECONDS
+
+
+def test_core_transport_has_no_runtime_core_imports():
+    """The collaborator must not create a runtime import cycle back to _core."""
+    path = Path(__file__).parents[2] / "src/notebooklm/_core_transport.py"
+    tree = ast.parse(path.read_text())
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+
+    def inside_type_checking(node: ast.AST) -> bool:
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, ast.If):
+                test = node.test
+                if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+                    return True
+        return False
+
+    forbidden: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if inside_type_checking(node):
+            continue
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "notebooklm._core" or alias.name.endswith("._core"):
+                    forbidden.append((node.lineno, f"import {alias.name}"))
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            names = {alias.name for alias in node.names}
+            if (
+                module == "notebooklm._core"
+                or (module == "notebooklm" and "_core" in names)
+                or (node.level > 0 and module == "_core")
+                or (node.level > 0 and not module and "_core" in names)
+            ):
+                imported = ", ".join(sorted(names))
+                forbidden.append(
+                    (node.lineno, f"from {'.' * node.level}{module} import {imported}")
+                )
+
+    assert forbidden == []
+
+
 # ---------------------------------------------------------------------------
 # _perform_authed_post
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_authed_transport_reads_live_retry_budget(monkeypatch):
+    core = _make_core(rate_limit_max_retries=0)
+    await core.open()
+    try:
+        transport = core._get_authed_transport()
+        assert isinstance(transport, AuthedTransport)
+        core._rate_limit_max_retries = 1
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise _status_error(429, retry_after="1")
+            return _ok_response()
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        response = await transport.perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert call_count["n"] == 2
+        assert sleeps == [1]
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
+    refresh_calls: list[bool] = []
+
+    async def refresh() -> AuthTokens:
+        refresh_calls.append(True)
+        return core.auth
+
+    core = _make_core(refresh_callback=refresh)
+    await core.open()
+    try:
+        transport = core._get_authed_transport()
+        monkeypatch.setattr("notebooklm._core.is_auth_error", lambda exc: True)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise _status_error(418)
+            return _ok_response()
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        response = await transport.perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert refresh_calls == [True]
+        assert call_count["n"] == 2
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_authed_transport_uses_late_bound_sleep_and_uniform(monkeypatch):
+    core = _make_core(server_error_max_retries=1)
+    await core.open()
+    try:
+        transport = core._get_authed_transport()
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+        monkeypatch.setattr("notebooklm._core.random.uniform", lambda a, b: 0.2)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise _status_error(503)
+            return _ok_response()
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        response = await transport.perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert call_count["n"] == 2
+        assert sleeps == [pytest.approx(1.2)]
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_authed_transport_disable_internal_retries_short_circuits(monkeypatch):
+    core = _make_core(server_error_max_retries=2)
+    await core.open()
+    try:
+        transport = core._get_authed_transport()
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            raise _status_error(503)
+
+        monkeypatch.setattr(core._http_client, "post", fake_post)
+
+        with pytest.raises(_TransportServerError):
+            await transport.perform_authed_post(
+                build_request=build,
+                log_label="test",
+                disable_internal_retries=True,
+            )
+
+        assert call_count["n"] == 1
+        assert sleeps == []
+    finally:
+        await core.close()
 
 
 @pytest.mark.asyncio

@@ -208,6 +208,36 @@ class TestRefreshAuth:
             assert client.auth.session_id == "new_session_id_456"
 
     @pytest.mark.asyncio
+    async def test_refresh_auth_delegates_token_update(
+        self,
+        mock_auth,
+        httpx_mock: HTTPXMock,
+        monkeypatch,
+    ):
+        """refresh_auth delegates token mutation through ClientCore."""
+        client = NotebookLMClient(mock_auth)
+        html = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/",
+            content=html.encode(),
+        )
+        calls: list[tuple[str, str]] = []
+
+        async def fake_update(csrf: str, session_id: str) -> None:
+            calls.append((csrf, session_id))
+            client._core.auth.csrf_token = csrf
+            client._core.auth.session_id = session_id
+
+        monkeypatch.setattr(client._core, "update_auth_tokens", fake_update)
+
+        async with client:
+            refreshed_auth = await client.refresh_auth()
+
+        assert calls == [("new_csrf_token_123", "new_session_id_456")]
+        assert refreshed_auth.csrf_token == "new_csrf_token_123"
+        assert refreshed_auth.session_id == "new_session_id_456"
+
+    @pytest.mark.asyncio
     async def test_refresh_auth_routes_to_account_email(self, httpx_mock: HTTPXMock):
         """Refresh should fetch tokens for the same selected browser account."""
         auth = AuthTokens(

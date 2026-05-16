@@ -53,16 +53,27 @@ from __future__ import annotations
 import ast
 import asyncio
 import contextlib
+import importlib.util
 import inspect
 import json
 import textwrap
+from pathlib import Path
 
 import httpx
 import pytest
 
-from conftest import make_core  # type: ignore[import-not-found]
 from notebooklm._core import ClientCore
+from notebooklm._core_transport import AuthedTransport
 from notebooklm.rpc import RPCMethod
+
+_UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
+    "unit_conftest_make_core",
+    Path(__file__).resolve().parent / "conftest.py",
+)
+assert _UNIT_CONFTEST_SPEC is not None and _UNIT_CONFTEST_SPEC.loader is not None
+_unit_conftest = importlib.util.module_from_spec(_UNIT_CONFTEST_SPEC)
+_UNIT_CONFTEST_SPEC.loader.exec_module(_unit_conftest)
+make_core = _unit_conftest.make_core
 
 # Test-side deadline for any single asyncio.Event in the race scaffolding.
 # Generous enough not to flake on slow CI, tight enough that a regression
@@ -93,7 +104,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     pre-POST ``await``, and it lives *before* the try block — so this
     guard (which only walks the try body) remains valid.
     """
-    src = textwrap.dedent(inspect.getsource(ClientCore._perform_authed_post))
+    src = textwrap.dedent(inspect.getsource(AuthedTransport.perform_authed_post))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -116,7 +127,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
 
     while_loop = _find_first_while(func)
     assert while_loop is not None, (
-        "Could not locate the retry-loop ``while`` in _perform_authed_post. "
+        "Could not locate the retry-loop ``while`` in AuthedTransport.perform_authed_post. "
         "If the loop was restructured, update this guard to match."
     )
 
@@ -158,7 +169,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     )
     assert try_node is not None, (
         "Could not locate the ``try:`` block guarding the POST in "
-        "_perform_authed_post. Update this guard if the structure changed."
+        "AuthedTransport.perform_authed_post. Update this guard if the structure changed."
     )
     # We only walk the try body, NOT its handlers.
     try_body_nodes: list[ast.AST] = []
@@ -170,7 +181,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     post_await_position = min(post_await_positions, default=None)
     assert post_await_position is not None, (
         "Could not locate `await ...post(...)` in the try body of "
-        "_perform_authed_post. If the call site was refactored (e.g. to "
+        "AuthedTransport.perform_authed_post. If the call site was refactored (e.g. to "
         "``client.request(...)``), update this guard to match — the "
         "invariant is 'no await between snapshot read and the POST per "
         "iteration', not specifically the `.post` attribute."
@@ -182,7 +193,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
         if isinstance(n, ast.Await) and (n.lineno, n.col_offset) < post_await_position
     ]
     assert not earlier_awaits, (
-        f"_perform_authed_post gained an await before the per-iteration POST "
+        f"AuthedTransport.perform_authed_post gained an await before the per-iteration POST "
         f"at {post_await_position}: "
         f"{[(n.lineno, ast.dump(n)) for n in earlier_awaits]}. "
         "This breaks the snapshot-invariant — auth state could be mutated "
@@ -275,6 +286,41 @@ def test_snapshot_acquires_auth_snapshot_lock():
         "broken — the four-scalar snapshot read is no longer atomic with the "
         "refresh-side write block in NotebookLMClient.refresh_auth, exposing "
         "torn (csrf, sid) reads."
+    )
+
+
+def test_update_auth_tokens_has_no_await_inside_mutation_block():
+    """``update_auth_tokens`` may await lock acquisition, but not while mutating."""
+    src = textwrap.dedent(inspect.getsource(ClientCore.update_auth_tokens))
+    tree = ast.parse(src)
+    func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
+
+    mutation_try = next(
+        (
+            node
+            for node in ast.walk(func)
+            if isinstance(node, ast.Try)
+            and any(
+                isinstance(stmt, ast.Assign)
+                and any(
+                    isinstance(target, ast.Attribute)
+                    and target.attr in {"csrf_token", "session_id"}
+                    for target in stmt.targets
+                )
+                for stmt in node.body
+            )
+        ),
+        None,
+    )
+    assert mutation_try is not None, (
+        "Could not locate the guarded csrf/session_id mutation block in "
+        "ClientCore.update_auth_tokens."
+    )
+
+    awaits = [node for node in ast.walk(mutation_try) if isinstance(node, ast.Await)]
+    assert awaits == [], (
+        "ClientCore.update_auth_tokens must not await inside the critical "
+        "mutation block; doing so would let snapshots observe torn auth tokens."
     )
 
 
