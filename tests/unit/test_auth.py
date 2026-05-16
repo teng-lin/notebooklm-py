@@ -3797,6 +3797,21 @@ class TestAccountMetadata:
         storage = tmp_path / "storage_state.json"
         assert get_authuser_for_storage(storage) == 0
 
+    def test_facade_monkeypatches_propagate_to_account_helpers(self, monkeypatch, tmp_path):
+        """Facade patches still affect helpers moved behind ``_auth.account``."""
+        import notebooklm.auth as auth_mod
+
+        storage = tmp_path / "storage_state.json"
+
+        def fake_read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
+            assert storage_path == storage
+            return {"authuser": 3, "email": "carol@example.com"}
+
+        monkeypatch.setattr(auth_mod, "read_account_metadata", fake_read_account_metadata)
+
+        assert auth_mod.get_authuser_for_storage(storage) == 3
+        assert auth_mod.get_account_email_for_storage(storage) == "carol@example.com"
+
     def test_get_authuser_reads_persisted_value(self, tmp_path):
         from notebooklm.auth import get_authuser_for_storage, write_account_metadata
 
