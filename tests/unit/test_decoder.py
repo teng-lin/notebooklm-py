@@ -137,20 +137,8 @@ class TestParseChunkedResponse:
         ]
         assert len(mismatch_records) == 1
         assert mismatch_records[0].levelno == logging.DEBUG
+        assert mismatch_records[0].levelno < logging.WARNING
         assert "payload is" in mismatch_records[0].message
-
-    def test_does_not_warn_on_byte_count_mismatch_with_valid_json(self, caplog):
-        """Byte-count mismatch with valid JSON must not log at WARNING or above."""
-        valid_parts = "\n".join(self._chunk_record([f"valid{i}"]) for i in range(10))
-        payload = json.dumps(["wrong-size"])
-        response = f"{valid_parts}\n{len(payload) + 1}\n{payload}\n"
-
-        with caplog.at_level(logging.WARNING, logger="notebooklm.rpc.decoder"):
-            parse_chunked_response(response)
-
-        assert not any(
-            "declares" in r.message and r.levelno >= logging.WARNING for r in caplog.records
-        )
 
     def test_skips_byte_count_without_payload_below_threshold(self, caplog):
         """A trailing byte-count line without a payload is malformed and skipped."""

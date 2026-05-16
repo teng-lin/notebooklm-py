@@ -230,11 +230,8 @@ def parse_chunked_response(response: str) -> list[Any]:
             json_str = lines[i]
             actual_byte_count = len(json_str.encode("utf-8"))
             if actual_byte_count != byte_count:
-                # Demoted to DEBUG: Google's batchexecute declares a count in a
-                # different unit than ``len(s.encode("utf-8"))`` (likely UTF-16
-                # codepoints), so every multi-chunk live response trips this on
-                # every chunk. The JSONDecodeError branch below still WARNs on
-                # real corruption.
+                # DEBUG (not WARNING): live multi-chunk responses trip this on
+                # every chunk; see the Note: block in this function's docstring.
                 logger.debug(
                     "Chunk at line %d declares %d bytes but payload is %d bytes; "
                     "parsing valid JSON payload anyway. Preview: %s",
