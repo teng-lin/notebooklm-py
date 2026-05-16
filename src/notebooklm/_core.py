@@ -559,8 +559,8 @@ class ClientCore:
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object can be constructed outside one.
         self._reqid_lock: asyncio.Lock | None = None
-        # Serializes ``_AuthSnapshot`` reads in :meth:`_snapshot` with the
-        # refresh-side mutation block in :meth:`NotebookLMClient.refresh_auth`
+        # Serializes ``_AuthSnapshot`` reads in :meth:`_snapshot` with
+        # :meth:`ClientCore.update_auth_tokens` during auth refresh
         # (audit §12 / T7.F2). The lock holds only across the four
         # ``self.auth.*`` scalar reads / two scalar writes — never across
         # an ``await`` — so RPC throughput isn't serialized to refresh
@@ -1210,8 +1210,8 @@ class ClientCore:
         ``asyncio.Lock()`` needs a running loop in some Python versions, so
         ``ClientCore.__init__`` leaves the field as ``None``. Callers must
         be inside an async context (which we are, since both
-        :meth:`_snapshot` and :meth:`NotebookLMClient.refresh_auth` are
-        coroutines). The check-then-assign is safe without an outer lock
+        :meth:`_snapshot` and :meth:`update_auth_tokens` are coroutines).
+        The check-then-assign is safe without an outer lock
         because asyncio is single-threaded — no other coroutine can
         execute between the ``is None`` check and the assignment unless
         we ``await``.

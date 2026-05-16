@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
 from ._artifacts import ArtifactsAPI
+from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._core import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -44,16 +45,18 @@ from ._core import (
     DEFAULT_TIMEOUT,
     ClientCore,
 )
-from ._env import get_base_url
+from ._env import get_base_url as get_base_url
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
-from ._url_utils import is_google_auth_redirect
-from .auth import AuthTokens, authuser_query, extract_wiz_field
-from .exceptions import AuthExtractionError
+from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
+from .auth import AuthTokens
+from .auth import authuser_query as authuser_query
+from .auth import extract_wiz_field as extract_wiz_field
+from .exceptions import AuthExtractionError as AuthExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -495,61 +498,4 @@ class NotebookLMClient:
         Raises:
             ValueError: If token extraction fails (page structure may have changed).
         """
-        http_client = self._core.get_http_client()
-        url = f"{get_base_url()}/"
-        if self.auth.account_email or self.auth.authuser:
-            url = f"{url}?{authuser_query(self.auth.authuser, self.auth.account_email)}"
-        response = await http_client.get(url)
-        response.raise_for_status()
-
-        # Check for redirect to login page
-        final_url = str(response.url)
-        if is_google_auth_redirect(final_url):
-            raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
-
-        # Extract SNlM0e (CSRF token) + FdrFJe (Session ID) via the unified
-        # extract_wiz_field helper. The helper tolerates double-quoted,
-        # single-quoted, and HTML-escaped variants, and raises
-        # AuthExtractionError with a sanitized 200-char preview on drift.
-        # AuthExtractionError is wrapped in ValueError to preserve the
-        # historical contract that refresh_auth raises ValueError on
-        # extraction failure (existing callers in keepalive paths catch
-        # ValueError specifically).
-        try:
-            csrf = extract_wiz_field(response.text, "SNlM0e", strict=True)
-            sid = extract_wiz_field(response.text, "FdrFJe", strict=True)
-        except AuthExtractionError as exc:
-            # Preserve the legacy human-readable label for each token
-            # ("CSRF token" / "session ID") so existing callers and tests
-            # that match on substring keep working, while still propagating
-            # the sanitized HTML preview from the new helper.
-            label = {"SNlM0e": "CSRF token", "FdrFJe": "session ID"}.get(exc.key, exc.key)
-            raise ValueError(
-                f"Failed to extract {label} ({exc.key}). "
-                "Page structure may have changed or authentication expired. "
-                f"Preview: {exc.payload_preview!r}"
-            ) from exc
-        # ``extract_wiz_field`` returns ``Optional[str]``; with ``strict=True``
-        # it never returns None — narrow the type for mypy and tolerate the
-        # (unreachable) None branch without crashing.
-        # T7.F2: serialize the csrf_token / session_id mutation with
-        # ``ClientCore._snapshot()`` via ``ClientCore.update_auth_tokens`` so a
-        # concurrent in-flight RPC can't observe a torn ``(csrf, sid)`` pair.
-        # Keep the historical normalization where an unreachable ``None`` from
-        # strict extraction is written as an empty string.
-        await self._core.update_auth_tokens(csrf or "", sid or "")
-
-        # CRITICAL: Update the HTTP client headers with new auth tokens
-        # Without this, the client continues using stale credentials
-        self._core.update_auth_headers()
-
-        # Persist refreshed cookies back to disk so the next CLI invocation
-        # picks up the updated short-lived tokens (e.g., __Secure-1PSIDCC).
-        # Routed through ClientCore.save_cookies so it serializes with the
-        # keepalive worker and the on-close save via ``_save_lock`` — without
-        # that, refresh_auth's synchronous save can race with an in-flight
-        # keepalive save and an older snapshot can clobber the freshly
-        # refreshed tokens.
-        await self._core.save_cookies(http_client.cookies)
-
-        return self._core.auth
+        return await refresh_auth_session(self._core)
