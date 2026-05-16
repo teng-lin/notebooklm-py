@@ -23,8 +23,8 @@ complementary halves:
    replaces a 21-char user ID with the 17-char ``SCRUBBED_USER_ID``
    placeholder the advertised count no longer matches the payload, so this
    helper runs as a second pass inside :func:`tests.vcr_config.scrub_response`
-   to keep cassettes self-consistent and silence the decoder's tolerance
-   warning during replay.
+   to keep cassettes self-consistent and avoid tripping the decoder's
+   byte-count-mismatch DEBUG log during replay.
 
 Why both halves live here, not split into two modules:
 
@@ -33,11 +33,12 @@ Why both halves live here, not split into two modules:
   string surgery is a separate concern and benefits from being importable
   on its own (the T8.B6 bulk re-scrub script in ``scripts/`` imports both
   ``scrub_string`` AND ``recompute_chunk_prefix`` directly).
-- Decoder tolerance behavior in ``src/notebooklm/rpc/decoder.py`` (warning
-  on byte-count mismatch but still parsing the JSON) is intentionally
-  UNCHANGED — these helpers exist so cassettes don't trigger that warning
-  during replay, not to harden the decoder against drift in production
-  responses.
+- Decoder tolerance behavior in ``src/notebooklm/rpc/decoder.py`` (still
+  parses the JSON on byte-count mismatch, now logging at DEBUG rather
+  than WARNING — see #669) is what makes the recompute pass optional for
+  correctness; these helpers exist so cassettes stay self-consistent for
+  shape-lint and don't add log noise during replay, not to harden the
+  decoder against drift in production responses.
 
 Exports
 -------
@@ -133,9 +134,11 @@ def recompute_chunk_prefix(body: str) -> str:
     This helper walks the body, identifies every digit-only "header" line that
     is immediately followed by a non-header line, and replaces the header with
     the correct count for that payload. Byte count uses ``len(payload.encode(
-    "utf-8"))`` — matching the on-wire protocol AND the
-    ``len(json_str.encode("utf-8"))`` calculation the decoder uses. For
-    ASCII-only payloads (the common case for batchexecute JSON), this is
+    "utf-8"))`` — matching the ``len(json_str.encode("utf-8"))`` calculation
+    the decoder uses (which is what the cassette shape lint validates, even
+    though Google's live framing appears to use a different unit; see the
+    Note: block on :func:`notebooklm.rpc.decoder.parse_chunked_response`).
+    For ASCII-only payloads (the common case for batchexecute JSON), this is
     identical to ``len(payload)``, so the shape-lint character-length
     assertion in ``test_cassette_shapes.py`` still passes.
 

@@ -193,7 +193,7 @@ def parse_chunked_response(response: str) -> list[Any]:
         logged at DEBUG and tolerated when the following payload is still
         valid JSON, because recorded and proxy-transformed streams may not
         preserve Google's original byte count and live Google responses use a
-        different unit (likely UTF-16 codepoints) than ``len(s.encode("utf-8"))``.
+        different unit (likely UTF-16 code units) than ``len(s.encode("utf-8"))``.
         A JSONDecodeError on the payload still emits a WARNING on the
         subsequent parse-failure path. If the malformed-record rate exceeds
         10%, raises RPCError as this likely indicates API changes.
