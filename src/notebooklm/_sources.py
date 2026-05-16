@@ -166,6 +166,7 @@ class SourcesAPI:
         *,
         disable_internal_retries: bool = False,
     ) -> Any:
+        """Delegate through the current core RPC method for late-bound test overrides."""
         return await self._core.rpc_call(
             method,
             params,

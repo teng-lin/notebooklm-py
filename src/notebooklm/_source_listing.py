@@ -11,6 +11,8 @@ from .rpc import RPCError, RPCMethod
 from .rpc.types import SourceStatus
 from .types import Source, _extract_source_created_at, _extract_source_url
 
+# Keep source-list warnings on the historical logger so existing log filters
+# continue to see the same channel after the service extraction.
 logger = logging.getLogger("notebooklm._sources")
 
 
@@ -124,7 +126,14 @@ class SourceLister:
         if not isinstance(src, builtins.list) or len(src) == 0:
             return None
 
-        src_id = src[0][0] if isinstance(src[0], builtins.list) else src[0]
+        src_id = SourceLister._extract_source_id(src)
+        if src_id is None:
+            logger.warning(
+                "SourcesAPI.list: Skipping source with unexpected id shape: %s",
+                repr(src)[:500],
+            )
+            return None
+
         title = src[1] if len(src) > 1 else None
         metadata = src[2] if len(src) > 2 else None
 
@@ -144,6 +153,20 @@ class SourceLister:
             created_at=created_at,
             status=status,
         )
+
+    @staticmethod
+    def _extract_source_id(src: builtins.list[Any]) -> object | None:
+        raw_id = src[0]
+        if not isinstance(raw_id, builtins.list):
+            return raw_id
+        if raw_id and raw_id[0] is not None:
+            return raw_id[0]
+        # Drive-backed entries can nest the source id inside the id envelope:
+        # [None, true, [source_id]]. Keep this local to source-list parsing so
+        # the public Source model remains a shape-preserving value object.
+        if len(raw_id) > 2 and isinstance(raw_id[2], builtins.list) and raw_id[2]:
+            return raw_id[2][0]
+        return None
 
     @staticmethod
     def _extract_status(src: builtins.list[Any]) -> SourceStatus:

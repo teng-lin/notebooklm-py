@@ -200,6 +200,64 @@ async def test_status_and_type_code_parsing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_nested_drive_source_id_is_extracted() -> None:
+    lister = SourceLister(
+        RecordingRpc(
+            [
+                [
+                    "Notebook",
+                    [
+                        [
+                            [None, True, ["drive_src"]],
+                            "Drive Source",
+                            [None, 11, [1704067200, 0], None, 2],
+                            [None, 2],
+                        ],
+                    ],
+                ]
+            ]
+        )
+    )
+
+    sources = await lister.list("nb_123")
+
+    assert len(sources) == 1
+    assert sources[0].id == "drive_src"
+    assert sources[0].title == "Drive Source"
+
+
+@pytest.mark.asyncio
+async def test_malformed_source_id_shape_logs_and_skips(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lister = SourceLister(
+        RecordingRpc(
+            [
+                [
+                    "Notebook",
+                    [
+                        source_entry("src_valid", title="Valid"),
+                        [
+                            [None, True, []],
+                            "Broken",
+                            [None, 11, [1704067200, 0], None, 2],
+                            [None, 2],
+                        ],
+                    ],
+                ]
+            ]
+        )
+    )
+    caplog.set_level("WARNING", logger="notebooklm._sources")
+
+    sources = await lister.list("nb_123")
+
+    assert [source.id for source in sources] == ["src_valid"]
+    assert "Skipping source with unexpected id shape" in caplog.text
+    assert "[None, True, []]" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_created_at_uses_shared_timestamp_parser() -> None:
     lister = SourceLister(
         RecordingRpc(
