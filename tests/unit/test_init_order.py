@@ -276,22 +276,72 @@ class _RuntimeImportVisitor(ast.NodeVisitor):
             return
         self.generic_visit(node)
 
+    @staticmethod
+    def _is_dunder_name(name: str) -> bool:
+        return name.startswith("__") and name.endswith("__")
+
+    @classmethod
+    def _is_forbidden_module_reference(cls, name: str, forbidden_modules: set[str]) -> bool:
+        if not name:
+            return False
+
+        if any(cls._is_dunder_name(part) for part in name.split(".")):
+            return False
+
+        for forbidden_module in forbidden_modules:
+            if cls._is_dunder_name(forbidden_module):
+                continue
+            if name == forbidden_module or name.startswith(f"{forbidden_module}."):
+                return True
+
+        return False
+
     def visit_Import(self, node: ast.Import) -> None:
         self.forbidden.extend(
-            alias.name for alias in node.names if alias.name in self._forbidden_modules
+            alias.name
+            for alias in node.names
+            if self._is_forbidden_module_reference(alias.name, self._forbidden_modules)
         )
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
-        if module in self._forbidden_modules:
+        if self._is_forbidden_module_reference(module, self._forbidden_modules):
             self.forbidden.extend(f"{module}.{alias.name}" for alias in node.names)
             return
 
         self.forbidden.extend(
             alias.name
             for alias in node.names
-            if alias.name in self._forbidden_names or alias.name in self._forbidden_modules
+            if alias.name in self._forbidden_names
+            or self._is_forbidden_module_reference(alias.name, self._forbidden_modules)
         )
+
+
+def test_runtime_import_visitor_detects_nested_forbidden_modules() -> None:
+    """The import-boundary guard must catch nested forbidden module paths."""
+    tree = ast.parse(
+        """
+import notebooklm._sources.utils
+import http.client
+from notebooklm._sources.utils import SourceParser
+from notebooklm import _sources
+from . import _sources as relative_sources
+from __future__ import annotations
+"""
+    )
+    visitor = _RuntimeImportVisitor(
+        forbidden_names=set(),
+        forbidden_modules={"_sources", "notebooklm._sources", "__future__"},
+    )
+
+    visitor.visit(tree)
+
+    assert visitor.forbidden == [
+        "notebooklm._sources.utils",
+        "notebooklm._sources.utils.SourceParser",
+        "_sources",
+        "_sources",
+    ]
 
 
 def test_artifact_service_modules_do_not_runtime_import_facades_or_core() -> None:
