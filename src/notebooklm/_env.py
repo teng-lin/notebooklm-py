@@ -22,8 +22,8 @@ STRICT_DECODE_ENV = "NOTEBOOKLM_STRICT_DECODE"
 def is_strict_decode_enabled() -> bool:
     """Return True if the strict-decode mode is enabled.
 
-    During the Tier-1 soft-rollout, schema-drift helpers (e.g. ``safe_index``)
-    fall back to warn-and-return-None by default. Setting
+    By default, schema-drift helpers (e.g. ``safe_index``) fall back to
+    warn-and-return-None during the soft-rollout window. Setting
     ``NOTEBOOKLM_STRICT_DECODE=1`` (or ``true``/``True``) flips them to raise
     ``UnknownRPCMethodError`` instead, surfacing drift early.
     """

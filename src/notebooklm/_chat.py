@@ -206,8 +206,8 @@ class ChatAPI:
 
         is_new_conversation = conversation_id is None
 
-        # Acquire the per-conversation lock only for follow-ups (audit §10 /
-        # T7.F1). Two concurrent gather'd follow-ups on the same conversation
+        # Acquire the per-conversation lock only for follow-ups.
+        # Two concurrent gather'd follow-ups on the same conversation
         # would otherwise read identical pre-update history, both POST it, and
         # the server would see two follow-ups both claiming to be turn N+1.
         # New conversations skip the lock entirely: there is no caller-supplied
@@ -238,10 +238,10 @@ class ChatAPI:
             active_source_ids: list[str] = source_ids
 
             # Mint the request-id under the asyncio-safe counter helper so two
-            # concurrent ``ask`` calls on the same client never collide (audit C3,
-            # synthesis §6 Tier-2 item 2). The previous direct mutation
-            # ``self._core._reqid_counter += 100000`` raced under
-            # ``asyncio.gather`` and produced duplicate ``_reqid`` URL params.
+            # concurrent ``ask`` calls on the same client never collide. The
+            # previous direct mutation ``self._core._reqid_counter += 100000``
+            # raced under ``asyncio.gather`` and produced duplicate ``_reqid``
+            # URL params.
             reqid = await self._core.next_reqid()
 
             def build_request(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:

@@ -129,7 +129,7 @@ class NotebookLMClient:
             rate_limit_max_retries: Max automatic retries on HTTP 429.
                 Defaults to ``3`` so programmatic users
                 inherit "smart retry" behavior out of the box. Set to ``0``
-                to restore the pre-T7.H2 contract of raising immediately.
+                to raise ``RateLimitError`` immediately.
                 Sleeps for ``Retry-After`` when the server provides a
                 parseable header; otherwise falls back to capped exponential
                 backoff ``min(2 ** attempt, 30)`` seconds with ±20% jitter.
@@ -171,7 +171,7 @@ class NotebookLMClient:
                 ``ValueError`` otherwise (a semaphore that lets requests
                 through that the pool can't fulfill would surface as
                 opaque ``httpx.PoolTimeout`` rather than clean
-                back-pressure). Pre-T7.H1 no gate existed; heavy
+                back-pressure). Before this gate was added, heavy
                 fan-out workloads tripped pool timeouts before any
                 upstream throttle could intervene.
             upload_timeout: Optional override for the ``httpx.Timeout`` used
@@ -265,7 +265,7 @@ class NotebookLMClient:
         # Initialize sub-client APIs.
         # ArtifactsAPI and NotesAPI both consume the shared ``_mind_map``
         # module for mind-map primitives, so their construction order is
-        # not significant (see T6.F).
+        # not significant.
         self.notebooks = NotebooksAPI(self._core)
         self.sources = SourcesAPI(self._core, upload_timeout=upload_timeout)
         self.artifacts = ArtifactsAPI(self._core, storage_path=storage_path)
@@ -438,7 +438,9 @@ class NotebookLMClient:
                 POSTs. Defaults to ``16``; ``None`` disables the gate.
                 Must be ``>= 1`` and ``<= limits.max_connections``. See
                 :class:`NotebookLMClient` for the cross-validation rule
-                and the audit §8 / T7.H1 rationale.
+                and the rationale (the gate sits below the connection
+                pool so back-pressure surfaces cleanly instead of as
+                opaque ``httpx.PoolTimeout``).
             upload_timeout: Optional override for the ``httpx.Timeout`` used
                 by the resumable-upload start handshake and the finalize
                 POST. ``None`` (default) preserves the original hardcoded

@@ -810,10 +810,10 @@ class ResearchTaskMismatchError(ValidationError):
     Raised by :meth:`ResearchAPI.import_sources` when one of the supplied
     sources carries a ``research_task_id`` that differs from the
     discriminator ``task_id`` passed by the caller. This is the wire-crossing
-    bug from audit §26: the caller intends to import results for task A,
-    but one of the source entries was actually discovered under task B.
-    Importing under the wrong task would mis-attribute provenance, so this
-    check fails loud before any RPC traffic is issued.
+    bug: the caller intends to import results for task A, but one of the
+    source entries was actually discovered under task B. Importing under
+    the wrong task would mis-attribute provenance, so this check fails
+    loud before any RPC traffic is issued.
 
     Inherits from :class:`ValidationError` so existing ``except
     ValidationError`` clauses on ``import_sources`` continue to catch it.

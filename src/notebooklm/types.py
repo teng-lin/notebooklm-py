@@ -87,7 +87,7 @@ class ConnectionLimits:
     fan-out: a few dozen concurrent RPCs against a single host with
     keep-alives held for the duration of an interactive session.
 
-    Constraint: ``max_concurrent_rpcs`` (added in T7.H1) must satisfy
+    Constraint: ``max_concurrent_rpcs`` must satisfy
     ``max_concurrent_rpcs <= max_connections`` — otherwise the
     semaphore lets requests through that the pool can't fulfill.
     The constructor for ``NotebookLMClient`` enforces this when both

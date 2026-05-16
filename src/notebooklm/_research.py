@@ -555,7 +555,7 @@ class ResearchAPI:
         if not sources:
             return []
 
-        # T7.F3: per-source ``research_task_id`` must match the caller's
+        # Per-source ``research_task_id`` must match the caller's
         # ``task_id`` when both are present. A mismatch is the wire-crossing
         # bug — importing under the wrong task would mis-attribute
         # provenance. We do this scan BEFORE the multi-task batch check so

@@ -169,7 +169,7 @@ class NotebooksAPI:
             The created Notebook object.
 
         Idempotency:
-            T7.B2 — wraps the underlying CREATE_NOTEBOOK RPC in a
+            Wraps the underlying CREATE_NOTEBOOK RPC in a
             probe-then-retry loop. On a transient transport failure
             (5xx / 429 / network), the wrapper lists notebooks and
             checks whether a new notebook with the requested title

@@ -197,9 +197,9 @@ elif result.returncode == 130:
 
 ## Migration notes
 
-The following shifts have landed (or are about to land) under the internal
-`cli-ux-remediation` plan and are documented here for callers preparing for —
-or recovering from — the contract change.
+The following shifts have landed (or are about to land) as part of the CLI
+UX overhaul and are documented here for callers preparing for — or recovering
+from — the contract change.
 
 ### C1 — `get`-on-not-found exits `1` (was `0`) ✅ **Landed in Phase 3**
 

@@ -88,10 +88,10 @@ DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
 
 # Default ceiling on concurrent in-flight ``SourcesAPI.add_file`` uploads.
 # Each in-flight upload holds one open file descriptor for the duration of
-# the upload, so the cap is also an FD-exhaustion guard (see T7.D3 /
-# audit §23). Sized for typical interactive workloads; tune higher for
-# batch ingestion pipelines that ingest dozens of files in parallel and
-# have headroom in the process FD limit (``ulimit -n``).
+# the upload, so the cap is also an FD-exhaustion guard. Sized for typical
+# interactive workloads; tune higher for batch ingestion pipelines that
+# ingest dozens of files in parallel and have headroom in the process FD
+# limit (``ulimit -n``).
 DEFAULT_MAX_CONCURRENT_UPLOADS = 4
 
 # Default ceiling on simultaneous in-flight ``_perform_authed_post``
@@ -108,15 +108,15 @@ DEFAULT_MAX_CONCURRENT_RPCS = 16
 # Auth error detection patterns (case-insensitive)
 
 # -----------------------------------------------------------------------------
-# T8.E10 — Test-only synthetic-error transport (opt-in via env var)
+# Test-only synthetic-error transport (opt-in via env var)
 # -----------------------------------------------------------------------------
 #
 # When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to one of ``429`` / ``5xx`` /
 # ``expired_csrf``, the next outgoing batchexecute RPC gets a substituted
 # synthetic response that the client maps onto its own exception domain. This
-# plumbing exists so T8.E4 (and any future error-cassette PR) can record
-# cassettes whose response shapes match what the client's exception mapping
-# keys on — see ``tests/cassette_patterns.py:build_synthetic_error_response``.
+# plumbing exists so error-cassette recording can produce cassettes whose
+# response shapes match what the client's exception mapping keys on — see
+# ``tests/cassette_patterns.py:build_synthetic_error_response``.
 #
 # **Production behavior is unchanged when the env var is unset.** The transport
 # wrapper is only constructed when the env var resolves to a valid mode; the
@@ -407,8 +407,8 @@ class ClientCore:
             rate_limit_max_retries: Max automatic retries on HTTP 429.
                 Defaults to ``3`` so programmatic users
                 inherit "smart retry" behavior without having to opt in. Set
-                to ``0`` to restore the pre-T7.H2 contract of raising
-                ``RateLimitError`` immediately. Each retry sleeps for the
+                to ``0`` to raise ``RateLimitError`` immediately. Each retry
+                sleeps for the
                 ``Retry-After`` value when the server provides a parseable
                 header (clamped at ``MAX_RETRY_AFTER_SECONDS``); when the
                 header is absent or unparseable, the loop falls back to
@@ -436,8 +436,8 @@ class ClientCore:
                 the default — unbounded uploads are intentionally rejected
                 because each in-flight upload holds one open file
                 descriptor for the duration of the upload, and an
-                unbounded fan-out exhausts the per-process FD limit (audit
-                §23 / T7.D3). Must be ``>= 1`` when supplied. Independent
+                unbounded fan-out exhausts the per-process FD limit. Must
+                be ``>= 1`` when supplied. Independent
                 of the RPC connection pool because uploads use their own
                 ``httpx.AsyncClient`` (Scotty endpoint) and don't share
                 the RPC pool.
@@ -449,8 +449,8 @@ class ClientCore:
                 preflights) outside this gate still have pool headroom.
                 Pass ``None`` to disable the gate entirely (callers with
                 an external rate-limiter or single-shot CLI work).
-                Must be ``>= 1`` when supplied. Pre-T7.H1 the gate did
-                not exist; heavy fan-out workloads tripped opaque
+                Must be ``>= 1`` when supplied. Before this gate was added,
+                heavy fan-out workloads tripped opaque
                 ``httpx.PoolTimeout`` errors before the connection pool
                 could surface clean back-pressure. Cross-
                 validation with ``limits.max_connections`` is enforced at
@@ -561,15 +561,15 @@ class ClientCore:
         self._reqid_lock: asyncio.Lock | None = None
         # Serializes ``_AuthSnapshot`` reads in :meth:`_snapshot` with
         # :meth:`ClientCore.update_auth_tokens` during auth refresh
-        #. The lock holds only across the four
+        # . The lock holds only across the four
         # ``self.auth.*`` scalar reads / two scalar writes — never across
         # an ``await`` — so RPC throughput isn't serialized to refresh
         # latency. Lazy-init mirrors ``_reqid_lock`` because ``asyncio.Lock()``
         # needs a running loop in some Python versions. Distinct from
         # ``_refresh_lock`` (which is owned by refresh-task creation and
         # held across ``await self._refresh_callback()``): mixing the two
-        # would re-introduce the reentrancy ambiguity T7.F2 set out to
-        # avoid.
+        # would re-introduce the reentrancy ambiguity that snapshot-side
+        # serialization was added to avoid.
         self._auth_snapshot_lock: asyncio.Lock | None = None
         # Event-loop affinity guard. Captured in
         # :meth:`open` and checked in :meth:`_perform_authed_post`; a cheap
@@ -628,7 +628,7 @@ class ClientCore:
     # Historical contract: callers did ``self._core._reqid_counter += 100000``
     # then read the new value. Two concurrent ``ChatAPI.ask`` calls on the same
     # core would race on the read-modify-write, producing duplicate ``_reqid``
-    # values that Google rejects (audit C3 / synthesis §6 Tier-2 item 2).
+    # values that Google rejects.
     #
     # New contract: ``await core.next_reqid()`` performs the increment under
     # ``_reqid_lock`` and returns the post-increment value. The lock is
@@ -1008,9 +1008,9 @@ class ClientCore:
                 cookies=self.auth.cookies,
                 storage_path=self.auth.storage_path,
             )
-            # T8.E10 — opt-in synthetic-error transport wrapper. When the env
-            # var is unset (the default) this is a no-op and the AsyncClient
-            # is constructed exactly as before. See ``_SyntheticErrorTransport``
+            # Opt-in synthetic-error transport wrapper. When the env var is
+            # unset (the default) this is a no-op and the AsyncClient is
+            # constructed exactly as before. See ``_SyntheticErrorTransport``
             # docstring at module top.
             error_mode = _get_error_injection_mode()
             synthetic_transport: httpx.AsyncBaseTransport | None = None
@@ -1025,7 +1025,7 @@ class ClientCore:
                 )
                 synthetic_transport = _SyntheticErrorTransport(error_mode, inner_transport)
                 logger.info(
-                    "T8.E10 synthetic-error injection enabled (mode=%s) — "
+                    "synthetic-error injection enabled (mode=%s) — "
                     "production paths will see substituted responses",
                     error_mode,
                 )
@@ -1038,10 +1038,11 @@ class ClientCore:
                 follow_redirects=True,
                 # ``limits=`` is honored when ``transport=None`` (default) —
                 # httpx builds its own default transport with these limits.
-                # When ``transport=synthetic_transport`` (T8.E10 record mode)
-                # this kwarg is ignored by httpx and the inner_transport above
-                # carries the limits instead. The redundant pass is harmless
-                # and avoids a branch on the AsyncClient construction site.
+                # When ``transport=synthetic_transport`` (error-injection
+                # record mode) this kwarg is ignored by httpx and the
+                # inner_transport above carries the limits instead. The
+                # redundant pass is harmless and avoids a branch on the
+                # AsyncClient construction site.
                 limits=self._limits.to_httpx_limits(),
                 transport=synthetic_transport,
             )
@@ -1366,7 +1367,7 @@ class ClientCore:
         :class:`~notebooklm.exceptions.NetworkError` /
         :class:`~notebooklm.exceptions.ChatError` respectively. This keeps
         ChatAPI free of HTTP-status branching and matches the historical
-        contract of ``ChatAPI.ask`` (T2.D will migrate that caller).
+        contract of ``ChatAPI.ask`` (a planned follow-up will migrate that caller).
 
         Args:
             build_request: See :meth:`_perform_authed_post`.

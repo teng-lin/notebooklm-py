@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 # Strong references for fire-and-forget cleanup tasks. ``asyncio.create_task``
 # returns a Task that the event loop only holds via a weak reference, so an
 # unrooted Task can be garbage-collected mid-execution — losing the orphan-row
-# cleanup the T7.C4 shield is supposed to guarantee. Each created task adds
-# itself here and removes itself in a done-callback so the set stays bounded.
+# cleanup the cancel-safety shield is supposed to guarantee. Each created task
+# adds itself here and removes itself in a done-callback so the set stays
+# bounded.
 _cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 
@@ -211,7 +212,7 @@ async def create_note(
         # CREATE_NOTE ignores the title param server-side, so set it via
         # UPDATE_NOTE alongside the actual content payload.
         #
-        # T7.C4: shield the UPDATE_NOTE finalize from outer cancellation.
+        # Shield the UPDATE_NOTE finalize from outer cancellation.
         # CREATE_NOTE has already persisted a row server-side; without the
         # shield, a cancel arriving between CREATE_NOTE and UPDATE_NOTE
         # completion leaves an orphan row with no title/content.

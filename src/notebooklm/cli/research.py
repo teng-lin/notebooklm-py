@@ -154,8 +154,8 @@ def research_wait(
                 """Poll until completion or terminal state; returns True on success.
 
                 Once the first poll identifies a task_id, subsequent polls pin
-                to that specific task via the T7.F3 discriminator. This guards
-                the wait loop against the cross-wire bug where a second
+                to that specific task via the ``task_id`` discriminator. This
+                guards the wait loop against the cross-wire bug where a second
                 research task started mid-wait (e.g. by a concurrent caller
                 or a retry) could substitute its results into ``status`` /
                 ``sources`` and mis-attribute provenance on import.

@@ -1,8 +1,5 @@
 """Logging configuration and credential redaction for notebooklm-py.
 
-Phase 0 of the gap remediation plan. See .sisyphus/plans/phase-0-implementation.md
-for design rationale.
-
 The package logger is configured at import time via configure_logging(). Every
 record reaching the package handler passes through a RedactingFilter that
 mutates the record in place, scrubbing CSRF tokens, session cookies, and other

@@ -146,7 +146,7 @@ class SourcePoller:
         **kwargs: Any,
     ) -> builtins.list[Source]:
         """Wait for multiple sources to become ready in parallel."""
-        # T7.E1: a bare ``asyncio.gather(*coros)`` propagates the first
+        # A bare ``asyncio.gather(*coros)`` propagates the first
         # exception but does NOT await the sibling tasks it cancels. The
         # cancelled siblings are left in a "cancellation requested but not
         # yet observed" state - their ``finally`` blocks may not have run by

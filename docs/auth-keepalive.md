@@ -428,7 +428,7 @@ allow-list. This matters because:
   union so that opted-in domains survive downstream filters — but it's
   not the load-bearing security control. The extraction-time filter is.
 
-This is the **single load-bearing T5.G control**
+This is the **single cookie-domain narrowing security control**
 ([#483](https://github.com/teng-lin/notebooklm-py/pull/483)): narrow
 the extraction list to REQUIRED by default, expose OPTIONAL behind an
 explicit opt-in flag, and document the trade-off so users with sibling-
@@ -1699,11 +1699,11 @@ Things we don't know that would inform future iterations:
   anything — relevant to triaging the hour-scale-survival pattern in
   Gemini-API [#203](https://github.com/HanaokaYuzu/Gemini-API/issues/203)
   and similar reports.
-- **2026-05-14** — Documentation remediation pass (T8 in the
-  `documentation-fix` plan). Added `**Last Updated:**` header. New
-  §2.6 *Domain tiering: REQUIRED vs OPTIONAL cookie domains* documents
-  the T5.G ([#483](https://github.com/teng-lin/notebooklm-py/pull/483))
-  split between `REQUIRED_COOKIE_DOMAINS` (always extracted) and
+- **2026-05-14** — Documentation consistency pass. Added
+  `**Last Updated:**` header. New §2.6 *Domain tiering: REQUIRED vs
+  OPTIONAL cookie domains* documents the cookie-domain split
+  ([#483](https://github.com/teng-lin/notebooklm-py/pull/483)) between
+  `REQUIRED_COOKIE_DOMAINS` (always extracted) and
   `OPTIONAL_COOKIE_DOMAINS_BY_LABEL` (opt-in via
   `--include-domains=<label>`), with the data-minimization /
   blast-radius rationale for why the split is enforced at extraction

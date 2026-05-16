@@ -219,9 +219,9 @@ def wait_polling_options(
     """Bundle the shared ``--timeout`` / ``--interval`` polling flags.
 
     Used by every long-running CLI command so the flag surface stays uniform
-    across ``generate <kind> --wait``, ``artifact wait``, and ``source wait``
-   . Returns a decorator so each call site can supply
-    its own historical defaults without diverging on flag name or help text.
+    across ``generate <kind> --wait``, ``artifact wait``, and ``source wait``.
+    Returns a decorator so each call site can supply its own historical
+    defaults without diverging on flag name or help text.
 
     The ``--wait`` flag is intentionally NOT bundled here. It is a *trigger*
     flag on ``generate <kind>`` (paired with ``wait_option`` /

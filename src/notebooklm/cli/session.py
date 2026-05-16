@@ -884,7 +884,7 @@ def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
 def _warn_missing_optional_domains(include_domains: set[str]) -> None:
     """Emit a migration warning when the default minimum-cookies set is used.
 
-    The T5.G change narrows the default extraction set to
+    The cookie-domain split narrows the default extraction set to
     :data:`REQUIRED_COOKIE_DOMAINS`. Users upgrading from the prior
     behavior need a heads-up that YouTube / Docs / myaccount / Mail
     cookies are no longer scraped at login. Telling them how to opt back
@@ -898,7 +898,7 @@ def _warn_missing_optional_domains(include_domains: set[str]) -> None:
         f"Pass --include-domains=<{supported}> (or =all) to extract them.[/dim]"
     )
     logger.info(
-        "Login extracting REQUIRED_COOKIE_DOMAINS only (T5.G default). "
+        "Login extracting REQUIRED_COOKIE_DOMAINS only (cookie-domain split default). "
         "Pass --include-domains=%s (or =all) to include sibling cookies.",
         supported,
     )
@@ -936,15 +936,15 @@ def _build_google_cookie_domains(
     """Return the cookie-domain list fed to extractors (rookiepy / Firefox).
 
     Defaults to :data:`REQUIRED_COOKIE_DOMAINS` plus all known regional
-    ``.google.<ccTLD>`` variants (T5.G tightening). Sibling-product cookies
-    (YouTube, Docs, myaccount, Mail) are excluded unless the caller opts
-    in via ``include_optional=True`` or a non-empty ``include_domains``
-    label set.
+    ``.google.<ccTLD>`` variants. Sibling-product cookies (YouTube, Docs,
+    myaccount, Mail) are excluded unless the caller opts in via
+    ``include_optional=True`` or a non-empty ``include_domains`` label
+    set.
 
     Args:
         include_optional: When ``True``, include every optional sibling
             domain (equivalent to ``--include-domains=all``). Preserves
-            the pre-T5.G behavior for callers that still need the broad
+            the pre-split behavior for callers that still need the broad
             set.
         include_domains: Set of optional-domain labels (output of
             :func:`_parse_include_domains`). Each label expands via

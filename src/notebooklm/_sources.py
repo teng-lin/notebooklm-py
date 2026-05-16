@@ -333,8 +333,8 @@ class SourcesAPI:
             content: Text content.
             wait: If True, wait for source to be ready before returning.
             wait_timeout: Maximum seconds to wait if wait=True (default: 120).
-            idempotent: T7.B2 — opt-in safety flag that REFUSES the call
-                rather than risk silent duplication on retry. Text sources
+            idempotent: Opt-in safety flag that REFUSES the call rather
+                than risk silent duplication on retry. Text sources
                 lack a reliable server-side dedupe key (titles non-unique;
                 content not exposed in the source list), so the
                 probe-then-retry pattern used by ``add_url`` cannot be
@@ -817,7 +817,7 @@ class SourcesAPI:
           ``add_file`` invocation under post-finalize cancel; if the
           caller closed the FD on cancel, the still-running background
           POST would read from a closed FD and abort, breaking the
-          T7.C3 dangling-session guarantee.
+          dangling-session guarantee.
 
           A legacy ``Path`` argument is still accepted; the helper opens
           + closes the FD itself in that branch. ``add_file`` never
