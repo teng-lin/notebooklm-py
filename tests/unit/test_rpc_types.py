@@ -56,7 +56,12 @@ def test_rpc_types_does_not_own_runtime_override_policy() -> None:
     assert imported_os == []
     assert environ_access == []
     assert direct_override_defs == []
-    assert {"_parse_rpc_overrides", "_load_rpc_overrides"} <= override_aliases
+    assert {
+        "_load_rpc_overrides",
+        "_logged_override_hashes",
+        "_parse_rpc_overrides",
+        "resolve_rpc_id",
+    } <= override_aliases
 
 
 def test_rpc_override_import_order_smoke() -> None:
