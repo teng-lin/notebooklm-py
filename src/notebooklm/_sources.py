@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, Any, Literal
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
@@ -19,14 +19,13 @@ from ._callbacks import maybe_await_callback
 from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
 from ._env import get_base_url
-from ._idempotency import idempotent_create
+from ._source_add import SourceAddService
 from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
 from ._url_utils import is_youtube_url
 from .exceptions import (
     AuthError,
     NetworkError,
-    NonIdempotentRetryError,
     RateLimitError,
     ServerError,
     ValidationError,
@@ -143,6 +142,7 @@ class SourcesAPI:
         """
         self._core = core
         self._capabilities = ClientCoreCapabilities(core)
+        self._adder = SourceAddService()
         self._lister = SourceLister(self._rpc_call)
         self._poller = SourcePoller()
         self._upload_timeout = upload_timeout
@@ -373,69 +373,19 @@ class SourcesAPI:
             # ... add more sources ...
             await client.sources.wait_for_sources(nb_id, [s.id for s in sources])
         """
-        logger.debug("Adding URL source to notebook %s: %s", notebook_id, url[:80])
-        video_id = self._extract_youtube_video_id(url)
-        # Warn if URL looks like YouTube but we couldn't extract video ID
-        if not video_id and is_youtube_url(url):
-            logger.warning(
-                "URL appears to be YouTube but no video ID found: %s. "
-                "Adding as web page - content may be incomplete. "
-                "If this is a video URL, please report this as a bug.",
-                url[:100],
-            )
-
-        async def _create() -> Source:
-            # Preserve transport-level signals so callers can act on the specific
-            # type (AuthError → re-login, RateLimitError → back-off with retry_after,
-            # ServerError → transient-retry). RateLimitError, ServerError, and
-            # NetworkError must propagate so ``idempotent_create`` can catch
-            # them and run the probe; AuthError continues to propagate to the
-            # caller (auth failure cannot have committed the write). Only the
-            # generic RPCError catch wraps into SourceAddError with the
-            # underlying cause attached. Mirrors the propagation contract in
-            # _register_file_source (#474, #407).
-            try:
-                if video_id:
-                    result = await self._add_youtube_source(notebook_id, url)
-                else:
-                    result = await self._add_url_source(notebook_id, url)
-            except (AuthError, RateLimitError, ServerError, NetworkError):
-                raise
-            except RPCError as e:
-                raise SourceAddError(url, cause=e) from e
-
-            if result is None:
-                raise SourceAddError(url, message=f"API returned no data for URL: {url}")
-            return Source.from_api_response(result)
-
-        async def _probe() -> Source | None:
-            # T7.B2: after a transport failure on ADD_SOURCE, list the
-            # notebook's sources and check whether one with this exact URL
-            # already exists. Best-effort — if listing fails, treat as
-            # no-match so the wrapper retries the create.
-            try:
-                sources = await self.list(notebook_id)
-            except Exception:
-                logger.debug(
-                    "add_url: probe list() failed; treating as no match",
-                    exc_info=True,
-                )
-                return None
-            for s in sources:
-                if s.url == url:
-                    return s
-            return None
-
-        source = await idempotent_create(
-            _create,
-            _probe,
-            label=f"sources.add_url[{url[:40]}]",
+        return await self._adder.add_url(
+            notebook_id,
+            url,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            add_youtube_source=self._add_youtube_source,
+            add_url_source=self._add_url_source,
+            list_sources=self.list,
+            wait_until_ready=self.wait_until_ready,
+            extract_youtube_video_id=self._extract_youtube_video_id,
+            is_youtube_url=is_youtube_url,
+            logger=logger,
         )
-
-        if wait:
-            return await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
-
-        return source
 
     async def add_text(
         self,
@@ -475,44 +425,17 @@ class SourcesAPI:
         Raises:
             NonIdempotentRetryError: When ``idempotent=True``.
         """
-        if idempotent:
-            raise NonIdempotentRetryError(
-                "add_text cannot be marked idempotent: text sources have no "
-                "reliable server-side dedupe key (titles non-unique, content "
-                "not exposed). For idempotent text imports, embed a UUID in "
-                "the title and dedupe client-side. See "
-                "docs/python-api.md#idempotency."
-            )
-        logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
-        params = [
-            [[None, [title, content], None, None, None, None, None, None]],
+        return await self._adder.add_text(
             notebook_id,
-            [2],
-            None,
-            None,
-        ]
-        try:
-            result = await self._core.rpc_call(
-                RPCMethod.ADD_SOURCE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-            )
-        except RPCError as e:
-            raise SourceAddError(
-                title,
-                cause=e,
-                message=f"Failed to add text source '{title}'",
-            ) from e
-
-        if result is None:
-            raise SourceAddError(title, message=f"API returned no data for text source: {title}")
-
-        source = Source.from_api_response(result)
-
-        if wait:
-            return await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
-
-        return source
+            title,
+            content,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            idempotent=idempotent,
+            rpc_call=self._rpc_call,
+            wait_until_ready=self.wait_until_ready,
+            logger=logger,
+        )
 
     async def add_file(
         self,
@@ -810,39 +733,17 @@ class SourcesAPI:
                 wait=True,  # Wait for processing
             )
         """
-        logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
-        # Drive source structure: [[file_id, mime_type, 1, title], null x9, 1]
-        source_data = [
-            [file_id, mime_type, 1, title],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            1,
-        ]
-        params = [
-            [source_data],  # Single wrap, not double - matches web UI
+        return await self._adder.add_drive(
             notebook_id,
-            [2],
-            [1, None, None, None, None, None, None, None, None, None, [1]],
-        ]
-        result = await self._core.rpc_call(
-            RPCMethod.ADD_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+            file_id,
+            title,
+            mime_type=mime_type,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            rpc_call=self._rpc_call,
+            wait_until_ready=self.wait_until_ready,
+            logger=logger,
         )
-        source = Source.from_api_response(result)
-
-        if wait:
-            return await self.wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
-
-        return source
 
     async def delete(self, notebook_id: str, source_id: str) -> bool:
         """Delete a source from a notebook.
@@ -1151,32 +1052,13 @@ class SourcesAPI:
         Returns:
             The video ID if found and valid, None otherwise.
         """
-        try:
-            parsed = urlparse(url.strip())
-            hostname = (parsed.hostname or "").lower()
-
-            # Check if this is a YouTube domain
-            youtube_domains = {
-                "youtube.com",
-                "www.youtube.com",
-                "m.youtube.com",
-                "music.youtube.com",
-                "youtu.be",
-            }
-
-            if hostname not in youtube_domains:
-                return None
-
-            video_id = self._extract_video_id_from_parsed_url(parsed, hostname)
-
-            if video_id and self._is_valid_video_id(video_id):
-                return video_id
-
-            return None
-
-        except (AttributeError, TypeError, ValueError) as e:
-            logger.debug("Failed to parse YouTube URL '%s': %s", url[:100], e)
-            return None
+        return self._adder.extract_youtube_video_id(
+            url,
+            parse_url=urlparse,
+            extract_video_id_from_parsed_url=self._extract_video_id_from_parsed_url,
+            is_valid_video_id=self._is_valid_video_id,
+            logger=logger,
+        )
 
     def _extract_video_id_from_parsed_url(self, parsed: Any, hostname: str) -> str | None:
         """Extract video ID from a parsed YouTube URL.
@@ -1188,28 +1070,7 @@ class SourcesAPI:
         Returns:
             The raw video ID (not yet validated), or None.
         """
-        # youtu.be short URLs: youtu.be/VIDEO_ID
-        if hostname == "youtu.be":
-            path = parsed.path.lstrip("/")
-            if path:
-                return path.split("/")[0].strip()
-            return None
-
-        # youtube.com path-based formats: /shorts/ID, /embed/ID, /live/ID, /v/ID
-        path_prefixes = ("shorts", "embed", "live", "v")
-        path_segments = parsed.path.lstrip("/").split("/")
-
-        if len(path_segments) >= 2 and path_segments[0].lower() in path_prefixes:
-            return path_segments[1].strip()
-
-        # Query param: ?v=VIDEO_ID (for /watch URLs)
-        if parsed.query:
-            query_params = parse_qs(parsed.query)
-            v_param = query_params.get("v", [])
-            if v_param and v_param[0]:
-                return v_param[0].strip()
-
-        return None
+        return self._adder.extract_video_id_from_parsed_url(parsed, hostname)
 
     def _is_valid_video_id(self, video_id: str) -> bool:
         """Validate YouTube video ID format.
@@ -1223,7 +1084,7 @@ class SourcesAPI:
         Returns:
             True if the video ID format is valid, False otherwise.
         """
-        return bool(video_id and re.match(r"^[a-zA-Z0-9_-]+$", video_id))
+        return self._adder.is_valid_video_id(video_id)
 
     async def _add_youtube_source(self, notebook_id: str, url: str) -> Any:
         """Add a YouTube video as a source.
@@ -1233,23 +1094,15 @@ class SourcesAPI:
         client sees a 5xx / network error. The probe-then-retry loop
         in ``add_url`` owns recovery via ``idempotent_create``.
         """
-        params = [
-            [[None, None, None, None, None, None, None, [url], None, None, 1]],
-            notebook_id,
-            [2],
-            [1, None, None, None, None, None, None, None, None, None, [1]],
-        ]
         # allow_null=False mirrors _register_file_source — ADD_SOURCE on
         # success returns the new source row. A null result with a status
         # code at wrb.fr[5] is the #407 / #474 mode; allow_null=True would
         # swallow that diagnostic. The decoder now raises RPCError with the
         # status code so add_url can wrap it into SourceAddError with detail.
-        return await self._core.rpc_call(
-            RPCMethod.ADD_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=False,
-            disable_internal_retries=True,
+        return await self._adder.add_youtube_source(
+            notebook_id,
+            url,
+            rpc_call=self._rpc_call,
         )
 
     async def _add_url_source(self, notebook_id: str, url: str) -> Any:
@@ -1258,18 +1111,10 @@ class SourcesAPI:
         ``disable_internal_retries=True`` (T7.B2): see
         ``_add_youtube_source`` for the rationale.
         """
-        params = [
-            [[None, None, [url], None, None, None, None, None]],
+        return await self._adder.add_url_source(
             notebook_id,
-            [2],
-            None,
-            None,
-        ]
-        return await self._core.rpc_call(
-            RPCMethod.ADD_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            disable_internal_retries=True,
+            url,
+            rpc_call=self._rpc_call,
         )
 
     async def _register_file_source(self, notebook_id: str, filename: str) -> str:
