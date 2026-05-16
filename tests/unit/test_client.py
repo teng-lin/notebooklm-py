@@ -675,7 +675,7 @@ class TestRpcCallAutoRetry:
     async def test_no_auth_refresh_on_non_auth_error(self):
         """rpc_call should NOT trigger auth refresh on non-auth errors (HTTP 500).
 
-        Note: ``server_error_max_retries=0`` opts out of the T3.A 5xx retry
+        Note: ``server_error_max_retries=0`` opts out of the 5xx retry
         path so this test stays focused on the original assertion — that 500
         does not trigger an auth refresh, regardless of the retry policy.
         """
@@ -917,8 +917,8 @@ class TestRpcCallAutoRetry:
 class TestBuildUrlAuthuser:
     """Regression for #359: batchexecute URL routes non-default profiles.
 
-    T7.F2: ``_build_url`` consumes an ``_AuthSnapshot`` rather than
-    reading ``self.auth`` live, so each test constructs the snapshot
+    ``_build_url`` consumes an ``_AuthSnapshot`` rather than reading
+    ``self.auth`` live, so each test constructs the snapshot
     inline from its ``AuthTokens`` fixture.
     """
 

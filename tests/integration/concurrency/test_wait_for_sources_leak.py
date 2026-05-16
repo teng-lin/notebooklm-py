@@ -14,7 +14,7 @@ Post-fix:
   ``await asyncio.gather(*tasks, return_exceptions=True)`` before re-raising.
 - The public signature is unchanged.
 
-Acceptance invariant (per plan §T7.E1):
+Acceptance invariant:
   invoke ``wait_for_sources(nb, ["bad-id", "slow-id"])`` against a mock that
   errors ``bad-id`` immediately and would poll ``slow-id`` for 60 s; assert the
   slow poll is fully cancelled (its ``CancelledError`` handler has executed)
@@ -44,7 +44,7 @@ async def test_wait_for_sources_cancels_sibling_on_first_failure(auth_tokens):
 
     Bare ``asyncio.gather(*coros)`` cancels siblings on first exception but does
     NOT await them; ``gather`` returns before the cancelled siblings reach their
-    ``except CancelledError`` blocks. T7.E1 makes ``wait_for_sources`` await the
+    ``except CancelledError`` blocks. The fix makes ``wait_for_sources`` await the
     drained siblings before re-raising, so the slow task's cancellation handler
     runs synchronously with respect to the caller.
     """

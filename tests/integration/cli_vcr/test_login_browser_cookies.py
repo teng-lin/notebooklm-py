@@ -29,10 +29,10 @@ from .conftest import notebooklm_vcr, skip_no_cassettes
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
 
-# A sanitized rookiepy cookie payload. Required tier-1 (``SID`` +
-# ``__Secure-1PSIDTS``) plus tier-2 secondary bindings (``APISID`` + ``SAPISID``
-# and ``OSID``) so ``_has_valid_secondary_binding`` is happy and no Tier-2
-# warning is emitted during the test.
+# A sanitized rookiepy cookie payload. Required cookies (``SID`` +
+# ``__Secure-1PSIDTS``) plus the secondary bindings (``APISID`` +
+# ``SAPISID`` and ``OSID``) so ``_has_valid_secondary_binding`` is
+# happy and no secondary-binding warning is emitted during the test.
 SANITIZED_ROOKIEPY_COOKIES: list[dict] = [
     {
         "domain": ".google.com",

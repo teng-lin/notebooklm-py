@@ -168,8 +168,8 @@ class TestArtifactMutations:
     """
 
     @pytest.mark.skip(
-        reason="Replaced by VCR-based replay in tests/integration/test_polling_vcr.py "
-        "(T8.D10): the live generate + wait_for_completion flow regularly exceeded "
+        reason="Replaced by VCR-based replay in tests/integration/test_polling_vcr.py: "
+        "the live generate + wait_for_completion flow regularly exceeded "
         "the 60s pytest timeout. The new test records the polling sequence once "
         "(real wall-clock) and replays it offline with asyncio.sleep monkey-patched "
         "to a no-op, so the same coverage runs in <2s on every CI build."

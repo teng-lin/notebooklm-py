@@ -735,7 +735,7 @@ class TestResearch:
             ]
             # Caller passes task_id="report_123": the first source matches,
             # but the second source's research_task_id="report_456" mismatches
-            # and trips the T7.F3 per-source check.
+            # and trips the per-source task-id check.
             with pytest.raises(ResearchTaskMismatchError) as exc_info:
                 await client.research.import_sources(
                     notebook_id="nb_123",

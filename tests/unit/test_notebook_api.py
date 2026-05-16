@@ -378,7 +378,7 @@ class TestGetNotebookFailsClosed:
         assert notebook.title == "Title Only"
 
     def test_notebook_not_found_error_is_rpc_error(self):
-        """``NotebookNotFoundError`` must be catchable as ``RPCError`` (T3.D contract)."""
+        """``NotebookNotFoundError`` must be catchable as ``RPCError``."""
         assert issubclass(NotebookNotFoundError, RPCError)
         err = NotebookNotFoundError("nb_x", method_id="rwIQyf")
         assert err.notebook_id == "nb_x"

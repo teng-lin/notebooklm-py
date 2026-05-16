@@ -1,6 +1,6 @@
 """Regression guard for the ``ClientCore._save_lock`` contract.
 
-Contract (audit §17, documented at ``_core.py`` next to the lock definition):
+Contract (documented at ``_core.py`` next to the lock definition):
 ``_save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``
 closure, which runs on a worker thread via ``asyncio.to_thread``. It is never
 held by an async context — a
@@ -92,7 +92,7 @@ async def test_save_lock_acquired_off_event_loop_thread(
         "event-loop thread. It must only be acquired inside the _save() "
         "closure dispatched via asyncio.to_thread, otherwise a blocking "
         "threading.Lock on the loop will stall every other coroutine "
-        "(priority inversion / T7.G5)."
+        "(priority inversion)."
     )
     # Belt-and-braces: also compare ident in case some future Thread
     # subclass overrides ``__eq__``/``is`` semantics around object identity.
@@ -229,6 +229,6 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
         f"outside the ``_save`` closure: {offenders!r}. The lock must "
         "ONLY be acquired inside ``_save()`` (run via asyncio.to_thread). "
         "See ``_core_cookie_persistence.py`` "
-        "and audit §17 / T7.G5."
+        "for the contract details."
     )
     assert acquisition_sites, "expected CookiePersistence.save to acquire the save lock"

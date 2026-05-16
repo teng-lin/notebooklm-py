@@ -4,7 +4,7 @@ Focuses on ``_extract_next_turn_content`` — the named extractor that
 replaces the raw ``next_turn[4][0][0]`` deep-index chain in
 :meth:`ChatAPI._parse_turns_to_qa_pairs`. These tests pin the soft-mode
 contract (returns ``None`` on shape drift, never raises) and exercise the
-happy path plus two canonical drift shapes, as required by T8.D2b.
+happy path plus two canonical drift shapes.
 """
 
 from __future__ import annotations

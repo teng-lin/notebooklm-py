@@ -1,7 +1,8 @@
 """Unit tests for ``ClientCore.next_reqid`` and the deprecation guard on
 direct mutation of ``_reqid_counter``.
 
-Covers PR of the - ``next_reqid()`` returns monotonic, post-increment values.
+Covers:
+- ``next_reqid()`` returns monotonic, post-increment values.
 - Custom ``step`` parameter works.
 - ``DeprecationWarning`` is emitted on ``core._reqid_counter = ...`` and on
   ``core._reqid_counter += ...``.
@@ -77,7 +78,7 @@ def test_direct_assignment_warns() -> None:
 
 def test_read_modify_write_warns() -> None:
     """``core._reqid_counter += step`` must warn — this is the existing
-    ``_chat.py`` pattern that T2.D will migrate.
+    ``_chat.py`` pattern targeted for migration.
     """
     core = _make_core()
     with pytest.warns(DeprecationWarning, match="next_reqid"):

@@ -7,7 +7,7 @@ on-wire shape of the **nested-list source-id encoder** for the chat
 endpoint — the audit flagged this path as fragile because the
 encoding has two distinct nesting depths (``[[id]]`` per source, then
 collected into an outer list) and the per-method test coverage prior
-to T8.E6 only exercised the zero-source and one-source cases via the
+to this cassette only exercised the zero-source and one-source cases via the
 default-sources branch (``ask`` calls ``get_source_ids`` itself).
 
 What this guards

@@ -205,7 +205,7 @@ def test_recompute_chunk_prefix_noop_on_plain_body():
 def test_recompute_chunk_prefix_corrects_synthetic_shrinkage():
     """Synthetic chunk that loses N bytes after scrubbing gets a corrected prefix.
 
-    Models the exact T8.D7 acceptance scenario: a header advertising the
+    Models the byte-count re-derivation scenario: a header advertising the
     pre-scrub byte count is rewritten to match the post-scrub payload.
     """
     # Pre-scrub the JSON-wrapped payload was 21 bytes (e.g.
@@ -295,7 +295,7 @@ def test_recompute_chunk_prefix_payload_containing_digits_is_treated_as_payload(
     Guards against an over-eager ``\\d+`` regex: the header detector uses
     ``\\A\\d+\\Z`` anchors so payloads like ``["123"]`` (digits surrounded by
     JSON punctuation) are recognized as non-header content and trigger the
-    rewrite path. Surfaced by gemini-code-assist review of the T8.D7 patch.
+    rewrite path. Surfaced by gemini-code-assist review.
     """
     body = '99\n["123","abc"]\n'
     rewritten = recompute_chunk_prefix(body)
@@ -493,7 +493,7 @@ def test_scrub_response_substitutes_when_env_var_set(monkeypatch, mode):
 
 def test_scrub_response_noop_when_env_var_unset(monkeypatch):
     """With the env var absent, ``scrub_response`` is byte-for-byte the same
-    as before T8.E10 landed — only sensitive-data scrubbing runs."""
+    as before the synthetic-error transport landed — only sensitive-data scrubbing runs."""
     monkeypatch.delenv(ERROR_INJECT_ENV_VAR, raising=False)
     incoming = {
         "status": {"code": 200, "message": "OK"},

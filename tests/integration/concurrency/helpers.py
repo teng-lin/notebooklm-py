@@ -23,8 +23,8 @@ Helpers
 ``with_simulated_cancel(coro, delay, *, label=None)``
     Creates a task from ``coro`` and schedules ``task.cancel()`` after
     ``delay`` seconds. Returns the task's result, or the captured
-    exception (including ``CancelledError``). Used by Phase 2 tests
-    for `asyncio.shield` regressions (T7.C1, T7.C2, T7.C3, T7.C4):
+    exception (including ``CancelledError``). Used by tests for
+    `asyncio.shield` regressions across the concurrency-hardening work:
     cancel one waiter mid-flight, assert sibling work survives.
 
 Non-helpers

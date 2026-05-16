@@ -247,7 +247,7 @@ def _file_contains_best_effort_after_except(filepath: Path, except_line: int) ->
 # (relative-to-SRC_ROOT path, except-line). Lines refer to the `except ...:`
 # statement; the helper scans the 4 lines following it for `# best-effort:`.
 # Note: the previous ``cli/helpers.py:596`` site (``set_current_notebook``'s
-# best-effort rewrite-from-scratch) was retired in T3.E — that branch now
+# best-effort rewrite-from-scratch) was retired — that branch now
 # uses :func:`notebooklm._atomic_io.atomic_update_json` with explicit
 # JSONDecodeError handling that re-runs the mutator on an empty dict.
 _SILENT_SITES = [

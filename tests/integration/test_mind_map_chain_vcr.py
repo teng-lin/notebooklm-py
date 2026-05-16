@@ -13,14 +13,13 @@ that emits **multiple sequential RPCs** in a single call. The flow is:
 A single-RPC cassette per call would not exercise the chain wiring (note-id
 plumbed from CREATE_NOTE's response into UPDATE_NOTE's params). This module
 records ALL THREE RPCs into one cassette so the integration test replays the
-full chain in order — closing the multi-interaction gap that T8.B coverage
-identified.
+full chain in order — closing the multi-interaction coverage gap.
 
 Recording
 ---------
 Pre-condition: the generation notebook (``NOTEBOOKLM_GENERATION_NOTEBOOK_ID``)
-must have at least one ready source attached. T8.B1 added a Wikipedia page
-("NotebookLM - Wikipedia") to ``bb00c9e3-656c-4fd2-b890-2b71e1cf3814``; the
+must have at least one ready source attached. A Wikipedia page
+("NotebookLM - Wikipedia") was added to ``bb00c9e3-656c-4fd2-b890-2b71e1cf3814``; the
 ``source_ids`` list passed below is the single source UUID from that page.
 
 To re-record this cassette::
@@ -57,8 +56,9 @@ from vcr_config import notebooklm_vcr  # noqa: E402
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-# Canonical Tier-8 generation notebook (carries the Wikipedia "NotebookLM"
-# page from T8.B1). The env var override is only consulted when recording —
+# Canonical recording notebook (carries the Wikipedia "NotebookLM"
+# page added during fixture seeding). The env var override is only
+# consulted when recording —
 # during replay the cassette drives the response regardless of notebook ID,
 # but we still need a stable value so the URL ``source-path`` query param
 # matches what was recorded.

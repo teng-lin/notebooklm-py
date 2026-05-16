@@ -4,7 +4,7 @@ Focuses on ``_extract_data_table_rows`` — the named extractor that replaces
 the raw ``raw_data[0][0][0][0][4][2]`` deep-index chain in
 :func:`_parse_data_table`. These tests pin the soft-mode contract (returns
 ``[]`` on shape drift, never raises) and exercise the four canonical drift
-shapes plus the happy path. T8.D2a.
+shapes plus the happy path.
 """
 
 from __future__ import annotations

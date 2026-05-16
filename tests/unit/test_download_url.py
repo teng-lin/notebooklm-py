@@ -102,7 +102,7 @@ def _make_http_status_error(status_code: int) -> httpx.HTTPStatusError:
 
 
 class TestDownloadUrlErrorWrapping:
-    """Pin T3.F: httpx errors become ArtifactDownloadError."""
+    """Pin the contract that httpx errors become ArtifactDownloadError."""
 
     @pytest.mark.asyncio
     async def test_happy_path_returns_output_path(self, mock_artifacts_api):

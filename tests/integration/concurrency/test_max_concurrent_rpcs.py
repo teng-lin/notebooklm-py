@@ -1,20 +1,17 @@
 """Regression test for the ``max_concurrent_rpcs`` semaphore at
 ``_perform_authed_post``.
 
-Audit item §8 (`thread-safety-concurrency-audit.md` §8):
-
-    Pre-fix, ``NotebookLMClient`` exposed no ceiling on simultaneous
-    in-flight RPC POSTs. A FastAPI handler that fanned out a couple
-    hundred ``client.notebooks.list()`` calls in parallel would push
-    all of them through ``_perform_authed_post`` together, exceeding
-    the underlying httpx connection-pool budget and tripping
-    ``httpx.PoolTimeout``. The connection-pool tuning landed in T7.B3
-    raised the default ``max_connections`` to 100, but a default
-    *upstream* gate is still needed because (1) connection-pool
-    saturation surfaces as opaque timeouts rather than clear
-    back-pressure, and (2) batchexecute itself rate-limits heavy
-    fan-out so an explicit knob lets callers tune for their account
-    tier.
+Pre-fix, ``NotebookLMClient`` exposed no ceiling on simultaneous
+in-flight RPC POSTs. A FastAPI handler that fanned out a couple
+hundred ``client.notebooks.list()`` calls in parallel would push
+all of them through ``_perform_authed_post`` together, exceeding
+the underlying httpx connection-pool budget and tripping
+``httpx.PoolTimeout``. The companion connection-pool tuning raised
+the default ``max_connections`` to 100, but a default *upstream*
+gate is still needed because (1) connection-pool saturation
+surfaces as opaque timeouts rather than clear back-pressure, and
+(2) batchexecute itself rate-limits heavy fan-out so an explicit
+knob lets callers tune for their account tier.
 
 Post-fix: a per-instance ``asyncio.Semaphore`` is acquired at
 the top of ``_perform_authed_post`` and released on every exit path.

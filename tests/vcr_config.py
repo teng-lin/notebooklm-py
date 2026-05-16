@@ -32,7 +32,7 @@ When to use VCR vs pytest-httpx:
 Sanitization
 ------------
 Scrub patterns and the byte-count re-derivation helper both live in
-:mod:`tests.cassette_patterns` (T8.A4 + T8.D7). This module deliberately holds
+:mod:`tests.cassette_patterns`. This module deliberately holds
 NO regex literals so we can never drift between "what the recorder scrubs" and
 "what the cassette guard inspects". :func:`scrub_request` / :func:`scrub_response`
 here are thin wrappers that delegate to
@@ -223,7 +223,7 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     no-op on bodies that don't look chunked, so it's safe to call
     unconditionally.
 
-    T8.E10: when ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to a valid mode,
+    Synthetic-error recording: when ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to a valid mode,
     :func:`_substitute_synthetic_error` runs FIRST so that downstream scrub
     steps see the canonical synthetic shape rather than whatever the wire
     produced (the transport wrapper in ``_core.py`` normally already

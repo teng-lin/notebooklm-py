@@ -125,7 +125,7 @@ def test_extract_account_tier_preserves_unknown_tier_string():
 def test_extract_account_tier_maps_all_known_plan_names(tier_string, expected_plan):
     """Every tier in ``_TIER_PLAN_NAMES`` must round-trip through the parser.
 
-    T8.C1: locks in the plan-name lookup table so future tier additions can't
+    Locks in the plan-name lookup table so future tier additions can't
     silently drift between :func:`extract_account_tier` and the
     :class:`AccountTier` ``plan_name`` mapping.
     """
@@ -138,7 +138,7 @@ def test_extract_account_tier_maps_all_known_plan_names(tier_string, expected_pl
 
 
 def test_extract_account_tier_against_recorded_cassette_shape():
-    """Parser handles the real GET_USER_TIER envelope recorded in T8.C1.
+    """Parser handles the real GET_USER_TIER envelope recorded against the live API.
 
     Mirrors the deeply-nested response shape captured by the live API in
     ``tests/cassettes/settings_get_user_tier.yaml`` so the unit test fails

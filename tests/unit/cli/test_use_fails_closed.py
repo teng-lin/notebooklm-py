@@ -77,7 +77,7 @@ class TestNotebookNotFoundIsRPCError:
 
     def test_inherits_from_rpc_error(self):
         # ``except RPCError`` at higher layers must still match — this is the
-        # whole point of widening the base class in T3.D.
+        # whole point of widening the base class in the fail-closed fix.
         assert issubclass(NotebookNotFoundError, RPCError)
 
     def test_carries_notebook_id(self):

@@ -4,7 +4,7 @@ When a CLI command supports ``--json`` and fails, it must emit a parseable
 JSON error payload AND exit with a nonzero status. Otherwise downstream
 automation reads the JSON document, finds an ``error`` field, but
 ``$?`` reports success — the worst-of-both-worlds failure mode that closes
-the loop on the T1.E stdout-purity work.
+the loop on the stdout-purity work.
 
 This sweep parametrizes over every CLI command with a ``--json`` flag and
 asserts both halves of the contract for at least one realistic failure mode.

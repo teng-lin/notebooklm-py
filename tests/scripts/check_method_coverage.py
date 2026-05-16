@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-method RPC coverage gate (Strategic 9, T8.E9).
+"""Per-method RPC coverage gate.
 
 Walks every member of :class:`notebooklm.rpc.types.RPCMethod` and asserts that
 each one has **both**:
@@ -88,14 +88,14 @@ _TEST_REFERENCE_EXCLUDES: frozenset[Path] = frozenset(
     }
 )
 
-# Pre-existing gaps grandfathered in when T8.E9 landed; new methods must NOT
-# be added here. See module docstring for the one-way-ratchet policy. The
-# script's bootstrap step (run once locally before commit) populated this
-# set. Each entry is the ``RPCMethod.<NAME>`` member name (without the
-# ``RPCMethod.`` prefix).
+# Pre-existing gaps grandfathered in when this gate landed; new methods
+# must NOT be added here. See module docstring for the one-way-ratchet
+# policy. The script's bootstrap step (run once locally before commit)
+# populated this set. Each entry is the ``RPCMethod.<NAME>`` member name
+# (without the ``RPCMethod.`` prefix).
 PREEXISTING_GAPS: frozenset[str] = frozenset(
     {
-        # Captured by the bootstrap run at T8.E9 landing. See module docstring
+        # Captured by the bootstrap run when this gate landed. See module docstring
         # for the one-way-ratchet policy: shrink this set when you backfill
         # coverage; never add new entries when introducing a new RPCMethod.
         # ``frozenset`` (not ``set``) so the module-level constant cannot be

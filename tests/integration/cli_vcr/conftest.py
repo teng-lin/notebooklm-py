@@ -65,7 +65,7 @@ def mock_auth_for_vcr():
     auth to avoid requiring real credentials.
 
     The layer-1 ``RotateCookies`` keepalive-poke disable that used to live
-    here (``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1``) was globalized in T8.D4 —
+    here (``NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1``) was globalized —
     see the ``_disable_keepalive_poke_for_vcr`` autouse fixture in
     ``tests/integration/conftest.py``. Every test that pulls this fixture
     also carries ``@pytest.mark.vcr`` (either directly or via a module-level

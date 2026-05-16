@@ -629,7 +629,7 @@ class TestChatAskErrorHandling:
         )
 
         # ``server_error_max_retries=0`` pins the original immediate-raise
-        # contract; T3.A's default retries 5xx + RequestError 3x.
+        # contract; the default retries 5xx + RequestError 3x.
         async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             with pytest.raises(NetworkError, match="timed out"):
                 await client.chat.ask(

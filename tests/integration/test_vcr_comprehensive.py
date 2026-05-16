@@ -40,7 +40,7 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 # — notably ``freq`` on the streaming-chat endpoint — replay also
 # needs to send the SAME notebook_id that was recorded, because the matcher
 # compares slot 7 of the decoded ``f.req`` envelope. We therefore default
-# ``MUTABLE_NOTEBOOK_ID`` to the canonical Tier-8 generation notebook UUID
+# ``MUTABLE_NOTEBOOK_ID`` to the canonical recording notebook UUID
 # used to record the chat cassettes; recording-time runs override
 # this with the real env var.
 READONLY_NOTEBOOK_ID = os.environ.get(
@@ -364,7 +364,7 @@ class TestArtifactsListAPI:
     ):
         """Parser turns INFOGRAPHIC (7) and DATA_TABLE (9) rows into the right kind.
 
-        T8.C6: closes audit finding I21. The two cassettes were already wired
+        The two cassettes were already wired
         into :data:`ARTIFACT_LIST_METHODS`, but the surrounding assertion only
         proved the call replayed — not that the decoder mapped the integer
         type code to the user-facing :class:`ArtifactType` enum. This test

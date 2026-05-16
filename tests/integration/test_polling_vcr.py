@@ -89,8 +89,9 @@ from vcr_config import notebooklm_vcr  # noqa: E402
 
 pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 
-# Canonical Tier-8 generation notebook (carries the Wikipedia "NotebookLM"
-# page from T8.B1). The env var override is only consulted when recording;
+# Canonical recording notebook (carries the Wikipedia "NotebookLM"
+# page added during fixture seeding). The env var override is only
+# consulted when recording;
 # during replay the cassette drives the response regardless of notebook ID.
 MUTABLE_NOTEBOOK_ID = os.environ.get(
     "NOTEBOOKLM_GENERATION_NOTEBOOK_ID",
@@ -199,7 +200,7 @@ class TestPollingReplay:
         immediate-completion shortcut rather than a real poll loop — the
         cassette wouldn't actually exercise the
         ``wait_for_completion`` backoff / progression logic, defeating
-        the purpose of T8.D10.
+        the purpose of this cassette.
 
         The cassette is the source of truth — we parse it directly rather
         than relying on the replay test's side effects so the assertion

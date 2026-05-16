@@ -1010,7 +1010,7 @@ class TestSourceAddDrive:
             assert result.exit_code == 0
 
     def test_source_add_drive_mime_type_no_deprecation_warning(self, runner, mock_auth):
-        """T6.E regression guard: Drive ``--mime-type`` MUST stay deprecation-free.
+        """Regression guard: Drive ``--mime-type`` MUST stay deprecation-free.
 
         The Drive ``--mime-type`` flag is live — it selects the ``DriveMimeType``
         value the API consumes (``google-doc``/``google-slides``/

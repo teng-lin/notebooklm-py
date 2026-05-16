@@ -12,7 +12,7 @@ Demonstrates that:
 
 Semaphore opt-out (max_concurrent_rpcs=None)
 --------------------------------------------
-T7.H1 added a default ``max_concurrent_rpcs=16`` ceiling on in-flight
+The RPC fan-out gate added a default ``max_concurrent_rpcs=16`` ceiling on in-flight
 RPC POSTs. To preserve the *harness* claim that 100 truly-concurrent
 RPCs reach the transport simultaneously (this test's whole point),
 the core is constructed with ``max_concurrent_rpcs=None`` here —
@@ -73,7 +73,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Clien
     that routes through our recording transport.
 
     Passes ``max_concurrent_rpcs=None`` to explicitly disable the
-    T7.H1 RPC-fan-out semaphore so the smoke test continues to
+    RPC-fan-out semaphore so the smoke test continues to
     prove the harness fans out at the *transport* boundary (the
     cap-on semantics are covered by ``test_max_concurrent_rpcs.py``).
     """

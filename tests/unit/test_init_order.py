@@ -502,7 +502,7 @@ def test_client_exposes_artifacts_and_notes(mock_auth: AuthTokens) -> None:
 
 def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> None:
     """``ArtifactsAPI`` must be constructible without ``notes_api`` — that is
-    the whole point of the T6.F decoupling."""
+    the whole point of the mind-map decoupling."""
     core = MagicMock()
     api = ArtifactsAPI(core)
     assert api is not None

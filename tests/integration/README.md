@@ -63,7 +63,7 @@ not a default.
   cassettes are present on disk.
 - `@notebooklm_vcr.use_cassette("cassette_name.yaml")` pins a specific
   cassette to a specific test. Always pair with `@pytest.mark.vcr` (a)
-  for self-documentation and (b) so the T8.D4
+  for self-documentation and (b) so the
   `_disable_keepalive_poke_for_vcr` autouse fixture activates — that
   fixture reads the marker, not the wrapper.
 

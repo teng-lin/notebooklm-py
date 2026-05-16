@@ -1,8 +1,8 @@
 """429 retry budget on ``ClientCore.rpc_call``.
 
-T7.H2 raises the ``rate_limit_max_retries`` default from ``0`` to ``3``
-and adds capped exponential backoff as the sleep fallback when 429
-arrives without a parseable ``Retry-After`` header. Setting
+The rate-limit fix raises the ``rate_limit_max_retries`` default from
+``0`` to ``3`` and adds capped exponential backoff as the sleep fallback
+when 429 arrives without a parseable ``Retry-After`` header. Setting
 ``rate_limit_max_retries=0`` still restores raise-immediately behavior.
 """
 

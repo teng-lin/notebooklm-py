@@ -12,7 +12,7 @@ Post-fix:
   DELETE_NOTE fires via ``asyncio.create_task`` (NOT awaited — re-raise must
   not block on cleanup), then the cancellation re-raises.
 
-Acceptance invariant (per plan §T7.C4):
+Acceptance invariant:
   cancel mid-flight after CREATE_NOTE returns but before UPDATE_NOTE
   completes; assert either
     (a) both succeed (shield wins — UPDATE_NOTE finished within the shielded

@@ -59,11 +59,11 @@ class TestGenerateCommands:
             assert_command_success(result)
 
     def test_mind_map(self, runner, mock_auth_for_vcr, mock_context):
-        """mind-map command drives the same 3-RPC chain T8.C3 captured.
+        """mind-map command drives the same 3-RPC chain captured by the API tests.
 
         ``notebooklm generate mind-map`` calls ``client.artifacts.generate_mind_map``,
         which emits a sequential ``GENERATE_MIND_MAP`` → ``CREATE_NOTE`` →
-        ``UPDATE_NOTE`` chain. T8.C3 already recorded that exact chain in
+        ``UPDATE_NOTE`` chain. The API test suite already recorded that exact chain in
         ``generate_mind_map_chain.yaml`` for the Python-API path; this CLI
         replay test **reuses** that cassette rather than re-recording.
 

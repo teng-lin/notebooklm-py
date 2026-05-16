@@ -1,9 +1,9 @@
-"""Error-path VCR cassettes via T8.E10 synthetic-error plumbing.
+"""Error-path VCR cassettes via the synthetic-error plumbing.
 
 SYNTHETIC error response — validates client exception mapping, not real Google
 error shapes. The cassettes in this module carry the canonical synthetic-error
-shapes from :mod:`tests.cassette_patterns.build_synthetic_error_response` (the
-T8.E10 plumbing landed in PR #638): minimal JSON bodies whose ONLY purpose is
+shapes from :mod:`tests.cassette_patterns.build_synthetic_error_response`
+(the plumbing landed in PR #638): minimal JSON bodies whose ONLY purpose is
 to drive the client's exception-mapping branches in
 ``src/notebooklm/_core.py`` — status code + a stub body, NOT Google's actual
 error response semantics.
@@ -31,7 +31,7 @@ a real-world error shape (e.g. a quota-exhaustion 429 with a real
 
 Recording note (maintainers)
 ----------------------------
-The T8.E10 transport wrapper in ``_core.py`` substitutes the response BEFORE
+The synthetic-error transport wrapper in ``_core.py`` substitutes the response BEFORE
 httpcore is reached — and VCR's record hook patches ``httpcore.
 AsyncConnectionPool.handle_async_request``, so the wrapper ALSO bypasses the
 record hook. As a consequence these cassettes are hand-written from the

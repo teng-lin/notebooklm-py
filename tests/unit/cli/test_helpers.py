@@ -1034,7 +1034,7 @@ class TestRunAsync:
         """Calling run_async from inside a running loop raises a CLI-shaped
         RuntimeError and does NOT leak a 'coroutine was never awaited' warning.
 
-        T7.G4: the guard wraps ``asyncio.run`` and explicitly closes the
+        The nested-loop guard wraps ``asyncio.run`` and explicitly closes the
         coroutine before re-raising so callers see the helpful message,
         not the noisy RuntimeWarning.
         """

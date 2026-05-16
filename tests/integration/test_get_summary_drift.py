@@ -1,8 +1,8 @@
-""" — strict-mode coverage for ``NotebooksAPI.get_summary``.
+"""Strict-mode coverage for ``NotebooksAPI.get_summary``.
 
 The site at ``_notebooks.py:get_summary`` used to swallow ``IndexError`` /
-``TypeError`` from an unguarded ``result[0][0][0]`` descent. T1.B2 migrates
-it to ``safe_index`` so:
+``TypeError`` from an unguarded ``result[0][0][0]`` descent. It was migrated
+to ``safe_index`` so:
 
 * In the default soft rollout (``NOTEBOOKLM_STRICT_DECODE`` unset), drift
   warn-logs and the method still returns ``""`` — preserving legacy semantics

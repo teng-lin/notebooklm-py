@@ -133,7 +133,7 @@ class TestRPCCallHTTPErrors:
     @pytest.mark.asyncio
     async def test_rate_limit_429_with_retry_after_header(self, auth_tokens):
         # Pin ``rate_limit_max_retries=0`` to exercise the raise-immediately
-        # path. T7.H2 raised the default to 3 — the post-retries raise is
+        # path. The rate-limit fix raised the default to 3 — the post-retries raise is
         # covered by ``tests/integration/concurrency/test_rate_limit_default.py``;
         # this test documents the explicit-disable contract.
         async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
@@ -590,7 +590,7 @@ class TestBuildUrlHL:
     This is the load-bearing site for setting the interface language on
     every RPC call.
 
-    T7.F2: ``_build_url`` now requires an ``_AuthSnapshot`` (consumes
+    ``_build_url`` now requires an ``_AuthSnapshot`` (consumes
     ``session_id`` / ``authuser`` / ``account_email`` from it rather
     than reading ``self.auth`` live). Tests construct a snapshot inline
     from the fixture's ``AuthTokens`` so the URL-construction logic is
