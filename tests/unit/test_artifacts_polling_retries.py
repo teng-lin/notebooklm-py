@@ -3,9 +3,56 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from notebooklm._artifact_polling import ArtifactPollingService
 from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
 from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
+
+
+class _FakeTransportProvider:
+    def __init__(
+        self,
+        *,
+        token: object | None = None,
+        begin_error: BaseException | None = None,
+        yield_before_begin_error: bool = False,
+        finish_release: asyncio.Event | None = None,
+    ) -> None:
+        self.poll_registry = PollRegistry()
+        self.token = object() if token is None else token
+        self.begin_error = begin_error
+        self.yield_before_begin_error = yield_before_begin_error
+        self.finish_release = finish_release
+        self.begin_tasks: list[asyncio.Task[object]] = []
+        self.begin_labels: list[str] = []
+        self.begin_task_done_states: list[bool] = []
+        self.finish_tokens: list[object] = []
+        self.finish_started = asyncio.Event()
+        self.finish_finished = asyncio.Event()
+
+    async def begin_transport_post(self, log_label: str) -> object:
+        raise AssertionError(f"unexpected begin_transport_post({log_label!r})")
+
+    async def begin_transport_task(
+        self,
+        task: asyncio.Task[object],
+        log_label: str,
+    ) -> object:
+        self.begin_tasks.append(task)
+        self.begin_labels.append(log_label)
+        self.begin_task_done_states.append(task.done())
+        if self.yield_before_begin_error:
+            await asyncio.sleep(0)
+        if self.begin_error is not None:
+            raise self.begin_error
+        return self.token
+
+    async def finish_transport_post(self, token: object) -> None:
+        self.finish_tokens.append(token)
+        self.finish_started.set()
+        if self.finish_release is not None:
+            await self.finish_release.wait()
+        self.finish_finished.set()
 
 
 @pytest.fixture
@@ -69,6 +116,133 @@ async def test_wait_for_completion_no_retry_on_auth_error(api):
 
         assert api.poll_status.call_count == 1
         assert mock_sleep.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_polling_service_begin_transport_task_receives_spawned_poll_task() -> None:
+    token = object()
+    provider = _FakeTransportProvider(token=token)
+    service = ArtifactPollingService(provider)
+
+    async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        assert (notebook_id, task_id) == ("nb1", "task1")
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    result = await service.wait_for_completion(
+        "nb1",
+        "task1",
+        initial_interval=0.0,
+        max_interval=0.0,
+        timeout=1.0,
+        poll_status=poll_status,
+    )
+
+    assert result.status == "completed"
+    assert len(provider.begin_tasks) == 1
+    poll_task = provider.begin_tasks[0]
+    assert isinstance(poll_task, asyncio.Task)
+    assert poll_task.done()
+    assert poll_task.get_name() == "artifact-poll-nb1-task1"
+    assert provider.begin_task_done_states == [False]
+    assert provider.begin_labels == ["artifact wait task1"]
+    await asyncio.wait_for(provider.finish_finished.wait(), timeout=1.0)
+    assert provider.finish_tokens == [token]
+
+
+@pytest.mark.asyncio
+async def test_polling_service_resolves_wait_before_slow_transport_finish() -> None:
+    token = object()
+    finish_release = asyncio.Event()
+    provider = _FakeTransportProvider(token=token, finish_release=finish_release)
+    service = ArtifactPollingService(provider)
+
+    async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    result = await service.wait_for_completion(
+        "nb1",
+        "task1",
+        initial_interval=0.0,
+        max_interval=0.0,
+        timeout=1.0,
+        poll_status=poll_status,
+    )
+
+    assert result.status == "completed"
+    assert provider.finish_started.is_set()
+    assert not provider.finish_finished.is_set()
+    assert provider.finish_tokens == [token]
+
+    finish_release.set()
+    await asyncio.wait_for(provider.finish_finished.wait(), timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_polling_service_finishes_transport_token_once_after_poll_failure() -> None:
+    token = object()
+    provider = _FakeTransportProvider(token=token)
+    service = ArtifactPollingService(provider)
+
+    async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        raise ValueError(f"poll failed: {notebook_id}/{task_id}")
+
+    with pytest.raises(ValueError, match="poll failed: nb1/task1"):
+        await service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
+
+    assert len(provider.begin_tasks) == 1
+    assert provider.begin_tasks[0].done()
+    await asyncio.wait_for(provider.finish_finished.wait(), timeout=1.0)
+    assert provider.finish_tokens == [token]
+
+
+@pytest.mark.asyncio
+async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fails() -> None:
+    begin_error = RuntimeError("draining")
+    provider = _FakeTransportProvider(
+        begin_error=begin_error,
+        yield_before_begin_error=True,
+    )
+    service = ArtifactPollingService(provider)
+    poll_started = asyncio.Event()
+    poll_cancelled = asyncio.Event()
+    poll_finally = asyncio.Event()
+    release_poll = asyncio.Event()
+
+    async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        poll_started.set()
+        try:
+            await release_poll.wait()
+        except asyncio.CancelledError:
+            poll_cancelled.set()
+            raise
+        finally:
+            poll_finally.set()
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    with pytest.raises(RuntimeError, match="draining"):
+        await service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
+
+    assert poll_started.is_set()
+    assert poll_cancelled.is_set()
+    assert poll_finally.is_set()
+    assert len(provider.begin_tasks) == 1
+    assert provider.begin_tasks[0].cancelled()
+    assert not provider.finish_started.is_set()
+    assert provider.finish_tokens == []
 
 
 @pytest.mark.asyncio
