@@ -21,6 +21,7 @@ from ._core import ClientCore
 from ._env import get_base_url
 from ._idempotency import idempotent_create
 from ._source_listing import SourceLister
+from ._source_polling import SourcePoller
 from ._url_utils import is_youtube_url
 from .exceptions import (
     AuthError,
@@ -37,21 +38,10 @@ from .types import (
     SourceAddError,
     SourceFulltext,
     SourceNotFoundError,
-    SourceProcessingError,
-    SourceTimeoutError,
     _extract_source_url,
 )
 
 logger = logging.getLogger(__name__)
-
-
-# Source type codes where status=3 (ERROR) is transient rather than
-# terminal. Audio/media (10) and unclassified (None / 0) sources can
-# briefly report status=3 during transcription/classification before
-# settling at status=2. All other types (PDFs, web, YouTube, etc.) treat
-# status=3 as a terminal failure. New unknown types default to terminal
-# — fail fast rather than silently looping until timeout. See #391.
-_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
 
 
 _SOURCE_ID_UUID_PATTERN = re.compile(
@@ -154,6 +144,7 @@ class SourcesAPI:
         self._core = core
         self._capabilities = ClientCoreCapabilities(core)
         self._lister = SourceLister(self._rpc_call)
+        self._poller = SourcePoller()
         self._upload_timeout = upload_timeout
 
     async def _rpc_call(
@@ -248,41 +239,18 @@ class SourcesAPI:
             )
             # Now safe to use in chat/artifacts
         """
-        start = monotonic()
-        interval = initial_interval
-        last_status: int | None = None
-
-        while True:
-            # Check timeout before each poll
-            elapsed = monotonic() - start
-            if elapsed >= timeout:
-                raise SourceTimeoutError(source_id, timeout, last_status)
-
-            source = await self.get(notebook_id, source_id)
-
-            if source is None:
-                raise SourceNotFoundError(source_id)
-
-            last_status = source.status
-
-            if source.is_ready:
-                return source
-
-            if source.is_error:
-                if source._type_code not in _TRANSIENT_ERROR_TYPES:
-                    raise SourceProcessingError(source_id, source.status)
-                # For audio (type 10) or unclassified (None / 0) sources,
-                # status=3 can be a transient state during transcription —
-                # keep polling instead of treating it as terminal. See #391.
-
-            # Don't sleep longer than remaining time
-            remaining = timeout - (monotonic() - start)
-            if remaining <= 0:
-                raise SourceTimeoutError(source_id, timeout, last_status)
-
-            sleep_time = min(interval, remaining)
-            await asyncio.sleep(sleep_time)
-            interval = min(interval * backoff_factor, max_interval)
+        return await self._poller.wait_until_ready(
+            notebook_id,
+            source_id,
+            timeout=timeout,
+            initial_interval=initial_interval,
+            max_interval=max_interval,
+            backoff_factor=backoff_factor,
+            get_source=self.get,
+            sleep=asyncio.sleep,
+            monotonic=monotonic,
+            logger=logger,
+        )
 
     async def wait_until_registered(
         self,
@@ -322,37 +290,18 @@ class SourcesAPI:
             SourceProcessingError: If source reports a terminal ERROR for a
                 non-transient source type.
         """
-        start = monotonic()
-        interval = initial_interval
-        last_status: int | None = None
-
-        while True:
-            elapsed = monotonic() - start
-            if elapsed >= timeout:
-                raise SourceTimeoutError(source_id, timeout, last_status)
-
-            source = await self.get(notebook_id, source_id)
-
-            if source is not None:
-                last_status = source.status
-
-                if source.is_error:
-                    if source._type_code not in _TRANSIENT_ERROR_TYPES:
-                        raise SourceProcessingError(source_id, source.status)
-                    # Transient ERROR for audio (type 10) or unclassified
-                    # (None / 0) — keep polling. See #391.
-                else:
-                    # Any non-error status (PROCESSING, READY, PREPARING)
-                    # means the source is registered server-side; we're done.
-                    return source
-
-            remaining = timeout - (monotonic() - start)
-            if remaining <= 0:
-                raise SourceTimeoutError(source_id, timeout, last_status)
-
-            sleep_time = min(interval, remaining)
-            await asyncio.sleep(sleep_time)
-            interval = min(interval * backoff_factor, max_interval)
+        return await self._poller.wait_until_registered(
+            notebook_id,
+            source_id,
+            timeout=timeout,
+            initial_interval=initial_interval,
+            max_interval=max_interval,
+            backoff_factor=backoff_factor,
+            get_source=self.get,
+            sleep=asyncio.sleep,
+            monotonic=monotonic,
+            logger=logger,
+        )
 
     async def wait_for_sources(
         self,
@@ -386,35 +335,14 @@ class SourcesAPI:
                 nb_id, [s.id for s in sources]
             )
         """
-        # T7.E1: a bare ``asyncio.gather(*coros)`` propagates the first
-        # exception but does NOT await the sibling tasks it cancels. The
-        # cancelled siblings are left in a "cancellation requested but not
-        # yet observed" state — their ``finally`` blocks may not have run by
-        # the time we re-raise. That race lets a slow poll keep ticking
-        # against the network after ``wait_for_sources`` already raised to
-        # its caller (audit §5).
-        #
-        # Fix: drive the fan-out as explicit tasks. On any exception, cancel
-        # every pending task and drain them via ``return_exceptions=True``
-        # before re-raising the first failure. The drain guarantees each
-        # sibling has reached its ``except CancelledError`` block before we
-        # return control to the caller.
-        tasks = [
-            asyncio.create_task(self.wait_until_ready(notebook_id, sid, timeout=timeout, **kwargs))
-            for sid in source_ids
-        ]
-        try:
-            return list(await asyncio.gather(*tasks))
-        except BaseException:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            # Drain cancelled (and any already-failed) siblings before
-            # surfacing the original exception. ``return_exceptions=True``
-            # swallows the cancellations and concurrent failures so the
-            # outer ``raise`` still raises the first task's exception.
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
+        return await self._poller.wait_for_sources(
+            notebook_id,
+            source_ids,
+            timeout=timeout,
+            wait_until_ready=self.wait_until_ready,
+            logger=logger,
+            **kwargs,
+        )
 
     async def add_url(
         self,
