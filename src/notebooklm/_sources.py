@@ -3,11 +3,7 @@
 import asyncio
 import builtins
 import logging
-import os
-import re
-import warnings
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 from typing import IO, Any, Literal
@@ -15,26 +11,17 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ._callbacks import maybe_await_callback
+from . import _source_upload
 from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
-from ._env import get_base_url
 from ._source_add import SourceAddService
 from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
+from ._source_upload import SourceUploadPipeline
 from ._url_utils import is_youtube_url
-from .exceptions import (
-    AuthError,
-    NetworkError,
-    RateLimitError,
-    ServerError,
-    ValidationError,
-)
-from .rpc import RPCError, RPCMethod, get_upload_url
-from .rpc.types import SourceStatus
+from .rpc import RPCMethod
 from .types import (
     Source,
-    SourceAddError,
     SourceFulltext,
     SourceNotFoundError,
     _extract_source_url,
@@ -42,69 +29,9 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
-
-_SOURCE_ID_UUID_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-
-
-def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
-    """Locate the SOURCE_ID string in an ADD_SOURCE_FILE response.
-
-    The historical shape was a strictly position-0 walk: ``[[[[id]]]]``. Issue
-    #474 surfaced cases where that walk lands on ``None`` or on the echoed
-    filename and silently fails. Walk the whole structure instead, prefer a
-    UUID-shaped leaf, and fall back to any other id-shaped string that is
-    plausibly not a status label.
-    """
-    uuid_match: str | None = None
-    fallback: str | None = None
-    # Depth guard for malformed/adversarial payloads — Google's real responses
-    # are shallow (≤5 levels), so 50 is generous without risking RecursionError.
-    max_depth = 50
-
-    def walk(node: Any, depth: int) -> None:
-        nonlocal uuid_match, fallback
-        if uuid_match is not None or depth > max_depth:
-            return
-        if isinstance(node, str):
-            candidate = node.strip()
-            if not candidate or candidate == filename:
-                return
-            if _SOURCE_ID_UUID_PATTERN.match(candidate):
-                uuid_match = candidate
-                return
-            # Fallback: reject obvious non-id strings — status labels ("OK",
-            # "DONE", "true"), mime types ("application/pdf"), free-form
-            # messages. An id-shaped string has no embedded whitespace, no
-            # slashes, is at least 4 chars, and contains at least one digit,
-            # hyphen, or underscore (excludes all-alpha status tokens).
-            if fallback is None and _looks_like_id_string(candidate):
-                fallback = candidate
-        elif isinstance(node, list):
-            for child in node:
-                if uuid_match is not None:
-                    return
-                walk(child, depth + 1)
-
-    walk(result, 0)
-    return uuid_match or fallback
-
-
-def _looks_like_id_string(candidate: str) -> bool:
-    """Heuristic for the non-UUID fallback in :func:`_extract_register_file_source_id`.
-
-    Accepts strings that look like an id (`src_pdf`, `source_id_123`) and
-    rejects short status tokens (`OK`, `DONE`, `true`) and structured fields
-    (`application/pdf`, anything with whitespace).
-    """
-    if len(candidate) < 4:
-        return False
-    if any(c in candidate for c in " \t/"):
-        return False
-    # Require at least one digit, hyphen, or underscore — blocks all-alpha
-    # status tokens while still admitting test-style ids like ``src_pdf``.
-    return any(c.isdigit() or c in "-_" for c in candidate)
+_SOURCE_ID_UUID_PATTERN = _source_upload._SOURCE_ID_UUID_PATTERN
+_extract_register_file_source_id = _source_upload._extract_register_file_source_id
+_looks_like_id_string = _source_upload._looks_like_id_string
 
 
 class SourcesAPI:
@@ -145,6 +72,7 @@ class SourcesAPI:
         self._adder = SourceAddService()
         self._lister = SourceLister(self._rpc_call)
         self._poller = SourcePoller()
+        self._uploader = SourceUploadPipeline()
         self._upload_timeout = upload_timeout
 
     async def _rpc_call(
@@ -519,182 +447,24 @@ class SourcesAPI:
             - EPUB: application/epub+zip
             - Word: application/vnd.openxmlformats-officedocument.wordprocessingml.document
         """
-        logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
-        # DEPRECATION-REMOVAL: v0.X.0 — the ``mime_type`` argument is unused by
-        # the resumable-upload pipeline (the server derives the MIME type from
-        # the filename extension). Kept as a positional kwarg for backward
-        # compatibility; callers passing a non-None value get a warning. See
-        # CHANGELOG entry "Deprecated: ``SourcesAPI.add_file`` ``mime_type``
-        # parameter" under ``[Unreleased]`` for the planned removal release.
-        if mime_type is not None:
-            warnings.warn(
-                "mime_type parameter is unused and will be removed in v0.X.0; "
-                "rely on filename extension instead",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if title is not None:
-            title = title.strip()
-            if not title:
-                raise ValidationError("Title cannot be empty or whitespace-only")
-
-        file_path = Path(file_path).resolve()
-
-        # Cheap pre-check. The real existence + regular-file check is
-        # ``open()`` itself (errors with ``FileNotFoundError`` / ``IsADirectoryError``);
-        # these probes give a clearer up-front error AND short-circuit
-        # before we acquire the upload semaphore. They can't replace
-        # the FD-level check below because the file can be swapped between
-        # these probes and the ``open()``; that's the TOCTOU the FD-hold
-        # fix closes.
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        if not file_path.is_file():
-            raise ValidationError(f"Not a regular file: {file_path}")
-
-        filename = file_path.name
-
-        # Step 0–3 run under the upload semaphore so a fan-out caller can't
-        # hold more than ``max_concurrent_uploads`` open FDs at once. The
-        # semaphore is per-instance; see ClientCore.get_upload_semaphore.
-        upload_sem = self._capabilities.get_upload_semaphore()
-        upload_wait_start = monotonic()
-        async with upload_sem:
-            self._capabilities.record_upload_queue_wait(monotonic() - upload_wait_start)
-            # Open the file ONCE here. The FD lives across:
-            #   - the os.fstat() size check (so the size we send to
-            #     ``_start_resumable_upload`` matches the bytes we will
-            #     actually stream),
-            #   - the two RPC calls (registration + upload-session start),
-            #   - the streamed body POST inside ``_upload_file_streaming``.
-            # A racing rename/replace of the path between any of these
-            # points cannot swap the FD's underlying inode out from under
-            # us — closing the TOCTOU window the pre-T7.D3 implementation
-            # had between its ``stat()``-based size probe and the second
-            # ``open()`` inside the streaming helper (audit §23).
-            #
-            # FD ownership handoff:
-            # ``add_file`` opens the FD here and closes it on any
-            # exception raised by the size check OR the two RPCs (the
-            # ``except BaseException`` branch below). The moment
-            # ``_upload_file_streaming`` is invoked, ownership transfers
-            # to the streaming helper, which arranges close-on-done via
-            # ``add_done_callback`` on the shielded finalize task. The
-            # transfer is necessary because T7.C3 keeps the shielded
-            # POST running in the background after a post-finalize
-            # cancel — if ``add_file`` closed the FD here, the background
-            # POST would read from a closed FD and abort, breaking the
-            # T7.C3 dangling-session guarantee.
-            # noqa SIM115: a ``with open(...)`` would close the FD on
-            # exit of the block, but ``_upload_file_streaming`` takes
-            # ownership of the FD via its shielded done-callback (see
-            # the FD-handoff comment above). We close locally only when
-            # the handoff never happens (``handed_off=False`` branch in
-            # the ``finally`` below).
-            file_obj = open(file_path, "rb")  # noqa: SIM115
-            handed_off = False
-            operation_token = None
-            try:
-                # ``os.fstat(fd.fileno())`` reads inode metadata via the
-                # FD itself, not the path — even if the path has been
-                # relinked since ``open()``, this returns the inode we're
-                # about to upload.
-                file_size = os.fstat(file_obj.fileno()).st_size
-                operation_token = await self._core._begin_transport_post(
-                    f"source upload {filename}"
-                )
-
-                # Step 1: Register source intent with RPC → get SOURCE_ID
-                source_id = await self._register_file_source(notebook_id, filename)
-
-                # Step 2: Start resumable upload with the SOURCE_ID from step 1
-                upload_url = await self._start_resumable_upload(
-                    notebook_id, filename, file_size, source_id
-                )
-
-                # Step 3: Stream upload file content (memory-efficient).
-                # Ownership of ``file_obj`` transfers to
-                # ``_upload_file_streaming`` here — the helper closes it
-                # on shielded-task completion (success, error, or the
-                # post-finalize cancel branch). ``handed_off=True``
-                # prevents the local ``finally`` from double-closing.
-                handed_off = True
-                await self._upload_file_streaming(
-                    upload_url,
-                    file_obj,
-                    filename=filename,
-                    on_progress=on_progress,
-                    total_bytes=file_size,
-                )
-            finally:
-                # Close locally ONLY if ownership never transferred —
-                # i.e. ``_upload_file_streaming`` was never invoked
-                # (size-check or RPC raised). After hand-off the
-                # streaming helper owns the close.
-                try:
-                    if operation_token is not None:
-                        await self._core._finish_transport_post(operation_token)
-                finally:
-                    if not handed_off:
-                        file_obj.close()
-
-        # Step 4: Ensure the source is registered server-side BEFORE renaming.
-        # The UPDATE_SOURCE RPC silently no-ops against an unregistered source
-        # (returns success-shaped data, but the title change never propagates),
-        # so a custom-title request must force a brief registration wait even
-        # when the caller passed wait=False. See #388.
-        #
-        # When wait=True the caller asked for full processing; use
-        # wait_until_ready. When only a custom title was supplied, use the
-        # narrower wait_until_registered so wait=False callers don't pay the
-        # full processing latency just to get a rename through.
-        needs_title_rename = title is not None and title != filename
-        if wait:
-            source = await self.wait_until_ready(notebook_id, source_id, timeout=wait_timeout)
-        elif needs_title_rename:
-            # Honor the caller's wait_timeout directly — wait_until_registered
-            # polls and returns on the first PROCESSING/READY status, so the
-            # narrow wait still completes fast for typical sources even when
-            # the upper bound is generous (e.g. long-audio callers passing 300s).
-            source = await self.wait_until_registered(notebook_id, source_id, timeout=wait_timeout)
-        else:
-            # Fire-and-forget placeholder. _type_code is None because the
-            # actual type is determined by the API after processing (PDF,
-            # TEXT, IMAGE, etc.). status=PROCESSING reflects that the source
-            # has been registered but not yet processed — callers can use
-            # wait=True or get() to retrieve the resolved state.
-            source = Source(
-                id=source_id,
-                title=filename,
-                status=SourceStatus.PROCESSING,
-                _type_code=None,  # Placeholder until processed
-            )
-
-        # Step 5: Apply custom title now that the source is registered. The
-        # file-add RPC ignores any title hint, so a separate UPDATE_SOURCE
-        # call is the only way to honor the caller's intent.
-        if title is not None and title != filename:
-            try:
-                renamed = await self.rename(notebook_id, source_id, title)
-                # Only merge the new title onto the waited source. rename()'s
-                # response shape can be sparse (UPDATE_SOURCE sometimes returns
-                # just an id + title) and would otherwise null out _type_code,
-                # url, and created_at that wait_until_ready() populated. Fall
-                # back to the requested title if rename's response omits it.
-                source = replace(source, title=renamed.title or title)
-            except (RPCError, NetworkError):
-                # Don't fail the whole upload if the rename fails — the file is
-                # already uploaded and registered. Surface a warning so the
-                # caller can retry. The registered source (from the forced wait
-                # above) is returned with its server-side title.
-                logger.warning(
-                    "Source %s uploaded but rename to %r failed",
-                    source_id,
-                    title,
-                    exc_info=True,
-                )
-
-        return source
+        return await self._uploader.add_file(
+            notebook_id,
+            file_path,
+            mime_type=mime_type,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            title=title,
+            on_progress=on_progress,
+            deprecation_warning_stacklevel=3,
+            capabilities=self._capabilities,
+            register_file_source=self._register_file_source,
+            start_resumable_upload=self._start_resumable_upload,
+            upload_file_streaming=self._upload_file_streaming,
+            wait_until_ready=self.wait_until_ready,
+            wait_until_registered=self.wait_until_registered,
+            rename=self.rename,
+            logger=logger,
+        )
 
     async def add_drive(
         self,
@@ -1119,59 +889,10 @@ class SourcesAPI:
 
     async def _register_file_source(self, notebook_id: str, filename: str) -> str:
         """Register a file source intent and get SOURCE_ID."""
-        # Note: filename is double-nested: [[filename]], not triple-nested
-        params = [
-            [[filename]],
+        return await self._uploader.register_file_source(
             notebook_id,
-            [2],
-            [1, None, None, None, None, None, None, None, None, None, [1]],
-        ]
-
-        # allow_null=False: ADD_SOURCE_FILE should always return the source id
-        # on success. When the server quietly returns null with a status code
-        # at wrb.fr[5] — the suspected #474 mode for account-routing mismatches
-        # (issues #114, #294) — the decoder enriches the error with that code
-        # and an account-routing hint. Surface that diagnostic to the caller
-        # via SourceAddError, instead of swallowing the null with allow_null=True
-        # and raising a generic "Failed to get SOURCE_ID" with no detail.
-        #
-        # AuthError, RateLimitError, and ServerError are allowed to propagate
-        # unchanged so callers can keep using their specific exception types
-        # for auth-refresh retry, rate-limit back-off, and server-error handling
-        # without having to unwrap SourceAddError.cause.
-        try:
-            result = await self._core.rpc_call(
-                RPCMethod.ADD_SOURCE_FILE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=False,
-            )
-        except (AuthError, RateLimitError, ServerError):
-            raise
-        except RPCError as exc:
-            raise SourceAddError(
-                filename,
-                cause=exc,
-                message=f"Failed to register file source for {filename}: {exc}",
-            ) from exc
-
-        source_id = _extract_register_file_source_id(result, filename)
-        if source_id:
-            return source_id
-
-        # The decoder returned a non-null payload that the walker couldn't
-        # parse — a genuine shape drift, not a null-result rejection. Include
-        # a faithful preview of the actual response (repr, not json — repr
-        # surfaces types the walker rejected) so future drift produces an
-        # actionable bug report (#474).
-        preview = repr(result)
-        if len(preview) > 200:
-            preview = preview[:200] + "..."
-        raise SourceAddError(
             filename,
-            message=(
-                f"Failed to get SOURCE_ID from registration response. Response shape: {preview}"
-            ),
+            rpc_call=self._rpc_call,
         )
 
     async def _start_resumable_upload(
@@ -1182,54 +903,15 @@ class SourcesAPI:
         source_id: str,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
-        import json
-
-        auth_route = self._capabilities.authuser_header()
-        base_url = get_base_url()
-        url = f"{get_upload_url()}?{self._capabilities.authuser_query()}"
-
-        headers = {
-            "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            "Origin": base_url,
-            "Referer": f"{base_url}/",
-            "x-goog-authuser": auth_route,
-            "x-goog-upload-command": "start",
-            "x-goog-upload-header-content-length": str(file_size),
-            "x-goog-upload-protocol": "resumable",
-        }
-
-        body = json.dumps(
-            {
-                "PROJECT_ID": notebook_id,
-                "SOURCE_NAME": filename,
-                "SOURCE_ID": source_id,
-            }
+        return await self._uploader.start_resumable_upload(
+            notebook_id,
+            filename,
+            file_size,
+            source_id,
+            capabilities=self._capabilities,
+            resolve_upload_timeout=self._resolve_upload_timeout,
+            async_client_factory=httpx.AsyncClient,
         )
-
-        # Pass the live cookie jar (not a flat Cookie header) so httpx scopes
-        # cookies by Domain attribute, matching browser behavior. The /upload/_/
-        # endpoint is served by Scotty, which validates host-sensitive cookies
-        # (notably OSID) against the request host: an OSID issued for
-        # myaccount.google.com leaked to notebooklm.google.com is rejected with
-        # HTTP 500 and x-goog-upload-status: final. A real browser would never
-        # send the foreign-host OSID; Domain-scoping the jar enforces the same.
-        # Using get_http_client().cookies (instead of auth.cookie_jar) so we
-        # pick up SIDCC/SIDTS rotations applied during the live session. See #373.
-        async with httpx.AsyncClient(
-            timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
-            cookies=self._capabilities.live_cookies(),
-        ) as client:
-            response = await client.post(url, headers=headers, content=body)
-            response.raise_for_status()
-
-            upload_url = response.headers.get("x-goog-upload-url")
-            if not upload_url:
-                raise SourceAddError(
-                    filename, message="Failed to get upload URL from response headers"
-                )
-
-            return upload_url
 
     async def _upload_file_streaming(
         self,
@@ -1297,162 +979,18 @@ class SourcesAPI:
                 path; inferred from the path for legacy direct-call tests when
                 omitted.
         """
-        # Discriminate: caller passed an open FD (the T7.D3 add_file path),
-        # or a Path (legacy direct-call test path — opens locally). The
-        # ``add_file`` callsite always takes the FD branch; the Path branch
-        # exists only so the existing _upload_file_streaming unit tests
-        # don't need to set up their own ``open()`` machinery.
-        path_fallback: Path | None = file_obj if isinstance(file_obj, Path) else None
-        # The "donecallback wired" sentinel — flipped to True only AFTER
-        # ``add_done_callback`` registers the FD-close hook on
-        # ``finalize_task``. If the function raises BEFORE that flip,
-        # we synchronously close the FD ourselves so a caller that
-        # transferred ownership doesn't leak.
-        close_wired = False
-        try:
-            base_url = get_base_url()
-            auth_route = self._capabilities.authuser_header()
-            headers = {
-                "Accept": "*/*",
-                "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-                "x-goog-authuser": auth_route,
-                "Origin": base_url,
-                "Referer": f"{base_url}/",
-                "x-goog-upload-command": "upload, finalize",
-                "x-goog-upload-offset": "0",
-            }
-            diag_name = filename or (path_fallback.name if path_fallback is not None else "<file>")
-            logger.debug("Streaming upload to %s for %s", upload_url, diag_name)
-            if total_bytes is None and path_fallback is not None:
-                total_bytes = path_fallback.stat().st_size
-            progress_total = total_bytes if total_bytes is not None else 0
-            uploaded_bytes = 0
-
-            if on_progress is not None:
-                await maybe_await_callback(on_progress, uploaded_bytes, progress_total)
-
-            # Stream the file content instead of loading it all into memory.
-            # When the caller passed an FD, we read directly from it (single
-            # open() per add_file call). When the caller passed a Path
-            # (legacy direct-call), we open here as a one-off helper whose
-            # ``with`` closes the locally-opened FD when the generator ends.
-            async def file_stream():
-                nonlocal uploaded_bytes
-                # T7.D2 / audit §22: chunk reads are synchronous file I/O.
-                # On slow storage (network FS, encrypted home, large PDFs
-                # served from a cold cache) a bare ``f.read(65536)`` from
-                # an ``async`` context stalls the entire event loop for
-                # the duration of each chunk read. Wrap each read with
-                # ``asyncio.to_thread`` so the blocking syscall runs on
-                # the default thread executor and sibling tasks (auth
-                # refresh, heartbeats, the cancellation watchdog above)
-                # keep making progress while bytes stream in.
-                if path_fallback is not None:
-                    with open(path_fallback, "rb") as f:
-                        while chunk := await asyncio.to_thread(f.read, 65536):  # 64KB chunks
-                            uploaded_bytes += len(chunk)
-                            if on_progress is not None:
-                                await maybe_await_callback(
-                                    on_progress, uploaded_bytes, progress_total
-                                )
-                            yield chunk
-                    return
-                # FD path: caller transferred ownership to this helper; we
-                # do NOT use a ``with`` here — the FD is closed by the
-                # done-callback on ``finalize_task`` below so the shielded
-                # background task can still read from it under post-finalize
-                # cancel.
-                assert not isinstance(file_obj, Path)  # narrowed by branch above
-                while chunk := await asyncio.to_thread(file_obj.read, 65536):  # 64KB chunks
-                    uploaded_bytes += len(chunk)
-                    if on_progress is not None:
-                        await maybe_await_callback(on_progress, uploaded_bytes, progress_total)
-                    yield chunk
-
-            # `finalize_started` flips after the local ``httpx.AsyncClient``
-            # context enters and immediately before ``client.post(...)``. There
-            # is no ``await`` between the flip and the POST, so asyncio cannot
-            # deliver a cancel in that window — once the flag is True, the
-            # request is effectively in flight. On cancel we discriminate:
-            #   - True  → shield is keeping the in-flight POST alive; just re-raise.
-            #   - False → no POST went out, so fire a best-effort Scotty cancel.
-            finalize_started = False
-
-            async def _do_finalize() -> None:
-                nonlocal finalize_started
-                # See _start_resumable_upload: pass the live cookie jar so
-                # httpx scopes cookies per Domain attribute. Scotty validates
-                # OSID against host and rejects foreign-host cookies. (#373)
-                async with httpx.AsyncClient(
-                    timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
-                    cookies=self._capabilities.live_cookies(),
-                ) as client:
-                    finalize_started = True
-                    response = await client.post(upload_url, headers=headers, content=file_stream())
-                    response.raise_for_status()
-
-            def _on_finalize_done(t: asyncio.Task[None]) -> None:
-                # Close the FD owned-by-this-helper (T7.D3 ownership transfer).
-                # Fires whether the task completed normally, raised, or was
-                # cancelled — including the post-finalize background-drain
-                # branch where the caller is long gone. The Path-branch
-                # closes its FD inside the generator's ``with`` block and
-                # does NOT need this hook.
-                if path_fallback is None:
-                    # path_fallback is None ⇔ file_obj is not a Path (see
-                    # line 1545 where path_fallback is derived).
-                    try:
-                        file_obj.close()  # type: ignore[union-attr]
-                    except Exception as close_exc:  # noqa: BLE001 — defensive
-                        # Already-closed / detached FD: harmless. Log at debug
-                        # so a real misconfiguration is still discoverable.
-                        logger.debug("Caller FD close in finalize-done failed: %r", close_exc)
-                # On post-finalize cancel, ``finalize_task`` keeps running in
-                # the background. Without this callback, an unawaited
-                # exception (e.g. server 5xx) would surface as a noisy
-                # "Task exception was never retrieved" asyncio warning.
-                if not t.cancelled() and (exc := t.exception()) is not None:
-                    logger.debug("Background finalize POST failed: %r", exc)
-
-            finalize_task = asyncio.create_task(_do_finalize())
-            finalize_task.add_done_callback(_on_finalize_done)
-            # FD-close is now wired to fire on task completion. Even if the
-            # ``await asyncio.shield(...)`` below raises, the done-callback
-            # will close the caller-owned FD when the (possibly cancelled,
-            # possibly shielded-into-the-background) task transitions to
-            # done. From this point we no longer need the synchronous
-            # ``finally`` fallback.
-            close_wired = True
-            try:
-                await asyncio.shield(finalize_task)
-            except asyncio.CancelledError:
-                if not finalize_started:
-                    # Pre-finalize cancel: the POST never went out. Cancel
-                    # the still-setting-up inner task and fire a best-effort
-                    # Scotty cancel so the resumable upload session doesn't
-                    # dangle until the server's GC sweeps it.
-                    finalize_task.cancel()
-                    asyncio.create_task(
-                        self._cancel_upload_session(upload_url, base_url, auth_route)
-                    )
-                # Post-finalize cancel: asyncio.shield is keeping the inner
-                # task alive; let it run to completion in the background,
-                # then propagate the cancel as the caller requested.
-                raise
-        except BaseException:
-            # Pre-task-creation raise (or pre-``add_done_callback`` raise):
-            # nothing else will close the caller-owned FD. Do it
-            # synchronously so a transferred FD doesn't leak. Once the
-            # done-callback is wired (``close_wired=True``), the task's
-            # done-callback handles close on every termination path,
-            # so we skip the local close to avoid double-close.
-            if not close_wired and path_fallback is None:
-                # path_fallback is None ⇔ file_obj is not a Path.
-                try:
-                    file_obj.close()  # type: ignore[union-attr]
-                except Exception as close_exc:  # noqa: BLE001 — defensive
-                    logger.debug("Caller FD close on pre-wire exception failed: %r", close_exc)
-            raise
+        return await self._uploader.upload_file_streaming(
+            upload_url,
+            file_obj,
+            filename=filename,
+            on_progress=on_progress,
+            total_bytes=total_bytes,
+            capabilities=self._capabilities,
+            resolve_upload_timeout=self._resolve_upload_timeout,
+            async_client_factory=httpx.AsyncClient,
+            cancel_upload_session=self._cancel_upload_session,
+            logger=logger,
+        )
 
     async def _cancel_upload_session(self, upload_url: str, base_url: str, auth_route: str) -> None:
         """Best-effort POST a Scotty resumable-upload cancel command.
@@ -1468,19 +1006,11 @@ class SourcesAPI:
         outer await chain that can deliver a cancellation here, so no
         extra shield is needed at this layer.
         """
-        headers = {
-            "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-            "x-goog-authuser": auth_route,
-            "Origin": base_url,
-            "Referer": f"{base_url}/",
-            "x-goog-upload-command": "cancel",
-        }
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(10.0, read=10.0),
-                cookies=self._capabilities.live_cookies(),
-            ) as client:
-                await client.post(upload_url, headers=headers)
-        except Exception as exc:  # noqa: BLE001 — best-effort cleanup
-            logger.debug("Best-effort Scotty cancel for %s failed: %r", upload_url, exc)
+        await self._uploader.cancel_upload_session(
+            upload_url,
+            base_url,
+            auth_route,
+            capabilities=self._capabilities,
+            async_client_factory=httpx.AsyncClient,
+            logger=logger,
+        )

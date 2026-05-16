@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError, RPCError, ValidationError
 from notebooklm.rpc.types import SourceStatus
@@ -75,6 +76,9 @@ def _self_core_http_client_cookies_read(node: ast.AST) -> bool:
         SourcesAPI._start_resumable_upload,
         SourcesAPI._upload_file_streaming,
         SourcesAPI._cancel_upload_session,
+        SourceUploadPipeline.start_resumable_upload,
+        SourceUploadPipeline.upload_file_streaming,
+        SourceUploadPipeline.cancel_upload_session,
     ],
 )
 def test_upload_helpers_do_not_read_core_auth_or_live_cookies_directly(helper):
@@ -854,11 +858,12 @@ class TestAddFile:
             mock_client.post.side_effect = [mock_start_response, mock_upload_response]
             mock_client_cls.return_value = mock_client
 
-            with pytest.warns(DeprecationWarning, match="mime_type"):
+            with pytest.warns(DeprecationWarning, match="mime_type") as caught:
                 result = await sources_api.add_file("nb_123", str(test_file), mime_type="image/png")
 
         # Deprecation is non-fatal: the upload still completes normally.
         assert result.id == "src_png"
+        assert caught[0].filename.endswith("test_sources_upload.py")
 
     @pytest.mark.asyncio
     async def test_add_file_mime_type_none_does_not_warn(self, sources_api, mock_core, tmp_path):

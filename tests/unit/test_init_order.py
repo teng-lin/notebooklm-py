@@ -25,14 +25,8 @@ from notebooklm.client import NotebookLMClient
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 
-# TODO(architecture-remediation): later capability-migration tasks should move
-# these feature APIs off ClientCore private state and then shrink this baseline
-# to an empty set. Until then, this guard blocks new direct private-state access
-# without failing the legitimate pre-extraction call sites.
-_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS = {
-    ("_sources.py", "_begin_transport_post"): 1,
-    ("_sources.py", "_finish_transport_post"): 1,
-}
+# Feature APIs should not reach into ClientCore private state directly.
+_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS: dict[tuple[str, str], int] = {}
 
 _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "__init__.py",
