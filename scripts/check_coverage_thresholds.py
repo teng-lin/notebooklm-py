@@ -1,12 +1,12 @@
 """Assert pyproject.toml `fail_under` matches `.github/workflows/test.yml` `--cov-fail-under`.
 
-Prevents the drift bug where CI claimed 70% and pyproject claimed 90% until
-they were aligned manually.
+Prevents the two values from drifting (e.g. CI passing at 70% while pyproject
+demands 90%, or vice versa) by failing CI whenever they disagree.
 
 When ``--coverage-json`` is provided, additionally enforces per-file floors
 declared in ``[tool.notebooklm.per_file_coverage_floors]``. Coverage.py's
 ``[tool.coverage.report]`` only supports a global ``fail_under``, so individual
-files that historically lag the project-wide 90% are guarded by this script.
+files that lag the project-wide 90% are guarded by this script.
 
 Usage:
     python scripts/check_coverage_thresholds.py

@@ -11,7 +11,7 @@ Why this script exists
 The avatar-URL scrubber (PR #565) added
 ``lh3.googleusercontent.com/(?:a|ogw)/<token>`` → ``SCRUBBED_AVATAR_URL`` to
 the canonical pattern registry, but the ~67 cassettes recorded BEFORE that
-pattern landed still embed the raw avatar URLs. They were enumerated in
+pattern landed still embed the raw avatar URLs. They are listed in
 ``tests/scripts/cassette_repair_allowlist.txt`` under the "/ogw/ avatar URL
 group" header; this script is the one-off tool that walks each of those
 cassettes, re-scrubs them in place, and reports a byte-level diff so reviewers

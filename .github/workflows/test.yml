@@ -117,8 +117,8 @@ jobs:
 
     - name: Assert cassettes are sanitized
       # Runs on all matrix entries (ubuntu, macos, windows × 5 Python versions).
-      # The legacy bash gate was replaced by a portable Python invocation so the
-      # check runs uniformly across the cross-platform test matrix.
+      # An earlier bash-only gate was replaced by a portable Python invocation
+      # so the check runs uniformly across the cross-platform test matrix.
       run: uv run python tests/scripts/check_cassettes_clean.py
 
     - name: Run tests with coverage
