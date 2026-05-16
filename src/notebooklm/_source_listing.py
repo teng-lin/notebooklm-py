@@ -78,7 +78,7 @@ class SourceLister:
         *,
         strict: bool,
     ) -> builtins.list[Any] | None:
-        if not notebook or not isinstance(notebook, builtins.list) or len(notebook) == 0:
+        if not notebook or not isinstance(notebook, builtins.list):
             return self._handle_malformed_list_response(
                 notebook_id,
                 "Empty or invalid notebook response when listing sources for %s "
@@ -116,10 +116,11 @@ class SourceLister:
         strict: bool,
         error_detail: str = "API response structure changed",
     ) -> None:
+        # Preserve the historical message prefix so log searches on
+        # "SourcesAPI.list:" continue to match after the service extraction.
         logger.warning("SourcesAPI.list: " + message, notebook_id, *log_args)
         if strict:
             raise RPCError(f"Could not list sources for {notebook_id}: {error_detail}")
-        return None
 
     @staticmethod
     def _parse_source(src: Any) -> Source | None:

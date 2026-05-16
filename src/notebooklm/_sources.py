@@ -207,7 +207,7 @@ class SourcesAPI:
         return await self._lister.get(
             notebook_id,
             source_id,
-            list_sources=lambda current_notebook_id: self.list(current_notebook_id),
+            list_sources=self.list,
         )
 
     async def wait_until_ready(

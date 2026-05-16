@@ -93,6 +93,7 @@ async def test_malformed_payloads_log_and_return_empty(
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
+        (None, "API response structure changed"),
         ([], "API response structure changed"),
         (["notebook"], "API response structure changed"),
         ([["Notebook"]], "API response structure changed"),
@@ -307,6 +308,25 @@ async def test_get_filters_list_results() -> None:
     assert source is not None
     assert source.id == "src_2"
     assert source.title == "Two"
+
+
+@pytest.mark.asyncio
+async def test_get_returns_none_when_source_not_found() -> None:
+    lister = SourceLister(
+        RecordingRpc(
+            [
+                [
+                    "Notebook",
+                    [
+                        source_entry("src_1", title="One"),
+                        source_entry("src_2", title="Two"),
+                    ],
+                ]
+            ]
+        )
+    )
+
+    assert await lister.get("nb_123", "missing") is None
 
 
 @pytest.mark.asyncio
