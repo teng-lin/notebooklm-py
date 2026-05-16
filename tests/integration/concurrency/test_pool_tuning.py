@@ -1,4 +1,4 @@
-"""Regression test for T7.B3 — httpx connection-pool tuning via ConnectionLimits.
+"""Regression test for the httpx connection-pool tuning via ConnectionLimits.
 
 Audit item #3 (`thread-safety-concurrency-audit.md` §3, also §19):
 Pre-fix, `ClientCore.open()` instantiated `httpx.AsyncClient(...)` with

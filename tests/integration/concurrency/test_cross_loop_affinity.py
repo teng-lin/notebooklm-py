@@ -1,4 +1,4 @@
-"""Regression test for T7.G2 — event-loop affinity guard.
+"""Regression test for the event-loop affinity guard.
 
 Audit item §14 (`thread-safety-concurrency-audit.md` §14):
 Pre-fix, ``ClientCore`` carried asyncio primitives (``_reqid_lock``,

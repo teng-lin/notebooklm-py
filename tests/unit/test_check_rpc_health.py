@@ -2,7 +2,7 @@
 
 The nightly canary previously exited ``0`` on every ``ERROR`` status by
 labelling them "transient". That meant a silently-broken canary stayed
-green in CI while the Tier-1 drift detector was effectively offline.
+green in CI while the drift detector was effectively offline.
 
 These tests pin down the new policy:
 

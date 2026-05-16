@@ -1,4 +1,4 @@
-"""Regression test for T7.D2 — upload chunk reads must not block the event loop.
+"""Regression test for the upload chunk reads must not block the event loop.
 
 Audit item §22 (``thread-safety-concurrency-audit.md`` §22):
 

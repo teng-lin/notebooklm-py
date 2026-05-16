@@ -1759,8 +1759,8 @@ class TestAllowedCookieDomains:
 
         Pins the union so external code that still imports the old constant
         keeps working. Internal callers should prefer the explicit
-        REQUIRED/OPTIONAL constants — see the T5.G migration note in
-        ``src/notebooklm/auth.py``.
+        REQUIRED/OPTIONAL constants — see the cookie-domain split
+        migration note in ``src/notebooklm/auth.py``.
         """
         from notebooklm.auth import (
             ALLOWED_COOKIE_DOMAINS,
@@ -1773,7 +1773,7 @@ class TestAllowedCookieDomains:
     def test_required_cookie_domains_preserve_normalization_variants(self):
         """REQUIRED keeps both host and dotted variants of each domain.
 
-        Codex caution (T5.G plan): http.cookiejar may normalize
+        Codex caution from the cookie-domain split design: http.cookiejar may normalize
         ``Domain=accounts.google.com`` to ``.accounts.google.com``. If
         REQUIRED only contained one variant, the next extraction would
         silently drop the cookie. Pin both forms here.
@@ -2020,9 +2020,10 @@ class TestIsAllowedAuthDomain:
         """YouTube cookies pass the runtime gate so ``--include-domains=youtube``
         works end-to-end.
 
-        T5.G enforces blast-radius reduction at *extraction* time
-        (rookiepy is asked for :data:`REQUIRED_COOKIE_DOMAINS` only).
-        The runtime gate stays permissive over the full union
+        The cookie-domain split enforces blast-radius reduction at
+        *extraction* time (rookiepy is asked for
+        :data:`REQUIRED_COOKIE_DOMAINS` only). The runtime gate stays
+        permissive over the full union
         (:data:`ALLOWED_COOKIE_DOMAINS`) so opted-in YouTube cookies
         survive ``convert_rookiepy_cookies_to_storage_state``,
         ``extract_cookies_with_domains``, and
@@ -2409,8 +2410,8 @@ class TestLoadHttpxCookiesRegional:
 class TestSiblingGoogleProductExtraction:
     """Cookie extraction behavior for sibling Google product domains.
 
-    T5.G enforces blast-radius reduction at *extraction* time
-    (``_build_google_cookie_domains`` defaults to
+    The cookie-domain split enforces blast-radius reduction at
+    *extraction* time (``_build_google_cookie_domains`` defaults to
     :data:`REQUIRED_COOKIE_DOMAINS`, so rookiepy never returns YouTube
     cookies unless the user opts in). The runtime gate stays permissive
     over the full union so that opted-in cookies survive every downstream
@@ -2987,7 +2988,7 @@ class TestConvertRookiepyCookies:
     def test_sibling_google_product_subdomains_kept(self):
         """Auth conversion keeps sibling Google subdomain cookies (after the fix).
 
-        T5.G narrowed the runtime gate from the union to REQUIRED, but the
+        The cookie-domain split narrowed the runtime gate from the union to REQUIRED, but the
         ``.google.com`` suffix branch of :func:`_is_allowed_cookie_domain`
         still accepts cookies on Drive / Docs / myaccount / Mail. Only
         ``youtube.com`` (which is not a subdomain of ``.google.com``) is

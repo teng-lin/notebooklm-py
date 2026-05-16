@@ -1,4 +1,4 @@
-"""Regression test for T7.C3 — shield upload finalize + Scotty cancel cleanup.
+"""Regression test for the shield upload finalize + Scotty cancel cleanup.
 
 Audit item §9: pre-fix, a `CancelledError` arriving mid-`_upload_file_streaming`
 abandoned the in-flight `"upload, finalize"` POST without waiting for the

@@ -1,4 +1,4 @@
-"""Tier-1 T1.B2 — strict-mode coverage for ``NotebooksAPI.get_summary``.
+""" — strict-mode coverage for ``NotebooksAPI.get_summary``.
 
 The site at ``_notebooks.py:get_summary`` used to swallow ``IndexError`` /
 ``TypeError`` from an unguarded ``result[0][0][0]`` descent. T1.B2 migrates

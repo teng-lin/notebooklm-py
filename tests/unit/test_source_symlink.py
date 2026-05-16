@@ -112,7 +112,7 @@ def _invoke(runner: CliRunner, mock_client: MagicMock, argv: list[str]):
 
 
 class TestAutoDetectFilePath:
-    """Auto-detect (no ``--type``) branch — the original PR-T5.C surface."""
+    """Auto-detect (no ``--type``) branch — the original PR surface."""
 
     def test_plain_regular_file_uploads(self, runner, mock_auth, tmp_path: Path) -> None:
         """A non-symlinked file passes the gate and is uploaded.

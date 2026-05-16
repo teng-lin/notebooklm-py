@@ -22,8 +22,7 @@ the rare race — the relaxed invariant is captured in
 ``tests/unit/test_refresh_lock_registry.py``
 ``test_two_loops_at_most_two_refreshes``.
 
-Acceptance (per
-``.sisyphus/plans/tier-7-thread-safety-concurrency/phase-2-wave-4.md#T7.F4``):
+Acceptance criteria:
 
     Two callers triggering refresh concurrently while ``_run_refresh_cmd``
     fails on the first; assert the second still sees a refresh attempt
@@ -44,10 +43,8 @@ import pytest
 
 from notebooklm import auth as auth_mod
 
-# Mock-only tests (no real HTTP, no cassette) — opt out of the T8.D11
-# tier-enforcement hook in ``tests/integration/conftest.py``. Marker
-# was missed when this file landed (PR #621 T7.F4 merged the same day
-# as PR #622 T8.D11 tier-enforcement).
+# Mock-only tests (no real HTTP, no cassette) — opt out of the
+# integration-tree enforcement hook in ``tests/integration/conftest.py``.
 pytestmark = pytest.mark.allow_no_vcr
 
 

@@ -1,4 +1,4 @@
-"""Tier-5 PR-T5.A — ``_run_refresh_cmd`` shell-injection hardening.
+"""Tier-5 PR — ``_run_refresh_cmd`` shell-injection hardening.
 
 Pins the contract that ``NOTEBOOKLM_REFRESH_CMD`` defaults to ``shell=False``
 via :func:`shlex.split`, with an explicit opt-in for the legacy ``shell=True``

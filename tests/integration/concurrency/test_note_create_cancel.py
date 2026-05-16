@@ -1,4 +1,4 @@
-"""Regression test for T7.C4 — shield UPDATE_NOTE finalize, cleanup on cancel.
+"""Regression test for the shield UPDATE_NOTE finalize, cleanup on cancel.
 
 Audit item §28: ``_mind_map.create_note`` issued CREATE_NOTE then UPDATE_NOTE
 back-to-back. A cancellation arriving after CREATE_NOTE returned but before

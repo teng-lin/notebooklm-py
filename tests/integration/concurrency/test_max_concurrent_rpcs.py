@@ -1,4 +1,4 @@
-"""Regression test for T7.H1 — ``max_concurrent_rpcs`` semaphore at
+"""Regression test for the ``max_concurrent_rpcs`` semaphore at
 ``_perform_authed_post``.
 
 Audit item §8 (`thread-safety-concurrency-audit.md` §8):

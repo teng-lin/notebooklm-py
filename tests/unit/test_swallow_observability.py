@@ -1,7 +1,4 @@
-"""Tests for Phase 1 T3 — categorized observability at 12 swallowed-exception sites.
-
-See .sisyphus/plans/phase-1-implementation.md for the inventory and rationale.
-"""
+"""Tests for categorized observability at 12 swallowed-exception sites."""
 
 from __future__ import annotations
 
@@ -110,7 +107,7 @@ def test_qa_pairs_warns_on_unguarded_shape(caplog):
 async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
     """_notebooks.py: summary extraction warns when result[0][0][0] raises.
 
-    Tier-1 T1.B2 migrated this site to ``safe_index``; the warning message
+    This site was migrated to ``safe_index``; the warning message
     now comes from ``notebooklm.rpc._safe_index`` and carries the call-site
     label ``source='_notebooks.get_summary'`` instead of the notebook id.
     """

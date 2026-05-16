@@ -1,8 +1,4 @@
-"""Tests for notebooklm._logging — credential redaction and configuration.
-
-Phase 0 of the gap remediation plan. See .sisyphus/plans/phase-0-implementation.md
-for design rationale.
-"""
+"""Tests for notebooklm._logging — credential redaction and configuration."""
 
 from __future__ import annotations
 

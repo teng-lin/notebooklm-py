@@ -1,9 +1,9 @@
-"""Tests for the T5.G cookie-domain blast-radius split.
+"""Tests for the cookie-domain blast-radius split.
 
 Pins the two-layer contract:
 
 * ``REQUIRED_COOKIE_DOMAINS`` is the default *extraction* set fed to
-  rookiepy. This is the load-bearing T5.G control: sibling-product
+  rookiepy. This is the canonical enforcement point: sibling-product
   cookies (YouTube, etc.) never reach ``storage_state.json`` unless
   the user opts in via ``--include-domains`` on
   ``notebooklm login`` / ``notebooklm auth refresh`` /
@@ -256,7 +256,7 @@ class TestResolveOptionalCookieDomains:
 class TestBlastRadiusExtractor:
     """Blast-radius reduction is enforced at extraction time, not runtime.
 
-    T5.G plan: rookiepy is asked only for ``REQUIRED_COOKIE_DOMAINS`` by
+    Contract: rookiepy is asked only for ``REQUIRED_COOKIE_DOMAINS`` by
     default. Sibling-product cookies (YouTube) therefore never enter
     ``storage_state.json`` unless the user explicitly opts in. The
     downstream runtime gate is permissive over the full union so
@@ -368,7 +368,7 @@ class TestBlastRadiusExtractor:
 
 
 class TestTokenVerificationStillWorksAfterMinimumSet:
-    """Token-verification regression test (load-bearing per T5.G plan).
+    """Token-verification regression test (load-bearing for the cookie-domain split).
 
     Asserts that a storage_state.json built from the minimum REQUIRED set
     still satisfies the auth-jar construction path — i.e. the same flow

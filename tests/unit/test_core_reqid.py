@@ -1,8 +1,7 @@
 """Unit tests for ``ClientCore.next_reqid`` and the deprecation guard on
 direct mutation of ``_reqid_counter``.
 
-Covers PR-T2.A of the Tier-2 remediation:
-- ``next_reqid()`` returns monotonic, post-increment values.
+Covers PR of the - ``next_reqid()`` returns monotonic, post-increment values.
 - Custom ``step`` parameter works.
 - ``DeprecationWarning`` is emitted on ``core._reqid_counter = ...`` and on
   ``core._reqid_counter += ...``.

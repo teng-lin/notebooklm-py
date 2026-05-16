@@ -1,4 +1,4 @@
-"""Regression test for T7.H3 — configurable upload timeouts.
+"""Regression test for the configurable upload timeouts.
 
 Audit item #20 (`thread-safety-concurrency-audit.md` §20):
 Pre-fix, the resumable-upload `_start_resumable_upload` helper and the

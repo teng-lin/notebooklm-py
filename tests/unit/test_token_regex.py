@@ -1,6 +1,6 @@
 """Tests for the WIZ_global_data token-extraction regex helper.
 
-Covers ``extract_wiz_field`` (the unified helper introduced in PR-T3.B) and
+Covers ``extract_wiz_field`` (the unified helper introduced in PR) and
 verifies that all extraction variants observed on real NotebookLM responses
 parse correctly, while drift produces a typed diagnostic
 (:class:`AuthExtractionError`) with a sanitized HTML preview.

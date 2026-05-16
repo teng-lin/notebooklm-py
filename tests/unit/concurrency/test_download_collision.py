@@ -1,4 +1,4 @@
-"""Regression test for T7.B1 — concurrent download temp-file collision.
+"""Regression test for the concurrent download temp-file collision.
 
 Audit item #1 (`thread-safety-concurrency-audit.md` §1):
 Pre-fix, two concurrent `_download_url(...)` calls targeting the same

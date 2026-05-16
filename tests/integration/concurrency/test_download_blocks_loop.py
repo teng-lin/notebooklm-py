@@ -1,4 +1,4 @@
-"""Regression test for T7.D4 — download paths must not block the event loop.
+"""Regression test for the download paths must not block the event loop.
 
 Audit item #30 (`thread-safety-concurrency-audit.md` §30):
 

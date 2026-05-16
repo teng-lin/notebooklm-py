@@ -1,4 +1,4 @@
-"""Regression tests for T7.B4 — `__aexit__` exception arbitration + close-leak repair.
+"""Regression tests for the `__aexit__` exception arbitration + close-leak repair.
 
 Audit items:
 - §25: `NotebookLMClient.__aexit__` lacked try/except, so a `close()` exception

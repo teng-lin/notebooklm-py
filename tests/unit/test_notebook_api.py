@@ -301,7 +301,7 @@ class TestGetNotebookFailsClosed:
     """``NotebooksAPI.get`` raises ``NotebookNotFoundError`` on degenerate responses.
 
     The NotebookLM backend returns a *parseable but empty* payload for unknown
-    notebook IDs rather than a typed error. Pre-T3.D, ``get()`` happily returned
+    notebook IDs rather than a typed error. Pre-fix, ``get()`` happily returned
     ``Notebook(id="", title="")`` and the CLI ``use`` command persisted that as
     saved state. The post-fix contract: detect the degenerate shape and raise.
     """

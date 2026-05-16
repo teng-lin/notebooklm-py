@@ -1,6 +1,6 @@
 """Concurrency test for ``ClientCore.next_reqid``.
 
-Covers PR-T2.A: 100 concurrent ``next_reqid()`` callers (via
+Covers PR: 100 concurrent ``next_reqid()`` callers (via
 ``asyncio.gather``) must each see a unique, monotonic counter value. Without
 the ``asyncio.Lock`` guard, the underlying read-modify-write would race and
 produce duplicate values — exactly the bug Google's chat backend rejects

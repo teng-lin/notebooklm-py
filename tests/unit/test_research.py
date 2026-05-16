@@ -709,7 +709,7 @@ class TestResearch:
 
         Two distinct failure modes both refuse the batch:
         - At least one source's ``research_task_id`` differs from the caller's
-          ``task_id`` (T7.F3 check; raises :class:`ResearchTaskMismatchError`).
+          ``task_id`` (triggers raises :class:`ResearchTaskMismatchError`).
         - All sources match the caller's ``task_id`` but disagree among
           themselves (legacy multi-task batch check; raises plain
           :class:`ValidationError`). Hard to construct in practice because

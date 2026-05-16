@@ -1,4 +1,4 @@
-"""Regression test for T7.E1 — cancel sibling pollers on first failure.
+"""Regression test for the cancel sibling pollers on first failure.
 
 Audit item §5: ``SourcesAPI.wait_for_sources`` fanned out to ``wait_until_ready``
 calls with a bare ``asyncio.gather(*coroutines)``. When one source poll raised

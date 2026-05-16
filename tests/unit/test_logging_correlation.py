@@ -1,7 +1,4 @@
-"""Tests for per-request correlation IDs via contextvars.ContextVar.
-
-Phase 1 / T2. See .sisyphus/plans/phase-1-implementation.md.
-"""
+"""Tests for per-request correlation IDs via contextvars.ContextVar."""
 
 from __future__ import annotations
 

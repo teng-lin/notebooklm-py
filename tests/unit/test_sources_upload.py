@@ -833,7 +833,7 @@ class TestAddFile:
     ):
         """Passing a non-None ``mime_type`` to ``add_file`` emits ``DeprecationWarning``.
 
-        Tier-6: the argument was never wired into the resumable-upload
+        the argument was never wired into the resumable-upload
         RPC payload; the server derives the MIME type from the filename
         extension. The positional signature is preserved so this is a soft
         deprecation rather than a removal.

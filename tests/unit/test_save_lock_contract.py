@@ -35,8 +35,7 @@ def _make_core(tmp_path: Path) -> ClientCore:
     """Build a minimal ``ClientCore`` whose ``save_cookies`` is safe to call.
 
     Order matters: ``AuthTokens.__post_init__`` calls ``build_cookie_jar``,
-    which loads from ``storage_path`` if it exists and enforces the Tier-1
-    cookie-set rule. We want it to take the in-memory ``cookies={...}``
+    which loads from ``storage_path`` if it exists and enforces the cookie-set rule. We want it to take the in-memory ``cookies={...}``
     branch (file absent) so construction succeeds, THEN write the baseline
     file so the subsequent ``save_cookies`` call has something to merge
     against.

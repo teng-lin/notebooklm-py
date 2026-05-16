@@ -24,7 +24,7 @@ from notebooklm.rpc import InfographicStyle, VideoFormat, VideoStyle
 def mock_core():
     """Create a mock ClientCore.
 
-    After Tier-2 T2.D, ``ChatAPI.ask`` goes through ``core.query_post`` and
+    After , ``ChatAPI.ask`` goes through ``core.query_post`` and
     ``core.next_reqid`` instead of the legacy direct ``post`` / counter
     mutation. Tests that need to assert on URL or body now drive
     ``query_post`` via its ``build_request`` factory rather than poking the

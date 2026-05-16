@@ -1,8 +1,8 @@
-# Tier 7 Concurrency Integration Test Harness
+# Concurrency Integration Test Harness
 
-Reusable fixtures and a smoke test for the **Tier 7 thread-safety /
-concurrency remediation arc**. Every Phase 2 fix PR consumes the
-fixtures here to TDD red-green against a specific Tier 7 bug.
+Reusable fixtures and a smoke test for the **thread-safety / concurrency
+hardening work**. Every fix PR consumes the fixtures here to TDD
+red-green against a specific concurrency bug.
 
 This directory is **infrastructure**, not regression tests. Per-bug
 tests live in their own modules (also under `tests/integration/`) that
@@ -166,9 +166,8 @@ collection, so a `tests/integration/concurrent/` directory would shadow
 project's deps do). Renaming to `concurrency/` sidesteps the collision
 without changing the semantic intent.
 
-## Parent arc
+## Related work
 
-- Tier 7 thread-safety / concurrency remediation. Per-task plans are
-  tracked locally (the `.sisyphus/` tree is gitignored); each Phase 2
-  fix PR will reference its source audit item directly in its
-  description and commit message.
+- Thread-safety and concurrency hardening. Each fix PR references the
+  specific bug or invariant it addresses directly in its description
+  and commit message.

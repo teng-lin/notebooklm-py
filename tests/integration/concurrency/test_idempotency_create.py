@@ -1,4 +1,4 @@
-"""Regression tests for T7.B2 — probe-then-retry idempotency for create RPCs.
+"""Regression tests for the probe-then-retry idempotency for create RPCs.
 
 Audit item #2 (`thread-safety-concurrency-audit.md` §2):
 Pre-fix, mutating create RPCs (CREATE_NOTEBOOK, ADD_SOURCE) ran inside

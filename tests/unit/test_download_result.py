@@ -1,7 +1,4 @@
-"""Tests for DownloadResult dataclass and _download_urls_batch return shape.
-
-Phase 1 / T1. See .sisyphus/plans/phase-1-implementation.md.
-"""
+"""Tests for DownloadResult dataclass and _download_urls_batch return shape."""
 
 from __future__ import annotations
 
