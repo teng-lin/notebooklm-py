@@ -162,6 +162,8 @@ def _extract_register_file_source_id(result: Any, filename: str) -> str | None:
         if uuid_match is not None or depth > max_depth:
             return
         if isinstance(node, str):
+            if len(node) > 1000:
+                return
             candidate = node.strip()
             if not candidate or candidate == filename:
                 return
@@ -330,9 +332,13 @@ class SourceUploadPipeline:
         if source_id:
             return source_id
 
-        preview = repr(result)
-        if len(preview) > 200:
-            preview = preview[:200] + "..."
+        if isinstance(result, str):
+            suffix = "..." if len(result) > 200 else ""
+            preview = repr(result[:200] + suffix)
+        else:
+            preview = repr(result)
+            if len(preview) > 200:
+                preview = preview[:200] + "..."
         raise SourceAddError(
             filename,
             message=(

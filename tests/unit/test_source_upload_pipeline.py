@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm._source_upload import SourceUploadPipeline
+from notebooklm._source_upload import SourceUploadPipeline, _extract_register_file_source_id
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source, SourceAddError
 
@@ -98,6 +98,12 @@ class RecordingRpc:
 @pytest.fixture
 def service() -> SourceUploadPipeline:
     return SourceUploadPipeline()
+
+
+def test_extract_register_file_source_id_skips_large_string_candidates() -> None:
+    long_payload = " " + ("x" * 2000) + " "
+
+    assert _extract_register_file_source_id([long_payload, "src_123"], "report.pdf") == "src_123"
 
 
 @pytest.mark.asyncio
@@ -202,6 +208,21 @@ async def test_register_file_source_uses_rpc_shape_and_wraps_rpc_error(
             "disable_internal_retries": False,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_register_file_source_truncates_large_string_response_preview(
+    service: SourceUploadPipeline,
+) -> None:
+    rpc = RecordingRpc("x" * 5000)
+
+    with pytest.raises(SourceAddError) as exc_info:
+        await service.register_file_source("nb_123", "report.pdf", rpc_call=rpc)
+
+    message = str(exc_info.value)
+    assert "..." in message
+    assert "x" * 300 not in message
+    assert len(message) < 320
 
 
 @pytest.mark.asyncio
