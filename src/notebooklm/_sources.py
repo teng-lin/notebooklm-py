@@ -15,6 +15,7 @@ from . import _source_upload
 from ._capabilities import ClientCoreCapabilities
 from ._core import ClientCore
 from ._source_add import SourceAddService
+from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
 from ._source_upload import SourceUploadPipeline
@@ -23,8 +24,6 @@ from .rpc import RPCMethod
 from .types import (
     Source,
     SourceFulltext,
-    SourceNotFoundError,
-    _extract_source_url,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,6 +69,7 @@ class SourcesAPI:
         self._core = core
         self._capabilities = ClientCoreCapabilities(core)
         self._adder = SourceAddService()
+        self._content = SourceContentRenderer(self._rpc_call, logger=logger)
         self._lister = SourceLister(self._rpc_call)
         self._poller = SourcePoller()
         self._uploader = SourceUploadPipeline()
@@ -626,33 +626,7 @@ class SourcesAPI:
                 - summary: AI-generated summary with **bold** keywords (markdown)
                 - keywords: List of topic keyword strings
         """
-        # Deeply nested source ID: [[[[source_id]]]]
-        params = [[[[source_id]]]]
-        result = await self._core.rpc_call(
-            RPCMethod.GET_SOURCE_GUIDE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-
-        # Parse response structure: [[[null, [summary], [[keywords]], []]]]
-        # Real API returns 3 levels of nesting before the data array
-        summary = ""
-        keywords: list[str] = []
-
-        if result and isinstance(result, list) and len(result) > 0:
-            outer = result[0]
-            if isinstance(outer, list) and len(outer) > 0:
-                inner = outer[0]
-                if isinstance(inner, list):
-                    # Summary at [1][0]
-                    if len(inner) > 1 and isinstance(inner[1], list) and len(inner[1]) > 0:
-                        summary = inner[1][0] if isinstance(inner[1][0], str) else ""
-                    # Keywords at [2][0]
-                    if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
-                        keywords = inner[2][0] if isinstance(inner[2][0], list) else []
-
-        return {"summary": summary, "keywords": keywords}
+        return await self._content.get_guide(notebook_id, source_id)
 
     async def get_fulltext(
         self,
@@ -686,95 +660,10 @@ class SourcesAPI:
             from the API (params ``[3],[3]`` instead of ``[2],[2]``) and
             converting it via *markdownify*.
         """
-        if output_format not in ("text", "markdown"):
-            raise ValueError(f"Invalid format: '{output_format}'. Must be 'text' or 'markdown'.")
-
-        # Fail fast on missing optional dep so CLI users don't pay for an RPC
-        # round-trip before seeing the install hint.
-        if output_format == "markdown":
-            try:
-                from markdownify import markdownify as md
-            except ImportError:
-                raise ImportError(
-                    "The 'markdown' format requires the 'markdownify' package. "
-                    "Install it with: pip install 'notebooklm-py[markdown]'"
-                ) from None
-
-        # [3],[3] returns HTML at result[4][1]; [2],[2] returns plaintext at result[3][0]
-        params = [[source_id], [3], [3]] if output_format == "markdown" else [[source_id], [2], [2]]
-
-        result = await self._core.rpc_call(
-            RPCMethod.GET_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-
-        # Validate response - raise if source not found
-        if not result or not isinstance(result, list):
-            raise SourceNotFoundError(f"Source {source_id} not found in notebook {notebook_id}")
-
-        # Parse response structure
-        title = ""
-        source_type = None
-        url = None
-        content = ""
-
-        if result and isinstance(result, list):
-            # Title at result[0][1]
-            if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 1:
-                title = result[0][1] if isinstance(result[0][1], str) else ""
-
-                # Source type at result[0][2][4]; source URLs may be stored
-                # at [7][0] for web/PDF sources or [5][0] for YouTube sources.
-                if len(result[0]) > 2 and isinstance(result[0][2], list):
-                    metadata = result[0][2]
-                    if len(metadata) > 4:
-                        source_type = metadata[4]
-                    url = _extract_source_url(metadata, allow_bare_http=False)
-
-            if output_format == "markdown":
-                # HTML content at result[4][1]; may be absent for source types
-                # without an HTML rendition (e.g. youtube, pasted_text).
-                html_content = None
-                if len(result) > 4 and isinstance(result[4], list) and len(result[4]) > 1:
-                    candidate = result[4][1]
-                    if isinstance(candidate, str):
-                        html_content = candidate
-                if html_content is not None:
-                    content = md(html_content, heading_style="ATX")
-                else:
-                    logger.warning(
-                        "Source %s (type=%s) has no HTML rendition for output_format='markdown'; "
-                        "returning empty content. Retry with output_format='text'.",
-                        source_id,
-                        source_type,
-                    )
-            else:
-                # Plaintext content blocks at result[3][0]
-                # Each block may be nested arrays with text strings
-                if len(result) > 3 and isinstance(result[3], list) and len(result[3]) > 0:
-                    content_blocks = result[3][0]
-                    if isinstance(content_blocks, list):
-                        texts = self._extract_all_text(content_blocks)
-                        content = "\n".join(texts)
-
-        # Log warning if content is empty but source exists
-        if not content:
-            logger.warning(
-                "Source %s returned empty content (type=%s, title=%s)",
-                source_id,
-                source_type,
-                title,
-            )
-
-        return SourceFulltext(
-            source_id=source_id,
-            title=title,
-            content=content,
-            _type_code=source_type,
-            url=url,
-            char_count=len(content),
+        return await self._content.get_fulltext(
+            notebook_id,
+            source_id,
+            output_format=output_format,
         )
 
     # =========================================================================
@@ -791,17 +680,7 @@ class SourcesAPI:
         Returns:
             List of extracted text strings.
         """
-        if max_depth <= 0:
-            logger.warning("Max recursion depth reached in text extraction")
-            return []
-
-        texts: builtins.list[str] = []
-        for item in data:
-            if isinstance(item, str) and len(item) > 0:
-                texts.append(item)
-            elif isinstance(item, builtins.list):
-                texts.extend(self._extract_all_text(item, max_depth - 1))
-        return texts
+        return self._content.extract_all_text(data, max_depth=max_depth)
 
     def _extract_youtube_video_id(self, url: str) -> str | None:
         """Extract YouTube video ID from various URL formats.
