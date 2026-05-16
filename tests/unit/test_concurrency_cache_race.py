@@ -12,11 +12,37 @@ import ast
 import asyncio
 import inspect
 import textwrap
+from contextlib import asynccontextmanager
 
 import pytest
 
-from conftest import make_core  # type: ignore[import-not-found]
 from notebooklm import _core
+from notebooklm._core_cache import ConversationCache
+from notebooklm.auth import AuthTokens
+
+
+def _assert_method_has_no_yield_points(method, label: str) -> None:
+    src = inspect.getsource(method)
+    tree = ast.parse(textwrap.dedent(src))
+    awaits = [n for n in ast.walk(tree) if isinstance(n, ast.Await)]
+    is_async = any(isinstance(n, ast.AsyncFunctionDef) for n in ast.walk(tree))
+    assert not awaits, f"{label} must not contain `await` (breaks atomicity guarantee)"
+    assert not is_async, f"{label} must not be `async def` (breaks atomicity guarantee)"
+
+
+@asynccontextmanager
+async def make_core():
+    auth = AuthTokens(
+        csrf_token="CSRF_OLD",
+        session_id="SID_OLD",
+        cookies={"SID": "old_sid_cookie"},
+    )
+    core = _core.ClientCore(auth=auth, refresh_retry_delay=0.0)
+    await core.open()
+    try:
+        yield core
+    finally:
+        await core.close()
 
 
 @pytest.mark.asyncio
@@ -41,15 +67,17 @@ def test_cache_conversation_turn_remains_synchronous():
     The cache's atomicity guarantee depends on the function having no yield
     points.
     """
-    src = inspect.getsource(_core.ClientCore.cache_conversation_turn)
-    tree = ast.parse(textwrap.dedent(src))
-    awaits = [n for n in ast.walk(tree) if isinstance(n, ast.Await)]
-    is_async = any(isinstance(n, ast.AsyncFunctionDef) for n in ast.walk(tree))
-    assert not awaits, (
-        "cache_conversation_turn must not contain `await` (breaks atomicity guarantee)"
+    _assert_method_has_no_yield_points(
+        _core.ClientCore.cache_conversation_turn,
+        "cache_conversation_turn",
     )
-    assert not is_async, (
-        "cache_conversation_turn must not be `async def` (breaks atomicity guarantee)"
+
+
+def test_conversation_cache_mutation_remains_synchronous():
+    """The collaborator mutation owns the no-yield atomicity contract."""
+    _assert_method_has_no_yield_points(
+        ConversationCache.cache_conversation_turn,
+        "ConversationCache.cache_conversation_turn",
     )
 
 

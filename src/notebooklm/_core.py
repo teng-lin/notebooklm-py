@@ -21,6 +21,12 @@ from urllib.parse import urlencode
 import httpx
 
 from ._callbacks import maybe_await_callback
+from ._core_cache import (
+    MAX_CONVERSATION_CACHE_SIZE as _DEFAULT_CONVERSATION_CACHE_SIZE,
+)
+from ._core_cache import (
+    ConversationCache,
+)
 from ._env import get_default_language
 from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import (
@@ -66,8 +72,7 @@ class _TransportOperationToken:
     task: asyncio.Task[Any] | None
 
 
-# Maximum number of conversations to cache (FIFO eviction)
-MAX_CONVERSATION_CACHE_SIZE = 100
+MAX_CONVERSATION_CACHE_SIZE = _DEFAULT_CONVERSATION_CACHE_SIZE
 
 # Default HTTP timeouts in seconds
 DEFAULT_TIMEOUT = 30.0
@@ -699,8 +704,7 @@ class ClientCore:
         # produces hangs and ``RuntimeError`` deep in httpx instead of an
         # actionable message at the call site.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
-        # OrderedDict for FIFO eviction when cache exceeds MAX_CONVERSATION_CACHE_SIZE
-        self._conversation_cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
+        self._conversation_cache_manager = ConversationCache()
         # Keepalive background task configuration
         self._keepalive_interval: float | None = _resolve_keepalive_interval(
             keepalive, keepalive_min_interval
@@ -2336,21 +2340,12 @@ class ClientCore:
             answer: The AI's response.
             turn_number: The turn number in the conversation.
         """
-        is_new_conversation = conversation_id not in self._conversation_cache
-
-        # Only evict when adding a NEW conversation at capacity
-        if is_new_conversation:
-            while len(self._conversation_cache) >= MAX_CONVERSATION_CACHE_SIZE:
-                # popitem(last=False) removes oldest entry (FIFO)
-                self._conversation_cache.popitem(last=False)
-            self._conversation_cache[conversation_id] = []
-
-        self._conversation_cache[conversation_id].append(
-            {
-                "query": query,
-                "answer": answer,
-                "turn_number": turn_number,
-            }
+        self._conversation_cache_manager.cache_conversation_turn(
+            conversation_id,
+            query,
+            answer,
+            turn_number,
+            max_size=MAX_CONVERSATION_CACHE_SIZE,
         )
 
     def get_cached_conversation(self, conversation_id: str) -> list[dict[str, Any]]:
@@ -2362,7 +2357,7 @@ class ClientCore:
         Returns:
             List of cached turns, or empty list if not found.
         """
-        return self._conversation_cache.get(conversation_id, [])
+        return self._conversation_cache_manager.get_cached_conversation(conversation_id)
 
     def clear_conversation_cache(self, conversation_id: str | None = None) -> bool:
         """Clear conversation cache.
@@ -2373,14 +2368,16 @@ class ClientCore:
         Returns:
             True if cache was cleared.
         """
-        if conversation_id:
-            if conversation_id in self._conversation_cache:
-                del self._conversation_cache[conversation_id]
-                return True
-            return False
-        else:
-            self._conversation_cache.clear()
-            return True
+        return self._conversation_cache_manager.clear(conversation_id)
+
+    @property
+    def _conversation_cache(self) -> OrderedDict[str, list[dict[str, Any]]]:
+        """Compatibility view of the conversation cache backing mapping."""
+        return self._conversation_cache_manager.conversations
+
+    @_conversation_cache.setter
+    def _conversation_cache(self, value: OrderedDict[str, list[dict[str, Any]]]) -> None:
+        self._conversation_cache_manager = ConversationCache(value)
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Extract all source IDs from a notebook.
