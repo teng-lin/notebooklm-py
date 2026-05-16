@@ -141,6 +141,21 @@ class TestSnapshotCookieJar:
         snap = snapshot_cookie_jar(jar)
         assert CookieSnapshotKey("SID", ".google.com", "/") in snap
 
+    def test_facade_monkeypatches_propagate_to_storage_helpers(self, monkeypatch):
+        """Facade patches still affect helpers moved behind ``_auth.storage``."""
+        import notebooklm.auth as auth_mod
+
+        def fake_cookie_is_http_only(cookie) -> bool:
+            return True
+
+        monkeypatch.setattr(auth_mod, "_cookie_is_http_only", fake_cookie_is_http_only)
+
+        jar = httpx.Cookies()
+        jar.set("SID", "abc", domain=".google.com", path="/")
+        snap = auth_mod.snapshot_cookie_jar(jar)
+
+        assert snap[auth_mod.CookieSnapshotKey("SID", ".google.com", "/")].http_only is True
+
 
 # NOTE on "two simulated processes" framing in this file: all the multi-
 # writer scenarios below run serially in one Python thread. They prove the
@@ -731,6 +746,24 @@ class TestSaveReturnsBoolSuccess:
         baseline isn't advanced before the next retry."""
         storage = tmp_path / "storage_state.json"
         storage.write_text("not json {")
+        jar = httpx.Cookies()
+        jar.set("SID", "new", domain=".google.com", path="/")
+        snapshot: dict = {}
+
+        assert save_cookies_to_storage(jar, storage, original_snapshot=snapshot) is False
+
+    @pytest.mark.parametrize(
+        "storage_state",
+        [
+            pytest.param({"origins": []}, id="missing-cookies"),
+            pytest.param({"cookies": "not-a-list"}, id="cookies-not-list"),
+            pytest.param({"cookies": ["not-a-dict"]}, id="cookie-row-not-dict"),
+        ],
+    )
+    def test_returns_false_when_cookies_payload_is_malformed(self, tmp_path, storage_state):
+        """Malformed cookie payloads must fail gracefully before merge logic."""
+        storage = tmp_path / "storage_state.json"
+        storage.write_text(json.dumps(storage_state), encoding="utf-8")
         jar = httpx.Cookies()
         jar.set("SID", "new", domain=".google.com", path="/")
         snapshot: dict = {}

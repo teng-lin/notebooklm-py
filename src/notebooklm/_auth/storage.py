@@ -389,9 +389,11 @@ def save_cookies_to_storage(
             logger.warning("Failed to read storage state for cookie sync: %s", e)
             return _cookie_save_return(CookieSaveResult(False), return_result=return_result)
 
-        if not isinstance(storage_data, dict) or "cookies" not in storage_data:
+        cookies = storage_data.get("cookies") if isinstance(storage_data, dict) else None
+        if not isinstance(cookies, list) or any(not isinstance(cookie, dict) for cookie in cookies):
             logger.warning(
-                "storage_state at %s lacks 'cookies' key; rotated cookies will not be persisted",
+                "storage_state at %s has an invalid 'cookies' key/payload; "
+                "rotated cookies will not be persisted",
                 path,
             )
             return _cookie_save_return(CookieSaveResult(False), return_result=return_result)
