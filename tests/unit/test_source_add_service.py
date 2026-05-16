@@ -239,6 +239,45 @@ async def test_add_drive_uses_exact_rpc_shape_and_wait_hook(
     wait_until_ready.assert_awaited_once_with("nb_1", "src_drive", timeout=7.0)
 
 
+@pytest.mark.asyncio
+async def test_add_drive_raises_source_add_error_on_null_result(
+    service: SourceAddService,
+    logger: logging.Logger,
+) -> None:
+    with pytest.raises(SourceAddError) as exc_info:
+        await service.add_drive(
+            "nb_1",
+            "drive_file",
+            "Drive Doc",
+            rpc_call=RecordingRpc(None),
+            wait_until_ready=AsyncMock(),
+            logger=logger,
+        )
+
+    assert exc_info.value.url == "Drive Doc"
+    assert "API returned no data for Drive source: Drive Doc" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_add_drive_preserves_rpc_error_propagation(
+    service: SourceAddService,
+    logger: logging.Logger,
+) -> None:
+    rpc_error = RPCError("drive add failed")
+
+    with pytest.raises(RPCError) as exc_info:
+        await service.add_drive(
+            "nb_1",
+            "drive_file",
+            "Drive Doc",
+            rpc_call=AsyncMock(side_effect=rpc_error),
+            wait_until_ready=AsyncMock(),
+            logger=logger,
+        )
+
+    assert exc_info.value is rpc_error
+
+
 def test_extract_youtube_video_id_uses_injected_parser_and_helpers(
     service: SourceAddService,
     logger: logging.Logger,

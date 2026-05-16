@@ -15,9 +15,10 @@ from .exceptions import (
     NonIdempotentRetryError,
     RateLimitError,
     ServerError,
+    SourceAddError,
 )
 from .rpc import RPCError, RPCMethod
-from .types import Source, SourceAddError
+from .types import Source
 
 RpcCall = Callable[..., Awaitable[Any]]
 ListSources = Callable[[str], Awaitable[list[Source]]]
@@ -198,6 +199,8 @@ class SourceAddService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
+        if result is None:
+            raise SourceAddError(title, message=f"API returned no data for Drive source: {title}")
         source = Source.from_api_response(result)
 
         if wait:
