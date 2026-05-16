@@ -1,4 +1,8 @@
-"""Cookie conversion and jar helpers for authentication."""
+"""Cookie conversion and jar helpers for authentication.
+
+This private module is safe to import directly, but ``notebooklm.auth`` owns the
+compatibility facade for monkeypatched validation policy.
+"""
 
 from __future__ import annotations
 

@@ -447,7 +447,10 @@ def test_auth_cookie_conversion_facade_delegates_to_private_module() -> None:
     assert auth.load_httpx_cookies is cookies.load_httpx_cookies
     assert auth.build_httpx_cookies_from_storage is cookies.build_httpx_cookies_from_storage
     assert auth.build_cookie_jar is cookies.build_cookie_jar
+    assert auth._cookie_is_http_only is cookies._cookie_is_http_only
+    assert auth._cookie_map_from_jar is cookies._cookie_map_from_jar
     assert auth._cookie_to_storage_state is cookies._cookie_to_storage_state
+    assert auth._load_storage_state is cookies._load_storage_state
     assert auth._storage_entry_to_cookie is cookies._storage_entry_to_cookie
     assert auth._cookie_key_variants is cookies._cookie_key_variants
     assert auth._find_cookie_for_storage is cookies._find_cookie_for_storage

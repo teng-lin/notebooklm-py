@@ -159,6 +159,7 @@ class _AuthFacadeModule(ModuleType):
         }:
             setattr(_cookie_policy, name, value)
         if name in {"MINIMUM_REQUIRED_COOKIES", "_EXTRACTION_HINT"}:
+            # Cookie loaders read these for diagnostics before delegating to policy validation.
             setattr(_auth_cookies, name, value)
 
 
