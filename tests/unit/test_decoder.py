@@ -137,7 +137,6 @@ class TestParseChunkedResponse:
         ]
         assert len(mismatch_records) == 1
         assert mismatch_records[0].levelno == logging.DEBUG
-        assert mismatch_records[0].levelno < logging.WARNING
         assert "payload is" in mismatch_records[0].message
 
     def test_skips_byte_count_without_payload_below_threshold(self, caplog):
