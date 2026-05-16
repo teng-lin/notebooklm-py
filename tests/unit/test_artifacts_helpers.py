@@ -155,6 +155,42 @@ def test_parse_data_table_wrapper_honors_artifacts_private_helper_seams(
     assert rows == [["text:value_cell"]]
 
 
+@pytest.mark.parametrize(
+    ("app_data", "is_quiz", "patched_name", "expected_items"),
+    [
+        ({"quiz": [{"question": "Q"}]}, True, "_format_quiz_markdown", [{"question": "Q"}]),
+        ({"flashcards": [{"f": "front"}]}, False, "_format_flashcards_markdown", [{"f": "front"}]),
+    ],
+)
+def test_format_interactive_content_wrapper_honors_artifacts_markdown_seams(
+    monkeypatch: pytest.MonkeyPatch,
+    app_data: dict,
+    is_quiz: bool,
+    patched_name: str,
+    expected_items: list[dict],
+) -> None:
+    """Interactive markdown wrappers keep sibling formatter monkeypatch seams intact."""
+    captured: dict[str, object] = {}
+
+    def formatter(title: str, items: list[dict]) -> str:
+        captured["title"] = title
+        captured["items"] = items
+        return "patched markdown"
+
+    monkeypatch.setattr(artifacts_module, patched_name, formatter)
+
+    result = artifacts_module._format_interactive_content(
+        app_data,
+        "Patched Title",
+        "markdown",
+        "<html></html>",
+        is_quiz,
+    )
+
+    assert result == "patched markdown"
+    assert captured == {"title": "Patched Title", "items": expected_items}
+
+
 def test_parse_data_table_happy_path() -> None:
     """End-to-end sanity: helper + parser still produce the expected CSV shape."""
     rows_payload = [

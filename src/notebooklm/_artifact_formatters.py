@@ -22,6 +22,7 @@ __all__ = [
     "_parse_data_table",
 ]
 
+# Preserve the pre-extraction logger so existing log filters keep helper diagnostics.
 logger = logging.getLogger("notebooklm._artifacts")
 
 
