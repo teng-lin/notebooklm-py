@@ -31,8 +31,15 @@ class ArtifactListingService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if result and isinstance(result, list) and len(result) > 0:
-            return result[0] if isinstance(result[0], list) else result
+        if (
+            isinstance(result, list)
+            and len(result) == 1
+            and isinstance(result[0], list)
+            and (not result[0] or isinstance(result[0][0], list))
+        ):
+            return result[0]
+        if isinstance(result, list):
+            return result
         return []
 
     async def list_artifacts(

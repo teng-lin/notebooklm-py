@@ -390,6 +390,21 @@ class TestArtifactsAPI:
         )
 
     @pytest.mark.asyncio
+    async def test_list_raw_preserves_already_flat_artifact_rows(self):
+        """_list_raw must not collapse already-flat artifact rows."""
+        artifact_rows = [
+            ["art_001", "My Report", 2, None, 3],
+            ["art_002", "Audio Overview", 1, None, 3],
+        ]
+        core = MagicMock()
+        core.rpc_call = AsyncMock(return_value=artifact_rows)
+        api = ArtifactsAPI(core)
+
+        result = await api._list_raw("nb_123")
+
+        assert result == artifact_rows
+
+    @pytest.mark.asyncio
     async def test_list_uses_facade_list_raw_callback_and_mind_map_patch_seam(self):
         """list() resolves facade and mind-map seams at call time."""
         core = MagicMock()
