@@ -1,17 +1,18 @@
 """Regression guard for the ``ClientCore._save_lock`` contract (T7.G5).
 
 Contract (audit §17, documented at ``_core.py`` next to the lock definition):
-``_save_lock`` is acquired ONLY inside ``_save()``, which runs on a worker
-thread via ``asyncio.to_thread``. It is never held by an async context — a
+``_save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``
+closure, which runs on a worker thread via ``asyncio.to_thread``. It is never
+held by an async context — a
 blocking ``threading.Lock`` taken on the event-loop thread would stall every
 other coroutine (keepalive, RPCs, cancellation) while a sibling worker thread
 does file I/O. That is the priority-inversion failure mode this contract
 exists to prevent.
 
 These tests are deliberately structural: they verify the rule end-to-end
-(via the live ``save_cookies`` path) AND statically (by scanning ``_core.py``
-for any unexpected acquisition site), so a future refactor that adds an
-event-loop acquisition fails fast in CI.
+(via the live ``save_cookies`` path) AND statically (by scanning the cookie
+persistence collaborator for any unexpected acquisition site), so a future
+refactor that adds an event-loop acquisition fails fast in CI.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import httpx
 import pytest
 
 from notebooklm._core import ClientCore
+from notebooklm._core_cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 
 
@@ -158,29 +160,22 @@ async def test_save_lock_does_not_block_event_loop(
 
 
 def test_save_lock_only_acquired_inside_save_closure() -> None:
-    """Static guard: ``_save_lock`` has exactly one ``with`` acquisition site
-    in ``_core.py``, and it lives inside the ``_save`` closure defined in
-    ``ClientCore.save_cookies``.
+    """Static guard: the blocking lock is acquired inside the worker closure.
 
-    This catches a refactor that adds a second ``with self._save_lock:``
-    elsewhere (e.g. inside an async method) before such a change can ship —
-    static-only, so it has zero runtime cost and runs even when the async
-    test infrastructure is offline.
-
-    Known blind spot: this scan only matches ``with self._save_lock:`` —
-    aliased acquisitions like ``lock = self._save_lock; with lock: ...``
-    inside an async method are NOT caught here. Those are covered by the
-    runtime guards above, which observe the thread that actually holds the
-    lock rather than relying on syntactic structure.
+    This catches a refactor that adds a second ``with self.save_lock:`` or
+    aliased ``with lock:`` elsewhere (e.g. inside an async method) before such
+    a change can ship — static-only, so it has zero runtime cost and runs even
+    when the async test infrastructure is offline.
     """
-    import notebooklm._core as core_module
 
-    source_path = Path(inspect.getsourcefile(core_module) or "")
-    assert source_path.is_file(), f"could not locate _core.py source: {source_path!r}"
+    source_path = Path(inspect.getsourcefile(CookiePersistence) or "")
+    assert source_path.is_file(), (
+        f"could not locate _core_cookie_persistence.py source: {source_path!r}"
+    )
     tree = ast.parse(source_path.read_text())
 
-    # Find every ``with <X>._save_lock:`` (or aliased ``with lock:`` whose
-    # binding is ``self._save_lock``) by walking the AST.
+    # Find every ``with self.save_lock:`` or closure-aliased ``with lock:`` by
+    # walking the collaborator AST.
     acquisition_sites: list[tuple[str, int]] = []
 
     class _Visitor(ast.NodeVisitor):
@@ -203,12 +198,15 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
             self._enclosing_func.pop()
 
         def _record_if_save_lock(self, expr: ast.expr) -> None:
-            # Match ``self._save_lock`` directly.
+            # Match ``self.save_lock`` directly.
             if (
-                isinstance(expr, ast.Attribute)
-                and expr.attr == "_save_lock"
-                and isinstance(expr.value, ast.Name)
-                and expr.value.id == "self"
+                (
+                    isinstance(expr, ast.Attribute)
+                    and expr.attr == "save_lock"
+                    and isinstance(expr.value, ast.Name)
+                    and expr.value.id == "self"
+                )
+                or (isinstance(expr, ast.Name) and expr.id == "lock")
             ):
                 where = ".".join(self._enclosing_func) or "<module>"
                 acquisition_sites.append((where, expr.lineno))
@@ -227,18 +225,14 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
 
     _Visitor().visit(tree)
 
-    # We don't enforce a single acquisition site (the closure uses a captured
-    # ``lock`` parameter, not ``self._save_lock`` directly, so the visitor
-    # finds zero ``self._save_lock`` ``with`` sites in steady state). What we
-    # DO enforce: no ``with self._save_lock:`` appears OUTSIDE the ``_save``
-    # closure. Any such site is a contract violation by construction.
     offenders = [
         (where, lineno) for (where, lineno) in acquisition_sites if "_save" not in where.split(".")
     ]
     assert offenders == [], (
-        "_save_lock contract violation: ``with self._save_lock:`` found "
+        "_save_lock contract violation: blocking lock acquisition found "
         f"outside the ``_save`` closure: {offenders!r}. The lock must "
         "ONLY be acquired inside ``_save()`` (run via asyncio.to_thread). "
-        "See ``_core.py`` docstring above ``self._save_lock`` "
+        "See ``_core_cookie_persistence.py`` "
         "and audit §17 / T7.G5."
     )
+    assert acquisition_sites, "expected CookiePersistence.save to acquire the save lock"

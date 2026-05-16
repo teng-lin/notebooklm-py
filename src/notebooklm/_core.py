@@ -27,19 +27,17 @@ from ._core_cache import (
 from ._core_cache import (
     ConversationCache,
 )
+from ._core_cookie_persistence import CookiePersistence
 from ._core_polling import PendingPolls, PollRegistry
 from ._env import get_default_language
 from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import (
     AuthTokens,
-    CookieSaveResult,
     CookieSnapshot,
     _rotate_cookies,
-    advance_cookie_snapshot_after_save,
     build_cookie_jar,
     format_authuser_value,
     save_cookies_to_storage,
-    snapshot_cookie_jar,
 )
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
@@ -716,28 +714,29 @@ class ClientCore:
             keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
         )
         self._keepalive_task: asyncio.Task[None] | None = None
-        # Serializes keepalive's worker-thread save with close()'s on-close save
-        # so that newer state always wins. Without this, an in-flight keepalive
-        # save kicked off before close() can finish *after* close()'s own save
-        # and clobber it (an older snapshot overwriting the freshest state).
-        #
-        # Contract (audit §17 / T7.G5):
-        # ``_save_lock`` is acquired ONLY inside ``_save()`` (run on a worker
-        # thread via ``asyncio.to_thread``); never held by an async context to
-        # prevent priority inversion against the event loop. A blocking
-        # ``threading.Lock`` held on the loop thread would stall every other
-        # coroutine — including the keepalive heartbeat and the cancellation
-        # path — while a sibling worker thread does file I/O. Keep all
-        # acquisitions inside the worker closure passed to ``asyncio.to_thread``.
-        # See ``tests/unit/test_save_lock_contract.py`` for the regression guard.
-        self._save_lock = threading.Lock()
-        # Open-time cookie snapshot — the input to the dirty-flag/delta merge
-        # in save_cookies_to_storage. Captured in ``open()`` and forwarded
-        # through every ``save_cookies`` call so a stale in-memory jar can't
-        # clobber sibling-process writes (docs/auth-keepalive.md §3.4.1).
-        # Per-instance, never module-global.
-        self._loaded_cookie_snapshot: CookieSnapshot | None = None
+        # Owns the in-process save lock and open-time cookie baseline while
+        # compatibility properties below keep the legacy private attribute
+        # names observable for current tests and first-party callers.
+        self.cookie_persistence = CookiePersistence(self.auth, self._keepalive_storage_path)
         self.poll_registry: PollRegistry = PollRegistry()
+
+    @property
+    def _save_lock(self) -> threading.Lock:
+        """Compatibility bridge to ``CookiePersistence``'s in-process save lock."""
+        return self.cookie_persistence.save_lock
+
+    @_save_lock.setter
+    def _save_lock(self, value: threading.Lock) -> None:
+        self.cookie_persistence.save_lock = value
+
+    @property
+    def _loaded_cookie_snapshot(self) -> CookieSnapshot | None:
+        """Compatibility bridge to the cookie save baseline."""
+        return self.cookie_persistence.loaded_cookie_snapshot
+
+    @_loaded_cookie_snapshot.setter
+    def _loaded_cookie_snapshot(self, value: CookieSnapshot | None) -> None:
+        self.cookie_persistence.loaded_cookie_snapshot = value
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
@@ -1127,12 +1126,7 @@ class ClientCore:
             # could possibly fire. When AuthTokens carries a snapshot from a
             # failed pre-client save, keep it so the unpersisted delta can be
             # retried instead of treating the already-mutated jar as clean.
-            self._loaded_cookie_snapshot = (
-                dict(self.auth.cookie_snapshot)
-                if self.auth.cookie_snapshot is not None
-                else snapshot_cookie_jar(self._http_client.cookies)
-            )
-            self.auth.cookie_snapshot = self._loaded_cookie_snapshot
+            self.cookie_persistence.capture_open_snapshot(self._http_client.cookies)
 
             # Spawn the keepalive task once the client is ready
             if self._keepalive_interval is not None:
@@ -1141,87 +1135,20 @@ class ClientCore:
                 )
 
     async def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> None:
-        """Persist a cookie jar through the shared save lock.
+        """Persist a cookie jar through the shared cookie-persistence collaborator.
 
-        Single chokepoint used by ``close()``, the keepalive loop, and
-        ``NotebookLMClient.refresh_auth``. Routes every save through:
-
-        1. **Snapshot the jar** on the event-loop thread so the worker isn't
-           iterating a live ``AsyncClient.cookies`` that may be mutating
-           (RPC redirects, the next poke iteration).
-        2. **Hold ``self._save_lock``** (a ``threading.Lock``) for the duration
-           of the off-loaded write. Multiple writers in the same process
-           serialize through this lock so the newer caller always wins.
-        3. **Off-load** the actual save to a worker thread via
-           ``asyncio.to_thread`` so disk I/O never stalls the event loop.
-        4. **Refresh the baseline snapshot** on success so that a subsequent
-           save in this client computes deltas against what we just
-           persisted — not against the open-time snapshot. Without this
-           step the same delta would re-apply on every save, silently
-           clobbering any sibling-process write that landed between two of
-           our own saves (the keepalive + close common case).
-
-        Cross-process serialization is handled at a different layer — the
-        OS-level file lock inside :func:`save_cookies_to_storage` itself.
-
-        Args:
-            jar: The cookie jar to persist. A copy is taken on the loop thread
-                before the worker reads it.
-            path: Storage path. Falls back to ``self._keepalive_storage_path``,
-                which itself falls back to ``self.auth.storage_path``. If both
-                are ``None``, the call is a no-op.
+        This remains the single chokepoint used by ``close()``, the keepalive
+        loop, and ``NotebookLMClient.refresh_auth``. The storage writer and
+        thread offload callable are resolved from this module at call time so
+        existing ``notebooklm._core`` monkeypatch paths continue to affect the
+        live save path.
         """
-        effective_path = path if path is not None else self._keepalive_storage_path
-        if effective_path is None:
-            return
-        save_path: Path = effective_path
-
-        jar_copy = httpx.Cookies(jar)
-        # Computed on the loop thread off ``jar_copy`` so the worker can refresh
-        # the baseline without re-snapshotting a jar that may have mutated in
-        # the meantime (next keepalive poke, in-flight RPC redirect).
-        post_save_snapshot = snapshot_cookie_jar(jar_copy)
-
-        def _save(
-            s: httpx.Cookies = jar_copy,
-            p: Path = save_path,
-            lock: threading.Lock = self._save_lock,
-            post: CookieSnapshot = post_save_snapshot,
-            client: ClientCore = self,
-        ) -> None:
-            """Worker-thread save: hold the in-process lock around the disk write."""
-            with lock:
-                # Read the baseline INSIDE the lock so a prior save that
-                # completed while we were queued advances ours too. Capturing
-                # this on the loop thread would let a concurrent save observe
-                # a stale baseline, compute deltas against pre-prior-save
-                # state, hit CAS rejection on every key, and silently lose
-                # the local rotation.
-                snap = client._loaded_cookie_snapshot
-                # Advance successful keys while preserving CAS-rejected ones.
-                # A silent I/O error leaves the baseline untouched; an
-                # exception does too. See class-level
-                # ``_loaded_cookie_snapshot``.
-                result = save_cookies_to_storage(
-                    s,
-                    p,
-                    original_snapshot=snap,
-                    return_result=True,
-                )
-                if isinstance(result, CookieSaveResult):
-                    if result.ok:
-                        client._loaded_cookie_snapshot = post
-                    elif result.cas_rejected_keys:
-                        client._loaded_cookie_snapshot = advance_cookie_snapshot_after_save(
-                            snap, post, result.cas_rejected_keys
-                        )
-                    if client._loaded_cookie_snapshot is not None:
-                        client.auth.cookie_snapshot = client._loaded_cookie_snapshot
-                elif result:
-                    client._loaded_cookie_snapshot = post
-                    client.auth.cookie_snapshot = post
-
-        await asyncio.to_thread(_save)
+        await self.cookie_persistence.save(
+            jar,
+            path,
+            save_cookies_to_storage=save_cookies_to_storage,
+            to_thread=asyncio.to_thread,
+        )
 
     async def close(self) -> None:
         """Close the HTTP client connection.
