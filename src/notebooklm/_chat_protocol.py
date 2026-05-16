@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -353,6 +354,11 @@ def extract_answer_range(cite_inner: list) -> tuple[int | None, int | None]:
     The server emits ``cite_inner[3] = [[None, answer_start, answer_end]]``
     pointing at the span of the answer string the citation backs. This is
     distinct from the source-side range in ``cite_inner[4]``.
+
+    Returns ``(None, None)`` if either position is missing, not an int,
+    a bool, negative, or if ``end < start`` — the two positions are
+    semantically paired and one without the other is meaningless to
+    downstream consumers.
     """
     if len(cite_inner) <= 3 or not isinstance(cite_inner[3], list):
         return None, None
@@ -362,20 +368,39 @@ def extract_answer_range(cite_inner: list) -> tuple[int | None, int | None]:
     inner = outer[0]
     if len(inner) < 3:
         return None, None
-    start = inner[1] if isinstance(inner[1], int) else None
-    end = inner[2] if isinstance(inner[2], int) else None
+    start, end = inner[1], inner[2]
+    # bool is an int subclass in Python; reject it explicitly. Treat positions
+    # as paired — one without the other (or invalid ordering) is unusable.
+    if (
+        not isinstance(start, int)
+        or isinstance(start, bool)
+        or not isinstance(end, int)
+        or isinstance(end, bool)
+    ):
+        return None, None
+    if start < 0 or end < start:
+        return None, None
     return start, end
 
 
 def extract_score(cite_inner: list) -> float | None:
-    """Extract the server-side relevance score (0.0-1.0) at ``cite_inner[2]``."""
+    """Extract the server-side relevance score (0.0-1.0) at ``cite_inner[2]``.
+
+    Returns ``None`` for non-numeric values, booleans (``bool`` is an ``int``
+    subclass in Python), non-finite floats (NaN, Inf), or values outside
+    [0.0, 1.0]. The bound check keeps the contract documented on the field
+    enforceable for downstream consumers.
+    """
     if len(cite_inner) <= 2:
         return None
     raw = cite_inner[2]
     if isinstance(raw, bool):  # bool is a subclass of int in Python; reject
         return None
     if isinstance(raw, (int, float)):
-        return float(raw)
+        score = float(raw)
+        if not math.isfinite(score) or not (0.0 <= score <= 1.0):
+            return None
+        return score
     return None
 
 

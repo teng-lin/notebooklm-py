@@ -343,6 +343,8 @@ def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> N
 def test_extract_answer_range_handles_well_formed_and_malformed_shapes() -> None:
     # Well-formed: [[None, start, end]]
     assert extract_answer_range([None, None, None, [[None, 10, 20]]]) == (10, 20)
+    # Zero-length but valid: end == start
+    assert extract_answer_range([None, None, None, [[None, 5, 5]]]) == (5, 5)
     # Missing outer: too short
     assert extract_answer_range([None, None, None]) == (None, None)
     # Inner [None] only (server omitted positions)
@@ -353,15 +355,32 @@ def test_extract_answer_range_handles_well_formed_and_malformed_shapes() -> None
     assert extract_answer_range([None, None, None, []]) == (None, None)
     # Outer[0] not a list
     assert extract_answer_range([None, None, None, ["bad"]]) == (None, None)
+    # bool positions rejected (bool is int subclass in Python)
+    assert extract_answer_range([None, None, None, [[None, True, False]]]) == (None, None)
+    # Partial range: end is None — paired check returns (None, None) not (10, None)
+    assert extract_answer_range([None, None, None, [[None, 10, None]]]) == (None, None)
+    assert extract_answer_range([None, None, None, [[None, None, 20]]]) == (None, None)
+    # Negative start rejected
+    assert extract_answer_range([None, None, None, [[None, -1, 10]]]) == (None, None)
+    # end < start rejected
+    assert extract_answer_range([None, None, None, [[None, 20, 10]]]) == (None, None)
 
 
-def test_extract_score_accepts_float_and_int_rejects_bool() -> None:
+def test_extract_score_accepts_float_and_int_rejects_bool_and_out_of_range() -> None:
     assert extract_score([None, None, 0.6998]) == pytest.approx(0.6998)
+    assert extract_score([None, None, 0.0]) == 0.0  # boundary
+    assert extract_score([None, None, 1.0]) == 1.0  # boundary
     assert extract_score([None, None, 1]) == 1.0  # int coerces
     assert extract_score([None, None, None]) is None
     assert extract_score([None, None, True]) is None  # bool rejected
     assert extract_score([None, None, "0.5"]) is None  # str rejected
     assert extract_score([None, None]) is None  # missing index
+    # Out-of-range or non-finite floats
+    assert extract_score([None, None, 1.5]) is None
+    assert extract_score([None, None, -0.1]) is None
+    assert extract_score([None, None, float("nan")]) is None
+    assert extract_score([None, None, float("inf")]) is None
+    assert extract_score([None, None, float("-inf")]) is None
 
 
 def test_missing_and_malformed_citation_shapes_degrade_without_raising() -> None:
