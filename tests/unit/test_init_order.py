@@ -33,12 +33,6 @@ _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS = {
     ("_sources.py", "_finish_transport_post"): 1,
 }
 
-_CAPABILITIES_TRANSPORT_PRIVATE_METHODS = {
-    "_begin_transport_post",
-    "_begin_transport_task",
-    "_finish_transport_post",
-}
-
 _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "__init__.py",
     "__main__.py",
@@ -199,7 +193,7 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
     )
 
 
-def test_capabilities_is_the_only_private_transport_adapter() -> None:
+def test_capabilities_private_core_access_is_limited_to_transport_adapter_calls() -> None:
     observed = _collect_core_private_accesses(SRC_ROOT / "_capabilities.py")
     observed_counts = Counter(attr for _, attr in observed)
 
@@ -210,8 +204,6 @@ def test_capabilities_is_the_only_private_transport_adapter() -> None:
             "_finish_transport_post": 1,
         }
     )
-    unexpected = set(observed_counts) - _CAPABILITIES_TRANSPORT_PRIVATE_METHODS
-    assert unexpected == set()
 
 
 def test_capabilities_does_not_import_transport_operation_token() -> None:

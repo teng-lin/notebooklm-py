@@ -51,6 +51,8 @@ class CookieJarProvider(Protocol):
 
 
 class TransportOperationProvider(Protocol):
+    """Provider for shared transport operation bookkeeping."""
+
     async def begin_transport_post(self, log_label: str) -> object: ...
     async def begin_transport_task(
         self,
