@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm._capabilities import ClientCoreCapabilities, TransportOperationProvider
+from notebooklm._capabilities import (
+    ClientCoreCapabilities,
+    TransportOperationProvider,
+    UploadConcurrencyProvider,
+)
 from notebooklm._core_polling import PollRegistry
 from notebooklm.auth import authuser_query, format_authuser_value
 
@@ -120,6 +124,25 @@ async def test_client_core_capabilities_finish_transport_post_delegates_exact_to
     core._finish_transport_post.assert_awaited_once_with(token)
 
 
+def test_client_core_capabilities_get_upload_semaphore_delegates_to_core() -> None:
+    semaphore = asyncio.Semaphore(2)
+    core = MagicMock()
+    core.get_upload_semaphore.return_value = semaphore
+    adapter = ClientCoreCapabilities(core)
+
+    assert adapter.get_upload_semaphore() is semaphore
+    core.get_upload_semaphore.assert_called_once_with()
+
+
+def test_client_core_capabilities_record_upload_queue_wait_delegates_to_core() -> None:
+    core = MagicMock()
+    adapter = ClientCoreCapabilities(core)
+
+    adapter.record_upload_queue_wait(1.25)
+
+    core.record_upload_queue_wait.assert_called_once_with(1.25)
+
+
 @pytest.mark.asyncio
 async def test_transport_operation_provider_accepts_magicmock_shape() -> None:
     post_token = object()
@@ -140,6 +163,18 @@ async def test_transport_operation_provider_accepts_magicmock_shape() -> None:
     provider.begin_transport_post.assert_awaited_once_with("artifact generate")
     provider.begin_transport_task.assert_awaited_once_with(task, "artifact wait task_123")
     provider.finish_transport_post.assert_awaited_once_with(task_token)
+
+
+def test_upload_concurrency_provider_accepts_magicmock_shape() -> None:
+    semaphore = asyncio.Semaphore(1)
+    provider = MagicMock(spec=UploadConcurrencyProvider)
+    provider.get_upload_semaphore.return_value = semaphore
+
+    assert provider.get_upload_semaphore() is semaphore
+    provider.record_upload_queue_wait(0.5)
+
+    provider.get_upload_semaphore.assert_called_once_with()
+    provider.record_upload_queue_wait.assert_called_once_with(0.5)
 
 
 def test_capabilities_module_does_not_import_client_core_at_runtime() -> None:

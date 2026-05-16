@@ -62,11 +62,24 @@ class TransportOperationProvider(Protocol):
     async def finish_transport_post(self, token: object) -> None: ...
 
 
+class UploadConcurrencyProvider(Protocol):
+    """Provider for shared source-upload concurrency and queue metrics."""
+
+    def get_upload_semaphore(self) -> asyncio.Semaphore:
+        """Return the existing per-core upload semaphore."""
+        ...
+
+    def record_upload_queue_wait(self, wait_seconds: float) -> None:
+        """Record how long an upload waited for the semaphore."""
+        ...
+
+
 class ClientCoreCapabilities(
     PollRegistryProvider,
     AuthRouteProvider,
     CookieJarProvider,
     TransportOperationProvider,
+    UploadConcurrencyProvider,
 ):
     """Narrow capability adapter around a ``ClientCore``-shaped object.
 
@@ -110,3 +123,9 @@ class ClientCoreCapabilities(
 
     async def finish_transport_post(self, token: object) -> None:
         await self._core._finish_transport_post(token)
+
+    def get_upload_semaphore(self) -> asyncio.Semaphore:
+        return self._core.get_upload_semaphore()
+
+    def record_upload_queue_wait(self, wait_seconds: float) -> None:
+        self._core.record_upload_queue_wait(wait_seconds)

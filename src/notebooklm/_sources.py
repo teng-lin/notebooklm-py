@@ -788,10 +788,10 @@ class SourcesAPI:
         # Step 0–3 run under the upload semaphore so a fan-out caller can't
         # hold more than ``max_concurrent_uploads`` open FDs at once. The
         # semaphore is per-instance; see ClientCore.get_upload_semaphore.
-        upload_sem = self._core.get_upload_semaphore()
+        upload_sem = self._capabilities.get_upload_semaphore()
         upload_wait_start = monotonic()
         async with upload_sem:
-            self._core.record_upload_queue_wait(monotonic() - upload_wait_start)
+            self._capabilities.record_upload_queue_wait(monotonic() - upload_wait_start)
             # Open the file ONCE here. The FD lives across:
             #   - the os.fstat() size check (so the size we send to
             #     ``_start_resumable_upload`` matches the bytes we will
