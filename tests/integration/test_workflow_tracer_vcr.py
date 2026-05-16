@@ -59,6 +59,7 @@ chain is the test.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import uuid
 from pathlib import Path
@@ -89,6 +90,18 @@ _TRACER_URL = "https://en.wikipedia.org/wiki/Tracer_bullet"
 _TRACER_QUESTION = "In one sentence, what is a tracer bullet?"
 
 
+@pytest.fixture
+def fast_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip polling backoff during replay while preserving live record cadence."""
+    if _is_vcr_record_mode():
+        return
+
+    async def instant_sleep(_seconds: float, result: object | None = None) -> object | None:
+        return result
+
+    monkeypatch.setattr(asyncio, "sleep", instant_sleep)
+
+
 class TestWorkflowTracerBullet:
     """Records and replays the full create→add→ask→generate→download journey."""
 
@@ -103,7 +116,7 @@ class TestWorkflowTracerBullet:
         # here keeps the per-cassette ``match_on`` self-contained.
         match_on=["method", "scheme", "host", "port", "path", "rpcids", "freq"],
     )
-    async def test_full_workflow(self, tmp_path: Path) -> None:
+    async def test_full_workflow(self, tmp_path: Path, fast_sleep: None) -> None:
         """End-to-end user journey produces a downloadable report.
 
         Asserts each phase's intermediate output:

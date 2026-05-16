@@ -216,7 +216,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_server_error_500(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        # Pin ``server_error_max_retries=0`` to exercise the raise-immediately
+        # mapping path. Retry/backoff behavior is covered in core transport tests.
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
             mock_response = MagicMock()
@@ -232,7 +234,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_connect_timeout_raises_network_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        # Network errors flow through the same retry loop as 5xx responses;
+        # pin to 0 so these mapping tests don't pay backoff sleeps.
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
             with (
@@ -247,7 +251,7 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_read_timeout_raises_rpc_timeout_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
             with (
@@ -262,7 +266,7 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_connect_error_raises_network_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
             with (
@@ -277,7 +281,7 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_generic_request_error_raises_network_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens) as client:
+        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
             with (

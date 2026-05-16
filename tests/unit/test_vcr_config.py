@@ -427,7 +427,7 @@ def test_build_synthetic_error_response_invalid_mode():
         build_synthetic_error_response("418")
 
 
-@pytest.mark.parametrize("mode", list(VALID_ERROR_MODES))
+@pytest.mark.parametrize("mode", sorted(VALID_ERROR_MODES))
 def test_synthetic_error_cassette_name_prefix(mode):
     """Cassette filenames generated through this plumbing must carry the
     canonical ``error_synthetic_`` prefix so a reader of tests/cassettes/ can

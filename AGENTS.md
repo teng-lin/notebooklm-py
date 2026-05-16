@@ -16,6 +16,7 @@ uv sync --frozen --extra browser --extra dev --extra markdown
 source .venv/bin/activate
 uv run playwright install chromium
 uv run pytest
+uv run pytest -n auto --dist=worksteal  # optional faster local run
 uv run ruff check .
 uv run ruff format .
 uv run mypy src/notebooklm
