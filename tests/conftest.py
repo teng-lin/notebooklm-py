@@ -246,8 +246,13 @@ def mock_get_conversation_id(httpx_mock, build_rpc_response):
             RPCMethod.GET_LAST_CONVERSATION_ID,
             [[[conv_id]]],
         )
+        # Narrow the URL pattern to ``rpcids=hPTbtc`` so the mock only
+        # intercepts the get_conversation_id call and not unrelated
+        # batchexecute RPCs that may fire in the same test (per CodeRabbit
+        # review on PR #667 — defensive against future tests that exercise
+        # additional batchexecute traffic).
         httpx_mock.add_response(
-            url=re.compile(r".*batchexecute.*"),
+            url=re.compile(r".*batchexecute.*rpcids=hPTbtc.*"),
             content=response.encode(),
             method="POST",
             is_reusable=reusable,

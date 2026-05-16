@@ -408,9 +408,23 @@ class ChatAPI:
                     for conv in group:
                         if isinstance(conv, list) and conv and isinstance(conv[0], str):
                             return conv[0]
-            logger.debug(
-                "No conversation ID found in response (API structure may have changed): %s",
-                raw,
+            # Promoted from DEBUG to WARNING (per Gemini review on PR #667):
+            # the response shape is the actionable diagnostic when callers
+            # (notably ``ChatAPI.ask`` post-issue-#659) raise ChatError on a
+            # ``None`` return. Truncate to keep log volume bounded; the
+            # ``repr`` keeps the shape visible (lists vs. dicts vs. ints).
+            logger.warning(
+                "hPTbtc returned an unexpected response shape; no "
+                "conversation_id extracted (notebook=%s, raw=%r)",
+                notebook_id,
+                repr(raw)[:500],
+            )
+        elif raw is not None:
+            logger.warning(
+                "hPTbtc returned a non-list, non-empty response (notebook=%s, type=%s, raw=%r)",
+                notebook_id,
+                type(raw).__name__,
+                repr(raw)[:500],
             )
         return None
 
