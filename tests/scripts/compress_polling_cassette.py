@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compress the artifacts polling cassette after recording (T8.D10).
+"""Compress the artifacts polling cassette after recording.
 
 The live ``artifacts_poll_rename_wait.yaml`` cassette is recorded by
 ``tests/integration/test_polling_vcr.py::TestPollingReplay::test_poll_rename_wait``

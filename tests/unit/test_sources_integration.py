@@ -904,7 +904,7 @@ class TestAddEpubFileSource:
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            # ``mime_type`` is deprecated for ``add_file`` (T6.E); the upload
+            # ``mime_type`` is deprecated for ``add_file``; the upload
             # pipeline derives the MIME type from the filename extension. The
             # legacy call site is preserved-by-omission here to avoid leaking
             # a DeprecationWarning into the integration suite.

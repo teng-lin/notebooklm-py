@@ -1,4 +1,4 @@
-"""Cassette-shape regression lint (T8.A3).
+"""Cassette-shape regression lint.
 
 This module walks every VCR cassette under ``tests/cassettes`` and asserts a
 small set of structural invariants that the audit's regression classes
@@ -364,7 +364,7 @@ def _lint_cassette(path: Path) -> list[str]:
     # and response bodies, before YAML re-quoting strips escapes).
     failures.extend(f"leak: {leak}" for leak in _find_leaks(raw_text))
 
-    # T8.E4 — synthetic-error cassettes (``error_synthetic_*.yaml``) carry
+    # synthetic-error cassettes (``error_synthetic_*.yaml``) carry
     # canonical error bodies from
     # ``tests.cassette_patterns.build_synthetic_error_response``: JSON
     # ``{"error": {...}}`` shapes whose ONLY purpose is to drive the client's

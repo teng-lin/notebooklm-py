@@ -58,7 +58,7 @@ wait), so the default pytest timeout is plenty.
 Replay
 ------
 ``@notebooklm_vcr.use_cassette`` plus ``fast_sleep`` makes the full flow run
-in <10 seconds. The default VCR matcher uses ``rpcids`` (T8.A1) so the
+in <10 seconds. The default VCR matcher uses ``rpcids`` so the
 create / add_text / start / poll / delete interactions are disambiguated by
 query string; the repeated ``POLL_RESEARCH`` interactions match by play-count
 order (VCR's default for same-key requests), which is exactly the sequential

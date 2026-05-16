@@ -10,7 +10,7 @@ either:
   - Remained half-finalized, the resumable URL still alive, holding
     quota until Scotty's GC timeout expired.
 
-Post-fix (T7.C3):
+Post-fix:
   - The finalize POST is wrapped in ``asyncio.shield`` so a cancel
     mid-POST lets the request complete; the cancel then propagates after
     the response is received (or after the inner Task wins the race).
@@ -46,7 +46,7 @@ from notebooklm import NotebookLMClient
 
 from .helpers import with_simulated_cancel
 
-# T8.D11 — mock-transport cancellation tests; no HTTP, no cassette. Opt out
+# mock-transport cancellation tests; no HTTP, no cassette. Opt out
 # of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

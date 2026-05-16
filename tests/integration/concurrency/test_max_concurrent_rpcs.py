@@ -16,7 +16,7 @@ Audit item §8 (`thread-safety-concurrency-audit.md` §8):
     fan-out so an explicit knob lets callers tune for their account
     tier.
 
-Post-fix (T7.H1): a per-instance ``asyncio.Semaphore`` is acquired at
+Post-fix: a per-instance ``asyncio.Semaphore`` is acquired at
 the top of ``_perform_authed_post`` and released on every exit path.
 Defaults to ``16`` — well below the default ``max_connections=100`` so
 there's headroom for short-lived helper requests (refresh GETs, upload
@@ -70,7 +70,7 @@ from notebooklm.types import ConnectionLimits
 
 from .conftest import ConcurrentMockTransport
 
-# T8.D11 — concurrency-harness tests against a mock transport; no HTTP,
+# concurrency-harness tests against a mock transport; no HTTP,
 # no cassette. Opt out of the tier-enforcement hook in
 # tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr

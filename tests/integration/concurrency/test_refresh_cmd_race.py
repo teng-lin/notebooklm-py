@@ -2,7 +2,7 @@
 
 Regression test for the two failure modes at ``src/notebooklm/auth.py``:
 
-1. **Failed refresh marked successful (audit §27)**:
+1. **Failed refresh marked successful**:
    ``_fetch_tokens_with_refresh()`` previously bumped ``_REFRESH_GENERATIONS``
    *before* awaiting ``_run_refresh_cmd()``. If the subprocess raised, the
    bump remained — concurrent waiters then observed the bumped generation

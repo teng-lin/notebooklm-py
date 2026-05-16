@@ -1,4 +1,4 @@
-"""``with_client`` routes errors through ``handle_errors`` (T1.G).
+"""``with_client`` routes errors through ``handle_errors``.
 
 Before T1.G, ``@with_client`` ran its own ad-hoc ``try/except FileNotFoundError``
 + broad ``except Exception``, so typed library exceptions got squashed into a

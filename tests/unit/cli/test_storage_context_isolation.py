@@ -1,4 +1,4 @@
-"""Tests for ``--storage`` context isolation (PR-T3.C).
+"""Tests for ``--storage`` context isolation.
 
 The ``--storage <path>`` flag pins both auth state AND notebook context to
 sibling files (``<path>`` and ``<path>.context.json``). Without isolation,

@@ -1,4 +1,4 @@
-"""Unit tests for ``NOTEBOOKLM_RPC_OVERRIDES`` self-patch escape hatch (T6.A).
+"""Unit tests for ``NOTEBOOKLM_RPC_OVERRIDES`` self-patch escape hatch.
 
 The override mechanism lets users self-patch when Google rotates an
 obfuscated batchexecute method id, *without* waiting for a release. The

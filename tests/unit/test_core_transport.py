@@ -1,4 +1,4 @@
-"""Parity tests for the shared transport pipeline (T2.C).
+"""Parity tests for the shared transport pipeline.
 
 Pins down the behavior of :meth:`ClientCore._perform_authed_post` (and the
 chat-side :meth:`ClientCore.query_post`) extracted from ``_rpc_call_impl``:
@@ -701,7 +701,7 @@ async def test_rpc_call_happy_path_url_and_body_unchanged(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# server_error_max_retries — 5xx + network with exponential backoff (T3.A)
+# server_error_max_retries — 5xx + network with exponential backoff
 # ---------------------------------------------------------------------------
 
 

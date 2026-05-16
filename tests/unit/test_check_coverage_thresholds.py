@@ -79,7 +79,7 @@ def test_original_drift_mismatch_fails(tmp_path, capsys, script):
 
 
 # ---------------------------------------------------------------------------
-# T6.C — per-file floor enforcement
+# per-file floor enforcement
 # ---------------------------------------------------------------------------
 
 

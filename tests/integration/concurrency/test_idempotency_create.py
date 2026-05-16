@@ -6,7 +6,7 @@ Pre-fix, mutating create RPCs (CREATE_NOTEBOOK, ADD_SOURCE) ran inside
 between server-side commit and client-side response triggered a naive
 re-POST that duplicated the resource.
 
-Post-fix (T7.B2):
+Post-fix:
 - Per-call ``disable_internal_retries`` flag suppresses the inner retry
   loop for declared mutating create RPCs.
 - An API-layer ``_idempotency.idempotent_create`` wrapper owns
@@ -44,7 +44,7 @@ from notebooklm import (
 )
 from notebooklm.rpc import RPCMethod
 
-# T8.D11 — mock-transport idempotency tests; no HTTP, no cassette. Opt out
+# mock-transport idempotency tests; no HTTP, no cassette. Opt out
 # of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

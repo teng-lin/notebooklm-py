@@ -49,7 +49,7 @@ from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.types import GenerationStatus
 
-# T8.D11 — mock-transport concurrency tests; no HTTP, no cassette. Opt out
+# mock-transport concurrency tests; no HTTP, no cassette. Opt out
 # of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

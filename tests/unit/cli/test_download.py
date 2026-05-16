@@ -1568,7 +1568,7 @@ class TestDownloadFlashcardsStandardFlags:
 # (audio/video/slide-deck/...); we exercise `download audio` as a
 # representative because the dispatch is shared.
 #
-# Contract under test (audit row I14, error_handler.py):
+# Contract under test:
 #   - --json honored on the exception path: emits a JSON envelope of shape
 #     {"error": true, "code": "<TYPED_CODE>", "message": "..."} on stdout.
 #   - RateLimitError surfaces `retry_after` in the JSON body and "Retry after

@@ -8,7 +8,7 @@ cassettes in `tests/cassettes/`.
 To keep the tier honest — i.e. to keep "integration" from quietly slipping
 back into "unit with extra ceremony" — every test collected under
 `tests/integration/` MUST satisfy one of these three rules. The
-`pytest_collection_modifyitems` hook in `conftest.py` (T8.D11) raises
+`pytest_collection_modifyitems` hook in `conftest.py` raises
 `pytest.UsageError` at collection time if none of them holds, so a violation
 fails CI immediately rather than degrading the tier silently.
 

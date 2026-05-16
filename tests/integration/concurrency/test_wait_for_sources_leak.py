@@ -33,7 +33,7 @@ import pytest
 from notebooklm import NotebookLMClient
 from notebooklm.types import Source, SourceProcessingError
 
-# T8.D11 — mock-based wait-for-sources cancellation tests; no HTTP, no
+# mock-based wait-for-sources cancellation tests; no HTTP, no
 # cassette. Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

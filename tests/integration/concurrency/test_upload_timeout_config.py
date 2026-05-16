@@ -8,7 +8,7 @@ finalize POST in `_upload_file_streaming` instantiated
 finalize). Callers uploading very large files on slow networks (or
 testing with deliberately short timeouts) had no way to override.
 
-Post-fix (T7.H3): `NotebookLMClient.__init__` / `from_storage` accept
+Post-fix: `NotebookLMClient.__init__` / `from_storage` accept
 `upload_timeout: httpx.Timeout | None = None`, threaded to
 `SourcesAPI`, and used at both hardcoded sites. ``None`` (default)
 preserves the original hardcoded values for back-compat — defaults

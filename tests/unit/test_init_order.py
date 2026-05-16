@@ -1,4 +1,4 @@
-"""Init-order regression tests for ``ArtifactsAPI`` / ``NotesAPI`` (T6.F).
+"""Init-order regression tests for ``ArtifactsAPI`` / ``NotesAPI``.
 
 Before T6.F, :class:`ArtifactsAPI` required ``notes_api=client.notes`` at
 construction time, so :class:`NotesAPI` had to be built first. The shared

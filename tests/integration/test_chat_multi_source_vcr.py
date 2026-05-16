@@ -1,4 +1,4 @@
-"""Multi-source streaming-chat VCR cassette (T8.E6).
+"""Multi-source streaming-chat VCR cassette.
 
 This module records and replays a single ``chat.ask`` call against a
 fresh scratch notebook that carries **five text sources**, with all five
@@ -41,7 +41,7 @@ sources are deleted at the end of the recording run; only the chat
 
 Replay
 ------
-Replay opts into the ``freq`` body matcher (T8.A2) on top of the
+Replay opts into the ``freq`` body matcher on top of the
 default ``method/scheme/host/port/path`` matchers. The streaming-chat
 endpoint at ``/GenerateFreeFormStreamed`` does not carry ``rpcids``, so without
 ``freq`` two chat POSTs would be indistinguishable. ``freq`` decodes
@@ -311,7 +311,7 @@ class TestChatMultiSource:
                 try:
                     with notebooklm_vcr.use_cassette(
                         CASSETTE_NAME,
-                        # Opt-in to the ``freq`` body matcher (T8.A2). The
+                        # Opt-in to the ``freq`` body matcher. The
                         # streaming-chat POST has no ``rpcids`` query
                         # param so the body-aware matcher is the only way
                         # to disambiguate it from any future chat

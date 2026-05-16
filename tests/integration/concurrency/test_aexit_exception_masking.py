@@ -10,7 +10,7 @@ Coverage:
 1. Body raises + close raises → body exception propagates, close logged at
    WARNING, transport closed.
 2. Body succeeds + close raises → close exception propagates.
-3. Cancel mid-close (audit §7) → transport still closed.
+3. Cancel mid-close → transport still closed.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import pytest
 
 from notebooklm import NotebookLMClient
 
-# T8.D11 — mock-based __aexit__ arbitration tests; no HTTP, no cassette.
+# mock-based __aexit__ arbitration tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

@@ -10,7 +10,7 @@ from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCError
 
-# T8.D11 — mock-based refresh-callback wiring tests; no HTTP, no cassette.
+# mock-based refresh-callback wiring tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 
@@ -30,7 +30,7 @@ class TestAutoRefreshIntegration:
         assert client._core._refresh_callback is not None
         assert client._core._refresh_callback.__func__ is NotebookLMClient.refresh_auth
         # ``_refresh_lock`` is lazily created on first ``_await_refresh``
-        # (T7.G1). At construction time it is ``None`` so the client can
+        #. At construction time it is ``None`` so the client can
         # be instantiated outside a running loop; the helper allocates the
         # lock on demand inside the async refresh path.
         assert client._core._refresh_lock is None

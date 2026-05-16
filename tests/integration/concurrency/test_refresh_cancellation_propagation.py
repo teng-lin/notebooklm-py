@@ -7,7 +7,7 @@ cancelled via ``asyncio.wait_for(timeout=...)`` while
 ``CancelledError`` into the *shared* refresh task itself, taking down
 every other waiter joining the single in-flight refresh.
 
-The fix (audit §4) wraps the await in ``asyncio.shield`` so the
+The fix wraps the await in ``asyncio.shield`` so the
 cancelled waiter unwinds locally while the underlying task continues
 producing a value for its siblings.
 
@@ -31,7 +31,7 @@ import pytest
 from notebooklm._core import ClientCore
 from notebooklm.auth import AuthTokens
 
-# T8.D11 — async-cancellation propagation tests with no HTTP, no cassette.
+# async-cancellation propagation tests with no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

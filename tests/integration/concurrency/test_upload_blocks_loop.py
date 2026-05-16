@@ -13,7 +13,7 @@ Audit item §22 (``thread-safety-concurrency-audit.md`` §22):
     sibling RPC the caller fired in parallel — for the full read
     latency.
 
-Post-fix (T7.D2) — each chunk read wraps the synchronous ``f.read``
+Post-fix — each chunk read wraps the synchronous ``f.read``
 with ``await asyncio.to_thread(f.read, 65536)`` so the blocking
 syscall runs on the default thread executor and the loop keeps
 ticking sibling tasks. Stdlib only — no ``aiofiles``.
@@ -66,7 +66,7 @@ import pytest
 
 from notebooklm._sources import SourcesAPI
 
-# T8.D11 — mock-based loop-blocking detection tests; no HTTP, no cassette.
+# mock-based loop-blocking detection tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

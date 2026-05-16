@@ -90,7 +90,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
     - ``__aexit__`` wrapped in ``wait_for(timeout=0.1)`` so the cancel
       fires during ``aclose``.
 
-    The shield in :meth:`ClientCore.close` (T7.B4 / audit §7) wraps
+    The shield in :meth:`ClientCore.close` wraps
     ``self._http_client.aclose()`` in ``asyncio.shield`` inside an
     outer ``finally``. Without that shield, a cancel arriving inside
     ``aclose`` aborts the close and leaks the httpx transport. With

@@ -1,4 +1,4 @@
-"""CLI integration tests for ``notebooklm login --browser-cookies`` (T8.C7).
+"""CLI integration tests for ``notebooklm login --browser-cookies``.
 
 The VCR cassette captures ONLY the post-import auth verification GET — the
 homepage fetch that ``_login_with_browser_cookies`` performs after

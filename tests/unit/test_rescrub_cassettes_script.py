@@ -1,4 +1,4 @@
-"""Unit tests for ``scripts/rescrub-cassettes.py`` (T8.B6).
+"""Unit tests for ``scripts/rescrub-cassettes.py``.
 
 These tests build synthetic "bad" cassettes that contain the exact leak
 shapes the script is meant to clean — an ``/ogw/`` avatar URL plus a

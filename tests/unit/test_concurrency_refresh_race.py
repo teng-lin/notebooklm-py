@@ -10,7 +10,7 @@ coroutine standpoint: no other task can mutate state between read and the
 wire.
 
 T2.C moved the POST out of ``_rpc_call_impl`` into ``_perform_authed_post``
-so chat (T2.D) can share the same transport pipeline. The AST guard below
+so chat can share the same transport pipeline. The AST guard below
 follows the POST; the invariant still belongs at the shared site.
 
 T7.F2 hardened the invariant by:
@@ -240,7 +240,7 @@ def test_build_url_does_not_read_self_auth():
             forbidden.append((node.lineno, ast.dump(node)))
 
     assert not forbidden, (
-        f"RpcExecutor.build_url reads self.auth — torn-read regression (T7.F2 / audit §12). "
+        f"RpcExecutor.build_url reads self.auth — torn-read regression. "
         f"Read every auth scalar off the ``snapshot`` parameter instead. "
         f"Occurrences: {forbidden}"
     )

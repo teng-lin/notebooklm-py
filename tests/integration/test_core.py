@@ -18,7 +18,7 @@ from notebooklm.rpc import (
     ServerError,
 )
 
-# T8.D11 — httpx-mock + MagicMock based core-layer tests; no real HTTP, no
+# httpx-mock + MagicMock based core-layer tests; no real HTTP, no
 # cassette. Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

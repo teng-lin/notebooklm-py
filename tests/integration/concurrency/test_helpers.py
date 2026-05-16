@@ -17,7 +17,7 @@ from .helpers import (
     with_simulated_cancel,
 )
 
-# T8.D11 — pure helper-logic tests for tests/integration/concurrency/helpers.py;
+# pure helper-logic tests for tests/integration/concurrency/helpers.py;
 # no HTTP, no cassette. Opt out of the tier-enforcement hook in
 # tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr

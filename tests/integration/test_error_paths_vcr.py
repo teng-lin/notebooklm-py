@@ -1,4 +1,4 @@
-"""Error-path VCR cassettes via T8.E10 synthetic-error plumbing (T8.E4).
+"""Error-path VCR cassettes via T8.E10 synthetic-error plumbing.
 
 SYNTHETIC error response — validates client exception mapping, not real Google
 error shapes. The cassettes in this module carry the canonical synthetic-error
@@ -47,7 +47,7 @@ short-circuiting VCR and making the cassette decorative. Leaving the env var
 unset lets VCR's cassette drive the response, which is the behavior we want
 the replay tests to exercise.
 
-See ``docs/development.md`` (section "Synthetic error cassettes (T8.E10)") and
+See ``docs/development.md`` (section "Synthetic error cassettes") and
 ``tests/cassette_patterns.py:build_synthetic_error_response`` for the canonical
 synthetic shapes these cassettes carry.
 """

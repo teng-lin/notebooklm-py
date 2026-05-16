@@ -341,7 +341,7 @@ class TestBlastRadiusExtractor:
         assert {".youtube.com"} <= kept_domains, (
             "convert_rookiepy_cookies_to_storage_state must keep YouTube "
             "cookies once they have been extracted; the runtime gate is "
-            "permissive over the union (T5.G)."
+            "permissive over the union."
         )
         assert any(c["name"] == "LOGIN_INFO" for c in storage_state["cookies"])
 
@@ -363,7 +363,7 @@ class TestBlastRadiusExtractor:
         for domain in (".youtube.com", "youtube.com", "accounts.youtube.com"):
             assert _is_allowed_auth_domain(domain) is True, (
                 f"_is_allowed_auth_domain({domain!r}) must accept the domain so "
-                "opted-in cookies survive every downstream filter (T5.G)."
+                "opted-in cookies survive every downstream filter."
             )
 
 

@@ -31,7 +31,7 @@ CASSETTES_DIR = Path(__file__).parent.parent / "cassettes"
 
 # Real cassettes live at the top level of ``tests/cassettes/``; illustrative
 # fixtures (``example_*.yaml``) live in ``tests/cassettes/examples/`` per the
-# naming convention documented in ``tests/cassettes/README.md`` (T8.E2).
+# naming convention documented in ``tests/cassettes/README.md``.
 #
 # This filter decides whether the VCR integration tier has anything to replay:
 # - Globbing ``*.yaml`` (non-recursive) naturally skips the ``examples/``
@@ -107,7 +107,7 @@ def _has_use_cassette_decorator(item) -> bool:
 
 
 def pytest_collection_modifyitems(config, items):
-    """Enforce the integration tier-VCR rule (T8.D11).
+    """Enforce the integration tier-VCR rule.
 
     Every collected test under ``tests/integration/`` MUST be VCR-tier: it must carry
     ``@pytest.mark.vcr``, be decorated with ``@notebooklm_vcr.use_cassette``,
@@ -140,7 +140,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 # =============================================================================
-# T8.D4 — Globalize keepalive-poke disable for VCR tests
+# Globalize keepalive-poke disable for VCR tests
 # =============================================================================
 
 

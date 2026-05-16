@@ -1,4 +1,4 @@
-"""End-to-end stale-CSRF refresh path under VCR (T8.C4).
+"""End-to-end stale-CSRF refresh path under VCR.
 
 This module records and replays the **full three-leg** auth-refresh flow that
 ``test_auto_refresh.py`` covers only at the httpx-mock layer:

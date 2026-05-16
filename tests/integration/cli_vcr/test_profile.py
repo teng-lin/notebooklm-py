@@ -1,4 +1,4 @@
-"""CLI integration tests for ``notebooklm profile`` (T8.D8).
+"""CLI integration tests for ``notebooklm profile``.
 
 The ``profile`` command group (``list`` / ``create`` / ``switch`` /
 ``rename``) is a local-only profile manager — every subcommand operates on

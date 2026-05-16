@@ -12,8 +12,8 @@ Helpers
     is supposed to be serialized (a lock, a per-resource queue, a
     per-conversation guard), asserts that no two ``enter`` events
     occur without an intervening ``exit``. Used by Phase 2 tests for
-    `_refresh_lock`, the conversation-cache lock (T7.F1), the
-    per-task polling dedupe leader (T7.E2), etc.
+    `_refresh_lock`, the conversation-cache lock, the
+    per-task polling dedupe leader, etc.
 
 ``assert_unique_outputs(make_coro, n_concurrent)``
     Asserts N concurrent invocations of an async callable produce N

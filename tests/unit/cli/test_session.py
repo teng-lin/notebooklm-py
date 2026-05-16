@@ -1256,7 +1256,7 @@ class TestUseAuthAwareError:
     """When `notebooklm use <id>` hits an `AuthError` (e.g. expired SID
     cookies), the catch must surface the typed "run notebooklm login" UX
     from `helpers.handle_auth_error` rather than the generic "Could not
-    verify ... Pass --force" catch-all (audit row I13).
+    verify ... Pass --force" catch-all.
     """
 
     def test_use_auth_error_suggests_notebooklm_login(self, runner, mock_auth, mock_context_file):

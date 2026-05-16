@@ -1,4 +1,4 @@
-"""Multi-interaction mind-map chain cassette (T8.C3).
+"""Multi-interaction mind-map chain cassette.
 
 ``ArtifactsAPI.generate_mind_map`` is one of the few public-API entry points
 that emits **multiple sequential RPCs** in a single call. The flow is:
@@ -31,7 +31,7 @@ To re-record this cassette::
 
 Replay
 ------
-The default VCR matcher includes ``rpcids`` (T8.A1) which deterministically
+The default VCR matcher includes ``rpcids`` which deterministically
 disambiguates the three batchexecute POSTs by the RPC ID in the URL query
 string. No per-cassette ``match_on`` override is needed.
 """

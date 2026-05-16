@@ -1,4 +1,4 @@
-"""Empty-result VCR cassettes — parser edge cases for empty state (T8.E5).
+"""Empty-result VCR cassettes — parser edge cases for empty state.
 
 Three cassettes exercise the empty-collection code paths in:
 

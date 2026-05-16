@@ -1,4 +1,4 @@
-"""Tests for ``scripts/check_rpc_health.py`` exit-code policy (PR-T1.C).
+"""Tests for ``scripts/check_rpc_health.py`` exit-code policy.
 
 The nightly canary previously exited ``0`` on every ``ERROR`` status by
 labelling them "transient". That meant a silently-broken canary stayed

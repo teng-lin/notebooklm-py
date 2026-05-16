@@ -6,7 +6,7 @@ Pre-fix, ``rate_limit_max_retries`` defaulted to ``0`` so any 429 raised
 programmatic users had to discover and opt in. Diverges from "smart
 retry" SDK norms.
 
-Post-fix (T7.H2):
+Post-fix:
 - ``ClientCore.__init__`` defaults ``rate_limit_max_retries`` to ``3``.
 - ``NotebookLMClient.__init__`` and ``NotebookLMClient.from_storage``
   match the new default.
@@ -14,7 +14,7 @@ Post-fix (T7.H2):
   (start 1s, cap 30s, ±20% jitter) when a 429 lacks a parseable
   ``Retry-After`` header, so the new default is useful even when the
   server omits the hint.
-- ``disable_internal_retries=True`` (T7.B2) still suppresses BOTH the
+- ``disable_internal_retries=True`` still suppresses BOTH the
   429 and the 5xx/network retry loops for mutating create RPCs whose
   retries would risk duplicate-resource creation.
 

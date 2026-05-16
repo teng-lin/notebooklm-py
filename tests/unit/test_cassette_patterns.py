@@ -471,7 +471,7 @@ def test_bad_cassette_cookie_header_payload_is_flagged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T8.A6b — upload + Drive token scrubbing (audit finding I17)
+# upload + Drive token scrubbing (audit finding I17)
 #
 # These tests pin down two invariants:
 #
@@ -646,7 +646,7 @@ def test_is_clean_recognizes_t8a6b_placeholders() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T8.A6a — display-name + avatar scrub patterns (audit C4 + /ogw/ group)
+# display-name + avatar scrub patterns (audit C4 + /ogw/ group)
 #
 # These tests pin down four invariants:
 #

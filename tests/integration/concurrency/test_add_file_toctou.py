@@ -13,7 +13,7 @@ A second, independent concern: nothing bounded the number of concurrent
 hold 100 file descriptors simultaneously, exhausting the per-process FD
 limit (default 1024 on macOS, configurable but rarely > 65535).
 
-Post-fix (T7.D3):
+Post-fix:
 
   1. ``add_file`` opens the file ONCE under a ``try``/``with`` block, derives
      the size via ``os.fstat(fd.fileno()).st_size`` (operating on the FD
@@ -62,7 +62,7 @@ import pytest
 
 from notebooklm import NotebookLMClient
 
-# T8.D11 — mock-transport concurrency tests; no HTTP, no cassette. Opt out
+# mock-transport concurrency tests; no HTTP, no cassette. Opt out
 # of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 

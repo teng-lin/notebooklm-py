@@ -1,4 +1,4 @@
-"""Coverage assertion for the RPC-health canary (PR-T6.B).
+"""Coverage assertion for the RPC-health canary.
 
 ``scripts/check_rpc_health.py`` already enumerates every ``RPCMethod`` and
 prints a per-method row, but until now there was no CI guard that *every*
@@ -98,7 +98,7 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
 
 # Reserved for ``RPCMethod`` members that hold a URL-path string rather than
 # a batchexecute RPC ID. None currently exist — the streamed-chat path was
-# relocated to a module-level constant in ``rpc/types.py`` (T8.D6) — but
+# relocated to a module-level constant in ``rpc/types.py`` — but
 # this category remains so a future path-shaped entry can be classified
 # without re-introducing the whole skip-list scaffolding.
 PATH_NOT_METHOD_SKIP: frozenset[str] = frozenset()

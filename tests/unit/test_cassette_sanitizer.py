@@ -2,13 +2,13 @@
 
 Coverage map:
 
-1. Structural display-name scrub (PR-T5.E) — positive + negative cases on
+1. Structural display-name scrub — positive + negative cases on
    ``tests/vcr_config.scrub_string``.
 2. Two-Capitalized-word source title regression — confirms we don't reintroduce
    the broad ``>[A-Z][a-z]+\\s[A-Z][a-z]+<`` pattern that would clobber legit
    fixture content.
-3. Broadened email scrub (PR-T5.E) — positive + idempotency.
-4. The Python guard ``tests/scripts/check_cassettes_clean.py`` (T8.A5a):
+3. Broadened email scrub — positive + idempotency.
+4. The Python guard ``tests/scripts/check_cassettes_clean.py``:
    - exits 0 on clean cassettes
    - exits 1 on email / cookie-header / JSON-key / storage_state leaks
    - explicit ``SCRUB_PLACEHOLDERS`` allowlist (NOT a "starts with S"
@@ -43,7 +43,7 @@ REGRESSION_FIXTURE = TESTS_DIR / "fixtures" / "bad_cassettes" / "bad_sid_startin
 
 
 # ---------------------------------------------------------------------------
-# Structural display-name scrub (PR-T5.E)
+# Structural display-name scrub
 # ---------------------------------------------------------------------------
 
 
@@ -125,7 +125,7 @@ def test_two_capital_word_in_html_text_not_scrubbed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Broadened email scrub (PR-T5.E)
+# Broadened email scrub
 # ---------------------------------------------------------------------------
 
 
@@ -177,7 +177,7 @@ def test_email_scrub_negative_unrelated_text() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Python guard tool: ``tests/scripts/check_cassettes_clean.py`` (T8.A5a)
+# Python guard tool: ``tests/scripts/check_cassettes_clean.py``
 #
 # The guard is invoked as a subprocess so we exercise the real CLI entry
 # point — including argparse wiring, exit codes, and stdout/stderr.  It is

@@ -1,4 +1,4 @@
-"""VCR tests for SHARE_ARTIFACT (T8.C2).
+"""VCR tests for SHARE_ARTIFACT.
 
 Records / replays the ``client.notebooks.share()`` call which drives the
 ``RGP97b`` SHARE_ARTIFACT RPC. ``share()`` is a NOTEBOOK-level toggle

@@ -11,7 +11,7 @@ in one thread and then hands it to another thread's loop hits opaque
 httpx, or — worse — a hang on a never-acquired lock that belongs to
 a dead loop.
 
-Post-fix (T7.G2): ``ClientCore.open()`` captures
+Post-fix: ``ClientCore.open()`` captures
 ``asyncio.get_running_loop()`` in ``self._bound_loop`` and
 ``_perform_authed_post`` asserts the running loop matches via a cheap
 ``is`` comparison. On mismatch we raise an actionable ``RuntimeError``
@@ -55,7 +55,7 @@ from notebooklm.rpc import RPCMethod
 
 from .conftest import ConcurrentMockTransport
 
-# T8.D11 — affinity-guard tests against a mock transport; no HTTP, no
+# affinity-guard tests against a mock transport; no HTTP, no
 # cassette. Opt out of the tier-enforcement hook in
 # tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
@@ -207,7 +207,7 @@ async def test_bound_loop_captured_on_open(
     core = ClientCore(auth=_make_auth())
     assert core._bound_loop is None, (
         "ClientCore must not bind to a loop at construction time — "
-        "open() is the binding moment (T7.G2)."
+        "open() is the binding moment."
     )
 
     await core.open()

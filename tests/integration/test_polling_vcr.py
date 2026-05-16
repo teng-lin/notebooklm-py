@@ -1,4 +1,4 @@
-"""VCR-based replay of the artifact poll/rename/wait flow (T8.D10).
+"""VCR-based replay of the artifact poll/rename/wait flow.
 
 This module replaces the previously-skipped e2e test
 ``tests/e2e/test_artifacts.py::TestArtifactMutations::test_poll_rename_wait``
@@ -59,7 +59,7 @@ bloating the cassette to 5+ MB.
 Replay
 ------
 ``@notebooklm_vcr.use_cassette`` plus ``fast_sleep`` makes the whole flow
-run in <1 second. The default VCR matcher uses ``rpcids`` (T8.A1) so the
+run in <1 second. The default VCR matcher uses ``rpcids`` so the
 ``CREATE_ARTIFACT`` / ``LIST_ARTIFACTS`` / ``RENAME_ARTIFACT`` interactions
 are disambiguated by query string; the repeated ``LIST_ARTIFACTS``
 interactions match by play-count order (VCR's default for same-key
@@ -108,7 +108,7 @@ CASSETTE_NAME = "artifacts_poll_rename_wait.yaml"
 CASSETTE_PATH = Path(__file__).parent.parent / "cassettes" / CASSETTE_NAME
 
 # Minimum number of LIST_ARTIFACTS (oUz7Ic) interactions the cassette must
-# carry. The whole point of this task (T8.D10) is to capture a *real*
+# carry. The whole point of this task is to capture a *real*
 # polling progression — a cassette with a single immediate-completion
 # response would not exercise the poll loop. Three is the minimum that
 # proves the loop iterated at least twice between progression steps.

@@ -1,4 +1,4 @@
-"""Tracer-bullet full-workflow VCR cassette (T8.E3).
+"""Tracer-bullet full-workflow VCR cassette.
 
 End-to-end VCR cassette covering the most common user journey through the
 client API: **create-notebook → add-source → ask → generate → download**.
@@ -39,8 +39,8 @@ the report-generation poll takes a minute or two).
 
 Replay
 ------
-The default VCR matcher includes ``rpcids`` (T8.A1). This cassette also
-opts in to the ``freq`` body matcher (T8.A2) because the chat-ask phase
+The default VCR matcher includes ``rpcids``. This cassette also
+opts in to the ``freq`` body matcher because the chat-ask phase
 hits the streaming endpoint, whose disambiguator lives in the
 form-encoded ``f.req`` body rather than the URL query string. ``rpcids``
 is a no-op for the streaming endpoint and ``freq`` is a no-op for

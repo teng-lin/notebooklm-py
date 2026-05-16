@@ -37,11 +37,11 @@ pytestmark = [pytest.mark.vcr, skip_no_cassettes]
 #
 # These only matter during recording for endpoints whose matcher ignores the
 # request body (most batchexecute calls). For body-aware matchers
-# — notably ``freq`` on the streaming-chat endpoint (T8.A2) — replay also
+# — notably ``freq`` on the streaming-chat endpoint — replay also
 # needs to send the SAME notebook_id that was recorded, because the matcher
 # compares slot 7 of the decoded ``f.req`` envelope. We therefore default
 # ``MUTABLE_NOTEBOOK_ID`` to the canonical Tier-8 generation notebook UUID
-# used to record the chat cassettes (T8.B2); recording-time runs override
+# used to record the chat cassettes; recording-time runs override
 # this with the real env var.
 READONLY_NOTEBOOK_ID = os.environ.get(
     "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID",
@@ -609,7 +609,7 @@ class TestChatAPI:
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette(
         "chat_ask.yaml",
-        # Opt this streaming-chat test in to the ``freq`` body matcher (T8.A2).
+        # Opt this streaming-chat test in to the ``freq`` body matcher.
         # The matcher decodes the form-encoded ``f.req`` payload so two
         # otherwise-identical POSTs (same method/scheme/host/port/path) can be
         # disambiguated by their param shape. ``freq`` is opt-in per-cassette
@@ -631,7 +631,7 @@ class TestChatAPI:
     @pytest.mark.asyncio
     @notebooklm_vcr.use_cassette(
         "chat_ask_with_references.yaml",
-        # Opt-in to the ``freq`` body matcher (T8.A2) so the streaming-chat
+        # Opt-in to the ``freq`` body matcher so the streaming-chat
         # POST is disambiguated by its decoded ``f.req`` payload rather than
         # by replay-order. See ``test_ask`` above for the full rationale.
         match_on=["method", "scheme", "host", "port", "path", "freq"],

@@ -298,7 +298,7 @@ class TestCreateNotebookQuotaDetection:
 
 
 class TestGetNotebookFailsClosed:
-    """``NotebooksAPI.get`` raises ``NotebookNotFoundError`` on degenerate responses (T3.D).
+    """``NotebooksAPI.get`` raises ``NotebookNotFoundError`` on degenerate responses.
 
     The NotebookLM backend returns a *parseable but empty* payload for unknown
     notebook IDs rather than a typed error. Pre-T3.D, ``get()`` happily returned

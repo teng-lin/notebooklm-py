@@ -2160,7 +2160,7 @@ class TestIsAllowedCookieDomainRegional:
         assert _is_allowed_cookie_domain("lh3.googleusercontent.com") is True
 
     def test_youtube_accepted_for_opt_in_post_t5g(self):
-        """YouTube remains in the runtime allowlist (T5.G).
+        """YouTube remains in the runtime allowlist.
 
         Blast-radius reduction is enforced at extraction time, not by the
         runtime gate. See :class:`TestIsAllowedAuthDomain` for the
@@ -2491,7 +2491,7 @@ class TestSiblingGoogleProductExtraction:
 
     @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
     def test_load_httpx_cookies_keeps_opted_in_youtube(self, tmp_path, domain):
-        """``load_httpx_cookies`` keeps opted-in YouTube cookies (T5.G).
+        """``load_httpx_cookies`` keeps opted-in YouTube cookies.
 
         Blast radius is reduced at extraction time. The runtime gate
         (and therefore this loader) is permissive over the union so
@@ -2531,7 +2531,7 @@ class TestSiblingGoogleProductExtraction:
 
     @pytest.mark.parametrize("domain", YOUTUBE_DOMAINS)
     def test_convert_rookiepy_keeps_opted_in_youtube(self, domain):
-        """rookiepy → storage_state keeps opted-in YouTube cookies (T5.G).
+        """rookiepy → storage_state keeps opted-in YouTube cookies.
 
         Blast radius is reduced at extraction time by
         ``_build_google_cookie_domains`` (the rookiepy domain filter).
@@ -2851,7 +2851,7 @@ class TestRookiepyDomainsCoverage:
         ):
             assert domain in ALLOWED_COOKIE_DOMAINS, (
                 f"{domain!r} must be in ALLOWED_COOKIE_DOMAINS (union) so "
-                "callers that read the legacy constant still see it (T5.G)"
+                "callers that read the legacy constant still see it"
             )
 
 

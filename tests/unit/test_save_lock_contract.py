@@ -1,4 +1,4 @@
-"""Regression guard for the ``ClientCore._save_lock`` contract (T7.G5).
+"""Regression guard for the ``ClientCore._save_lock`` contract.
 
 Contract (audit §17, documented at ``_core.py`` next to the lock definition):
 ``_save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``

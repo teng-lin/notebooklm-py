@@ -58,7 +58,7 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm.types import ArtifactDownloadError
 
-# T8.D11 — mock-based loop-blocking detection tests; no HTTP, no cassette.
+# mock-based loop-blocking detection tests; no HTTP, no cassette.
 # Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 
@@ -90,7 +90,7 @@ def _assert_offloaded_to_worker_thread(
         f"{call_site} ran {wrap_target} on the event-loop thread "
         f"(thread id {captured_thread_id}). It must be wrapped in "
         "asyncio.to_thread so slow synchronous I/O cannot stall "
-        "concurrent tasks (T7.D4, audit §30)."
+        "concurrent tasks."
     )
 
 

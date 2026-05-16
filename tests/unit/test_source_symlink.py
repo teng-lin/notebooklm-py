@@ -1,4 +1,4 @@
-"""Symlink hardening for `notebooklm source add` file uploads (PR-T5.C).
+"""Symlink hardening for `notebooklm source add` file uploads.
 
 The CLI must reject symlinked paths unless the user explicitly opts in via
 ``--follow-symlinks``. This guards against the footgun where a workspace

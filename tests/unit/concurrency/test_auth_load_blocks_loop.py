@@ -7,7 +7,7 @@ function performs file I/O (atomic-replace + fsync + flock); when the
 underlying storage is slow (network FS, encrypted home, fcntl
 contention with a sibling process), it stalls the whole event loop.
 
-Post-fix (T7.D1): each call site wraps the synchronous save with
+Post-fix: each call site wraps the synchronous save with
 ``await asyncio.to_thread(save_cookies_to_storage, ...)``, so the
 blocking work runs on the default thread executor and the event loop
 keeps spinning sibling tasks.

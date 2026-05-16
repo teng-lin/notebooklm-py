@@ -487,7 +487,7 @@ class TestClientCoreRefreshCallback:
         assert core._refresh_callback is None
 
     def test_refresh_lock_lazy_at_construction(self):
-        """Refresh lock is ``None`` at construction regardless of callback (T7.G1).
+        """Refresh lock is ``None`` at construction regardless of callback.
 
         Lazy-init mirrors ``_reqid_lock`` / ``_auth_snapshot_lock`` so the
         client can be constructed outside a running event loop. The lock

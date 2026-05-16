@@ -1,4 +1,4 @@
-"""CLI integration tests for ``notebooklm doctor`` (T8.D8).
+"""CLI integration tests for ``notebooklm doctor``.
 
 The ``doctor`` command is a local-only diagnostic — it inspects
 ``$NOTEBOOKLM_HOME`` (profile directory, ``storage_state.json``,

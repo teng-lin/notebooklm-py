@@ -8,7 +8,7 @@ import pytest
 
 from notebooklm.cli.download_helpers import artifact_title_to_filename, select_artifact
 
-# T8.D11 — pure helper-logic tests; no HTTP, no cassette. Opt out of the
+# pure helper-logic tests; no HTTP, no cassette. Opt out of the
 # tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
 
