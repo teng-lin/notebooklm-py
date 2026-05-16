@@ -7,6 +7,7 @@ import contextlib
 import csv
 import logging
 import os
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,9 +61,10 @@ def _artifact_seams() -> Any:
     ``notebooklm._artifacts`` at call time so existing private monkeypatch
     targets keep working after the extraction.
     """
-    from . import _artifacts
-
-    return _artifacts
+    try:
+        return sys.modules["notebooklm._artifacts"]
+    except KeyError as e:
+        raise RuntimeError("notebooklm._artifacts must be imported before downloads run") from e
 
 
 def _load_httpx_cookies(storage_path: Any) -> Any:
