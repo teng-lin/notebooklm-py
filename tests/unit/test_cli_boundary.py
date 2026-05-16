@@ -141,7 +141,10 @@ def test_no_private_module_imports_in_cli():
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("from notebooklm._auth.tokens import AuthTokens", "from notebooklm._auth.tokens import ..."),
+        (
+            "from notebooklm._auth.tokens import AuthTokens",
+            "from notebooklm._auth.tokens import ...",
+        ),
         ("import notebooklm._auth.tokens", "import notebooklm._auth.tokens"),
         ("from .._auth.tokens import AuthTokens", "from .._auth.tokens import ..."),
     ],
