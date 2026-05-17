@@ -485,6 +485,7 @@ def test_types_private_helper_seams_remain_importable(name: str) -> None:
 
 def test_types_private_helper_seam_manifest_matches_first_party_imports() -> None:
     """The private seam manifest tracks known first-party notebooklm.types imports."""
+
     def attribute_path(node: ast.AST) -> list[str]:
         parts: list[str] = []
         while isinstance(node, ast.Attribute):
