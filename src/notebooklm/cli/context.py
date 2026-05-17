@@ -1,0 +1,160 @@
+"""CLI context persistence helpers."""
+
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+import click
+from filelock import FileLock
+
+from ..io import atomic_update_json, atomic_write_json
+from ..paths import get_context_path
+
+logger = logging.getLogger(__name__)
+ContextPathFn = Callable[..., Path]
+
+
+def _current_storage_override() -> Path | None:
+    """Resolve the active ``--storage`` override from the current Click context."""
+    ctx = click.get_current_context(silent=True)
+    if ctx is None or not ctx.obj:
+        return None
+    storage = ctx.obj.get("storage_path")
+    if storage is None:
+        return None
+    return Path(storage).expanduser().resolve()
+
+
+def _resolve_context_path(context_path_fn: ContextPathFn | None = None) -> Path:
+    context_path_fn = context_path_fn or get_context_path
+    return context_path_fn(storage_path=_current_storage_override())
+
+
+def _get_context_value(key: str, *, context_path_fn: ContextPathFn | None = None) -> str | None:
+    """Read a single value from context.json."""
+    context_file = _resolve_context_path(context_path_fn)
+    if not context_file.exists():
+        return None
+    try:
+        data = json.loads(context_file.read_text(encoding="utf-8"))
+        return data.get(key)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Context file %s is corrupted; cannot read '%s'. Run 'notebooklm clear' to reset.",
+            context_file,
+            key,
+        )
+        return None
+    except OSError as e:
+        logger.warning("Cannot read context file %s: %s", context_file, e)
+        return None
+
+
+def _set_context_value(
+    key: str, value: str | None, *, context_path_fn: ContextPathFn | None = None
+) -> None:
+    """Set or clear a single value in context.json."""
+    context_file = _resolve_context_path(context_path_fn)
+    if not context_file.exists():
+        return
+
+    def _mutate(data: dict[str, Any]) -> dict[str, Any]:
+        if value is not None:
+            data[key] = value
+        elif key in data:
+            del data[key]
+        return data
+
+    try:
+        atomic_update_json(context_file, _mutate)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Context file %s is corrupted; cannot update '%s'. Run 'notebooklm clear' to reset.",
+            context_file,
+            key,
+        )
+    except OSError as e:
+        logger.warning("Failed to write context file %s for key '%s': %s", context_file, key, e)
+
+
+def get_current_notebook(*, context_path_fn: ContextPathFn | None = None) -> str | None:
+    """Get the current notebook ID from context."""
+    return _get_context_value("notebook_id", context_path_fn=context_path_fn)
+
+
+def set_current_notebook(
+    notebook_id: str,
+    title: str | None = None,
+    is_owner: bool | None = None,
+    created_at: str | None = None,
+    *,
+    context_path_fn: ContextPathFn | None = None,
+) -> None:
+    """Set the current notebook context."""
+    context_file = _resolve_context_path(context_path_fn)
+
+    def _mutate(existing: dict[str, Any]) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        if isinstance(existing.get("account"), dict):
+            data["account"] = existing["account"]
+        data["notebook_id"] = notebook_id
+        if title:
+            data["title"] = title
+        if is_owner is not None:
+            data["is_owner"] = is_owner
+        if created_at:
+            data["created_at"] = created_at
+        return data
+
+    atomic_update_json(context_file, _mutate, recover_from_corrupt=True)
+
+
+def clear_context(
+    *, clear_account: bool = False, context_path_fn: ContextPathFn | None = None
+) -> bool:
+    """Clear the current context."""
+    context_file = _resolve_context_path(context_path_fn)
+    if not context_file.exists():
+        return False
+    lock_path = context_file.with_suffix(context_file.suffix + ".lock")
+    context_file.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(lock_path), timeout=10.0):
+        if not context_file.exists():
+            return False
+        if clear_account:
+            context_file.unlink()
+            return True
+        try:
+            data = json.loads(context_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            context_file.unlink()
+            return True
+        if not isinstance(data, dict):
+            context_file.unlink()
+            return True
+        original = dict(data)
+        for key in ("notebook_id", "title", "is_owner", "created_at", "conversation_id"):
+            data.pop(key, None)
+        if not data:
+            context_file.unlink()
+            return True
+        if data != original:
+            atomic_write_json(context_file, data)
+            return True
+        return False
+
+
+def get_current_conversation(*, context_path_fn: ContextPathFn | None = None) -> str | None:
+    """Get the current conversation ID from context."""
+    return _get_context_value("conversation_id", context_path_fn=context_path_fn)
+
+
+def set_current_conversation(
+    conversation_id: str | None, *, context_path_fn: ContextPathFn | None = None
+) -> None:
+    """Set or clear the current conversation ID in context."""
+    _set_context_value("conversation_id", conversation_id, context_path_fn=context_path_fn)

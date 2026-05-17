@@ -10,6 +10,8 @@ import httpx
 import pytest
 
 import notebooklm.cli._encoding as encoding_module
+import notebooklm.cli.context as context_module
+import notebooklm.cli.rendering as rendering_module
 from notebooklm import Artifact
 from notebooklm.cli.helpers import (
     clear_context,
@@ -248,6 +250,13 @@ class TestJsonOutputResponse:
         assert "🚀" in captured.out
         assert "\\u" not in captured.out
 
+    def test_rendering_module_outputs_valid_json(self, capsys):
+        rendering_module.json_output_response({"test": "value"})
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["test"] == "value"
+
 
 class TestJsonErrorResponse:
     def test_outputs_error_json_and_exits(self, capsys):
@@ -307,6 +316,13 @@ class TestContextManagement:
         with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
             set_current_notebook("nb_test123", title="Test Notebook")
             result = get_current_notebook()
+            assert result == "nb_test123"
+
+    def test_context_module_uses_own_get_context_path(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        with patch("notebooklm.cli.context.get_context_path", return_value=context_file):
+            context_module.set_current_notebook("nb_test123", title="Test Notebook")
+            result = context_module.get_current_notebook()
             assert result == "nb_test123"
 
     def test_set_notebook_with_all_fields(self, tmp_path):
@@ -729,6 +745,17 @@ class TestDisplayReport:
 
         with patch("notebooklm.cli.helpers.console") as mock_console:
             display_report(report, max_chars=1000)
+
+        assert mock_console.print.call_count == 2
+        assert mock_console.print.call_args_list[0].args[0] == "\n[bold]Report:[/bold]"
+        assert mock_console.print.call_args_list[1].args[0] == report
+        assert mock_console.print.call_args_list[1].kwargs["markup"] is False
+
+    def test_rendering_module_prints_markdown_as_literal_text(self):
+        report = "See [NotebookLM](https://example.com) and [1]"
+
+        with patch("notebooklm.cli.rendering.console") as mock_console:
+            rendering_module.display_report(report, max_chars=1000)
 
         assert mock_console.print.call_count == 2
         assert mock_console.print.call_args_list[0].args[0] == "\n[bold]Report:[/bold]"

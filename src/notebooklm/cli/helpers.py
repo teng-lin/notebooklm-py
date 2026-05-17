@@ -10,7 +10,6 @@ Provides common functionality for all CLI commands:
 """
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -22,52 +21,34 @@ from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 
 import click
-from filelock import FileLock
-from rich.console import Console
-from rich.table import Table
 
 from ..auth import AuthTokens, build_cookie_jar, load_auth_from_storage
 from ..exceptions import NetworkError, RPCError, RPCTimeoutError
-from ..io import atomic_update_json, atomic_write_json
 from ..paths import get_context_path
 from ..research import select_cited_sources
 from ..types import ArtifactType, CitedSourceSelection
+from . import context as context_helpers
+from . import rendering as rendering_helpers
 from ._encoding import safe_echo
 
 if TYPE_CHECKING:
     from ..types import Artifact, Source
 
-console = Console()
-# stderr_console is used for diagnostic / status output when --json mode is
-# active so that stdout stays parseable JSON for automation. See ``emit_status``.
-stderr_console = Console(stderr=True)
+console = rendering_helpers.console
+stderr_console = rendering_helpers.stderr_console
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
 def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:
-    """Emit a status / diagnostic line.
-
-    When ``json_output`` is True, the message is written to stderr via a
-    dedicated Rich console so that stdout remains pure JSON for downstream
-    automation. Otherwise the message goes through the regular stdout console.
-
-    Args:
-        msg: The message text. Rich markup is honored by both consoles.
-        json_output: True when the current command is producing JSON on stdout.
-        style: Optional Rich style to apply (e.g., ``"yellow"``, ``"dim"``).
-    """
-    target = stderr_console if json_output else console
-    if style is not None:
-        target.print(msg, style=style)
-    else:
-        target.print(msg)
-
-
-# CLI artifact type name aliases
-_CLI_ARTIFACT_ALIASES = {
-    "flashcard": "flashcards",  # CLI uses singular, enum uses plural
-}
+    """Emit a status / diagnostic line."""
+    rendering_helpers._emit_status(
+        msg,
+        json_output=json_output,
+        style=style,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
+    )
 
 
 @dataclass(frozen=True)
@@ -80,27 +61,8 @@ class ResearchImportResult:
 
 
 def cli_name_to_artifact_type(name: str) -> ArtifactType | None:
-    """Convert CLI artifact type name to ArtifactType enum.
-
-    Args:
-        name: CLI artifact type name (e.g., "video", "slide-deck", "flashcard").
-            Use "all" to get None (no filter).
-
-    Returns:
-        ArtifactType enum member, or None if name is "all".
-
-    Raises:
-        KeyError: If name is not a valid artifact type.
-    """
-    if name == "all":
-        return None
-
-    # Handle aliases
-    name = _CLI_ARTIFACT_ALIASES.get(name, name)
-
-    # Convert kebab-case to snake_case and uppercase for enum lookup
-    enum_name = name.upper().replace("-", "_")
-    return ArtifactType[enum_name]
+    """Convert CLI artifact type name to ArtifactType enum."""
+    return rendering_helpers.cli_name_to_artifact_type(name)
 
 
 # =============================================================================
@@ -558,89 +520,23 @@ def get_auth_tokens(ctx) -> AuthTokens:
 
 
 def _current_storage_override() -> Path | None:
-    """Resolve the active ``--storage`` override from the current Click context.
-
-    Returns the explicit storage path stored in ``ctx.obj["storage_path"]`` by
-    the root CLI group (see ``notebooklm_cli.cli``), canonicalized via
-    ``expanduser().resolve()`` so two representations of the same file (e.g.,
-    ``~/foo.json`` and ``/home/user/foo.json``) share one sibling-context
-    namespace. When no Click context is active (library usage) or no override
-    was passed, returns ``None``.
-
-    ``click.get_current_context(silent=True)`` already returns ``None`` outside
-    of a Click invocation, so no try/except is needed.
-    """
-    ctx = click.get_current_context(silent=True)
-    if ctx is None or not ctx.obj:
-        return None
-    storage = ctx.obj.get("storage_path")
-    if storage is None:
-        return None
-    # Defensive normalization: ``notebooklm_cli`` already wraps strings via
-    # ``Path(storage)``, but accept either form so future callers (tests,
-    # library wrappers populating ``ctx.obj`` directly) don't get a
-    # string-vs-``Path`` mismatch crash inside ``get_context_path``.
-    return Path(storage).expanduser().resolve()
+    """Resolve the active ``--storage`` override from the current Click context."""
+    return context_helpers._current_storage_override()
 
 
 def _get_context_value(key: str) -> str | None:
     """Read a single value from context.json."""
-    context_file = get_context_path(storage_path=_current_storage_override())
-    if not context_file.exists():
-        return None
-    try:
-        data = json.loads(context_file.read_text(encoding="utf-8"))
-        return data.get(key)
-    except json.JSONDecodeError:
-        logger.warning(
-            "Context file %s is corrupted; cannot read '%s'. Run 'notebooklm clear' to reset.",
-            context_file,
-            key,
-        )
-        return None
-    except OSError as e:
-        logger.warning("Cannot read context file %s: %s", context_file, e)
-        return None
+    return context_helpers._get_context_value(key, context_path_fn=get_context_path)
 
 
 def _set_context_value(key: str, value: str | None) -> None:
-    """Set or clear a single value in context.json.
-
-    Uses ``atomic_update_json`` so concurrent CLI invocations cannot lose
-    updates by interleaving read-modify-write cycles.
-
-    Note: the ``context_file.exists()`` pre-check below is a TOCTOU window —
-    a concurrent ``clear`` could delete the file between this check and the
-    lock acquire, but the worst case is one unnecessary lock + create cycle,
-    not data loss. We accept the minor inefficiency to keep the early-return
-    fast path: most invocations have no context file at all.
-    """
-    context_file = get_context_path(storage_path=_current_storage_override())
-    if not context_file.exists():
-        return
-
-    def _mutate(data: dict[str, Any]) -> dict[str, Any]:
-        if value is not None:
-            data[key] = value
-        elif key in data:
-            del data[key]
-        return data
-
-    try:
-        atomic_update_json(context_file, _mutate)
-    except json.JSONDecodeError:
-        logger.warning(
-            "Context file %s is corrupted; cannot update '%s'. Run 'notebooklm clear' to reset.",
-            context_file,
-            key,
-        )
-    except OSError as e:
-        logger.warning("Failed to write context file %s for key '%s': %s", context_file, key, e)
+    """Set or clear a single value in context.json."""
+    context_helpers._set_context_value(key, value, context_path_fn=get_context_path)
 
 
 def get_current_notebook() -> str | None:
     """Get the current notebook ID from context."""
-    return _get_context_value("notebook_id")
+    return context_helpers.get_current_notebook(context_path_fn=get_context_path)
 
 
 def set_current_notebook(
@@ -649,35 +545,14 @@ def set_current_notebook(
     is_owner: bool | None = None,
     created_at: str | None = None,
 ):
-    """Set the current notebook context.
-
-    conversation_id is never preserved — the server owns the canonical ID per
-    notebook, and a stale local value would silently use the wrong UUID.
-
-    Uses ``atomic_update_json`` so the account-metadata preservation and the
-    notebook-context overwrite happen as one lock-protected critical section.
-    """
-    context_file = get_context_path(storage_path=_current_storage_override())
-
-    def _mutate(existing: dict[str, Any]) -> dict[str, Any]:
-        data: dict[str, Any] = {}
-        # Preserve account metadata used for multi-account auth routing.
-        if isinstance(existing.get("account"), dict):
-            data["account"] = existing["account"]
-        data["notebook_id"] = notebook_id
-        if title:
-            data["title"] = title
-        if is_owner is not None:
-            data["is_owner"] = is_owner
-        if created_at:
-            data["created_at"] = created_at
-        return data
-
-    # ``recover_from_corrupt=True`` keeps the empty-dict fallback **inside**
-    # the file lock. An outside-the-lock unlink-and-retry would race a
-    # concurrent process that wrote a valid payload between our raise and
-    # our retry, causing us to delete their good write (see PR #465 review).
-    atomic_update_json(context_file, _mutate, recover_from_corrupt=True)
+    """Set the current notebook context."""
+    context_helpers.set_current_notebook(
+        notebook_id,
+        title=title,
+        is_owner=is_owner,
+        created_at=created_at,
+        context_path_fn=get_context_path,
+    )
 
 
 def clear_context(*, clear_account: bool = False) -> bool:
@@ -686,55 +561,20 @@ def clear_context(*, clear_account: bool = False) -> bool:
     By default, only notebook/conversation fields are cleared; account
     metadata used for multi-account auth routing is preserved. ``auth logout``
     passes ``clear_account=True`` to remove the whole file.
-
-    Holds the same sibling ``.lock`` file used by :func:`atomic_update_json`
-    so concurrent writers don't lose updates against our clear-and-delete.
-
-    Returns True if a context file was changed or removed, False if none existed.
     """
-    context_file = get_context_path(storage_path=_current_storage_override())
-    if not context_file.exists():
-        return False
-    lock_path = context_file.with_suffix(context_file.suffix + ".lock")
-    context_file.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(lock_path), timeout=10.0):
-        # Re-check existence under the lock — another writer may have
-        # removed it between the early-return check and the lock acquire.
-        if not context_file.exists():
-            return False
-        if clear_account:
-            context_file.unlink()
-            return True
-        try:
-            data = json.loads(context_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            context_file.unlink()
-            return True
-        if not isinstance(data, dict):
-            context_file.unlink()
-            return True
-        original = dict(data)
-        for key in ("notebook_id", "title", "is_owner", "created_at", "conversation_id"):
-            data.pop(key, None)
-        if not data:
-            context_file.unlink()
-            return True
-        if data != original:
-            # atomic_update_json would re-acquire the lock; instead use the
-            # atomic write directly since we already hold the lock here.
-            atomic_write_json(context_file, data)
-            return True
-        return False
+    return context_helpers.clear_context(
+        clear_account=clear_account, context_path_fn=get_context_path
+    )
 
 
 def get_current_conversation() -> str | None:
     """Get the current conversation ID from context."""
-    return _get_context_value("conversation_id")
+    return context_helpers.get_current_conversation(context_path_fn=get_context_path)
 
 
 def set_current_conversation(conversation_id: str | None):
     """Set or clear the current conversation ID in context."""
-    _set_context_value("conversation_id", conversation_id)
+    context_helpers.set_current_conversation(conversation_id, context_path_fn=get_context_path)
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
@@ -1217,90 +1057,26 @@ def with_client(f):
 
 def json_output_response(data: dict | list) -> None:
     """Print JSON response (no colors for machine parsing)."""
-    click.echo(json.dumps(data, indent=2, default=str, ensure_ascii=False))
+    rendering_helpers.json_output_response(data)
 
 
 def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
-    """Print JSON error and exit (no colors for machine parsing).
-
-    Args:
-        code: Error code (e.g., "AUTH_REQUIRED", "ERROR")
-        message: Human-readable error message
-        extra: Optional additional data to include in response
-    """
-    response = {"error": True, "code": code, "message": message}
-    if extra:
-        response.update(extra)
-    click.echo(json.dumps(response, indent=2, default=str, ensure_ascii=False))
-    raise SystemExit(1)
-
-
-_RESULT_TYPE_LABELS = {
-    1: "Web",
-    2: "Drive",
-    5: "Report",
-    "web": "Web",
-    "drive": "Drive",
-    "report": "Report",
-}
+    """Print JSON error and exit (no colors for machine parsing)."""
+    rendering_helpers.json_error_response(code, message, extra)
 
 
 def display_research_sources(sources: list[dict], max_display: int = 10) -> None:
-    """Display research sources in a formatted table.
-
-    Args:
-        sources: List of source dicts with 'title', 'url', and optional 'result_type' keys
-        max_display: Maximum sources to show before truncating (default 10)
-    """
-    console.print(f"[bold]Found {len(sources)} sources[/bold]")
-
-    if sources:
-        # Only show Type column if any source has result_type
-        has_types = any("result_type" in s for s in sources)
-
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Title", style="cyan")
-        if has_types:
-            table.add_column("Type", style="yellow")
-        table.add_column("URL", style="dim")
-        for src in sources[:max_display]:
-            row = [src.get("title", "Untitled")[:50]]
-            if has_types:
-                rt: int | None = src.get("result_type")
-                label = (
-                    _RESULT_TYPE_LABELS.get(rt, str(rt) if rt is not None else "")
-                    if rt is not None
-                    else ""
-                )
-                row.append(label)
-            row.append(src.get("url", "")[:60])
-            table.add_row(*row)
-        if len(sources) > max_display:
-            extra_row = [f"... and {len(sources) - max_display} more"]
-            if has_types:
-                extra_row.append("")
-            extra_row.append("")
-            table.add_row(*extra_row)
-        console.print(table)
+    """Display research sources in a formatted table."""
+    rendering_helpers._display_research_sources(
+        sources, max_display=max_display, output_console=console
+    )
 
 
 def display_report(report: str, max_chars: int = 1000, json_hint: bool = True) -> None:
-    """Display a research report, truncated for terminal output.
-
-    Args:
-        report: The report markdown text.
-        max_chars: Maximum characters to display (default 1000).
-        json_hint: Whether to suggest --json for full output in truncation message.
-    """
-    if not report:
-        return
-    console.print("\n[bold]Report:[/bold]")
-    console.print(report[:max_chars], markup=False)
-    if len(report) > max_chars:
-        hint = " use --json for full report" if json_hint else ""
-        console.print(
-            f"[dim]... (truncated,{hint})[/dim]" if hint else "[dim]... (truncated)[/dim]"
-        )
+    """Display a research report, truncated for terminal output."""
+    rendering_helpers._display_report(
+        report, max_chars=max_chars, json_hint=json_hint, output_console=console
+    )
 
 
 # =============================================================================
@@ -1309,71 +1085,10 @@ def display_report(report: str, max_chars: int = 1000, json_hint: bool = True) -
 
 
 def get_artifact_type_display(artifact: "Artifact") -> str:
-    """Get display string for artifact type.
-
-    Args:
-        artifact: Artifact object
-
-    Returns:
-        Display string with emoji
-    """
-    from notebooklm import ArtifactType
-
-    kind = artifact.kind
-
-    # Map ArtifactType enum to display strings
-    display_map = {
-        ArtifactType.AUDIO: "🎧 Audio",
-        ArtifactType.VIDEO: "🎬 Video",
-        ArtifactType.QUIZ: "📝 Quiz",
-        ArtifactType.FLASHCARDS: "🃏 Flashcards",
-        ArtifactType.MIND_MAP: "🧠 Mind Map",
-        ArtifactType.INFOGRAPHIC: "🖼️ Infographic",
-        ArtifactType.SLIDE_DECK: "📊 Slide Deck",
-        ArtifactType.DATA_TABLE: "📈 Data Table",
-    }
-
-    # Handle report subtypes specially
-    if kind == ArtifactType.REPORT:
-        report_displays = {
-            "briefing_doc": "📋 Briefing Doc",
-            "study_guide": "📚 Study Guide",
-            "blog_post": "✍️ Blog Post",
-            "report": "📄 Report",
-        }
-        return report_displays.get(artifact.report_subtype or "report", "📄 Report")
-
-    return display_map.get(kind, f"Unknown ({kind})")
+    """Get display string for artifact type."""
+    return rendering_helpers.get_artifact_type_display(artifact)
 
 
 def get_source_type_display(source_type: str) -> str:
-    """Get display string for source type.
-
-    Args:
-        source_type: Type string from Source.kind (SourceType str enum)
-
-    Returns:
-        Display string with emoji
-    """
-    # Extract value if it's a SourceType enum, otherwise use as-is
-    type_str = source_type.value if hasattr(source_type, "value") else str(source_type)
-    type_map = {
-        # From SourceType str enum values (types.py)
-        "google_docs": "📄 Google Docs",
-        "google_slides": "📊 Google Slides",
-        "google_spreadsheet": "📊 Google Sheets",
-        "pdf": "📄 PDF",
-        "pasted_text": "📝 Pasted Text",
-        "docx": "📝 DOCX",
-        "web_page": "🌐 Web Page",
-        "markdown": "📝 Markdown",
-        "youtube": "🎬 YouTube",
-        "media": "🎵 Media",
-        "google_drive_audio": "🎧 Drive Audio",
-        "google_drive_video": "🎬 Drive Video",
-        "image": "🖼️ Image",
-        "csv": "📊 CSV",
-        "epub": "📕 EPUB",
-        "unknown": "❓ Unknown",
-    }
-    return type_map.get(type_str, f"❓ {type_str}")
+    """Get display string for source type."""
+    return rendering_helpers.get_source_type_display(source_type)

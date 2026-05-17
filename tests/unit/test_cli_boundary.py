@@ -37,6 +37,8 @@ import pytest
 CLI_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "cli"
 OPTIONS_PATH = CLI_ROOT / "options.py"
 SERVICES_ROOT = CLI_ROOT / "services"
+RENDERING_PATH = CLI_ROOT / "rendering.py"
+CONTEXT_PATH = CLI_ROOT / "context.py"
 COMPLETION_CALLBACKS = {
     "_complete_artifacts",
     "_complete_notebooks",
@@ -47,6 +49,38 @@ COMPLETION_FORBIDDEN_SYMBOLS = {
     "NotebookLMClient",
     "get_auth_tokens",
     "run_async",
+}
+CLI_COMMAND_MODULES = {
+    "agent",
+    "artifact",
+    "chat",
+    "doctor",
+    "download",
+    "generate",
+    "language",
+    "note",
+    "notebook",
+    "profile",
+    "research",
+    "session",
+    "share",
+    "skill",
+    "source",
+}
+RENDERING_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
+    "auth_runtime",
+    "completion",
+    "context",
+    "input",
+    "resolve",
+    "runtime",
+}
+CONTEXT_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
+    "auth_runtime",
+    "completion",
+    "input",
+    "resolve",
+    "runtime",
 }
 
 
@@ -70,6 +104,29 @@ def _is_rpc_path(parts: list[str]) -> bool:
     ``["rpc"]`` or ``["rpc", "types"]``.
     """
     return bool(parts) and parts[0] == "rpc"
+
+
+def _cli_module_imports(path: pathlib.Path) -> set[str]:
+    """Return direct ``notebooklm.cli`` module imports used by a CLI file."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            mod_parts = mod.split(".") if mod else []
+            if node.level == 1:
+                if mod:
+                    imports.add(mod_parts[0])
+                else:
+                    imports.update(alias.name.split(".")[0] for alias in node.names)
+            elif node.level == 0 and mod_parts[:2] == ["notebooklm", "cli"] and len(mod_parts) > 2:
+                imports.add(mod_parts[2])
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                parts = alias.name.split(".")
+                if parts[:2] == ["notebooklm", "cli"] and len(parts) > 2:
+                    imports.add(parts[2])
+    return imports
 
 
 def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on import shape
@@ -165,6 +222,24 @@ def test_cli_services_stay_on_public_library_boundary() -> None:
         "notebooklm.rpc.*, or `_private` names from public notebooklm modules. "
         "Route service collaborators through public library APIs or CLI facades.\n"
         f"Offenders: {offenders}"
+    )
+
+
+def test_rendering_stays_on_low_level_cli_import_boundary() -> None:
+    imports = _cli_module_imports(RENDERING_PATH)
+
+    assert not (imports & RENDERING_FORBIDDEN_MODULES), (
+        "cli.rendering must not import runtime/auth/context/resolve/input/completion "
+        f"or command modules. Offenders: {sorted(imports & RENDERING_FORBIDDEN_MODULES)}"
+    )
+
+
+def test_context_stays_on_low_level_cli_import_boundary() -> None:
+    imports = _cli_module_imports(CONTEXT_PATH)
+
+    assert not (imports & CONTEXT_FORBIDDEN_MODULES), (
+        "cli.context must not import runtime/auth/resolve/input/completion or command modules. "
+        f"Offenders: {sorted(imports & CONTEXT_FORBIDDEN_MODULES)}"
     )
 
 
