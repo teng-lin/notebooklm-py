@@ -5,11 +5,9 @@ on:
     # Run at 7 AM UTC daily (1 hour after nightly E2E tests)
     - cron: '0 7 * * *'
   workflow_dispatch:  # Allow manual trigger
-  pull_request:
-    types: [opened, synchronize, reopened]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -20,10 +18,6 @@ jobs:
   health-check:
     name: RPC Health Check
     runs-on: ubuntu-latest
-    # Scheduled/manual runs always fire; PR runs fire only for same-repo PRs
-    # so fork PRs never see NOTEBOOKLM_AUTH_JSON. ``head.repo.full_name`` on a
-    # fork PR is ``<fork-owner>/notebooklm-py``, which fails the equality.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
     - uses: actions/checkout@v6
@@ -63,12 +57,11 @@ jobs:
 
     # Each issue-creating step is paired with a dedup probe that counts
     # open issues sharing the same title + automated label. Without this,
-    # back-to-back failing runs (manual reruns, cron + workflow_dispatch,
-    # in-flight PR branches without the gate fix from #736) farm one
-    # fresh issue per run instead of letting the open one accumulate
-    # context.
+    # back-to-back failing runs (manual reruns, cron + workflow_dispatch)
+    # farm one fresh issue per run instead of letting the open one
+    # accumulate context.
     - name: Check for existing RPC Mismatch issue
-      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '1'
+      if: steps.health.outputs.exit_code == '1'
       id: dup_mismatch
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,8 +77,7 @@ jobs:
 
     - name: Create Issue on RPC Mismatch
       if: |
-        github.event_name != 'pull_request'
-        && steps.health.outputs.exit_code == '1'
+        steps.health.outputs.exit_code == '1'
         && steps.dup_mismatch.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@v6
       with:
@@ -94,7 +86,7 @@ jobs:
         labels: bug, rpc-breakage, automated
 
     - name: Check for existing Auth Failure issue
-      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '2'
+      if: steps.health.outputs.exit_code == '2'
       id: dup_auth
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -110,8 +102,7 @@ jobs:
 
     - name: Create Issue on Auth Failure
       if: |
-        github.event_name != 'pull_request'
-        && steps.health.outputs.exit_code == '2'
+        steps.health.outputs.exit_code == '2'
         && steps.dup_auth.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@v6
       with:
@@ -120,7 +111,7 @@ jobs:
         labels: bug, automated
 
     - name: Check for existing non-transient ERROR issue
-      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '3'
+      if: steps.health.outputs.exit_code == '3'
       id: dup_error
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -136,8 +127,7 @@ jobs:
 
     - name: Extract failing methods for ERROR issue
       if: |
-        github.event_name != 'pull_request'
-        && steps.health.outputs.exit_code == '3'
+        steps.health.outputs.exit_code == '3'
         && steps.dup_error.outputs.open == '0'
       id: error_details
       shell: bash
@@ -166,8 +156,7 @@ jobs:
 
     - name: Create Issue on Non-transient ERROR
       if: |
-        github.event_name != 'pull_request'
-        && steps.health.outputs.exit_code == '3'
+        steps.health.outputs.exit_code == '3'
         && steps.dup_error.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@v6
       with:
@@ -183,15 +172,8 @@ jobs:
         path: health-report.txt
         retention-days: 30
 
-    - name: Report PR health check failure
-      if: github.event_name == 'pull_request' && steps.health.outcome == 'failure'
-      run: |
-        echo "RPC Health Check failed on this pull request (exit code: ${{ steps.health.outputs.exit_code }})."
-        echo "Pull-request runs are report-only; scheduled and manual runs still fail and file issues."
-        echo "See the workflow summary and rpc-health-report artifact for details."
-
     - name: Fail if health check failed
-      if: github.event_name != 'pull_request' && steps.health.outcome == 'failure'
+      if: steps.health.outcome == 'failure'
       run: |
         echo "RPC Health Check failed (exit code: ${{ steps.health.outputs.exit_code }}). See report above."
         exit 1
