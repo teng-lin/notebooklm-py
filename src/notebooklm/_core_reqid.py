@@ -55,7 +55,6 @@ def _noop_record_lock_wait(_wait_seconds: float) -> None:
     Used when the counter is constructed standalone (e.g. in
     ``tests/unit/test_core_reqid_unit.py``) without a metrics sink wired up.
     """
-    return None
 
 
 class ReqidCounter:
