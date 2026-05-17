@@ -252,6 +252,18 @@ def with_client(f):
     The decorated function stays SYNC (Click doesn't support async) but returns
     a coroutine. The decorator runs the coroutine and handles errors.
 
+    Usage:
+        @cli.command("list")
+        @click.option("--json", "json_output", is_flag=True)
+        @with_client
+        def list_notebooks(ctx, json_output, client_auth):
+            async def _run():
+                async with NotebookLMClient(client_auth) as client:
+                    notebooks = await client.notebooks.list()
+                    output_notebooks(notebooks, json_output)
+
+            return _run()
+
     Args:
         f: Function that accepts client_auth (AuthTokens) and returns a coroutine
 
