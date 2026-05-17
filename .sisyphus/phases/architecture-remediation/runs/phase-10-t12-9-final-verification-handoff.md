@@ -48,7 +48,7 @@ rebased onto main.
 Command used:
 
 ```bash
-rtk rg -n "from \\.helpers import|from \\. import helpers|from \\.\\.helpers import|from \\.\\. import helpers|from notebooklm\\.cli\\.helpers import|from notebooklm\\.cli import helpers|import notebooklm\\.cli\\.helpers" src/notebooklm/cli
+rtk rg -n 'from\s+(\.\.?|notebooklm\.cli)(\.helpers\s+import\b|\s+import\s+helpers\b)|import\s+notebooklm\.cli\.helpers\b' src/notebooklm/cli
 ```
 
 Production `cli.helpers` imports are limited to the compatibility surface and
@@ -78,8 +78,8 @@ T12.8 leaves the CLI boundary in this shape:
 - `cli.context` stays below runtime/auth/resolve/input/completion and command
   modules, without importing peer low-level rendering helpers.
 - `cli.runtime` remains a leaf CLI module.
-- `cli.auth_runtime` imports only the CLI collaborators `error_handler` and the
-  `helpers` facade for call-time patching.
+- `cli.auth_runtime` imports only the peer CLI collaborators `error_handler`
+  and the `helpers` facade for call-time patching.
 - `cli.resolve` stays off `helpers`, runtime/auth, `notebooklm.auth`, and
   command modules.
 - `cli.options` keeps live completion auth/client/runtime work delegated to
