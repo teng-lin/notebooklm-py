@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._chat import ChatAPI
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import InfographicStyle, VideoFormat, VideoStyle
@@ -45,7 +46,7 @@ def mock_core():
 
     core.rpc_call = AsyncMock(return_value=MagicMock())
 
-    async def _rpc_call_dispatch(method, params, *, source_path=None, allow_null=False):
+    async def _rpc_call_dispatch(method, params, **kwargs):
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
         return core.rpc_call.return_value
@@ -62,8 +63,6 @@ def mock_core():
     core._reqid_counter = 0
     core.next_reqid = AsyncMock(return_value=100000)
     core.get_http_client = MagicMock()
-    core.get_cached_conversation = MagicMock(return_value=[])
-    core.cache_conversation_turn = MagicMock()
 
     # Default ``query_post`` stub: invokes the caller-supplied
     # ``build_request`` factory with a frozen snapshot (so the URL/body the
@@ -123,7 +122,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_with_explicit_source_ids(self, mock_core):
         """Test ask() with explicitly provided source_ids."""
-        api = ChatAPI(mock_core)
+        api = ChatAPI(ClientCoreCapabilities(mock_core))
 
         result = await api.ask(
             notebook_id="nb_123",
@@ -146,7 +145,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_with_none_fetches_all_sources(self, mock_core):
         """Test ask() with source_ids=None fetches all sources."""
-        api = ChatAPI(mock_core)
+        api = ChatAPI(ClientCoreCapabilities(mock_core))
 
         # Mock get_source_ids to return source IDs
         mock_core.get_source_ids.return_value = ["src_001", "src_002", "src_003"]
@@ -165,7 +164,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_source_encoding_format(self, mock_core):
         """Verify the correct encoding format for source IDs in ask()."""
-        api = ChatAPI(mock_core)
+        api = ChatAPI(ClientCoreCapabilities(mock_core))
 
         await api.ask(
             notebook_id="nb_123",
@@ -204,7 +203,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_notes_api):
         """Test generate_audio with explicitly provided source_ids."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         # Mock successful generation response
         mock_core.rpc_call.return_value = [
@@ -245,7 +244,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_audio_with_none_fetches_all_sources(self, mock_core, mock_notes_api):
         """Test generate_audio with source_ids=None fetches all sources."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         # Mock get_source_ids to return source IDs
         mock_core.get_source_ids.return_value = ["src_001", "src_002"]
@@ -275,7 +274,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_video_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_video has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
@@ -304,7 +303,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_prompt_encoding(self, mock_core, mock_notes_api):
         """Test custom video style prompt is encoded after the style code."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
         await api.generate_video(
@@ -321,7 +320,7 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_requires_prompt(self, mock_core, mock_notes_api):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -334,7 +333,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_empty_prompt(
         self, mock_core, mock_notes_api
     ):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -348,7 +347,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_blank_prompt(
         self, mock_core, mock_notes_api
     ):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -362,7 +361,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_style_prompt_requires_custom_style(
         self, mock_core, mock_notes_api
     ):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt requires"):
             await api.generate_video(
@@ -374,7 +373,7 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_cinematic_rejects_style_prompt(self, mock_core, mock_notes_api):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         with pytest.raises(ValidationError, match="cinematic"):
             await api.generate_video(
@@ -387,7 +386,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_report_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_report has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
@@ -416,7 +415,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_report_extra_instructions_appended(self, mock_core, mock_notes_api):
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -439,7 +438,7 @@ class TestArtifactsSourceSelection:
         """extra_instructions has no effect when report_format is CUSTOM."""
         from notebooklm.rpc.types import ReportFormat
 
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -460,7 +459,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_quiz_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_quiz has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
 
@@ -485,7 +484,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_flashcards_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_flashcards has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
 
@@ -505,7 +504,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_infographic_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_infographic has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -525,7 +524,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_infographic_style_encoding(self, mock_core, mock_notes_api):
         """Test generate_infographic encodes style in config slot 5."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -546,7 +545,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_slide_deck_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_slide_deck has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
 
@@ -566,7 +565,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_data_table_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_data_table has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_table", "Table", 9, None, 1]]
 
@@ -586,7 +585,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_mind_map_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_mind_map has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         # Mock get_source_ids to return source IDs
         mock_core.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
@@ -621,7 +620,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_notes_api
     ):
         """Test generate_mind_map passes language and instructions to RPC payload."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.get_source_ids.return_value = ["src_1"]
         mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
@@ -650,7 +649,7 @@ class TestArtifactsSourceSelection:
         """Test suggest_reports uses GET_SUGGESTED_REPORTS RPC."""
         from notebooklm.rpc.types import RPCMethod
 
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         # Mock the GET_SUGGESTED_REPORTS RPC call
         # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
@@ -677,7 +676,7 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_generate_with_empty_source_list(self, mock_core, mock_notes_api):
         """Test generation with empty source_ids list produces empty arrays."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_empty", "Audio", 1, None, 1]]
 
@@ -700,7 +699,7 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_ask_with_empty_source_list(self, mock_core):
         """Test ask with empty source_ids list."""
-        api = ChatAPI(mock_core)
+        api = ChatAPI(ClientCoreCapabilities(mock_core))
 
         await api.ask(
             notebook_id="nb_123",

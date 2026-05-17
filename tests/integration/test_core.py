@@ -7,7 +7,7 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
-from notebooklm._core import MAX_CONVERSATION_CACHE_SIZE, ClientCore, is_auth_error
+from notebooklm._core import ClientCore, is_auth_error
 from notebooklm.rpc import (
     AuthError,
     ClientError,
@@ -314,79 +314,6 @@ class TestGetHttpClient:
         async with NotebookLMClient(auth_tokens) as client:
             http_client = client._core.get_http_client()
             assert isinstance(http_client, httpx.AsyncClient)
-
-
-class TestConversationCacheFIFOEviction:
-    """Tests for FIFO eviction when conversation cache exceeds MAX_CONVERSATION_CACHE_SIZE."""
-
-    def test_fifo_eviction_when_cache_is_full(self, auth_tokens):
-        core = ClientCore(auth_tokens)
-
-        # Fill the cache to capacity
-        for i in range(MAX_CONVERSATION_CACHE_SIZE):
-            core.cache_conversation_turn(f"conv_{i}", f"q{i}", f"a{i}", i)
-
-        assert len(core._conversation_cache) == MAX_CONVERSATION_CACHE_SIZE
-
-        # Adding one more should evict the oldest (conv_0)
-        core.cache_conversation_turn("conv_new", "q_new", "a_new", 0)
-
-        assert len(core._conversation_cache) == MAX_CONVERSATION_CACHE_SIZE
-        assert "conv_0" not in core._conversation_cache
-        assert "conv_new" in core._conversation_cache
-
-    def test_fifo_eviction_preserves_order(self, auth_tokens):
-        core = ClientCore(auth_tokens)
-
-        # Fill cache to capacity
-        for i in range(MAX_CONVERSATION_CACHE_SIZE):
-            core.cache_conversation_turn(f"conv_{i}", f"q{i}", f"a{i}", i)
-
-        # Add two new conversations - should evict conv_0 then conv_1
-        core.cache_conversation_turn("conv_new_1", "q1", "a1", 0)
-        core.cache_conversation_turn("conv_new_2", "q2", "a2", 0)
-
-        assert "conv_0" not in core._conversation_cache
-        assert "conv_1" not in core._conversation_cache
-        assert "conv_new_1" in core._conversation_cache
-        assert "conv_new_2" in core._conversation_cache
-
-    def test_adding_turns_to_existing_conversation_does_not_evict(self, auth_tokens):
-        core = ClientCore(auth_tokens)
-
-        # Fill cache to capacity
-        for i in range(MAX_CONVERSATION_CACHE_SIZE):
-            core.cache_conversation_turn(f"conv_{i}", f"q{i}", f"a{i}", i)
-
-        # Adding a second turn to an EXISTING conversation should NOT evict anything
-        core.cache_conversation_turn("conv_0", "q_extra", "a_extra", 1)
-
-        assert len(core._conversation_cache) == MAX_CONVERSATION_CACHE_SIZE
-        assert len(core._conversation_cache["conv_0"]) == 2
-
-
-class TestClearConversationCacheNotFound:
-    """Tests for clear_conversation_cache() returning False when ID not found."""
-
-    def test_clear_nonexistent_conversation_returns_false(self, auth_tokens):
-        core = ClientCore(auth_tokens)
-        result = core.clear_conversation_cache("nonexistent_id")
-        assert result is False
-
-    def test_clear_existing_conversation_returns_true(self, auth_tokens):
-        core = ClientCore(auth_tokens)
-        core.cache_conversation_turn("conv_abc", "question", "answer", 1)
-        result = core.clear_conversation_cache("conv_abc")
-        assert result is True
-        assert "conv_abc" not in core._conversation_cache
-
-    def test_clear_all_conversations_returns_true(self, auth_tokens):
-        core = ClientCore(auth_tokens)
-        core.cache_conversation_turn("conv_1", "q1", "a1", 1)
-        core.cache_conversation_turn("conv_2", "q2", "a2", 1)
-        result = core.clear_conversation_cache()
-        assert result is True
-        assert len(core._conversation_cache) == 0
 
 
 class TestGetSourceIds:

@@ -10,6 +10,7 @@ import logging
 import weakref
 from typing import Any
 
+from ._capabilities import ClientCoreCapabilities
 from ._chat_protocol import (
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -21,7 +22,8 @@ from ._chat_protocol import (
     parse_streaming_chat_response,
     raise_if_rate_limited,
 )
-from ._core import ClientCore, _AuthSnapshot
+from ._core import _AuthSnapshot
+from ._core_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (
@@ -99,13 +101,23 @@ class ChatAPI:
             )
     """
 
-    def __init__(self, core: ClientCore):
+    def __init__(
+        self,
+        core: ClientCoreCapabilities,
+        *,
+        conversation_cache: ConversationCache | None = None,
+    ):
         """Initialize the chat API.
 
         Args:
             core: The core client infrastructure.
+            conversation_cache: Optional injected cache; defaults to a fresh
+                per-instance ``ConversationCache``. The cache is owned here
+                (not on ``ClientCore``) because turn history is chat-domain
+                state with no other consumer.
         """
         self._core = core
+        self._cache = conversation_cache or ConversationCache()
         # Per-``conversation_id`` lock that serializes follow-up asks on the
         # same conversation. Without this, two
         # ``asyncio.gather``'d ``ask`` calls on the same conversation read
@@ -336,10 +348,10 @@ class ChatAPI:
 
             assert conversation_id is not None  # narrowed by the branches above
 
-            turns = self._core.get_cached_conversation(conversation_id)
+            turns = self._cache.get_cached_conversation(conversation_id)
             if answer_text:
                 turn_number = len(turns) + 1
-                self._core.cache_conversation_turn(
+                self._cache.cache_conversation_turn(
                     conversation_id, question, answer_text, turn_number
                 )
             else:
@@ -518,7 +530,7 @@ class ChatAPI:
         Returns:
             List of ConversationTurn objects.
         """
-        cached = self._core.get_cached_conversation(conversation_id)
+        cached = self._cache.get_cached_conversation(conversation_id)
         return [
             ConversationTurn(
                 query=turn["query"],
@@ -537,7 +549,7 @@ class ChatAPI:
         Returns:
             True if cache was cleared.
         """
-        return self._core.clear_conversation_cache(conversation_id)
+        return self._cache.clear(conversation_id)
 
     async def configure(
         self,
@@ -606,7 +618,7 @@ class ChatAPI:
 
     def _build_conversation_history(self, conversation_id: str) -> list | None:
         """Build conversation history for follow-up requests."""
-        turns = self._core.get_cached_conversation(conversation_id)
+        turns = self._cache.get_cached_conversation(conversation_id)
         if not turns:
             return None
 

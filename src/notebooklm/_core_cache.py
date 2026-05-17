@@ -1,4 +1,4 @@
-"""Conversation cache collaborator for :mod:`notebooklm._core`."""
+"""Conversation cache collaborator owned by :mod:`notebooklm._chat`."""
 
 from __future__ import annotations
 

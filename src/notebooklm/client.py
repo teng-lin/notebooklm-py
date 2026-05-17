@@ -265,13 +265,12 @@ class NotebookLMClient:
             on_rpc_event=on_rpc_event,
         )
 
-        # ``_chat`` keeps the raw core: its conversation-cache methods are not on the capability surface yet.
         capabilities = ClientCoreCapabilities(self._core)
         self.sources = SourcesAPI(capabilities, upload_timeout=upload_timeout)
         self.notebooks = NotebooksAPI(capabilities, sources_api=self.sources)
         self.artifacts = ArtifactsAPI(capabilities, storage_path=storage_path)
         self.notes = NotesAPI(capabilities)
-        self.chat = ChatAPI(self._core)
+        self.chat = ChatAPI(capabilities)
         self.research = ResearchAPI(capabilities)
         self.settings = SettingsAPI(capabilities)
         self.sharing = SharingAPI(capabilities)

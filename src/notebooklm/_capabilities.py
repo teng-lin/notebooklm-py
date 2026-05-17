@@ -8,6 +8,7 @@ from typing import Any, Protocol
 import httpx
 
 from ._core_polling import PollRegistry
+from ._core_transport import _BuildRequest
 from .auth import authuser_query, format_authuser_value
 from .rpc.types import RPCMethod
 
@@ -38,6 +39,31 @@ class SourceListProvider(Protocol):
     """Provider for the notebook→source-id enumeration helper."""
 
     async def get_source_ids(self, notebook_id: str) -> list[str]: ...
+
+
+class CoreReqIdProvider(Protocol):
+    """Provider for the shared request-id counter."""
+
+    async def next_reqid(self, step: int = 100000) -> int: ...
+
+
+class ChatStreamingProvider(Protocol):
+    """Provider for the chat-specific streaming POST transport.
+
+    ``query_post`` is currently chat-aware on ``ClientCore`` because it
+    maps transport-layer exceptions to ``ChatError`` / ``NetworkError``.
+    A future change will extract this into a chat-owned transport once
+    the auth-refresh wiring is decoupled from ``ClientCore``; until then
+    this Protocol carves it out on the capability surface so ``ChatAPI``
+    can take ``ClientCoreCapabilities`` without a concrete dependency.
+    """
+
+    async def query_post(
+        self,
+        *,
+        build_request: _BuildRequest,
+        parse_label: str,
+    ) -> httpx.Response: ...
 
 
 class PollRegistryProvider(Protocol):
@@ -106,6 +132,8 @@ class UploadConcurrencyProvider(Protocol):
 class ClientCoreCapabilities(
     CoreRPCProvider,
     SourceListProvider,
+    CoreReqIdProvider,
+    ChatStreamingProvider,
     PollRegistryProvider,
     AuthRouteProvider,
     CookieJarProvider,
@@ -142,6 +170,20 @@ class ClientCoreCapabilities(
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         return await self._core.get_source_ids(notebook_id)
+
+    async def next_reqid(self, step: int = 100000) -> int:
+        return await self._core.next_reqid(step)
+
+    async def query_post(
+        self,
+        *,
+        build_request: _BuildRequest,
+        parse_label: str,
+    ) -> httpx.Response:
+        return await self._core.query_post(
+            build_request=build_request,
+            parse_label=parse_label,
+        )
 
     @property
     def poll_registry(self) -> PollRegistry:

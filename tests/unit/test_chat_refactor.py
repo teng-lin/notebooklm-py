@@ -28,6 +28,7 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
+from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._chat import ChatAPI
 from notebooklm._core import ClientCore, _AuthSnapshot
 from notebooklm.auth import AuthTokens
@@ -311,7 +312,7 @@ class TestChatRefreshRetry:
             assert core._http_client is not None
             install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
-            api = ChatAPI(core)
+            api = ChatAPI(ClientCoreCapabilities(core))
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])
 
             assert call_count["n"] == 2
@@ -413,8 +414,7 @@ class TestBuildChatRequestFactory:
         from unittest.mock import MagicMock
 
         core = MagicMock(spec=ClientCore)
-        core.get_cached_conversation = MagicMock(return_value=[])
-        return ChatAPI(core)
+        return ChatAPI(ClientCoreCapabilities(core))
 
     def test_build_request_omits_authuser_for_default_profile(self):
         chat = self._factory()

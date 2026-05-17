@@ -354,10 +354,11 @@ the hot path raises `RuntimeError` when an instance is re-used on a
 different loop. Cold paths (`next_reqid()`, `close()`) raise an opaque
 asyncio `RuntimeError` instead — same outcome, less helpful message.
 
-**`_conversation_cache` is per-instance.** Chat-conversation IDs cached
-inside a `NotebookLMClient` are not shared across clients in the same
-process and never persisted across processes. Two clients pointed at the
-same notebook will not share follow-up context.
+**`ChatAPI._cache` is per-instance.** Chat-conversation IDs cached
+inside a `NotebookLMClient` (on the `client.chat` sub-client) are not
+shared across clients in the same process and never persisted across
+processes. Two clients pointed at the same notebook will not share
+follow-up context.
 
 **Cookies in storage are eventually-consistent across processes.** When
 multiple processes share a storage path, an OS-level file lock plus a
@@ -519,7 +520,7 @@ sites instead.
 For a service that handles multiple NotebookLM tenants (different
 `AuthTokens`, typically one per user), spin up **one
 `NotebookLMClient` per tenant**. There is no cross-tenant
-`_conversation_cache` bleed (the cache is per-instance), and the
+`ChatAPI._cache` bleed (the cache is per-instance), and the
 loop-affinity guard plus the per-instance refresh state means tenants
 cannot accidentally observe each other's auth.
 

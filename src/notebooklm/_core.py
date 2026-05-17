@@ -8,7 +8,6 @@ import threading
 import time
 import warnings
 import weakref
-from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass, replace
@@ -20,9 +19,6 @@ import httpx
 from ._callbacks import maybe_await_callback
 from ._core_cache import (
     MAX_CONVERSATION_CACHE_SIZE as _DEFAULT_CONVERSATION_CACHE_SIZE,
-)
-from ._core_cache import (
-    ConversationCache,
 )
 from ._core_cookie_persistence import CookiePersistence
 from ._core_polling import PendingPolls, PollRegistry
@@ -585,7 +581,6 @@ class ClientCore:
         # produces hangs and ``RuntimeError`` deep in httpx instead of an
         # actionable message at the call site.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
-        self._conversation_cache_manager = ConversationCache()
         # Keepalive background task configuration
         self._keepalive_interval: float | None = _resolve_keepalive_interval(
             keepalive, keepalive_min_interval
@@ -1635,58 +1630,6 @@ class ClientCore:
         if not self._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
         return self._http_client
-
-    def cache_conversation_turn(
-        self, conversation_id: str, query: str, answer: str, turn_number: int
-    ) -> None:
-        """Cache a conversation turn locally.
-
-        Uses FIFO eviction when cache exceeds MAX_CONVERSATION_CACHE_SIZE.
-
-        Args:
-            conversation_id: The conversation ID.
-            query: The user's question.
-            answer: The AI's response.
-            turn_number: The turn number in the conversation.
-        """
-        self._conversation_cache_manager.cache_conversation_turn(
-            conversation_id,
-            query,
-            answer,
-            turn_number,
-            max_size=MAX_CONVERSATION_CACHE_SIZE,
-        )
-
-    def get_cached_conversation(self, conversation_id: str) -> list[dict[str, Any]]:
-        """Get cached conversation turns.
-
-        Args:
-            conversation_id: The conversation ID.
-
-        Returns:
-            List of cached turns, or empty list if not found.
-        """
-        return self._conversation_cache_manager.get_cached_conversation(conversation_id)
-
-    def clear_conversation_cache(self, conversation_id: str | None = None) -> bool:
-        """Clear conversation cache.
-
-        Args:
-            conversation_id: Clear specific conversation, or all if None.
-
-        Returns:
-            True if cache was cleared.
-        """
-        return self._conversation_cache_manager.clear(conversation_id)
-
-    @property
-    def _conversation_cache(self) -> OrderedDict[str, list[dict[str, Any]]]:
-        """Compatibility view of the conversation cache backing mapping."""
-        return self._conversation_cache_manager.conversations
-
-    @_conversation_cache.setter
-    def _conversation_cache(self, value: OrderedDict[str, list[dict[str, Any]]]) -> None:
-        self._conversation_cache_manager = ConversationCache(value)
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Extract all source IDs from a notebook.

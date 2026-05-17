@@ -1,7 +1,7 @@
 """Regression test for the per-``conversation_id`` lock for serial follow-ups.
 
 ``ChatAPI.ask`` rebuilds the conversation history from
-``_core._conversation_cache`` at the top of the request, then ``await``s
+``ChatAPI._cache`` at the top of the request, then ``await``s
 the streamed POST, then writes the new turn back to the cache. Two
 concurrent ``ask`` calls on the *same* ``conversation_id`` interleave at
 the ``await`` — both read the SAME pre-update history, both POST the
@@ -186,7 +186,7 @@ async def test_concurrent_follow_ups_serialize_on_conversation_id(auth_tokens) -
         # Seed the conversation cache so both follow-ups have at least one
         # prior turn to read. ``ask`` would normally populate this on a
         # first call but we want a known, fixed seed to assert against.
-        client._core.cache_conversation_turn(cid, "q1", "answer-1", turn_number=1)
+        client.chat._cache.cache_conversation_turn(cid, "q1", "answer-1", turn_number=1)
 
         results = await asyncio.gather(
             client.chat.ask(
@@ -292,8 +292,8 @@ async def test_different_conversation_ids_run_in_parallel(auth_tokens) -> None:
         # (the path the lock protects). New-conversation asks would
         # also fan out in parallel but for a different reason — fresh
         # UUIDs — so this test wants the follow-up path specifically.
-        client._core.cache_conversation_turn(cid_a, "q0", "a0", turn_number=1)
-        client._core.cache_conversation_turn(cid_b, "q0", "a0", turn_number=1)
+        client.chat._cache.cache_conversation_turn(cid_a, "q0", "a0", turn_number=1)
+        client.chat._cache.cache_conversation_turn(cid_b, "q0", "a0", turn_number=1)
 
         await asyncio.gather(
             client.chat.ask(notebook_id, "qA", source_ids=["src_001"], conversation_id=cid_a),
