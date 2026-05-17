@@ -24,6 +24,7 @@ from ._core_drain import TransportDrainTracker
 # ``_core_drain``. ``_core_drain`` is the source of truth for the token
 # shape; the alias below is the backwards-compat anchor.
 from ._core_drain import _TransportOperationToken as _TransportOperationToken
+from ._core_lifecycle import ClientLifecycle
 from ._core_metrics import ClientMetrics
 from ._core_polling import PendingPolls, PollRegistry
 from ._core_reqid import DEFAULT_STEP as _REQID_DEFAULT_STEP
@@ -50,12 +51,31 @@ from ._core_transport import (
     _TransportServerError as _TransportServerError,
 )
 from ._sources import fetch_source_ids
+
+# ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
+# so existing ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
+# sites in tests keep working (used in 8+ test files). The lifecycle helper
+# (``_core_lifecycle.ClientLifecycle.save_cookies``) reads the attribute via
+# ``from . import _core; _core.save_cookies_to_storage`` at call time so the
+# monkeypatched value is what runs on the live save path.
+#
+# ``_rotate_cookies`` is re-exported on the same module-level attribute surface
+# so ``tests/unit/concurrency/test_close_cancellation_leak.py:138``'s
+# ``monkeypatch.setattr("notebooklm._core._rotate_cookies", …)`` keeps
+# affecting the live keepalive loop (the lifecycle helper resolves it via
+# ``from . import _core; _core._rotate_cookies`` at call time).
 from .auth import (
     AuthTokens,
     CookieSnapshot,
-    _rotate_cookies,
-    build_cookie_jar,
-    save_cookies_to_storage,
+)
+from .auth import (
+    _rotate_cookies as _rotate_cookies,
+)
+from .auth import (
+    build_cookie_jar as build_cookie_jar,
+)
+from .auth import (
+    save_cookies_to_storage as save_cookies_to_storage,
 )
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
@@ -483,9 +503,17 @@ class ClientCore:
         from .types import ConnectionLimits
 
         self.auth = auth
-        self._timeout = timeout
-        self._connect_timeout = connect_timeout
-        self._limits = limits if limits is not None else ConnectionLimits()
+        # HTTP timeouts, connection limits, keepalive interval / storage_path,
+        # the live ``httpx.AsyncClient``, the captured ``_bound_loop``, and
+        # the keepalive background task all live on ``self._lifecycle``
+        # (constructed below alongside the other extracted helpers so the
+        # inter-helper dependency order is obvious). Compat properties further
+        # down preserve the legacy ``_timeout`` / ``_connect_timeout`` /
+        # ``_limits`` / ``_http_client`` / ``_bound_loop`` /
+        # ``_keepalive_task`` / ``_keepalive_interval`` /
+        # ``_keepalive_storage_path`` ivar names for tests and first-party
+        # callers that probe or assign them directly.
+        _resolved_limits = limits if limits is not None else ConnectionLimits()
         # ``_refresh_retry_delay`` stays here directly — it is read on the
         # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
         # by integration tests against ``client._core``. The refresh
@@ -544,7 +572,6 @@ class ClientCore:
         # ``_max_concurrent_rpcs is None``, the accessor returns a
         # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
         self._rpc_semaphore: asyncio.Semaphore | None = None
-        self._http_client: httpx.AsyncClient | None = None
         # Observability counters + telemetry callback. Compat properties
         # below (``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event``) bridge
         # the legacy ivar names back into this helper.
@@ -578,34 +605,46 @@ class ClientCore:
         # inter-helper contract for the upcoming B2/C1 extractions; do not
         # rename.
         self._auth_coord = AuthRefreshCoordinator(refresh_callback=refresh_callback)
-        # Event-loop affinity guard. Captured in
-        # :meth:`open` and checked in :meth:`_perform_authed_post`; a cheap
-        # ``is`` comparison fails fast when a caller drives the same
-        # ``ClientCore`` from a different loop (typical mistake: instantiating
-        # under ``asyncio.run`` in one thread, then handing the client to
-        # another thread's loop). Each client is per-loop — the asyncio
-        # primitives we hold (``_reqid_lock``, ``_refresh_lock``,
-        # ``_auth_snapshot_lock``, ``_upload_semaphore``, ``_rpc_semaphore``,
-        # the ``httpx.AsyncClient`` pool, in-flight tasks like
-        # ``_refresh_task``/``_keepalive_task``) are all bound to the loop
-        # that ``open()`` ran on; reusing them under a different loop
-        # produces hangs and ``RuntimeError`` deep in httpx instead of an
-        # actionable message at the call site.
-        self._bound_loop: asyncio.AbstractEventLoop | None = None
-        # Keepalive background task configuration
-        self._keepalive_interval: float | None = _resolve_keepalive_interval(
-            keepalive, keepalive_min_interval
-        )
-        # Prefer the explicit storage_path if provided (e.g. NotebookLMClient(storage_path=...)
-        # with a manually-built AuthTokens), otherwise fall back to auth.storage_path.
-        self._keepalive_storage_path: Path | None = (
+        # HTTP-client lifecycle — owns ``_http_client``, ``_bound_loop``,
+        # ``_keepalive_task``, ``_keepalive_interval``,
+        # ``_keepalive_storage_path``, ``_timeout``, ``_connect_timeout``,
+        # ``_limits``. Compat properties further down preserve the legacy
+        # ivar names. The ``_resolve_keepalive_interval`` clamp stays in
+        # this module's preamble (see top of file) because
+        # ``tests/unit/test_vcr_config.py`` imports
+        # ``_SyntheticErrorTransport`` / ``_get_error_injection_mode`` from
+        # ``notebooklm._core`` by name, and the master plan pins the
+        # preamble surface as the public-on-private contract.
+        #
+        # Event-loop affinity guard rationale: the lifecycle captures
+        # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
+        # and the cross-loop check in ``_perform_authed_post`` (via
+        # :class:`AuthedTransport`) does a cheap ``is`` comparison against
+        # it. Each client is per-loop — the asyncio primitives we hold
+        # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
+        # ``_upload_semaphore``, ``_rpc_semaphore``, the ``httpx.AsyncClient``
+        # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)
+        # are all bound to the loop that ``open()`` ran on; reusing them
+        # under a different loop produces hangs and ``RuntimeError`` deep
+        # in httpx instead of an actionable message at the call site.
+        #
+        # Prefer the explicit storage_path if provided (e.g.
+        # ``NotebookLMClient(storage_path=...)`` with a manually-built
+        # ``AuthTokens``), otherwise fall back to ``auth.storage_path``.
+        _resolved_storage_path: Path | None = (
             keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
         )
-        self._keepalive_task: asyncio.Task[None] | None = None
+        self._lifecycle = ClientLifecycle(
+            timeout=timeout,
+            connect_timeout=connect_timeout,
+            limits=_resolved_limits,
+            keepalive_interval=_resolve_keepalive_interval(keepalive, keepalive_min_interval),
+            keepalive_storage_path=_resolved_storage_path,
+        )
         # Owns the in-process save lock and open-time cookie baseline while
         # compatibility properties below keep the legacy private attribute
         # names observable for current tests and first-party callers.
-        self.cookie_persistence = CookiePersistence(self.auth, self._keepalive_storage_path)
+        self.cookie_persistence = CookiePersistence(self.auth, _resolved_storage_path)
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
@@ -782,6 +821,140 @@ class ClientCore:
     def _auth_snapshot_lock(self, value: asyncio.Lock | None) -> None:
         self._ensure_auth_coord()
         self._auth_coord._auth_snapshot_lock = value
+
+    # ------------------------------------------------------------------
+    # ``ClientLifecycle`` compat bridges. HTTP-client lifecycle state now
+    # lives on ``self._lifecycle``; the eight legacy ivar names (
+    # ``_http_client``, ``_bound_loop``, ``_keepalive_task``,
+    # ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
+    # ``_connect_timeout``, ``_limits``) are preserved here as
+    # ``@property`` bridges. ``_http_client`` and ``_bound_loop`` carry
+    # writeable setters because tests SET them directly (15+ sites for
+    # ``_http_client``; ``_bound_loop`` setter is required by the master
+    # plan for future C1 access patterns). The other six are getter-only
+    # because no SET sites were found in the test surface.
+    # ``_ensure_lifecycle`` mirrors the ``_ensure_observability_state`` /
+    # ``_ensure_auth_coord`` backfill so ``__new__``-built fixtures (no
+    # ``__init__`` ran) still resolve cleanly.
+    # ------------------------------------------------------------------
+
+    def _ensure_lifecycle(self) -> None:
+        """Backfill ``_lifecycle`` for tests that construct via ``__new__``.
+
+        Uses a module-level threading lock (the existing
+        ``_OBSERVABILITY_INIT_LOCK``) for double-checked locking so two
+        threads racing through ``hasattr`` cannot both decide they need to
+        construct a lifecycle and silently discard each other's
+        ``_http_client`` references.
+
+        ``__new__``-built fixtures may not have the underlying timeout /
+        limits attributes; we synthesise a minimally-configured lifecycle
+        in that case (the same shape ``ClientCore.__init__`` would produce
+        for default args).
+        """
+        if hasattr(self, "_lifecycle"):
+            return
+        with _OBSERVABILITY_INIT_LOCK:
+            if not hasattr(self, "_lifecycle"):
+                # Lazy import to break the types.py -> _core.py cycle.
+                from .types import ConnectionLimits
+
+                self._lifecycle = ClientLifecycle(
+                    timeout=DEFAULT_TIMEOUT,
+                    connect_timeout=DEFAULT_CONNECT_TIMEOUT,
+                    limits=ConnectionLimits(),
+                    keepalive_interval=None,
+                    keepalive_storage_path=None,
+                )
+
+    @property
+    def _http_client(self) -> httpx.AsyncClient | None:
+        self._ensure_lifecycle()
+        return self._lifecycle._http_client
+
+    @_http_client.setter
+    def _http_client(self, value: httpx.AsyncClient | None) -> None:
+        self._ensure_lifecycle()
+        self._lifecycle._http_client = value
+
+    @property
+    def _bound_loop(self) -> asyncio.AbstractEventLoop | None:
+        self._ensure_lifecycle()
+        return self._lifecycle._bound_loop
+
+    @_bound_loop.setter
+    def _bound_loop(self, value: asyncio.AbstractEventLoop | None) -> None:
+        self._ensure_lifecycle()
+        self._lifecycle._bound_loop = value
+
+    @property
+    def _keepalive_task(self) -> asyncio.Task[None] | None:
+        self._ensure_lifecycle()
+        return self._lifecycle._keepalive_task
+
+    @_keepalive_task.setter
+    def _keepalive_task(self, value: asyncio.Task[None] | None) -> None:
+        # Setter retained because these were plain ivars pre-extraction
+        # (and Python attributes are writeable by default). No SET sites in
+        # the current test surface, but mirroring the pre-extraction
+        # contract avoids future friction.
+        self._ensure_lifecycle()
+        self._lifecycle._keepalive_task = value
+
+    @property
+    def _keepalive_interval(self) -> float | None:
+        self._ensure_lifecycle()
+        return self._lifecycle._keepalive_interval
+
+    @_keepalive_interval.setter
+    def _keepalive_interval(self, value: float | None) -> None:
+        self._ensure_lifecycle()
+        self._lifecycle._keepalive_interval = value
+
+    @property
+    def _keepalive_storage_path(self) -> Path | None:
+        self._ensure_lifecycle()
+        return self._lifecycle._keepalive_storage_path
+
+    @_keepalive_storage_path.setter
+    def _keepalive_storage_path(self, value: Path | None) -> None:
+        self._ensure_lifecycle()
+        self._lifecycle._keepalive_storage_path = value
+
+    @property
+    def _timeout(self) -> float:
+        self._ensure_lifecycle()
+        return self._lifecycle._timeout
+
+    @_timeout.setter
+    def _timeout(self, value: float) -> None:
+        # Required by ``RpcOwner`` Protocol (``_core_rpc.py``) which
+        # declares ``_timeout: float`` as a settable variable. Pre-extraction
+        # ``_timeout`` was a plain ivar so attribute assignment worked
+        # implicitly; the property bridge needs an explicit setter to
+        # preserve that contract.
+        self._ensure_lifecycle()
+        self._lifecycle._timeout = value
+
+    @property
+    def _connect_timeout(self) -> float:
+        self._ensure_lifecycle()
+        return self._lifecycle._connect_timeout
+
+    @_connect_timeout.setter
+    def _connect_timeout(self, value: float) -> None:
+        self._ensure_lifecycle()
+        self._lifecycle._connect_timeout = value
+
+    @property
+    def _limits(self) -> "ConnectionLimits":
+        self._ensure_lifecycle()
+        return self._lifecycle._limits
+
+    @_limits.setter
+    def _limits(self, value: "ConnectionLimits") -> None:
+        self._ensure_lifecycle()
+        self._lifecycle._limits = value
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
@@ -1055,232 +1228,66 @@ class ClientCore:
     async def open(self) -> None:
         """Open the HTTP client connection.
 
-        Called automatically by NotebookLMClient.__aenter__.
-        Uses httpx.Cookies jar to properly handle cross-domain redirects
-        (e.g., to accounts.google.com for auth token refresh).
-
-        Captures the running event loop in ``self._bound_loop`` so
-        :meth:`_perform_authed_post` can fail fast if the same client is
-        later driven from a different loop. Re-opening
-        on a different loop intentionally replaces the binding — ``open()``
-        is the only binding moment; ``close()`` does not unbind so an
+        Called automatically by NotebookLMClient.__aenter__. Delegates to
+        :meth:`ClientLifecycle.open` — that helper builds the
+        ``httpx.AsyncClient`` (with the opt-in
+        :class:`_SyntheticErrorTransport` wrap when
+        ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set), captures the running
+        event loop into ``self._bound_loop``, and spawns the keepalive
+        task. Idempotent — calling ``open()`` while already open is a
+        no-op. Re-opening after a prior :meth:`close` intentionally
+        replaces the loop binding; :meth:`close` does not unbind so an
         accidental cross-loop call after close still raises actionably.
         """
-        if self._http_client is None:
-            # Capture event-loop affinity before any awaitable resource is
-            # built so the binding is consistent with the loop that owns
-            # every primitive constructed below.
-            self._bound_loop = asyncio.get_running_loop()
-            self._draining = False
-            # Use granular timeouts: shorter connect timeout helps detect network issues
-            # faster, while longer read/write timeouts accommodate slow responses
-            timeout = httpx.Timeout(
-                connect=self._connect_timeout,
-                read=self._timeout,
-                write=self._timeout,
-                pool=self._timeout,
-            )
-            # Build cookies jar for cross-domain redirect support
-            # Use pre-built jar if available, otherwise build one
-            cookies = self.auth.cookie_jar or build_cookie_jar(
-                cookies=self.auth.cookies,
-                storage_path=self.auth.storage_path,
-            )
-            # Opt-in synthetic-error transport wrapper. When the env var is
-            # unset (the default) this is a no-op and the AsyncClient is
-            # constructed exactly as before. See ``_SyntheticErrorTransport``
-            # docstring at module top.
-            error_mode = _get_error_injection_mode()
-            synthetic_transport: httpx.AsyncBaseTransport | None = None
-            if error_mode is not None:
-                # When we supply a custom ``transport=`` to ``AsyncClient``,
-                # httpx no longer constructs its own internal transport from
-                # the ``limits=`` kwarg below — those limits are consumed by
-                # the inner transport here instead, so connection-pool sizing
-                # remains identical to the no-injection path.
-                inner_transport = httpx.AsyncHTTPTransport(
-                    limits=self._limits.to_httpx_limits(),
-                )
-                synthetic_transport = _SyntheticErrorTransport(error_mode, inner_transport)
-                logger.info(
-                    "synthetic-error injection enabled (mode=%s) — "
-                    "production paths will see substituted responses",
-                    error_mode,
-                )
-            self._http_client = httpx.AsyncClient(
-                headers={
-                    "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-                },
-                cookies=cookies,
-                timeout=timeout,
-                follow_redirects=True,
-                # ``limits=`` is honored when ``transport=None`` (default) —
-                # httpx builds its own default transport with these limits.
-                # When ``transport=synthetic_transport`` (error-injection
-                # record mode) this kwarg is ignored by httpx and the
-                # inner_transport above carries the limits instead. The
-                # redundant pass is harmless and avoids a branch on the
-                # AsyncClient construction site.
-                limits=self._limits.to_httpx_limits(),
-                transport=synthetic_transport,
-            )
-
-            # Capture the open-time snapshot AFTER the AsyncClient is built
-            # (httpx normalizes domains on ingest) but BEFORE any rotation
-            # could possibly fire. When AuthTokens carries a snapshot from a
-            # failed pre-client save, keep it so the unpersisted delta can be
-            # retried instead of treating the already-mutated jar as clean.
-            self.cookie_persistence.capture_open_snapshot(self._http_client.cookies)
-
-            # Spawn the keepalive task once the client is ready
-            if self._keepalive_interval is not None:
-                self._keepalive_task = asyncio.create_task(
-                    self._keepalive_loop(self._keepalive_interval)
-                )
+        self._ensure_lifecycle()
+        await self._lifecycle.open(self)
 
     async def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> None:
         """Persist a cookie jar through the shared cookie-persistence collaborator.
 
-        This remains the single chokepoint used by ``close()``, the keepalive
-        loop, and ``NotebookLMClient.refresh_auth``. The storage writer and
-        thread offload callable are resolved from this module at call time so
-        existing ``notebooklm._core`` monkeypatch paths continue to affect the
-        live save path.
+        Thin facade over :meth:`ClientLifecycle.save_cookies`. The storage
+        writer ``save_cookies_to_storage`` is resolved from this module at
+        call time inside the lifecycle helper so existing
+        ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
+        sites continue to affect the live save path.
         """
-        await self.cookie_persistence.save(
-            jar,
-            path,
-            save_cookies_to_storage=save_cookies_to_storage,
-            to_thread=asyncio.to_thread,
-        )
+        self._ensure_lifecycle()
+        await self._lifecycle.save_cookies(self, jar, path)
 
     async def close(self) -> None:
         """Close the HTTP client connection.
 
-        Called automatically by NotebookLMClient.__aexit__.
+        Called automatically by NotebookLMClient.__aexit__. Delegates to
+        :meth:`ClientLifecycle.close`, which:
 
-        Cancellation safety:
-        the entire close sequence is wrapped in ``try/finally`` and the
-        final ``self._http_client.aclose()`` is wrapped in
-        ``asyncio.shield`` — without the shield, a ``CancelledError``
-        arriving during keepalive teardown or the cookie save would
-        skip ``aclose()`` and leak the underlying httpx transport.
-        ``self._http_client = None`` runs in an inner ``finally`` so
-        the instance is consistently marked closed even if the
-        shielded ``aclose`` itself raises.
-
-        Poll-task drain: in-flight artifact poll tasks held by
-        :attr:`poll_registry` are cancelled and awaited before the HTTP
-        client is torn down. Without this, a leader poll waking mid-aclose
-        would issue a request against an already-closed transport and
-        surface as a confusing httpx error in the user's logs. The drain
-        uses ``return_exceptions=True`` so a single misbehaving task can't
-        block the rest of the close sequence.
+        1. Cancels and joins the keepalive task (so the loop can't issue a
+           poke against an already-closed transport).
+        2. Drains in-flight artifact poll tasks held by ``self.poll_registry``.
+        3. Saves cookies one last time through ``save_cookies``.
+        4. Calls ``aclose()`` under :func:`asyncio.shield` so cancellation
+           arriving mid-close cannot leak the underlying httpx transport.
+        5. Nulls out ``_http_client``, ``_authed_transport`` and
+           ``_rpc_executor`` so a follow-up :meth:`open` rebuilds the
+           transport collaborators against the new ``httpx.AsyncClient``.
         """
-        try:
-            # Stop the keepalive task before tearing down the HTTP client so
-            # the loop can't issue a poke against an already-closed transport.
-            if self._keepalive_task is not None:
-                self._keepalive_task.cancel()
-                await asyncio.gather(self._keepalive_task, return_exceptions=True)
-                self._keepalive_task = None
-
-            # Drain in-flight artifact poll tasks. Snapshot first so concurrent
-            # registry mutations (a finishing leader removing its entry) don't
-            # race with the cancel/gather pair.
-            poll_tasks = self.poll_registry.active_tasks()
-            if poll_tasks:
-                for task in poll_tasks:
-                    task.cancel()
-                await asyncio.gather(*poll_tasks, return_exceptions=True)
-
-            if self._http_client:
-                try:
-                    # Single source of truth for the on-close save: takes the
-                    # in-process lock, snapshots, off-loads. Serializes
-                    # naturally with any keepalive save still finishing in a
-                    # worker thread — close() owns the freshest jar and must
-                    # win, not the older snapshot.
-                    await self.save_cookies(self._http_client.cookies)
-                except Exception as e:
-                    logger.warning("Failed to sync refreshed cookies during close: %s", e)
-        finally:
-            if self._http_client:
-                try:
-                    # Shield: cancellation arriving mid-aclose must not leak
-                    # the transport. The shielded aclose runs to completion;
-                    # ``self._http_client = None`` then makes ``is_open``
-                    # return False correctly.
-                    await asyncio.shield(self._http_client.aclose())
-                finally:
-                    self._http_client = None
+        self._ensure_lifecycle()
+        await self._lifecycle.close(self)
 
     async def _keepalive_loop(self, interval: float) -> None:
         """Background loop that periodically pokes the identity surface.
 
-        Sleeps ``interval`` seconds between iterations, then calls
-        :func:`notebooklm.auth._rotate_cookies` to elicit ``__Secure-1PSIDTS``
-        rotation. Any rotated cookies are persisted to ``storage_state.json``
-        immediately (off-loop, via :func:`asyncio.to_thread`) so a long-lived
-        client's freshness survives a crash.
-
-        Error handling is split by failure mode:
-
-        - Poke failures (network blips, ``accounts.google.com`` downtime) are
-          opportunistic and logged at DEBUG. The next iteration retries.
-        - Persistence failures hide the most important class of bug — a
-          rotated cookie that exists in memory but not on disk — so they are
-          logged at WARNING with the storage path.
-
-        Both classes never propagate; the loop only exits via
-        :class:`asyncio.CancelledError` from :meth:`close`.
+        Thin facade over :meth:`ClientLifecycle._keepalive_loop`. Retained
+        as a ``ClientCore`` method so ``test_client_keepalive`` and other
+        tests that introspect ``core._keepalive_loop`` continue to resolve.
         """
-        logger.debug("Keepalive task started (interval=%.1fs)", interval)
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                client = self._http_client
-                if client is None:
-                    # Client closed concurrently; exit gracefully.
-                    return
-
-                try:
-                    # Bypass the layer-1 dedup guards: this loop is self-paced
-                    # by ``keepalive_min_interval`` and never runs concurrently
-                    # with itself. Pass the storage path so the bare call
-                    # bumps the *per-profile* in-process timestamp, letting
-                    # concurrent layer-1 callers (e.g. spawned ``fetch_tokens``
-                    # tasks on the same profile) and other keepalive loops on
-                    # the same profile see the fresh rotation and skip.
-                    await _rotate_cookies(client, self._keepalive_storage_path)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001 - opportunistic best-effort
-                    logger.debug("Keepalive poke failed (non-fatal): %s", exc)
-                    continue
-
-                if self._keepalive_storage_path is None:
-                    continue
-
-                try:
-                    # save_cookies handles snapshot + lock + off-load.
-                    await self.save_cookies(client.cookies)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "Keepalive cookie persistence to %s failed: %s",
-                        self._keepalive_storage_path,
-                        exc,
-                    )
-        except asyncio.CancelledError:
-            logger.debug("Keepalive task cancelled")
-            raise
+        self._ensure_lifecycle()
+        await self._lifecycle._keepalive_loop(self, interval)
 
     @property
     def is_open(self) -> bool:
         """Check if the HTTP client is open."""
-        return self._http_client is not None
+        self._ensure_lifecycle()
+        return self._lifecycle.is_open()
 
     def update_auth_headers(self) -> None:
         """Refresh auth metadata without resetting the live cookie jar.
