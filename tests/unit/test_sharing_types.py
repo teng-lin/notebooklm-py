@@ -53,6 +53,13 @@ class TestSharedUser:
 
         assert user.permission == SharePermission.VIEWER
 
+    def test_from_api_response_malformed_permission(self):
+        """Test parsing with malformed permission value defaults to VIEWER."""
+        data = ["user@example.com", {"permission": 3}, []]
+        user = SharedUser.from_api_response(data)
+
+        assert user.permission == SharePermission.VIEWER
+
     def test_from_api_response_empty(self):
         """Test parsing with empty data."""
         data = []

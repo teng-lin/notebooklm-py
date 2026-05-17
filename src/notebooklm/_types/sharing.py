@@ -29,7 +29,7 @@ class SharedUser:
         perm_value = data[1] if len(data) > 1 else 3
         try:
             permission = SharePermission(perm_value)
-        except ValueError:
+        except (TypeError, ValueError):
             permission = SharePermission.VIEWER
 
         display_name = None

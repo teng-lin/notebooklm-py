@@ -401,12 +401,12 @@ class Artifact:
     @property
     def is_quiz(self) -> bool:
         """Check if this is a quiz (type 4, variant 2)."""
-        return self._artifact_type == 4 and self._variant == 2
+        return self._artifact_type == ArtifactTypeCode.QUIZ.value and self._variant == 2
 
     @property
     def is_flashcards(self) -> bool:
         """Check if this is flashcards (type 4, variant 1)."""
-        return self._artifact_type == 4 and self._variant == 1
+        return self._artifact_type == ArtifactTypeCode.QUIZ.value and self._variant == 1
 
     @property
     def report_subtype(self) -> str | None:
@@ -415,7 +415,7 @@ class Artifact:
         Returns:
             'briefing_doc', 'study_guide', 'blog_post', or None if not a report.
         """
-        if self._artifact_type != 2:
+        if self._artifact_type != ArtifactTypeCode.REPORT.value:
             return None
         title_lower = self.title.lower()
         if title_lower.startswith("briefing doc"):
