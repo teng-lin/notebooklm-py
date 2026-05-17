@@ -990,8 +990,7 @@ class TestFetchTokens:
             async def get(self, *args, **kwargs):
                 request = httpx.Request(
                     "GET",
-                    "https://accounts.google.com/signin?continue=foo&f.sid=bar"
-                    "#access_token=frag",
+                    "https://accounts.google.com/signin?continue=foo&f.sid=bar#access_token=frag",
                 )
                 return httpx.Response(200, content=b"<html>Login</html>", request=request)
 
