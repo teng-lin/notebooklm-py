@@ -28,6 +28,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
+import notebooklm.cli.auth_runtime as auth_runtime
 from notebooklm.cli.helpers import with_auth_and_errors, with_client
 from notebooklm.exceptions import AuthError, RateLimitError
 
@@ -132,6 +133,25 @@ def test_with_auth_and_errors_default_auth_loader_is_looked_up_at_call_time() ->
 
     with patch("notebooklm.cli.helpers.get_auth_tokens", return_value=sentinel_auth) as loader:
         result = with_auth_and_errors(
+            ctx,
+            command_name="run",
+            json_output=False,
+            body=_body,
+        )
+
+    loader.assert_called_once_with(ctx)
+    assert result is sentinel_auth
+
+
+def test_auth_runtime_default_auth_loader_preserves_helpers_patch_seam() -> None:
+    sentinel_auth = MagicMock(name="default-auth")
+    ctx = _make_click_context()
+
+    async def _body(auth):
+        return auth
+
+    with patch("notebooklm.cli.helpers.get_auth_tokens", return_value=sentinel_auth) as loader:
+        result = auth_runtime.with_auth_and_errors(
             ctx,
             command_name="run",
             json_output=False,

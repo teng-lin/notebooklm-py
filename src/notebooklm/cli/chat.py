@@ -18,14 +18,12 @@ from .helpers import (
     get_current_conversation,
     get_current_notebook,
     json_output_response,
-    require_notebook,
-    resolve_notebook_id,
-    resolve_prompt,
-    resolve_source_ids,
     set_current_conversation,
     with_client,
 )
+from .input import resolve_prompt
 from .options import _complete_sources, json_option, notebook_option, prompt_file_option
+from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
 
 logger = logging.getLogger(__name__)
 

@@ -56,6 +56,24 @@ def _storage_auth(tmp_path) -> tuple[AuthTokens, "object"]:
     return auth, storage_path
 
 
+async def _read_storage_text_when_available(storage_path):
+    """Read storage text, retrying transient Windows sharing violations."""
+    for _ in range(50):
+        try:
+            return storage_path.read_text()
+        except PermissionError:
+            await asyncio.sleep(0.05)
+    return storage_path.read_text()
+
+
+async def _wait_until_storage_contains(storage_path, needle: str, failure_message: str) -> None:
+    for _ in range(50):
+        if needle in await _read_storage_text_when_available(storage_path):
+            return
+        await asyncio.sleep(0.05)
+    pytest.fail(failure_message)
+
+
 class TestKeepaliveDisabledByDefault:
     @pytest.mark.asyncio
     async def test_keepalive_off_by_default(self, mock_auth, httpx_mock: HTTPXMock):
@@ -320,12 +338,11 @@ class TestKeepaliveExplicitStoragePath:
         )
 
         async with client:
-            for _ in range(50):
-                if "rotated_via_explicit" in storage_path.read_text():
-                    break
-                await asyncio.sleep(0.05)
-            else:
-                pytest.fail("Rotated cookie was not persisted to the explicit storage path")
+            await _wait_until_storage_contains(
+                storage_path,
+                "rotated_via_explicit",
+                "Rotated cookie was not persisted to the explicit storage path",
+            )
 
     def test_explicit_storage_path_normalizes_onto_auth_without_mutating_caller(self, tmp_path):
         """The constructor exposes ``storage_path`` on ``client.auth`` so
@@ -423,18 +440,15 @@ class TestKeepalivePersistence:
 
         async with client:
             # Wait long enough for at least one poke + persist
-            for _ in range(50):
-                if "rotated_value_xyz" in storage_path.read_text():
-                    break
-                await asyncio.sleep(0.05)
-            else:
-                pytest.fail(
-                    "Rotated cookie was not persisted to storage_state.json before __aexit__ ran"
-                )
+            await _wait_until_storage_contains(
+                storage_path,
+                "rotated_value_xyz",
+                "Rotated cookie was not persisted to storage_state.json before __aexit__ ran",
+            )
 
             # Sanity: the rotated cookie was written *while* the client was open,
             # not just at close time.
-            data = json.loads(storage_path.read_text())
+            data = json.loads(await _read_storage_text_when_available(storage_path))
             cookie_names = {c["name"] for c in data["cookies"]}
             assert "__Secure-1PSIDTS" in cookie_names
 

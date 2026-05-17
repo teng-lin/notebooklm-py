@@ -22,12 +22,11 @@ from .helpers import (
     console,
     get_current_notebook,
     json_output_response,
-    require_notebook,
-    resolve_notebook_id,
     set_current_notebook,
     with_client,
 )
 from .options import list_options, notebook_option
+from .resolve import require_notebook, resolve_notebook_id
 
 
 def register_notebook_commands(cli):

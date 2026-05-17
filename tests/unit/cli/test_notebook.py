@@ -1020,7 +1020,10 @@ class TestNotebookMetadata:
             mock_client_cls.return_value = mock_client
 
             with (
-                patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_1"),
+                patch(
+                    "notebooklm.cli.resolve.context_helpers.get_current_notebook",
+                    return_value="nb_1",
+                ),
                 patch(
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
@@ -1058,7 +1061,10 @@ class TestNotebookMetadata:
             mock_client_cls.return_value = mock_client
 
             with (
-                patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_1"),
+                patch(
+                    "notebooklm.cli.resolve.context_helpers.get_current_notebook",
+                    return_value="nb_1",
+                ),
                 patch(
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
@@ -1089,7 +1095,10 @@ class TestNotebookMetadata:
             mock_client_cls.return_value = mock_client
 
             with (
-                patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_empty"),
+                patch(
+                    "notebooklm.cli.resolve.context_helpers.get_current_notebook",
+                    return_value="nb_empty",
+                ),
                 patch(
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
@@ -1125,7 +1134,10 @@ class TestNotebookMetadata:
             mock_client_cls.return_value = mock_client
 
             with (
-                patch("notebooklm.cli.helpers.get_current_notebook", return_value="nb_url"),
+                patch(
+                    "notebooklm.cli.resolve.context_helpers.get_current_notebook",
+                    return_value="nb_url",
+                ),
                 patch(
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,

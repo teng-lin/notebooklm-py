@@ -21,13 +21,11 @@ from .error_handler import _output_error
 from .helpers import (
     console,
     json_output_response,
-    read_stdin_text,
-    require_notebook,
-    resolve_note_id,
-    resolve_notebook_id,
     with_client,
 )
+from .input import read_stdin_text
 from .options import json_option, notebook_option
+from .resolve import require_notebook, resolve_note_id, resolve_notebook_id
 
 
 @click.group()
