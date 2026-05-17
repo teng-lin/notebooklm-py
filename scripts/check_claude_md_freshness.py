@@ -1,6 +1,6 @@
 """Assert CLAUDE.md repo-structure paths actually exist.
 
-Phase 6 / P6.6: prevents silent drift in the hand-maintained file map.
+Prevents silent drift in the hand-maintained file map.
 
 Usage:
     python scripts/check_claude_md_freshness.py
