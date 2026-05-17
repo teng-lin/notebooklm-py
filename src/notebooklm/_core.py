@@ -26,6 +26,7 @@ from ._core_cache import (
 from ._core_cookie_persistence import CookiePersistence
 from ._core_metrics import ClientMetrics
 from ._core_polling import PendingPolls, PollRegistry
+from ._core_reqid import ReqidCounter
 from ._core_rpc import RpcExecutor
 from ._core_transport import (
     MAX_RETRY_AFTER_SECONDS as MAX_RETRY_AFTER_SECONDS,
@@ -553,14 +554,14 @@ class ClientCore:
             weakref.WeakKeyDictionary()
         )
         # Request ID counter for chat API (must be unique per request).
-        # Access via the ``next_reqid()`` async method, which guards mutation
-        # under ``_reqid_lock``. Direct mutation through the ``_reqid_counter``
-        # property setter emits a ``DeprecationWarning``; bypass the warning
-        # for legitimate test setup by writing to ``_reqid_counter_value``.
-        self._reqid_counter_value: int = 100000
-        # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
-        # Python versions, and this object can be constructed outside one.
-        self._reqid_lock: asyncio.Lock | None = None
+        # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
+        # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
+        # Compat properties below (``_reqid_counter`` /
+        # ``_reqid_counter_value`` / ``_reqid_lock``) bridge the legacy ivar
+        # names back into this helper. The ``on_lock_wait`` hook keeps the
+        # cumulative ``lock_wait_seconds_*`` metrics ticking inside
+        # ``self._metrics_obj`` even though the counter is now extracted.
+        self._reqid = ReqidCounter(on_lock_wait=self._record_lock_wait)
         # Serializes ``_AuthSnapshot`` reads in :meth:`_snapshot` with
         # :meth:`ClientCore.update_auth_tokens` during auth refresh
         # . The lock holds only across the four
@@ -667,10 +668,14 @@ class ClientCore:
     # values that Google rejects.
     #
     # New contract: ``await core.next_reqid()`` performs the increment under
-    # ``_reqid_lock`` and returns the post-increment value. The lock is
-    # created lazily so a ``ClientCore`` can be constructed outside a running
-    # event loop. Direct mutation of ``_reqid_counter`` still works for
-    # backwards compatibility but emits ``DeprecationWarning``.
+    # ``_reqid_lock`` and returns the post-increment value. The state lives in
+    # :class:`notebooklm._core_reqid.ReqidCounter` (``self._reqid``); the
+    # properties below are read/write bridges that keep the legacy
+    # ``_reqid_counter`` / ``_reqid_counter_value`` / ``_reqid_lock`` ivar
+    # names observable for existing tests and first-party callers. Direct
+    # mutation of ``_reqid_counter`` still works for backwards compatibility
+    # but emits ``DeprecationWarning`` — bypass the warning for legitimate
+    # test setup by writing to ``_reqid_counter_value`` instead.
     # ------------------------------------------------------------------
 
     @property
@@ -678,7 +683,7 @@ class ClientCore:
         """Current request-id counter value. Read access is safe; write access
         via the property setter emits ``DeprecationWarning``.
         """
-        return self._reqid_counter_value
+        return self._reqid.value
 
     @_reqid_counter.setter
     def _reqid_counter(self, value: int) -> None:
@@ -688,7 +693,35 @@ class ClientCore:
             DeprecationWarning,
             stacklevel=2,
         )
-        self._reqid_counter_value = value
+        self._reqid.set_value(value)
+
+    @property
+    def _reqid_counter_value(self) -> int:
+        """Bypass-warning bridge for tests that seed the counter directly.
+
+        Writing through ``_reqid_counter`` emits a ``DeprecationWarning``;
+        test fixtures that legitimately need to set the counter without
+        paying that tax write to ``_reqid_counter_value`` instead.
+        """
+        return self._reqid.value
+
+    @_reqid_counter_value.setter
+    def _reqid_counter_value(self, value: int) -> None:
+        self._reqid.set_value(value)
+
+    @property
+    def _reqid_lock(self) -> asyncio.Lock | None:
+        """Bridge to the lazily-allocated reqid lock.
+
+        Historically a plain ivar; preserved as a property with a setter so
+        test fixtures that inject their own ``asyncio.Lock`` (or reset it to
+        ``None`` to force re-allocation) continue to work.
+        """
+        return self._reqid._lock
+
+    @_reqid_lock.setter
+    def _reqid_lock(self, value: asyncio.Lock | None) -> None:
+        self._reqid._lock = value
 
     @property
     def _pending_polls(self) -> PendingPolls:
@@ -707,41 +740,12 @@ class ClientCore:
     async def next_reqid(self, step: int = 100000) -> int:
         """Atomically increment the request-id counter and return the new value.
 
-        Args:
-            step: Increment applied to the counter. Defaults to ``100000`` to
-                match the historical bump used by ``ChatAPI.ask``. Must be a
-                positive ``int`` (not ``bool``); ``step <= 0`` would break
-                monotonicity / uniqueness guarantees that Google's chat
-                backend relies on.
-
-        Returns:
-            The post-increment counter value. Successive calls return strictly
-            monotonic, distinct values even under ``asyncio.gather``.
-
-        Raises:
-            TypeError: If ``step`` is not an ``int`` (bool is rejected even
-                though it is a subclass of ``int``).
-            ValueError: If ``step`` is not positive.
+        Thin facade over :meth:`ReqidCounter.next_reqid`. The default ``step``
+        matches the historical bump used by ``ChatAPI.ask``; see
+        :class:`notebooklm._core_reqid.ReqidCounter` for the full contract,
+        validation rules, and lazy-lock semantics.
         """
-        # ``bool`` is a subclass of ``int`` in Python — reject it explicitly so
-        # ``next_reqid(step=True)`` doesn't silently degrade to ``step=1``.
-        if not isinstance(step, int) or isinstance(step, bool):
-            raise TypeError(f"step must be int, got {type(step).__name__}")
-        if step <= 0:
-            raise ValueError(f"step must be positive, got {step!r}")
-        # Safe: no await between check and assign, so no other coroutine can race us here.
-        if self._reqid_lock is None:
-            # Lazy init — safe to construct here because we're already in an
-            # async context (caller is awaiting us).
-            self._reqid_lock = asyncio.Lock()
-        wait_start = time.perf_counter()
-        await self._reqid_lock.acquire()
-        self._record_lock_wait(time.perf_counter() - wait_start)
-        try:
-            self._reqid_counter_value += step
-            return self._reqid_counter_value
-        finally:
-            self._reqid_lock.release()
+        return await self._reqid.next_reqid(step)
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client instance."""
