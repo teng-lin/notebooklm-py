@@ -7,7 +7,6 @@ jobs:
   publish:
     name: Build and publish to TestPyPI
     runs-on: ubuntu-latest
-    environment: testpypi
     permissions:
       id-token: write
       contents: read
@@ -35,19 +34,15 @@ jobs:
     - name: Build package
       run: python -m build
 
-    - name: Install built wheel in a clean venv
+    - name: Install built wheel + dev extras in a clean venv
       run: |
         python -m venv smoke-venv
-        smoke-venv/bin/pip install dist/notebooklm_py-*.whl
+        WHEEL=$(ls dist/notebooklm_py-*.whl)
+        smoke-venv/bin/pip install "${WHEEL}[dev]"
         smoke-venv/bin/python -c "import notebooklm; print(notebooklm.__version__)"
 
-    - name: Install dev deps for unit-test smoke
-      run: pip install -e .[dev]
-
     - name: Run unit tests against wheel
-      env:
-        PYTHONPATH: ""  # force loading from installed site-packages, not src/
-      run: pytest tests/unit -q --no-cov -x
+      run: smoke-venv/bin/pytest tests/unit -q --no-cov -x
 
     - name: Upload to TestPyPI
       uses: pypa/gh-action-pypi-publish@release/v1
