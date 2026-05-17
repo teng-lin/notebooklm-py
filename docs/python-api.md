@@ -560,7 +560,7 @@ particular ivar lives.
 
 | Module | Owns | Notes |
 |---|---|---|
-| `_core` | `ClientCore` orchestrator; HTTP client lifecycle; module-level constants (`MAX_CONVERSATION_CACHE_SIZE`, `MAX_RETRY_AFTER_SECONDS`, `DEFAULT_TIMEOUT`, etc.); `is_auth_error`, `save_cookies_to_storage`. | Public/internal contract — names imported from `notebooklm._core` stay stable. |
+| `_core` | `ClientCore` orchestrator; HTTP client lifecycle; module-level constants (`MAX_CONVERSATION_CACHE_SIZE`, `MAX_RETRY_AFTER_SECONDS`, `DEFAULT_TIMEOUT`, etc.); `is_auth_error`, `save_cookies_to_storage`; error-injection seam `_SyntheticErrorTransport` + `_get_error_injection_mode` consumed by `_core_transport`'s retry loops. | Public/internal contract — names imported from `notebooklm._core` stay stable. |
 | `_core_auth` (Phase 2 in progress) | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
 | `_core_cache` | Per-instance LRU `_conversation_cache` for `ChatAPI` continuity. | Pure in-process state; not shared across `ClientCore` instances. |
 | `_core_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
@@ -570,16 +570,16 @@ particular ivar lives.
 | `_core_polling` | Pending-poll registry shared by long-running artifact generations. | Tracked via `PollRegistryProvider` in `_capabilities.py`. |
 | `_core_reqid` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
 | `_core_rpc` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | Phase 3 (in progress) collapses the `_core.py`-side `rpc_call` body into this module. |
-| `_core_transport` | Authed HTTP POST path, retry loops (429 + 5xx), error-injection seam (`_SyntheticErrorTransport`), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |
+| `_core_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |
 
 The capability surface that sub-clients depend on is pinned in
-`notebooklm._capabilities` via narrow Protocols (`CoreRPCProvider`,
-`SourceListProvider`, `PollRegistryProvider`, `AuthRouteProvider`,
-`CookieJarProvider`, `TransportOperationProvider`,
-`UploadConcurrencyProvider`), composed into the concrete
-`ClientCoreCapabilities` adapter. Adding or removing a method on
-`ClientCore` is a Protocol change — review `_capabilities.py` alongside
-any change to the orchestrator's public method surface.
+`notebooklm._capabilities` via 9 narrow Protocols (`CoreRPCProvider`,
+`SourceListProvider`, `CoreReqIdProvider`, `ChatStreamingProvider`,
+`PollRegistryProvider`, `AuthRouteProvider`, `CookieJarProvider`,
+`TransportOperationProvider`, `UploadConcurrencyProvider`), composed into
+the concrete `ClientCoreCapabilities` adapter. Adding or removing a
+method on `ClientCore` is a Protocol change — review `_capabilities.py`
+alongside any change to the orchestrator's public method surface.
 
 ---
 
