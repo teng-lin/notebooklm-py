@@ -1,5 +1,6 @@
 """Unit tests for types module dataclasses and parsing."""
 
+import pickle
 import warnings
 from unittest.mock import patch
 
@@ -72,6 +73,147 @@ class TestTimestampParsing:
         from notebooklm.types import _datetime_from_timestamp
 
         assert _datetime_from_timestamp(value) is None
+
+
+_PUBLIC_MOVABLE_CLASSES = [
+    "AccountLimits",
+    "AccountTier",
+    "Artifact",
+    "ArtifactType",
+    "AskResult",
+    "ChatMode",
+    "ChatReference",
+    "CitedSourceSelection",
+    "ClientMetricsSnapshot",
+    "ConnectionLimits",
+    "ConversationTurn",
+    "GenerationStatus",
+    "Note",
+    "Notebook",
+    "NotebookDescription",
+    "NotebookMetadata",
+    "ReportSuggestion",
+    "RpcTelemetryEvent",
+    "SharedUser",
+    "ShareStatus",
+    "Source",
+    "SourceFulltext",
+    "SourceSummary",
+    "SourceType",
+    "SuggestedTopic",
+]
+
+
+@pytest.mark.parametrize("name", _PUBLIC_MOVABLE_CLASSES)
+def test_public_movable_types_keep_notebooklm_types_module(name):
+    """Moved public dataclasses/enums must preserve inspection and pickle identity."""
+    import notebooklm.types as public_types
+
+    assert getattr(public_types, name).__module__ == "notebooklm.types"
+
+
+def test_representative_public_dataclasses_pickle_round_trip():
+    """Representative public dataclasses/enums keep pickle compatibility through T13 moves."""
+    from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
+    from notebooklm.types import (
+        AccountLimits,
+        AccountTier,
+        Artifact,
+        AskResult,
+        ChatReference,
+        CitedSourceSelection,
+        ClientMetricsSnapshot,
+        ConnectionLimits,
+        ConversationTurn,
+        GenerationStatus,
+        Note,
+        Notebook,
+        NotebookDescription,
+        NotebookMetadata,
+        ReportSuggestion,
+        RpcTelemetryEvent,
+        ShareAccess,
+        SharedUser,
+        SharePermission,
+        ShareStatus,
+        ShareViewLevel,
+        Source,
+        SourceFulltext,
+        SourceStatus,
+        SourceSummary,
+        SourceType,
+        SuggestedTopic,
+    )
+
+    source_summary = SourceSummary(kind=SourceType.PDF, title="doc.pdf")
+    notebook = Notebook(id="nb_1", title="Notebook")
+    chat_reference = ChatReference(source_id="src_1", citation_number=1, cited_text="quoted")
+    shared_user = SharedUser(email="reader@example.com", permission=SharePermission.VIEWER)
+    instances = [
+        AccountLimits(notebook_limit=10, source_limit=50, raw_limits=("raw",)),
+        AccountTier(tier="plus", plan_name="Plus"),
+        Artifact(
+            id="artifact_1",
+            title="Audio",
+            _artifact_type=ArtifactTypeCode.AUDIO.value,
+            status=ArtifactStatus.COMPLETED,
+            url="https://example.com/audio.mp3",
+        ),
+        AskResult(
+            answer="Answer",
+            conversation_id="conversation_1",
+            turn_number=1,
+            is_follow_up=False,
+            references=[chat_reference],
+            raw_response="raw",
+        ),
+        CitedSourceSelection(
+            sources=[{"url": "https://example.com"}],
+            cited_url_count=1,
+            matched_url_source_count=1,
+        ),
+        ClientMetricsSnapshot(rpc_calls_started=2, rpc_calls_succeeded=1),
+        ConnectionLimits(max_connections=10, max_keepalive_connections=5),
+        ConversationTurn(query="Question", answer="Answer", turn_number=1),
+        GenerationStatus(task_id="task_1", status="completed", url="https://example.com/file"),
+        Note(id="note_1", notebook_id="nb_1", title="Note", content="Body"),
+        NotebookDescription(
+            summary="Summary",
+            suggested_topics=[SuggestedTopic(question="Q?", prompt="Ask Q")],
+        ),
+        NotebookMetadata(notebook=notebook, sources=[source_summary]),
+        ReportSuggestion(title="Briefing", description="Desc", prompt="Prompt"),
+        RpcTelemetryEvent(method="GET_NOTEBOOK", status="success", elapsed_seconds=0.01),
+        ShareStatus(
+            notebook_id="nb_1",
+            is_public=True,
+            access=ShareAccess.ANYONE_WITH_LINK,
+            view_level=ShareViewLevel.FULL_NOTEBOOK,
+            shared_users=[shared_user],
+            share_url="https://notebooklm.google.com/notebook/nb_1",
+        ),
+        Source(
+            id="src_1",
+            title="Source",
+            url="https://example.com",
+            _type_code=2,
+            status=SourceStatus.READY.value,
+        ),
+        SourceFulltext(
+            source_id="src_1",
+            title="Source",
+            content="Full indexed text",
+            _type_code=2,
+            url="https://example.com",
+            char_count=17,
+        ),
+    ]
+
+    for instance in instances:
+        assert pickle.loads(pickle.dumps(instance)) == instance
+
+    for enum_member in [SourceType.PDF, ArtifactType.AUDIO, ChatMode.DEFAULT]:
+        assert pickle.loads(pickle.dumps(enum_member)) is enum_member
 
 
 class TestNotebook:
