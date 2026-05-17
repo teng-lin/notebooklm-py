@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import math
-import random  # noqa: F401 — preserves `notebooklm._core.random.uniform` monkeypatch path used by transport tests
+import random  # noqa: F401 — keeps `notebooklm._core.random` importable for transport-test monkeypatches
 import threading
 import time
 import warnings

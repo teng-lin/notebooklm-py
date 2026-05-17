@@ -123,50 +123,64 @@ _DEFAULT_FMT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _DEFAULT_DATEFMT = "%H:%M:%S"
 
 # Fast-path gate for ``scrub_secrets``. If none of these substrings appear in
-# the input, no pattern in ``_REDACT_PATTERNS`` can possibly match, so we skip
-# the full regex sweep. This is a STRICT SUPERSET of substrings appearing in
-# any pattern — adding a new pattern to ``_REDACT_PATTERNS`` MUST be paired
-# with a token here (or a clear note that the pattern's literal anchor is
-# already covered). Order is insignificant; the gate is an OR.
+# the input (compared case-insensitively), no pattern in ``_REDACT_PATTERNS``
+# can possibly match, so we skip the full regex sweep. This is a STRICT
+# SUPERSET of substrings appearing in any pattern — adding a new pattern to
+# ``_REDACT_PATTERNS`` MUST be paired with a token here (or a clear note
+# that the pattern's literal anchor is already covered). Order is
+# insignificant; the gate is an OR.
 #
-# Coverage map (pattern -> covering token in this set):
+# Casing: tokens are stored lowercase and the gate compares against the
+# lowercased input. This matches the ``re.IGNORECASE`` patterns (OAuth +
+# Authorization) so a log line with ``AUTHORIZATION: BEARER ...`` or
+# ``Refresh_Token=...`` still triggers the regex sweep and gets redacted.
+# The cookie-name pattern is case-SENSITIVE in the regex (cookie names are
+# canonical), but ``"sid"`` as a substring of a lowercased input also
+# matches lowercase ``sid`` — which would NOT match the case-sensitive
+# regex. False positives in the gate (input contains the substring but the
+# regex doesn't match) are harmless: we just run the regex sweep unnecessarily.
+# False negatives (input is a secret but the gate skips) would shrink the
+# redaction surface, so we avoid them by erring toward more triggering.
+#
+# Coverage map (pattern -> covering token in this set, all lowercase):
 #   \bat=<csrf>                                          -> "at="
 #   \bf\.sid=<sid>                                       -> "f.sid"
-#   (refresh_token|access_token|id_token)=               -> "_token="
-#   \bcode=                                              -> "code="
-#   __Secure-*PSID(CC)?/SAPISID/APISID/SIDCC/HSID/SSID/LSID/SID= -> "SID"
-#   Authorization:\s*Bearer                              -> "Authorization"
-#   Cookie:                                              -> "Cookie"
-#   Set-Cookie:                                          -> "Set-Cookie" (also "Cookie")
+#   (refresh_token|access_token|id_token)= (IGNORECASE)  -> "_token="
+#   \bcode= (IGNORECASE)                                 -> "code="
+#   __Secure-*PSID(CC)?/SAPISID/APISID/SIDCC/HSID/SSID/LSID/SID= -> "sid"
+#   Authorization:\s*Bearer (IGNORECASE)                 -> "authorization"
+#   Cookie: (IGNORECASE)                                 -> "cookie"
+#   Set-Cookie: (IGNORECASE)                             -> "set-cookie" (also "cookie")
 #
 # Deviation notes vs. plan PR-F:
+#   - Plan's literal token list is mixed-case (``SID``, ``SAPISID``, ``CSRF``,
+#     ``Cookie``, ``Authorization``, ``Set-Cookie``). We lowercase the gate
+#     to honor ``re.IGNORECASE`` on those patterns. Token VALUES change to
+#     lowercase; the COVERAGE story (and the resulting redaction surface)
+#     is preserved.
 #   - "_token=" and "code=" extend the plan's literal token list. The plan
 #     advertises "superset of substrings in any pattern" but its own list
 #     omits OAuth anchors; without them the OAuth pattern would silently stop
-#     redacting whenever a message had no other secret marker. We choose
-#     "preserve redaction surface" (an acceptance criterion) over "match the
-#     plan's literal list" (a presentation detail) and document here.
+#     redacting whenever a message had no other secret marker.
 #   - "continue=" and "authuser=" are NOT in ``_REDACT_PATTERNS``. Including
 #     them is harmless: they only INCREASE the regex-sweep rate, never the
 #     redaction surface, and they hedge against future audit additions.
-#   - "CSRF" likewise is not in any pattern verbatim (the CSRF token shows
-#     up as ``at=<csrf>``), but is kept as a defensive token in case future
-#     log call sites emit ``CSRF=`` style markers.
-#   - The fast-path is CASE-SENSITIVE; the OAuth + Authorization patterns
-#     are ``re.IGNORECASE``. A log line with ``AUTHORIZATION:`` (uppercase
-#     keyword only) or ``Refresh_Token=`` (CamelCase) would skip the regex
-#     sweep. In practice every observed call site emits canonical casing.
+#   - "csrf" is not in any pattern verbatim (the CSRF token shows up as
+#     ``at=<csrf>``), but is kept as a defensive token in case future log
+#     call sites emit ``CSRF=`` style markers.
+#   - "sapisid" is redundant given "sid", but kept as documentation that we
+#     deliberately cover that cookie family.
 SECRET_FAST_PATH_TOKENS: tuple[str, ...] = (
-    "SID",
-    "SAPISID",
-    "CSRF",
+    "sid",
+    "sapisid",
+    "csrf",
     "f.sid",
     "continue=",
     "authuser=",
     "at=",
-    "Cookie",
-    "Authorization",
-    "Set-Cookie",
+    "cookie",
+    "authorization",
+    "set-cookie",
     "_token=",
     "code=",
 )
@@ -196,9 +210,14 @@ def scrub_secrets(text: object) -> str:
     if not isinstance(text, str):
         text = str(text)
     # Fast-path: if no credential-shaped substring is present, every regex
-    # in _REDACT_PATTERNS will miss. Plain `in` on a short literal beats a
-    # compiled regex by ~10× on innocuous messages.
-    if not any(token in text for token in SECRET_FAST_PATH_TOKENS):
+    # in _REDACT_PATTERNS will miss. We lowercase once and compare against
+    # the lowercase token set so case-insensitive patterns (OAuth + the
+    # Authorization/Cookie headers) still trigger the regex sweep when their
+    # anchors appear in non-canonical casing (``AUTHORIZATION:`` etc.).
+    # Plain `in` on a short literal beats a compiled regex by ~10× on
+    # innocuous messages even after paying for the lowercase copy.
+    lowered = text.lower()
+    if not any(token in lowered for token in SECRET_FAST_PATH_TOKENS):
         return text
     for pattern, replacement in _REDACT_PATTERNS:
         text = pattern.sub(replacement, text)

@@ -520,9 +520,20 @@ def test_install_redaction_no_root_mutation(saved_external_logger, saved_root_lo
 # ---------------------------------------------------------------------------
 
 
+def test_fast_path_tokens_are_lowercase():
+    """Tokens must be lowercase because the gate lowercases input.
+
+    Mixed-case tokens would never match (``"SID" in "...sid..."`` is False).
+    """
+    from notebooklm._logging import SECRET_FAST_PATH_TOKENS
+
+    for token in SECRET_FAST_PATH_TOKENS:
+        assert token == token.lower(), f"token {token!r} must be lowercase"
+
+
 def test_fast_path_tokens_cover_every_redaction_pattern():
     """Every pattern in _REDACT_PATTERNS has at least one literal substring
-    present in SECRET_FAST_PATH_TOKENS.
+    present in SECRET_FAST_PATH_TOKENS (compared case-insensitively).
 
     This is the load-bearing invariant of the fast-path: if a pattern's
     anchor isn't covered, the gate would skip strings the regex would have
@@ -531,29 +542,54 @@ def test_fast_path_tokens_cover_every_redaction_pattern():
     from notebooklm import _logging
     from notebooklm._logging import SECRET_FAST_PATH_TOKENS
 
-    # Sample inputs known to trigger each pattern. Each entry MUST contain at
-    # least one fast-path token AND get rewritten by scrub_secrets.
+    # Sample inputs known to trigger each pattern, paired with the lowercase
+    # token that covers them. Each entry MUST contain at least one fast-path
+    # token (case-insensitively) AND get rewritten by scrub_secrets.
     samples = [
         ("at=", "posted body at=SECRET_X&hl=en"),
         ("f.sid", "url ?f.sid=ABC_DEF"),
         ("_token=", "oauth body refresh_token=RT&access_token=AT&id_token=IT"),
         ("code=", "oauth callback code=AUTH_X"),
-        ("SID", "cookie SID=v1; SAPISID=v2; HSID=v3"),
-        ("Authorization", "Authorization: Bearer SECRET"),
-        ("Cookie", "Cookie: jar=foo"),
-        ("Set-Cookie", "Set-Cookie: SID=fresh"),
+        ("sid", "cookie SID=v1; SAPISID=v2; HSID=v3"),
+        ("authorization", "Authorization: Bearer SECRET"),
+        ("cookie", "Cookie: jar=foo"),
+        ("set-cookie", "Set-Cookie: SID=fresh"),
     ]
     for required_token, text in samples:
         assert required_token in SECRET_FAST_PATH_TOKENS, (
             f"sample {text!r} requires token {required_token!r} in SECRET_FAST_PATH_TOKENS"
         )
-        # Sanity: at least one token from the set appears.
-        assert any(t in text for t in SECRET_FAST_PATH_TOKENS), (
+        # Sanity: at least one token from the set appears in the lowercased input.
+        lowered = text.lower()
+        assert any(t in lowered for t in SECRET_FAST_PATH_TOKENS), (
             f"sample {text!r} would be skipped by fast-path"
         )
         # And scrub_secrets actually redacts it.
         scrubbed = _logging.scrub_secrets(text)
         assert scrubbed != text, f"scrub_secrets did not change {text!r}"
+
+
+def test_fast_path_handles_case_insensitive_patterns():
+    """OAuth and Authorization patterns are IGNORECASE; the fast-path must
+    still trigger redaction when those anchors appear in non-canonical casing.
+
+    Regression for the Gemini-flagged case-sensitivity bug: a log line with
+    ``AUTHORIZATION: Bearer ...`` or ``Refresh_Token=...`` must NOT bypass.
+    """
+    from notebooklm._logging import scrub_secrets
+
+    cases = [
+        ("AUTHORIZATION: Bearer SECRET_A", "SECRET_A", "Bearer ***"),
+        ("authorization: bearer SECRET_B", "SECRET_B", "bearer ***"),
+        ("oauth Refresh_Token=RT_X&Code=CODE_X", "RT_X", "Refresh_Token=***"),
+        ("oauth Refresh_Token=RT_X&Code=CODE_X", "CODE_X", "Code=***"),
+        ("COOKIE: SID=alpha", "alpha", "COOKIE: ***"),
+        ("set-COOKIE: SID=beta", "beta", "set-COOKIE: ***"),
+    ]
+    for text, secret, must_contain in cases:
+        out = scrub_secrets(text)
+        assert secret not in out, f"{secret!r} leaked from {text!r}: got {out!r}"
+        assert must_contain in out, f"expected {must_contain!r} in scrubbed {text!r}: got {out!r}"
 
 
 def test_fast_path_skips_innocuous_messages_unchanged():
@@ -577,12 +613,12 @@ def test_fast_path_microbenchmark_speedup_ratio(monkeypatch):
     from notebooklm import _logging
 
     innocuous = (
-        "RPC LIST_NOTEBOOKS finished in 0.42s for nb_id=abc123 with 12 sources; "
-        "method=LIST conversation_id=conv-x latency_ms=420"
+        "RPC finished in 0.42s for nb_id=abc123 with 12 sources; method=fetch req=ok latency_ms=420"
     )
     # Confirm the sample really has no fast-path token (otherwise the
-    # measurement is meaningless).
-    assert not any(t in innocuous for t in _logging.SECRET_FAST_PATH_TOKENS), (
+    # measurement is meaningless). The gate compares lowercase to lowercase.
+    lowered = innocuous.lower()
+    assert not any(t in lowered for t in _logging.SECRET_FAST_PATH_TOKENS), (
         "benchmark input must not contain any fast-path token"
     )
 
