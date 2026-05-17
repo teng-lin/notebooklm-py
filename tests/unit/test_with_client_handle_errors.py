@@ -21,13 +21,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import click
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.helpers import with_client
+from notebooklm.cli.helpers import with_auth_and_errors, with_client
 from notebooklm.exceptions import AuthError, RateLimitError
 
 # ---------------------------------------------------------------------------
@@ -76,6 +77,182 @@ def _build_cli(body):
         return body(client_auth)
 
     return cli
+
+
+def _make_click_context(verbose: int = 0) -> click.Context:
+    @click.group()
+    def cli():
+        pass
+
+    @click.command()
+    def run():
+        pass
+
+    root_ctx = click.Context(cli)
+    root_ctx.params["verbose"] = verbose
+    return click.Context(run, parent=root_ctx)
+
+
+# ---------------------------------------------------------------------------
+# Shared primitive behavior
+# ---------------------------------------------------------------------------
+
+
+def test_with_auth_and_errors_uses_custom_auth_loader() -> None:
+    sentinel_auth = MagicMock(name="custom-auth")
+    seen: dict[str, object] = {}
+    ctx = _make_click_context()
+
+    def _loader(loader_ctx: click.Context):
+        seen["ctx"] = loader_ctx
+        return sentinel_auth
+
+    async def _body(auth):
+        seen["auth"] = auth
+        return "ok"
+
+    result = with_auth_and_errors(
+        ctx,
+        command_name="run",
+        json_output=False,
+        body=_body,
+        auth_loader=_loader,
+    )
+
+    assert result == "ok"
+    assert seen == {"ctx": ctx, "auth": sentinel_auth}
+
+
+def test_with_auth_and_errors_default_auth_loader_is_looked_up_at_call_time() -> None:
+    sentinel_auth = MagicMock(name="default-auth")
+    ctx = _make_click_context()
+
+    async def _body(auth):
+        return auth
+
+    with patch("notebooklm.cli.helpers.get_auth_tokens", return_value=sentinel_auth) as loader:
+        result = with_auth_and_errors(
+            ctx,
+            command_name="run",
+            json_output=False,
+            body=_body,
+        )
+
+    loader.assert_called_once_with(ctx)
+    assert result is sentinel_auth
+
+
+def test_with_auth_and_errors_passes_verbose_json_to_current_handle_errors() -> None:
+    calls: list[dict[str, bool]] = []
+    ctx = _make_click_context(verbose=1)
+
+    @contextmanager
+    def fake_handle_errors(*, verbose: bool, json_output: bool):
+        calls.append({"verbose": verbose, "json_output": json_output})
+        yield
+
+    async def _body(_auth):
+        return "real body result"
+
+    def fake_run_async(coro):
+        coro.close()
+        return "patched run result"
+
+    with (
+        patch("notebooklm.cli.error_handler.handle_errors", fake_handle_errors),
+        patch("notebooklm.cli.helpers.run_async", side_effect=fake_run_async) as run_async,
+    ):
+        result = with_auth_and_errors(
+            ctx,
+            command_name="run",
+            json_output=True,
+            body=_body,
+            auth_loader=lambda _ctx: MagicMock(name="auth"),
+        )
+
+    assert result == "patched run result"
+    assert calls == [{"verbose": True, "json_output": True}]
+    assert run_async.call_count == 1
+
+
+def test_with_auth_and_errors_auth_file_not_found_uses_auth_handler() -> None:
+    ctx = _make_click_context()
+
+    async def _never_called(_auth):
+        raise AssertionError("body should not run when auth bootstrap fails")
+
+    def _loader(_ctx):
+        raise FileNotFoundError("missing storage")
+
+    with (
+        patch("notebooklm.cli.helpers.handle_auth_error", side_effect=SystemExit(1)) as auth_error,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        with_auth_and_errors(
+            ctx,
+            command_name="run",
+            json_output=True,
+            body=_never_called,
+            auth_loader=_loader,
+        )
+
+    assert exc_info.value.code == 1
+    auth_error.assert_called_once_with(True)
+
+
+def test_with_auth_and_errors_body_file_not_found_reaches_handle_errors(capsys) -> None:
+    ctx = _make_click_context()
+
+    async def _body(_auth):
+        raise FileNotFoundError("missing command input")
+
+    with (
+        patch("notebooklm.cli.helpers.handle_auth_error") as auth_error,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        with_auth_and_errors(
+            ctx,
+            command_name="run",
+            json_output=True,
+            body=_body,
+            auth_loader=lambda _ctx: MagicMock(name="auth"),
+        )
+
+    assert exc_info.value.code == 2
+    auth_error.assert_not_called()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"] is True
+    assert payload["code"] == "UNEXPECTED_ERROR"
+    assert "missing command input" in payload["message"]
+
+
+def test_with_auth_and_errors_non_file_auth_failure_reaches_handle_errors(capsys) -> None:
+    ctx = _make_click_context()
+
+    async def _never_called(_auth):
+        raise AssertionError("body should not run when auth bootstrap fails")
+
+    def _loader(_ctx):
+        raise ValueError("malformed storage JSON")
+
+    with (
+        patch("notebooklm.cli.helpers.handle_auth_error") as auth_error,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        with_auth_and_errors(
+            ctx,
+            command_name="run",
+            json_output=True,
+            body=_never_called,
+            auth_loader=_loader,
+        )
+
+    assert exc_info.value.code == 2
+    auth_error.assert_not_called()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"] is True
+    assert payload["code"] == "UNEXPECTED_ERROR"
+    assert "malformed storage JSON" in payload["message"]
 
 
 # ---------------------------------------------------------------------------
