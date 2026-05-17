@@ -14,7 +14,7 @@ from ._notebook_metadata import (
 from ._settings import build_get_user_settings_params, extract_account_limits
 from .exceptions import NotebookLimitError, NotebookNotFoundError, RPCError
 from .rpc import RPCMethod, safe_index
-from .types import AccountLimits, Notebook, NotebookDescription, SuggestedTopic
+from .types import AccountLimits, Notebook, NotebookDescription, NotebookMetadata, SuggestedTopic
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +588,7 @@ class NotebooksAPI:
             return f"{base_url}?artifactId={artifact_id}"
         return base_url
 
-    async def get_metadata(self, notebook_id: str):
+    async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook metadata with sources list.
 
         This combines notebook details with a simplified sources list,
