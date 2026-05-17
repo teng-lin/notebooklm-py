@@ -604,63 +604,49 @@ def test_fast_path_skips_innocuous_messages_unchanged():
 
 
 def test_fast_path_microbenchmark_speedup_ratio(monkeypatch):
-    """Fast-path must materially speed up innocuous redactions.
+    """Fast-path must skip the expensive regex sweep for innocuous redactions.
 
-    NOT a fixed-time assertion (machine-dependent). Instead measures the
-    ratio of full-regex-sweep time vs. gated time on identical inputs. The
-    ratio is robust to CPU speed, but CI coverage instrumentation changes
-    the absolute ratio across Python versions. Keep the threshold modest so
-    the test guards the optimization without becoming a runner benchmark.
+    This used to benchmark the speedup ratio, but timing assertions flap on
+    loaded CI. The deterministic invariant is the important part: no fast-path
+    token means no regex pattern is consulted; a token hit runs the full sweep.
     """
-    import time
-
     from notebooklm import _logging
 
     innocuous = (
         "RPC finished in 0.42s for nb_id=abc123 with 12 sources; method=fetch req=ok latency_ms=420"
     )
-    # Confirm the sample really has no fast-path token (otherwise the
-    # measurement is meaningless). The gate compares lowercase to lowercase.
+    # Confirm the sample really has no fast-path token (otherwise the no-call
+    # assertion proves nothing). The gate compares lowercase to lowercase.
     lowered = innocuous.lower()
     assert not any(t in lowered for t in _logging.SECRET_FAST_PATH_TOKENS), (
         "benchmark input must not contain any fast-path token"
     )
 
-    n_iter = 10_000
+    class CountingPattern:
+        def __init__(self) -> None:
+            self.calls = 0
 
-    # --- gated (production) ----------------------------------------------
-    t0 = time.perf_counter()
-    for _ in range(n_iter):
-        _logging.scrub_secrets(innocuous)
-    t_gated = time.perf_counter() - t0
+        def sub(self, _replacement: str, text: str) -> str:
+            self.calls += 1
+            return text
 
-    # --- bypassed: regex-sweep every time --------------------------------
-    # Replace the gate predicate with one that always reports a hit, forcing
-    # the full _REDACT_PATTERNS sweep. This isolates the regex cost from any
-    # other change in scrub_secrets.
-    original_tokens = _logging.SECRET_FAST_PATH_TOKENS
+    counting_patterns = tuple(
+        (CountingPattern(), replacement) for _pattern, replacement in _logging._REDACT_PATTERNS
+    )
+    assert counting_patterns, "benchmark must install at least one counting pattern"
+    monkeypatch.setattr(_logging, "_REDACT_PATTERNS", counting_patterns)
+
+    assert _logging.scrub_secrets(innocuous) == innocuous
+    assert all(pattern.calls == 0 for pattern, _replacement in counting_patterns)
+
+    # Replace the gate predicate with one that reports a hit, forcing the full
+    # _REDACT_PATTERNS sweep. This proves the call-count check would catch a
+    # regression that accidentally removes the fast-path bypass.
     # Use a token guaranteed to appear in the input.
     monkeypatch.setattr(_logging, "SECRET_FAST_PATH_TOKENS", ("nb_id",))
-    try:
-        assert any(t in innocuous for t in _logging.SECRET_FAST_PATH_TOKENS)
-        t0 = time.perf_counter()
-        for _ in range(n_iter):
-            _logging.scrub_secrets(innocuous)
-        t_bypassed = time.perf_counter() - t0
-    finally:
-        monkeypatch.setattr(_logging, "SECRET_FAST_PATH_TOKENS", original_tokens)
-
-    # Guard against degenerate clocks (e.g. very fast machine reporting 0).
-    if t_gated <= 0:
-        pytest.skip("clock granularity too coarse to measure fast-path speedup")
-    if t_gated > 0.05:
-        pytest.skip("runner too loaded to measure fast-path speedup reliably")
-
-    ratio = t_bypassed / t_gated
-    assert ratio >= 2.0, (
-        f"fast-path speedup ratio {ratio:.2f}× is below 2× threshold "
-        f"(gated={t_gated * 1000:.2f}ms, bypassed={t_bypassed * 1000:.2f}ms)"
-    )
+    assert any(t in innocuous for t in _logging.SECRET_FAST_PATH_TOKENS)
+    assert _logging.scrub_secrets(innocuous) == innocuous
+    assert all(pattern.calls == 1 for pattern, _replacement in counting_patterns)
 
 
 def test_fast_path_still_redacts_when_token_present():
