@@ -1412,6 +1412,32 @@ class TestImportWithRetry:
         mock_sleep.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_skips_retry_when_only_url_fragment_differs(self):
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com/a")
+        client = MagicMock()
+        client.sources.list = AsyncMock(side_effect=[[], [new_src]])
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com/a#top", "title": "Source 1"}],
+            )
+
+        assert imported == [{"id": "src_new", "title": "Source 1"}]
+        assert client.research.import_sources.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_retries_when_server_state_shows_no_progress(self):
         """If sources.list shows the requested URLs were NOT imported, fall
         back to the original retry behavior.
@@ -1786,6 +1812,41 @@ class TestImportWithRetry:
             )
 
         # Both sources are returned — the report (no URL) and the URL source.
+        ids_returned = {entry["id"] for entry in imported}
+        assert ids_returned == {"src_report", "src_new"}
+
+    @pytest.mark.asyncio
+    async def test_no_url_verified_success_is_capped_to_requested_no_url_count(self):
+        """Concurrent no-URL rows must not inflate the synthesized import count."""
+        requested_report = MagicMock(id="src_report", title="Research Report", url=None)
+        concurrent_report = MagicMock(id="src_concurrent", title="Concurrent Report", url=None)
+        new_src = MagicMock(id="src_new", title="Source 1", url="https://example.com")
+        client = MagicMock()
+        client.sources.list = AsyncMock(
+            side_effect=[[], [requested_report, concurrent_report, new_src]]
+        )
+        client.research.import_sources = AsyncMock(
+            side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
+        )
+
+        with (
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console"),
+        ):
+            imported = await import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [
+                    {"url": "https://example.com", "title": "Source 1"},
+                    {
+                        "title": "Research Report",
+                        "report_markdown": "# Findings\n...",
+                        "result_type": 5,
+                    },
+                ],
+            )
+
         ids_returned = {entry["id"] for entry in imported}
         assert ids_returned == {"src_report", "src_new"}
 

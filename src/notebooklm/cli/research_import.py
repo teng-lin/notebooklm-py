@@ -45,7 +45,7 @@ def _normalize_url(url: str) -> str:
             parsed.netloc.lower(),
             parsed.path.rstrip("/"),
             parsed.query,
-            parsed.fragment,
+            "",
         )
     )
 
@@ -63,6 +63,10 @@ def _requested_urls_norm(sources: list[dict]) -> set[str]:
 
 def _has_no_url_entry(sources: list[dict]) -> bool:
     return any(_source_url_norm(source) is None for source in sources)
+
+
+def _no_url_entry_count(sources: list[dict]) -> int:
+    return sum(1 for source in sources if _source_url_norm(source) is None)
 
 
 def _imported_source_entry(source: "Source") -> dict[str, str]:
@@ -119,11 +123,10 @@ async def import_with_retry(
     verified_imported_ids: set[str] = set()
 
     requested_urls_norm = _requested_urls_norm(sources)
-    # Track whether the request itself includes any non-URL entries (research
-    # reports, pasted text). If it doesn't, we must NOT include concurrent
-    # no-URL additions in the synthesized return — those would be unrelated
-    # sources reported as "imported" by this call.
-    requested_has_no_url_entry = _has_no_url_entry(sources)
+    # Track how many non-URL entries (research reports, pasted text) the
+    # request includes so concurrent no-URL additions cannot inflate the
+    # synthesized return.
+    requested_no_url_count = _no_url_entry_count(sources)
 
     # Snapshot baseline source IDs so the post-timeout probe can identify
     # truly-new sources. We anchor the verified-success condition on URLs of
@@ -188,18 +191,16 @@ async def import_with_retry(
                                 len(requested_urls_norm),
                             )
                         # Return only new sources that match a requested URL.
-                        # No-URL new sources (research reports, pasted text)
-                        # are included only if the request itself had no-URL
-                        # entries — otherwise they're concurrent unrelated
-                        # additions and don't belong in the return.
-                        imported = [
-                            _imported_source_entry(src)
-                            for src in new_sources
-                            if (src.url and _normalize_url(src.url) in requested_urls_norm)
-                            or (not src.url and requested_has_no_url_entry)
-                        ]
+                        timeout_verified: list[dict[str, str]] = []
+                        remaining_no_url = requested_no_url_count
+                        for src in new_sources:
+                            if src.url and _normalize_url(src.url) in requested_urls_norm:
+                                timeout_verified.append(_imported_source_entry(src))
+                            elif not src.url and remaining_no_url > 0:
+                                timeout_verified.append(_imported_source_entry(src))
+                                remaining_no_url -= 1
                         return _merge_imported_sources(
-                            imported, verified_imported, verified_imported_ids
+                            timeout_verified, verified_imported, verified_imported_ids
                         )
                     source_norms = [(source, _source_url_norm(source)) for source in sources]
                     removed_urls_norm = {
@@ -222,7 +223,7 @@ async def import_with_retry(
                                 verified_imported_ids.add(src.id)
                         sources = filtered_sources
                         requested_urls_norm = _requested_urls_norm(sources)
-                        requested_has_no_url_entry = _has_no_url_entry(sources)
+                        requested_no_url_count = _no_url_entry_count(sources)
                         if not sources:
                             logger.warning(
                                 "IMPORT_RESEARCH timed out for notebook %s but "
