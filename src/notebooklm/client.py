@@ -58,6 +58,8 @@ from .auth import authuser_query as authuser_query
 from .auth import extract_wiz_field as extract_wiz_field
 from .exceptions import AuthExtractionError as AuthExtractionError
 
+__all__ = ["NotebookLMClient"]
+
 logger = logging.getLogger(__name__)
 
 

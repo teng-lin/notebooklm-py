@@ -124,6 +124,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_DEBUG` | Show untruncated RPC response bodies in error messages instead of the default 80-char preview (verbose; intended for deep debugging) | `0` |
 | `NOTEBOOKLM_STRICT_DECODE` | Raise `UnknownRPCMethodError` on schema drift instead of warn-and-fallback | `0` |
 | `NOTEBOOKLM_RPC_OVERRIDES` | JSON object mapping `RPCMethod` enum names to RPC ID strings (community self-patch when Google rotates a method ID; e.g. `{"LIST_NOTEBOOKS":"AbC123"}`) | - |
+| `NOTEBOOKLM_REFRESH_CMD` | Optional shell command (or argv) invoked when auth refresh is required, replacing the default browser-cookie path. Must emit a new `AuthTokens` JSON on stdout | - |
 | `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True` execution. Default `shell=False` (argv list) — set to `1`/`true` only when the refresh command requires shell metacharacters | `0` |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress stderr deprecation notices for deprecated CLI flags | - |
@@ -151,6 +152,7 @@ be audited from one location.
 | `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
 | `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
 | `NOTEBOOKLM_DEBUG` | When `1`, RPC error messages include the **full** untruncated response body instead of the default 80-char preview. Verbose; intended for deep debugging only. | Process env on each error formatting call. | `exceptions._truncate_response_preview` |
+| `NOTEBOOKLM_REFRESH_CMD` | Optional command invoked when auth refresh is required, replacing the default browser-cookie path. Must emit a new `AuthTokens` JSON on stdout. Parsing honors `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`. | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (see `auth.py:623`, `NOTEBOOKLM_REFRESH_CMD_ENV`) |
 | `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the optional `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True`. Default `shell=False` parses the command with `shlex.split` and invokes it as an argv list (safer; resists shell-injection footguns when the env var is sourced from CI configs or container env files). | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (see `auth.py:2482-2510`) |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (see `auth.py:2899-2977`) |
 
@@ -221,6 +223,15 @@ notebooklm list  # Works without any file on disk
 5. `~/.notebooklm/storage_state.json` (legacy fallback)
 
 **Note:** Cannot run `notebooklm login` when `NOTEBOOKLM_AUTH_JSON` is set.
+
+### `NOTEBOOKLM_REFRESH_CMD`
+
+Optional. If set, this command is invoked when auth refresh is required
+(replacing the default browser-cookie path). The command must produce a new
+`AuthTokens` JSON on stdout. Read at `auth.py:623`
+(`NOTEBOOKLM_REFRESH_CMD_ENV`).
+
+See also `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` to interpret as shell vs argv list.
 
 ### NOTEBOOKLM_HL
 

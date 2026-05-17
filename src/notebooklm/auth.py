@@ -114,6 +114,59 @@ _is_allowed_auth_domain = _cookie_policy._is_allowed_auth_domain
 _is_allowed_cookie_domain = _cookie_policy._is_allowed_cookie_domain
 
 
+# Public surface for ``from notebooklm.auth import *`` and for downstream
+# static-analysis tools (mypy, ruff F401 checks). This is the audited set of
+# names externally imported by the package, tests, docs, and the CLI as of
+# 2026-05-17. Underscore-prefixed names remain accessible on the module — some
+# tests reach for them as whitebox affordances — but are intentionally NOT
+# blessed here. See ``tests/unit/test_public_surface.py`` for the
+# audit-enforcement test that keeps this list and the externally-imported set
+# in lockstep.
+__all__ = [
+    "Account",
+    "advance_cookie_snapshot_after_save",
+    "ALLOWED_COOKIE_DOMAINS",
+    "AuthTokens",
+    "authuser_query",
+    "build_cookie_jar",
+    "build_httpx_cookies_from_storage",
+    "clear_account_metadata",
+    "convert_rookiepy_cookies_to_storage_state",
+    "CookieSaveResult",
+    "CookieSnapshot",
+    "CookieSnapshotKey",
+    "CookieSnapshotValue",
+    "enumerate_accounts",
+    "extract_cookies_from_storage",
+    "extract_cookies_with_domains",
+    "extract_csrf_from_html",
+    "extract_email_from_html",
+    "extract_session_id_from_html",
+    "extract_wiz_field",
+    "fetch_tokens",
+    "fetch_tokens_with_domains",
+    "format_authuser_value",
+    "get_account_email_for_storage",
+    "get_authuser_for_storage",
+    "GOOGLE_REGIONAL_CCTLDS",
+    "KEEPALIVE_ROTATE_URL",
+    "load_auth_from_storage",
+    "load_httpx_cookies",
+    "MINIMUM_REQUIRED_COOKIES",
+    "normalize_cookie_map",
+    "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
+    "NOTEBOOKLM_REFRESH_CMD_ENV",
+    "NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV",
+    "OPTIONAL_COOKIE_DOMAINS",
+    "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+    "read_account_metadata",
+    "REQUIRED_COOKIE_DOMAINS",
+    "save_cookies_to_storage",
+    "snapshot_cookie_jar",
+    "write_account_metadata",
+]
+
+
 _AUTH_STORAGE_FACADE_NAMES = {
     "CookieSnapshotKey",
     "CookieSnapshotValue",

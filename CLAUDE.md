@@ -31,20 +31,14 @@ uv run pytest tests/e2e -m e2e
 uv run notebooklm --help
 ```
 
-## Pre-Commit Checks (REQUIRED before committing)
+## Pre-Commit Checks
 
-**IMPORTANT:** Always run these checks before committing to avoid CI failures:
+The pre-commit hook (`.pre-commit-config.yaml`) runs ruff formatting + linting automatically on staged files.
 
+Before pushing, also run mypy + pytest manually to avoid CI failures:
 ```bash
-uv run ruff format .
-uv run ruff check .
 uv run mypy src/notebooklm --ignore-missing-imports
 uv run pytest
-```
-
-Or use this one-liner:
-```bash
-uv run ruff format . && uv run ruff check . && uv run mypy src/notebooklm --ignore-missing-imports && uv run pytest
 ```
 
 ## Architecture
