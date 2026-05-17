@@ -61,10 +61,6 @@ def _requested_urls_norm(sources: list[dict]) -> set[str]:
     return {url for source in sources if (url := _source_url_norm(source))}
 
 
-def _has_no_url_entry(sources: list[dict]) -> bool:
-    return any(_source_url_norm(source) is None for source in sources)
-
-
 def _no_url_entry_count(sources: list[dict]) -> int:
     return sum(1 for source in sources if _source_url_norm(source) is None)
 
