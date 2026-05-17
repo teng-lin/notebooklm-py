@@ -833,6 +833,47 @@ class TestExtractSessionIdRedirect:
             extract_session_id_from_html(html)
 
 
+class TestFinalUrlScrubbing:
+    """Auth-error messages must strip query + fragment from final_url interpolations.
+
+    Auth-handshake URLs frequently carry credential-shaped query params
+    (``f.sid=...``, ``continue=...``, ``access_token=...``). Without
+    sanitization these would leak into every drift-error message and the
+    associated log line.
+    """
+
+    def test_final_url_stripped(self):
+        """CSRF drift error must NOT include query params from final_url."""
+        # No WIZ_global_data → drift path; URL is not an accounts.google.com
+        # redirect so we get the "shape changed" raise that interpolates
+        # final_url into the message.
+        html = "<html><body>not a notebooklm page</body></html>"
+        final_url = "https://x.example/y?continue=foo&f.sid=bar"
+
+        with pytest.raises(ValueError) as excinfo:
+            extract_csrf_from_html(html, final_url)
+
+        message = str(excinfo.value)
+        assert "continue=foo" not in message
+        assert "f.sid=bar" not in message
+        # The scheme/netloc/path triple should still appear so operators can
+        # identify the failing endpoint.
+        assert "https://x.example/y" in message
+
+    def test_final_url_stripped_session_id_path(self):
+        """Session-ID drift error must NOT include query params from final_url."""
+        html = "<html><body>not a notebooklm page</body></html>"
+        final_url = "https://x.example/y?continue=foo&f.sid=bar"
+
+        with pytest.raises(ValueError) as excinfo:
+            extract_session_id_from_html(html, final_url)
+
+        message = str(excinfo.value)
+        assert "continue=foo" not in message
+        assert "f.sid=bar" not in message
+        assert "https://x.example/y" in message
+
+
 class TestExtractCookiesEdgeCases:
     """Test cookie extraction edge cases."""
 

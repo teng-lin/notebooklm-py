@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any, TypeAlias
+from urllib.parse import urlparse
 
 import httpx
 
@@ -456,6 +457,24 @@ def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None
     return None
 
 
+def _safe_url(url: str) -> str:
+    """Return ``url`` stripped of query string and fragment for error display.
+
+    Auth-handshake URLs often carry credential-shaped query params
+    (``f.sid=...``, ``continue=...``, ``access_token=...``) that must never
+    appear in exception messages or log lines. We surface only the
+    ``scheme://netloc/path`` triple — enough context for an operator to
+    recognize which endpoint failed without leaking session state.
+
+    Empty input passes through verbatim so error messages with the default
+    ``final_url=""`` still render cleanly instead of degenerating to ``"://"``.
+    """
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+
 def extract_csrf_from_html(html: str, final_url: str = "") -> str:
     """
     Extract CSRF token (SNlM0e) from NotebookLM page HTML.
@@ -491,7 +510,7 @@ def extract_csrf_from_html(html: str, final_url: str = "") -> str:
             "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
         )
     raise ValueError(
-        f"CSRF token not found in HTML. Final URL: {final_url}\n"
+        f"CSRF token not found in HTML. Final URL: {_safe_url(final_url)}\n"
         "This may indicate the page structure has changed."
     )
 
@@ -524,7 +543,7 @@ def extract_session_id_from_html(html: str, final_url: str = "") -> str:
             "Authentication expired or invalid. Run 'notebooklm login' to re-authenticate."
         )
     raise ValueError(
-        f"Session ID not found in HTML. Final URL: {final_url}\n"
+        f"Session ID not found in HTML. Final URL: {_safe_url(final_url)}\n"
         "This may indicate the page structure has changed."
     )
 
@@ -1458,7 +1477,7 @@ async def _fetch_tokens_with_jar(
         if is_google_auth_redirect(final_url):
             raise ValueError(
                 "Authentication expired or invalid. "
-                "Redirected to: " + final_url + "\n"
+                "Redirected to: " + _safe_url(final_url) + "\n"
                 "Run 'notebooklm login' to re-authenticate."
             )
 

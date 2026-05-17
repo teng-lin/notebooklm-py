@@ -31,6 +31,7 @@ __all__ = [
     "get_request_id",
     "install_redaction",
     "reset_request_id",
+    "scrub_secrets",
     "set_request_id",
 ]
 
@@ -122,7 +123,19 @@ _DEFAULT_FMT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _DEFAULT_DATEFMT = "%H:%M:%S"
 
 
-def _scrub(text: object) -> str:
+def scrub_secrets(text: object) -> str:
+    """Redact credential-shaped substrings (CSRF tokens, session cookies, etc).
+
+    Applies the package's shared redaction patterns to the input. Non-string
+    inputs (Exception instances, custom __str__ objects) are coerced via
+    ``str()`` before matching so callers can pass log-record fragments
+    directly without pre-stringifying.
+
+    Use this when including third-party text (HTML bodies, raw RPC payloads,
+    diagnostic previews) in exception messages or other surfaces that escape
+    the logging pipeline — the RedactingFilter only catches text that reaches
+    a configured handler.
+    """
     # Defensive: record.msg / stack_info can be non-string in unusual setups
     # (Exception instance, custom __str__ object). Coerce before regex.
     if not isinstance(text, str):
@@ -130,6 +143,11 @@ def _scrub(text: object) -> str:
     for pattern, replacement in _REDACT_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+# Backwards-compat alias for any in-package code that imported the historical
+# private name. New code should use ``scrub_secrets`` directly.
+_scrub = scrub_secrets
 
 
 def _has_redacting_filter(filters: Iterable[Any]) -> bool:
@@ -173,19 +191,19 @@ class RedactingFilter(logging.Filter):
             rendered = record.getMessage()
         except (TypeError, ValueError):
             rendered = str(record.msg)
-        record.msg = _scrub(rendered)
+        record.msg = scrub_secrets(rendered)
         record.args = ()
 
         if record.exc_info and not record.exc_text:
             exc_text = logging.Formatter().formatException(record.exc_info)
-            record.exc_text = _scrub(exc_text)
+            record.exc_text = scrub_secrets(exc_text)
         elif record.exc_text:
-            record.exc_text = _scrub(record.exc_text)
+            record.exc_text = scrub_secrets(record.exc_text)
 
         # stack_info from logger.<level>(..., stack_info=True) — rarely used
         # but technically a leak vector.
         if record.stack_info:
-            record.stack_info = _scrub(record.stack_info)
+            record.stack_info = scrub_secrets(record.stack_info)
 
         # Correlation prefix. AFTER scrub so an 8-hex id can never be
         # accidentally scrubbed by a future pattern. Marker attribute
@@ -220,7 +238,7 @@ class RedactingFormatter(logging.Formatter):
         )
 
     def format(self, record: logging.LogRecord) -> str:
-        rendered = _scrub(self._inner.format(record))
+        rendered = scrub_secrets(self._inner.format(record))
         # logging.Formatter.format() caches the rendered traceback on
         # record.exc_text as a side effect when exc_info is set and exc_text
         # was None. If we were called without the Filter pre-setting exc_text
@@ -228,17 +246,17 @@ class RedactingFormatter(logging.Formatter):
         # may have just stored an UNSCRUBBED traceback on the record. Re-scrub
         # so the record cannot leak via a subsequent handler.
         if record.exc_text:
-            record.exc_text = _scrub(record.exc_text)
+            record.exc_text = scrub_secrets(record.exc_text)
         return rendered
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         return self._inner.formatTime(record, datefmt)
 
     def formatException(self, ei: logging._SysExcInfoType | tuple[None, None, None]) -> str:
-        return _scrub(self._inner.formatException(ei))
+        return scrub_secrets(self._inner.formatException(ei))
 
     def formatStack(self, stack_info: str) -> str:
-        return _scrub(self._inner.formatStack(stack_info))
+        return scrub_secrets(self._inner.formatStack(stack_info))
 
 
 def apply_redaction(handler: logging.Handler) -> logging.Handler:

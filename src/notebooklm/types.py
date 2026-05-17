@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, Optional
+from urllib.parse import quote
 
 if TYPE_CHECKING:
     import httpx
@@ -1525,8 +1526,12 @@ class ShareStatus:
         # view_level not in GET_SHARE_STATUS response - default to FULL_NOTEBOOK
         view_level = ShareViewLevel.FULL_NOTEBOOK
 
-        # Construct share URL if public
-        share_url = f"{get_base_url()}/notebook/{notebook_id}" if is_public else None
+        # Construct share URL if public. Percent-encode the id with ``safe=""``
+        # so reserved characters cannot escape the path position and rewrite
+        # the URL into another endpoint (mirrors ``_sharing_manager.build_share_url``).
+        share_url = (
+            f"{get_base_url()}/notebook/{quote(notebook_id, safe='')}" if is_public else None
+        )
 
         return cls(
             notebook_id=notebook_id,

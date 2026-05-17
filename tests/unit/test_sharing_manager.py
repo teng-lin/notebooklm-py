@@ -31,6 +31,23 @@ def test_build_share_url_with_artifact() -> None:
     )
 
 
+def test_build_share_url_quotes_ids() -> None:
+    """Reserved characters and whitespace in IDs must be percent-encoded.
+
+    Without ``safe=""`` quoting, an ID like ``"foo bar/baz"`` would slip a
+    raw ``/`` into the path position and rewrite the URL into another
+    endpoint, and a raw space would produce an invalid URL.
+    """
+    url = build_share_url(BASE_URL, "foo bar/baz", artifact_id="qux?frag&y")
+    assert "foo%20bar%2Fbaz" in url
+    # Reserved characters in the artifact id are also encoded so they cannot
+    # smuggle additional query params or fragments.
+    assert "qux%3Ffrag%26y" in url
+    # Sanity: the raw, un-encoded forms must NOT appear anywhere in the URL.
+    assert "foo bar/baz" not in url
+    assert "qux?frag&y" not in url
+
+
 @pytest.mark.asyncio
 async def test_share_public_with_artifact_sends_legacy_payload_and_returns_deep_link() -> None:
     manager, rpc = _make_manager()

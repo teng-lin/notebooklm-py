@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from ._env import DEFAULT_BASE_URL, get_base_url
+from ._logging import scrub_secrets
 
 
 def _truncate_response_preview(raw: str | None) -> str | None:
@@ -345,12 +346,16 @@ class AuthExtractionError(RPCError):
         message: str | None = None,
     ):
         self.key = key
-        # Slice before substituting so we don't run the regex over a multi-MB
-        # response body just to throw away most of it. A 5x headroom over
-        # PREVIEW_LENGTH guarantees we still have enough non-whitespace
-        # characters left after collapsing runs of whitespace, even on heavily
-        # indented HTML where ~80% of the prefix may be indentation.
-        head = payload_preview[: self.PREVIEW_LENGTH * 5]
+        # Scrub BEFORE slicing so credential-shaped substrings that straddle
+        # the 5x preview boundary (e.g., ``f.sid=`` near offset PREVIEW*5)
+        # are still fully matched and redacted. Slicing first could split a
+        # secret value across the boundary, leaving the prefix unredacted in
+        # the rendered preview.
+        scrubbed = scrub_secrets(payload_preview)
+        # Slice after scrubbing to a 5x-PREVIEW_LENGTH head — enough headroom
+        # that collapsing runs of whitespace still leaves PREVIEW_LENGTH chars
+        # of non-whitespace even on heavily indented HTML.
+        head = scrubbed[: self.PREVIEW_LENGTH * 5]
         # Collapse runs of whitespace so the preview stays compact and useful
         # even when the upstream HTML is heavily indented or contains newlines.
         collapsed = re.sub(r"\s+", " ", head).strip()
