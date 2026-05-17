@@ -53,10 +53,10 @@ def mock_auth():
 
     with (
         patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
-        patch("notebooklm.auth.AuthTokens.from_storage", new_callable=AsyncMock) as mock_from,
+        patch("notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock) as mock_fetch,
     ):
         mock_load.return_value = auth.flat_cookies
-        mock_from.return_value = auth
+        mock_fetch.return_value = ("csrf", "session")
         yield mock_load
 
 
@@ -1789,18 +1789,16 @@ class TestDownloadTypedErrorPath:
         """A missing ``storage_state.json`` exits 1 via ``handle_auth_error``.
 
         Regression guard for the integration-test failure that surfaced after
-        the typed-handler swap: ``AuthTokens.from_storage`` raises
+        the typed-handler swap: the shared auth loader raises
         ``FileNotFoundError`` when no auth file exists, and the typed handler
         would otherwise classify it as ``UNEXPECTED_ERROR`` (exit 2). The
-        canonical ``with_client`` decorator catches this exact case and routes
-        it through ``handle_auth_error`` — ``download`` must do the same so
+        shared runtime catches this exact case and routes it through
+        ``handle_auth_error`` — ``download`` must do the same so
         ``tests/integration/cli_vcr/test_downloads.py`` (which asserts
         ``exit_code in (0, 1)`` for unauth invocations) keeps passing.
         """
-        from notebooklm.auth import AuthTokens
-
-        with patch.object(AuthTokens, "from_storage", new_callable=AsyncMock) as mock_from_storage:
-            mock_from_storage.side_effect = FileNotFoundError(
+        with patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens:
+            mock_get_auth_tokens.side_effect = FileNotFoundError(
                 "Storage file not found: /tmp/missing/storage_state.json"
             )
             result = runner.invoke(cli, ["download", "audio", "-n", "nb_123"])
@@ -1813,10 +1811,8 @@ class TestDownloadTypedErrorPath:
 
     def test_missing_storage_json_emits_auth_required_envelope(self, runner):
         """Missing storage in --json mode emits AUTH_REQUIRED envelope, exit 1."""
-        from notebooklm.auth import AuthTokens
-
-        with patch.object(AuthTokens, "from_storage", new_callable=AsyncMock) as mock_from_storage:
-            mock_from_storage.side_effect = FileNotFoundError("Storage file not found")
+        with patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens:
+            mock_get_auth_tokens.side_effect = FileNotFoundError("Storage file not found")
             result = runner.invoke(cli, ["download", "audio", "--json", "-n", "nb_123"])
 
         assert result.exit_code == 1, result.output
