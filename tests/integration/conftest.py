@@ -1,8 +1,12 @@
 """Shared fixtures for integration tests."""
 
 import importlib.util
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 
 from notebooklm.auth import AuthTokens
@@ -55,6 +59,45 @@ skip_no_cassettes = pytest.mark.skipif(
     not _cassettes_available,
     reason="VCR cassettes not available. Set NOTEBOOKLM_VCR_RECORD=1 to record.",
 )
+
+
+def install_post_as_stream(
+    monkeypatch: pytest.MonkeyPatch | None,
+    http_client: Any,
+    fake_post: Callable[..., Awaitable[Any]],
+) -> None:
+    """Adapt legacy fake ``post`` callbacks to the streaming RPC POST API."""
+
+    @asynccontextmanager
+    async def fake_stream(method: str, url: str, **kwargs: Any) -> Any:
+        response = await fake_post(url, **kwargs)
+        if type(response) is httpx.Response:
+            yield response
+            return
+
+        text = getattr(response, "text", "")
+        payload = text.encode("utf-8") if isinstance(text, str) else bytes(text or b"")
+        raw_status = getattr(response, "status_code", 200)
+        status = raw_status if isinstance(raw_status, int) else 200
+        try:
+            raw_headers = getattr(response, "headers", None)
+        except AttributeError:
+            raw_headers = None
+        try:
+            headers = dict(raw_headers) if raw_headers else None
+        except (TypeError, AttributeError):
+            headers = None
+        yield httpx.Response(
+            status_code=status,
+            headers=headers,
+            content=payload,
+            request=httpx.Request("POST", url),
+        )
+
+    if monkeypatch is not None:
+        monkeypatch.setattr(http_client, "stream", fake_stream)
+    else:
+        http_client.stream = fake_stream
 
 
 async def get_vcr_auth() -> AuthTokens:

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._core import MAX_CONVERSATION_CACHE_SIZE, ClientCore, is_auth_error
 from notebooklm.rpc import (
@@ -21,6 +22,12 @@ from notebooklm.rpc import (
 # httpx-mock + MagicMock based core-layer tests; no real HTTP, no
 # cassette. Opt out of the tier-enforcement hook in tests/integration/conftest.py.
 pytestmark = pytest.mark.allow_no_vcr
+
+
+def _install_error_post(core: ClientCore, error: Exception) -> AsyncMock:
+    mock_post = AsyncMock(side_effect=error)
+    install_post_as_stream(None, core._http_client, mock_post)
+    return mock_post
 
 
 class TestClientInitialization:
@@ -145,10 +152,8 @@ class TestRPCCallHTTPErrors:
             mock_response.reason_phrase = "Too Many Requests"
             error = httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response)
 
-            with (
-                patch.object(core._http_client, "post", side_effect=error),
-                pytest.raises(RateLimitError) as exc_info,
-            ):
+            _install_error_post(core, error)
+            with pytest.raises(RateLimitError) as exc_info:
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after == 60
 
@@ -165,10 +170,8 @@ class TestRPCCallHTTPErrors:
             mock_response.reason_phrase = "Too Many Requests"
             error = httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response)
 
-            with (
-                patch.object(core._http_client, "post", side_effect=error),
-                pytest.raises(RateLimitError) as exc_info,
-            ):
+            _install_error_post(core, error)
+            with pytest.raises(RateLimitError) as exc_info:
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after is None
 
@@ -185,10 +188,8 @@ class TestRPCCallHTTPErrors:
             mock_response.reason_phrase = "Too Many Requests"
             error = httpx.HTTPStatusError("429", request=MagicMock(), response=mock_response)
 
-            with (
-                patch.object(core._http_client, "post", side_effect=error),
-                pytest.raises(RateLimitError) as exc_info,
-            ):
+            _install_error_post(core, error)
+            with pytest.raises(RateLimitError) as exc_info:
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after is None
 
@@ -208,10 +209,8 @@ class TestRPCCallHTTPErrors:
             mock_response.reason_phrase = "Bad Request"
             error = httpx.HTTPStatusError("400", request=MagicMock(), response=mock_response)
 
-            with (
-                patch.object(core._http_client, "post", side_effect=error),
-                pytest.raises(ClientError),
-            ):
+            _install_error_post(core, error)
+            with pytest.raises(ClientError):
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -226,10 +225,8 @@ class TestRPCCallHTTPErrors:
             mock_response.reason_phrase = "Internal Server Error"
             error = httpx.HTTPStatusError("500", request=MagicMock(), response=mock_response)
 
-            with (
-                patch.object(core._http_client, "post", side_effect=error),
-                pytest.raises(ServerError),
-            ):
+            _install_error_post(core, error)
+            with pytest.raises(ServerError):
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -239,14 +236,8 @@ class TestRPCCallHTTPErrors:
         async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
-            with (
-                patch.object(
-                    core._http_client,
-                    "post",
-                    side_effect=httpx.ConnectTimeout("connect timeout"),
-                ),
-                pytest.raises(NetworkError),
-            ):
+            _install_error_post(core, httpx.ConnectTimeout("connect timeout"))
+            with pytest.raises(NetworkError):
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -254,14 +245,8 @@ class TestRPCCallHTTPErrors:
         async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
-            with (
-                patch.object(
-                    core._http_client,
-                    "post",
-                    side_effect=httpx.ReadTimeout("read timeout"),
-                ),
-                pytest.raises(RPCTimeoutError),
-            ):
+            _install_error_post(core, httpx.ReadTimeout("read timeout"))
+            with pytest.raises(RPCTimeoutError):
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -269,14 +254,8 @@ class TestRPCCallHTTPErrors:
         async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
-            with (
-                patch.object(
-                    core._http_client,
-                    "post",
-                    side_effect=httpx.ConnectError("connection refused"),
-                ),
-                pytest.raises(NetworkError),
-            ):
+            _install_error_post(core, httpx.ConnectError("connection refused"))
+            with pytest.raises(NetworkError):
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -284,14 +263,8 @@ class TestRPCCallHTTPErrors:
         async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
             core = client._core
 
-            with (
-                patch.object(
-                    core._http_client,
-                    "post",
-                    side_effect=httpx.RequestError("something went wrong"),
-                ),
-                pytest.raises(NetworkError),
-            ):
+            _install_error_post(core, httpx.RequestError("something went wrong"))
+            with pytest.raises(NetworkError):
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
 
@@ -313,15 +286,14 @@ class TestRPCCallAuthRetry:
             success_response.status_code = 200
             success_response.text = "some_valid_response"
 
-            with (
-                patch.object(core._http_client, "post", return_value=success_response),
-                patch(
-                    "notebooklm._core.decode_response",
-                    side_effect=[
-                        RPCError("authentication expired"),
-                        ["result_data"],
-                    ],
-                ),
+            mock_post = AsyncMock(return_value=success_response)
+            install_post_as_stream(None, core._http_client, mock_post)
+            with patch(
+                "notebooklm._core.decode_response",
+                side_effect=[
+                    RPCError("authentication expired"),
+                    ["result_data"],
+                ],
             ):
                 result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 

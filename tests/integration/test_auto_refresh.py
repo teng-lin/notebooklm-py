@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCError
@@ -77,7 +78,7 @@ class TestAutoRefreshIntegration:
             return response
 
         async with client:
-            client._core._http_client.post = mock_post
+            install_post_as_stream(None, client._core._http_client, mock_post)
 
             with patch("notebooklm._core.decode_response") as mock_decode:
                 mock_decode.return_value = [[["nb1"], ["Notebook 1"]]]
@@ -124,7 +125,7 @@ class TestAutoRefreshIntegration:
             return [[["nb1"], ["Notebook 1"]]]
 
         async with client:
-            client._core._http_client.post = mock_post
+            install_post_as_stream(None, client._core._http_client, mock_post)
 
             with patch("notebooklm._core.decode_response", side_effect=mock_decode):
                 await client.notebooks.list()
@@ -163,7 +164,7 @@ class TestAutoRefreshIntegration:
             return response
 
         async with client:
-            client._core._http_client.post = mock_post
+            install_post_as_stream(None, client._core._http_client, mock_post)
 
             start_time = asyncio.get_event_loop().time()
 
@@ -199,7 +200,7 @@ class TestAutoRefreshIntegration:
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
         async with client:
-            client._core._http_client.post = mock_post
+            install_post_as_stream(None, client._core._http_client, mock_post)
 
             # Should raise the original HTTP error with refresh failure as cause
             with pytest.raises(httpx.HTTPStatusError) as exc_info:

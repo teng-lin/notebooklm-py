@@ -46,6 +46,7 @@ import logging
 import traceback
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
@@ -73,6 +74,45 @@ def _default_rpc_response_text(rpc_id: str = _DEFAULT_RPC_ID) -> str:
     inner = json.dumps([])
     chunk = json.dumps([["wrb.fr", rpc_id, inner, None, None]])
     return f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+
+def install_post_as_stream(
+    monkeypatch: pytest.MonkeyPatch | None,
+    http_client: Any,
+    fake_post: Callable[..., Awaitable[Any]],
+) -> None:
+    """Adapt legacy fake ``post`` callbacks to the streaming RPC POST API."""
+
+    @asynccontextmanager
+    async def fake_stream(method: str, url: str, **kwargs: Any) -> Any:
+        response = await fake_post(url, **kwargs)
+        if type(response) is httpx.Response:
+            yield response
+            return
+
+        text = getattr(response, "text", "")
+        payload = text.encode("utf-8") if isinstance(text, str) else bytes(text or b"")
+        raw_status = getattr(response, "status_code", 200)
+        status = raw_status if isinstance(raw_status, int) else 200
+        try:
+            raw_headers = getattr(response, "headers", None)
+        except AttributeError:
+            raw_headers = None
+        try:
+            headers = dict(raw_headers) if raw_headers else None
+        except (TypeError, AttributeError):
+            headers = None
+        yield httpx.Response(
+            status_code=status,
+            headers=headers,
+            content=payload,
+            request=httpx.Request("POST", url),
+        )
+
+    if monkeypatch is not None:
+        monkeypatch.setattr(http_client, "stream", fake_stream)
+    else:
+        http_client.stream = fake_stream
 
 
 # ---------------------------------------------------------------------------
