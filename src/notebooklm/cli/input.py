@@ -57,8 +57,9 @@ def resolve_prompt(
         required: When true, raise ``UsageError`` if both sources are empty.
 
     Returns:
-        Resolved and stripped prompt text, or an empty string when no source is
-        provided and ``required`` is false.
+        Resolved prompt text, or an empty string when no source is provided and
+        ``required`` is false. File/stdin sources are whitespace-stripped;
+        positional arguments are preserved verbatim.
 
     Raises:
         click.UsageError: Both sources are provided, or ``required`` is true and
