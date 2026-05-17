@@ -112,9 +112,8 @@ class ChatAPI:
         Args:
             core: The core client infrastructure.
             conversation_cache: Optional injected cache; defaults to a fresh
-                per-instance ``ConversationCache``. The cache is owned here
-                (not on ``ClientCore``) because turn history is chat-domain
-                state with no other consumer.
+                per-instance ``ConversationCache`` (chat-domain state, no
+                other consumer).
         """
         self._core = core
         self._cache = conversation_cache or ConversationCache()
@@ -122,9 +121,9 @@ class ChatAPI:
         # same conversation. Without this, two
         # ``asyncio.gather``'d ``ask`` calls on the same conversation read
         # identical pre-update history at the top, both POST that history,
-        # then race to append to ``_core._conversation_cache`` — the server
-        # sees two follow-ups both claiming to be turn N+1 and the local
-        # cache loses one turn's lineage.
+        # then race to append to ``self._cache`` — the server sees two
+        # follow-ups both claiming to be turn N+1 and the local cache loses
+        # one turn's lineage.
         #
         # ``WeakValueDictionary`` keeps the map bounded automatically:
         # callers hold a strong reference to the lock while inside

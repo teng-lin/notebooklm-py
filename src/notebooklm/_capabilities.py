@@ -48,15 +48,7 @@ class CoreReqIdProvider(Protocol):
 
 
 class ChatStreamingProvider(Protocol):
-    """Provider for the chat-specific streaming POST transport.
-
-    ``query_post`` is currently chat-aware on ``ClientCore`` because it
-    maps transport-layer exceptions to ``ChatError`` / ``NetworkError``.
-    A future change will extract this into a chat-owned transport once
-    the auth-refresh wiring is decoupled from ``ClientCore``; until then
-    this Protocol carves it out on the capability surface so ``ChatAPI``
-    can take ``ClientCoreCapabilities`` without a concrete dependency.
-    """
+    """Provider for the chat streaming POST transport (chat-aware error mapping still lives on ``ClientCore``)."""
 
     async def query_post(
         self,
