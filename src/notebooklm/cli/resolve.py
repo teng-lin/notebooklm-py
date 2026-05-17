@@ -279,13 +279,23 @@ async def resolve_source_ids(
     """
     if not source_ids:
         return None
+
+    sources = None
+
+    async def list_sources():
+        nonlocal sources
+        if sources is None:
+            sources = await client.sources.list(notebook_id)
+        return sources
+
     resolved = []
     for source_id in source_ids:
         resolved.append(
-            await resolve_source_id(
-                client,
-                notebook_id,
+            await _resolve_partial_id(
                 source_id,
+                list_fn=list_sources,
+                entity_name="source",
+                list_command="source list",
                 json_output=json_output,
                 stdout_console=stdout_console,
                 stderr_output_console=stderr_output_console,

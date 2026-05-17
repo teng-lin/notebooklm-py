@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import click
 import pytest
 
-from notebooklm.cli.helpers import resolve_notebook_id, resolve_source_id
+from notebooklm.cli.helpers import resolve_notebook_id, resolve_source_id, resolve_source_ids
 from notebooklm.types import Notebook, Source
 
 
@@ -356,3 +356,34 @@ class TestResolveSourceIdAmbiguityDisplay:
         error_msg = str(exc_info.value)
         assert "First Source" in error_msg
         assert "Third Source" in error_msg
+
+
+class TestResolveSourceIds:
+    """Test multiple source ID resolution."""
+
+    @pytest.mark.asyncio
+    async def test_reuses_source_list_for_multiple_partial_ids(
+        self, mock_client_with_sources, sample_sources
+    ):
+        """Multiple partial IDs share one sources.list call."""
+        mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
+
+        with patch("notebooklm.cli.helpers.console"):
+            result = await resolve_source_ids(mock_client_with_sources, "nb_123", ("xyz", "src999"))
+
+        assert result == ["xyz789uvw456rst123", "src999zzz888yyy777"]
+        mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
+
+    @pytest.mark.asyncio
+    async def test_full_ids_skip_source_list(self, mock_client_with_sources):
+        """Full source IDs keep the no-list behavior for direct IDs."""
+        mock_client_with_sources.sources.list = AsyncMock()
+
+        result = await resolve_source_ids(
+            mock_client_with_sources,
+            "nb_123",
+            ("src123def456ghi78900", "xyz789uvw456rst12300"),
+        )
+
+        assert result == ["src123def456ghi78900", "xyz789uvw456rst12300"]
+        mock_client_with_sources.sources.list.assert_not_called()
