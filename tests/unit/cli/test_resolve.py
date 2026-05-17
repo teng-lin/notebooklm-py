@@ -481,3 +481,14 @@ class TestResolveSourceIds:
 
         assert result == ["src123def456ghi789", "xyz789uvw456rst123"]
         mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
+
+    @pytest.mark.asyncio
+    async def test_empty_source_id_raises_before_listing(self, mock_client_with_sources):
+        """Invalid multi-source input does not trigger a source-list RPC."""
+        mock_client_with_sources.sources.list = AsyncMock()
+
+        with pytest.raises(click.ClickException) as exc_info:
+            await resolve_source_ids(mock_client_with_sources, "nb_123", ("xyz", ""))
+
+        assert "cannot be empty" in str(exc_info.value)
+        mock_client_with_sources.sources.list.assert_not_called()

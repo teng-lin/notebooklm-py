@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -284,25 +285,25 @@ async def resolve_source_ids(
     if not source_ids:
         return None
 
-    sources = None
+    validated_source_ids = tuple(validate_id(source_id, "source") for source_id in source_ids)
+    sources = await client.sources.list(notebook_id)
 
     async def list_sources():
-        nonlocal sources
-        if sources is None:
-            sources = await client.sources.list(notebook_id)
         return sources
 
-    resolved = []
-    for source_id in source_ids:
-        resolved.append(
-            await _resolve_partial_id(
-                source_id,
-                list_fn=list_sources,
-                entity_name="source",
-                list_command="source list",
-                json_output=json_output,
-                stdout_console=stdout_console,
-                stderr_output_console=stderr_output_console,
+    return list(
+        await asyncio.gather(
+            *(
+                _resolve_partial_id(
+                    source_id,
+                    list_fn=list_sources,
+                    entity_name="source",
+                    list_command="source list",
+                    json_output=json_output,
+                    stdout_console=stdout_console,
+                    stderr_output_console=stderr_output_console,
+                )
+                for source_id in validated_source_ids
             )
         )
-    return resolved
+    )
