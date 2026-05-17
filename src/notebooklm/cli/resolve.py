@@ -308,7 +308,8 @@ async def resolve_source_ids(
     async def list_sources():
         return sources
 
-    return await asyncio.gather(
+    unique_source_ids = tuple(dict.fromkeys(validated_source_ids))
+    resolved_unique = await asyncio.gather(
         *(
             _resolve_partial_id(
                 source_id,
@@ -319,6 +320,8 @@ async def resolve_source_ids(
                 stdout_console=stdout_console,
                 stderr_output_console=stderr_output_console,
             )
-            for source_id in validated_source_ids
+            for source_id in unique_source_ids
         )
     )
+    resolved_by_input = dict(zip(unique_source_ids, resolved_unique, strict=True))
+    return [resolved_by_input[source_id] for source_id in validated_source_ids]

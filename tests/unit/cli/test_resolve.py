@@ -467,6 +467,25 @@ class TestResolveSourceIds:
         mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
 
     @pytest.mark.asyncio
+    async def test_duplicate_partial_ids_resolve_once_preserving_duplicates(
+        self, mock_client_with_sources, sample_sources
+    ):
+        """Duplicate partial IDs produce one status message but preserve output shape."""
+        mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
+        mock_console = MagicMock()
+
+        result = await resolve_source_ids(
+            mock_client_with_sources,
+            "nb_123",
+            ("xyz", "xyz"),
+            stdout_console=mock_console,
+        )
+
+        assert result == ["xyz789uvw456rst123", "xyz789uvw456rst123"]
+        mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
+        mock_console.print.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_empty_source_id_raises_before_listing(self, mock_client_with_sources):
         """Invalid multi-source input does not trigger a source-list RPC."""
         mock_client_with_sources.sources.list = AsyncMock()
