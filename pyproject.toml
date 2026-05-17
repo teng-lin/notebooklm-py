@@ -52,9 +52,9 @@ dev = [
     "pytest-timeout>=2.3.0,<3",
     "pytest-xdist>=3.6.0,<4",
     "python-dotenv>=1.0.0,<2",
-    "mypy>=1.0.0,<2",
+    "mypy>=1.0.0,<3",
     "pre-commit>=4.5.1,<5",
-    "ruff==0.15.12",
+    "ruff==0.15.13",
     "tomli>=2.0.0,<3; python_version < '3.11'",  # for tests/unit/test_install_docs.py on Python 3.10 (tomllib is 3.11+)
     "vcrpy>=6.0.0,<9",
     "packaging>=23.0,<26",  # for tests/unit/test_version_gate.py (PEP 440 version parsing)
