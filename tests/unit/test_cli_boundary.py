@@ -272,6 +272,12 @@ def test_options_completion_callbacks_stay_on_completion_provider_boundary() -> 
             ["import: pkg.run_async"],
         ),
         (
+            "from .runtime import run_async as runner\n"
+            "def _complete_sources():\n"
+            "    return runner\n",
+            ["import: run_async", "_complete_sources: runner"],
+        ),
+        (
             "class Provider:\n"
             "    client = NotebookLMClient\n"
             "def _resolve_notebook_for_completion():\n"
@@ -299,6 +305,14 @@ def test_completion_boundary_reports_missing_callbacks() -> None:
 def test_completion_boundary_ignores_dunder_imports() -> None:
     _, offenders = _completion_boundary_violations(
         ast.parse("from notebooklm import __version__\n")
+    )
+
+    assert offenders == []
+
+
+def test_completion_boundary_allows_standard_library_and_safe_relative_imports() -> None:
+    _, offenders = _completion_boundary_violations(
+        ast.parse("import pathlib\nfrom collections import abc\nfrom .completion import complete\n")
     )
 
     assert offenders == []
