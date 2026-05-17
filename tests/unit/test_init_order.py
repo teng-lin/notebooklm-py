@@ -548,6 +548,12 @@ def test_notebook_composition_services_do_not_runtime_import_facades_or_core() -
     assert forbidden_construction_by_module == {}
 
 
+def test_notebook_composition_services_import_cleanly() -> None:
+    """Notebook composition services must be import-safe."""
+    for module_name in _NOTEBOOK_COMPOSITION_SERVICE_MODULES:
+        importlib.import_module(f"notebooklm.{module_name.removesuffix('.py')}")
+
+
 def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
     """Phase 9 notebook metadata work depends on the final Phase 8 lister name."""
     from notebooklm._source_listing import SourceLister
@@ -615,10 +621,6 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     assert notebooks_call.func.id == "NotebooksAPI"
 
     assert _self_attr_name(_call_keyword_value(notebooks_call, "sources_api")) == "sources"
-
-
-def test_notebook_metadata_service_imports_cleanly() -> None:
-    importlib.import_module("notebooklm._notebook_metadata")
 
 
 def test_core_private_access_guard_detects_simple_aliases() -> None:
