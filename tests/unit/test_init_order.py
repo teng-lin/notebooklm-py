@@ -59,35 +59,61 @@ _SOURCE_SERVICE_MODULES = [
     "_source_content.py",
 ]
 
-_FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_NAMES = {
-    "NotebookLMClient",
-    "ClientCore",
+_NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
+    "_notebook_metadata.py",
+    "_sharing_manager.py",
+    "_mind_map.py",
+]
+
+_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "ArtifactsAPI",
-}
-
-_FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_MODULES = {
-    "_artifacts",
-    "_core",
-    "client",
-    "notebooklm._artifacts",
-    "notebooklm._core",
-    "notebooklm.client",
-}
-
-_FORBIDDEN_SOURCE_SERVICE_RUNTIME_IMPORT_NAMES = {
-    "NotebookLMClient",
+    "ChatAPI",
     "ClientCore",
+    "NotebookLMClient",
+    "NotebooksAPI",
+    "NotesAPI",
+    "ResearchAPI",
+    "SettingsAPI",
+    "SharingAPI",
     "SourcesAPI",
 }
 
-_FORBIDDEN_SOURCE_SERVICE_RUNTIME_IMPORT_MODULES = {
-    "_sources",
+_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
+    "_artifacts",
+    "_chat",
     "_core",
+    "_notebooks",
+    "_notes",
+    "_research",
+    "_settings",
+    "_sharing",
+    "_sources",
     "client",
-    "notebooklm._sources",
+    "notebooklm",
+    "notebooklm._artifacts",
+    "notebooklm._chat",
     "notebooklm._core",
+    "notebooklm._notebooks",
+    "notebooklm._notes",
+    "notebooklm._research",
+    "notebooklm._settings",
+    "notebooklm._sharing",
+    "notebooklm._sources",
     "notebooklm.client",
 }
+
+_FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_NAMES = _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES
+_FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_MODULES = (
+    _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES
+)
+_FORBIDDEN_SOURCE_SERVICE_RUNTIME_IMPORT_NAMES = _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES
+_FORBIDDEN_SOURCE_SERVICE_RUNTIME_IMPORT_MODULES = _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES
+_FORBIDDEN_NOTEBOOK_COMPOSITION_SERVICE_RUNTIME_IMPORT_NAMES = (
+    _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES
+)
+_FORBIDDEN_NOTEBOOK_COMPOSITION_SERVICE_RUNTIME_IMPORT_MODULES = (
+    _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES
+)
 
 
 def _is_self_core(node: ast.AST) -> bool:
@@ -181,6 +207,83 @@ def _collect_core_private_accesses(path: Path) -> list[tuple[str, str]]:
     visitor = _CorePrivateAccessVisitor(path.name)
     visitor.visit(tree)
     return visitor.observed
+
+
+def _self_attr_name(node: ast.AST) -> str | None:
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+    ):
+        return node.attr
+    return None
+
+
+def _assigned_self_attr_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            attr_name = _self_attr_name(target)
+            if attr_name is not None:
+                return attr_name
+    if isinstance(node, ast.AnnAssign):
+        return _self_attr_name(node.target)
+    return None
+
+
+def _assignment_value(node: ast.AST) -> ast.AST | None:
+    if isinstance(node, ast.Assign):
+        return node.value
+    if isinstance(node, ast.AnnAssign):
+        return node.value
+    return None
+
+
+def _self_attr_assignment(body: list[ast.stmt], attr_name: str) -> tuple[int, ast.stmt]:
+    for index, statement in enumerate(body):
+        if _assigned_self_attr_name(statement) == attr_name:
+            return index, statement
+    raise AssertionError(f"self.{attr_name} assignment not found")
+
+
+def _method_body(tree: ast.AST, class_name: str, method_name: str) -> list[ast.stmt]:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if (
+                isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and item.name == method_name
+            ):
+                return item.body
+    raise AssertionError(f"{class_name}.{method_name} not found")
+
+
+def _facade_call_name(node: ast.AST, facade_names: set[str]) -> str | None:
+    if isinstance(node, ast.Name) and node.id in facade_names:
+        return node.id
+    if isinstance(node, ast.Attribute):
+        if node.attr in facade_names:
+            return node.attr
+        return _facade_call_name(node.value, facade_names)
+    return None
+
+
+def _facade_construction_lines(tree: ast.AST, facade_names: set[str]) -> dict[str, list[int]]:
+    lines: dict[str, list[int]] = {facade_name: [] for facade_name in facade_names}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        facade_name = _facade_call_name(node.func, facade_names)
+        if facade_name is not None:
+            lines[facade_name].append(node.lineno)
+    return {facade_name: found for facade_name, found in lines.items() if found}
+
+
+def _call_keyword_value(call: ast.Call, keyword_name: str) -> ast.AST:
+    for keyword in call.keywords:
+        if keyword.arg == keyword_name:
+            return keyword.value
+    raise AssertionError(f"keyword argument {keyword_name!r} not found")
 
 
 def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
@@ -338,9 +441,35 @@ from __future__ import annotations
     ]
 
 
+def test_runtime_import_visitor_detects_top_level_public_package_import() -> None:
+    """Private services must not import the public package facade."""
+    tree = ast.parse(
+        """
+import notebooklm
+from notebooklm import NotebookLMClient
+"""
+    )
+    visitor = _RuntimeImportVisitor(
+        forbidden_names={"NotebookLMClient"},
+        forbidden_modules={"notebooklm"},
+    )
+
+    visitor.visit(tree)
+
+    assert visitor.forbidden == ["notebooklm", "notebooklm.NotebookLMClient"]
+
+
+def test_facade_construction_lines_detects_chained_facade_access() -> None:
+    """Facade construction guard must catch classmethod-style facade access."""
+    tree = ast.parse("notebooklm.NotebookLMClient.from_storage()\n")
+
+    assert _facade_construction_lines(tree, {"NotebookLMClient"}) == {"NotebookLMClient": [1]}
+
+
 def test_artifact_service_modules_do_not_runtime_import_facades_or_core() -> None:
     """Guard future artifact service extraction modules against facade/core imports."""
     forbidden_by_module: dict[str, list[str]] = {}
+    forbidden_construction_by_module: dict[str, dict[str, list[int]]] = {}
     for module_name in _ARTIFACT_SERVICE_MODULES:
         tree = ast.parse((SRC_ROOT / module_name).read_text(encoding="utf-8"))
         visitor = _RuntimeImportVisitor(
@@ -351,7 +480,15 @@ def test_artifact_service_modules_do_not_runtime_import_facades_or_core() -> Non
         if visitor.forbidden:
             forbidden_by_module[module_name] = visitor.forbidden
 
+        construction_lines = _facade_construction_lines(
+            tree,
+            _FORBIDDEN_ARTIFACT_SERVICE_RUNTIME_IMPORT_NAMES,
+        )
+        if construction_lines:
+            forbidden_construction_by_module[module_name] = construction_lines
+
     assert forbidden_by_module == {}
+    assert forbidden_construction_by_module == {}
 
 
 def test_source_service_modules_import_cleanly() -> None:
@@ -363,6 +500,7 @@ def test_source_service_modules_import_cleanly() -> None:
 def test_source_service_modules_do_not_runtime_import_facades_or_core() -> None:
     """Guard future source service extraction modules against facade/core imports."""
     forbidden_by_module: dict[str, list[str]] = {}
+    forbidden_construction_by_module: dict[str, dict[str, list[int]]] = {}
     for module_name in _SOURCE_SERVICE_MODULES:
         tree = ast.parse((SRC_ROOT / module_name).read_text(encoding="utf-8"))
         visitor = _RuntimeImportVisitor(
@@ -373,7 +511,41 @@ def test_source_service_modules_do_not_runtime_import_facades_or_core() -> None:
         if visitor.forbidden:
             forbidden_by_module[module_name] = visitor.forbidden
 
+        construction_lines = _facade_construction_lines(
+            tree,
+            _FORBIDDEN_SOURCE_SERVICE_RUNTIME_IMPORT_NAMES,
+        )
+        if construction_lines:
+            forbidden_construction_by_module[module_name] = construction_lines
+
     assert forbidden_by_module == {}
+    assert forbidden_construction_by_module == {}
+
+
+def test_notebook_composition_services_do_not_runtime_import_facades_or_core() -> None:
+    """Notebook composition services stay below facade APIs and ClientCore."""
+    forbidden_by_module: dict[str, list[str]] = {}
+    forbidden_construction_by_module: dict[str, dict[str, list[int]]] = {}
+
+    for module_name in _NOTEBOOK_COMPOSITION_SERVICE_MODULES:
+        tree = ast.parse((SRC_ROOT / module_name).read_text(encoding="utf-8"))
+        visitor = _RuntimeImportVisitor(
+            forbidden_names=_FORBIDDEN_NOTEBOOK_COMPOSITION_SERVICE_RUNTIME_IMPORT_NAMES,
+            forbidden_modules=_FORBIDDEN_NOTEBOOK_COMPOSITION_SERVICE_RUNTIME_IMPORT_MODULES,
+        )
+        visitor.visit(tree)
+        if visitor.forbidden:
+            forbidden_by_module[module_name] = visitor.forbidden
+
+        construction_lines = _facade_construction_lines(
+            tree,
+            _FORBIDDEN_NOTEBOOK_COMPOSITION_SERVICE_RUNTIME_IMPORT_NAMES,
+        )
+        if construction_lines:
+            forbidden_construction_by_module[module_name] = construction_lines
+
+    assert forbidden_by_module == {}
+    assert forbidden_construction_by_module == {}
 
 
 def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
@@ -408,19 +580,8 @@ def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
     )
     visitor.visit(notebooks_tree)
 
-    def sources_api_construction_lines(tree: ast.AST) -> list[int]:
-        lines: list[int] = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if isinstance(node.func, ast.Name) and node.func.id == "SourcesAPI":
-                lines.append(node.lineno)
-            if isinstance(node.func, ast.Attribute) and node.func.attr == "SourcesAPI":
-                lines.append(node.lineno)
-        return lines
-
     assert visitor.forbidden == []
-    assert sources_api_construction_lines(notebooks_tree) == []
+    assert _facade_construction_lines(notebooks_tree, {"SourcesAPI"}) == {}
 
     metadata_tree = ast.parse((SRC_ROOT / "_notebook_metadata.py").read_text(encoding="utf-8"))
     metadata_visitor = _RuntimeImportVisitor(
@@ -430,7 +591,30 @@ def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
     metadata_visitor.visit(metadata_tree)
 
     assert metadata_visitor.forbidden == []
-    assert sources_api_construction_lines(metadata_tree) == []
+    assert _facade_construction_lines(metadata_tree, {"SourcesAPI"}) == {}
+
+
+def test_client_constructs_sources_before_notebooks_and_injects_sources_api() -> None:
+    """Client wiring must avoid hidden SourcesAPI construction inside NotebooksAPI."""
+    client_tree = ast.parse((SRC_ROOT / "client.py").read_text(encoding="utf-8"))
+    init_body = _method_body(client_tree, "NotebookLMClient", "__init__")
+    sources_index, sources_assignment = _self_attr_assignment(init_body, "sources")
+    notebooks_index, notebook_assignment = _self_attr_assignment(init_body, "notebooks")
+
+    assert sources_index < notebooks_index
+
+    sources_value = _assignment_value(sources_assignment)
+    assert isinstance(sources_value, ast.Call)
+    assert isinstance(sources_value.func, ast.Name)
+    assert sources_value.func.id == "SourcesAPI"
+
+    notebooks_value = _assignment_value(notebook_assignment)
+    assert isinstance(notebooks_value, ast.Call)
+    notebooks_call = notebooks_value
+    assert isinstance(notebooks_call.func, ast.Name)
+    assert notebooks_call.func.id == "NotebooksAPI"
+
+    assert _self_attr_name(_call_keyword_value(notebooks_call, "sources_api")) == "sources"
 
 
 def test_notebook_metadata_service_imports_cleanly() -> None:

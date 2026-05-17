@@ -23,13 +23,18 @@ src/notebooklm/
 ├── types.py             # Dataclasses and type definitions
 ├── _core.py             # Core HTTP/RPC infrastructure
 ├── _notebooks.py        # NotebooksAPI implementation
+├── _notebook_metadata.py # Private notebook metadata composition service
 ├── _sources.py          # SourcesAPI implementation
+├── _source_*.py         # Private source services
 ├── _artifacts.py        # ArtifactsAPI implementation
+├── _artifact_*.py       # Private artifact services
 ├── _chat.py             # ChatAPI implementation
 ├── _research.py         # ResearchAPI implementation
 ├── _notes.py            # NotesAPI implementation
+├── _mind_map.py         # Private note-backed mind-map service
 ├── _settings.py         # SettingsAPI implementation
 ├── _sharing.py          # SharingAPI implementation
+├── _sharing_manager.py  # Private legacy notebook share-link service
 ├── rpc/                 # RPC protocol layer
 │   ├── __init__.py
 │   ├── types.py         # RPCMethod enum and constants
@@ -59,6 +64,7 @@ src/notebooklm/
 ┌───────────────────────────▼─────────────────────────────────┐
 │                      Client Layer                           │
 │  NotebookLMClient → NotebooksAPI, SourcesAPI, ArtifactsAPI  │
+│       private services compose cross-facade behavior         │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -80,6 +86,14 @@ src/notebooklm/
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
 | **Core** | `_core.py` | HTTP client, request counter, RPC abstraction |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
+
+Private service modules sit inside the client layer but below the public
+facades. They own cross-facade composition without importing sibling facades:
+`_notebook_metadata.py` composes notebook metadata through a narrow source
+lister, `_sharing_manager.py` owns legacy `SHARE_ARTIFACT` link behavior, and
+`_mind_map.py` owns note-backed mind-map rows shared by notes and artifacts.
+Facade modules keep the public method surface stable and delegate to these
+services.
 
 ### Boundary Guardrails
 
@@ -103,6 +117,13 @@ The architecture tests encode the current layer contract:
   migration PRs should reduce that baseline as private state moves behind
   explicit `ClientCore` methods; do not add new entries unless the PR also
   explains the follow-up migration path.
+- `tests/unit/test_init_order.py` also guards the notebook-composition
+  boundaries: `NotebookLMClient` constructs `SourcesAPI` before `NotebooksAPI`
+  and passes it through the legacy `sources_api=` slot; notebook metadata
+  services must not import or construct `SourcesAPI`; artifact/source/notebook
+  composition services must not runtime-import facade APIs or `ClientCore`.
+  Add new private services to those guard lists when they take ownership of
+  cross-facade behavior.
 
 ### Key Design Decisions
 
