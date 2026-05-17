@@ -140,8 +140,11 @@ jobs:
         # --reruns 1 catches sub-minute network blips; longer chat-throttle
         # recovery is handled by the cool-down retry step below.
         if [ -n "$TEST_FILTER" ]; then
-          # Run specific test(s) when filter provided
-          pytest "$TEST_FILTER" -s -v --tb=short --reruns 1 --reruns-delay 30
+          # Run specific test(s) when filter provided.
+          # ``--`` separator forces $TEST_FILTER to be parsed as positional
+          # file/path args, never as pytest options (e.g. a crafted ``--co``
+          # or ``-k "expr"`` value cannot inject pytest flags).
+          pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
         elif [ "$MATRIX_OS" = "ubuntu-latest" ]; then
           # Linux: run all E2E tests except variants
           pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
