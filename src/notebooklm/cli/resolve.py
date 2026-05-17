@@ -17,6 +17,7 @@ from . import rendering as rendering_helpers
 
 ContextPathFn = Callable[..., Path]
 ListFn = Callable[[], Awaitable[list[Any]]]
+_FULL_ID_MIN_LEN = 20
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
@@ -36,6 +37,11 @@ def validate_id(entity_id: str, entity_name: str = "ID") -> str:
     if not entity_id or not entity_id.strip():
         raise click.ClickException(f"{entity_name} ID cannot be empty")
     return entity_id.strip()
+
+
+def _is_full_id_candidate(entity_id: str) -> bool:
+    """Return whether an ID is long enough to be treated as concrete."""
+    return len(entity_id) >= _FULL_ID_MIN_LEN
 
 
 def require_notebook(
@@ -123,6 +129,9 @@ async def _resolve_partial_id(
             ambiguous.
     """
     partial_id = validate_id(partial_id, entity_name)
+
+    if _is_full_id_candidate(partial_id):
+        return partial_id
 
     items = await list_fn()
     partial_id_lower = partial_id.lower()
@@ -286,6 +295,9 @@ async def resolve_source_ids(
         return None
 
     validated_source_ids = tuple(validate_id(source_id, "source") for source_id in source_ids)
+    if all(_is_full_id_candidate(source_id) for source_id in validated_source_ids):
+        return list(validated_source_ids)
+
     sources = await client.sources.list(notebook_id)
 
     async def list_sources():

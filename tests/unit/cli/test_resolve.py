@@ -118,24 +118,15 @@ class TestResolveNotebookId:
         assert "notebooklm list" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_long_id_resolves_against_list(self, mock_client):
-        """Long IDs are still resolved so ambiguous prefixes are not skipped."""
+    async def test_long_id_returns_without_listing(self, mock_client):
+        """Long IDs are treated as concrete IDs and do not list notebooks."""
         long_id = "a" * 20
-        mock_client.notebooks.list = AsyncMock(
-            return_value=[
-                Notebook(
-                    id=long_id,
-                    title="Long ID Notebook",
-                    created_at=datetime(2024, 1, 1),
-                    is_owner=True,
-                )
-            ]
-        )
+        mock_client.notebooks.list = AsyncMock()
 
         result = await resolve_notebook_id(mock_client, long_id)
 
         assert result == long_id
-        mock_client.notebooks.list.assert_awaited_once()
+        mock_client.notebooks.list.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_empty_id_raises_exception(self, mock_client):
@@ -331,17 +322,15 @@ class TestResolveSourceId:
         assert "notebooklm source list" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_long_id_resolves_against_list(self, mock_client_with_sources):
-        """Long IDs are still resolved so ambiguous prefixes are not skipped."""
+    async def test_long_id_returns_without_listing(self, mock_client_with_sources):
+        """Long IDs are treated as concrete IDs and do not list sources."""
         long_id = "a" * 20
-        mock_client_with_sources.sources.list = AsyncMock(
-            return_value=[Source(id=long_id, title="Long ID Source")]
-        )
+        mock_client_with_sources.sources.list = AsyncMock()
 
         result = await resolve_source_id(mock_client_with_sources, "nb_123", long_id)
 
         assert result == long_id
-        mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
+        mock_client_with_sources.sources.list.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_empty_id_raises_exception(self, mock_client_with_sources):
@@ -447,14 +436,9 @@ class TestResolveSourceIds:
         mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
 
     @pytest.mark.asyncio
-    async def test_full_ids_share_one_source_list(self, mock_client_with_sources):
-        """Full source IDs resolve exactly while sharing one source list."""
-        mock_client_with_sources.sources.list = AsyncMock(
-            return_value=[
-                Source(id="src123def456ghi78900", title="First Source"),
-                Source(id="xyz789uvw456rst12300", title="Second Source"),
-            ]
-        )
+    async def test_full_ids_skip_source_list(self, mock_client_with_sources):
+        """Full source IDs pass through without a source list call."""
+        mock_client_with_sources.sources.list = AsyncMock()
 
         result = await resolve_source_ids(
             mock_client_with_sources,
@@ -463,7 +447,7 @@ class TestResolveSourceIds:
         )
 
         assert result == ["src123def456ghi78900", "xyz789uvw456rst12300"]
-        mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
+        mock_client_with_sources.sources.list.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_mixed_full_and_partial_ids_list_once(
