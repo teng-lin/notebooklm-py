@@ -356,9 +356,9 @@ class TestAuthExtractionErrorScrubbing:
         """payload_preview must not leak ``f.sid=`` values from raw HTML.
 
         Drift previews can capture multi-KB HTML snippets that contain live
-        session-id query params; ``scrub_secrets`` is applied BEFORE the
+        session-id query params; ``scrub_secrets`` is applied during the
         slice + whitespace-collapse pipeline so the redaction cannot be
-        defeated by a value that straddles the slice boundary.
+        defeated by a value that straddles the 5x preview boundary.
         """
         # Token value lives in the prefix that will survive truncation.
         payload = "<html><body>boot script f.sid=ABC123XYZ remaining markup</body></html>"
@@ -369,6 +369,22 @@ class TestAuthExtractionErrorScrubbing:
         # Sanity: the redaction marker should be present so operators can see
         # WHY the value is missing.
         assert "f.sid=***" in exc.payload_preview
+
+    def test_auth_extraction_error_scrubs_secret_near_5x_boundary(self):
+        """Secret straddling the 5x boundary is still scrubbed via the 10x slice.
+
+        The implementation pre-slices to 10x PREVIEW_LENGTH (2000 chars) before
+        scrubbing — large enough that a secret near the 5x cutoff (~1000 chars)
+        is fully contained in the pre-slice and gets redacted.
+        """
+        prefix = "A" * (AuthExtractionError.PREVIEW_LENGTH * 5 - 10)
+        # Secret begins inside the 5x cut and continues past it — without the
+        # 10x pre-slice we'd see the unredacted "f.sid=SECRET" prefix.
+        payload = prefix + "f.sid=SECRET_NEAR_BOUNDARY_VALUE"
+        exc = AuthExtractionError("SNlM0e", payload)
+
+        assert "SECRET_NEAR_BOUNDARY" not in exc.payload_preview
+        assert "SECRET_NEAR_BOUNDARY" not in str(exc)
 
 
 class TestCatchAllPattern:

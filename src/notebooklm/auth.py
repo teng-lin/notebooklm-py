@@ -458,21 +458,31 @@ def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None
 
 
 def _safe_url(url: str) -> str:
-    """Return ``url`` stripped of query string and fragment for error display.
+    """Return ``url`` stripped of credential-shaped parts for error display.
 
-    Auth-handshake URLs often carry credential-shaped query params
-    (``f.sid=...``, ``continue=...``, ``access_token=...``) that must never
-    appear in exception messages or log lines. We surface only the
-    ``scheme://netloc/path`` triple — enough context for an operator to
-    recognize which endpoint failed without leaking session state.
+    Auth-handshake URLs can carry credentials in three positions, all of
+    which we strip:
 
-    Empty input passes through verbatim so error messages with the default
-    ``final_url=""`` still render cleanly instead of degenerating to ``"://"``.
+    * **Query string** — ``f.sid=...``, ``continue=...``, ``access_token=...``.
+    * **Fragment** — OAuth implicit-flow tokens (``#access_token=...``).
+    * **Userinfo** — ``https://TOKEN@host/...`` shapes; ``parsed.netloc``
+      preserves the userinfo, so we rebuild from ``hostname`` + optional
+      port instead of trusting ``netloc`` directly.
+
+    The surviving ``scheme://host[:port]/path`` is enough context for an
+    operator to recognize which endpoint failed without leaking session
+    state. Empty input passes through verbatim so error messages with the
+    default ``final_url=""`` still render cleanly instead of degenerating to
+    ``"://"``.
     """
     if not url:
         return ""
     parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    # hostname strips userinfo; port survives separately. Both can be None
+    # on malformed input, in which case we degrade gracefully to "scheme:///path".
+    host = parsed.hostname or ""
+    netloc = f"{host}:{parsed.port}" if parsed.port is not None else host
+    return f"{parsed.scheme}://{netloc}{parsed.path}"
 
 
 def extract_csrf_from_html(html: str, final_url: str = "") -> str:

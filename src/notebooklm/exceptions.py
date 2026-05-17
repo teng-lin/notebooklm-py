@@ -346,15 +346,21 @@ class AuthExtractionError(RPCError):
         message: str | None = None,
     ):
         self.key = key
-        # Scrub BEFORE slicing so credential-shaped substrings that straddle
-        # the 5x preview boundary (e.g., ``f.sid=`` near offset PREVIEW*5)
-        # are still fully matched and redacted. Slicing first could split a
-        # secret value across the boundary, leaving the prefix unredacted in
-        # the rendered preview.
-        scrubbed = scrub_secrets(payload_preview)
-        # Slice after scrubbing to a 5x-PREVIEW_LENGTH head — enough headroom
-        # that collapsing runs of whitespace still leaves PREVIEW_LENGTH chars
-        # of non-whitespace even on heavily indented HTML.
+        # Two-stage slice with the scrub in the middle, so we bound regex work
+        # without giving up boundary-straddle safety:
+        #
+        # 1. Pre-slice to a generous 10x cap. Bounds the scrub at O(2000 chars)
+        #    instead of O(len(payload)) — a multi-MB HTML body would otherwise
+        #    cost ~7 regex passes over the whole thing just to throw most away.
+        # 2. Scrub the slice. A secret straddling the 10x boundary is
+        #    theoretically possible but the 2000-char window gives ~19x more
+        #    slack than the 5x preview limit, so any realistic ``f.sid=``,
+        #    ``Bearer ...``, or ``Set-Cookie:`` value fits well inside.
+        # 3. Re-slice to 5x. The scrub already neutralized anything that would
+        #    have leaked from the 5x cut, including secrets that originally
+        #    straddled the 5x boundary inside the 10x window.
+        pre_sliced = payload_preview[: self.PREVIEW_LENGTH * 10]
+        scrubbed = scrub_secrets(pre_sliced)
         head = scrubbed[: self.PREVIEW_LENGTH * 5]
         # Collapse runs of whitespace so the preview stays compact and useful
         # even when the upstream HTML is heavily indented or contains newlines.

@@ -875,6 +875,26 @@ class TestFinalUrlScrubbing:
         assert "access_token=frag" not in message
         assert "https://x.example/y" in message
 
+    def test_final_url_stripped_userinfo(self):
+        """URL userinfo (``https://TOKEN@host/...``) must NOT leak.
+
+        ``urlparse(...).netloc`` preserves the userinfo component, so a naive
+        reconstruction from ``scheme://netloc/path`` would surface tokens
+        carried in the ``user[:password]@`` position. ``_safe_url`` rebuilds
+        from ``hostname`` + port instead.
+        """
+        html = "<html><body>not a notebooklm page</body></html>"
+        # Token embedded as userinfo — the most adversarial leak vector.
+        final_url = "https://SECRET_TOKEN_USERINFO@x.example:8443/y?q=1"
+
+        with pytest.raises(ValueError) as excinfo:
+            extract_csrf_from_html(html, final_url)
+
+        message = str(excinfo.value)
+        assert "SECRET_TOKEN_USERINFO" not in message
+        # Port is preserved so operators can still identify the endpoint.
+        assert "https://x.example:8443/y" in message
+
 
 class TestExtractCookiesEdgeCases:
     """Test cookie extraction edge cases."""
