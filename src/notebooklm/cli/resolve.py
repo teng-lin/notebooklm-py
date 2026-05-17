@@ -130,6 +130,8 @@ async def _resolve_partial_id(
     """
     partial_id = validate_id(partial_id, entity_name)
 
+    # Concrete IDs are passed through so direct get/delete commands can hit
+    # the backend by ID without forcing an extra list RPC first.
     if _is_full_id_candidate(partial_id):
         return partial_id
 
@@ -303,19 +305,17 @@ async def resolve_source_ids(
     async def list_sources():
         return sources
 
-    return list(
-        await asyncio.gather(
-            *(
-                _resolve_partial_id(
-                    source_id,
-                    list_fn=list_sources,
-                    entity_name="source",
-                    list_command="source list",
-                    json_output=json_output,
-                    stdout_console=stdout_console,
-                    stderr_output_console=stderr_output_console,
-                )
-                for source_id in validated_source_ids
+    return await asyncio.gather(
+        *(
+            _resolve_partial_id(
+                source_id,
+                list_fn=list_sources,
+                entity_name="source",
+                list_command="source list",
+                json_output=json_output,
+                stdout_console=stdout_console,
+                stderr_output_console=stderr_output_console,
             )
+            for source_id in validated_source_ids
         )
     )
