@@ -53,7 +53,7 @@ def load_auth_from_storage(*args: Any, **kwargs: Any) -> Any:
 
 def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:
     """Emit a status / diagnostic line."""
-    rendering_helpers._emit_status(
+    rendering_helpers.emit_status(
         msg,
         json_output=json_output,
         style=style,

@@ -55,6 +55,10 @@ def resolve_prompt(
         param_name: Name of the positional argument, used in error messages.
         required: When true, raise ``UsageError`` if both sources are empty.
 
+    Returns:
+        Resolved and stripped prompt text, or an empty string when no source is
+        provided and ``required`` is false.
+
     Raises:
         click.UsageError: Both sources are provided, or ``required`` is true and
             both are empty.
