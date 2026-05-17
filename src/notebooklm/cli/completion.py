@@ -17,6 +17,21 @@ _NotebookResolver = Callable[[Any], str | None]
 _CurrentNotebookLoader = Callable[[], str | None]
 
 
+def _notebook_id_from_context(ctx: Any) -> str | None:
+    """Return a parsed notebook id from a Click context chain, if present."""
+    cur = ctx
+    while cur is not None:
+        try:
+            params = getattr(cur, "params", None)
+            notebook_id = params.get("notebook_id") if params else None
+            if isinstance(notebook_id, str) and notebook_id:
+                return notebook_id
+            cur = getattr(cur, "parent", None)
+        except Exception:
+            return None
+    return None
+
+
 def _close_awaitable(awaitable: Awaitable[Any]) -> None:
     """Close an unconsumed coroutine when an injected runner fails immediately."""
     close = getattr(awaitable, "close", None)
@@ -133,16 +148,9 @@ class CompletionProvider:
             return None
 
     def _resolve_notebook_from_context(self, ctx: Any) -> str | None:
-        cur = ctx
-        while cur is not None:
-            try:
-                params = getattr(cur, "params", None)
-                notebook_id = params.get("notebook_id") if params else None
-                if notebook_id:
-                    return notebook_id
-                cur = getattr(cur, "parent", None)
-            except Exception:
-                return None
+        notebook_id = _notebook_id_from_context(ctx)
+        if notebook_id:
+            return notebook_id
 
         env_val = os.environ.get("NOTEBOOKLM_NOTEBOOK", "").strip()
         if env_val:

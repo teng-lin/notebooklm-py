@@ -247,7 +247,7 @@ class TestCompletionProviderSilentFailures:
         assert captured.out == ""
         assert captured.err == ""
 
-    def test_corrupt_context_returns_empty_without_output(self, capsys):
+    def test_corrupt_context_falls_back_to_env_without_output(self, capsys):
         from notebooklm.cli.completion import CompletionProvider
 
         class BrokenCtx:
@@ -258,14 +258,33 @@ class TestCompletionProviderSilentFailures:
                 raise RuntimeError("bad context")
 
         provider = CompletionProvider(
-            auth_loader=lambda _ctx: pytest.fail("auth should not load"),
             current_notebook_loader=lambda: pytest.fail("context should not load"),
         )
         with patch.dict(os.environ, {"NOTEBOOKLM_NOTEBOOK": "nb_from_env"}):
-            items = provider.complete_sources(ctx=BrokenCtx(), incomplete="src_")
+            notebook_id = provider.resolve_notebook(ctx=BrokenCtx())
 
         captured = capsys.readouterr()
-        assert items == []
+        assert notebook_id == "nb_from_env"
+        assert captured.out == ""
+        assert captured.err == ""
+
+    def test_corrupt_context_falls_back_to_current_notebook_without_output(self, capsys):
+        from notebooklm.cli.completion import CompletionProvider
+
+        class BrokenCtx:
+            parent = None
+
+            @property
+            def params(self):
+                raise RuntimeError("bad context")
+
+        provider = CompletionProvider(current_notebook_loader=lambda: "nb_from_context")
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NOTEBOOKLM_NOTEBOOK", None)
+            notebook_id = provider.resolve_notebook(ctx=BrokenCtx())
+
+        captured = capsys.readouterr()
+        assert notebook_id == "nb_from_context"
         assert captured.out == ""
         assert captured.err == ""
 
