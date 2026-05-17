@@ -200,9 +200,7 @@ async def test_update_auth_tokens_holds_snapshot_lock_on_entry(
     holder = asyncio.create_task(hold_lock())
     await asyncio.wait_for(enter_held.wait(), EVENT_TIMEOUT_S)
 
-    write_task = asyncio.create_task(
-        coord.update_auth_tokens(stub_host, csrf="X", session_id="Y")
-    )
+    write_task = asyncio.create_task(coord.update_auth_tokens(stub_host, csrf="X", session_id="Y"))
     # Yield a few times so the writer reaches lock.acquire() and blocks.
     for _ in range(5):
         await asyncio.sleep(0)
@@ -289,9 +287,7 @@ async def test_await_refresh_is_single_flight(stub_host: _StubHost) -> None:
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
 
-    tasks = [
-        asyncio.create_task(coord.await_refresh(stub_host)) for _ in range(3)
-    ]
+    tasks = [asyncio.create_task(coord.await_refresh(stub_host)) for _ in range(3)]
     await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
 
     # Yield enough times for waiters 2/3 to reach ``await shield(task)``.
@@ -301,9 +297,7 @@ async def test_await_refresh_is_single_flight(stub_host: _StubHost) -> None:
         await asyncio.sleep(0)
     assert coord._refresh_task is not None
     assert not coord._refresh_task.done()
-    assert call_count == 1, (
-        f"Multiple refreshes fired before release: {call_count}"
-    )
+    assert call_count == 1, f"Multiple refreshes fired before release: {call_count}"
 
     release_refresh.set()
     await asyncio.gather(*tasks)

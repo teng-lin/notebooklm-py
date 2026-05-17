@@ -744,9 +744,7 @@ class ClientCore:
         return self._auth_coord._refresh_callback
 
     @_refresh_callback.setter
-    def _refresh_callback(
-        self, value: Callable[[], Awaitable[AuthTokens]] | None
-    ) -> None:
+    def _refresh_callback(self, value: Callable[[], Awaitable[AuthTokens]] | None) -> None:
         self._ensure_auth_coord()
         self._auth_coord._refresh_callback = value
 

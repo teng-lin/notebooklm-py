@@ -98,9 +98,7 @@ class AuthRefreshCoordinator:
         # Python versions, and this object can be constructed outside one.
         self._refresh_lock: asyncio.Lock | None = None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
-        self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = (
-            refresh_callback
-        )
+        self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = refresh_callback
         # Distinct from ``_refresh_lock`` — see module docstring.
         self._auth_snapshot_lock: asyncio.Lock | None = None
 
@@ -246,9 +244,7 @@ class AuthRefreshCoordinator:
                 refresh_task = self._refresh_task
                 logger.debug("Joining existing refresh task")
             else:
-                coro = cast(
-                    Coroutine[Any, Any, AuthTokens], self._refresh_callback()
-                )
+                coro = cast(Coroutine[Any, Any, AuthTokens], self._refresh_callback())
                 self._refresh_task = asyncio.create_task(coro)
                 refresh_task = self._refresh_task
         finally:
