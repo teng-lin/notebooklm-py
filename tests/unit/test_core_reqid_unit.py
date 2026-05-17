@@ -18,7 +18,6 @@ import pytest
 
 from notebooklm._core_reqid import DEFAULT_BASELINE, DEFAULT_STEP, ReqidCounter
 
-
 # ---------------------------------------------------------------------------
 # Construction / sync accessors
 # ---------------------------------------------------------------------------
