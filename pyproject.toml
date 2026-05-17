@@ -57,6 +57,7 @@ dev = [
     "ruff==0.15.12",
     "tomli>=2.0.0,<3; python_version < '3.11'",  # for tests/unit/test_install_docs.py on Python 3.10 (tomllib is 3.11+)
     "vcrpy>=6.0.0,<9",
+    "packaging>=23.0,<26",  # for tests/unit/test_version_gate.py (PEP 440 version parsing)
 ]
 # `all` deliberately excludes `cookies` — rookiepy has install issues on Python 3.13+
 # (see CHANGELOG [0.4.1]). Opt in explicitly via `pip install "notebooklm-py[cookies]"`.

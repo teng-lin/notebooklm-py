@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from ._types import artifacts as _artifact_types
+from ._types import common as _common_types
 from ._types import notebooks as _notebook_types
 from ._types import sources as _source_types
 from ._types.artifacts import (
@@ -115,6 +116,7 @@ _is_valid_artifact_url = _artifact_types._is_valid_artifact_url
 _map_artifact_kind = _artifact_types._map_artifact_kind
 _safe_source_type = _source_types._safe_source_type
 _warned_artifact_types = _artifact_types._warned_artifact_types
+_warned_deprecated_properties = _common_types._warned_deprecated_properties
 _warned_source_types = _source_types._warned_source_types
 
 # Imported for the historical ``notebooklm.types.ArtifactTypeCode`` attribute,

@@ -395,6 +395,7 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
     "_is_valid_artifact_url",
     "_map_artifact_kind",
     "_warned_artifact_types",
+    "_warned_deprecated_properties",
     "_warned_source_types",
 ]
 

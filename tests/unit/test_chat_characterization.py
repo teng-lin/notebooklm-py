@@ -2081,10 +2081,13 @@ class TestParseAskResponseBranchCoverage:
 class TestExtractTextPassagesNonIntEndChar:
     """Test _extract_text_passages when passage_data[1] is not an int (arc 678->682)."""
 
-    def test_non_int_end_char_does_not_update_end_char(self, auth_tokens):
-        """Test end_char is not updated when passage_data[1] is not an int (arc 678->682)."""
+    def test_non_int_end_char_drops_paired_range(self, auth_tokens):
+        """A half-populated start/end pair is dropped to (None, None) so the
+        ChatReference paired-offset invariant accepts the result. The cited
+        text is still returned regardless.
+        """
         client = NotebookLMClient(auth_tokens)
-        # passage_data[1] is a string, not int
+        # passage_data[1] is a string, not int — start was set, end never was.
         cite_inner = [
             None,
             None,
@@ -2095,8 +2098,9 @@ class TestExtractTextPassagesNonIntEndChar:
             ],
         ]
         cited_text, start_char, end_char = client.chat._extract_text_passages(cite_inner)
-        assert start_char == 100
-        assert end_char is None  # not set since passage_data[1] was not int
+        assert start_char is None  # paired-drop: end was never int, start is cleared too
+        assert end_char is None
+        assert cited_text is not None  # text extraction still succeeded
 
 
 class TestChatHL:

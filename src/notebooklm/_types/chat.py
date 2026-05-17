@@ -74,6 +74,49 @@ class ChatReference:
     answer_end_char: int | None = None
     score: float | None = None
 
+    def __post_init__(self) -> None:
+        """Validate paired-offset invariants at construction time.
+
+        ``start_char``/``end_char`` and ``answer_start_char``/``answer_end_char``
+        are semantically paired ranges: each pair is either fully populated or
+        fully ``None``, and start must not exceed end. The streamed-chat parser
+        already produces values that satisfy this contract; this check catches
+        bad hand-constructed instances at the dataclass boundary instead of
+        leaking the half-populated state into downstream consumers.
+
+        Raises:
+            ValueError: when either pair is half-populated, or when start
+                exceeds end on either pair.
+        """
+        if (self.start_char is None) != (self.end_char is None):
+            raise ValueError(
+                "ChatReference start_char/end_char must both be set or both None "
+                f"(got start_char={self.start_char!r}, end_char={self.end_char!r})"
+            )
+        if (self.answer_start_char is None) != (self.answer_end_char is None):
+            raise ValueError(
+                "ChatReference answer_start_char/answer_end_char must both be set or both None "
+                f"(got answer_start_char={self.answer_start_char!r}, "
+                f"answer_end_char={self.answer_end_char!r})"
+            )
+        if (
+            self.start_char is not None
+            and self.end_char is not None
+            and self.start_char > self.end_char
+        ):
+            raise ValueError(
+                f"ChatReference start_char ({self.start_char}) > end_char ({self.end_char})"
+            )
+        if (
+            self.answer_start_char is not None
+            and self.answer_end_char is not None
+            and self.answer_start_char > self.answer_end_char
+        ):
+            raise ValueError(
+                f"ChatReference answer_start_char ({self.answer_start_char}) "
+                f"> answer_end_char ({self.answer_end_char})"
+            )
+
 
 @dataclass
 class AskResult:

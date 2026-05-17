@@ -11,7 +11,7 @@ import json
 import logging
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode
 
@@ -223,9 +223,14 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             parseable_chunk_count,
         )
 
-    for idx, ref in enumerate(final_refs, start=1):
-        if ref.citation_number is None:
-            ref.citation_number = idx
+    # Assign citation numbers without mutating the dataclass instances in place
+    # (prepares for an eventual ``frozen=True`` sweep on public domain types).
+    # The list is rebuilt — externally identical to the prior mutation since
+    # only ``citation_number`` ever changes here.
+    final_refs = [
+        replace(ref, citation_number=idx) if ref.citation_number is None else ref
+        for idx, ref in enumerate(final_refs, start=1)
+    ]
 
     return StreamingChatParseResult(longest_answer, final_refs, server_conv_id)
 
@@ -477,7 +482,14 @@ def extract_score(cite_inner: list) -> float | None:
 
 
 def extract_text_passages(cite_inner: list) -> tuple[str | None, int | None, int | None]:
-    """Extract cited text and character positions from citation data."""
+    """Extract cited text and character positions from citation data.
+
+    ``start_char`` and ``end_char`` are treated as a semantically paired range:
+    if exactly one is present after walking all passages, both are dropped to
+    ``None`` so the downstream :class:`ChatReference` paired-offset invariant
+    never trips on a half-populated source range. The cited text (if any) is
+    still returned.
+    """
     if len(cite_inner) <= 4 or not isinstance(cite_inner[4], list):
         return None, None, None
 
@@ -500,6 +512,16 @@ def extract_text_passages(cite_inner: list) -> tuple[str | None, int | None, int
         collect_texts_from_nested(passage_data[2], texts)
 
     cited_text = " ".join(texts) if texts else None
+    # Drop a half-populated range so the ChatReference invariant accepts it.
+    # Also reject an inverted range (end before start) for the same reason.
+    if (
+        (start_char is None) != (end_char is None)
+        or start_char is not None
+        and end_char is not None
+        and start_char > end_char
+    ):
+        start_char = None
+        end_char = None
     return cited_text, start_char, end_char
 
 

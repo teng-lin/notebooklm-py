@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -16,6 +17,34 @@ class UnknownTypeWarning(UserWarning):
     This warning indicates the API returned a type code that this version
     of notebooklm-py doesn't recognize. Consider updating to the latest version.
     """
+
+
+# Tracks which deprecated ``@property`` accessors have already emitted their
+# DeprecationWarning in this process, so the warning fires at-most-once per
+# property regardless of how many instances or accesses occur. Shared across
+# ``_types/sources.py`` and ``_types/artifacts.py`` so a single dedupe surface
+# covers every deprecated dataclass property. Mirrors the per-module
+# ``_warned_source_types`` / ``_warned_artifact_types`` precedent. Keys are
+# the dotted ``"ClassName.property"`` tag so multiple sites share one set
+# without collision.
+_warned_deprecated_properties: set[str] = set()
+
+
+def _deprecated_property_warning_state() -> set[str]:
+    """Return the active dedupe set, honoring the public-facade rebinding hook.
+
+    Tests can rebind ``notebooklm.types._warned_deprecated_properties`` via
+    ``monkeypatch.setattr`` (or clear it directly) for isolation; this resolver
+    mirrors ``_source_warning_state`` / ``_artifact_warning_state`` so the
+    private warn-once logic always reads through the public surface when one
+    is registered.
+    """
+    public_types = sys.modules.get("notebooklm.types")
+    if public_types is not None:
+        public_state = getattr(public_types, "_warned_deprecated_properties", None)
+        if isinstance(public_state, set):
+            return public_state
+    return _warned_deprecated_properties
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,11 @@ from enum import Enum
 from typing import Any
 
 from ..rpc.types import SourceStatus
-from .common import UnknownTypeWarning, _datetime_from_timestamp
+from .common import (
+    UnknownTypeWarning,
+    _datetime_from_timestamp,
+    _deprecated_property_warning_state,
+)
 
 
 class SourceType(str, Enum):
@@ -170,11 +174,14 @@ class Source:
     @property
     def source_type(self) -> str:
         """Deprecated: Use .kind instead."""
-        warnings.warn(
-            "Source.source_type is deprecated, use .kind instead. Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        _warned = _deprecated_property_warning_state()
+        if "Source.source_type" not in _warned:
+            _warned.add("Source.source_type")
+            warnings.warn(
+                "Source.source_type is deprecated, use .kind instead. Will be removed in v0.5.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return _source_compat_map().get(self.kind, "text")
 
     @property
@@ -275,12 +282,15 @@ class SourceFulltext:
     @property
     def source_type(self) -> str:
         """Deprecated: Use .kind instead."""
-        warnings.warn(
-            "SourceFulltext.source_type is deprecated, use .kind instead. "
-            "Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        _warned = _deprecated_property_warning_state()
+        if "SourceFulltext.source_type" not in _warned:
+            _warned.add("SourceFulltext.source_type")
+            warnings.warn(
+                "SourceFulltext.source_type is deprecated, use .kind instead. "
+                "Will be removed in v0.5.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return _source_compat_map().get(self.kind, "text")
 
     def find_citation_context(
