@@ -206,6 +206,34 @@ class TestCompleteNotebooks:
 
         assert items == []
 
+    def test_skips_malformed_rows_without_dropping_valid_notebooks(self):
+        """A bad notebook row should not discard the rest of the completions."""
+        from notebooklm.cli import options
+
+        async def fake_list():
+            return [
+                object(),
+                _Stub("nb_good_1", "Good One"),
+                _Stub("other", "Other Notebook"),
+                type("BadTitle", (), {"id": "nb_good_2", "title": None})(),
+            ]
+
+        fake_client = AsyncMock()
+        fake_client.__aenter__.return_value = fake_client
+        fake_client.__aexit__.return_value = None
+        fake_client.notebooks.list = AsyncMock(side_effect=fake_list)
+
+        with (
+            patch("notebooklm.cli.helpers.get_auth_tokens", return_value=object()),
+            patch("notebooklm.client.NotebookLMClient", return_value=fake_client),
+        ):
+            items = options._complete_notebooks(ctx=None, param=None, incomplete="nb_good")
+
+        assert [(item.value, item.help) for item in items] == [
+            ("nb_good_1", "Good One"),
+            ("nb_good_2", ""),
+        ]
+
     def test_caps_results_at_50(self):
         """The completer must cap the result list at 50 to keep the shell
         snappy on profiles with hundreds of notebooks.

@@ -80,8 +80,10 @@ class CompletionProvider:
             notebooks = self._run(_list())
             items: list[CompletionItem] = []
             for notebook in notebooks:
-                if notebook.id.startswith(incomplete):
-                    items.append(CompletionItem(notebook.id, help=notebook.title or ""))
+                notebook_id = getattr(notebook, "id", "")
+                if isinstance(notebook_id, str) and notebook_id.startswith(incomplete):
+                    title = getattr(notebook, "title", "") or ""
+                    items.append(CompletionItem(notebook_id, help=title))
                     if len(items) >= self._row_limit:
                         break
             return items
