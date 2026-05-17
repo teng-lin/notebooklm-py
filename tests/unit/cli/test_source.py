@@ -22,7 +22,7 @@ from notebooklm.types import (
 from .conftest import create_mock_client, patch_client_for_module
 
 source_module = importlib.import_module("notebooklm.cli.source")
-helpers_module = importlib.import_module("notebooklm.cli.helpers")
+research_import_module = importlib.import_module("notebooklm.cli.research_import")
 
 
 @pytest.fixture
@@ -1061,7 +1061,7 @@ class TestSourceAddResearch:
         with (
             patch_client_for_module("source") as mock_client_cls,
             patch.object(
-                helpers_module, "import_with_retry", new_callable=AsyncMock
+                research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
         ):
             mock_client = create_mock_client()
@@ -1109,7 +1109,7 @@ class TestSourceAddResearch:
         with (
             patch_client_for_module("source") as mock_client_cls,
             patch.object(
-                helpers_module, "import_with_retry", new_callable=AsyncMock
+                research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
         ):
             mock_client = create_mock_client()
@@ -1171,7 +1171,7 @@ class TestSourceAddResearch:
         with (
             patch_client_for_module("source") as mock_client_cls,
             patch.object(
-                helpers_module, "import_with_retry", new_callable=AsyncMock
+                research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
         ):
             mock_client = create_mock_client()

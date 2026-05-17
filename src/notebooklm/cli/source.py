@@ -38,7 +38,6 @@ from .helpers import (
     display_research_sources,
     emit_status,
     get_source_type_display,
-    import_research_sources,
     json_output_response,
     read_stdin_text,
     require_notebook,
@@ -57,6 +56,7 @@ from .options import (
 )
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
+from .research_import import import_research_sources
 
 
 @contextlib.asynccontextmanager

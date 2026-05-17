@@ -12,7 +12,9 @@ from filelock import Timeout
 
 import notebooklm.cli._encoding as encoding_module
 import notebooklm.cli.context as context_module
+import notebooklm.cli.helpers as helpers_module
 import notebooklm.cli.rendering as rendering_module
+import notebooklm.cli.research_import as research_import_module
 from notebooklm import Artifact
 from notebooklm.cli.helpers import (
     clear_context,
@@ -27,7 +29,6 @@ from notebooklm.cli.helpers import (
     get_source_type_display,
     handle_auth_error,
     handle_error,
-    import_with_retry,
     json_error_response,
     json_output_response,
     require_notebook,
@@ -36,6 +37,7 @@ from notebooklm.cli.helpers import (
     set_current_notebook,
     with_client,
 )
+from notebooklm.cli.research_import import import_with_retry
 from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
 from notebooklm.types import ArtifactType
 
@@ -1151,6 +1153,71 @@ class TestRunAsync:
 
 class TestImportWithRetry:
     @pytest.mark.asyncio
+    async def test_helpers_import_with_retry_passes_console_without_global_mutation(self):
+        client = MagicMock()
+        original_console = research_import_module.console
+
+        with (
+            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch.object(
+                research_import_module,
+                "import_with_retry",
+                new_callable=AsyncMock,
+            ) as mock_import,
+        ):
+            mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
+
+            imported = await helpers_module.import_with_retry(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+            )
+
+        assert imported == [{"id": "src_1", "title": "Source 1"}]
+        assert research_import_module.console is original_console
+        mock_import.assert_awaited_once_with(
+            client,
+            "nb_123",
+            "task_123",
+            [{"url": "https://example.com", "title": "Source 1"}],
+            max_elapsed=1800,
+            initial_delay=5,
+            backoff_factor=2,
+            max_delay=60,
+            json_output=False,
+            output_console=mock_console,
+        )
+
+    @pytest.mark.asyncio
+    async def test_helpers_import_research_sources_uses_patchable_retry_wrapper(self):
+        client = MagicMock()
+
+        with patch.object(
+            helpers_module,
+            "import_with_retry",
+            new_callable=AsyncMock,
+        ) as mock_import:
+            mock_import.return_value = [{"id": "src_1", "title": "Source 1"}]
+
+            result = await helpers_module.import_research_sources(
+                client,
+                "nb_123",
+                "task_123",
+                [{"url": "https://example.com", "title": "Source 1"}],
+                max_elapsed=123,
+            )
+
+        assert result.imported == [{"id": "src_1", "title": "Source 1"}]
+        mock_import.assert_awaited_once_with(
+            client,
+            "nb_123",
+            "task_123",
+            [{"url": "https://example.com", "title": "Source 1"}],
+            max_elapsed=123,
+        )
+
+    @pytest.mark.asyncio
     async def test_retries_rpc_timeout_then_succeeds(self):
         # Empty baseline + empty post-timeout probe → verification fails →
         # falls through to legacy retry. This exercises the retry path
@@ -1165,8 +1232,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console") as mock_console,
         ):
             imported = await import_with_retry(
                 client,
@@ -1194,8 +1263,8 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
-            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console") as mock_console,
         ):
             await import_with_retry(
                 client,
@@ -1219,10 +1288,12 @@ class TestImportWithRetry:
         # path (elapsed check). Past-budget on second read forces the raise.
         with (
             patch(
-                "notebooklm.cli.helpers.time.monotonic",
+                "notebooklm.cli.research_import.time.monotonic",
                 side_effect=[0.0, 1801.0],
             ),
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
             pytest.raises(RPCTimeoutError),
         ):
             await import_with_retry(
@@ -1242,7 +1313,9 @@ class TestImportWithRetry:
         client.research.import_sources = AsyncMock(side_effect=ValueError("boom"))
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
             pytest.raises(ValueError, match="boom"),
         ):
             await import_with_retry(
@@ -1278,8 +1351,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console") as mock_console,
         ):
             imported = await import_with_retry(
                 client,
@@ -1319,8 +1394,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1349,8 +1426,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1390,8 +1469,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1447,8 +1528,8 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
-            patch("notebooklm.cli.helpers.console"),
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1496,8 +1577,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1547,8 +1630,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1590,8 +1675,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console") as mock_console,
         ):
             imported = await import_with_retry(
                 client,
@@ -1640,8 +1727,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1678,8 +1767,8 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
-            patch("notebooklm.cli.helpers.console"),
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1726,8 +1815,8 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
-            patch("notebooklm.cli.helpers.console"),
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1774,8 +1863,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1815,8 +1906,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1852,11 +1945,13 @@ class TestImportWithRetry:
         with (
             # Time budget never expires — only the retry cap can stop the loop.
             patch(
-                "notebooklm.cli.helpers.time.monotonic",
+                "notebooklm.cli.research_import.time.monotonic",
                 return_value=0.0,
             ),
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
             pytest.raises(RPCTimeoutError),
         ):
             await import_with_retry(
@@ -1903,8 +1998,10 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch("notebooklm.cli.helpers.console"),
+            patch(
+                "notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep,
+            patch("notebooklm.cli.research_import.console"),
         ):
             imported = await import_with_retry(
                 client,
@@ -1935,8 +2032,8 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
-            patch("notebooklm.cli.helpers.console") as mock_console,
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console") as mock_console,
         ):
             imported = await import_with_retry(
                 client,
@@ -1987,8 +2084,8 @@ class TestImportWithRetry:
         )
 
         with (
-            patch("notebooklm.cli.helpers.asyncio.sleep", new_callable=AsyncMock),
-            patch("notebooklm.cli.helpers.console"),
+            patch("notebooklm.cli.research_import.asyncio.sleep", new_callable=AsyncMock),
+            patch("notebooklm.cli.research_import.console"),
             pytest.raises(asyncio.CancelledError),
         ):
             await import_with_retry(
