@@ -119,9 +119,11 @@ _is_allowed_cookie_domain = _cookie_policy._is_allowed_cookie_domain
 # names externally imported by the package, tests, docs, and the CLI as of
 # 2026-05-17. Underscore-prefixed names remain accessible on the module — some
 # tests reach for them as whitebox affordances — but are intentionally NOT
-# blessed here. See ``tests/unit/test_public_surface.py`` for the
-# audit-enforcement test that keeps this list and the externally-imported set
-# in lockstep.
+# blessed here. See ``tests/unit/test_public_surface.py``: two complementary
+# tests pin this list — ``test_auth_module_has_expected_all`` snapshot-checks
+# the exact ordering, and ``test_auth_all_matches_external_imports_audit``
+# AST-scans ``src/``, ``tests/``, ``docs/`` to fail if a new public name is
+# imported externally without being added here.
 __all__ = [
     "Account",
     "advance_cookie_snapshot_after_save",

@@ -13,16 +13,28 @@ machine-checkable contract:
   names remain accessible on the module — some tests poke at them as whitebox
   affordances — but are intentionally excluded from ``__all__``.
 
-This test pins both lists so a future refactor that drops a name from
-``__all__`` (silently breaking ``from notebooklm.auth import *`` callers, or
-making the symbol invisible to static-analysis surfacing) fails loudly here
-with the specific name that went missing.
+Two complementary tests guard the contract:
+
+1. The snapshot test (``test_*_module_has_expected_all``) pins the exact
+   list, so accidental drift in shape or ordering fails loudly.
+2. The audit test (``test_*_all_matches_external_imports_audit``) AST-scans
+   ``src/``, ``tests/``, ``docs/`` for ``from notebooklm.<module> import X``
+   patterns and fails if any externally imported public name was added
+   without updating ``__all__``.
 """
 
 from __future__ import annotations
 
+import ast
+import pathlib
+
 import notebooklm.auth as auth_module
 import notebooklm.client as client_module
+
+# Repository root, derived from this test file's location:
+# tests/unit/test_public_surface.py -> parents[2] == repo root.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_SCAN_ROOTS = ("src", "tests", "docs")
 
 # ---------------------------------------------------------------------------
 # Expected public surface — keep in sync with the audited externally-imported
@@ -148,4 +160,82 @@ def test_auth_all_has_no_duplicates() -> None:
     assert len(actual) == len(set(actual)), (
         "auth.__all__ contains duplicate entries: "
         f"{sorted({n for n in actual if actual.count(n) > 1})}"
+    )
+
+
+def test_auth_all_excludes_private_names() -> None:
+    """``auth.__all__`` must not bless underscore-prefixed helpers.
+
+    Private helpers (``_is_allowed_cookie_domain``, ``_safe_url``, etc.) remain
+    accessible on the module — some tests treat them as whitebox affordances —
+    but they are deliberately excluded from the public surface. Adding one
+    here would silently promote it to documented API.
+    """
+    private = [name for name in auth_module.__all__ if name.startswith("_")]
+    assert not private, f"underscore-prefixed names must not appear in auth.__all__: {private}"
+
+
+def _collect_external_imports(module_basename: str) -> set[str]:
+    """Return the set of public names imported from ``notebooklm.<module_basename>``.
+
+    Walks every ``.py`` file under ``src/``, ``tests/``, ``docs/`` and collects
+    names from any ``ImportFrom`` that resolves to ``notebooklm.<module>``
+    (absolute) or ``..<module>`` / ``.<module>`` (relative). Filters out
+    underscore-prefixed names and the bare ``*`` star-import marker.
+
+    Defensive on parse errors — a malformed file in the tree must not block
+    this audit.
+    """
+    names: set[str] = set()
+    for root in _SCAN_ROOTS:
+        for path in (_REPO_ROOT / root).rglob("*.py"):
+            try:
+                tree = ast.parse(path.read_text())
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                module = node.module or ""
+                resolves_to_target = module == f"notebooklm.{module_basename}" or (
+                    node.level > 0 and module == module_basename
+                )
+                if not resolves_to_target:
+                    continue
+                for alias in node.names:
+                    if alias.name == "*" or alias.name.startswith("_"):
+                        continue
+                    names.add(alias.name)
+    return names
+
+
+def test_auth_all_matches_external_imports_audit() -> None:
+    """``auth.__all__`` is a superset of every public name actually imported.
+
+    This is the dynamic counterpart to ``test_auth_module_has_expected_all``.
+    Where the former pins to a snapshotted list, this one scans the live
+    codebase (``src/``, ``tests/``, ``docs/``) and fails if any externally
+    imported public name has been added without updating ``__all__``.
+    """
+    declared = set(auth_module.__all__)
+    actually_imported = _collect_external_imports("auth")
+    missing = actually_imported - declared
+    assert not missing, (
+        "Public names imported from notebooklm.auth but missing from "
+        f"auth.__all__: {sorted(missing)}\n"
+        "Add them to __all__ (and to EXPECTED_AUTH_ALL above) so the public "
+        "surface stays explicit."
+    )
+
+
+def test_client_all_matches_external_imports_audit() -> None:
+    """``client.__all__`` is a superset of every public name actually imported."""
+    declared = set(client_module.__all__)
+    actually_imported = _collect_external_imports("client")
+    missing = actually_imported - declared
+    assert not missing, (
+        "Public names imported from notebooklm.client but missing from "
+        f"client.__all__: {sorted(missing)}\n"
+        "Add them to __all__ (and to EXPECTED_CLIENT_ALL above) so the public "
+        "surface stays explicit."
     )
