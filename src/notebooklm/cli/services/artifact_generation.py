@@ -329,7 +329,7 @@ def _output_generation_status(status: Any, artifact_type: str, json_output: bool
             else:
                 console.print(f"[green]{artifact_type.title()} ready[/green]")
         elif is_failed:
-            console.print(f"[red]Failed:[/red] {getattr(status, 'error', 'Unknown error')}")
+            console.print(f"[red]Failed:[/red] {getattr(status, 'error', None) or 'Unknown error'}")
         else:
             task_id = _extract_task_id(status)
             console.print(f"[yellow]Started:[/yellow] {task_id or status}")
