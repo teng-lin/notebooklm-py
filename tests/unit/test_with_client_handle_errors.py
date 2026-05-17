@@ -158,6 +158,7 @@ def test_with_auth_and_errors_passes_verbose_json_to_current_handle_errors() -> 
         coro.close()
         return "patched run result"
 
+    # ``with_auth_and_errors`` imports this at call time, so patch the source module.
     with (
         patch("notebooklm.cli.error_handler.handle_errors", fake_handle_errors),
         patch("notebooklm.cli.helpers.run_async", side_effect=fake_run_async) as run_async,
