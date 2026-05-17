@@ -10,7 +10,6 @@ Commands:
 
 import json
 import os
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -29,52 +28,11 @@ from ..paths import (
     resolve_profile,
 )
 from .helpers import console, json_output_response
+from .services import login as login_service
 
-# Profile name validation: alphanumeric, hyphens, underscores. Must start with alphanum.
-_PROFILE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
-
-
-def _validate_profile_name(name: str) -> str:
-    """Validate a profile name."""
-    if not _PROFILE_NAME_RE.match(name):
-        raise click.ClickException(
-            f"Invalid profile name '{name}'. "
-            "Use alphanumeric characters, hyphens, and underscores. Must start with a letter or digit."
-        )
-    return name
-
-
-def email_to_profile_name(email: str, *, fallback: str = "account") -> str:
-    """Derive a valid profile name from an email address.
-
-    Profile names are restricted to ``[a-zA-Z0-9_-]`` (see
-    :data:`_PROFILE_NAME_RE`) and must start with an alphanumeric character.
-    Email local-parts routinely contain ``.``, ``+``, etc. that aren't
-    allowed, so we rewrite them to hyphens.
-
-    Examples::
-
-        alice@example.com         -> "alice"
-        alice.smith@example.com   -> "alice-smith"
-        bob+work@gmail.com        -> "bob-work"
-        teng.lin.9414@gmail.com   -> "teng-lin-9414"
-
-    Args:
-        email: Account email address.
-        fallback: Profile name to use when sanitization yields an empty
-            string or a name that does not start with an alphanum.
-
-    Returns:
-        A profile name guaranteed to satisfy :data:`_PROFILE_NAME_RE`.
-    """
-    local = email.split("@", 1)[0] if "@" in email else email
-    sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "-", local)
-    sanitized = re.sub(r"-{2,}", "-", sanitized).strip("-_")
-    if not sanitized or not _PROFILE_NAME_RE.match(sanitized):
-        # The function's contract is "always returns a valid profile name", so
-        # protect callers that pass a malformed fallback (e.g. "-tmp").
-        return fallback if _PROFILE_NAME_RE.match(fallback) else "account"
-    return sanitized
+_PROFILE_NAME_RE = login_service._PROFILE_NAME_RE
+_validate_profile_name = login_service._validate_profile_name
+email_to_profile_name = login_service.email_to_profile_name
 
 
 def _read_config(config_path: Path, *, suppress_errors: bool = True) -> dict:

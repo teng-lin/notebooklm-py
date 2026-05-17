@@ -3097,6 +3097,39 @@ def _multiaccount_rookiepy_mock():
 
 
 class TestAuthInspect:
+    def test_session_run_async_patch_reaches_login_service_helper(self):
+        from notebooklm.auth import Account
+        from notebooklm.cli.session import _enumerate_one_jar
+
+        raw_cookies = _multiaccount_rookiepy_mock().chrome.return_value
+        accounts = [Account(authuser=0, email="alice@example.com", is_default=True)]
+
+        with (
+            patch("notebooklm.auth.enumerate_accounts", return_value=object()),
+            patch("notebooklm.cli.session.run_async", return_value=accounts) as mock_run_async,
+        ):
+            result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
+
+        assert result == accounts
+        mock_run_async.assert_called_once()
+
+    def test_select_account_without_marked_default_uses_first_account(self):
+        from notebooklm.auth import Account
+        from notebooklm.cli.session import _select_account
+
+        accounts = [
+            Account(authuser=0, email="alice@example.com", is_default=False),
+            Account(authuser=1, email="bob@gmail.com", is_default=False),
+        ]
+
+        with patch("notebooklm.cli.session.console") as mock_console:
+            selected = _select_account(accounts, account_email=None)
+
+        assert selected == accounts[0]
+        warning_text = mock_console.print.call_args[0][0]
+        assert "default account" in warning_text
+        assert "alice@example.com" in warning_text
+
     def test_inspect_lists_accounts(self, runner):
         mock_rk = _multiaccount_rookiepy_mock()
 
