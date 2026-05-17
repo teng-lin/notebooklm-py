@@ -2266,7 +2266,7 @@ class TestSourceWait:
 
     def test_source_wait_sigint_json_emits_cancelled_envelope(self, runner, mock_auth):
         """Ctrl-C under ``source wait --json`` emits a CANCELLED envelope, exits 130
-       ."""
+        ."""
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
