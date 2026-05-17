@@ -31,6 +31,12 @@ import vcr
 
 from notebooklm._core_transport import _stream_post_with_size_cap
 
+# Required by the tier-enforcement rule in :mod:`tests.integration.conftest`
+# — every integration test must carry ``@pytest.mark.vcr``, be decorated
+# with ``@notebooklm_vcr.use_cassette``, or opt out via
+# ``@pytest.mark.allow_no_vcr``. We use a scoped ``vcr.VCR`` instance below
+# (not ``notebooklm_vcr``), so the marker is the only path to satisfy the
+# rule without spawning a no-op cassette on the project's default config.
 pytestmark = pytest.mark.vcr
 
 
@@ -43,6 +49,12 @@ GZIP_COVERAGE_DIR = REPO_ROOT / "tests" / "cassettes" / "gzip_coverage"
 # defeating the regression. The match rules mirror ``notebooklm_vcr`` so
 # request matching stays consistent with how the source cassette was
 # recorded.
+# ``match_on`` deliberately omits the query string. The cassette has a
+# single batchexecute interaction so the default ``method/scheme/host/
+# port/path`` tuple identifies it uniquely. If more interactions are
+# ever added under ``gzip_coverage/``, switch to the ``rpcids`` matcher
+# (see ``tests.vcr_config._rpcids_matcher``) so the wrong recording can
+# never be served on replay.
 _gzip_replay_vcr = vcr.VCR(
     cassette_library_dir=str(GZIP_COVERAGE_DIR),
     record_mode="none",

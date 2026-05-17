@@ -564,30 +564,6 @@ def test_audit_repair_list_entries_exist() -> None:
 # under ``tests/scripts/inject_gzip_into_cassette.py``) trips CI loudly.
 
 
-def _response_headers_iter(cassette: Path) -> list[dict[str, list[str]]]:
-    """Return every response's ``headers`` dict from a cassette."""
-    data, _ = _load_cassette(cassette)
-    out: list[dict[str, list[str]]] = []
-    for interaction in data.get("interactions") or []:
-        response = interaction.get("response") or {}
-        headers = response.get("headers") or {}
-        if isinstance(headers, dict):
-            out.append(headers)
-    return out
-
-
-def _response_advertises_gzip(headers: dict[str, list[str]]) -> bool:
-    """Return True if any case-variant ``Content-Encoding`` header in
-    ``headers`` names gzip."""
-    for key, raw_values in headers.items():
-        if key.lower() != "content-encoding":
-            continue
-        values = [raw_values] if isinstance(raw_values, str) else raw_values
-        if any("gzip" in v.lower() for v in values):
-            return True
-    return False
-
-
 def _all_cassettes_recursive() -> list[Path]:
     """Every cassette under ``tests/cassettes``, including subdirectories
     like ``gzip_coverage/``.
@@ -600,6 +576,21 @@ def _all_cassettes_recursive() -> list[Path]:
     return sorted(CASSETTE_DIR.rglob("*.yaml"))
 
 
+# Cassette header lines for ``Content-Encoding: gzip`` follow the vcrpy
+# YAML serialization shape: the case-insensitive header name on one line
+# followed by ``- gzip`` (with optional surrounding whitespace) on the
+# next. Anchored to ``^`` so the pattern does not match `gzip` mentioned
+# in a request URL or response body. Compiled at module scope so the
+# walk-the-cassette test stays cheap on Windows runners where libyaml
+# isn't available and structural ``yaml.safe_load`` is ~10× slower —
+# the original load-every-cassette implementation timed out at 60s on
+# Windows Python 3.11 / 3.12.
+_CONTENT_ENCODING_GZIP_RE = re.compile(
+    r"^[ \t]*[Cc]ontent-[Ee]ncoding:\s*\n[ \t]*-\s*gzip\b",
+    re.MULTILINE,
+)
+
+
 def test_at_least_one_cassette_advertises_content_encoding_gzip() -> None:
     """At least one cassette must carry ``Content-Encoding: gzip`` in a
     response header.
@@ -610,11 +601,14 @@ def test_at_least_one_cassette_advertises_content_encoding_gzip() -> None:
     cassettes from canonical recordings. If this assertion ever fails
     again, regenerate the gzip-coverage cassettes — do not silence the
     test.
+
+    Scans raw cassette text rather than ``yaml.safe_load``-ing every
+    cassette — see ``_CONTENT_ENCODING_GZIP_RE`` for why.
     """
     matches = [
         c
         for c in _all_cassettes_recursive()
-        if any(_response_advertises_gzip(h) for h in _response_headers_iter(c))
+        if _CONTENT_ENCODING_GZIP_RE.search(c.read_text(encoding="utf-8"))
     ]
     assert matches, (
         "No cassette under tests/cassettes/ advertises Content-Encoding: gzip "
@@ -640,13 +634,16 @@ def test_gzip_coverage_cassettes_round_trip_through_helper() -> None:
     """
     import importlib.util
 
-    # Safe loader — cassettes are arbitrary YAML on disk; ``!!binary`` works
-    # under the safe schema so we don't need the full Loader.
+    # Safe loader + dumper — cassettes are arbitrary YAML on disk and we
+    # never need to serialize Python-specific tags here, so the safe
+    # schema is the symmetric and audit-friendly choice. ``!!binary``
+    # (the encoding gzipped bodies rely on) is part of the core YAML
+    # schema and round-trips through ``CSafeLoader`` / ``CSafeDumper``.
     try:
-        from yaml import CDumper as Dumper
+        from yaml import CSafeDumper as Dumper
         from yaml import CSafeLoader as Loader
     except ImportError:  # pragma: no cover — libyaml ships with PyYAML wheels
-        from yaml import Dumper  # type: ignore[assignment]
+        from yaml import SafeDumper as Dumper  # type: ignore[assignment]
         from yaml import SafeLoader as Loader
 
     # ``tests/`` is not a Python package, so import the helper by file path —

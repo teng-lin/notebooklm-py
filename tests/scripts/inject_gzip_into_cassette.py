@@ -53,10 +53,10 @@ import yaml
 # ``!!binary`` (the encoding we rely on for gzipped bodies) is part of the
 # core YAML schema so it works under ``CSafeLoader`` / ``SafeLoader``.
 try:
-    from yaml import CDumper as Dumper
+    from yaml import CSafeDumper as Dumper
     from yaml import CSafeLoader as Loader
 except ImportError:  # pragma: no cover — libyaml is bundled with PyYAML wheels
-    from yaml import Dumper  # type: ignore[assignment]
+    from yaml import SafeDumper as Dumper  # type: ignore[assignment]
     from yaml import SafeLoader as Loader
 
 
@@ -103,10 +103,11 @@ def _inject_into_response(response: dict[str, Any]) -> bool:
     """Mutate ``response`` in place so the body is gzip-compressed and
     ``Content-Encoding: gzip`` is set.
 
-    Returns ``True`` when the response was rewritten, ``False`` when the
-    cassette already carried a ``Content-Encoding`` header (in which case
-    the body is re-gzipped from its decoded form so the rewrite is
-    idempotent).
+    Returns ``True`` when the body was (re)written; ``False`` only when
+    the response has no ``body.string`` to process (missing key or
+    ``None``). A response that already advertises ``Content-Encoding``
+    is gunzipped first and then re-gzipped from the decoded form so the
+    rewrite is idempotent — still a rewrite, still ``True``.
     """
     body = response.get("body") or {}
     if "string" not in body:
