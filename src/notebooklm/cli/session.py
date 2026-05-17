@@ -573,6 +573,332 @@ def _recover_page(context: BrowserContext, console: Console) -> Page:
         raise
 
 
+def _validate_login_flag_conflicts(
+    *,
+    browser_cookies: str | None,
+    account_email: str | None,
+    all_accounts: bool,
+    update: bool,
+    profile_name: str | None,
+    storage: str | None,
+) -> None:
+    """Enforce ``login`` flag mutual-exclusion rules.
+
+    Emits a styled error and ``raise SystemExit(1)`` on the first conflict.
+    The ``NOTEBOOKLM_AUTH_JSON`` env-var check is intentionally not handled
+    here: it is an environment vs file-auth conflict, distinct from flag
+    mutual-exclusion, and stays in the ``login`` orchestrator.
+    """
+    if browser_cookies is None and (
+        account_email is not None or all_accounts or profile_name is not None
+    ):
+        console.print(
+            "[red]Error: --account, --all-accounts, and --profile-name "
+            "require --browser-cookies.[/red]"
+        )
+        raise SystemExit(1)
+    if all_accounts and (account_email is not None or profile_name is not None):
+        console.print(
+            "[red]Error: --all-accounts cannot be combined with --account or --profile-name.[/red]"
+        )
+        raise SystemExit(1)
+    if all_accounts and storage:
+        console.print(
+            "[red]Error: --all-accounts writes one profile per account "
+            "and cannot be combined with --storage.[/red]"
+        )
+        raise SystemExit(1)
+    if update and not all_accounts:
+        console.print("[red]Error: --update only applies to --all-accounts.[/red]")
+        raise SystemExit(1)
+
+
+def _prepare_login_paths(
+    profile: str | None, storage: str | None, fresh: bool
+) -> tuple[Path, Path]:
+    """Resolve storage and browser-profile paths for the Playwright login flow.
+
+    Clears the cached browser profile on ``--fresh`` (exiting 1 on OSError),
+    then creates both parent directories with platform-aware permissions.
+    Returns ``(storage_path, browser_profile)``.
+    """
+    if storage:
+        storage_path = Path(storage)
+    elif profile:
+        storage_path = get_storage_path(profile=profile)
+    else:
+        storage_path = get_storage_path()
+    browser_profile = get_browser_profile_dir()
+
+    if fresh and browser_profile.exists():
+        try:
+            shutil.rmtree(browser_profile)
+            console.print("[yellow]Cleared cached browser session (--fresh)[/yellow]")
+        except OSError as exc:
+            logger.error("Failed to clear browser profile %s: %s", browser_profile, exc)
+            console.print(
+                f"[red]Cannot clear browser profile: {exc}[/red]\n"
+                "Close any open browser windows and try again.\n"
+                f"If the problem persists, manually delete: {browser_profile}"
+            )
+            raise SystemExit(1) from exc
+
+    if sys.platform == "win32":
+        # On Windows < Python 3.13, mode= is ignored by mkdir(). On
+        # Python 3.13+, mode= applies Windows ACLs that can be overly
+        # restrictive (0o700 blocks other same-user processes). Skip mode
+        # and chmod entirely; Windows inherits ACLs from the parent.
+        storage_path.parent.mkdir(parents=True, exist_ok=True)
+        browser_profile.mkdir(parents=True, exist_ok=True)
+    else:
+        storage_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        storage_path.parent.chmod(0o700)
+        browser_profile.mkdir(parents=True, exist_ok=True, mode=0o700)
+        browser_profile.chmod(0o700)
+
+    return storage_path, browser_profile
+
+
+def _run_playwright_login(
+    *,
+    browser: str,
+    browser_profile: Path,
+    storage_path: Path,
+) -> None:
+    """Drive the Playwright-based Google login and persist storage state.
+
+    Imports Playwright lazily (raising ``SystemExit(1)`` with an install hint
+    on ImportError), runs the chromium pre-flight when the bundled browser is
+    selected, opens a persistent context, retries navigation on transient
+    connection errors, waits for login completion, pins ``.google.com``
+    cookies, atomically writes ``storage_state.json``, and clears stale
+    account metadata.
+    """
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        # NOTE: passing markup=False so rich does not interpret `[browser]` as a style tag
+        # (which would strip it, leaving the user with `pip install "notebooklm-py"` — no extras).
+        if browser in _CHANNEL_BROWSERS:
+            install_hint = '  pip install "notebooklm-py[browser]"'
+        else:
+            install_hint = '  pip install "notebooklm-py[browser]"\n  playwright install chromium'
+        console.print("[red]Playwright not installed. Run:[/red]")
+        console.print(install_hint, markup=False)
+        raise SystemExit(1) from None
+
+    # Pre-flight check: verify Chromium browser is installed (system Chrome
+    # and Edge are checked at launch time by Playwright's channel routing).
+    if browser == "chromium":
+        _ensure_chromium_installed()
+
+    from ..paths import resolve_profile
+
+    profile_name = resolve_profile()
+    channel_info = _CHANNEL_BROWSERS.get(browser)
+    browser_label = channel_info[0] if channel_info else "Chromium"
+    console.print(f"[dim]Profile: {profile_name}[/dim]")
+    console.print(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
+    console.print(f"[dim]Using persistent profile: {browser_profile}[/dim]")
+
+    # Use context manager to restore ProactorEventLoop for Playwright on Windows
+    # (fixes #89: NotImplementedError on Windows Python 3.12)
+    with _windows_playwright_event_loop(), sync_playwright() as p:
+        launch_kwargs: dict[str, Any] = {
+            "user_data_dir": str(browser_profile),
+            "headless": False,
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+                "--password-store=basic",  # Avoid macOS keychain encryption for headless compatibility
+            ],
+            "ignore_default_args": ["--enable-automation"],
+        }
+        if browser in _CHANNEL_BROWSERS:
+            launch_kwargs["channel"] = browser
+
+        context = None
+        try:
+            context = p.chromium.launch_persistent_context(**launch_kwargs)
+
+            page = context.pages[0] if context.pages else _recover_page(context, console)
+
+            # Retry navigation on transient connection errors with backoff
+            for attempt in range(1, LOGIN_MAX_RETRIES + 1):
+                try:
+                    page.goto(f"{get_base_url()}/", timeout=30000)
+                    break
+                except PlaywrightError as exc:
+                    error_str = str(exc)
+                    is_retryable = any(code in error_str for code in RETRYABLE_CONNECTION_ERRORS)
+                    is_target_closed = TARGET_CLOSED_ERROR in error_str
+
+                    # Check if we should retry
+                    if (is_retryable or is_target_closed) and attempt < LOGIN_MAX_RETRIES:
+                        # For TargetClosedError, get a fresh page reference
+                        if is_target_closed:
+                            page = _recover_page(context, console)
+
+                        backoff_seconds = attempt  # Linear backoff: 1s, 2s
+                        logger.debug(
+                            "Retryable error on attempt %d/%d: %s",
+                            attempt,
+                            LOGIN_MAX_RETRIES,
+                            error_str,
+                        )
+                        if is_target_closed:
+                            console.print(
+                                f"[yellow]Browser page closed "
+                                f"(attempt {attempt}/{LOGIN_MAX_RETRIES}). "
+                                f"Retrying with fresh page...[/yellow]"
+                            )
+                        else:
+                            console.print(
+                                f"[yellow]Connection interrupted "
+                                f"(attempt {attempt}/{LOGIN_MAX_RETRIES}). "
+                                f"Retrying in {backoff_seconds}s...[/yellow]"
+                            )
+                            time.sleep(backoff_seconds)
+                    elif is_target_closed:
+                        # Exhausted retries on browser-closed errors
+                        logger.error(
+                            "Browser closed during login after %d attempts. Last error: %s",
+                            LOGIN_MAX_RETRIES,
+                            error_str,
+                        )
+                        console.print(BROWSER_CLOSED_HELP)
+                        raise SystemExit(1) from exc
+                    elif is_retryable:
+                        # Exhausted retries on network errors
+                        logger.error(
+                            f"Failed to connect to NotebookLM after {LOGIN_MAX_RETRIES} attempts. "
+                            f"Last error: {error_str}"
+                        )
+                        console.print(_connection_error_help())
+                        raise SystemExit(1) from exc
+                    else:
+                        # Non-retryable error - re-raise immediately
+                        logger.debug("Non-retryable error: %s", error_str)
+                        raise
+
+            if _url_matches_base_host(page.url):
+                # Persistent browser profile already has a valid session.
+                console.print("[green]Already logged in.[/green]")
+            else:
+                console.print("\n[bold green]Instructions:[/bold green]")
+                console.print("1. Complete the Google login in the browser window")
+                console.print(
+                    "2. Authentication will be saved automatically once login is detected\n"
+                )
+                console.print("[dim]Waiting for login (up to 5 minutes)...[/dim]")
+                try:
+                    page.wait_for_url(f"{get_base_url()}/**", timeout=300_000)
+                except PlaywrightTimeout:
+                    console.print(
+                        "[red]Login not detected within 5 minutes.[/red]\n"
+                        "Try again with: notebooklm login"
+                    )
+                    raise SystemExit(1) from None
+                except PlaywrightError as exc:
+                    # Browser/tab closed during the wait. Cannot resume a
+                    # partially completed SSO form, so surface the same
+                    # help text other browser-closed paths use.
+                    if TARGET_CLOSED_ERROR in str(exc):
+                        console.print(BROWSER_CLOSED_HELP)
+                        raise SystemExit(1) from exc
+                    raise
+                console.print("[green]Login detected.[/green]")
+
+            # Force .google.com cookies for regional users (e.g. UK lands on
+            # .google.co.uk). Use "commit" to resolve once response headers
+            # (including Set-Cookie) are processed, before any client-side
+            # JS redirect can interrupt. See #214.
+            for url in [GOOGLE_ACCOUNTS_URL, f"{get_base_url()}/"]:
+                try:
+                    page.goto(url, wait_until="commit")
+                except PlaywrightError as exc:
+                    error_str = str(exc)
+                    if TARGET_CLOSED_ERROR in error_str:
+                        # Page was destroyed (e.g. user switched accounts) -- get fresh page
+                        page = _recover_page(context, console)
+                        try:
+                            page.goto(url, wait_until="commit")
+                        except PlaywrightError as inner_exc:
+                            if TARGET_CLOSED_ERROR in str(inner_exc):
+                                # Recovered page also dead -- context/browser is gone
+                                console.print(BROWSER_CLOSED_HELP)
+                                raise SystemExit(1) from inner_exc
+                            elif not _is_navigation_interrupted_error(inner_exc):
+                                raise
+                    elif not _is_navigation_interrupted_error(error_str):
+                        raise
+
+            # Defense-in-depth: wait_for_url proved we reached the host,
+            # but the cookie-forcing round-trip above can land us back on
+            # accounts.google.com if the session was invalidated mid-flow
+            # (rare, but the old interactive path defended against this
+            # via a "save anyway?" confirm). Auto-detect is non-interactive,
+            # so fail fast with a clear next step instead.
+            if not _url_matches_base_host(page.url):
+                console.print(
+                    f"[red]Unexpected URL after login: {page.url}[/red]\n"
+                    "Authentication may be incomplete. "
+                    "Try: notebooklm login --fresh"
+                )
+                raise SystemExit(1)
+
+            # Atomic write with chmod 0o600 — Playwright's path= argument
+            # writes directly (non-atomic + world-readable window).
+            state = context.storage_state()
+            atomic_write_json(storage_path, state)
+            from ..auth import clear_account_metadata
+
+            try:
+                clear_account_metadata(storage_path)
+            except OSError as exc:
+                logger.warning(
+                    "Failed to clear stale account metadata for %s: %s",
+                    storage_path,
+                    exc,
+                )
+
+        except Exception as e:
+            # Handle browser launch errors specially (context will be None if launch failed)
+            if context is None and browser in _CHANNEL_BROWSERS:
+                err = str(e).lower()
+                is_not_found = any(
+                    marker in err
+                    for marker in (
+                        "executable doesn't exist",
+                        "is not found at",
+                        "no such file",
+                        "failed to launch",
+                    )
+                )
+                if is_not_found:
+                    label, install_url = _CHANNEL_BROWSERS[browser]
+                    logger.error("%s not found: %s", label, e)
+                    console.print(
+                        f"[red]{label} not found.[/red]\n"
+                        f"Install from: {install_url}\n"
+                        "Or use the default Chromium browser: notebooklm login"
+                    )
+                    raise SystemExit(1) from e
+            # Downgraded from ``logger.error(..., exc_info=True)``:
+            # the previous traceback dump duplicated whatever ``handle_errors``
+            # already shows the user. Keep the diagnostic available at
+            # debug level (-vv) without flooding stderr by default. The
+            # bare ``raise`` propagates to ``handle_errors`` which converts
+            # it to a friendly ``Unexpected error: <msg>`` line + exit 2.
+            logger.debug("Login failed: %s", e, exc_info=True)
+            raise
+        finally:
+            # Always close the browser context to prevent resource leaks
+            if context:
+                context.close()
+
+
 def register_session_commands(cli):
     """Register session commands on the main CLI group."""
 
@@ -698,12 +1024,12 @@ def register_session_commands(cli):
         """
         # Wrap entire body in handle_errors so unexpected failures (e.g.
         # Playwright internal crashes that bubble out of the catch-all
-        # except-block below) emit a friendly 'Unexpected error: <msg>'
-        # line + exit 2 instead of a Python traceback. Existing
-        # ``raise SystemExit(N)`` calls inside the body propagate
-        # unchanged — handle_errors does not intercept SystemExit.
+        # except-block in _run_playwright_login) emit a friendly
+        # 'Unexpected error: <msg>' line + exit 2 instead of a Python
+        # traceback. Existing ``raise SystemExit(N)`` calls inside the
+        # body propagate unchanged — handle_errors does not intercept
+        # SystemExit.
         with handle_errors():
-            # Check for conflicting env var
             if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
                 console.print(
                     "[red]Error: Cannot run 'login' when NOTEBOOKLM_AUTH_JSON is set.[/red]\n"
@@ -715,29 +1041,14 @@ def register_session_commands(cli):
                 )
                 raise SystemExit(1)
 
-            if browser_cookies is None and (
-                account_email is not None or all_accounts or profile_name is not None
-            ):
-                console.print(
-                    "[red]Error: --account, --all-accounts, and --profile-name "
-                    "require --browser-cookies.[/red]"
-                )
-                raise SystemExit(1)
-            if all_accounts and (account_email is not None or profile_name is not None):
-                console.print(
-                    "[red]Error: --all-accounts cannot be combined with "
-                    "--account or --profile-name.[/red]"
-                )
-                raise SystemExit(1)
-            if all_accounts and storage:
-                console.print(
-                    "[red]Error: --all-accounts writes one profile per account "
-                    "and cannot be combined with --storage.[/red]"
-                )
-                raise SystemExit(1)
-            if update and not all_accounts:
-                console.print("[red]Error: --update only applies to --all-accounts.[/red]")
-                raise SystemExit(1)
+            _validate_login_flag_conflicts(
+                browser_cookies=browser_cookies,
+                account_email=account_email,
+                all_accounts=all_accounts,
+                update=update,
+                profile_name=profile_name,
+                storage=storage,
+            )
 
             # Parse + validate --include-domains. Raises click.BadParameter on
             # unknown labels (Click converts that to a non-zero exit + stderr
@@ -785,269 +1096,12 @@ def register_session_commands(cli):
                 )
 
             profile = ctx.obj.get("profile") if ctx.obj else None
-            storage_path = (
-                Path(storage)
-                if storage
-                else get_storage_path(profile=profile)
-                if profile
-                else get_storage_path()
+            storage_path, browser_profile = _prepare_login_paths(profile, storage, fresh)
+            _run_playwright_login(
+                browser=browser,
+                browser_profile=browser_profile,
+                storage_path=storage_path,
             )
-            browser_profile = get_browser_profile_dir()
-
-            if fresh and browser_profile.exists():
-                try:
-                    shutil.rmtree(browser_profile)
-                    console.print("[yellow]Cleared cached browser session (--fresh)[/yellow]")
-                except OSError as exc:
-                    logger.error("Failed to clear browser profile %s: %s", browser_profile, exc)
-                    console.print(
-                        f"[red]Cannot clear browser profile: {exc}[/red]\n"
-                        "Close any open browser windows and try again.\n"
-                        f"If the problem persists, manually delete: {browser_profile}"
-                    )
-                    raise SystemExit(1) from exc
-
-            if sys.platform == "win32":
-                # On Windows < Python 3.13, mode= is ignored by mkdir(). On
-                # Python 3.13+, mode= applies Windows ACLs that can be overly
-                # restrictive (0o700 blocks other same-user processes). Skip mode
-                # and chmod entirely; Windows inherits ACLs from the parent.
-                storage_path.parent.mkdir(parents=True, exist_ok=True)
-                browser_profile.mkdir(parents=True, exist_ok=True)
-            else:
-                storage_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                storage_path.parent.chmod(0o700)
-                browser_profile.mkdir(parents=True, exist_ok=True, mode=0o700)
-                browser_profile.chmod(0o700)
-
-            try:
-                from playwright.sync_api import Error as PlaywrightError
-                from playwright.sync_api import TimeoutError as PlaywrightTimeout
-                from playwright.sync_api import sync_playwright
-            except ImportError:
-                # NOTE: passing markup=False so rich does not interpret `[browser]` as a style tag
-                # (which would strip it, leaving the user with `pip install "notebooklm-py"` — no extras).
-                if browser in _CHANNEL_BROWSERS:
-                    install_hint = '  pip install "notebooklm-py[browser]"'
-                else:
-                    install_hint = (
-                        '  pip install "notebooklm-py[browser]"\n  playwright install chromium'
-                    )
-                console.print("[red]Playwright not installed. Run:[/red]")
-                console.print(install_hint, markup=False)
-                raise SystemExit(1) from None
-
-            # Pre-flight check: verify Chromium browser is installed (system Chrome
-            # and Edge are checked at launch time by Playwright's channel routing).
-            if browser == "chromium":
-                _ensure_chromium_installed()
-
-            from ..paths import resolve_profile
-
-            profile_name = resolve_profile()
-            channel_info = _CHANNEL_BROWSERS.get(browser)
-            browser_label = channel_info[0] if channel_info else "Chromium"
-            console.print(f"[dim]Profile: {profile_name}[/dim]")
-            console.print(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
-            console.print(f"[dim]Using persistent profile: {browser_profile}[/dim]")
-
-            # Use context manager to restore ProactorEventLoop for Playwright on Windows
-            # (fixes #89: NotImplementedError on Windows Python 3.12)
-            with _windows_playwright_event_loop(), sync_playwright() as p:
-                launch_kwargs: dict[str, Any] = {
-                    "user_data_dir": str(browser_profile),
-                    "headless": False,
-                    "args": [
-                        "--disable-blink-features=AutomationControlled",
-                        "--password-store=basic",  # Avoid macOS keychain encryption for headless compatibility
-                    ],
-                    "ignore_default_args": ["--enable-automation"],
-                }
-                if browser in _CHANNEL_BROWSERS:
-                    launch_kwargs["channel"] = browser
-
-                context = None
-                try:
-                    context = p.chromium.launch_persistent_context(**launch_kwargs)
-
-                    page = context.pages[0] if context.pages else _recover_page(context, console)
-
-                    # Retry navigation on transient connection errors with backoff
-                    for attempt in range(1, LOGIN_MAX_RETRIES + 1):
-                        try:
-                            page.goto(f"{get_base_url()}/", timeout=30000)
-                            break
-                        except PlaywrightError as exc:
-                            error_str = str(exc)
-                            is_retryable = any(
-                                code in error_str for code in RETRYABLE_CONNECTION_ERRORS
-                            )
-                            is_target_closed = TARGET_CLOSED_ERROR in error_str
-
-                            # Check if we should retry
-                            if (is_retryable or is_target_closed) and attempt < LOGIN_MAX_RETRIES:
-                                # For TargetClosedError, get a fresh page reference
-                                if is_target_closed:
-                                    page = _recover_page(context, console)
-
-                                backoff_seconds = attempt  # Linear backoff: 1s, 2s
-                                logger.debug(
-                                    "Retryable error on attempt %d/%d: %s",
-                                    attempt,
-                                    LOGIN_MAX_RETRIES,
-                                    error_str,
-                                )
-                                if is_target_closed:
-                                    console.print(
-                                        f"[yellow]Browser page closed "
-                                        f"(attempt {attempt}/{LOGIN_MAX_RETRIES}). "
-                                        f"Retrying with fresh page...[/yellow]"
-                                    )
-                                else:
-                                    console.print(
-                                        f"[yellow]Connection interrupted "
-                                        f"(attempt {attempt}/{LOGIN_MAX_RETRIES}). "
-                                        f"Retrying in {backoff_seconds}s...[/yellow]"
-                                    )
-                                    time.sleep(backoff_seconds)
-                            elif is_target_closed:
-                                # Exhausted retries on browser-closed errors
-                                logger.error(
-                                    "Browser closed during login after %d attempts. Last error: %s",
-                                    LOGIN_MAX_RETRIES,
-                                    error_str,
-                                )
-                                console.print(BROWSER_CLOSED_HELP)
-                                raise SystemExit(1) from exc
-                            elif is_retryable:
-                                # Exhausted retries on network errors
-                                logger.error(
-                                    f"Failed to connect to NotebookLM after {LOGIN_MAX_RETRIES} attempts. "
-                                    f"Last error: {error_str}"
-                                )
-                                console.print(_connection_error_help())
-                                raise SystemExit(1) from exc
-                            else:
-                                # Non-retryable error - re-raise immediately
-                                logger.debug("Non-retryable error: %s", error_str)
-                                raise
-
-                    if _url_matches_base_host(page.url):
-                        # Persistent browser profile already has a valid session.
-                        console.print("[green]Already logged in.[/green]")
-                    else:
-                        console.print("\n[bold green]Instructions:[/bold green]")
-                        console.print("1. Complete the Google login in the browser window")
-                        console.print(
-                            "2. Authentication will be saved automatically once login is detected\n"
-                        )
-                        console.print("[dim]Waiting for login (up to 5 minutes)...[/dim]")
-                        try:
-                            page.wait_for_url(f"{get_base_url()}/**", timeout=300_000)
-                        except PlaywrightTimeout:
-                            console.print(
-                                "[red]Login not detected within 5 minutes.[/red]\n"
-                                "Try again with: notebooklm login"
-                            )
-                            raise SystemExit(1) from None
-                        except PlaywrightError as exc:
-                            # Browser/tab closed during the wait. Cannot resume a
-                            # partially completed SSO form, so surface the same
-                            # help text other browser-closed paths use.
-                            if TARGET_CLOSED_ERROR in str(exc):
-                                console.print(BROWSER_CLOSED_HELP)
-                                raise SystemExit(1) from exc
-                            raise
-                        console.print("[green]Login detected.[/green]")
-
-                    # Force .google.com cookies for regional users (e.g. UK lands on
-                    # .google.co.uk). Use "commit" to resolve once response headers
-                    # (including Set-Cookie) are processed, before any client-side
-                    # JS redirect can interrupt. See #214.
-                    for url in [GOOGLE_ACCOUNTS_URL, f"{get_base_url()}/"]:
-                        try:
-                            page.goto(url, wait_until="commit")
-                        except PlaywrightError as exc:
-                            error_str = str(exc)
-                            if TARGET_CLOSED_ERROR in error_str:
-                                # Page was destroyed (e.g. user switched accounts) -- get fresh page
-                                page = _recover_page(context, console)
-                                try:
-                                    page.goto(url, wait_until="commit")
-                                except PlaywrightError as inner_exc:
-                                    if TARGET_CLOSED_ERROR in str(inner_exc):
-                                        # Recovered page also dead -- context/browser is gone
-                                        console.print(BROWSER_CLOSED_HELP)
-                                        raise SystemExit(1) from inner_exc
-                                    elif not _is_navigation_interrupted_error(inner_exc):
-                                        raise
-                            elif not _is_navigation_interrupted_error(error_str):
-                                raise
-
-                    # Defense-in-depth: wait_for_url proved we reached the host,
-                    # but the cookie-forcing round-trip above can land us back on
-                    # accounts.google.com if the session was invalidated mid-flow
-                    # (rare, but the old interactive path defended against this
-                    # via a "save anyway?" confirm). Auto-detect is non-interactive,
-                    # so fail fast with a clear next step instead.
-                    if not _url_matches_base_host(page.url):
-                        console.print(
-                            f"[red]Unexpected URL after login: {page.url}[/red]\n"
-                            "Authentication may be incomplete. "
-                            "Try: notebooklm login --fresh"
-                        )
-                        raise SystemExit(1)
-
-                    # Atomic write with chmod 0o600 — Playwright's path= argument
-                    # writes directly (non-atomic + world-readable window).
-                    state = context.storage_state()
-                    atomic_write_json(storage_path, state)
-                    from ..auth import clear_account_metadata
-
-                    try:
-                        clear_account_metadata(storage_path)
-                    except OSError as exc:
-                        logger.warning(
-                            "Failed to clear stale account metadata for %s: %s",
-                            storage_path,
-                            exc,
-                        )
-
-                except Exception as e:
-                    # Handle browser launch errors specially (context will be None if launch failed)
-                    if context is None and browser in _CHANNEL_BROWSERS:
-                        err = str(e).lower()
-                        is_not_found = any(
-                            marker in err
-                            for marker in (
-                                "executable doesn't exist",
-                                "is not found at",
-                                "no such file",
-                                "failed to launch",
-                            )
-                        )
-                        if is_not_found:
-                            label, install_url = _CHANNEL_BROWSERS[browser]
-                            logger.error("%s not found: %s", label, e)
-                            console.print(
-                                f"[red]{label} not found.[/red]\n"
-                                f"Install from: {install_url}\n"
-                                "Or use the default Chromium browser: notebooklm login"
-                            )
-                            raise SystemExit(1) from e
-                    # Downgraded from ``logger.error(..., exc_info=True)``:
-                    # the previous traceback dump duplicated whatever ``handle_errors``
-                    # already shows the user. Keep the diagnostic available at
-                    # debug level (-vv) without flooding stderr by default. The
-                    # bare ``raise`` propagates to ``handle_errors`` which converts
-                    # it to a friendly ``Unexpected error: <msg>`` line + exit 2.
-                    logger.debug("Login failed: %s", e, exc_info=True)
-                    raise
-                finally:
-                    # Always close the browser context to prevent resource leaks
-                    if context:
-                        context.close()
-
             console.print(f"\n[green]Authentication saved to:[/green] {storage_path}")
 
             # Sync server language setting to local config so generate commands
