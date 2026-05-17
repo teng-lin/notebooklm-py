@@ -588,8 +588,8 @@ async def test_decode_shape_error_json_decode_wrapped() -> None:
         # Bare ``ValueError`` (not a ``JSONDecodeError``) — e.g. ``int("bad")``
         # or a ``uuid.UUID("...")`` failure inside a decoder. Only the
         # ``JSONDecodeError`` subclass is in the narrow tuple, so a bare
-        # ``ValueError`` MUST propagate unmasked. Pinned per PR-D review
-        # (Claude bot) so the propagation behavior is documented in tests.
+        # ``ValueError`` MUST propagate unmasked. The new test guards
+        # against accidental future widening of the catch tuple.
         lambda: ValueError("non-json value error"),
     ],
 )

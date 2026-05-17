@@ -326,10 +326,13 @@ def _extract_chunk_with_parseable(
 
                 refs = parse_citations(first)
                 return text, is_answer, refs, server_conv_id, parseable
-        # inner_json decoded but the record shape didn't match (empty/short
-        # list, dict, etc.) — keep ``parseable = True`` and fall through to
-        # the next item. Real-world ``wrb.fr`` heartbeats like ``"[]"`` hit
-        # this branch and are deliberately still counted as parseable so a
+        # inner_json decoded but the record didn't yield usable answer data
+        # — either the outer ``isinstance(inner_data, list) and len > 0``
+        # guard failed (dict, empty list, non-list) OR the inner
+        # ``isinstance(first, list) and len > 0`` guard failed. In either
+        # case we keep ``parseable = True`` and fall through to the next
+        # item. Real-world ``wrb.fr`` heartbeats like ``"[]"`` hit this
+        # branch and are deliberately still counted as parseable so a
         # heartbeats-only stream surfaces as "empty answer" rather than
         # "API drift" / ``ChatResponseParseError``.
 
