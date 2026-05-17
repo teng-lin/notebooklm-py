@@ -6,8 +6,6 @@ from pathlib import Path
 
 import click
 
-_ARGUMENT_STRIP_MAX_CHARS = 10_000
-
 
 def read_stdin_text(*, source_label: str = "stdin") -> str:
     """Read all of stdin as UTF-8 text and strip surrounding whitespace.
@@ -44,11 +42,10 @@ def resolve_prompt(
     """Resolve prompt text from a positional argument or ``--prompt-file``.
 
     Exactly one source may be provided. The file/stdin path is read as UTF-8
-    with surrounding whitespace stripped. Normal-sized argument values are also
-    stripped for consistency; large argument payloads are preserved to avoid an
-    extra full-string allocation. When ``required`` is true and neither source
-    yields text, a ``UsageError`` is raised; otherwise an empty string is
-    returned.
+    with surrounding whitespace stripped. Positional argument values are
+    preserved verbatim for backward compatibility. When ``required`` is true and
+    neither source yields text, a ``UsageError`` is raised; otherwise an empty
+    string is returned.
 
     The literal ``-`` is recognized as "read stdin" for either source, matching
     the Unix convention.
@@ -89,11 +86,7 @@ def resolve_prompt(
                 f"Prompt file '{prompt_file}' is not valid UTF-8: {e}"
             ) from e
     else:
-        text = (
-            argument_value.strip()
-            if argument_value and len(argument_value) < _ARGUMENT_STRIP_MAX_CHARS
-            else argument_value or ""
-        )
+        text = argument_value or ""
 
     if required and not text:
         raise click.UsageError(f"Provide a {param_name} argument or --prompt-file.")
