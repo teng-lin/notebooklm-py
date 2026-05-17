@@ -149,6 +149,9 @@ from .types import (
     VideoStyle,
 )
 
+# Public API: Utility helpers
+from .utils import resolve_chat_reference_passage
+
 __all__ = [
     "__version__",
     # Client (main entry point)
@@ -184,6 +187,8 @@ __all__ = [
     "CitedSourceSelection",
     "SharedUser",
     "ShareStatus",
+    # Utility helpers
+    "resolve_chat_reference_passage",
     # Base Exceptions
     "NotebookLMError",
     "ValidationError",

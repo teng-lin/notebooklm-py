@@ -826,7 +826,9 @@ class TestAddFile:
             mock_client.post.side_effect = [mock_start_response, mock_upload_response]
             mock_client_cls.return_value = mock_client
 
-            result = await sources_api.add_file("nb_123", str(test_file), None, True, 45.0)
+            result = await sources_api.add_file(
+                "nb_123", str(test_file), None, wait=True, wait_timeout=45.0
+            )
 
         assert result.id == "src_pdf"
         sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_pdf", timeout=45.0)

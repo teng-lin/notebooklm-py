@@ -1,6 +1,7 @@
 """Notebook operations API."""
 
 import logging
+import warnings
 from typing import Any
 
 from ._core import ClientCore
@@ -528,6 +529,22 @@ class NotebooksAPI:
     ) -> dict:
         """Toggle notebook sharing.
 
+        .. deprecated:: 0.5.0
+            Use :meth:`client.sharing.set_public` instead, which is the
+            canonical notebook-level public-sharing toggle and is paired
+            with the rest of the sharing surface (``add_user``,
+            ``set_view_level``, ``get_status``). This wrapper is
+            preserved as a no-behavior-change shim and will be removed
+            in a future major release.
+
+        Migration::
+
+            # before
+            await client.notebooks.share(notebook_id, public=True)
+
+            # after
+            await client.sharing.set_public(notebook_id, True)
+
         Note: This method uses SHARE_ARTIFACT for artifact-level sharing.
         For notebook-level sharing with user management, use client.sharing instead:
 
@@ -545,6 +562,15 @@ class NotebooksAPI:
         Returns:
             Dict with 'public' status, 'url', and 'artifact_id'.
         """
+        warnings.warn(
+            "NotebooksAPI.share() is deprecated; use client.sharing.set_public() "
+            "for the canonical notebook-level public-sharing toggle (paired with "
+            "client.sharing.add_user(), set_view_level(), get_status()). Return "
+            "shape is unchanged in this release; the wrapper will be removed in "
+            "a future major release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return await self._share_manager.share(notebook_id, public, artifact_id)
 
     def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:

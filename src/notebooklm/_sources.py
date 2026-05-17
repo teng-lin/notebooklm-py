@@ -276,6 +276,7 @@ class SourcesAPI:
         self,
         notebook_id: str,
         url: str,
+        *,
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
@@ -320,9 +321,9 @@ class SourcesAPI:
         notebook_id: str,
         title: str,
         content: str,
+        *,
         wait: bool = False,
         wait_timeout: float = 120.0,
-        *,
         idempotent: bool = False,
     ) -> Source:
         """Add a text source (copied text) to a notebook.
@@ -370,9 +371,9 @@ class SourcesAPI:
         notebook_id: str,
         file_path: str | Path,
         mime_type: str | None = None,
+        *,
         wait: bool = False,
         wait_timeout: float = 120.0,
-        *,
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
@@ -472,6 +473,7 @@ class SourcesAPI:
         file_id: str,
         title: str,
         mime_type: str = "application/vnd.google-apps.document",
+        *,
         wait: bool = False,
         wait_timeout: float = 120.0,
     ) -> Source:
