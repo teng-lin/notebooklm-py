@@ -10,13 +10,19 @@ import warnings
 import weakref
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, nullcontext
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import httpx
 
 from ._core_cookie_persistence import CookiePersistence
+from ._core_drain import TransportDrainTracker
+
+# Re-exported so the existing import path ``from notebooklm._core import
+# _TransportOperationToken`` keeps working after the dataclass moved into
+# ``_core_drain``. ``_core_drain`` is the source of truth for the token
+# shape; the alias below is the backwards-compat anchor.
+from ._core_drain import _TransportOperationToken as _TransportOperationToken
 from ._core_metrics import ClientMetrics
 from ._core_polling import PendingPolls, PollRegistry
 from ._core_rpc import RpcExecutor
@@ -62,13 +68,6 @@ from .rpc import (
 
 logger = logging.getLogger(__name__)
 _OBSERVABILITY_INIT_LOCK = threading.Lock()
-
-
-@dataclass(frozen=True)
-class _TransportOperationToken:
-    """Token for one accepted transport operation on a specific asyncio task."""
-
-    task: asyncio.Task[Any] | None
 
 
 # Default HTTP timeouts in seconds
@@ -537,12 +536,14 @@ class ClientCore:
         # below (``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event``) bridge
         # the legacy ivar names back into this helper.
         self._metrics_obj = ClientMetrics(on_rpc_event=on_rpc_event)
-        self._draining = False
-        self._in_flight_posts = 0
-        self._drain_condition: asyncio.Condition | None = None
-        self._operation_depths: weakref.WeakKeyDictionary[asyncio.Task[Any], int] = (
-            weakref.WeakKeyDictionary()
-        )
+        # Transport drain bookkeeping (in-flight posts, drain condition,
+        # per-task operation depth, draining flag). Compat properties below
+        # (``_in_flight_posts`` / ``_drain_condition`` / ``_operation_depths``
+        # / ``_draining``) bridge the legacy ivar names back into this
+        # helper. The helper's ``__init__`` is event-loop-agnostic; the
+        # ``asyncio.Condition`` is created lazily on first
+        # ``get_drain_condition`` call.
+        self._drain_tracker = TransportDrainTracker()
         # Request ID counter for chat API (must be unique per request).
         # Access via the ``next_reqid()`` async method, which guards mutation
         # under ``_reqid_lock``. Direct mutation through the ``_reqid_counter``
@@ -648,6 +649,52 @@ class ClientCore:
         self._ensure_observability_state()
         self._metrics_obj._on_rpc_event = value
 
+    # ``TransportDrainTracker`` compat bridges. The four drain ivars now live
+    # on ``self._drain_tracker``; each setter calls
+    # ``_ensure_observability_state`` first so a ``__new__``-built fixture
+    # (no ``__init__`` ran) can still assign (e.g.) ``core._draining = True``
+    # or ``core._drain_condition = asyncio.Condition()`` and have it write
+    # through to a real helper.
+    @property
+    def _in_flight_posts(self) -> int:
+        self._ensure_observability_state()
+        return self._drain_tracker._in_flight_posts
+
+    @_in_flight_posts.setter
+    def _in_flight_posts(self, value: int) -> None:
+        self._ensure_observability_state()
+        self._drain_tracker._in_flight_posts = value
+
+    @property
+    def _draining(self) -> bool:
+        self._ensure_observability_state()
+        return self._drain_tracker._draining
+
+    @_draining.setter
+    def _draining(self, value: bool) -> None:
+        self._ensure_observability_state()
+        self._drain_tracker._draining = value
+
+    @property
+    def _drain_condition(self) -> asyncio.Condition | None:
+        self._ensure_observability_state()
+        return self._drain_tracker._drain_condition
+
+    @_drain_condition.setter
+    def _drain_condition(self, value: asyncio.Condition | None) -> None:
+        self._ensure_observability_state()
+        self._drain_tracker._drain_condition = value
+
+    @property
+    def _operation_depths(self) -> weakref.WeakKeyDictionary[asyncio.Task[Any], int]:
+        self._ensure_observability_state()
+        return self._drain_tracker._operation_depths
+
+    @_operation_depths.setter
+    def _operation_depths(self, value: weakref.WeakKeyDictionary[asyncio.Task[Any], int]) -> None:
+        self._ensure_observability_state()
+        self._drain_tracker._operation_depths = value
+
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
     #
@@ -741,28 +788,17 @@ class ClientCore:
     def _ensure_observability_state(self) -> None:
         """Backfill observability fields for tests that construct via ``__new__``.
 
-        Gates on ``_metrics_obj`` (a real instance attribute) — the
-        property-bridged ivars' ``hasattr`` probes are always True.
+        Gates on ``_metrics_obj`` AND ``_drain_tracker`` (both real instance
+        attributes) — the property-bridged ivars' ``hasattr`` probes are
+        always True because the descriptors live on the class.
         """
-        if (
-            hasattr(self, "_metrics_obj")
-            and hasattr(self, "_draining")
-            and hasattr(self, "_in_flight_posts")
-            and hasattr(self, "_drain_condition")
-            and hasattr(self, "_operation_depths")
-        ):
+        if hasattr(self, "_metrics_obj") and hasattr(self, "_drain_tracker"):
             return
         with _OBSERVABILITY_INIT_LOCK:
             if not hasattr(self, "_metrics_obj"):
                 self._metrics_obj = ClientMetrics(on_rpc_event=None)
-            if not hasattr(self, "_draining"):
-                self._draining = False
-            if not hasattr(self, "_in_flight_posts"):
-                self._in_flight_posts = 0
-            if not hasattr(self, "_drain_condition"):
-                self._drain_condition = None
-            if not hasattr(self, "_operation_depths"):
-                self._operation_depths = weakref.WeakKeyDictionary()
+            if not hasattr(self, "_drain_tracker"):
+                self._drain_tracker = TransportDrainTracker()
 
     def _increment_metrics(self, **increments: int | float) -> None:
         self._ensure_observability_state()
@@ -788,30 +824,16 @@ class ClientCore:
 
     def _get_drain_condition(self) -> asyncio.Condition:
         self._ensure_observability_state()
-        if self._drain_condition is None:
-            self._drain_condition = asyncio.Condition()
-        return self._drain_condition
+        return self._drain_tracker.get_drain_condition()
 
     def _current_operation_depth(self, task: asyncio.Task[Any] | None) -> int:
-        if task is None:
-            return 0
-        return self._operation_depths.get(task, 0)
+        self._ensure_observability_state()
+        return self._drain_tracker.current_operation_depth(task)
 
     async def _begin_transport_post(self, log_label: str) -> _TransportOperationToken:
         """Reject new top-level transport work once graceful drain has started."""
-        condition = self._get_drain_condition()
-        task = asyncio.current_task()
-        depth = self._current_operation_depth(task)
-        async with condition:
-            if self._draining and depth == 0:
-                raise RuntimeError(
-                    "NotebookLMClient is draining; new client operations are not accepted "
-                    f"({log_label})."
-                )
-            if task is not None:
-                self._operation_depths[task] = depth + 1
-            self._in_flight_posts += 1
-        return _TransportOperationToken(task=task)
+        self._ensure_observability_state()
+        return await self._drain_tracker.begin_transport_post(log_label)
 
     async def _begin_transport_task(
         self,
@@ -819,30 +841,12 @@ class ClientCore:
         log_label: str,
     ) -> _TransportOperationToken:
         """Admit an internally-spawned task as part of the current operation."""
-        condition = self._get_drain_condition()
-        current_depth = self._current_operation_depth(asyncio.current_task())
-        async with condition:
-            if self._draining and current_depth == 0:
-                raise RuntimeError(
-                    "NotebookLMClient is draining; new client operations are not accepted "
-                    f"({log_label})."
-                )
-            self._operation_depths[task] = self._operation_depths.get(task, 0) + 1
-            self._in_flight_posts += 1
-        return _TransportOperationToken(task=task)
+        self._ensure_observability_state()
+        return await self._drain_tracker.begin_transport_task(task, log_label)
 
     async def _finish_transport_post(self, token: _TransportOperationToken) -> None:
-        condition = self._get_drain_condition()
-        async with condition:
-            if token.task is not None:
-                depth = self._operation_depths.get(token.task, 0)
-                if depth <= 1:
-                    self._operation_depths.pop(token.task, None)
-                else:
-                    self._operation_depths[token.task] = depth - 1
-            self._in_flight_posts -= 1
-            if self._in_flight_posts == 0:
-                condition.notify_all()
+        self._ensure_observability_state()
+        await self._drain_tracker.finish_transport_post(token)
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new client operations and wait for in-flight ones to finish.
@@ -851,17 +855,8 @@ class ClientCore:
         remains in draining mode so shutdown callers do not accidentally admit
         new work after a missed deadline.
         """
-        if timeout is not None and timeout < 0:
-            raise ValueError(f"timeout must be >= 0 or None, got {timeout!r}")
-        condition = self._get_drain_condition()
-        async with condition:
-            self._draining = True
-            if self._in_flight_posts == 0:
-                return
-            await asyncio.wait_for(
-                condition.wait_for(lambda: self._in_flight_posts == 0),
-                timeout=timeout,
-            )
+        self._ensure_observability_state()
+        await self._drain_tracker.drain(timeout)
 
     def get_upload_semaphore(self) -> asyncio.Semaphore:
         """Return the per-instance upload semaphore, creating it on first use.
