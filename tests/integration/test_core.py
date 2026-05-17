@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from _streaming_mock import install_post_as_stream
 
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._core import MAX_CONVERSATION_CACHE_SIZE, ClientCore, is_auth_error
@@ -149,6 +150,7 @@ class TestRPCCallHTTPErrors:
                 patch.object(core._http_client, "post", side_effect=error),
                 pytest.raises(RateLimitError) as exc_info,
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after == 60
 
@@ -169,6 +171,7 @@ class TestRPCCallHTTPErrors:
                 patch.object(core._http_client, "post", side_effect=error),
                 pytest.raises(RateLimitError) as exc_info,
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after is None
 
@@ -189,6 +192,7 @@ class TestRPCCallHTTPErrors:
                 patch.object(core._http_client, "post", side_effect=error),
                 pytest.raises(RateLimitError) as exc_info,
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
             assert exc_info.value.retry_after is None
 
@@ -212,6 +216,7 @@ class TestRPCCallHTTPErrors:
                 patch.object(core._http_client, "post", side_effect=error),
                 pytest.raises(ClientError),
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -230,6 +235,7 @@ class TestRPCCallHTTPErrors:
                 patch.object(core._http_client, "post", side_effect=error),
                 pytest.raises(ServerError),
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -262,6 +268,7 @@ class TestRPCCallHTTPErrors:
                 ),
                 pytest.raises(RPCTimeoutError),
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     @pytest.mark.asyncio
@@ -323,6 +330,7 @@ class TestRPCCallAuthRetry:
                     ],
                 ),
             ):
+                install_post_as_stream(None, core._http_client, core._http_client.post)
                 result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
             assert result == ["result_data"]
