@@ -73,10 +73,13 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+        if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
           --state open --label automated --label rpc-breakage \
           --search 'in:title "RPC ID Mismatch Detected"' \
-          --json number --jq 'length')
+          --json number --jq 'length'); then
+          echo "::warning::RPC mismatch dedup probe failed; allowing issue creation"
+          count=0
+        fi
         echo "open=${count}" >> "$GITHUB_OUTPUT"
 
     - name: Create Issue on RPC Mismatch
@@ -96,10 +99,13 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+        if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
           --state open --label automated \
           --search 'in:title "RPC Health Check: Authentication Failure"' \
-          --json number --jq 'length')
+          --json number --jq 'length'); then
+          echo "::warning::Auth failure dedup probe failed; allowing issue creation"
+          count=0
+        fi
         echo "open=${count}" >> "$GITHUB_OUTPUT"
 
     - name: Create Issue on Auth Failure
@@ -119,10 +125,13 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+        if ! count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
           --state open --label automated --label rpc-error \
           --search 'in:title "RPC Health Check: Non-transient ERROR detected"' \
-          --json number --jq 'length')
+          --json number --jq 'length'); then
+          echo "::warning::Non-transient ERROR dedup probe failed; allowing issue creation"
+          count=0
+        fi
         echo "open=${count}" >> "$GITHUB_OUTPUT"
 
     - name: Extract failing methods for ERROR issue

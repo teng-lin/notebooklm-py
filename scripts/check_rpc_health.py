@@ -480,7 +480,11 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     # notebook is available, route this method there instead so the
     # canary keeps drift-checking the RPC ID.
     if method == RPCMethod.GET_SUGGESTED_REPORTS:
-        stable_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID") or notebook_id
+        stable_id = (
+            os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID")
+            or os.environ.get("NOTEBOOKLM_GENERATION_NOTEBOOK_ID")
+            or notebook_id
+        )
         return [[2], stable_id]
 
     # Methods that take [[notebook_id]] as the only param.

@@ -291,6 +291,21 @@ def test_get_suggested_reports_prefers_stable_read_only_notebook(
     assert params == [[2], "stable_nb"]
 
 
+def test_get_suggested_reports_prefers_generation_notebook_when_read_only_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In --full mode, use the generation notebook as the stable fallback
+    when a dedicated read-only notebook is not configured.
+    """
+    monkeypatch.delenv("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_GENERATION_NOTEBOOK_ID", "generation_nb")
+    params = check_rpc_health.get_test_params(
+        check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
+        "temp_nb",
+    )
+    assert params == [[2], "generation_nb"]
+
+
 def test_get_suggested_reports_falls_back_to_caller_notebook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -298,6 +313,7 @@ def test_get_suggested_reports_falls_back_to_caller_notebook(
     passed (preserves quick-mode behaviour where there's no temp notebook).
     """
     monkeypatch.delenv("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_GENERATION_NOTEBOOK_ID", raising=False)
     params = check_rpc_health.get_test_params(
         check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
         "caller_nb",
