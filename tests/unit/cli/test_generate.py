@@ -1581,6 +1581,13 @@ class TestOutputGenerationStatusDirect:
             self.generate_module._output_generation_status(status, "audio", json_output=False)
         mock_console.print.assert_called_once_with("[red]Failed:[/red] Transcription error")
 
+    def test_text_failed_no_error_message(self):
+        """Text failed output falls back to Unknown error when error is None."""
+        status = self._make_status(is_failed=True, error=None)
+        with patch.object(self.generate_module, "console") as mock_console:
+            self.generate_module._output_generation_status(status, "audio", json_output=False)
+        mock_console.print.assert_called_once_with("[red]Failed:[/red] Unknown error")
+
     def test_text_pending_with_task_id(self):
         """Line 268: Text output for pending status shows task_id."""
         status = self._make_status(task_id="task_789")
