@@ -1,0 +1,92 @@
+interactions:
+- request:
+    body: f.req=%5B%5B%5B%22KmcKPe%22%2C%22%5B%5B2%5D%2C%5C%22e52e81c5-613b-43ec-8f45-66a120644a26%5C%22%2C%5B%5B%5B0%2C%5C%22Move%20the%20title%20up%5C%22%5D%5D%5D%5D%22%2Cnull%2C%22generic%22%5D%5D%5D&at=SCRUBBED_CSRF%3A1778848153629&
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '241'
+      Content-Type:
+      - application/x-www-form-urlencoded;charset=UTF-8
+      Cookie:
+      - NID=SCRUBBED; SID=SCRUBBED; __Secure-1PSID=SCRUBBED; __Secure-3PSID=SCRUBBED;
+        HSID=SCRUBBED; SSID=SCRUBBED; APISID=SCRUBBED; SAPISID=SCRUBBED; __Secure-1PAPISID=SCRUBBED;
+        __Secure-3PAPISID=SCRUBBED; __Secure-1PSIDTS=SCRUBBED; __Secure-3PSIDTS=SCRUBBED;
+        SIDCC=SCRUBBED; __Secure-1PSIDCC=SCRUBBED; __Secure-3PSIDCC=SCRUBBED; OSID=SCRUBBED;
+        __Secure-OSID=SCRUBBED; _gcl_au=1.1.1583381276.1778846987; _ga=GA1.1.1567240762.1778846987;
+        _ga_W0LDH41ZCB=GS2.1.s1778846986$o1$g0$t1778846986$j60$l0$h0
+      Host:
+      - notebooklm.google.com
+      User-Agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute?rpcids=KmcKPe&source-path=%2Fnotebook%2Fbb00c9e3-656c-4fd2-b890-2b71e1cf3814&f.sid=SCRUBBED&hl=en&rt=c
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAC/51RS0/DMAy+91dUucCkZMrDCelvGEOIa5pDHs5W0a1T1cGJ/046LgjEhYOfnz/b
+        sjf+465pQMjGOfI+x22ZCSW7U9o9Y3Wc60m0kACNYQkfIgMVLQvJGmZ5siFnVYJUPaE9eZoWjNP0
+        +rhvXzBjGc6Y23u5qaClbm0FxsQOUbEkEjLQWJg1IjGRIZaUO9WF3BPvPRX0fB3HfyjnbqYnZa5z
+        BRX+jzLHa9F+esN2OVYZlhHb6+U2/Relro5aohVJMyPUegVMzBaooQlCcgMQpLmRyU8yOeAZ5yER
+        Tx3JQ11Ka7n6oWyPy3KZT18pSowWwI21nCvggnMjZIW4941U63/qR+BbY9Ar9Al+l1NiwgEAAA==
+    headers:
+      Accept-CH:
+      - Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version, Sec-CH-UA-Full-Version-List,
+        Sec-CH-UA-Model, Sec-CH-UA-WoW64, Sec-CH-UA-Form-Factors, Sec-CH-UA-Platform,
+        Sec-CH-UA-Platform-Version
+      Alt-Svc:
+      - h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+      Cache-Control:
+      - no-cache, no-store, max-age=0, must-revalidate
+      Content-Disposition:
+      - attachment; filename="response.bin"; filename*=UTF-8''response.bin
+      Content-Encoding:
+      - gzip
+      Content-Security-Policy:
+      - require-trusted-types-for 'script';report-uri /_/LabsTailwindUi/cspreport
+      Content-Type:
+      - application/json; charset=utf-8
+      Cross-Origin-Opener-Policy:
+      - same-origin-allow-popups
+      Cross-Origin-Resource-Policy:
+      - same-site
+      Date:
+      - Fri, 15 May 2026 12:29:13 GMT
+      Expires:
+      - Mon, 01 Jan 1990 00:00:00 GMT
+      Permissions-Policy:
+      - ch-ua-arch=*, ch-ua-bitness=*, ch-ua-full-version=*, ch-ua-full-version-list=*,
+        ch-ua-model=*, ch-ua-wow64=*, ch-ua-form-factors=*, ch-ua-platform=*, ch-ua-platform-version=*
+      Pragma:
+      - no-cache
+      Server:
+      - ESF
+      Set-Cookie:
+      - SIDCC=SCRUBBED; expires=Sat, 15-May-2027 12:29:15 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 12:29:15 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 12:29:15 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      - SIDCC=SCRUBBED; expires=Sat, 15-May-2027 12:29:15 GMT; path=/; domain=.google.com;
+        priority=high
+      - __Secure-1PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 12:29:15 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high
+      - __Secure-3PSIDCC=SCRUBBED; expires=Sat, 15-May-2027 12:29:15 GMT; path=/;
+        domain=.google.com; Secure; HttpOnly; priority=high; SameSite=none
+      Vary:
+      - Sec-Fetch-Dest, Sec-Fetch-Mode, Sec-Fetch-Site
+      X-Content-Type-Options:
+      - nosniff
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-XSS-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1

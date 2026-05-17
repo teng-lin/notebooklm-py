@@ -1281,8 +1281,18 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
         await client.aclose()
 
 
+@pytest.mark.parametrize(
+    "encoding",
+    # Every codec httpx wires into its content-decoder chain. ``gzip`` is
+    # the one #769 hit in production; ``br`` and ``zstd`` ship with httpx
+    # whenever the optional ``brotli`` / ``zstandard`` packages are
+    # installed, and ``deflate`` is always available. Parametrizing all
+    # four guards against a future codec going through the same rebuild
+    # path with an unstripped Content-Encoding header.
+    ["gzip", "br", "zstd", "deflate"],
+)
 @pytest.mark.asyncio
-async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkeypatch):
+async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkeypatch, encoding):
     """Regression for #769.
 
     ``response.aiter_bytes()`` yields already-decoded chunks, so the buffered
@@ -1293,8 +1303,19 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
 
     The wrapper must strip ``content-encoding`` (and ``content-length``) before
     handing headers back so downstream ``.text`` access stays a plain charset
-    decode — no double decompression.
+    decode — no double decompression. Parametrized across every codec httpx
+    knows about so adding a new ``Content-Encoding`` value in the future
+    cannot silently regress this branch.
     """
+    # ``br`` / ``zstd`` only re-trigger ``Response.__init__``'s decoder when
+    # the optional ``brotli`` / ``zstandard`` packages are present. Without
+    # them httpx no-ops the encoding and the test would pass even WITHOUT
+    # the strip — defeating the regression. Skip the variant rather than
+    # silently lie about coverage.
+    if encoding == "br":
+        pytest.importorskip("brotli")
+    elif encoding == "zstd":
+        pytest.importorskip("zstandard")
     from contextlib import asynccontextmanager
 
     from notebooklm._core_transport import _stream_post_with_size_cap
@@ -1304,11 +1325,11 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
 
     class _FakeResponse:
         status_code = 200
-        # Upstream advertises gzip — the kind of header that flowed through the
-        # transport at production time and bit issue #769.
+        # Upstream advertises the parametrized encoding — the kind of header
+        # that flowed through the transport at production time and bit #769.
         headers = {
             "content-type": "application/json; charset=UTF-8",
-            "content-encoding": "gzip",
+            "content-encoding": encoding,
             # Length of the compressed body upstream — also a lie for the
             # rebuilt response, since we hold the decoded bytes now.
             "content-length": "9999",
