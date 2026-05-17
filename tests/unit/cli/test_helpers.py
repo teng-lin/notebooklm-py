@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from filelock import Timeout
 
 import notebooklm.cli._encoding as encoding_module
 import notebooklm.cli.context as context_module
@@ -410,12 +411,32 @@ class TestContextManagement:
             result = get_current_notebook()
             assert result is None
 
-    def test_get_notebook_non_object_json(self, tmp_path):
+    def test_get_notebook_non_object_json(self, tmp_path, caplog):
         context_file = tmp_path / "context.json"
         context_file.write_text("[]")
-        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+        with (
+            patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+            caplog.at_level("WARNING", logger="notebooklm.cli.context"),
+        ):
             result = get_current_notebook()
             assert result is None
+        assert "expected JSON object, got list []" in caplog.text
+
+    def test_clear_context_lock_timeout_returns_false(self, tmp_path, caplog):
+        context_file = tmp_path / "context.json"
+        context_file.write_text('{"notebook_id": "test"}')
+        with (
+            patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+            patch(
+                "notebooklm.cli.context.FileLock",
+                side_effect=Timeout(str(context_file.with_suffix(".json.lock"))),
+            ),
+            caplog.at_level("WARNING", logger="notebooklm.cli.context"),
+        ):
+            assert clear_context() is False
+
+        assert context_file.exists()
+        assert "lock is contended" in caplog.text
 
     def test_set_current_notebook_recovers_non_object_json(self, tmp_path):
         context_file = tmp_path / "context.json"

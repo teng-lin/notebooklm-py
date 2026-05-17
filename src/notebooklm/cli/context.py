@@ -6,16 +6,22 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import click
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from ..io import atomic_update_json, atomic_write_json
 from ..paths import get_context_path
 
 logger = logging.getLogger(__name__)
 ContextPathFn = Callable[..., Path]
+ContextClearStatus = Literal["cleared", "unchanged", "contended", "unavailable"]
+
+
+def _describe_json_shape(value: Any) -> str:
+    """Return a compact diagnostic description for unexpected JSON payloads."""
+    return f"{type(value).__name__} {value!r}"
 
 
 def _current_storage_override() -> Path | None:
@@ -43,8 +49,9 @@ def _get_context_value(key: str, *, context_path_fn: ContextPathFn | None = None
         data = json.loads(context_file.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             logger.warning(
-                "Context file %s has invalid shape; expected JSON object.",
+                "Context file %s has invalid shape; expected JSON object, got %s.",
                 context_file,
+                _describe_json_shape(data),
             )
             return None
         return data.get(key)
@@ -128,24 +135,43 @@ def clear_context(
 ) -> bool:
     """Clear the current context."""
     context_file = _resolve_context_path(context_path_fn)
+    return _clear_context_file(context_file, clear_account=clear_account) == "cleared"
+
+
+def _clear_context_file(context_file: Path, *, clear_account: bool) -> ContextClearStatus:
+    """Clear context file data and report the precise lock/storage outcome."""
     if not context_file.exists():
-        return False
+        return "unchanged"
     lock_path = context_file.with_suffix(context_file.suffix + ".lock")
     context_file.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(str(lock_path), timeout=10.0):
+    try:
+        lock = FileLock(str(lock_path), timeout=10.0)
+        with lock:
+            return _clear_context_file_locked(context_file, clear_account=clear_account)
+    except Timeout as e:
+        logger.warning("Context file %s lock is contended; clear skipped: %s", context_file, e)
+        return "contended"
+    except OSError as e:
+        logger.warning("Context file %s is unavailable; clear skipped: %s", context_file, e)
+        return "unavailable"
+
+
+def _clear_context_file_locked(context_file: Path, *, clear_account: bool) -> ContextClearStatus:
+    """Clear context file data while the file lock is held."""
+    try:
         if not context_file.exists():
-            return False
+            return "unchanged"
         if clear_account:
             context_file.unlink(missing_ok=True)
-            return True
+            return "cleared"
         try:
             data = json.loads(context_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             context_file.unlink(missing_ok=True)
-            return True
+            return "cleared"
         if not isinstance(data, dict):
             context_file.unlink(missing_ok=True)
-            return True
+            return "cleared"
         original = dict(data)
         account = original.get("account")
         # ``clear`` intentionally removes every non-account field so future
@@ -155,11 +181,14 @@ def clear_context(
             data["account"] = account
         if not data:
             context_file.unlink(missing_ok=True)
-            return True
+            return "cleared"
         if data != original:
             atomic_write_json(context_file, data)
-            return True
-        return False
+            return "cleared"
+        return "unchanged"
+    except OSError as e:
+        logger.warning("Context file %s is unavailable; clear skipped: %s", context_file, e)
+        return "unavailable"
 
 
 def get_current_conversation(*, context_path_fn: ContextPathFn | None = None) -> str | None:
