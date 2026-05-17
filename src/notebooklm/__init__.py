@@ -83,6 +83,7 @@ from .exceptions import (
     # Domain: Research
     ResearchTaskMismatchError,
     RPCError,
+    RPCResponseTooLargeError,
     RPCTimeoutError,
     ServerError,
     # Domain: Sources
@@ -194,6 +195,7 @@ __all__ = [
     "AuthExtractionError",
     "NetworkError",
     "RPCTimeoutError",
+    "RPCResponseTooLargeError",
     "RateLimitError",
     "ServerError",
     "ClientError",

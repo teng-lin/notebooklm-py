@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 import pytest
 
+from conftest import install_post_as_stream
 from notebooklm._core import (
     ClientCore,
     _AuthSnapshot,
@@ -180,7 +181,7 @@ async def test_authed_transport_reads_live_retry_budget(monkeypatch):
                 raise _status_error(429, retry_after="1")
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await transport.perform_authed_post(build_request=build, log_label="test")
 
@@ -228,7 +229,7 @@ async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
                 raise _status_error(418)
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await transport.perform_authed_post(build_request=build, log_label="test")
 
@@ -264,7 +265,7 @@ async def test_authed_transport_uses_late_bound_sleep_and_uniform(monkeypatch):
                 raise _status_error(503)
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await transport.perform_authed_post(build_request=build, log_label="test")
 
@@ -297,7 +298,7 @@ async def test_authed_transport_disable_internal_retries_short_circuits(monkeypa
             call_count["n"] += 1
             raise _status_error(503)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportServerError):
             await transport.perform_authed_post(
@@ -328,7 +329,7 @@ async def test_build_request_called_once_on_happy_path(monkeypatch):
             assert content == "payload"
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -371,7 +372,7 @@ async def test_build_request_called_twice_with_fresh_snapshot_on_401(monkeypatch
             assert content == "body-CSRF_NEW"
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -407,7 +408,7 @@ async def test_transport_auth_expired_when_refresh_fails(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise original
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportAuthExpired) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -440,7 +441,7 @@ async def test_429_retries_exhaust_to_transport_rate_limited(monkeypatch):
             call_count["n"] += 1
             raise _status_error(429, retry_after="1")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -465,7 +466,7 @@ async def test_429_without_retry_budget_raises_immediately(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(429, retry_after="60")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -502,7 +503,7 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
                 raise _status_error(401)
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         # Drive through rpc_call so set_request_id is in scope (rpc_call is
         # the caller boundary that owns the request-id context).
@@ -549,7 +550,7 @@ async def test_query_post_wraps_rate_limit_as_chat_error(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(429, retry_after="42")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(ChatError) as exc_info:
             await core.query_post(build_request=build, parse_label="chat.ask")
@@ -577,7 +578,7 @@ async def test_query_post_wraps_auth_expired_as_chat_error(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(401)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(ChatError) as exc_info:
             await core.query_post(build_request=build, parse_label="chat.ask")
@@ -606,7 +607,7 @@ async def test_query_post_wraps_timeout_as_network_error(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise httpx.ReadTimeout("read timeout")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(NetworkError) as exc_info:
             await core.query_post(build_request=build, parse_label="chat.ask")
@@ -646,7 +647,7 @@ async def test_query_post_timeout_after_budget_keeps_timeout_message(monkeypatch
         async def fake_post(*args, **kwargs):
             raise httpx.ReadTimeout("read timeout")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(NetworkError) as exc_info:
             await core.query_post(build_request=build, parse_label="chat.ask")
@@ -686,7 +687,7 @@ async def test_rpc_call_happy_path_url_and_body_unchanged(monkeypatch):
             text = f")]}}'\n{len(chunk)}\n{chunk}\n"
             return _ok_response(text)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
@@ -729,7 +730,7 @@ async def test_5xx_retries_then_succeeds(monkeypatch):
                 raise _status_error(503)
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -763,7 +764,7 @@ async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
             call_count["n"] += 1
             raise _status_error(502)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -802,7 +803,7 @@ async def test_network_error_retries_then_succeeds(monkeypatch):
                 raise httpx.ReadTimeout("connection blip")
             return _ok_response()
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -833,7 +834,7 @@ async def test_network_error_exhausts_budget_raises_transport_server_error(monke
         async def fake_post(*args, **kwargs):
             raise httpx.ConnectError("connection refused")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -869,7 +870,7 @@ async def test_server_error_budget_zero_raises_immediately(monkeypatch):
             call_count["n"] += 1
             raise _status_error(500)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -901,7 +902,7 @@ async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(503)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportServerError):
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -932,7 +933,7 @@ async def test_5xx_path_does_not_touch_429_path(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(429, retry_after="5")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -972,7 +973,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(503)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(_TransportServerError):
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -1004,7 +1005,7 @@ async def test_rpc_call_maps_transport_server_error_to_server_error(monkeypatch)
         async def fake_post(*args, **kwargs):
             raise _status_error(503)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(ServerError) as exc_info:
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -1031,7 +1032,7 @@ async def test_rpc_call_maps_transport_server_error_network_to_network_error(mon
         async def fake_post(*args, **kwargs):
             raise httpx.ConnectError("nope")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(NetworkError):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -1059,7 +1060,7 @@ async def test_query_post_maps_transport_server_error_to_chat_error(monkeypatch)
         async def fake_post(*args, **kwargs):
             raise _status_error(500)
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(ChatError) as exc_info:
             await core.query_post(build_request=build, parse_label="chat.ask")
@@ -1090,7 +1091,7 @@ async def test_query_post_maps_transport_server_error_network_to_network_error(m
         async def fake_post(*args, **kwargs):
             raise httpx.ConnectError("nope")
 
-        monkeypatch.setattr(core._http_client, "post", fake_post)
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
         with pytest.raises(NetworkError) as exc_info:
             await core.query_post(build_request=build, parse_label="chat.ask")
@@ -1114,3 +1115,177 @@ def test_server_error_max_retries_negative_raises():
     )
     with pytest.raises(ValueError, match="server_error_max_retries must be >= 0"):
         ClientCore(auth=auth, server_error_max_retries=-1)
+
+
+# ---------------------------------------------------------------------------
+# Streamed RPC response size cap (PR-E, audit I10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_streamed_response_size_cap(monkeypatch):
+    """A response that exceeds ``max_bytes`` raises before the buffer is full.
+
+    Stubs ``client.stream`` to yield chunks that sum to more than the cap.
+    The guard must abort the read loop and surface
+    :class:`RPCResponseTooLargeError` instead of buffering an unbounded body.
+    """
+    from contextlib import asynccontextmanager
+
+    from notebooklm._core_transport import _stream_post_with_size_cap
+    from notebooklm.exceptions import RPCResponseTooLargeError
+
+    cap = 1024  # 1 KiB cap so the test stays fast and small.
+    chunks_yielded = 0
+
+    class _FakeResponse:
+        status_code = 200
+        headers: dict[str, str] = {}
+        request = httpx.Request("POST", "https://example.test/x")
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            nonlocal chunks_yielded
+            # Each chunk is half the cap; the third one trips the guard. We
+            # deliberately yield well past the limit so a buggy implementation
+            # that buffers everything is caught (it would OOM in production).
+            payload = b"x" * (cap // 2)
+            for _ in range(8):
+                chunks_yielded += 1
+                yield payload
+
+    @asynccontextmanager
+    async def fake_stream(method, url, **kwargs):
+        yield _FakeResponse()
+
+    client = httpx.AsyncClient()
+    try:
+        monkeypatch.setattr(client, "stream", fake_stream)
+
+        with pytest.raises(RPCResponseTooLargeError) as exc_info:
+            await _stream_post_with_size_cap(
+                client,
+                "https://example.test/x",
+                body=b"",
+                headers=None,
+                max_bytes=cap,
+            )
+
+        # Aborts as soon as the running total crosses the cap — does NOT
+        # keep iterating to the end of the upstream stream.
+        assert chunks_yielded < 8
+        assert exc_info.value.limit_bytes == cap
+        assert exc_info.value.bytes_read is not None
+        assert exc_info.value.bytes_read > cap
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_normal_response_below_cap_works(monkeypatch):
+    """A normal-sized response decodes through the streaming wrapper unchanged."""
+    from contextlib import asynccontextmanager
+
+    from notebooklm._core_transport import _stream_post_with_size_cap
+
+    payload = b"hello world" * 1000  # ~11 KB, well under the 50 MiB default
+
+    class _FakeResponse:
+        status_code = 200
+        headers = {"content-type": "text/plain"}
+        request = httpx.Request("POST", "https://example.test/x")
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            # Yield in two chunks to exercise the loop, not a single shot.
+            yield payload[: len(payload) // 2]
+            yield payload[len(payload) // 2 :]
+
+    @asynccontextmanager
+    async def fake_stream(method, url, **kwargs):
+        yield _FakeResponse()
+
+    client = httpx.AsyncClient()
+    try:
+        monkeypatch.setattr(client, "stream", fake_stream)
+
+        response = await _stream_post_with_size_cap(
+            client,
+            "https://example.test/x",
+            body=b"",
+            headers=None,
+        )
+
+        assert response.status_code == 200
+        assert response.content == payload
+        # Buffered into a real httpx.Response so downstream callers can keep
+        # using ``.text`` without dealing with stream state.
+        assert response.text == payload.decode("utf-8")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_streaming_raise_for_status_propagates_before_size_check(monkeypatch):
+    """``raise_for_status`` runs before the read loop so the existing
+    auth-refresh / 429 / 5xx branches see the same error they always did."""
+    from contextlib import asynccontextmanager
+
+    from notebooklm._core_transport import _stream_post_with_size_cap
+
+    chunk_reads = 0
+
+    class _FakeResponse:
+        status_code = 429
+        headers = {"retry-after": "1"}
+        request = httpx.Request("POST", "https://example.test/x")
+
+        def raise_for_status(self) -> None:
+            raise httpx.HTTPStatusError(
+                "rate limited",
+                request=self.request,
+                response=httpx.Response(
+                    429,
+                    headers=self.headers,
+                    request=self.request,
+                ),
+            )
+
+        async def aiter_bytes(self):
+            nonlocal chunk_reads
+            chunk_reads += 1
+            yield b"never read"
+
+    @asynccontextmanager
+    async def fake_stream(method, url, **kwargs):
+        yield _FakeResponse()
+
+    client = httpx.AsyncClient()
+    try:
+        monkeypatch.setattr(client, "stream", fake_stream)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await _stream_post_with_size_cap(
+                client,
+                "https://example.test/x",
+                body=b"",
+                headers=None,
+            )
+
+        assert chunk_reads == 0, "body must not be read when raise_for_status fires"
+    finally:
+        await client.aclose()
+
+
+def test_max_rpc_response_bytes_constant_lives_in_transport_module():
+    """Constant is owned by ``_core_transport`` (not ``_core``) to avoid an
+    import cycle — ``_core`` already imports from ``_core_transport``."""
+    from notebooklm import _core_transport
+
+    assert _core_transport.MAX_RPC_RESPONSE_BYTES == 50 * 1024 * 1024
+    # Sanity: it sits next to the other transport-layer constant.
+    assert _core_transport.MAX_RETRY_AFTER_SECONDS == 300

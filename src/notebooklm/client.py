@@ -320,15 +320,23 @@ class NotebookLMClient:
     async def close(
         self,
         *,
-        drain: bool = False,
+        drain: bool = True,
         drain_timeout: float | None = None,
     ) -> None:
         """Close the client.
 
-        Pass ``drain=True`` to stop accepting new operations and wait for
-        in-flight operations to finish before closing the transport. If the
-        drain deadline is exceeded, the transport is still closed and the
-        timeout is re-raised.
+        By default (``drain=True``), ``close()`` first stops accepting new
+        operations and waits for in-flight operations to finish before tearing
+        down the transport. If the drain deadline (``drain_timeout``) is
+        exceeded, the transport is still closed and the timeout is re-raised.
+
+        Pass ``drain=False`` to skip the drain step and tear the transport
+        down immediately (fire-and-forget semantics).
+
+        BREAKING CHANGE: prior versions defaulted to ``drain=False``. Callers
+        relying on fire-and-forget close semantics (e.g. via
+        ``__aexit__``) will now block briefly on the drain step; pass
+        ``drain=False`` explicitly to restore the old behavior.
         """
         if drain:
             try:

@@ -55,6 +55,7 @@ __all__ = [
     "ServerError",
     "ClientError",
     "RPCTimeoutError",
+    "RPCResponseTooLargeError",
     # Idempotency
     "NonIdempotentRetryError",
     # Domain: Notebooks
@@ -469,6 +470,33 @@ class RPCTimeoutError(NetworkError):
             original_error=original_error,
         )
         self.timeout_seconds = timeout_seconds
+
+
+class RPCResponseTooLargeError(RPCError):
+    """RPC response body exceeded the configured maximum size.
+
+    Raised by the streaming transport when a response body grows past
+    ``MAX_RPC_RESPONSE_BYTES`` (currently 50 MiB) while being read. The guard
+    aborts the read mid-stream rather than buffering an unbounded body, so a
+    runaway or hostile server can't exhaust process memory.
+
+    Attributes:
+        limit_bytes: The configured maximum (in bytes) that was exceeded.
+        bytes_read: Number of bytes already buffered when the guard fired
+            (always strictly greater than ``limit_bytes``).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        limit_bytes: int | None = None,
+        bytes_read: int | None = None,
+        method_id: str | None = None,
+    ):
+        super().__init__(message, method_id=method_id)
+        self.limit_bytes = limit_bytes
+        self.bytes_read = bytes_read
 
 
 # =============================================================================

@@ -28,3 +28,19 @@ class PollRegistry:
 
     def __init__(self, pending: PendingPolls | None = None) -> None:
         self.pending: PendingPolls = pending if pending is not None else {}
+
+    def active_tasks(self) -> list[asyncio.Task[Any]]:
+        """Return the currently-pending leader poll tasks.
+
+        Used by :meth:`ClientCore.close` to drain in-flight artifact polls
+        before the HTTP transport is torn down — without this, a leader task
+        can wake mid-aclose and issue a request against an already-closed
+        client, surfacing as a confusing httpx error in the user's logs.
+
+        Returns a snapshot list (not a live view) so a caller can iterate and
+        cancel without mutating the underlying ``pending`` mapping mid-loop.
+        Already-completed tasks are filtered out: they have nothing left to
+        cancel, and asking ``asyncio.gather`` to await an already-done task is
+        harmless but noisy in the cancellation path.
+        """
+        return [task for _future, task in self.pending.values() if not task.done()]

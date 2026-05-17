@@ -1090,6 +1090,14 @@ class ClientCore:
         ``self._http_client = None`` runs in an inner ``finally`` so
         the instance is consistently marked closed even if the
         shielded ``aclose`` itself raises.
+
+        Poll-task drain: in-flight artifact poll tasks held by
+        :attr:`poll_registry` are cancelled and awaited before the HTTP
+        client is torn down. Without this, a leader poll waking mid-aclose
+        would issue a request against an already-closed transport and
+        surface as a confusing httpx error in the user's logs. The drain
+        uses ``return_exceptions=True`` so a single misbehaving task can't
+        block the rest of the close sequence.
         """
         try:
             # Stop the keepalive task before tearing down the HTTP client so
@@ -1098,6 +1106,15 @@ class ClientCore:
                 self._keepalive_task.cancel()
                 await asyncio.gather(self._keepalive_task, return_exceptions=True)
                 self._keepalive_task = None
+
+            # Drain in-flight artifact poll tasks. Snapshot first so concurrent
+            # registry mutations (a finishing leader removing its entry) don't
+            # race with the cancel/gather pair.
+            poll_tasks = self.poll_registry.active_tasks()
+            if poll_tasks:
+                for task in poll_tasks:
+                    task.cancel()
+                await asyncio.gather(*poll_tasks, return_exceptions=True)
 
             if self._http_client:
                 try:

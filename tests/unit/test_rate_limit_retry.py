@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from conftest import install_post_as_stream
 from notebooklm._core import ClientCore
 from notebooklm.rpc import RateLimitError, RPCError, RPCMethod
 
@@ -54,6 +55,7 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
 
     core = ClientCore(auth_tokens, rate_limit_max_retries=2)
     core._http_client = mock_client
+    install_post_as_stream(None, mock_client, mock_client.post)
 
     # Decode may fail on the synthetic 200 — that's fine, what we care about
     # is the post counts and sleep budget. We expect either success or an
@@ -76,6 +78,7 @@ async def test_rate_limit_retry_exhausted_with_budget(auth_tokens):
 
     core = ClientCore(auth_tokens, rate_limit_max_retries=2)
     core._http_client = mock_client
+    install_post_as_stream(None, mock_client, mock_client.post)
 
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
         await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
@@ -102,6 +105,7 @@ async def test_rate_limit_no_retry_if_disabled(auth_tokens):
     # Explicitly disable retries
     core = ClientCore(auth_tokens, rate_limit_max_retries=0)
     core._http_client = mock_client
+    install_post_as_stream(None, mock_client, mock_client.post)
 
     with pytest.raises(RateLimitError):
         await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])
@@ -124,6 +128,7 @@ async def test_rate_limit_exp_backoff_fallback_without_header(auth_tokens):
 
     core = ClientCore(auth_tokens, rate_limit_max_retries=2)
     core._http_client = mock_client
+    install_post_as_stream(None, mock_client, mock_client.post)
 
     sleeps: list[float] = []
 
@@ -149,6 +154,7 @@ async def test_rate_limit_no_retry_without_header_when_disabled(auth_tokens):
 
     core = ClientCore(auth_tokens, rate_limit_max_retries=0)
     core._http_client = mock_client
+    install_post_as_stream(None, mock_client, mock_client.post)
 
     with pytest.raises(RateLimitError):
         await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb1"])

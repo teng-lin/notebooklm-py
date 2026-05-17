@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import httpx
 import pytest
 
+from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
 from notebooklm._core import ClientCore, _AuthSnapshot
@@ -308,7 +309,7 @@ class TestChatRefreshRetry:
                 )
 
             assert core._http_client is not None
-            monkeypatch.setattr(core._http_client, "post", fake_post)
+            install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
             api = ChatAPI(core)
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])

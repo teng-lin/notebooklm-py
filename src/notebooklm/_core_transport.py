@@ -14,9 +14,19 @@ from typing import Any, Protocol, cast
 
 import httpx
 
+from .exceptions import RPCResponseTooLargeError
+
 # Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
 # so a malicious or buggy server can't force a multi-hour pause.
 MAX_RETRY_AFTER_SECONDS = 300
+
+# Upper bound on a single RPC response body. The streaming POST path enforces
+# this with a running size guard so a runaway or hostile server can't exhaust
+# process memory by emitting a huge body. 50 MiB is far above any legitimate
+# batchexecute response we've observed and well below the OOM threshold on a
+# typical workstation. Kept in this module (not ``_core.py``) so the streaming
+# read loop can read it without creating an import cycle through ``_core``.
+MAX_RPC_RESPONSE_BYTES = 50 * 1024 * 1024
 
 
 def _parse_retry_after(value: str | None) -> int | None:
@@ -121,6 +131,57 @@ _PostBody = str | bytes
 _BuildRequest = Callable[[_AuthSnapshot], tuple[str, _PostBody, dict[str, str] | None]]
 
 
+async def _stream_post_with_size_cap(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    body: _PostBody,
+    headers: dict[str, str] | None,
+    max_bytes: int = MAX_RPC_RESPONSE_BYTES,
+) -> httpx.Response:
+    """Issue a streaming POST and buffer the body with a running size guard.
+
+    Uses :meth:`httpx.AsyncClient.stream` so the body is read chunk-by-chunk and
+    aborted as soon as the running total exceeds ``max_bytes``. The buffered
+    bytes are then attached to a fresh :class:`httpx.Response` with the same
+    status code, headers, and request, so downstream callers can keep using
+    ``response.text`` / ``response.content`` exactly as they did when this was a
+    plain ``client.post`` call.
+
+    Error semantics are preserved verbatim: ``response.raise_for_status()`` is
+    invoked while still inside the streaming context so the existing
+    auth-refresh / 429 / 5xx branches in :meth:`AuthedTransport.perform_authed_post`
+    see the same :class:`httpx.HTTPStatusError` they always did, with
+    ``exc.response.headers`` intact (the response headers arrive before any body
+    chunk, so reading them does not require consuming the stream).
+    """
+    stream_kwargs: dict[str, Any] = {"content": body}
+    if headers:
+        stream_kwargs["headers"] = headers
+    async with client.stream("POST", url, **stream_kwargs) as response:
+        response.raise_for_status()
+        buffer = bytearray()
+        async for chunk in response.aiter_bytes():
+            buffer.extend(chunk)
+            if len(buffer) > max_bytes:
+                raise RPCResponseTooLargeError(
+                    f"RPC response exceeded {max_bytes} bytes "
+                    f"(read {len(buffer)} bytes before aborting)",
+                    limit_bytes=max_bytes,
+                    bytes_read=len(buffer),
+                )
+        # Reconstruct a fully-buffered Response so downstream consumers
+        # (``_core_rpc.py`` decode path) can use ``.text`` / ``.content``
+        # without dealing with stream state. The request handle is carried
+        # over so log/repr surfaces still point at the originating request.
+        return httpx.Response(
+            status_code=response.status_code,
+            headers=response.headers,
+            content=bytes(buffer),
+            request=response.request,
+        )
+
+
 class _AuthedTransportHost(Protocol):
     _http_client: httpx.AsyncClient | None
     _bound_loop: asyncio.AbstractEventLoop | None
@@ -200,11 +261,19 @@ class AuthedTransport:
                 url, body, headers = build_request(snapshot)
 
                 try:
-                    if headers:
-                        response = await client.post(url, content=body, headers=headers)
-                    else:
-                        response = await client.post(url, content=body)
-                    response.raise_for_status()
+                    # Streaming POST with a running size cap. The size guard
+                    # lives inside the stream-read loop in
+                    # ``_stream_post_with_size_cap``; ``raise_for_status()`` is
+                    # invoked before any body chunk is read so the existing
+                    # auth-refresh / 429 / 5xx branches below still fire with
+                    # the same :class:`httpx.HTTPStatusError` they did when
+                    # this used ``client.post``.
+                    response = await _stream_post_with_size_cap(
+                        client,
+                        url,
+                        body=body,
+                        headers=headers,
+                    )
                 except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                     # --- Auth refresh path ---------------------------------
                     if (

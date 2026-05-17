@@ -134,13 +134,23 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     )
 
     def is_post_await(node):
+        """Match the single per-iteration POST await.
+
+        Accepts either historical shape:
+        - ``await client.post(...)`` (pre-streaming),
+        - ``await _stream_post_with_size_cap(...)`` (PR-E onwards — the helper
+          performs the streaming POST internally, so it's the same conceptual
+          POST site for the purposes of this concurrency invariant).
+        """
         if not isinstance(node, ast.Await):
             return False
         call = node.value
         if not isinstance(call, ast.Call):
             return False
-        attr = call.func
-        return isinstance(attr, ast.Attribute) and attr.attr == "post"
+        func = call.func
+        if isinstance(func, ast.Attribute) and func.attr == "post":
+            return True
+        return isinstance(func, ast.Name) and func.id == "_stream_post_with_size_cap"
 
     def _walk_outer(parent):
         """Yield nodes lexically inside ``parent`` itself (skip nested defs).
