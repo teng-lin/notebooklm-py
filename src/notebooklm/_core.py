@@ -26,6 +26,7 @@ from ._core_cache import (
 from ._core_cookie_persistence import CookiePersistence
 from ._core_metrics import ClientMetrics
 from ._core_polling import PendingPolls, PollRegistry
+from ._core_reqid import DEFAULT_STEP as _REQID_DEFAULT_STEP
 from ._core_reqid import ReqidCounter
 from ._core_rpc import RpcExecutor
 from ._core_transport import (
@@ -737,11 +738,12 @@ class ClientCore:
     def _pending_polls(self, value: PendingPolls) -> None:
         self.poll_registry.pending = value
 
-    async def next_reqid(self, step: int = 100000) -> int:
+    async def next_reqid(self, step: int = _REQID_DEFAULT_STEP) -> int:
         """Atomically increment the request-id counter and return the new value.
 
         Thin facade over :meth:`ReqidCounter.next_reqid`. The default ``step``
-        matches the historical bump used by ``ChatAPI.ask``; see
+        is sourced from :data:`notebooklm._core_reqid.DEFAULT_STEP` so the
+        facade and the underlying helper cannot silently drift apart; see
         :class:`notebooklm._core_reqid.ReqidCounter` for the full contract,
         validation rules, and lazy-lock semantics.
         """
