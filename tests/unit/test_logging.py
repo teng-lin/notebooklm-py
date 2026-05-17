@@ -603,7 +603,7 @@ def test_fast_path_skips_innocuous_messages_unchanged():
     assert scrub_secrets(benign) is benign or scrub_secrets(benign) == benign
 
 
-def test_fast_path_microbenchmark_speedup_ratio(monkeypatch):
+def test_fast_path_bypass_skips_regex_patterns(monkeypatch):
     """Fast-path must skip the expensive regex sweep for innocuous redactions.
 
     This used to benchmark the speedup ratio, but timing assertions flap on
@@ -625,6 +625,9 @@ def test_fast_path_microbenchmark_speedup_ratio(monkeypatch):
     class CountingPattern:
         def __init__(self) -> None:
             self.calls = 0
+
+        def __repr__(self) -> str:
+            return f"CountingPattern(calls={self.calls})"
 
         def sub(self, _replacement: str, text: str) -> str:
             self.calls += 1
