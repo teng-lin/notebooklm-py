@@ -52,17 +52,17 @@ jobs:
         python scripts/check_rpc_health.py --full 2>&1 | tee health-report.txt
         exit_code=${PIPESTATUS[0]}
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
-        exit $exit_code
+        exit "$exit_code"
 
     - name: Add Summary
       if: always()
       shell: bash
       run: |
-        echo "## RPC Health Check Results" >> $GITHUB_STEP_SUMMARY
-        grep -A 10 "^SUMMARY$" health-report.txt >> $GITHUB_STEP_SUMMARY || echo "No summary found" >> $GITHUB_STEP_SUMMARY
+        echo "## RPC Health Check Results" >> "$GITHUB_STEP_SUMMARY"
+        grep -A 10 "^SUMMARY$" health-report.txt >> "$GITHUB_STEP_SUMMARY" || echo "No summary found" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Create Issue on RPC Mismatch
-      if: steps.health.outputs.exit_code == '1'
+      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '1'
       uses: peter-evans/create-issue-from-file@v6
       with:
         title: "RPC ID Mismatch Detected"
@@ -70,7 +70,7 @@ jobs:
         labels: bug, rpc-breakage, automated
 
     - name: Create Issue on Auth Failure
-      if: steps.health.outputs.exit_code == '2'
+      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '2'
       uses: peter-evans/create-issue-from-file@v6
       with:
         title: "RPC Health Check: Authentication Failure"
@@ -78,7 +78,7 @@ jobs:
         labels: bug, automated
 
     - name: Extract failing methods for ERROR issue
-      if: steps.health.outputs.exit_code == '3'
+      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '3'
       id: error_details
       shell: bash
       run: |
@@ -105,7 +105,7 @@ jobs:
         } > error-issue-body.md
 
     - name: Create Issue on Non-transient ERROR
-      if: steps.health.outputs.exit_code == '3'
+      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '3'
       uses: peter-evans/create-issue-from-file@v6
       with:
         title: "RPC Health Check: Non-transient ERROR detected"
@@ -120,8 +120,15 @@ jobs:
         path: health-report.txt
         retention-days: 30
 
+    - name: Report PR health check failure
+      if: github.event_name == 'pull_request' && steps.health.outcome == 'failure'
+      run: |
+        echo "RPC Health Check failed on this pull request (exit code: ${{ steps.health.outputs.exit_code }})."
+        echo "Pull-request runs are report-only; scheduled and manual runs still fail and file issues."
+        echo "See the workflow summary and rpc-health-report artifact for details."
+
     - name: Fail if health check failed
-      if: steps.health.outcome == 'failure'
+      if: github.event_name != 'pull_request' && steps.health.outcome == 'failure'
       run: |
         echo "RPC Health Check failed (exit code: ${{ steps.health.outputs.exit_code }}). See report above."
         exit 1
