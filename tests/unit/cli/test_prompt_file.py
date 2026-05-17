@@ -28,6 +28,14 @@ class TestResolvePrompt:
     def test_uses_argument_when_prompt_file_missing(self):
         assert resolve_prompt("hello", None, "question") == "hello"
 
+    def test_strips_normal_sized_argument_whitespace(self):
+        assert resolve_prompt("  hello from argument \n", None, "question") == "hello from argument"
+
+    def test_preserves_large_argument_without_stripping(self):
+        large_prompt = f" {'x' * 10000} "
+
+        assert resolve_prompt(large_prompt, None, "question") == large_prompt
+
     def test_reads_prompt_file_and_strips_whitespace(self, tmp_path):
         prompt_file = tmp_path / "prompt.txt"
         prompt_file.write_text("hello from file\n\n", encoding="utf-8")
