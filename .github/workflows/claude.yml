@@ -15,11 +15,20 @@ permissions:
 
 jobs:
   claude:
+    # AND-gate on both the actor (``sender.login``) and the keyword. For the
+    # ``issues`` event we additionally require ``issue.user.login`` to match
+    # — otherwise an attacker could open an issue with ``@claude`` in the
+    # body and wait for ``teng-lin`` to assign it: ``sender`` would then be
+    # ``teng-lin`` while the prompt text remains attacker-authored. Keeping
+    # the author check pins both the trigger and the prompt to the same
+    # trusted account.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      github.event.sender.login == 'teng-lin' && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+        (github.event_name == 'issues' && github.event.issue.user.login == 'teng-lin' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read

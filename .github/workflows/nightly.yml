@@ -31,32 +31,40 @@ jobs:
     steps:
       - name: Resolve target branch
         id: resolve
+        # Route every workflow_dispatch input + GitHub-context value through
+        # the env block so crafted values (e.g. ``"; rm -rf / ; #``) reach
+        # the shell as literal strings, not as inlined script. ``GITHUB_OUTPUT``
+        # is set automatically by the runner.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          CUSTOM_BRANCH: ${{ inputs.custom_branch }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "$EVENT_NAME" = "schedule" ]; then
             # Scheduled: determine from cron expression
-            if [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
-              echo "branch=main" >> $GITHUB_OUTPUT
+            if [ "$EVENT_SCHEDULE" = "0 6 * * *" ]; then
+              echo "branch=main" >> "$GITHUB_OUTPUT"
             else
-              echo "branch=develop" >> $GITHUB_OUTPUT
+              echo "branch=develop" >> "$GITHUB_OUTPUT"
             fi
-            echo "is_standard=true" >> $GITHUB_OUTPUT
+            echo "is_standard=true" >> "$GITHUB_OUTPUT"
           else
             # Manual: use custom_branch if set, otherwise use triggering branch
-            CUSTOM="${{ inputs.custom_branch }}"
-            if [ -n "$CUSTOM" ]; then
-              TARGET="$CUSTOM"
+            if [ -n "$CUSTOM_BRANCH" ]; then
+              TARGET="$CUSTOM_BRANCH"
             else
-              TARGET="${{ github.ref_name }}"
+              TARGET="$REF_NAME"
             fi
-            echo "branch=$TARGET" >> $GITHUB_OUTPUT
+            echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
             # Check if it's main or develop
             if [ "$TARGET" = "main" ] || [ "$TARGET" = "develop" ]; then
-              echo "is_standard=true" >> $GITHUB_OUTPUT
+              echo "is_standard=true" >> "$GITHUB_OUTPUT"
             else
-              echo "is_standard=false" >> $GITHUB_OUTPUT
+              echo "is_standard=false" >> "$GITHUB_OUTPUT"
             fi
           fi
-          echo "Resolved branch: $(cat $GITHUB_OUTPUT | grep branch= | cut -d= -f2)"
+          echo "Resolved branch: $(grep branch= "$GITHUB_OUTPUT" | cut -d= -f2)"
 
   # Run E2E tests on the resolved branch
   e2e:
@@ -118,16 +126,23 @@ jobs:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        # Route every workflow_dispatch input + upstream needs.* value through
+        # the env block so crafted values (e.g. ``"; echo PWN``) reach pytest
+        # as literal strings, not as inlined shell. ``TARGET_BRANCH`` is
+        # derived from ``inputs.custom_branch`` upstream; ``TEST_FILTER`` is
+        # the direct workflow_dispatch input (empty for scheduled runs).
+        TEST_FILTER: ${{ inputs.test_filter }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
+        MATRIX_OS: ${{ matrix.os }}
       shell: bash
       run: |
-        echo "Testing branch: ${{ needs.resolve-branch.outputs.branch }}"
-        TEST_FILTER="${{ inputs.test_filter }}"
+        echo "Testing branch: $TARGET_BRANCH"
         # --reruns 1 catches sub-minute network blips; longer chat-throttle
         # recovery is handled by the cool-down retry step below.
         if [ -n "$TEST_FILTER" ]; then
           # Run specific test(s) when filter provided
           pytest "$TEST_FILTER" -s -v --tb=short --reruns 1 --reruns-delay 30
-        elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+        elif [ "$MATRIX_OS" = "ubuntu-latest" ]; then
           # Linux: run all E2E tests except variants
           pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
         else

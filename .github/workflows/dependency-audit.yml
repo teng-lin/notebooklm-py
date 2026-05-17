@@ -1,7 +1,7 @@
 # Runs pip-audit against the locked environment so a CVE landing in a
-# transitive dep surfaces in CI rather than at next user install. The first
-# release cycle uses ``continue-on-error`` to avoid blocking unrelated PRs
-# while the policy beds in — flip to a hard fail in a follow-up PR.
+# transitive dep surfaces in CI rather than at next user install. Any
+# unresolved advisory fails the job (a hard merge gate on PRs, a red main
+# build on push/schedule).
 name: dependency-audit
 
 on:
@@ -41,8 +41,7 @@ jobs:
         run: uv pip install 'pip-audit>=2.7.0,<3'
 
       - name: pip-audit (locked env)
-        # Soft-launch: keep a transient advisory from blocking unrelated PRs
-        # while the audit policy beds in. Remove ``continue-on-error`` after
-        # the first release cycle so the audit becomes a hard merge gate.
-        continue-on-error: true
+        # Hard merge gate: any unresolved advisory fails the job. If a
+        # transient advisory genuinely needs to be ignored, pin the fix in
+        # uv.lock or use pip-audit's --ignore-vuln for a tracked exception.
         run: uv run pip-audit --strict

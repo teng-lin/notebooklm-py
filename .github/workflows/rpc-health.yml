@@ -5,9 +5,11 @@ on:
     # Run at 7 AM UTC daily (1 hour after nightly E2E tests)
     - cron: '0 7 * * *'
   workflow_dispatch:  # Allow manual trigger
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -18,8 +20,10 @@ jobs:
   health-check:
     name: RPC Health Check
     runs-on: ubuntu-latest
-    # Only run on main repo (not forks) due to secrets requirement
-    if: github.repository == 'teng-lin/notebooklm-py'
+    # Scheduled/manual runs always fire; PR runs fire only for same-repo PRs
+    # so fork PRs never see NOTEBOOKLM_AUTH_JSON. ``head.repo.full_name`` on a
+    # fork PR is ``<fork-owner>/notebooklm-py``, which fails the equality.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
     - uses: actions/checkout@v6
