@@ -14,10 +14,11 @@ import json
 import logging
 import os
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 
 import click
@@ -41,6 +42,7 @@ console = Console()
 # active so that stdout stays parseable JSON for automation. See ``emit_status``.
 stderr_console = Console(stderr=True)
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:
@@ -1091,6 +1093,74 @@ def handle_auth_error(json_output: bool = False):
 # =============================================================================
 
 
+def with_auth_and_errors(
+    ctx: click.Context,
+    *,
+    command_name: str,
+    json_output: bool,
+    body: Callable[[AuthTokens], Awaitable[T]],
+    auth_loader: Callable[[click.Context], AuthTokens] | None = None,
+) -> T:
+    """Run a CLI command body with shared auth bootstrap and error handling."""
+    from .error_handler import handle_errors
+
+    start = time.monotonic()
+    logger.debug("CLI command starting: %s", command_name)
+
+    # Verbose is captured on the root group via Click ``--verbose`` count.
+    # Use ``find_root`` so nested subcommand contexts still see it.
+    try:
+        verbose_count = int(ctx.find_root().params.get("verbose", 0) or 0)
+    except Exception:
+        verbose_count = 0
+    verbose = verbose_count >= 1
+
+    def log_result(status: str, detail: str = "") -> float:
+        elapsed = time.monotonic() - start
+        if detail:
+            logger.debug(
+                "CLI command %s: %s (%.3fs) - %s",
+                status,
+                command_name,
+                elapsed,
+                detail,
+            )
+        else:
+            logger.debug("CLI command %s: %s (%.3fs)", status, command_name, elapsed)
+        return elapsed
+
+    with handle_errors(verbose=verbose, json_output=json_output):
+        # Auth bootstrap: FileNotFoundError here means the storage file is
+        # missing — it has a dedicated rich UX via ``handle_auth_error``.
+        # The narrow ``except FileNotFoundError`` ensures a FileNotFoundError
+        # raised *inside* the command body (e.g., a missing ``--source-file``
+        # argument; see issue #153) is NOT misclassified as an auth error —
+        # it propagates to ``handle_errors``' UNEXPECTED_ERROR branch instead.
+        # Any OTHER exception from the auth bootstrap (malformed storage JSON,
+        # AuthError during token extraction, etc.) also reaches ``handle_errors``
+        # so users get typed hints rather than a raw traceback.
+        try:
+            loader = auth_loader or get_auth_tokens
+            auth = loader(ctx)
+        except FileNotFoundError:
+            log_result("failed", "not authenticated")
+            return handle_auth_error(json_output)
+        except Exception as e:
+            # Non-FileNotFoundError bootstrap failures (AuthError, malformed
+            # storage JSON, etc.) still need the structured debug-log entry;
+            # ``handle_errors`` will translate the exception to a typed hint.
+            log_result("failed", str(e))
+            raise
+
+        try:
+            result = run_async(body(auth))
+        except Exception as e:
+            log_result("failed", str(e))
+            raise
+        log_result("completed")
+        return result
+
+
 def with_client(f):
     """Decorator that handles auth, async execution, and errors for CLI commands.
 
@@ -1123,59 +1193,18 @@ def with_client(f):
     @wraps(f)
     @click.pass_context
     def wrapper(ctx, *args, **kwargs):
-        from .error_handler import handle_errors
-
         cmd_name = f.__name__
-        start = time.monotonic()
-        logger.debug("CLI command starting: %s", cmd_name)
-
         json_output = kwargs.get("json_output", False)
-        # Verbose is captured on the root group via Click ``--verbose`` count.
-        # Use ``find_root`` so nested subcommand contexts still see it.
-        try:
-            verbose_count = int(ctx.find_root().params.get("verbose", 0) or 0)
-        except Exception:
-            verbose_count = 0
-        verbose = verbose_count >= 1
 
-        def log_result(status: str, detail: str = "") -> float:
-            elapsed = time.monotonic() - start
-            if detail:
-                logger.debug("CLI command %s: %s (%.3fs) - %s", status, cmd_name, elapsed, detail)
-            else:
-                logger.debug("CLI command %s: %s (%.3fs)", status, cmd_name, elapsed)
-            return elapsed
+        def body(auth: AuthTokens) -> Awaitable[Any]:
+            return f(ctx, *args, client_auth=auth, **kwargs)
 
-        with handle_errors(verbose=verbose, json_output=json_output):
-            # Auth bootstrap: FileNotFoundError here means the storage file is
-            # missing — it has a dedicated rich UX via ``handle_auth_error``.
-            # The narrow ``except FileNotFoundError`` ensures a FileNotFoundError
-            # raised *inside* the command body (e.g., a missing ``--source-file``
-            # argument; see issue #153) is NOT misclassified as an auth error —
-            # it propagates to ``handle_errors``' UNEXPECTED_ERROR branch instead.
-            # Any OTHER exception from the auth bootstrap (malformed storage JSON,
-            # AuthError during token extraction, etc.) also reaches ``handle_errors``
-            # so users get typed hints rather than a raw traceback.
-            try:
-                auth = get_auth_tokens(ctx)
-            except FileNotFoundError:
-                log_result("failed", "not authenticated")
-                handle_auth_error(json_output)
-                return  # unreachable — handle_auth_error raises SystemExit
-            except Exception as e:
-                # Non-FileNotFoundError bootstrap failures (AuthError, malformed
-                # storage JSON, etc.) still need the structured debug-log entry;
-                # ``handle_errors`` will translate the exception to a typed hint.
-                log_result("failed", str(e))
-                raise
-            try:
-                coro = f(ctx, *args, client_auth=auth, **kwargs)
-                result = run_async(coro)
-            except Exception as e:
-                log_result("failed", str(e))
-                raise
-            log_result("completed")
-            return result
+        return with_auth_and_errors(
+            ctx,
+            command_name=cmd_name,
+            json_output=json_output,
+            body=body,
+        )
 
     return wrapper
 
