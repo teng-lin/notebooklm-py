@@ -141,6 +141,7 @@ async def _resolve_partial_id(
     matches = []
     for item in items:
         item_id_lower = item.id.lower()
+        # Exact short IDs win over prefix matches to avoid false ambiguity.
         if item_id_lower == partial_id_lower:
             return item.id
         if item_id_lower.startswith(partial_id_lower):
