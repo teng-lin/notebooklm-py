@@ -544,6 +544,7 @@ class TestAskServerResumed:
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "question"])
@@ -576,6 +577,7 @@ class TestAskServerResumed:
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "follow-up question"])
@@ -620,6 +622,7 @@ class TestAskNewFlag:
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "question"])
@@ -693,6 +696,7 @@ class TestAskNewFlag:
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
             ):
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "question"])

@@ -3,7 +3,7 @@
 import click
 
 from .agent_templates import get_agent_source_content
-from .helpers import console
+from .rendering import console
 
 
 @click.group()

@@ -28,8 +28,9 @@ from ...auth import (
 from ...client import NotebookLMClient
 from ...io import atomic_write_json
 from ...paths import get_storage_path
-from ..helpers import console, run_async
 from ..language import set_language
+from ..rendering import console
+from ..runtime import run_async
 
 logger = logging.getLogger(__name__)
 

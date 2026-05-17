@@ -59,7 +59,11 @@ def mock_context(tmp_path: Path):
         encoding="utf-8",
     )
 
-    with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+    with (
+        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+    ):
         yield context_file
 
 

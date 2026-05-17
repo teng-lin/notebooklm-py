@@ -36,6 +36,7 @@ from collections.abc import Iterator
 import pytest
 
 CLI_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "cli"
+HELPERS_PATH = CLI_ROOT / "helpers.py"
 OPTIONS_PATH = CLI_ROOT / "options.py"
 SERVICES_ROOT = CLI_ROOT / "services"
 RENDERING_PATH = CLI_ROOT / "rendering.py"
@@ -95,6 +96,51 @@ RESOLVE_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "completion",
     "helpers",
     "runtime",
+}
+HELPERS_IMPORT_ALLOWED_FILES = {
+    "__init__.py",  # compatibility re-export surface
+    "auth_runtime.py",  # call-time patch seam for auth/runtime wrappers
+    "completion.py",  # call-time patch seam for completion callbacks
+}
+HELPERS_FACADE_ALLOWED_DEFS = {
+    "_current_storage_override",
+    "_display_cited_import_selection",
+    "_get_context_value",
+    "_resolve_partial_id",
+    "_set_context_value",
+    "build_cookie_jar",
+    "clear_context",
+    "cli_name_to_artifact_type",
+    "display_report",
+    "display_research_sources",
+    "emit_status",
+    "get_artifact_type_display",
+    "get_auth_tokens",
+    "get_client",
+    "get_current_conversation",
+    "get_current_notebook",
+    "get_source_type_display",
+    "handle_auth_error",
+    "handle_error",
+    "import_research_sources",
+    "import_with_retry",
+    "json_error_response",
+    "json_output_response",
+    "load_auth_from_storage",
+    "read_stdin_text",
+    "require_notebook",
+    "resolve_artifact_id",
+    "resolve_note_id",
+    "resolve_notebook_id",
+    "resolve_prompt",
+    "resolve_source_id",
+    "resolve_source_ids",
+    "run_async",
+    "set_current_conversation",
+    "set_current_notebook",
+    "validate_id",
+    "with_auth_and_errors",
+    "with_client",
 }
 
 
@@ -189,6 +235,48 @@ def _imports_notebooklm_auth(tree: ast.AST) -> list[str]:
     return offenders
 
 
+def _imports_helpers_facade(tree: ast.AST, relative_parts: tuple[str, ...]) -> list[str]:
+    """Return imports that bind a CLI module back to ``cli.helpers``."""
+    offenders: list[str] = []
+    cli_package_level = len(relative_parts)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            mod_parts = mod.split(".") if mod else []
+            if node.level > 0:
+                if node.level == cli_package_level and mod_parts[:1] == ["helpers"]:
+                    offenders.append(f"from {'.' * node.level}{mod} import ...")
+                elif node.level == cli_package_level and not mod:
+                    offenders.extend(
+                        f"from {'.' * node.level} import {alias.name}"
+                        for alias in node.names
+                        if alias.name == "helpers"
+                    )
+                elif node.level > cli_package_level and mod_parts[:1] == ["cli"]:
+                    if len(mod_parts) > 1 and mod_parts[1] == "helpers":
+                        offenders.append(f"from {'.' * node.level}{mod} import ...")
+                    elif len(mod_parts) == 1:
+                        offenders.extend(
+                            f"from {'.' * node.level}{mod} import {alias.name}"
+                            for alias in node.names
+                            if alias.name == "helpers"
+                        )
+            elif node.level == 0:
+                if mod_parts[:3] == ["notebooklm", "cli", "helpers"]:
+                    offenders.append(f"from {mod} import ...")
+                elif mod_parts[:2] == ["notebooklm", "cli"]:
+                    offenders.extend(
+                        f"from {mod} import {alias.name}"
+                        for alias in node.names
+                        if alias.name == "helpers"
+                    )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[:3] == ["notebooklm", "cli", "helpers"]:
+                    offenders.append(f"import {alias.name}")
+    return offenders
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
@@ -205,6 +293,47 @@ def test_cli_module_imports_detects_cli_import_forms(
     path.write_text(source, encoding="utf-8")
 
     assert _cli_module_imports(path) == expected
+
+
+@pytest.mark.parametrize(
+    ("relative_parts", "source", "expected"),
+    [
+        (("source.py",), "from .helpers import console\n", ["from .helpers import ..."]),
+        (("source.py",), "from . import helpers\n", ["from . import helpers"]),
+        (
+            ("services", "source.py"),
+            "from ..helpers import console\n",
+            ["from ..helpers import ..."],
+        ),
+        (
+            ("services", "source.py"),
+            "from .. import helpers\n",
+            ["from .. import helpers"],
+        ),
+        (("services", "source.py"), "from . import helpers\n", []),
+        (
+            ("source.py",),
+            "from notebooklm.cli.helpers import console\n",
+            ["from notebooklm.cli.helpers import ..."],
+        ),
+        (
+            ("source.py",),
+            "from notebooklm.cli import helpers\n",
+            ["from notebooklm.cli import helpers"],
+        ),
+        (
+            ("source.py",),
+            "import notebooklm.cli.helpers as helpers\n",
+            ["import notebooklm.cli.helpers"],
+        ),
+    ],
+)
+def test_imports_helpers_facade_detects_cli_helpers_forms(
+    relative_parts: tuple[str, ...], source: str, expected: list[str]
+) -> None:
+    tree = ast.parse(source)
+
+    assert _imports_helpers_facade(tree, relative_parts) == expected
 
 
 def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on import shape
@@ -427,6 +556,45 @@ def test_resolve_stays_off_helpers_runtime_auth_and_commands() -> None:
     assert not auth_imports, (
         "cli.resolve must not import notebooklm.auth; keep auth/runtime work outside "
         f"the resolver layer. Offenders: {auth_imports}"
+    )
+
+
+def test_command_modules_do_not_import_helpers_facade_for_moved_symbols() -> None:
+    """Production CLI modules import moved helpers from their owning modules."""
+    offenders: list[tuple[str, list[str]]] = []
+    for path in sorted(CLI_ROOT.rglob("*.py")):
+        if path.name == "helpers.py":
+            continue
+        relative = str(path.relative_to(CLI_ROOT))
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        helper_imports = _imports_helpers_facade(tree, tuple(path.relative_to(CLI_ROOT).parts))
+        if helper_imports and relative not in HELPERS_IMPORT_ALLOWED_FILES:
+            offenders.append((relative, helper_imports))
+
+    assert not offenders, (
+        "Production CLI modules must not import moved symbols from cli.helpers. "
+        "Import rendering/context/runtime/auth/resolve/input/research helpers from "
+        "their owning modules instead. Only the compatibility export surface and "
+        "documented call-time patch seams may bind to cli.helpers.\n"
+        f"Offenders: {offenders}"
+    )
+
+
+def test_helpers_remains_compatibility_facade() -> None:
+    """Keep ``cli.helpers`` from silently regaining broad command responsibilities."""
+    tree = ast.parse(HELPERS_PATH.read_text(encoding="utf-8"))
+    defs = {node.name for node in tree.body if isinstance(node, BLOCK_DEF_TYPES)}
+    imports = _cli_module_imports(HELPERS_PATH)
+
+    assert defs <= HELPERS_FACADE_ALLOWED_DEFS, (
+        "cli.helpers should stay a compatibility facade over moved helper modules. "
+        "Add compatibility re-exports to HELPERS_FACADE_ALLOWED_DEFS only after "
+        "the implementation lives in an owning module. "
+        f"Unexpected defs: {sorted(defs - HELPERS_FACADE_ALLOWED_DEFS)}"
+    )
+    assert not (imports & CLI_COMMAND_MODULES), (
+        "cli.helpers must not import command modules; keep it below commands. "
+        f"Offenders: {sorted(imports & CLI_COMMAND_MODULES)}"
     )
 
 

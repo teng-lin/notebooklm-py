@@ -22,18 +22,20 @@ from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import ExportType
+from .auth_runtime import with_client
 from .error_handler import _output_error, emit_cancelled_and_exit
-from .helpers import (
+from .options import json_option, list_options, notebook_option, wait_polling_options
+from .rendering import (
     cli_name_to_artifact_type,
     console,
     get_artifact_type_display,
     json_output_response,
+)
+from .resolve import (
     require_notebook,
     resolve_artifact_id,
     resolve_notebook_id,
-    with_client,
 )
-from .options import json_option, list_options, notebook_option, wait_polling_options
 
 
 @contextlib.asynccontextmanager

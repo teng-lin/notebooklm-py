@@ -31,22 +31,9 @@ from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import Source, source_status_to_str
+from .auth_runtime import with_client
 from .error_handler import _output_error, emit_cancelled_and_exit
-from .helpers import (
-    console,
-    display_report,
-    display_research_sources,
-    emit_status,
-    get_source_type_display,
-    json_output_response,
-    read_stdin_text,
-    require_notebook,
-    resolve_notebook_id,
-    resolve_prompt,
-    resolve_source_id,
-    validate_id,
-    with_client,
-)
+from .input import read_stdin_text, resolve_prompt
 from .options import (
     json_option,
     list_options,
@@ -54,7 +41,16 @@ from .options import (
     prompt_file_option,
     wait_polling_options,
 )
+from .rendering import (
+    console,
+    display_report,
+    display_research_sources,
+    emit_status,
+    get_source_type_display,
+    json_output_response,
+)
 from .research_import import import_research_sources
+from .resolve import require_notebook, resolve_notebook_id, resolve_source_id, validate_id
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
 

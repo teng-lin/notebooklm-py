@@ -17,15 +17,10 @@ import click
 from rich.table import Table
 
 from ..client import NotebookLMClient
-from .helpers import (
-    clear_context,
-    console,
-    get_current_notebook,
-    json_output_response,
-    set_current_notebook,
-    with_client,
-)
+from .auth_runtime import with_client
+from .context import clear_context, get_current_notebook, set_current_notebook
 from .options import list_options, notebook_option
+from .rendering import console, json_output_response
 from .resolve import require_notebook, resolve_notebook_id
 
 

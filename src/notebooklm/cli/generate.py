@@ -34,16 +34,8 @@ from ..types import (
     VideoFormat,
     VideoStyle,
 )
-from .helpers import (
-    console,
-    json_error_response,
-    json_output_response,
-    require_notebook,
-    resolve_notebook_id,
-    resolve_prompt,
-    resolve_source_ids,
-    with_client,
-)
+from .auth_runtime import with_client
+from .input import resolve_prompt
 from .language import SUPPORTED_LANGUAGES, get_language
 from .options import (
     _complete_artifacts,
@@ -53,6 +45,16 @@ from .options import (
     prompt_file_option,
     retry_option,
     wait_polling_options,
+)
+from .rendering import (
+    console,
+    json_error_response,
+    json_output_response,
+)
+from .resolve import (
+    require_notebook,
+    resolve_notebook_id,
+    resolve_source_ids,
 )
 from .services.artifact_generation import generate_with_retry, handle_generation_result
 

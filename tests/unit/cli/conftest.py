@@ -319,5 +319,9 @@ def patch_main_cli_client():
 def mock_context_file(tmp_path):
     """Provide a temporary context file for testing context commands."""
     context_file = tmp_path / "context.json"
-    with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+    with (
+        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
+    ):
         yield context_file

@@ -17,7 +17,7 @@ from ..paths import (
     get_profile_dir,
     get_storage_path,
 )
-from .helpers import console, json_output_response
+from .rendering import console, json_output_response
 
 logger = logging.getLogger(__name__)
 

@@ -67,8 +67,8 @@ High-risk helper patch seams found:
 | `build_cookie_jar` imported from `notebooklm.auth` | `notebooklm.cli.auth_runtime` wrapper | T12.2 | Existing tests patch `notebooklm.cli.helpers.build_cookie_jar`; keep or migrate in same slice. |
 | `handle_auth_error` | `notebooklm.cli.auth_runtime` | T12.2 | Preserve JSON/text UX, exit code 1, checked path fields, and `NoReturn` behavior. |
 | `run_async` | `notebooklm.cli.runtime` | T12.2 | Preserve nested-loop and coroutine cleanup semantics. Existing tests patch `helpers.run_async`. |
-| `with_auth_and_errors` | `notebooklm.cli.runtime` | T12.2 | Preserve T11 call-time lookup for `get_auth_tokens`, `handle_errors`, `handle_auth_error`, and `run_async`. |
-| `with_client` | `notebooklm.cli.runtime` | T12.2 | Keep decorator signature and command callback contract unchanged. |
+| `with_auth_and_errors` | `notebooklm.cli.auth_runtime` | T12.2 | Preserve T11 call-time lookup for `get_auth_tokens`, `handle_errors`, `handle_auth_error`, and `run_async`. |
+| `with_client` | `notebooklm.cli.auth_runtime` | T12.2 | Keep decorator signature and command callback contract unchanged. |
 | `handle_error` | `notebooklm.cli.runtime` or `notebooklm.cli.rendering` | T12.2 | Preserve exit code 1 and Unicode fallback. |
 | `validate_id` | `notebooklm.cli.resolve` | T12.3 | Preserve ClickException wording and trimming behavior. |
 | `require_notebook` | `notebooklm.cli.resolve` | T12.3 | Preserve flag/env/context precedence and failure message. |
@@ -137,3 +137,21 @@ The current plan order remains valid:
 
 The marker-only package file `src/notebooklm/cli/services/__init__.py` is
 created in T12.0 so later service slices do not race on package creation.
+
+## T12.8 Final Helper Facade Imports
+
+After T12.8, production command and service modules import moved helpers from
+their canonical owners instead of `notebooklm.cli.helpers`.
+
+Remaining production imports of `cli.helpers` are intentionally limited to:
+
+| File | Import shape | Reason |
+|---|---|---|
+| `src/notebooklm/cli/__init__.py` | `from .helpers import ...` | Compatibility re-export surface for callers that import helper names through the CLI package. |
+| `src/notebooklm/cli/auth_runtime.py` | lazy `from . import helpers` inside `_helpers_facade()` | Preserves call-time patch seams for `load_auth_from_storage`, `build_cookie_jar`, `get_client`, `get_auth_tokens`, `run_async`, `handle_auth_error`, JSON error rendering, and helper-level consoles. |
+| `src/notebooklm/cli/completion.py` | lazy `from . import helpers` inside provider methods | Preserves existing completion tests and shell-completion patch seams for `get_auth_tokens`, `get_current_notebook`, and `run_async` while keeping visible completion failures silent. |
+
+`tests/unit/test_cli_boundary.py::test_command_modules_do_not_import_helpers_facade_for_moved_symbols`
+guards that no other production CLI module imports moved helper symbols through
+the compatibility facade. `test_helpers_remains_compatibility_facade` guards
+against `cli.helpers` regaining new top-level command responsibilities.

@@ -9,7 +9,7 @@ from typing import Any
 from ...client import NotebookLMClient
 from ...types import GenerationStatus
 from ..error_handler import emit_cancelled_and_exit
-from ..helpers import console, json_error_response, json_output_response
+from ..rendering import console, json_error_response, json_output_response
 
 # Retry constants
 RETRY_INITIAL_DELAY = 60.0  # seconds

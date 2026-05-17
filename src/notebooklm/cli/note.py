@@ -17,14 +17,11 @@ from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import Note
+from .auth_runtime import with_client
 from .error_handler import _output_error
-from .helpers import (
-    console,
-    json_output_response,
-    with_client,
-)
 from .input import read_stdin_text
 from .options import json_option, notebook_option
+from .rendering import console, json_output_response
 from .resolve import require_notebook, resolve_note_id, resolve_notebook_id
 
 

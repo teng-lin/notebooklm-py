@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from .agent_templates import get_agent_source_content
-from .helpers import console
+from .rendering import console
 
 
 @dataclass(frozen=True)

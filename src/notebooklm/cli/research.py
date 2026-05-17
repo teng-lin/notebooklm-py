@@ -10,17 +10,19 @@ import asyncio
 import click
 
 from ..client import NotebookLMClient
-from .helpers import (
+from .auth_runtime import with_client
+from .options import notebook_option
+from .rendering import (
     console,
     display_report,
     display_research_sources,
     json_output_response,
+)
+from .research_import import import_research_sources
+from .resolve import (
     require_notebook,
     resolve_notebook_id,
-    with_client,
 )
-from .options import notebook_option
-from .research_import import import_research_sources
 
 # UI-only cap for the research summary preview shown in `research status` /
 # `research wait`. Unlike RPC error previews (see

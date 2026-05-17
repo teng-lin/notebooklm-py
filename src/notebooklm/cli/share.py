@@ -14,14 +14,10 @@ from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import SharePermission, ShareViewLevel
-from .helpers import (
-    console,
-    json_output_response,
-    require_notebook,
-    resolve_notebook_id,
-    with_client,
-)
+from .auth_runtime import with_client
 from .options import notebook_option
+from .rendering import console, json_output_response
+from .resolve import require_notebook, resolve_notebook_id
 
 
 def _permission_name(perm: SharePermission) -> str:

@@ -15,8 +15,10 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from ..io import atomic_update_json
 from ..paths import get_config_path, get_home_dir
-from .helpers import console, get_auth_tokens, json_output_response, run_async
+from .auth_runtime import get_auth_tokens
 from .options import json_option
+from .rendering import console, json_output_response
+from .runtime import run_async
 
 logger = logging.getLogger(__name__)
 

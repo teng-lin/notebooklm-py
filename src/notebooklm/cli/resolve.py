@@ -47,7 +47,7 @@ def _is_full_id_candidate(entity_id: str) -> bool:
 def require_notebook(
     notebook_id: str | None,
     *,
-    context_path_fn: ContextPathFn = get_context_path,
+    context_path_fn: ContextPathFn | None = None,
     output_console: Console = rendering_helpers.console,
 ) -> str:
     """Get notebook ID from argument, env var, or active context.
@@ -64,7 +64,8 @@ def require_notebook(
         notebook_id: Optional notebook ID from command argument. When the
             Click flag was omitted and the env var was unset, this is ``None``.
         context_path_fn: Context-path resolver, injectable for compatibility
-            wrappers and tests.
+            wrappers and tests. ``None`` keeps the module-level
+            ``get_context_path`` lookup call-time patchable.
         output_console: Console used for the no-notebook diagnostic.
 
     Returns:
@@ -82,7 +83,9 @@ def require_notebook(
     if env_value and env_value.strip():
         return validate_id(env_value, "Notebook")
 
-    current = context_helpers.get_current_notebook(context_path_fn=context_path_fn)
+    current = context_helpers.get_current_notebook(
+        context_path_fn=context_path_fn or get_context_path
+    )
     if current:
         return validate_id(current, "Notebook")
 

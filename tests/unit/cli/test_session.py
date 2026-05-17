@@ -43,6 +43,8 @@ def mock_context_file(tmp_path):
     context_file = tmp_path / "context.json"
     with (
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
         patch("notebooklm.cli.session.get_context_path", return_value=context_file),
     ):
         yield context_file

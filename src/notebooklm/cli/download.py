@@ -23,20 +23,16 @@ import click
 from ..auth import AuthTokens
 from ..client import NotebookLMClient
 from ..types import Artifact, ArtifactType
+from .auth_runtime import with_auth_and_errors
 from .download_helpers import (
     ArtifactDict,
     artifact_title_to_filename,
     resolve_partial_artifact_id,
     select_artifact,
 )
-from .helpers import (
-    console,
-    json_output_response,
-    require_notebook,
-    resolve_notebook_id,
-    with_auth_and_errors,
-)
 from .options import _complete_artifacts, notebook_option
+from .rendering import console, json_output_response
+from .resolve import require_notebook, resolve_notebook_id
 
 # Common signature shared by all artifact download functions.
 # Each function accepts (notebook_id, output_path, *, artifact_id=None, **kwargs).

@@ -43,19 +43,17 @@ from ..paths import (
     get_path_info,
     get_storage_path,
 )
-from .error_handler import handle_errors
-from .helpers import (
+from .auth_runtime import get_auth_tokens, handle_auth_error
+from .context import (
     _current_storage_override,
     clear_context,
-    console,
-    get_auth_tokens,
     get_current_notebook,
-    handle_auth_error,
-    json_output_response,
-    resolve_notebook_id,
-    run_async,
     set_current_notebook,
 )
+from .error_handler import handle_errors
+from .rendering import console, json_output_response
+from .resolve import resolve_notebook_id
+from .runtime import run_async
 from .services import login as login_service
 
 logger = logging.getLogger(__name__)

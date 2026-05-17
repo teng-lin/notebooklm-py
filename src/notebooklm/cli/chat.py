@@ -13,16 +13,14 @@ from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import ChatMode
-from .helpers import (
-    console,
-    get_current_conversation,
-    get_current_notebook,
-    json_output_response,
-    set_current_conversation,
-    with_client,
-)
+from .auth_runtime import with_client
+from .context import get_current_conversation, get_current_notebook, set_current_conversation
 from .input import resolve_prompt
 from .options import _complete_sources, json_option, notebook_option, prompt_file_option
+from .rendering import (
+    console,
+    json_output_response,
+)
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
 
 logger = logging.getLogger(__name__)

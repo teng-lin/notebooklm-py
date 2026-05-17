@@ -27,7 +27,7 @@ from ..paths import (
     read_default_profile,
     resolve_profile,
 )
-from .helpers import console, json_output_response
+from .rendering import console, json_output_response
 from .services import login as login_service
 
 _PROFILE_NAME_RE = login_service._PROFILE_NAME_RE

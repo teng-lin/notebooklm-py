@@ -521,6 +521,8 @@ class TestNotebookDelete:
 
             with (
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
                 patch("notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"),
                 patch("notebooklm.cli.notebook.clear_context"),
                 patch(
@@ -774,6 +776,10 @@ class TestNotebookAsk:
             with (
                 patch(
                     "notebooklm.cli.helpers.get_context_path",
+                    return_value=Path("/nonexistent/context.json"),
+                ),
+                patch(
+                    "notebooklm.cli.context.get_context_path",
                     return_value=Path("/nonexistent/context.json"),
                 ),
                 patch(
