@@ -12,7 +12,6 @@ patch targets; see ``cli.runtime``, ``cli.auth_runtime``, ``cli.context``, and
 """
 
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
@@ -25,8 +24,10 @@ from ..paths import get_context_path
 from ..types import ArtifactType
 from . import auth_runtime as auth_runtime_helpers
 from . import context as context_helpers
+from . import input as input_helpers
 from . import rendering as rendering_helpers
 from . import research_import as research_import_helpers
+from . import resolve as resolve_helpers
 from . import runtime as runtime_helpers
 from ._encoding import safe_echo
 
@@ -223,68 +224,17 @@ def set_current_conversation(conversation_id: str | None):
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
-    """Validate and normalize an entity ID.
-
-    Args:
-        entity_id: The ID to validate
-        entity_name: Name for error messages (e.g., "notebook", "source")
-
-    Returns:
-        Stripped ID
-
-    Raises:
-        click.ClickException: If ID is empty or whitespace-only
-    """
-    if not entity_id or not entity_id.strip():
-        raise click.ClickException(f"{entity_name} ID cannot be empty")
-    return entity_id.strip()
+    """Validate and normalize an entity ID."""
+    return resolve_helpers.validate_id(entity_id, entity_name)
 
 
 def require_notebook(notebook_id: str | None) -> str:
-    """Get notebook ID from argument, env var, or active context.
-
-    Resolution order (env-var precedence):
-
-    1. ``notebook_id`` argument (the resolved value of the ``-n/--notebook``
-       Click flag — already env-var-aware via ``cli/options.py:notebook_option``,
-       which declares ``envvar="NOTEBOOKLM_NOTEBOOK"``).
-    2. ``NOTEBOOKLM_NOTEBOOK`` environment variable. Re-checked here so direct
-       callers that don't pass through the Click flag (programmatic usage,
-       legacy code paths, tests) honor the same precedence ladder.
-    3. The persisted active-notebook context written by ``notebooklm use``.
-    4. Hard error → ``SystemExit(1)`` with a discoverability hint listing all
-       three resolution paths.
-
-    Args:
-        notebook_id: Optional notebook ID from command argument. When the
-            Click flag was omitted AND the env var was unset, this is ``None``.
-
-    Returns:
-        Notebook ID (from argument, env var, or context), validated and stripped.
-
-    Raises:
-        SystemExit: If no notebook ID can be resolved from any source.
-        click.ClickException: If the resolved notebook ID is empty/whitespace
-            after stripping.
-    """
-    if notebook_id:
-        return validate_id(notebook_id, "Notebook")
-    # Env-var fallback runs BEFORE the active-context lookup so per-shell
-    # overrides (e.g. ``NOTEBOOKLM_NOTEBOOK=other notebooklm ask "..."``)
-    # compose without clobbering the persisted ``notebooklm use`` selection.
-    # Empty / whitespace-only values are treated as unset (consistent with
-    # ``NOTEBOOKLM_HL``'s same-shape handling) — the next fallback wins.
-    env_value = os.environ.get("NOTEBOOKLM_NOTEBOOK")
-    if env_value and env_value.strip():
-        return validate_id(env_value, "Notebook")
-    current = get_current_notebook()
-    if current:
-        return validate_id(current, "Notebook")
-    console.print(
-        "[red]No notebook specified. Use 'notebooklm use <id>' to set context, "
-        "pass -n/--notebook, or set NOTEBOOKLM_NOTEBOOK.[/red]"
+    """Get notebook ID from argument, env var, or active context."""
+    return resolve_helpers.require_notebook(
+        notebook_id,
+        context_path_fn=get_context_path,
+        output_console=console,
     )
-    raise SystemExit(1)
 
 
 async def _resolve_partial_id(
@@ -295,122 +245,68 @@ async def _resolve_partial_id(
     *,
     json_output: bool = False,
 ) -> str:
-    """Generic partial ID resolver.
-
-    Allows users to type partial IDs like 'abc' instead of full UUIDs.
-    Matches are case-insensitive prefix matches.
-
-    Args:
-        partial_id: Full or partial ID to resolve
-        list_fn: Async function that returns list of items with id/title attributes
-        entity_name: Name for error messages (e.g., "notebook", "source")
-        list_command: CLI command to list items (e.g., "list", "source list")
-        json_output: When True, the "Matched..." diagnostic is routed to stderr
-            via ``emit_status`` so stdout stays parseable JSON.
-
-    Returns:
-        Full ID of the matched item
-
-    Raises:
-        click.ClickException: If ID is empty, no match, or ambiguous match
-    """
-    # Validate and normalize the ID
-    partial_id = validate_id(partial_id, entity_name)
-
-    # Skip resolution for IDs that look complete (20+ chars)
-    if len(partial_id) >= 20:
-        return partial_id
-
-    items = await list_fn()
-    matches = [item for item in items if item.id.lower().startswith(partial_id.lower())]
-
-    if len(matches) == 1:
-        if matches[0].id != partial_id:
-            title = matches[0].title or "(untitled)"
-            emit_status(
-                f"[dim]Matched: {matches[0].id[:12]}... ({title})[/dim]",
-                json_output=json_output,
-            )
-        return matches[0].id
-    elif len(matches) == 0:
-        raise click.ClickException(
-            f"No {entity_name} found starting with '{partial_id}'. "
-            f"Run 'notebooklm {list_command}' to see available {entity_name}s."
-        )
-    else:
-        lines = [f"Ambiguous ID '{partial_id}' matches {len(matches)} {entity_name}s:"]
-        for item in matches[:5]:
-            title = item.title or "(untitled)"
-            lines.append(f"  {item.id[:12]}... {title}")
-        if len(matches) > 5:
-            lines.append(f"  ... and {len(matches) - 5} more")
-        lines.append("\nSpecify more characters to narrow down.")
-        raise click.ClickException("\n".join(lines))
+    """Generic partial ID resolver."""
+    return await resolve_helpers._resolve_partial_id(
+        partial_id,
+        list_fn,
+        entity_name,
+        list_command,
+        json_output=json_output,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
+    )
 
 
 async def resolve_notebook_id(client, partial_id: str, *, json_output: bool = False) -> str:
-    """Resolve partial notebook ID to full ID.
-
-    When ``json_output`` is True, the "Matched..." diagnostic for a successful
-    partial match is routed to stderr so stdout stays parseable JSON.
-    """
-    return await _resolve_partial_id(
+    """Resolve partial notebook ID to full ID."""
+    return await resolve_helpers.resolve_notebook_id(
+        client,
         partial_id,
-        list_fn=lambda: client.notebooks.list(),
-        entity_name="notebook",
-        list_command="list",
         json_output=json_output,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
     )
 
 
 async def resolve_source_id(
     client, notebook_id: str, partial_id: str, *, json_output: bool = False
 ) -> str:
-    """Resolve partial source ID to full ID.
-
-    When ``json_output`` is True, the "Matched..." diagnostic for a successful
-    partial match is routed to stderr so stdout stays parseable JSON.
-    """
-    return await _resolve_partial_id(
+    """Resolve partial source ID to full ID."""
+    return await resolve_helpers.resolve_source_id(
+        client,
+        notebook_id,
         partial_id,
-        list_fn=lambda: client.sources.list(notebook_id),
-        entity_name="source",
-        list_command="source list",
         json_output=json_output,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
     )
 
 
 async def resolve_artifact_id(
     client, notebook_id: str, partial_id: str, *, json_output: bool = False
 ) -> str:
-    """Resolve partial artifact ID to full ID.
-
-    When ``json_output`` is True, the "Matched..." diagnostic for a successful
-    partial match is routed to stderr so stdout stays parseable JSON.
-    """
-    return await _resolve_partial_id(
+    """Resolve partial artifact ID to full ID."""
+    return await resolve_helpers.resolve_artifact_id(
+        client,
+        notebook_id,
         partial_id,
-        list_fn=lambda: client.artifacts.list(notebook_id),
-        entity_name="artifact",
-        list_command="artifact list",
         json_output=json_output,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
     )
 
 
 async def resolve_note_id(
     client, notebook_id: str, partial_id: str, *, json_output: bool = False
 ) -> str:
-    """Resolve partial note ID to full ID.
-
-    When ``json_output`` is True, the "Matched..." diagnostic for a successful
-    partial match is routed to stderr so stdout stays parseable JSON.
-    """
-    return await _resolve_partial_id(
+    """Resolve partial note ID to full ID."""
+    return await resolve_helpers.resolve_note_id(
+        client,
+        notebook_id,
         partial_id,
-        list_fn=lambda: client.notes.list(notebook_id),
-        entity_name="note",
-        list_command="note list",
         json_output=json_output,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
     )
 
 
@@ -421,46 +317,20 @@ async def resolve_source_ids(
     *,
     json_output: bool = False,
 ) -> list[str] | None:
-    """Resolve multiple partial source IDs to full IDs.
-
-    Args:
-        client: NotebookLM client
-        notebook_id: Resolved notebook ID
-        source_ids: Tuple of partial source IDs from CLI
-        json_output: When True, "Matched..." diagnostics for partial matches
-            are routed to stderr so stdout stays parseable JSON.
-
-    Returns:
-        List of resolved source IDs, or None if no source IDs provided
-    """
-    if not source_ids:
-        return None
-    resolved = []
-    for sid in source_ids:
-        resolved.append(await resolve_source_id(client, notebook_id, sid, json_output=json_output))
-    return resolved
+    """Resolve multiple partial source IDs to full IDs."""
+    return await resolve_helpers.resolve_source_ids(
+        client,
+        notebook_id,
+        source_ids,
+        json_output=json_output,
+        stdout_console=console,
+        stderr_output_console=stderr_console,
+    )
 
 
 def read_stdin_text(*, source_label: str = "stdin") -> str:
-    """Read all of stdin as UTF-8 text and strip surrounding whitespace.
-
-    Centralizes the Unix ``-`` (stdin) convention used by ``ask``, ``note
-    create``, ``source add``, and ``--prompt-file -``. Uses
-    ``click.get_text_stream("stdin").read()`` so ``CliRunner.invoke(input=...)``
-    in tests is honored without monkey-patching ``sys.stdin``.
-
-    Args:
-        source_label: Label used in error messages (e.g. ``"prompt file"``)
-            so the failure mode tells the user which input was empty.
-
-    Raises:
-        click.ClickException: stdin yields a non-UTF-8 byte sequence.
-    """
-    try:
-        text = click.get_text_stream("stdin").read()
-    except UnicodeDecodeError as e:
-        raise click.ClickException(f"{source_label} (stdin) is not valid UTF-8: {e}") from e
-    return text.strip()
+    """Read all of stdin as UTF-8 text and strip surrounding whitespace."""
+    return input_helpers.read_stdin_text(source_label=source_label)
 
 
 def resolve_prompt(
@@ -470,53 +340,13 @@ def resolve_prompt(
     *,
     required: bool = False,
 ) -> str:
-    """Resolve prompt text from a positional argument or ``--prompt-file``.
-
-    Exactly one source may be provided. The file is read as UTF-8 with surrounding
-    whitespace stripped. When ``required`` is True and neither source yields
-    text, a ``UsageError`` is raised; otherwise an empty string is returned.
-
-    The literal ``-`` is recognized as "read stdin" for either source,
-    matching the Unix convention.
-
-    Args:
-        argument_value: Value of the positional CLI argument (may be empty).
-        prompt_file: Path passed via ``--prompt-file`` (may be ``None``).
-        param_name: Name of the positional argument, used in error messages.
-        required: When True, raise ``UsageError`` if both sources are empty.
-
-    Raises:
-        click.UsageError: Both sources provided, or ``required`` and both empty.
-        click.ClickException: Prompt file unreadable or not valid UTF-8.
-    """
-    if argument_value and prompt_file:
-        raise click.UsageError(
-            f"Cannot use both the {param_name} argument and --prompt-file. Choose one."
-        )
-
-    if prompt_file == "-" or argument_value == "-":
-        # Unix ``-`` convention: read text from stdin. The label hints which
-        # input is the empty one if the required check fires below.
-        label = "prompt file" if prompt_file == "-" else param_name
-        text = read_stdin_text(source_label=label)
-    elif prompt_file:
-        path = Path(prompt_file)
-        if not path.is_file():
-            raise click.ClickException(f"Prompt file '{prompt_file}' is not a regular file.")
-        try:
-            text = path.read_text(encoding="utf-8").strip()
-        except OSError as e:
-            raise click.ClickException(f"Failed to read prompt file '{prompt_file}': {e}") from e
-        except UnicodeDecodeError as e:
-            raise click.ClickException(
-                f"Prompt file '{prompt_file}' is not valid UTF-8: {e}"
-            ) from e
-    else:
-        text = argument_value or ""
-
-    if required and not text:
-        raise click.UsageError(f"Provide a {param_name} argument or --prompt-file.")
-    return text
+    """Resolve prompt text from a positional argument or ``--prompt-file``."""
+    return input_helpers.resolve_prompt(
+        argument_value,
+        prompt_file,
+        param_name,
+        required=required,
+    )
 
 
 # =============================================================================

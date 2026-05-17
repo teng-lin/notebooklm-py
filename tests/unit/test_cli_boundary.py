@@ -42,6 +42,7 @@ RENDERING_PATH = CLI_ROOT / "rendering.py"
 CONTEXT_PATH = CLI_ROOT / "context.py"
 RUNTIME_PATH = CLI_ROOT / "runtime.py"
 AUTH_RUNTIME_PATH = CLI_ROOT / "auth_runtime.py"
+RESOLVE_PATH = CLI_ROOT / "resolve.py"
 COMPLETION_CALLBACKS = {
     "_complete_artifacts",
     "_complete_notebooks",
@@ -89,6 +90,12 @@ CONTEXT_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "runtime",
 }
 AUTH_RUNTIME_ALLOWED_MODULES = {"error_handler", "helpers"}
+RESOLVE_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
+    "auth",
+    "auth_runtime",
+    "helpers",
+    "runtime",
+}
 
 
 def _is_private_segment(seg: str) -> bool:
@@ -147,6 +154,39 @@ def _cli_module_imports(path: pathlib.Path) -> set[str]:
                 if parts[:2] == ["notebooklm", "cli"] and len(parts) > 2:
                     imports.add(parts[2])
     return imports
+
+
+def _imports_notebooklm_auth(tree: ast.AST) -> list[str]:
+    """Return imports that bind CLI code directly to notebooklm.auth."""
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            mod_parts = mod.split(".") if mod else []
+            if node.level == 0:
+                if mod_parts[:2] == ["notebooklm", "auth"]:
+                    offenders.append(f"from {mod} import ...")
+                elif mod_parts == ["notebooklm"]:
+                    offenders.extend(
+                        f"from notebooklm import {alias.name}"
+                        for alias in node.names
+                        if alias.name == "auth"
+                    )
+            elif node.level >= 2:
+                if mod_parts[:1] == ["auth"]:
+                    offenders.append(f"from {'.' * node.level}{mod} import ...")
+                elif not mod:
+                    offenders.extend(
+                        f"from {'.' * node.level} import {alias.name}"
+                        for alias in node.names
+                        if alias.name == "auth"
+                    )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                parts = alias.name.split(".")
+                if parts[:2] == ["notebooklm", "auth"]:
+                    offenders.append(f"import {alias.name}")
+    return offenders
 
 
 @pytest.mark.parametrize(
@@ -372,6 +412,21 @@ def test_auth_runtime_imports_only_runtime_facade_collaborators() -> None:
         "cli.auth_runtime must not import command, rendering, context, resolve, "
         "input, or completion modules directly. "
         f"Offenders: {sorted(imports - AUTH_RUNTIME_ALLOWED_MODULES)}"
+    )
+
+
+def test_resolve_stays_off_helpers_runtime_auth_and_commands() -> None:
+    """Partial-ID resolution stays below helpers/runtime/auth and command modules."""
+    imports = _cli_module_imports(RESOLVE_PATH)
+    auth_imports = _imports_notebooklm_auth(ast.parse(RESOLVE_PATH.read_text(encoding="utf-8")))
+
+    assert not (imports & RESOLVE_FORBIDDEN_MODULES), (
+        "cli.resolve must not import cli.helpers, cli.runtime/auth_runtime, "
+        f"or command modules. Offenders: {sorted(imports & RESOLVE_FORBIDDEN_MODULES)}"
+    )
+    assert not auth_imports, (
+        "cli.resolve must not import notebooklm.auth; keep auth/runtime work outside "
+        f"the resolver layer. Offenders: {auth_imports}"
     )
 
 
