@@ -16,6 +16,7 @@ from . import rendering as rendering_helpers
 
 ContextPathFn = Callable[..., Path]
 ListFn = Callable[[], Awaitable[list[Any]]]
+_FULL_ID_MIN_LEN = 20
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
@@ -122,7 +123,7 @@ async def _resolve_partial_id(
     """
     partial_id = validate_id(partial_id, entity_name)
 
-    if len(partial_id) >= 20:
+    if len(partial_id) >= _FULL_ID_MIN_LEN:
         return partial_id
 
     items = await list_fn()
@@ -131,7 +132,7 @@ async def _resolve_partial_id(
     if len(matches) == 1:
         if matches[0].id != partial_id:
             title = matches[0].title or "(untitled)"
-            rendering_helpers._emit_status(
+            rendering_helpers.emit_status(
                 f"[dim]Matched: {matches[0].id[:12]}... ({title})[/dim]",
                 json_output=json_output,
                 stdout_console=stdout_console,

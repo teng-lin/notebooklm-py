@@ -92,6 +92,7 @@ CONTEXT_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
 AUTH_RUNTIME_ALLOWED_MODULES = {"error_handler", "helpers"}
 RESOLVE_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "auth_runtime",
+    "completion",
     "helpers",
     "runtime",
 }

@@ -1,12 +1,12 @@
 """Tests for resolve_notebook_id and resolve_source_id partial ID matching."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import click
 import pytest
 
-from notebooklm.cli.helpers import resolve_notebook_id, resolve_source_id, resolve_source_ids
+from notebooklm.cli.resolve import resolve_notebook_id, resolve_source_id, resolve_source_ids
 from notebooklm.types import Notebook, Source
 
 
@@ -60,8 +60,8 @@ class TestResolveNotebookId:
         mock_client.notebooks.list = AsyncMock(return_value=sample_notebooks)
 
         # "xyz" uniquely matches "xyz789uvw456rst123"
-        with patch("notebooklm.cli.helpers.console") as mock_console:
-            result = await resolve_notebook_id(mock_client, "xyz")
+        mock_console = MagicMock()
+        result = await resolve_notebook_id(mock_client, "xyz", stdout_console=mock_console)
 
         assert result == "xyz789uvw456rst123"
         # Should print a match message
@@ -131,8 +131,7 @@ class TestResolveNotebookId:
         mock_client.notebooks.list = AsyncMock(return_value=sample_notebooks)
 
         # "XYZ" should match "xyz789..." (case-insensitive)
-        with patch("notebooklm.cli.helpers.console"):
-            result = await resolve_notebook_id(mock_client, "XYZ")
+        result = await resolve_notebook_id(mock_client, "XYZ", stdout_console=MagicMock())
 
         assert result == "xyz789uvw456rst123"
 
@@ -153,8 +152,8 @@ class TestResolveNotebookId:
             ]
         )
 
-        with patch("notebooklm.cli.helpers.console") as mock_console:
-            result = await resolve_notebook_id(mock_client, "shortid")
+        mock_console = MagicMock()
+        result = await resolve_notebook_id(mock_client, "shortid", stdout_console=mock_console)
 
         assert result == "shortid"
         # Should NOT print match message since it's an exact match
@@ -238,8 +237,13 @@ class TestResolveSourceId:
         mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
 
         # "xyz" uniquely matches "xyz789uvw456rst123"
-        with patch("notebooklm.cli.helpers.console") as mock_console:
-            result = await resolve_source_id(mock_client_with_sources, "nb_123", "xyz")
+        mock_console = MagicMock()
+        result = await resolve_source_id(
+            mock_client_with_sources,
+            "nb_123",
+            "xyz",
+            stdout_console=mock_console,
+        )
 
         assert result == "xyz789uvw456rst123"
         # Should print a match message
@@ -311,8 +315,12 @@ class TestResolveSourceId:
         mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
 
         # "XYZ" should match "xyz789..." (case-insensitive)
-        with patch("notebooklm.cli.helpers.console"):
-            result = await resolve_source_id(mock_client_with_sources, "nb_123", "XYZ")
+        result = await resolve_source_id(
+            mock_client_with_sources,
+            "nb_123",
+            "XYZ",
+            stdout_console=MagicMock(),
+        )
 
         assert result == "xyz789uvw456rst123"
 
@@ -321,8 +329,12 @@ class TestResolveSourceId:
         """Should pass the notebook ID to sources.list."""
         mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
 
-        with patch("notebooklm.cli.helpers.console"):
-            await resolve_source_id(mock_client_with_sources, "my_notebook_id", "xyz")
+        await resolve_source_id(
+            mock_client_with_sources,
+            "my_notebook_id",
+            "xyz",
+            stdout_console=MagicMock(),
+        )
 
         mock_client_with_sources.sources.list.assert_called_once_with("my_notebook_id")
 
@@ -368,8 +380,12 @@ class TestResolveSourceIds:
         """Multiple partial IDs share one sources.list call."""
         mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
 
-        with patch("notebooklm.cli.helpers.console"):
-            result = await resolve_source_ids(mock_client_with_sources, "nb_123", ("xyz", "src999"))
+        result = await resolve_source_ids(
+            mock_client_with_sources,
+            "nb_123",
+            ("xyz", "src999"),
+            stdout_console=MagicMock(),
+        )
 
         assert result == ["xyz789uvw456rst123", "src999zzz888yyy777"]
         mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
@@ -387,3 +403,20 @@ class TestResolveSourceIds:
 
         assert result == ["src123def456ghi78900", "xyz789uvw456rst12300"]
         mock_client_with_sources.sources.list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mixed_full_and_partial_ids_list_once(
+        self, mock_client_with_sources, sample_sources
+    ):
+        """Full IDs skip listing while partial IDs reuse one shared list call."""
+        mock_client_with_sources.sources.list = AsyncMock(return_value=sample_sources)
+
+        result = await resolve_source_ids(
+            mock_client_with_sources,
+            "nb_123",
+            ("src123def456ghi78900", "xyz"),
+            stdout_console=MagicMock(),
+        )
+
+        assert result == ["src123def456ghi78900", "xyz789uvw456rst123"]
+        mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")

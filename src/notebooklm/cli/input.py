@@ -19,6 +19,9 @@ def read_stdin_text(*, source_label: str = "stdin") -> str:
         source_label: Label used in error messages, e.g. ``"prompt file"``, so
             the failure mode identifies which input was empty or invalid.
 
+    Returns:
+        UTF-8 stdin text with surrounding whitespace removed.
+
     Raises:
         click.ClickException: If stdin yields a non-UTF-8 byte sequence.
     """

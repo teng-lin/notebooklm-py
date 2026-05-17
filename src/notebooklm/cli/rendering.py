@@ -42,14 +42,21 @@ def _emit_status(
         target.print(msg)
 
 
-def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:
+def emit_status(
+    msg: str,
+    *,
+    json_output: bool,
+    style: str | None = None,
+    stdout_console: Console = console,
+    stderr_output_console: Console = stderr_console,
+) -> None:
     """Emit a status / diagnostic line."""
     _emit_status(
         msg,
         json_output=json_output,
         style=style,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
+        stdout_console=stdout_console,
+        stderr_output_console=stderr_output_console,
     )
 
 
