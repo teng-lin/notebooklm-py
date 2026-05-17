@@ -74,6 +74,15 @@ _OBSERVABILITY_INIT_LOCK = threading.Lock()
 # Guards ``_auth_coord`` backfill on ``__new__``-built fixtures. Mirrors the
 # observability init lock so two threads can't both observe ``hasattr is False``
 # and race to construct competing :class:`AuthRefreshCoordinator` instances.
+#
+# Dual-implementation sites (kept identical for AST guards in
+# ``tests/unit/test_concurrency_refresh_race.py`` that inspect
+# ``inspect.getsource(ClientCore.update_auth_tokens)`` /
+# ``ClientCore._snapshot``):
+#   - ``ClientCore._snapshot`` (this file) ↔ ``AuthRefreshCoordinator.snapshot``
+#   - ``ClientCore.update_auth_tokens`` (this file) ↔ ``AuthRefreshCoordinator.update_auth_tokens``
+# Any change to auth-snapshot invariants must be applied to BOTH sites. Grep
+# anchor for future maintainers: ``_AUTH_COORD_INIT_LOCK``.
 _AUTH_COORD_INIT_LOCK = threading.Lock()
 
 
@@ -711,9 +720,20 @@ class ClientCore:
         threading lock for double-checked locking so two threads racing
         through ``hasattr`` cannot both decide they need to construct a
         coordinator and silently discard each other's locks/refresh task.
+
+        Also primes ``_metrics_obj`` because every coordinator method reaches
+        into ``host._metrics_obj`` (e.g. ``record_lock_wait`` inside
+        :meth:`AuthRefreshCoordinator.snapshot` /
+        :meth:`AuthRefreshCoordinator.update_auth_tokens`). Without this,
+        a ``__new__``-built fixture that calls ``_await_refresh`` /
+        ``_snapshot`` / ``update_auth_tokens`` before any observability
+        compat-bridge setter would surface as
+        ``AttributeError: '_StubCore' has no attribute '_metrics_obj'``
+        rather than backfilling gracefully.
         """
         if hasattr(self, "_auth_coord"):
             return
+        self._ensure_observability_state()
         with _AUTH_COORD_INIT_LOCK:
             if not hasattr(self, "_auth_coord"):
                 self._auth_coord = AuthRefreshCoordinator(refresh_callback=None)

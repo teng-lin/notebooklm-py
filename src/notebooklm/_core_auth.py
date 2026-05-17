@@ -229,7 +229,14 @@ class AuthRefreshCoordinator:
         intact across the cancellation and is replaced only on the next
         refresh wave once the current task transitions to ``done()``.
         """
-        assert self._refresh_callback is not None
+        if self._refresh_callback is None:
+            raise RuntimeError(
+                "AuthRefreshCoordinator.await_refresh called without a "
+                "refresh_callback configured — wire one via "
+                "ClientCore(refresh_callback=...) or "
+                "self._auth_coord._refresh_callback = ... before triggering "
+                "an auth refresh."
+            )
 
         # Lazy-init the lock on first refresh attempt. Every concurrent
         # caller resolves to the same instance because ``get_refresh_lock``
