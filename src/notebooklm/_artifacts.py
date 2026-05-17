@@ -165,7 +165,9 @@ class ArtifactsAPI:
         # working through the deprecation cycle.
         del notes_api
         self._storage_path = storage_path
-        self._mind_map_service = mind_map_service or _mind_map.MindMapService(core)
+        self._mind_map_service = (
+            _mind_map.MindMapService(core) if mind_map_service is None else mind_map_service
+        )
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
         self._downloads = ArtifactDownloadService(self)

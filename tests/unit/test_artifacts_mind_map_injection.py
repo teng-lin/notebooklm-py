@@ -1,12 +1,8 @@
-"""Tests for ``MindMapService`` injection into ``ArtifactsAPI`` (issue #691).
+"""Tests for ``MindMapService`` injection into ``ArtifactsAPI``.
 
-PR #690 introduced ``MindMapService`` and wired it into ``NotesAPI`` via a
-keyword-only constructor parameter. Issue #691 brings ``ArtifactsAPI`` onto
-the same explicit service-injection boundary so both facades depend on the
-mind-map service through a constructor seam rather than the module-level
-``_mind_map.list_mind_maps()`` wrapper.
-
-These tests pin three contracts:
+``ArtifactsAPI`` and ``NotesAPI`` both depend on the mind-map service
+through a constructor seam rather than the module-level
+``_mind_map.list_mind_maps()`` wrapper. These tests pin three contracts:
 
 1. ``_list_mind_maps()`` delegates to the injected service and does not
    re-enter the module-level ``_mind_map.list_mind_maps`` wrapper.
