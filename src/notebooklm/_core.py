@@ -11,13 +11,12 @@ import weakref
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import httpx
 
-from ._callbacks import maybe_await_callback
 from ._core_cache import (
     MAX_CONVERSATION_CACHE_SIZE as _DEFAULT_CONVERSATION_CACHE_SIZE,
 )
@@ -25,6 +24,7 @@ from ._core_cache import (
     ConversationCache,
 )
 from ._core_cookie_persistence import CookiePersistence
+from ._core_metrics import ClientMetrics
 from ._core_polling import PendingPolls, PollRegistry
 from ._core_rpc import RpcExecutor
 from ._core_transport import (
@@ -541,9 +541,10 @@ class ClientCore:
         self._refresh_lock: asyncio.Lock | None = None
         self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
-        self._on_rpc_event = on_rpc_event
-        self._metrics_lock = threading.Lock()
-        self._metrics = ClientMetricsSnapshot()
+        # Observability counters + telemetry callback. Compat properties
+        # below (``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event``) bridge
+        # the legacy ivar names back into this helper.
+        self._metrics_obj = ClientMetrics(on_rpc_event=on_rpc_event)
         self._draining = False
         self._in_flight_posts = 0
         self._drain_condition: asyncio.Condition | None = None
@@ -621,6 +622,40 @@ class ClientCore:
     @_loaded_cookie_snapshot.setter
     def _loaded_cookie_snapshot(self, value: CookieSnapshot | None) -> None:
         self.cookie_persistence.loaded_cookie_snapshot = value
+
+    # ``ClientMetrics`` compat bridges. The three observability ivars now live
+    # on ``self._metrics_obj``; each setter calls ``_ensure_observability_state``
+    # first so a ``__new__``-built fixture (no ``__init__`` ran) can still
+    # assign ``core._on_rpc_event = cb`` and have it write through.
+    @property
+    def _metrics_lock(self) -> threading.Lock:
+        self._ensure_observability_state()
+        return self._metrics_obj._metrics_lock
+
+    @_metrics_lock.setter
+    def _metrics_lock(self, value: threading.Lock) -> None:
+        self._ensure_observability_state()
+        self._metrics_obj._metrics_lock = value
+
+    @property
+    def _metrics(self) -> ClientMetricsSnapshot:
+        self._ensure_observability_state()
+        return self._metrics_obj._metrics
+
+    @_metrics.setter
+    def _metrics(self, value: ClientMetricsSnapshot) -> None:
+        self._ensure_observability_state()
+        self._metrics_obj._metrics = value
+
+    @property
+    def _on_rpc_event(self) -> Callable[[RpcTelemetryEvent], object] | None:
+        self._ensure_observability_state()
+        return self._metrics_obj._on_rpc_event
+
+    @_on_rpc_event.setter
+    def _on_rpc_event(self, value: Callable[[RpcTelemetryEvent], object] | None) -> None:
+        self._ensure_observability_state()
+        self._metrics_obj._on_rpc_event = value
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
@@ -710,15 +745,16 @@ class ClientCore:
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client instance."""
         self._ensure_observability_state()
-        with self._metrics_lock:
-            return replace(self._metrics)
+        return self._metrics_obj.snapshot()
 
     def _ensure_observability_state(self) -> None:
-        """Backfill observability fields for tests that construct via ``__new__``."""
+        """Backfill observability fields for tests that construct via ``__new__``.
+
+        Gates on ``_metrics_obj`` (a real instance attribute) — the
+        property-bridged ivars' ``hasattr`` probes are always True.
+        """
         if (
-            hasattr(self, "_on_rpc_event")
-            and hasattr(self, "_metrics_lock")
-            and hasattr(self, "_metrics")
+            hasattr(self, "_metrics_obj")
             and hasattr(self, "_draining")
             and hasattr(self, "_in_flight_posts")
             and hasattr(self, "_drain_condition")
@@ -726,12 +762,8 @@ class ClientCore:
         ):
             return
         with _OBSERVABILITY_INIT_LOCK:
-            if not hasattr(self, "_on_rpc_event"):
-                self._on_rpc_event = None
-            if not hasattr(self, "_metrics_lock"):
-                self._metrics_lock = threading.Lock()
-            if not hasattr(self, "_metrics"):
-                self._metrics = ClientMetricsSnapshot()
+            if not hasattr(self, "_metrics_obj"):
+                self._metrics_obj = ClientMetrics(on_rpc_event=None)
             if not hasattr(self, "_draining"):
                 self._draining = False
             if not hasattr(self, "_in_flight_posts"):
@@ -742,62 +774,26 @@ class ClientCore:
                 self._operation_depths = weakref.WeakKeyDictionary()
 
     def _increment_metrics(self, **increments: int | float) -> None:
-        """Increment numeric metrics fields under the metrics lock."""
         self._ensure_observability_state()
-        with self._metrics_lock:
-            values = {
-                field_name: getattr(self._metrics, field_name) + increment
-                for field_name, increment in increments.items()
-            }
-            self._metrics = replace(self._metrics, **values)
+        self._metrics_obj.increment(**increments)
 
     def _record_rpc_queue_wait(self, wait_seconds: float) -> None:
         self._ensure_observability_state()
-        with self._metrics_lock:
-            self._metrics = replace(
-                self._metrics,
-                rpc_queue_wait_seconds_total=(
-                    self._metrics.rpc_queue_wait_seconds_total + wait_seconds
-                ),
-                rpc_queue_wait_seconds_max=max(
-                    self._metrics.rpc_queue_wait_seconds_max,
-                    wait_seconds,
-                ),
-            )
+        self._metrics_obj.record_rpc_queue_wait(wait_seconds)
 
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         """Record time spent waiting for the upload semaphore."""
         self._ensure_observability_state()
-        with self._metrics_lock:
-            self._metrics = replace(
-                self._metrics,
-                upload_queue_wait_seconds_total=(
-                    self._metrics.upload_queue_wait_seconds_total + wait_seconds
-                ),
-                upload_queue_wait_seconds_max=max(
-                    self._metrics.upload_queue_wait_seconds_max,
-                    wait_seconds,
-                ),
-            )
+        self._metrics_obj.record_upload_queue_wait(wait_seconds)
 
     def _record_lock_wait(self, wait_seconds: float) -> None:
         self._ensure_observability_state()
-        with self._metrics_lock:
-            self._metrics = replace(
-                self._metrics,
-                lock_wait_seconds_total=self._metrics.lock_wait_seconds_total + wait_seconds,
-                lock_wait_seconds_max=max(self._metrics.lock_wait_seconds_max, wait_seconds),
-            )
+        self._metrics_obj.record_lock_wait(wait_seconds)
 
     async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
         """Invoke the optional telemetry callback without affecting RPC behavior."""
         self._ensure_observability_state()
-        if self._on_rpc_event is None:
-            return
-        try:
-            await maybe_await_callback(self._on_rpc_event, event)
-        except Exception as exc:  # noqa: BLE001 - observability must not alter behavior
-            logger.warning("RPC telemetry callback failed: %s", exc)
+        await self._metrics_obj.emit_rpc_event(event)
 
     def _get_drain_condition(self) -> asyncio.Condition:
         self._ensure_observability_state()
