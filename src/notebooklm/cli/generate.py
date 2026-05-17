@@ -54,20 +54,9 @@ from .options import (
     retry_option,
     wait_polling_options,
 )
-from .services import artifact_generation as _artifact_generation
+from .services.artifact_generation import generate_with_retry, handle_generation_result
 
 DEFAULT_LANGUAGE = "en"
-
-RETRY_INITIAL_DELAY = _artifact_generation.RETRY_INITIAL_DELAY
-RETRY_MAX_DELAY = _artifact_generation.RETRY_MAX_DELAY
-RETRY_BACKOFF_MULTIPLIER = _artifact_generation.RETRY_BACKOFF_MULTIPLIER
-_format_status_message = _artifact_generation._format_status_message
-_status_with_elapsed = _artifact_generation._status_with_elapsed
-calculate_backoff_delay = _artifact_generation.calculate_backoff_delay
-generate_with_retry = _artifact_generation.generate_with_retry
-handle_generation_result = _artifact_generation.handle_generation_result
-_extract_task_id = _artifact_generation._extract_task_id
-_output_generation_status = _artifact_generation._output_generation_status
 
 _INFOGRAPHIC_STYLE_MAP = {
     "auto": InfographicStyle.AUTO_SELECT,

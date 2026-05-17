@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.services.artifact_generation import _format_status_message, _status_with_elapsed
+from notebooklm.cli.services.artifact_generation import (
+    RETRY_MAX_DELAY,
+    _format_status_message,
+    _status_with_elapsed,
+    calculate_backoff_delay,
+    generate_with_retry,
+)
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 
@@ -1132,30 +1138,22 @@ class TestCalculateBackoffDelay:
 
     def test_initial_delay(self):
         """Test that first attempt uses initial delay."""
-        from notebooklm.cli.generate import calculate_backoff_delay
-
         delay = calculate_backoff_delay(0, initial_delay=60.0)
         assert delay == 60.0
 
     def test_exponential_backoff(self):
         """Test that delay increases exponentially."""
-        from notebooklm.cli.generate import calculate_backoff_delay
-
         assert calculate_backoff_delay(0, initial_delay=60.0) == 60.0
         assert calculate_backoff_delay(1, initial_delay=60.0) == 120.0
         assert calculate_backoff_delay(2, initial_delay=60.0) == 240.0
 
     def test_max_delay_cap(self):
         """Test that delay is capped at max_delay."""
-        from notebooklm.cli.generate import calculate_backoff_delay
-
         delay = calculate_backoff_delay(10, initial_delay=60.0, max_delay=300.0)
         assert delay == 300.0
 
     def test_custom_multiplier(self):
         """Test custom backoff multiplier."""
-        from notebooklm.cli.generate import calculate_backoff_delay
-
         delay = calculate_backoff_delay(1, initial_delay=10.0, multiplier=3.0)
         assert delay == 30.0
 
@@ -1166,7 +1164,6 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_no_retry_on_success(self):
         """Test that successful generation doesn't trigger retry."""
-        from notebooklm.cli.generate import generate_with_retry
         from notebooklm.types import GenerationStatus
 
         success_result = GenerationStatus(
@@ -1182,7 +1179,6 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_on_rate_limit(self):
         """Test that rate limit triggers retry."""
-        from notebooklm.cli.generate import generate_with_retry
         from notebooklm.types import GenerationStatus
 
         rate_limited = GenerationStatus(
@@ -1205,7 +1201,6 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_exhausted(self):
         """Test that all retries being exhausted returns last result."""
-        from notebooklm.cli.generate import generate_with_retry
         from notebooklm.types import GenerationStatus
 
         rate_limited = GenerationStatus(
@@ -1224,7 +1219,6 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_no_retry_when_max_retries_zero(self):
         """Test that max_retries=0 means no retry attempts."""
-        from notebooklm.cli.generate import generate_with_retry
         from notebooklm.types import GenerationStatus
 
         rate_limited = GenerationStatus(
@@ -1242,7 +1236,6 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_delays_increase_exponentially(self):
         """Verify delays follow exponential backoff pattern (60s, 120s, 240s)."""
-        from notebooklm.cli.generate import generate_with_retry
         from notebooklm.types import GenerationStatus
 
         rate_limited = GenerationStatus(
@@ -1262,7 +1255,6 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_delay_caps_at_max(self):
         """Verify delay caps at 300s even with many retries."""
-        from notebooklm.cli.generate import RETRY_MAX_DELAY, generate_with_retry
         from notebooklm.types import GenerationStatus
 
         rate_limited = GenerationStatus(
@@ -2152,6 +2144,41 @@ class TestHandleGenerationResultListPathAndWait:
 
         assert result.exit_code == 0
         mock_client.artifacts.wait_for_completion.assert_called_once()
+
+    def test_dict_result_prefers_artifact_id_for_wait(self, runner, mock_auth):
+        """Dict generation-start results preserve artifact_id-first wait semantics."""
+        from notebooklm.types import GenerationStatus
+
+        completed_status = GenerationStatus(
+            task_id="artifact_wait_id",
+            status="completed",
+            error=None,
+            error_code=None,
+            url="https://example.com/audio.mp3",
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(
+                return_value={
+                    "artifact_id": "artifact_wait_id",
+                    "task_id": "task_wait_id",
+                    "status": "processing",
+                }
+            )
+            mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--wait"])
+
+        assert result.exit_code == 0, result.output
+        mock_client.artifacts.wait_for_completion.assert_awaited_once()
+        args = mock_client.artifacts.wait_for_completion.await_args.args
+        assert args[:2] == ("nb_123", "artifact_wait_id")
 
 
 class TestOutputMindMapNonDictMindMap:

@@ -235,18 +235,8 @@ async def handle_generation_result(
             )
         return result
 
-    # Extract task_id from various result formats
-    task_id: str | None = None
     status: Any = result
-    if isinstance(result, GenerationStatus):
-        task_id = result.task_id
-        status = result
-    elif isinstance(result, dict):
-        task_id = result.get("artifact_id") or result.get("task_id")
-        status = result
-    elif isinstance(result, list) and len(result) > 0:
-        task_id = result[0] if isinstance(result[0], str) else None
-        status = result
+    task_id = _extract_generation_task_id(result)
 
     # Wait for completion if requested
     if wait and task_id:
@@ -276,6 +266,22 @@ async def handle_generation_result(
     _output_generation_status(status, artifact_type, json_output)
 
     return status if isinstance(status, GenerationStatus) else None
+
+
+def _extract_generation_task_id(result: Any) -> str | None:
+    """Extract the task ID used to wait after a generation-start response.
+
+    Generation-start dicts historically prefer ``artifact_id`` over
+    ``task_id``. Keep that precedence separate from final status rendering,
+    where ``_extract_task_id`` preserves the existing ``task_id``-first order.
+    """
+    if isinstance(result, GenerationStatus):
+        return result.task_id
+    if isinstance(result, dict):
+        return result.get("artifact_id") or result.get("task_id")
+    if isinstance(result, list) and len(result) > 0 and isinstance(result[0], str):
+        return result[0]
+    return None
 
 
 def _extract_task_id(status: Any) -> str | None:
