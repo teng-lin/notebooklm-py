@@ -585,6 +585,12 @@ async def test_decode_shape_error_json_decode_wrapped() -> None:
         lambda: NameError("undefined name"),
         lambda: RuntimeError("invariant broken"),
         lambda: ZeroDivisionError("oops"),
+        # Bare ``ValueError`` (not a ``JSONDecodeError``) — e.g. ``int("bad")``
+        # or a ``uuid.UUID("...")`` failure inside a decoder. Only the
+        # ``JSONDecodeError`` subclass is in the narrow tuple, so a bare
+        # ``ValueError`` MUST propagate unmasked. Pinned per PR-D review
+        # (Claude bot) so the propagation behavior is documented in tests.
+        lambda: ValueError("non-json value error"),
     ],
 )
 @pytest.mark.asyncio
@@ -592,9 +598,10 @@ async def test_decode_code_bug_propagates(
     decoder_exc_factory: Callable[[], Exception],
 ) -> None:
     """Code-bug exceptions (``AttributeError``, ``NameError``, generic
-    ``RuntimeError``, etc.) propagate as their native type — they are NOT
-    wrapped as ``RPCError``. This is what surfaces decoder typos and
-    broken invariants instead of masking them as "API drift."
+    ``RuntimeError``, bare ``ValueError`` that isn't a ``JSONDecodeError``,
+    etc.) propagate as their native type — they are NOT wrapped as
+    ``RPCError``. This is what surfaces decoder typos and broken
+    invariants instead of masking them as "API drift."
     """
     decoder_exc = decoder_exc_factory()
     owner = _Owner()
