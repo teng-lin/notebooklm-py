@@ -319,6 +319,9 @@ def patch_main_cli_client():
 def mock_context_file(tmp_path):
     """Provide a temporary context file for testing context commands."""
     context_file = tmp_path / "context.json"
+    # Patch every current context-path seam: the helpers facade passes the
+    # resolver explicitly, while context.py and resolve.py perform call-time
+    # lookups after the helper split.
     with (
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
