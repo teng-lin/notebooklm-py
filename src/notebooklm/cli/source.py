@@ -132,12 +132,7 @@ def _validate_upload_path(content: str, follow_symlinks: bool) -> Path:
         raise click.ClickException(str(exc)) from exc
 
 
-def _normalize_url_for_dedup(url: str) -> str:
-    """Compatibility wrapper for source-clean URL deduplication."""
-    return source_clean_service.normalize_url_for_dedup(url)
-
-
-def _classify_junk_sources(sources: list) -> list[tuple[str, str, str, str]]:
+def _classify_junk_sources(sources: list[Source]) -> list[tuple[str, str, str, str]]:
     """Compatibility wrapper for tests patching source-clean classification."""
     return source_clean_service.classify_junk_sources(sources)
 
