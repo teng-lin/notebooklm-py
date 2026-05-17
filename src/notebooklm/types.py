@@ -9,16 +9,24 @@ Usage:
     from notebooklm.types import SourceType, ArtifactType  # str enums for .kind
 """
 
-import warnings
-from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
-from urllib.parse import quote
+from typing import Any
 
-from ._env import get_base_url
+from ._types import artifacts as _artifact_types
 from ._types import notebooks as _notebook_types
 from ._types import sources as _source_types
+from ._types.artifacts import (
+    Artifact,
+    ArtifactType,
+    GenerationStatus,
+    ReportSuggestion,
+)
+from ._types.chat import (
+    AskResult,
+    ChatMode,
+    ChatReference,
+    ConversationTurn,
+)
 from ._types.common import (
     AccountLimits,
     AccountTier,
@@ -38,6 +46,8 @@ from ._types.notebooks import (
     SourceSummary,
     SuggestedTopic,
 )
+from ._types.notes import Note
+from ._types.sharing import SharedUser, ShareStatus
 from ._types.sources import (
     Source,
     SourceFulltext,
@@ -88,195 +98,31 @@ from .rpc.types import (
 
 # Keep private facade names that first-party tests and external callers have
 # historically imported while the implementation moves into _types modules.
+_ARTIFACT_TYPE_CODE_MAP = _artifact_types._ARTIFACT_TYPE_CODE_MAP
 _SOURCE_TYPE_CODE_MAP = _source_types._SOURCE_TYPE_CODE_MAP
 _SOURCE_TYPE_COMPAT_MAP = _source_types._SOURCE_TYPE_COMPAT_MAP
+_extract_artifact_url = _artifact_types._extract_artifact_url
+_extract_audio_artifact_url = _artifact_types._extract_audio_artifact_url
+_extract_infographic_artifact_url = _artifact_types._extract_infographic_artifact_url
 _extract_notebook_sources_count = _notebook_types._extract_notebook_sources_count
+_extract_slide_deck_artifact_url = _artifact_types._extract_slide_deck_artifact_url
 _extract_source_created_at = _source_types._extract_source_created_at
 _extract_source_url = _source_types._extract_source_url
+_extract_video_artifact_url = _artifact_types._extract_video_artifact_url
+_is_valid_artifact_url = _artifact_types._is_valid_artifact_url
+_map_artifact_kind = _artifact_types._map_artifact_kind
 _safe_source_type = _source_types._safe_source_type
+_warned_artifact_types = _artifact_types._warned_artifact_types
 _warned_source_types = _source_types._warned_source_types
 
-# =============================================================================
-# User-facing Type Enums (str enums for .kind property)
-# =============================================================================
-
-
-class ArtifactType(str, Enum):
-    """User-facing artifact types.
-
-    This is a str enum that hides internal variant complexity. For example,
-    quizzes and flashcards are both type 4 internally but distinguished by variant.
-
-    Comparisons work with both enum members and strings:
-        artifact.kind == ArtifactType.AUDIO  # True
-        artifact.kind == "audio"             # Also True
-    """
-
-    AUDIO = "audio"
-    VIDEO = "video"
-    REPORT = "report"
-    QUIZ = "quiz"
-    FLASHCARDS = "flashcards"
-    MIND_MAP = "mind_map"
-    INFOGRAPHIC = "infographic"
-    SLIDE_DECK = "slide_deck"
-    DATA_TABLE = "data_table"
-    UNKNOWN = "unknown"
-
-
-_warned_artifact_types: set[tuple[int, int | None]] = set()
-
-
-# Mapping from internal int codes to ArtifactType enum
-_ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
-    1: ArtifactType.AUDIO,
-    2: ArtifactType.REPORT,
-    3: ArtifactType.VIDEO,
-    5: ArtifactType.MIND_MAP,
-    7: ArtifactType.INFOGRAPHIC,
-    8: ArtifactType.SLIDE_DECK,
-    9: ArtifactType.DATA_TABLE,
-}
-
-
-def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
-    """Convert internal artifact type and variant to user-facing ArtifactType.
-
-    Args:
-        artifact_type: ArtifactTypeCode integer value from API.
-        variant: Optional variant code (e.g., for quiz vs flashcards).
-
-    Returns:
-        ArtifactType enum member. Returns UNKNOWN for unrecognized types.
-    """
-    # Handle QUIZ/FLASHCARDS distinction (both use type 4)
-    if artifact_type == 4:  # ArtifactTypeCode.QUIZ
-        if variant == 1:
-            return ArtifactType.FLASHCARDS
-        elif variant == 2:
-            return ArtifactType.QUIZ
-        else:
-            key = (artifact_type, variant)
-            if key not in _warned_artifact_types:
-                _warned_artifact_types.add(key)
-                warnings.warn(
-                    f"Unknown QUIZ variant {variant}. "
-                    "Consider updating notebooklm-py to the latest version.",
-                    UnknownTypeWarning,
-                    stacklevel=3,
-                )
-            return ArtifactType.UNKNOWN
-
-    result = _ARTIFACT_TYPE_CODE_MAP.get(artifact_type)
-    if result is None:
-        key = (artifact_type, variant)
-        if key not in _warned_artifact_types:
-            _warned_artifact_types.add(key)
-            warnings.warn(
-                f"Unknown artifact type {artifact_type}. "
-                "Consider updating notebooklm-py to the latest version.",
-                UnknownTypeWarning,
-                stacklevel=3,
-            )
-        return ArtifactType.UNKNOWN
-    return result
+# Imported for the historical ``notebooklm.types.ArtifactTypeCode`` attribute,
+# but intentionally absent from ``__all__``.
+_NON_ALL_COMPAT_TYPES = (ArtifactTypeCode,)
 
 
 def _datetime_from_timestamp(value: Any) -> datetime | None:
     """Convert an API seconds timestamp to ``datetime``, returning ``None`` if invalid."""
     return _common_datetime_from_timestamp(value, datetime_type=datetime)
-
-
-def _is_valid_artifact_url(value: Any) -> bool:
-    """Return True when ``value`` looks like a downloadable artifact URL."""
-    return isinstance(value, str) and value.startswith(("http://", "https://"))
-
-
-def _extract_audio_artifact_url(data: list[Any]) -> str | None:
-    if len(data) <= 6 or not isinstance(data[6], list) or len(data[6]) <= 5:
-        return None
-
-    media_list = data[6][5]
-    if not isinstance(media_list, list):
-        return None
-
-    for item in media_list:
-        if (
-            isinstance(item, list)
-            and len(item) > 2
-            and item[2] == "audio/mp4"
-            and _is_valid_artifact_url(item[0])
-        ):
-            return item[0]
-
-    for item in media_list:
-        if isinstance(item, list) and item and _is_valid_artifact_url(item[0]):
-            return item[0]
-
-    return None
-
-
-def _extract_video_artifact_url(data: list[Any]) -> str | None:
-    if len(data) <= 8 or not isinstance(data[8], list):
-        return None
-
-    fallback_url = None
-    for media_list in data[8]:
-        if not isinstance(media_list, list):
-            continue
-        for item in media_list:
-            if not isinstance(item, list) or not item or not _is_valid_artifact_url(item[0]):
-                continue
-            if fallback_url is None:
-                fallback_url = item[0]
-            if len(item) > 2 and item[2] == "video/mp4":
-                if len(item) > 1 and item[1] == 4:
-                    return item[0]
-                fallback_url = item[0]
-
-    return fallback_url
-
-
-def _extract_infographic_artifact_url(data: list[Any]) -> str | None:
-    for item in data:
-        if not isinstance(item, list) or len(item) <= 2:
-            continue
-        content = item[2]
-        if not isinstance(content, list) or not content:
-            continue
-        first_content = content[0]
-        if not isinstance(first_content, list) or len(first_content) <= 1:
-            continue
-        img_data = first_content[1]
-        if isinstance(img_data, list) and img_data and _is_valid_artifact_url(img_data[0]):
-            return img_data[0]
-    return None
-
-
-def _extract_slide_deck_artifact_url(data: list[Any]) -> str | None:
-    """Extract the slide-deck PDF URL. The PPTX URL at ``data[16][4]`` is not
-    surfaced — callers wanting PPTX should use ``download_slide_deck(output_format="pptx")``."""
-    if (
-        len(data) > 16
-        and isinstance(data[16], list)
-        and len(data[16]) > 3
-        and _is_valid_artifact_url(data[16][3])
-    ):
-        return data[16][3]
-    return None
-
-
-def _extract_artifact_url(data: list[Any], artifact_type: int | None) -> str | None:
-    """Extract a public download URL from known artifact response shapes."""
-    if artifact_type == ArtifactTypeCode.AUDIO.value:
-        return _extract_audio_artifact_url(data)
-    if artifact_type == ArtifactTypeCode.VIDEO.value:
-        return _extract_video_artifact_url(data)
-    if artifact_type == ArtifactTypeCode.INFOGRAPHIC.value:
-        return _extract_infographic_artifact_url(data)
-    if artifact_type == ArtifactTypeCode.SLIDE_DECK.value:
-        return _extract_slide_deck_artifact_url(data)
-    return None
 
 
 __all__ = [
@@ -361,9 +207,20 @@ del _public_common_type
 
 
 for _public_moved_type in (
+    Artifact,
+    ArtifactType,
+    AskResult,
+    ChatMode,
+    ChatReference,
+    ConversationTurn,
+    GenerationStatus,
+    Note,
     Notebook,
     NotebookDescription,
     NotebookMetadata,
+    ReportSuggestion,
+    SharedUser,
+    ShareStatus,
     Source,
     SourceFulltext,
     SourceSummary,
@@ -372,573 +229,3 @@ for _public_moved_type in (
 ):
     _public_moved_type.__module__ = __name__
 del _public_moved_type
-
-
-# =============================================================================
-# Chat Mode Enum (service-level, not RPC-level)
-# =============================================================================
-
-
-class ChatMode(Enum):
-    """Predefined chat modes for common use cases."""
-
-    DEFAULT = "default"  # General purpose
-    LEARNING_GUIDE = "learning_guide"  # Educational focus
-    CONCISE = "concise"  # Brief responses
-    DETAILED = "detailed"  # Verbose responses
-
-
-# =============================================================================
-# Artifact Types
-# =============================================================================
-
-
-@dataclass
-class Artifact:
-    """Represents a NotebookLM artifact (studio content).
-
-    Artifacts are AI-generated content like Audio Overviews, Video Overviews,
-    Reports, Quizzes, Flashcards, Mind Maps, Infographics, Slide Decks, and
-    Data Tables.
-
-    Attributes:
-        id: Unique artifact identifier.
-        title: Artifact title.
-        kind: Artifact type as ArtifactType enum (str enum, comparable to strings).
-        status: Processing status (1=processing, 2=pending, 3=completed, 4=failed).
-        created_at: When the artifact was created.
-        url: Download URL (if available). For slide decks this is the PDF URL
-            only — PPTX is fetched separately via ``download_slide_deck(output_format="pptx")``.
-
-    Example:
-        artifact.kind == ArtifactType.AUDIO  # True
-        artifact.kind == "audio"             # Also True (str enum)
-        f"Type: {artifact.kind}"             # "Type: audio"
-    """
-
-    id: str
-    title: str
-    _artifact_type: int = field(repr=False)  # ArtifactTypeCode enum value
-    status: int  # 1=processing, 2=pending, 3=completed, 4=failed
-    created_at: datetime | None = None
-    url: str | None = None
-    _variant: int | None = field(default=None, repr=False)  # For type 4: 1=flashcards, 2=quiz
-
-    @property
-    def kind(self) -> ArtifactType:
-        """Get artifact type as ArtifactType enum.
-
-        Returns:
-            ArtifactType enum member. Returns ArtifactType.UNKNOWN for
-            unrecognized type codes (with a warning on first occurrence).
-        """
-        return _map_artifact_kind(self._artifact_type, self._variant)
-
-    @property
-    def artifact_type(self) -> int:
-        """Deprecated: Use .kind instead.
-
-        Returns the raw integer type code for backward compatibility.
-
-        .. deprecated:: 0.3.0
-            Use the ``.kind`` property which returns an ``ArtifactType`` enum.
-            Will be removed in v0.5.0.
-        """
-        warnings.warn(
-            "Artifact.artifact_type is deprecated, use .kind instead. Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._artifact_type
-
-    @property
-    def variant(self) -> int | None:
-        """Deprecated: Use .kind, .is_quiz, or .is_flashcards instead.
-
-        Returns the variant code for type 4 artifacts (1=flashcards, 2=quiz).
-
-        .. deprecated:: 0.3.0
-            Use ``.kind == ArtifactType.QUIZ`` or ``.is_quiz`` / ``.is_flashcards``.
-            Will be removed in v0.5.0.
-        """
-        warnings.warn(
-            "Artifact.variant is deprecated. Use .kind, .is_quiz, or .is_flashcards instead. "
-            "Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self._variant
-
-    @classmethod
-    def from_api_response(cls, data: list[Any]) -> "Artifact":
-        """Parse artifact from API response.
-
-        Structure: [id, title, type, ..., status, ..., metadata, ...]
-        Position 9 contains options with variant code at [9][1][0]:
-          - For type 4: 1=flashcards, 2=quiz
-        """
-        artifact_id = data[0] if len(data) > 0 else ""
-        title = data[1] if len(data) > 1 else ""
-        artifact_type = data[2] if len(data) > 2 else 0
-        status = data[4] if len(data) > 4 else 0
-
-        # Extract timestamp from data[15][0]
-        created_at = None
-        if len(data) > 15 and isinstance(data[15], list) and len(data[15]) > 0:
-            created_at = _datetime_from_timestamp(data[15][0])
-
-        # Extract variant code from data[9][1][0] for quiz/flashcard distinction
-        variant = None
-        if len(data) > 9 and isinstance(data[9], list) and len(data[9]) > 1:
-            options = data[9][1]
-            if isinstance(options, list) and len(options) > 0:
-                variant = options[0]
-
-        url = _extract_artifact_url(data, artifact_type if isinstance(artifact_type, int) else None)
-
-        return cls(
-            id=str(artifact_id),
-            title=str(title),
-            _artifact_type=artifact_type,
-            status=status,
-            created_at=created_at,
-            url=url,
-            _variant=variant,
-        )
-
-    @classmethod
-    def from_mind_map(cls, data: list[Any]) -> Optional["Artifact"]:
-        """Parse artifact from mind map data (stored in notes system).
-
-        Mind map structure:
-        [
-            "mind_map_id",
-            [
-                "mind_map_id",           # [1][0]: ID
-                "JSON_content",          # [1][1]: Mind map JSON
-                [1, "user_id", [ts, ns]],  # [1][2]: Metadata
-                None,                    # [1][3]
-                "title"                  # [1][4]: Title
-            ]
-        ]
-
-        Deleted/cleared mind map: ["id", None, 2]
-
-        Returns:
-            Artifact object, or None if deleted (status=2).
-        """
-        if not isinstance(data, list) or len(data) < 1:
-            return None
-
-        mind_map_id = data[0] if len(data) > 0 else ""
-
-        # Check for deleted status (item[1] is None with status=2)
-        if len(data) >= 3 and data[1] is None and data[2] == 2:
-            return None  # Deleted, don't include
-
-        # Extract title and timestamp from nested structure
-        title = ""
-        created_at = None
-
-        if len(data) > 1 and isinstance(data[1], list):
-            inner = data[1]
-            # Title is at position [4]
-            if len(inner) > 4 and isinstance(inner[4], str):
-                title = inner[4]
-            # Timestamp is at [2][2][0]
-            if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 2:
-                ts_data = inner[2][2]
-                if isinstance(ts_data, list) and len(ts_data) > 0:
-                    created_at = _datetime_from_timestamp(ts_data[0])
-
-        return cls(
-            id=str(mind_map_id),
-            title=title,
-            _artifact_type=5,  # ArtifactTypeCode.MIND_MAP
-            status=3,  # Mind maps are always "completed" once created
-            created_at=created_at,
-            _variant=None,
-        )
-
-    @property
-    def is_completed(self) -> bool:
-        """Check if artifact generation is complete (status=COMPLETED)."""
-        return self.status == ArtifactStatus.COMPLETED
-
-    @property
-    def is_processing(self) -> bool:
-        """Check if artifact is being generated (status=PROCESSING)."""
-        return self.status == ArtifactStatus.PROCESSING
-
-    @property
-    def is_pending(self) -> bool:
-        """Check if artifact is queued/transitional (status=PENDING)."""
-        return self.status == ArtifactStatus.PENDING
-
-    @property
-    def is_failed(self) -> bool:
-        """Check if artifact generation failed (status=FAILED)."""
-        return self.status == ArtifactStatus.FAILED
-
-    @property
-    def status_str(self) -> str:
-        """Get human-readable status string.
-
-        Returns:
-            "in_progress", "pending", "completed", "failed", or "unknown".
-        """
-        return artifact_status_to_str(self.status)
-
-    @property
-    def is_quiz(self) -> bool:
-        """Check if this is a quiz (type 4, variant 2)."""
-        return self._artifact_type == 4 and self._variant == 2
-
-    @property
-    def is_flashcards(self) -> bool:
-        """Check if this is flashcards (type 4, variant 1)."""
-        return self._artifact_type == 4 and self._variant == 1
-
-    @property
-    def report_subtype(self) -> str | None:
-        """Get the report subtype for type 2 artifacts.
-
-        Returns:
-            'briefing_doc', 'study_guide', 'blog_post', or None if not a report.
-        """
-        if self._artifact_type != 2:
-            return None
-        title_lower = self.title.lower()
-        if title_lower.startswith("briefing doc"):
-            return "briefing_doc"
-        elif title_lower.startswith("study guide"):
-            return "study_guide"
-        elif title_lower.startswith("blog post"):
-            return "blog_post"
-        return "report"
-
-
-@dataclass
-class GenerationStatus:
-    """Status of an artifact generation task.
-
-    Note: task_id and artifact_id are the same identifier. The API returns a single
-    ID when generation starts, which is used both for polling the task status during
-    generation and as the artifact's ID once complete. We use 'task_id' here to
-    emphasize its role in tracking the generation task.
-    """
-
-    task_id: str  # Same as artifact_id - used for polling and becomes Artifact.id
-    status: str  # "pending", "in_progress", "completed", "failed", "not_found"
-    url: str | None = None
-    error: str | None = None
-    error_code: str | None = None  # e.g., "USER_DISPLAYABLE_ERROR" for rate limits
-    metadata: dict[str, Any] | None = None
-
-    @property
-    def is_complete(self) -> bool:
-        """Check if generation is complete."""
-        return self.status == "completed"
-
-    @property
-    def is_failed(self) -> bool:
-        """Check if generation failed."""
-        return self.status == "failed"
-
-    @property
-    def is_pending(self) -> bool:
-        """Check if generation is pending."""
-        return self.status == "pending"
-
-    @property
-    def is_in_progress(self) -> bool:
-        """Check if generation is in progress."""
-        return self.status == "in_progress"
-
-    @property
-    def is_not_found(self) -> bool:
-        """Check if the artifact was not found in the poll response.
-
-        This status is set by ``poll_status()`` when the artifact ID is
-        absent from the artifact list.  It differs from ``is_pending``:
-        a ``pending`` artifact exists in the list and is queued, while a
-        ``not_found`` artifact has either not yet appeared (brief lag after
-        creation) or was silently removed by the server (e.g. after a
-        daily-quota rejection).
-
-        ``wait_for_completion`` treats a sustained run of ``not_found``
-        responses as a failure — see its ``max_not_found`` parameter.
-        """
-        return self.status == "not_found"
-
-    @property
-    def is_rate_limited(self) -> bool:
-        """Check if generation failed due to rate limiting or quota exceeded.
-
-        Returns True when the API rejected the request, typically due to
-        too many requests or quota exhaustion.
-        """
-        if not self.is_failed:
-            return False
-
-        # Prefer structured error code when available
-        if self.error_code == "USER_DISPLAYABLE_ERROR":
-            return True
-
-        # Fall back to string matching for backwards compatibility
-        if self.error is not None:
-            error_lower = self.error.lower()
-            return (
-                "rate limit" in error_lower
-                or "quota" in error_lower
-                or "limit exceeded" in error_lower
-            )
-
-        return False
-
-
-@dataclass
-class ReportSuggestion:
-    """AI-suggested report format based on notebook sources."""
-
-    title: str
-    description: str
-    prompt: str
-    audience_level: int = 2  # 1=beginner, 2=advanced
-
-    @classmethod
-    def from_api_response(cls, data: dict[str, Any]) -> "ReportSuggestion":
-        """Parse from get_suggested_report_formats() response item."""
-        return cls(
-            title=data.get("title", ""),
-            description=data.get("description", ""),
-            prompt=data.get("prompt", ""),
-            audience_level=data.get("audience_level", 2),
-        )
-
-
-# =============================================================================
-# Note Types
-# =============================================================================
-
-
-@dataclass
-class Note:
-    """Represents a user-created note in a notebook.
-
-    Notes are distinct from artifacts - they are user-created content,
-    not AI-generated. Notes support different operations than artifacts
-    (export to Docs/Sheets, convert to source).
-    """
-
-    id: str
-    notebook_id: str
-    title: str
-    content: str
-    created_at: datetime | None = None
-
-    @classmethod
-    def from_api_response(cls, data: list[Any], notebook_id: str) -> "Note":
-        """Parse note from API response.
-
-        Args:
-            data: Raw API response list.
-            notebook_id: The parent notebook ID.
-
-        Returns:
-            Note instance.
-        """
-        note_id = data[0] if len(data) > 0 else ""
-        title = data[1] if len(data) > 1 else ""
-        content = data[2] if len(data) > 2 else ""
-
-        created_at = None
-        if len(data) > 3 and isinstance(data[3], list) and len(data[3]) > 0:
-            created_at = _datetime_from_timestamp(data[3][0])
-
-        return cls(
-            id=str(note_id),
-            notebook_id=notebook_id,
-            title=str(title),
-            content=str(content),
-            created_at=created_at,
-        )
-
-
-# =============================================================================
-# Conversation Types
-# =============================================================================
-
-
-@dataclass
-class ConversationTurn:
-    """Represents a single turn in a conversation."""
-
-    query: str
-    answer: str
-    turn_number: int
-
-
-@dataclass
-class ChatReference:
-    """A reference/citation in a chat response.
-
-    References link parts of the answer to specific sources.
-    When you click a reference in the NotebookLM UI, it shows
-    the relevant passage from the source.
-
-    Attributes:
-        source_id: The source UUID this reference points to.
-        citation_number: The citation number shown in the answer (e.g., [1], [2]).
-            Assigned client-side in answer-array order; this is the marker that
-            appears inline in the answer text.
-        cited_text: The actual text passage from the source being cited.
-            Reliably populated for content-bearing citations (empirically ~95%
-            of refs have ``len(cited_text) ≈ end_char - start_char``). May be
-            ``None`` for structural-anchor citations (single-char source ranges
-            at page/section boundaries, image/infobox refs) — the server has no
-            plaintext to deliver for those.
-        start_char: Start character position in the source's chunked index
-            (if available). NOT a position in ``SourceFulltext.content``.
-        end_char: End character position in the source's chunked index.
-        chunk_id: Internal chunk ID (for debugging, not user-facing).
-        passage_id: Forward-compatibility slot for the per-passage UUID
-            that NotebookLM's web UI sends in its saved-from-chat
-            CREATE_NOTE payload (issue #660). The streaming chat response
-            does NOT currently expose this UUID, so it stays ``None`` in
-            production. ``build_save_chat_as_note_params`` falls back to
-            ``chunk_id`` when it's unset.
-        answer_start_char: Start position in the *answer text* of the span that
-            this citation supports. Distinct from ``start_char`` (which is
-            source-side). Useful for highlighting the supported span in a UI.
-            ``None`` if the server omitted it.
-        answer_end_char: End position in the answer text (exclusive).
-        score: Server-side relevance score for this citation, 0.0-1.0.
-            Typically observed in the 0.6-0.7 range. ``None`` if the server
-            omitted it.
-    """
-
-    source_id: str
-    citation_number: int | None = None
-    cited_text: str | None = None
-    start_char: int | None = None
-    end_char: int | None = None
-    chunk_id: str | None = None
-    passage_id: str | None = None
-    answer_start_char: int | None = None
-    answer_end_char: int | None = None
-    score: float | None = None
-
-
-@dataclass
-class AskResult:
-    """Result of asking the notebook a question.
-
-    Attributes:
-        answer: The AI-generated answer text.
-        conversation_id: UUID for this conversation (used for follow-ups).
-        turn_number: The turn number in the conversation.
-        is_follow_up: Whether this was a follow-up question.
-        references: List of source references cited in the answer.
-        raw_response: First 1000 chars of raw API response (for debugging).
-    """
-
-    answer: str
-    conversation_id: str
-    turn_number: int
-    is_follow_up: bool
-    references: list["ChatReference"] = field(default_factory=list)
-    raw_response: str = ""
-
-
-# =============================================================================
-# Sharing Types
-# =============================================================================
-
-
-@dataclass
-class SharedUser:
-    """A user the notebook is shared with."""
-
-    email: str
-    permission: SharePermission
-    display_name: str | None = None
-    avatar_url: str | None = None
-
-    @classmethod
-    def from_api_response(cls, data: list[Any]) -> "SharedUser":
-        """Parse from GET_SHARE_STATUS user entry.
-
-        Entry format: [email, permission, [], [name, avatar]]
-        """
-        email = data[0] if data else ""
-        perm_value = data[1] if len(data) > 1 else 3
-        try:
-            permission = SharePermission(perm_value)
-        except ValueError:
-            permission = SharePermission.VIEWER
-
-        display_name = None
-        avatar_url = None
-        if len(data) > 3 and isinstance(data[3], list):
-            user_info = data[3]
-            display_name = user_info[0] if user_info else None
-            avatar_url = user_info[1] if len(user_info) > 1 else None
-
-        return cls(
-            email=email,
-            permission=permission,
-            display_name=display_name,
-            avatar_url=avatar_url,
-        )
-
-
-@dataclass
-class ShareStatus:
-    """Current sharing configuration for a notebook."""
-
-    notebook_id: str
-    is_public: bool
-    access: ShareAccess
-    view_level: ShareViewLevel
-    shared_users: list[SharedUser] = field(default_factory=list)
-    share_url: str | None = None
-
-    @classmethod
-    def from_api_response(cls, data: list[Any], notebook_id: str) -> "ShareStatus":
-        """Parse from GET_SHARE_STATUS response.
-
-        Response format: [[[user_entries]], [is_public], 1000]
-        """
-        # Parse users from [0]
-        users = []
-        if data and isinstance(data[0], list):
-            for user_data in data[0]:
-                if isinstance(user_data, list):
-                    users.append(SharedUser.from_api_response(user_data))
-
-        # Parse is_public from [1]
-        is_public = False
-        if len(data) > 1 and isinstance(data[1], list) and data[1]:
-            is_public = bool(data[1][0])
-
-        access = ShareAccess.ANYONE_WITH_LINK if is_public else ShareAccess.RESTRICTED
-
-        # view_level not in GET_SHARE_STATUS response - default to FULL_NOTEBOOK
-        view_level = ShareViewLevel.FULL_NOTEBOOK
-
-        # Construct share URL if public. Percent-encode the id with ``safe=""``
-        # so reserved characters cannot escape the path position and rewrite
-        # the URL into another endpoint (mirrors ``_sharing_manager.build_share_url``).
-        share_url = (
-            f"{get_base_url()}/notebook/{quote(notebook_id, safe='')}" if is_public else None
-        )
-
-        return cls(
-            notebook_id=notebook_id,
-            is_public=is_public,
-            access=access,
-            view_level=view_level,
-            shared_users=users,
-            share_url=share_url,
-        )

@@ -375,6 +375,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
 ]
 
 _TYPES_PRIVATE_HELPER_SEAMS = [
+    "_ARTIFACT_TYPE_CODE_MAP",
     "_SOURCE_TYPE_COMPAT_MAP",
     "_datetime_from_timestamp",
     "_extract_artifact_url",
@@ -385,6 +386,7 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
     "_extract_source_url",
     "_extract_video_artifact_url",
     "_is_valid_artifact_url",
+    "_map_artifact_kind",
     "_warned_artifact_types",
     "_warned_source_types",
 ]

@@ -112,6 +112,44 @@ def test_public_movable_types_keep_notebooklm_types_module(name):
     assert getattr(public_types, name).__module__ == "notebooklm.types"
 
 
+def test_artifact_note_chat_and_sharing_types_are_facade_reexports():
+    """T13.3 domain types live in private modules while notebooklm.types stays public."""
+    import notebooklm.types as public_types
+    from notebooklm._types import artifacts, chat, notes, sharing
+
+    assert public_types.Artifact is artifacts.Artifact
+    assert public_types.ArtifactType is artifacts.ArtifactType
+    assert public_types.GenerationStatus is artifacts.GenerationStatus
+    assert public_types.ReportSuggestion is artifacts.ReportSuggestion
+    assert public_types.Note is notes.Note
+    assert public_types.ConversationTurn is chat.ConversationTurn
+    assert public_types.ChatReference is chat.ChatReference
+    assert public_types.AskResult is chat.AskResult
+    assert public_types.ChatMode is chat.ChatMode
+    assert public_types.SharedUser is sharing.SharedUser
+    assert public_types.ShareStatus is sharing.ShareStatus
+
+
+def test_artifact_private_helper_seams_are_facade_reexports():
+    """Artifact helper functions and warning state remain live notebooklm.types aliases."""
+    import notebooklm.types as public_types
+    from notebooklm._types import artifacts
+
+    assert public_types._ARTIFACT_TYPE_CODE_MAP is artifacts._ARTIFACT_TYPE_CODE_MAP
+    assert public_types._warned_artifact_types is artifacts._warned_artifact_types
+    assert public_types._map_artifact_kind is artifacts._map_artifact_kind
+    assert public_types._is_valid_artifact_url is artifacts._is_valid_artifact_url
+    assert public_types._extract_artifact_url is artifacts._extract_artifact_url
+    assert public_types._extract_audio_artifact_url is artifacts._extract_audio_artifact_url
+    assert public_types._extract_video_artifact_url is artifacts._extract_video_artifact_url
+    assert public_types._extract_infographic_artifact_url is (
+        artifacts._extract_infographic_artifact_url
+    )
+    assert public_types._extract_slide_deck_artifact_url is (
+        artifacts._extract_slide_deck_artifact_url
+    )
+
+
 def test_representative_public_dataclasses_pickle_round_trip():
     """Representative public dataclasses/enums keep pickle compatibility through T13 moves."""
     from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
