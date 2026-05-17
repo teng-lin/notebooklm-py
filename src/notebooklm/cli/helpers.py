@@ -39,13 +39,6 @@ stderr_console = rendering_helpers.stderr_console
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 ResearchImportResult = research_import_helpers.ResearchImportResult
-_normalize_url = research_import_helpers._normalize_url
-_source_url_norm = research_import_helpers._source_url_norm
-_requested_urls_norm = research_import_helpers._requested_urls_norm
-_has_no_url_entry = research_import_helpers._has_no_url_entry
-_imported_source_entry = research_import_helpers._imported_source_entry
-_merge_imported_sources = research_import_helpers._merge_imported_sources
-_select_research_sources_for_import = research_import_helpers._select_research_sources_for_import
 
 
 def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:
