@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.generate import _format_status_message, _status_with_elapsed
+from notebooklm.cli.services.artifact_generation import _format_status_message, _status_with_elapsed
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 
@@ -19,6 +19,7 @@ from .conftest import create_mock_client, patch_client_for_module
 # tests target the module's attribute set (``console``, helpers) rather than
 # the Click Group sitting at the same dotted path.
 generate_module = importlib.import_module("notebooklm.cli.generate")
+artifact_generation_module = importlib.import_module("notebooklm.cli.services.artifact_generation")
 
 
 @pytest.fixture
@@ -1513,9 +1514,7 @@ class TestOutputGenerationStatusDirect:
     """Direct tests for _output_generation_status() covering uncovered branches."""
 
     def setup_method(self):
-        import importlib
-
-        self.generate_module = importlib.import_module("notebooklm.cli.generate")
+        self.generate_module = artifact_generation_module
 
     def _make_status(
         self, *, is_complete=False, is_failed=False, task_id=None, url=None, error=None
@@ -1618,9 +1617,7 @@ class TestExtractTaskIdDirect:
     """Direct tests for _extract_task_id() covering list path."""
 
     def setup_method(self):
-        import importlib
-
-        self.generate_module = importlib.import_module("notebooklm.cli.generate")
+        self.generate_module = artifact_generation_module
 
     def test_extract_from_list_first_string(self):
         """Lines 231-232: list where first element is a string."""
@@ -2066,11 +2063,8 @@ class TestGenerateWithRetryConsoleOutput:
     @pytest.mark.asyncio
     async def test_retry_shows_console_message_when_not_json(self):
         """Line 111: console.print shown during retry when json_output=False."""
-        import importlib
 
         from notebooklm.types import GenerationStatus
-
-        generate_module = importlib.import_module("notebooklm.cli.generate")
 
         rate_limited = GenerationStatus(
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
@@ -2081,10 +2075,10 @@ class TestGenerateWithRetryConsoleOutput:
         generate_fn = AsyncMock(side_effect=[rate_limited, success_result])
 
         with (
-            patch.object(generate_module, "console") as mock_console,
+            patch.object(artifact_generation_module, "console") as mock_console,
             patch("asyncio.sleep", new_callable=AsyncMock),
         ):
-            result = await generate_module.generate_with_retry(
+            result = await artifact_generation_module.generate_with_retry(
                 generate_fn, max_retries=1, artifact_type="audio", json_output=False
             )
 
@@ -2211,7 +2205,7 @@ class TestStatusWithElapsed:
         """Under --json the helper must NOT call console.status (stdout stays JSON)."""
 
         async def _exercise() -> None:
-            with patch.object(generate_module.console, "status") as mock_status:
+            with patch.object(artifact_generation_module.console, "status") as mock_status:
                 async with _status_with_elapsed("audio", json_output=True):
                     pass
                 assert not mock_status.called, "console.status must not be invoked under --json"
@@ -2325,7 +2319,7 @@ class TestGenerateWaitSigintResumeHint:
         """
 
         async def _exercise() -> None:
-            with patch.object(generate_module.console, "status") as mock_status:
+            with patch.object(artifact_generation_module.console, "status") as mock_status:
                 mock_status.return_value.__enter__ = MagicMock(return_value=MagicMock())
                 mock_status.return_value.__exit__ = MagicMock(return_value=False)
                 with pytest.raises(KeyboardInterrupt):
