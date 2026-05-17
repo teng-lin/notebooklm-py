@@ -153,16 +153,16 @@ _DEFAULT_DATEFMT = "%H:%M:%S"
 #   Cookie: (IGNORECASE)                                 -> "cookie"
 #   Set-Cookie: (IGNORECASE)                             -> "set-cookie" (also "cookie")
 #
-# Deviation notes vs. plan PR-F:
-#   - Plan's literal token list is mixed-case (``SID``, ``SAPISID``, ``CSRF``,
-#     ``Cookie``, ``Authorization``, ``Set-Cookie``). We lowercase the gate
-#     to honor ``re.IGNORECASE`` on those patterns. Token VALUES change to
-#     lowercase; the COVERAGE story (and the resulting redaction surface)
-#     is preserved.
-#   - "_token=" and "code=" extend the plan's literal token list. The plan
-#     advertises "superset of substrings in any pattern" but its own list
-#     omits OAuth anchors; without them the OAuth pattern would silently stop
-#     redacting whenever a message had no other secret marker.
+# Deviation notes vs. the originating redaction design:
+#   - The design's literal token list is mixed-case (``SID``, ``SAPISID``,
+#     ``CSRF``, ``Cookie``, ``Authorization``, ``Set-Cookie``). We lowercase
+#     the gate to honor ``re.IGNORECASE`` on those patterns. Token VALUES
+#     change to lowercase; the COVERAGE story (and the resulting redaction
+#     surface) is preserved.
+#   - "_token=" and "code=" extend the design's literal token list. The
+#     design advertises "superset of substrings in any pattern" but its own
+#     list omits OAuth anchors; without them the OAuth pattern would silently
+#     stop redacting whenever a message had no other secret marker.
 #   - "continue=" and "authuser=" are NOT in ``_REDACT_PATTERNS``. Including
 #     them is harmless: they only INCREASE the regex-sweep rate, never the
 #     redaction surface, and they hedge against future audit additions.

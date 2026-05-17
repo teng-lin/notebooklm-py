@@ -351,8 +351,9 @@ Run the setup script once per Google account that records cassettes:
 uv run python tests/scripts/setup-generation-notebook.py
 ```
 
-The script is idempotent: it reuses an existing notebook titled
-`VCR Generation Notebook (Tier 8)` if one already exists, otherwise creates it.
+The script is idempotent: it reuses the notebook whose title matches
+`GENERATION_NOTEBOOK_TITLE` (defined in `tests/scripts/setup-generation-notebook.py`)
+if one already exists, otherwise creates it.
 It prints the notebook UUID and an `export` line. Copy the export line into
 your maintainer environment (e.g. `~/.zshrc` or a profile-specific `.env`
 file you do NOT commit):

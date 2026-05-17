@@ -509,8 +509,8 @@ def source_get(ctx, source_id, notebook_id, json_output, client_auth):
             # (``_output_error`` always raises) — it exists solely to narrow
             # ``src`` from ``Source | None`` to ``Source`` for mypy without
             # forcing a ``NoReturn`` annotation onto
-            # ``error_handler._output_error`` (which would touch a module the
-            # C1 spec says we must not).
+            # ``error_handler._output_error`` (which would change the shared
+            # error helper's typing contract).
             if src is None:
                 _output_error(
                     "Source not found",

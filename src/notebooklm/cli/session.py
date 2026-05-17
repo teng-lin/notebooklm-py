@@ -1144,10 +1144,10 @@ def register_session_commands(cli):
         if force:
             set_current_notebook(notebook_id)
             if json_output:
-                # I12: surface the new active notebook id as the primary
-                # signal so script callers can pipe `notebooklm use --json`
-                # straight into downstream automation. ``verified: false``
-                # mirrors the "(not verified — --force)" cell in text mode.
+                # Surface the new active notebook id as the primary signal
+                # so script callers can pipe `notebooklm use --json` straight
+                # into downstream automation. ``verified: false`` mirrors the
+                # "(not verified — --force)" cell in text mode.
                 json_output_response(
                     {
                         "active_notebook_id": notebook_id,
@@ -1168,7 +1168,7 @@ def register_session_commands(cli):
             # with an unverified ID) and route through the typed
             # ``handle_auth_error`` UX so JSON callers get the standard
             # ``AUTH_REQUIRED`` envelope and text callers get the rich
-            # multi-line "Run notebooklm login" walkthrough. (I13.)
+            # multi-line "Run notebooklm login" walkthrough.
             handle_auth_error(json_output)
             return  # unreachable — handle_auth_error raises SystemExit
         except click.ClickException:
@@ -1201,8 +1201,8 @@ def register_session_commands(cli):
             # Auth expired (e.g. SID/SSID cookies stale). Route through the
             # typed UX so the user sees "Run notebooklm login" instead of
             # the generic "Pass --force to persist without verification"
-            # catch-all that previously hid the real remediation. (Audit row
-            # I13 — see helpers.handle_auth_error for the canonical message.)
+            # catch-all that previously hid the real remediation.
+            # See ``helpers.handle_auth_error`` for the canonical message.
             handle_auth_error(json_output)
             return  # unreachable — handle_auth_error raises SystemExit
         except Exception as exc:
@@ -1218,9 +1218,9 @@ def register_session_commands(cli):
         set_current_notebook(resolved_id, nb.title, nb.is_owner, created_str)
 
         if json_output:
-            # I12: scriptable envelope surfaces the new active notebook id
-            # plus enough metadata that callers don't have to round-trip
-            # through `notebooklm status --json` to render a confirmation.
+            # Scriptable envelope surfaces the new active notebook id plus
+            # enough metadata that callers don't have to round-trip through
+            # `notebooklm status --json` to render a confirmation.
             json_output_response(
                 {
                     "active_notebook_id": resolved_id,
@@ -1845,7 +1845,7 @@ def register_session_commands(cli):
         See docs/troubleshooting.md ("Cookie freshness for long-running /
         unattended use") for launchd / systemd / cron recipes.
         """
-        # Wrap the entire body in handle_errors (I15 polish): typed exceptions
+        # Wrap the entire body in handle_errors: typed exceptions
         # (AuthError, NetworkError, ValidationError, ...) get user-friendly
         # one-liners + hints; unexpected exceptions become 'Unexpected error:
         # <msg>' (exit 2) instead of leaking ``type(exc).__name__`` into the

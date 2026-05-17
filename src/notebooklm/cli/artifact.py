@@ -240,8 +240,8 @@ def artifact_get(ctx, artifact_id, notebook_id, json_output, client_auth):
             # (``_output_error`` always raises) — it exists solely to narrow
             # ``art`` from ``Artifact | None`` to ``Artifact`` for mypy without
             # forcing a ``NoReturn`` annotation onto
-            # ``error_handler._output_error`` (which would touch a module the
-            # C1 spec says we must not).
+            # ``error_handler._output_error`` (which would change the shared
+            # error helper's typing contract).
             if art is None:
                 _output_error(
                     "Artifact not found",
