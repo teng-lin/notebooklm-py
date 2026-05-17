@@ -52,7 +52,9 @@ class NotesAPI:
                 positional constructor contract stays unchanged.
         """
         self._core = core
-        self._mind_map_service = mind_map_service or _mind_map.MindMapService(core)
+        self._mind_map_service = (
+            _mind_map.MindMapService(core) if mind_map_service is None else mind_map_service
+        )
 
     async def list(self, notebook_id: str) -> list[Note]:
         """List all text notes in the notebook.
