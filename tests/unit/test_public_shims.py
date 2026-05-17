@@ -582,6 +582,36 @@ def test_types_private_state_seams_are_live_objects(monkeypatch: pytest.MonkeyPa
     assert (7654322, None) in artifact_warnings
 
 
+def test_facade_unknown_type_warning_filter_suppresses_parser_warnings() -> None:
+    """Filters using notebooklm.types.UnknownTypeWarning still catch parser warnings."""
+    import notebooklm.types as public_types
+
+    public_types._warned_source_types.clear()
+    public_types._warned_artifact_types.clear()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        warnings.filterwarnings("ignore", category=public_types.UnknownTypeWarning)
+
+        assert (
+            public_types.Source(id="source", _type_code=8765432).kind
+            is public_types.SourceType.UNKNOWN
+        )
+        assert (
+            public_types.Artifact(
+                id="artifact",
+                title="Artifact",
+                _artifact_type=8765433,
+                status=3,
+            ).kind
+            is public_types.ArtifactType.UNKNOWN
+        )
+
+    assert caught == []
+    assert 8765432 in public_types._warned_source_types
+    assert (8765433, None) in public_types._warned_artifact_types
+
+
 def test_deprecated_top_level_studio_content_type_import_warns_and_caches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
