@@ -390,13 +390,19 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
 ]
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_TYPES_PRIVATE_HELPER_IMPORT_FILES = [
-    _PROJECT_ROOT / "src/notebooklm/_artifact_polling.py",
-    _PROJECT_ROOT / "src/notebooklm/_artifacts.py",
-    _PROJECT_ROOT / "src/notebooklm/_source_content.py",
-    _PROJECT_ROOT / "src/notebooklm/_source_listing.py",
-    _PROJECT_ROOT / "tests/unit/test_types.py",
-]
+
+
+def _iter_types_private_helper_import_files() -> list[Path]:
+    """Return first-party Python files that may import private notebooklm.types seams."""
+    roots = (
+        _PROJECT_ROOT / "src" / "notebooklm",
+        _PROJECT_ROOT / "tests" / "unit",
+    )
+    paths: list[Path] = []
+    for root in roots:
+        assert root.exists(), f"tracked private seam scan root disappeared: {root}"
+        paths.extend(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
+    return sorted(paths)
 
 
 @pytest.mark.parametrize("enum_name", _REEXPORTED_RPC_ENUMS)
@@ -497,8 +503,7 @@ def test_types_private_helper_seam_manifest_matches_first_party_imports() -> Non
         return []
 
     imported_private_names: set[str] = set()
-    for path in _TYPES_PRIVATE_HELPER_IMPORT_FILES:
-        assert path.exists(), f"tracked private seam importer disappeared: {path}"
+    for path in _iter_types_private_helper_import_files():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         type_module_aliases: set[str] = set()
         for node in ast.walk(tree):
@@ -533,7 +538,11 @@ def test_types_private_helper_seam_manifest_matches_first_party_imports() -> Non
                     alias.asname or alias.name for alias in node.names if alias.name == "types"
                 )
                 continue
-            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr.startswith("_")
+                and not node.attr.startswith("__")
+            ):
                 qualifier = attribute_path(node.value)
                 if qualifier == ["notebooklm", "types"] or (
                     len(qualifier) == 1 and qualifier[0] in type_module_aliases
