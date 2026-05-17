@@ -79,6 +79,7 @@ CONTEXT_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "auth_runtime",
     "completion",
     "input",
+    "rendering",
     "resolve",
     "runtime",
 }
@@ -238,7 +239,8 @@ def test_context_stays_on_low_level_cli_import_boundary() -> None:
     imports = _cli_module_imports(CONTEXT_PATH)
 
     assert not (imports & CONTEXT_FORBIDDEN_MODULES), (
-        "cli.context must not import runtime/auth/resolve/input/completion or command modules. "
+        "cli.context must not import runtime/auth/rendering/resolve/input/completion "
+        "or command modules. "
         f"Offenders: {sorted(imports & CONTEXT_FORBIDDEN_MODULES)}"
     )
 

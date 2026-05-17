@@ -111,6 +111,7 @@ class TestGetArtifactTypeDisplay:
         # Unknown types return "Unknown (<kind>)" format
         display = get_artifact_type_display(art)
         assert "Unknown" in display
+        assert repr(art.kind) not in display
 
     def test_report_subtype_briefing_doc(self):
         # report_subtype is computed from title
@@ -351,6 +352,7 @@ class TestContextManagement:
                 {
                     "notebook_id": "test",
                     "conversation_id": "conv",
+                    "future_context_field": "clear me too",
                     "account": {"authuser": 1, "email": "bob@example.com"},
                 }
             )

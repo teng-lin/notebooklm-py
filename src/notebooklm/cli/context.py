@@ -126,21 +126,23 @@ def clear_context(
         if not context_file.exists():
             return False
         if clear_account:
-            context_file.unlink()
+            context_file.unlink(missing_ok=True)
             return True
         try:
             data = json.loads(context_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            context_file.unlink()
+            context_file.unlink(missing_ok=True)
             return True
         if not isinstance(data, dict):
-            context_file.unlink()
+            context_file.unlink(missing_ok=True)
             return True
         original = dict(data)
-        for key in ("notebook_id", "title", "is_owner", "created_at", "conversation_id"):
-            data.pop(key, None)
+        account = original.get("account")
+        data.clear()
+        if "account" in original:
+            data["account"] = account
         if not data:
-            context_file.unlink()
+            context_file.unlink(missing_ok=True)
             return True
         if data != original:
             atomic_write_json(context_file, data)

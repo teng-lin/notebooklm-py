@@ -176,7 +176,8 @@ def get_artifact_type_display(artifact: Artifact) -> str:
         }
         return report_displays.get(artifact.report_subtype or "report", "📄 Report")
 
-    return display_map.get(kind, f"Unknown ({kind})")
+    fallback_label = kind.name if hasattr(kind, "name") else kind
+    return display_map.get(kind, f"Unknown ({fallback_label})")
 
 
 def get_source_type_display(source_type: str) -> str:

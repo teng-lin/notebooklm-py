@@ -561,6 +561,9 @@ def clear_context(*, clear_account: bool = False) -> bool:
     By default, only notebook/conversation fields are cleared; account
     metadata used for multi-account auth routing is preserved. ``auth logout``
     passes ``clear_account=True`` to remove the whole file.
+
+    Returns True if a context file was changed or removed, False if none
+    existed or no clearable fields were present.
     """
     return context_helpers.clear_context(
         clear_account=clear_account, context_path_fn=get_context_path
