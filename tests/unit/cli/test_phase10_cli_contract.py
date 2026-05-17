@@ -142,11 +142,14 @@ def _type_contract(param_type: click.ParamType) -> dict[str, object]:
     return data
 
 
-def _shell_complete_name(param: click.Option) -> str | None:
-    callback = getattr(param, "_custom_shell_complete", None)
-    if callback is None:
-        callback = param.shell_complete
-    return getattr(callback, "__name__", None)
+def _has_custom_shell_complete(param: click.Option) -> bool:
+    return getattr(param, "_custom_shell_complete", None) is not None
+
+
+def _visible_command_names(group: click.Group) -> list[str]:
+    ctx = click.Context(group)
+    names = group.list_commands(ctx)
+    return [name for name in names if not getattr(group.get_command(ctx, name), "hidden", False)]
 
 
 def _param_contract(param: click.Parameter) -> dict[str, object]:
@@ -166,7 +169,7 @@ def _param_contract(param: click.Parameter) -> dict[str, object]:
                 "is_flag": param.is_flag,
                 "multiple": param.multiple,
                 "help": param.help,
-                "shell_complete": _shell_complete_name(param),
+                "has_custom_shell_complete": _has_custom_shell_complete(param),
             }
         )
     else:
@@ -178,12 +181,11 @@ def _command_contract(path: str) -> dict[str, object]:
     cmd = _command_for(path)
     data: dict[str, object] = {
         "class": type(cmd).__name__,
-        "callback": getattr(cmd.callback, "__name__", None),
         "params": [_param_contract(param) for param in cmd.params],
         "short_help": cmd.get_short_help_str(),
     }
     if isinstance(cmd, click.Group):
-        data["commands"] = sorted(cmd.commands)
+        data["commands"] = _visible_command_names(cmd)
     return data
 
 
@@ -198,7 +200,7 @@ def _iter_command_paths(path: str) -> list[str]:
     cmd = _command_for(path)
     paths = [path]
     if isinstance(cmd, click.Group):
-        for child in sorted(cmd.commands):
+        for child in _visible_command_names(cmd):
             child_path = f"{path} {child}" if path else child
             paths.extend(_iter_command_paths(child_path))
     return paths
@@ -229,9 +231,11 @@ def build_phase10_cli_contract() -> dict[str, object]:
     return {
         "schema_version": 1,
         "tracked_surfaces": list(TRACKED_GROUPS),
-        "root_commands": sorted(cli.commands),
+        "root_commands": _visible_command_names(cli),
         "top_level_surfaces": {key: list(value) for key, value in TOP_LEVEL_SURFACES.items()},
-        "click_groups": {group: sorted(_command_for(group).commands) for group in CLICK_GROUPS},
+        "click_groups": {
+            group: _visible_command_names(_command_for(group)) for group in CLICK_GROUPS
+        },
         "aliases": {
             "download cinematic-video": {
                 "canonical": "download video",
@@ -245,8 +249,8 @@ def build_phase10_cli_contract() -> dict[str, object]:
             },
         },
         "completion_callbacks": {
-            "notebook": _shell_complete_name(_option_by_name("source list", "notebook_id")),
-            "download_artifact": _shell_complete_name(
+            "notebook": _has_custom_shell_complete(_option_by_name("source list", "notebook_id")),
+            "download_artifact": _has_custom_shell_complete(
                 _option_by_name("download audio", "artifact_id")
             ),
         },
