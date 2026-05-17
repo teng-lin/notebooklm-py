@@ -485,23 +485,59 @@ def test_types_private_helper_seams_remain_importable(name: str) -> None:
 
 def test_types_private_helper_seam_manifest_matches_first_party_imports() -> None:
     """The private seam manifest tracks known first-party notebooklm.types imports."""
+    def attribute_path(node: ast.AST) -> list[str]:
+        parts: list[str] = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if isinstance(node, ast.Name):
+            parts.append(node.id)
+            return list(reversed(parts))
+        return []
+
     imported_private_names: set[str] = set()
     for path in _TYPES_PRIVATE_HELPER_IMPORT_FILES:
         assert path.exists(), f"tracked private seam importer disappeared: {path}"
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        type_module_aliases: set[str] = set()
         for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "notebooklm.types" and alias.asname:
+                        type_module_aliases.add(alias.asname)
                 continue
-            if node.module == "notebooklm.types" or (
-                node.level > 0
-                and node.module == "types"
-                and path.is_relative_to(_PROJECT_ROOT / "src" / "notebooklm")
+            if isinstance(node, ast.ImportFrom) and (
+                node.module == "notebooklm.types"
+                or (
+                    node.level > 0
+                    and node.module == "types"
+                    and path.is_relative_to(_PROJECT_ROOT / "src" / "notebooklm")
+                )
             ):
                 imported_private_names.update(
                     alias.name
                     for alias in node.names
                     if alias.name.startswith("_") and not alias.name.startswith("__")
                 )
+                continue
+            if isinstance(node, ast.ImportFrom) and (
+                (node.module == "notebooklm" and any(alias.name == "types" for alias in node.names))
+                or (
+                    node.level > 0
+                    and node.module is None
+                    and path.is_relative_to(_PROJECT_ROOT / "src" / "notebooklm")
+                )
+            ):
+                type_module_aliases.update(
+                    alias.asname or alias.name for alias in node.names if alias.name == "types"
+                )
+                continue
+            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+                qualifier = attribute_path(node.value)
+                if qualifier == ["notebooklm", "types"] or (
+                    len(qualifier) == 1 and qualifier[0] in type_module_aliases
+                ):
+                    imported_private_names.add(node.attr)
 
     assert imported_private_names == set(_TYPES_PRIVATE_HELPER_SEAMS)
 
