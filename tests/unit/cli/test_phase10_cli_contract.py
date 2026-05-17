@@ -19,8 +19,17 @@ from notebooklm.notebooklm_cli import cli
 
 ROOT_COMMAND = "notebooklm"
 
+
+def _find_repo_root() -> Path:
+    current = Path(__file__).resolve()
+    for parent in (current, *current.parents):
+        if (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError("Could not locate repository root")
+
+
 BASELINE_PATH = (
-    Path(__file__).resolve().parents[3]
+    _find_repo_root()
     / ".sisyphus/phases/architecture-remediation/runs/"
     / "phase-10-cli-contract-baseline.json"
 )
@@ -78,8 +87,14 @@ class _Stub:
         self.title = title
 
 
-def _ctx_with_notebook(notebook_id: str = "nb_contract"):
-    return type("Ctx", (), {"params": {"notebook_id": notebook_id}, "parent": None})()
+class _CompletionCtx:
+    def __init__(self, notebook_id: str) -> None:
+        self.params = {"notebook_id": notebook_id}
+        self.parent = None
+
+
+def _ctx_with_notebook(notebook_id: str = "nb_contract") -> _CompletionCtx:
+    return _CompletionCtx(notebook_id)
 
 
 def _command_for(path: str) -> click.Command:

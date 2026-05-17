@@ -293,7 +293,6 @@ def test_command_body_file_not_found_is_not_auth_required(runner: CliRunner, stu
     payload = json.loads(result.stdout)
     assert payload["error"] is True
     assert payload["code"] == "UNEXPECTED_ERROR"
-    assert payload["code"] != "AUTH_REQUIRED"
 
 
 def test_unexpected_error_json_payload_exits_2(runner: CliRunner, stubbed_auth) -> None:
