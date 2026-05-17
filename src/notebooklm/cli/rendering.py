@@ -33,8 +33,8 @@ def _emit_status(
     stdout_console: Console = console,
     stderr_output_console: Console = stderr_console,
 ) -> None:
-    # ``cli.helpers`` calls this private variant to preserve helper-level
-    # Console patch seams while the public rendering helper uses local defaults.
+    # Shared implementation for callers that need explicit stdout/stderr
+    # console injection while preserving the public ``emit_status`` wrapper.
     target = stderr_output_console if json_output else stdout_console
     if style is not None:
         target.print(msg, style=style)
