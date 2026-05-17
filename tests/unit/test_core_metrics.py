@@ -100,31 +100,35 @@ def test_increment_accumulates_across_calls() -> None:
 
 
 def test_increment_holds_metrics_lock_during_update() -> None:
-    """Increments must run under ``_metrics_lock``.
+    """``increment()`` itself must run under ``_metrics_lock``.
 
-    We verify by attempting to acquire the lock from another thread while
-    increment is in progress — the acquire should block until the lock is
-    released.
+    Spawn a worker that calls ``metrics.increment(...)`` while the main
+    thread already holds ``_metrics_lock``. The worker must block inside
+    ``increment`` until the main thread releases — verified by the
+    ``timeout=0.05`` ``Event.wait()`` returning False. Once the main thread
+    drops the lock, the worker completes and the increment is visible in
+    the next snapshot.
     """
     metrics = ClientMetrics()
-    lock_acquired_during_increment = threading.Event()
+    increment_finished = threading.Event()
 
-    def lock_grabber() -> None:
-        # Acquire the lock; if increment held it, this blocks. Signal once
-        # we finally acquire so the main thread can verify ordering.
-        with metrics._metrics_lock:
-            lock_acquired_during_increment.set()
+    def run_increment() -> None:
+        metrics.increment(rpc_calls_started=1)
+        increment_finished.set()
 
-    # Pre-acquire from main thread and run the spy thread under contention.
+    # Hold the same lock that ``increment()`` needs; the worker must block
+    # inside its ``with self._metrics_lock`` until we release here.
     with metrics._metrics_lock:
-        spy = threading.Thread(target=lock_grabber)
-        spy.start()
-        # The spy is blocked because we hold the lock. It must not have
-        # signaled the event yet.
-        assert not lock_acquired_during_increment.wait(timeout=0.05)
-    spy.join(timeout=1.0)
-    assert spy.is_alive() is False
-    assert lock_acquired_during_increment.is_set()
+        worker = threading.Thread(target=run_increment)
+        worker.start()
+        # Worker is blocked inside increment(); the post-increment event
+        # must not have fired yet.
+        assert not increment_finished.wait(timeout=0.05)
+    worker.join(timeout=1.0)
+    assert worker.is_alive() is False
+    assert increment_finished.is_set()
+    # And the increment actually landed — the lock release didn't drop it.
+    assert metrics.snapshot().rpc_calls_started == 1
 
 
 # ---------------------------------------------------------------------------
