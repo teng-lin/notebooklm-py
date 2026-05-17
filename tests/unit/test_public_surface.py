@@ -197,6 +197,9 @@ def _collect_external_imports(module_basename: str) -> set[str]:
                 if not isinstance(node, ast.ImportFrom):
                     continue
                 module = node.module or ""
+                # Relative matching covers `from .auth import X` / `from ..auth`.
+                # The scan roots do not contain same-named non-notebooklm packages,
+                # so the module basename is sufficient for this audit.
                 resolves_to_target = module == f"notebooklm.{module_basename}" or (
                     node.level > 0 and module == module_basename
                 )

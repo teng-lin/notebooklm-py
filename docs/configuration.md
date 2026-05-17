@@ -126,6 +126,8 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_RPC_OVERRIDES` | JSON object mapping `RPCMethod` enum names to RPC ID strings (community self-patch when Google rotates a method ID; e.g. `{"LIST_NOTEBOOKS":"AbC123"}`) | - |
 | `NOTEBOOKLM_REFRESH_CMD` | Optional command (argv list, or shell string with `_USE_SHELL=1`) invoked when auth refresh is required. Must exit `0` after writing a refreshed `storage_state.json`; the parent reloads from disk | - |
 | `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True` execution. Default `shell=False` (argv list) — set to the literal `1` (only `"1"` is honored — not `true`/`yes`/`on`) when the refresh command requires shell metacharacters | `0` |
+| `NOTEBOOKLM_REFRESH_PROFILE` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; names the resolved profile being refreshed | resolved profile |
+| `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child-process hint set for `NOTEBOOKLM_REFRESH_CMD`; path to the `storage_state.json` file the command must rewrite | resolved storage path |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | Disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry | `0` |
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress stderr deprecation notices for deprecated CLI flags | - |
 
@@ -153,8 +155,10 @@ be audited from one location.
 | `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
 | `NOTEBOOKLM_DEBUG` | When `1`, RPC error messages include the **full** untruncated response body instead of the default 80-char preview. Verbose; intended for deep debugging only. | Process env on each error formatting call. | `exceptions._truncate_response_preview` |
 | `NOTEBOOKLM_REFRESH_CMD` | Optional command invoked when auth refresh is required. Must exit `0` after writing a refreshed `storage_state.json`; the parent reloads cookies from disk. Stdout/stderr are not parsed (only surfaced in the non-zero-exit error message). Parsing honors `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`. | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (constant `NOTEBOOKLM_REFRESH_CMD_ENV` in `notebooklm.auth`) |
-| `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the optional `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True`. Default `shell=False` parses the command with `shlex.split` and invokes it as an argv list (safer; resists shell-injection footguns when the env var is sourced from CI configs or container env files). | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (see `auth.py:2482-2510`) |
-| `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (see `auth.py:2899-2977`) |
+| `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the optional `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True`. Default `shell=False` parses the command with `shlex.split` and invokes it as an argv list (safer; resists shell-injection footguns when the env var is sourced from CI configs or container env files). | Process env on each refresh subprocess spawn. | `auth` refresh-spawn helper (constant `NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV` in `notebooklm.auth`) |
+| `NOTEBOOKLM_REFRESH_PROFILE` | Child env var injected into `NOTEBOOKLM_REFRESH_CMD`; names the resolved NotebookLM profile that is being refreshed. Refresh scripts may read it, but setting it in the parent shell does not select the profile. | Set by `auth` refresh-spawn helper from the resolved profile. | `auth._run_refresh_cmd` |
+| `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child env var injected into `NOTEBOOKLM_REFRESH_CMD`; points to the `storage_state.json` file the command must rewrite before exiting `0`. Refresh scripts may read it, but setting it in the parent shell does not select storage. | Set by `auth` refresh-spawn helper from the explicit storage path or profile-aware storage path. | `auth._run_refresh_cmd` |
+| `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (constant `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV` in `notebooklm.auth`) |
 
 **Boolean handling.** `NOTEBOOKLM_DEBUG_RPC` and `NOTEBOOKLM_STRICT_DECODE`
 treat `1` / `true` / `yes` (case-insensitive) as truthy; everything else is
@@ -231,13 +235,16 @@ replacing the default browser-cookie path. The contract is **exit-code based**:
 
 1. The command must exit `0`.
 2. On exit, it must have written a refreshed `storage_state.json` at the
-   path the parent process is using (the standard profile-aware storage
-   path, or `NOTEBOOKLM_REFRESH_STORAGE_PATH` when set by the parent).
+   path in `NOTEBOOKLM_REFRESH_STORAGE_PATH`. The parent sets this child
+   env var to the explicit storage path or the resolved profile-aware
+   storage path before spawning the command.
 
 The parent then reloads cookies from disk and retries the token fetch. Stdout
 and stderr are **not** parsed — they are only captured for inclusion in the
 error message when the command exits non-zero. Read by the
 `NOTEBOOKLM_REFRESH_CMD_ENV` constant in `notebooklm.auth`.
+The child process also receives `NOTEBOOKLM_REFRESH_PROFILE` with the resolved
+profile name.
 
 See also `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` to opt back into `shell=True`
 parsing.
