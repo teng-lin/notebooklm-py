@@ -20,7 +20,9 @@ from ._core_transport import (
     _TransportServerError,
 )
 from ._env import get_default_language
+from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import format_authuser_value
+from .exceptions import ChatError
 from .rpc import (
     ClientError,
     NetworkError,
@@ -34,6 +36,7 @@ from .rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
+from .types import RpcTelemetryEvent
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,7 @@ class RpcOwner(Protocol):
     _timeout: float
     _refresh_callback: Callable[[], Awaitable[Any]] | None
     _refresh_retry_delay: float
+    _http_client: Any
 
     async def _perform_authed_post(
         self,
@@ -68,6 +72,25 @@ class RpcOwner(Protocol):
         disable_internal_retries: bool = False,
     ) -> Any: ...
 
+    async def _rpc_call_impl(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str,
+        allow_null: bool,
+        _is_retry: bool,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any: ...
+
+    async def _begin_transport_post(self, log_label: str) -> Any: ...
+
+    async def _finish_transport_post(self, token: Any) -> None: ...
+
+    def _increment_metrics(self, **increments: int | float) -> None: ...
+
+    async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None: ...
+
 
 class RpcExecutor:
     """Owns raw batchexecute RPC encode, transport dispatch, decode, and retry."""
@@ -84,6 +107,187 @@ class RpcExecutor:
         self._decode_response = decode_response_late_bound
         self._is_auth_error = is_auth_error
         self._sleep = sleep
+
+    async def execute_with_telemetry(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str,
+        allow_null: bool,
+        _is_retry: bool,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any:
+        """Run an RPC wrapped with telemetry, reqid, and drain bookkeeping.
+
+        This is the outer entry point that ``ClientCore.rpc_call`` routes
+        through. The body owns the operation-token + metrics + request-id
+        wiring that surrounds the raw RPC dispatch. Pure relocation from
+        ``ClientCore.rpc_call``: no behavior changes.
+
+        Dispatches through ``self._owner._rpc_call_impl(...)`` (rather than
+        the executor's own :meth:`execute` directly) so the long-standing
+        ``core._rpc_call_impl = fake`` swap point keeps working for tests
+        and any private callers that override the impl by attribute.
+
+        The ``_is_retry`` flag suppresses telemetry/reqid wrapping so the
+        decode-time refresh-and-retry leg inherits the parent's
+        request id and reports under one ``[req=<id>]`` line in logs.
+        """
+        if not self._owner._http_client:
+            raise RuntimeError("Client not initialized. Use 'async with' context.")
+
+        # Only the outer call mints a request id; the decode-time retry path
+        # (``_is_retry=True``) inherits the parent's id so a single
+        # decode-error → refresh → retry sequence appears under one
+        # ``[req=<id>]`` in the logs. HTTP-status retries (auth + 429) happen
+        # inside ``_perform_authed_post`` without recursion, so they don't
+        # need this guard.
+        if _is_retry:
+            return await self._owner._rpc_call_impl(
+                method,
+                params,
+                source_path,
+                allow_null,
+                _is_retry,
+                disable_internal_retries=disable_internal_retries,
+            )
+
+        method_name = getattr(method, "name", str(method))
+        operation_token = await self._owner._begin_transport_post(f"RPC {method_name}")
+        self._owner._increment_metrics(rpc_calls_started=1)
+        start = time.perf_counter()
+        _reqid_token = None if get_request_id() is not None else set_request_id()
+        try:
+            result = await self._owner._rpc_call_impl(
+                method,
+                params,
+                source_path,
+                allow_null,
+                _is_retry,
+                disable_internal_retries=disable_internal_retries,
+            )
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            self._owner._increment_metrics(
+                rpc_calls_failed=1,
+                rpc_latency_seconds_total=elapsed,
+            )
+            await self._owner._emit_rpc_event(
+                RpcTelemetryEvent(
+                    method=method_name,
+                    status="error",
+                    elapsed_seconds=elapsed,
+                    request_id=get_request_id(),
+                    error_type=type(exc).__name__,
+                )
+            )
+            raise
+        else:
+            elapsed = time.perf_counter() - start
+            self._owner._increment_metrics(
+                rpc_calls_succeeded=1,
+                rpc_latency_seconds_total=elapsed,
+            )
+            await self._owner._emit_rpc_event(
+                RpcTelemetryEvent(
+                    method=method_name,
+                    status="success",
+                    elapsed_seconds=elapsed,
+                    request_id=get_request_id(),
+                )
+            )
+            return result
+        finally:
+            if _reqid_token is not None:
+                reset_request_id(_reqid_token)
+            await self._owner._finish_transport_post(operation_token)
+
+    async def query_post(
+        self,
+        *,
+        build_request: _BuildRequest,
+        parse_label: str,
+    ) -> httpx.Response:
+        """Chat-side semantic owner around :meth:`_perform_authed_post`.
+
+        Wraps the shared transport pipeline with chat-flavored exception
+        mapping: transport-layer auth failures become
+        :class:`~notebooklm.exceptions.ChatError`, and transport-layer
+        network/rate-limit failures become
+        :class:`~notebooklm.exceptions.NetworkError` /
+        :class:`~notebooklm.exceptions.ChatError` respectively. This keeps
+        ChatAPI free of HTTP-status branching and matches the historical
+        contract of ``ChatAPI.ask`` (a planned follow-up will migrate that caller).
+
+        Args:
+            build_request: See :meth:`_perform_authed_post`.
+            parse_label: Caller-friendly label used in log lines and error
+                messages (e.g. ``"chat.ask"``).
+        """
+        operation_token = await self._owner._begin_transport_post(parse_label)
+        try:
+            try:
+                return await self._owner._perform_authed_post(
+                    build_request=build_request,
+                    log_label=parse_label,
+                )
+            except _TransportAuthExpired as exc:
+                raise ChatError(
+                    f"{parse_label} failed: authentication expired and refresh did not recover"
+                ) from exc
+            except _TransportRateLimited as exc:
+                raise ChatError(
+                    f"{parse_label} rate-limited (HTTP 429)."
+                    + (
+                        f" Retry after {exc.retry_after} seconds."
+                        if exc.retry_after is not None
+                        else ""
+                    )
+                ) from exc
+            except _TransportServerError as exc:
+                if isinstance(exc.original, httpx.HTTPStatusError):
+                    raise ChatError(
+                        f"{parse_label} failed with HTTP {exc.original.response.status_code} "
+                        f"after retries: {exc.original}"
+                    ) from exc
+                # Network-layer failure (RequestError / Timeout).
+                # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
+                # ``_TransportServerError`` on the network path; this guard keeps
+                # the contract enforced under ``python -O`` (where ``assert``
+                # would be stripped) and gives a clear diagnostic if the
+                # invariant ever drifts.
+                if not isinstance(exc.original, httpx.RequestError):
+                    raise TypeError(
+                        f"Unexpected _TransportServerError.original type: {type(exc.original)}"
+                    ) from exc
+                # Preserve the timeout-specific message: TimeoutException is a
+                # subclass of RequestError, so without this branch read/connect
+                # timeouts would surface as a generic "network error after
+                # retries" line and lose the "timed out" signal callers rely on.
+                if isinstance(exc.original, httpx.TimeoutException):
+                    raise NetworkError(
+                        f"{parse_label} timed out after retries: {exc.original}",
+                        original_error=exc.original,
+                    ) from exc
+                raise NetworkError(
+                    f"{parse_label} network error after retries: {exc.original}",
+                    original_error=exc.original,
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                # Non-5xx / non-401 / non-429 status errors fall through
+                # ``_perform_authed_post``'s "Anything else" branch (e.g. a 404
+                # or unhandled 4xx).
+                raise ChatError(
+                    f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
+                ) from exc
+        finally:
+            await self._owner._finish_transport_post(operation_token)
+        # NOTE: bare ``httpx.TimeoutException`` / ``httpx.RequestError``
+        # handlers were removed here because ``_perform_authed_post`` always
+        # either retries those errors or wraps them in
+        # ``_TransportServerError`` (handled above), so they cannot reach
+        # this scope.
 
     async def execute(
         self,
