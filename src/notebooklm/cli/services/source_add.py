@@ -157,7 +157,7 @@ async def add_source(
         return await sources.add_text(notebook_id, text_title, plan.content)
 
     if plan.upload_path is None:
-        raise ValueError("upload_path must be set when detected_type == 'file'")
+        raise SourceAddValidationError("upload_path must be set when detected_type == 'file'")
 
     # Do not forward the deprecated mime_type flag: the CLI emits the user
     # warning, while add_file() would also emit a library-level warning.

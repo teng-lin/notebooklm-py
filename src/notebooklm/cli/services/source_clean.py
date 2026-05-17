@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlparse, urlunparse
@@ -22,7 +22,7 @@ class SourceCleanResult:
 
     notebook_id: str
     status: CleanStatus
-    candidates: list[CleanCandidate]
+    candidates: tuple[CleanCandidate, ...]
     deleted_count: int = 0
     failures: tuple[CleanFailure, ...] = ()
 
@@ -93,7 +93,7 @@ def classify_junk_sources(sources: list[Source]) -> list[CleanCandidate]:
     return candidates
 
 
-def candidates_payload(candidates: list[CleanCandidate]) -> list[dict[str, str]]:
+def candidates_payload(candidates: Sequence[CleanCandidate]) -> list[dict[str, str]]:
     """Convert clean candidates to the JSON payload shape."""
     return [
         {"id": sid, "title": title, "status": status, "reason": reason}
@@ -112,7 +112,7 @@ async def run_source_clean(
     on_candidates: Callable[[list[CleanCandidate]], None] | None = None,
     on_delete_start: Callable[[int], None] | None = None,
     classify_sources: Callable[[list[Source]], list[CleanCandidate]] = classify_junk_sources,
-    sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> SourceCleanResult:
     """Classify and optionally delete junk sources."""
     sources = await list_sources(notebook_id)
@@ -122,7 +122,7 @@ async def run_source_clean(
         return SourceCleanResult(
             notebook_id=notebook_id,
             status="already_clean",
-            candidates=[],
+            candidates=(),
         )
 
     if on_candidates is not None:
@@ -132,14 +132,14 @@ async def run_source_clean(
         return SourceCleanResult(
             notebook_id=notebook_id,
             status="dry_run",
-            candidates=candidates,
+            candidates=tuple(candidates),
         )
 
     if not yes and not confirm_delete(len(candidates)):
         return SourceCleanResult(
             notebook_id=notebook_id,
             status="cancelled",
-            candidates=candidates,
+            candidates=tuple(candidates),
         )
 
     if on_delete_start is not None:
@@ -164,7 +164,7 @@ async def run_source_clean(
     return SourceCleanResult(
         notebook_id=notebook_id,
         status="completed",
-        candidates=candidates,
+        candidates=tuple(candidates),
         deleted_count=deleted,
         failures=tuple(failures),
     )

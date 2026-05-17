@@ -30,7 +30,7 @@ import click
 from rich.table import Table
 
 from ..client import NotebookLMClient
-from ..types import source_status_to_str
+from ..types import Source, source_status_to_str
 from .error_handler import _output_error, emit_cancelled_and_exit
 from .helpers import (
     console,
@@ -1293,7 +1293,7 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
 
-            async def _list_sources(notebook_id: str):
+            async def _list_sources(notebook_id: str) -> list[Source]:
                 if json_output:
                     return await client.sources.list(notebook_id)
                 with console.status("Fetching sources for cleanup..."):
@@ -1315,14 +1315,14 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 classify_sources=_classify_junk_sources,
             )
 
-            candidates_payload = source_clean_service.candidates_payload(result.candidates)
+            candidate_payload = source_clean_service.candidates_payload(result.candidates)
 
             if json_output:
                 payload = {
                     "action": "clean",
                     "notebook_id": result.notebook_id,
                     "status": result.status,
-                    "candidates": candidates_payload,
+                    "candidates": candidate_payload,
                     "deleted_count": result.deleted_count,
                     "failure_count": result.failure_count,
                 }
