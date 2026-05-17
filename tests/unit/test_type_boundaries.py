@@ -21,6 +21,8 @@ PRIVATE_TYPES_ROOT = SRC_ROOT / "_types"
 CLI_ROOT = SRC_ROOT / "cli"
 PUBLIC_DOC_ROOTS = (PROJECT_ROOT / "README.md", PROJECT_ROOT / "docs")
 
+# Add names here only for explicit facade wrappers that must keep a public
+# monkeypatch seam while delegating implementation to a private _types module.
 ALLOWED_TYPES_WRAPPER_BODIES = {"_datetime_from_timestamp"}
 PRIVATE_TYPES_IMPORT_RE = re.compile(
     r"\b(?:from\s+notebooklm(?:\._types(?:\.\w+)*|\s+import\s+_types)\b"
@@ -73,6 +75,9 @@ def _cli_private_types_import_offenders(path: Path) -> list[str]:
             and module_parts == ["notebooklm"]
             and any(alias.name == "_types" for alias in node.names)
         )
+        # A root CLI module needs ``..`` to reach notebooklm; a nested CLI module
+        # needs one more dot per package segment, so only levels above this depth
+        # can resolve to notebooklm._types rather than a hypothetical cli._types.
         is_relative_private_types = node.level > cli_package_level and (
             module_parts[:1] == ["_types"]
             or (not module_parts and any(alias.name == "_types" for alias in node.names))
@@ -207,7 +212,8 @@ def _types_all_names() -> list[str]:
             continue
         if any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets):
             value = ast.literal_eval(node.value)
-            assert isinstance(value, list)
+            if not isinstance(value, list):
+                raise AssertionError("notebooklm.types.__all__ must be assigned a list literal")
             return [str(item) for item in value]
     raise AssertionError("notebooklm.types.__all__ assignment not found")
 
