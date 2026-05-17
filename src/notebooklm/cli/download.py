@@ -20,6 +20,7 @@ from typing import Any, TypedDict
 
 import click
 
+from ..auth import AuthTokens
 from ..client import NotebookLMClient
 from ..types import Artifact, ArtifactType
 from .download_helpers import (
@@ -128,8 +129,7 @@ async def _get_completed_artifacts_as_dicts(
 
 
 async def _download_artifacts_generic(
-    ctx,
-    client_auth,
+    client_auth: AuthTokens,
     artifact_type_name: str,
     artifact_kind: ArtifactType,
     file_extension: str,
@@ -155,7 +155,7 @@ async def _download_artifacts_generic(
     with the same logic, only varying by extension and type filters.
 
     Args:
-        ctx: Click context
+        client_auth: Auth tokens for constructing the NotebookLM client
         artifact_type_name: Human-readable type name ("audio", "video", etc.)
         artifact_kind: ArtifactType enum value to filter by
         file_extension: File extension (".mp3", ".mp4", ".png", ".pdf")
@@ -723,9 +723,8 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
     config = ARTIFACT_CONFIGS[artifact_type]
     json_output = kwargs.get("json_output", False)
 
-    async def body(client_auth):
+    async def body(client_auth: AuthTokens) -> dict[str, Any]:
         return await _download_artifacts_generic(
-            ctx=ctx,
             client_auth=client_auth,
             artifact_type_name=artifact_type,
             artifact_kind=config["kind"],
@@ -743,16 +742,12 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
 
     if json_output:
         json_output_response(result)
-        # Mirror the non-JSON exit-code behavior: any top-level "error"
-        # field means the operation failed even though we returned a
-        # parseable JSON document. Automation must see a nonzero exit.
-        # NOTE: this preserves the legacy returned-dict envelope shape
-        # (free-form ``error`` string, no typed ``code``) — see docstring.
-        if "error" in result:
-            raise SystemExit(1)
-        return
+    else:
+        _display_download_result(result, artifact_type)
 
-    _display_download_result(result, artifact_type)
+    # Mirror the non-JSON exit-code behavior: any top-level "error" field means
+    # the operation failed even though JSON mode returned a parseable legacy
+    # error document (free-form ``error`` string, no typed ``code``).
     if "error" in result:
         raise SystemExit(1)
 
