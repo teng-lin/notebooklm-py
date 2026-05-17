@@ -1281,6 +1281,78 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
         await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkeypatch):
+    """Regression for #769.
+
+    ``response.aiter_bytes()`` yields already-decoded chunks, so the buffered
+    payload is plain bytes. If the upstream ``Content-Encoding`` header (e.g.
+    ``gzip``) is carried over verbatim onto the rebuilt :class:`httpx.Response`,
+    its ``__init__`` re-runs the decoder on already-decoded bytes and raises
+    ``DecodingError: Error -3 ... incorrect header check``.
+
+    The wrapper must strip ``content-encoding`` (and ``content-length``) before
+    handing headers back so downstream ``.text`` access stays a plain charset
+    decode — no double decompression.
+    """
+    from contextlib import asynccontextmanager
+
+    from notebooklm._core_transport import _stream_post_with_size_cap
+
+    # Realistic batchexecute prefix; only the bytes matter, not the framing.
+    decoded_payload = b')]}\'\n\n[["wrb.fr",null,"[1]",null,null,null,"generic"]]'
+
+    class _FakeResponse:
+        status_code = 200
+        # Upstream advertises gzip — the kind of header that flowed through the
+        # transport at production time and bit issue #769.
+        headers = {
+            "content-type": "application/json; charset=UTF-8",
+            "content-encoding": "gzip",
+            # Length of the compressed body upstream — also a lie for the
+            # rebuilt response, since we hold the decoded bytes now.
+            "content-length": "9999",
+        }
+        request = httpx.Request("POST", "https://example.test/x")
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            yield decoded_payload
+
+    @asynccontextmanager
+    async def fake_stream(method, url, **kwargs):
+        yield _FakeResponse()
+
+    client = httpx.AsyncClient()
+    try:
+        monkeypatch.setattr(client, "stream", fake_stream)
+
+        # Pre-fix this call raised httpx.DecodingError during Response.__init__.
+        response = await _stream_post_with_size_cap(
+            client,
+            "https://example.test/x",
+            body=b"",
+            headers=None,
+        )
+
+        # Body round-trips as the decoded payload, both as bytes and text.
+        assert response.content == decoded_payload
+        assert response.text == decoded_payload.decode("utf-8")
+        # The misleading content-encoding header must NOT survive — otherwise
+        # any downstream consumer that re-streams or re-reads the response
+        # would hit the same double-decode trap.
+        assert "content-encoding" not in response.headers
+        # httpx may auto-repopulate content-length to match the buffered body,
+        # which is fine — what matters is that it doesn't carry the stale
+        # upstream value (9999) that misrepresented the decoded payload.
+        if "content-length" in response.headers:
+            assert response.headers["content-length"] == str(len(decoded_payload))
+    finally:
+        await client.aclose()
+
+
 def test_max_rpc_response_bytes_constant_lives_in_transport_module():
     """Constant is owned by ``_core_transport`` (not ``_core``) to avoid an
     import cycle — ``_core`` already imports from ``_core_transport``."""

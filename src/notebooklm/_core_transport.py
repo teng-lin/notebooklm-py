@@ -175,9 +175,19 @@ async def _stream_post_with_size_cap(
         # (``_core_rpc.py`` decode path) can use ``.text`` / ``.content``
         # without dealing with stream state. The request handle is carried
         # over so log/repr surfaces still point at the originating request.
+        #
+        # ``response.aiter_bytes()`` above yields already-decoded body chunks,
+        # so the buffered payload is plain bytes. Strip ``content-encoding``
+        # (and the now-mismatched ``content-length``) before handing the
+        # headers to a fresh ``httpx.Response`` — otherwise its ``__init__``
+        # re-runs the gzip/brotli/zstd decoder on already-decoded bytes and
+        # raises ``DecodingError: Error -3 ... incorrect header check``.
+        rebuilt_headers = httpx.Headers(response.headers)
+        rebuilt_headers.pop("content-encoding", None)
+        rebuilt_headers.pop("content-length", None)
         return httpx.Response(
             status_code=response.status_code,
-            headers=response.headers,
+            headers=rebuilt_headers,
             content=bytes(buffer),
             request=response.request,
         )
