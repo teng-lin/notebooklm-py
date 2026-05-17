@@ -78,9 +78,20 @@ RPC Layer (rpc/)
 | File | Purpose |
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
-| `_core.py` | HTTP and RPC infrastructure |
+| `_core.py` | `ClientCore` orchestrator; HTTP client lifecycle; module-level constants and re-exports |
+| `_core_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
+| `_core_drain.py` | `TransportDrainTracker` — in-flight transport counters + `_TransportOperationToken` |
+| `_core_reqid.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
+| `_core_auth.py` | `AuthRefreshCoordinator` (Phase 2 in progress) — refresh task + auth-snapshot lock |
+| `_core_lifecycle.py` | `ClientLifecycle` (Phase 2 in progress) — loop-affinity guard + keepalive task |
+| `_core_rpc.py` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols |
+| `_core_transport.py` | Authed POST path, retry loops, `_AuthedTransportHost` Protocol |
+| `_core_cache.py` | Per-instance LRU conversation cache for `ChatAPI` |
+| `_core_polling.py` | Pending-poll registry for long-running artifact generations |
+| `_core_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
+| `_capabilities.py` | Narrow capability Protocols + `ClientCoreCapabilities` adapter for sub-clients |
 | `_notebooks.py` | `client.notebooks` API |
-| `_sources.py` | `client.sources` API |
+| `_sources.py` | `client.sources` API + `fetch_source_ids` module helper |
 | `_artifacts.py` | `client.artifacts` API |
 | `_chat.py` | `client.chat` API |
 | `rpc/types.py` | RPC method IDs (source of truth) |

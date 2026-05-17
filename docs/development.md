@@ -84,8 +84,37 @@ src/notebooklm/
 |-------|-------|----------------|
 | **CLI** | `cli/*.py` | User commands, input validation, Rich output |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Core** | `_core.py` | HTTP client, request counter, RPC abstraction |
+| **Core** | `_core.py`, `_core_*.py` | `ClientCore` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
+
+#### Core-layer seam modules
+
+The `Core` layer is split across `_core.py` (orchestrator) and a family of
+single-responsibility `_core_*.py` helper modules. Each helper exposes a
+Protocol-shim host interface so it can be unit-tested against a stub `ClientCore`:
+
+| Module | Class | Responsibility |
+|---|---|---|
+| `_core.py` | `ClientCore` | Orchestrator owning the `httpx.AsyncClient` + `AuthTokens`; module-level constants and re-exports. |
+| `_core_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
+| `_core_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
+| `_core_reqid.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
+| `_core_auth.py` (Phase 2 in progress) | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. |
+| `_core_lifecycle.py` (Phase 2 in progress) | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
+| `_core_rpc.py` | `RpcExecutor` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols. |
+| `_core_transport.py` | `AuthedTransport` | Authed HTTP POST path, retry loops (429 + 5xx), error-injection seam (`_SyntheticErrorTransport`). |
+| `_core_cache.py` | `ConversationCache` | Per-instance LRU conversation cache for `ChatAPI` continuity. |
+| `_core_polling.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
+| `_core_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
+
+The capability surface that sub-clients depend on is pinned in
+`notebooklm._capabilities` via narrow Protocols (`CoreRPCProvider`,
+`SourceListProvider`, `PollRegistryProvider`, `AuthRouteProvider`,
+`CookieJarProvider`, `TransportOperationProvider`,
+`UploadConcurrencyProvider`), composed into the concrete
+`ClientCoreCapabilities` adapter. Adding or removing a method on
+`ClientCore` is a Protocol change — review `_capabilities.py` alongside
+any change to the orchestrator's public method surface.
 
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
