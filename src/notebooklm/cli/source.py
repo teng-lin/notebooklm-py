@@ -54,9 +54,9 @@ from .options import (
     prompt_file_option,
     wait_polling_options,
 )
+from .research_import import import_research_sources
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
-from .research_import import import_research_sources
 
 
 @contextlib.asynccontextmanager
