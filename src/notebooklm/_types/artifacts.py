@@ -70,8 +70,8 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     Returns:
         ArtifactType enum member. Returns UNKNOWN for unrecognized types.
     """
-    # Handle QUIZ/FLASHCARDS distinction (both use type 4)
-    if artifact_type == 4:  # ArtifactTypeCode.QUIZ
+    # Handle QUIZ/FLASHCARDS distinction.
+    if artifact_type == ArtifactTypeCode.QUIZ.value:
         if variant == 1:
             return ArtifactType.FLASHCARDS
         elif variant == 2:
@@ -363,7 +363,7 @@ class Artifact:
         return cls(
             id=str(mind_map_id),
             title=title,
-            _artifact_type=5,  # ArtifactTypeCode.MIND_MAP
+            _artifact_type=ArtifactTypeCode.MIND_MAP.value,
             status=3,  # Mind maps are always "completed" once created
             created_at=created_at,
             _variant=None,
@@ -517,7 +517,7 @@ class ReportSuggestion:
 
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> ReportSuggestion:
-        """Parse from get_suggested_report_formats() response item."""
+        """Parse a dict item from get_suggested_report_formats()."""
         return cls(
             title=data.get("title", ""),
             description=data.get("description", ""),

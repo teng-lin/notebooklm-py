@@ -71,7 +71,6 @@ from .exceptions import (
 # Re-export enums from rpc/types.py for convenience
 from .rpc.types import (
     ArtifactStatus,
-    ArtifactTypeCode,
     AudioFormat,
     AudioLength,
     ChatGoal,
@@ -95,6 +94,9 @@ from .rpc.types import (
     artifact_status_to_str,
     source_status_to_str,
 )
+from .rpc.types import (
+    ArtifactTypeCode as _ArtifactTypeCode,
+)
 
 # Keep private facade names that first-party tests and external callers have
 # historically imported while the implementation moves into _types modules.
@@ -117,7 +119,7 @@ _warned_source_types = _source_types._warned_source_types
 
 # Imported for the historical ``notebooklm.types.ArtifactTypeCode`` attribute,
 # but intentionally absent from ``__all__``.
-_NON_ALL_COMPAT_TYPES = (ArtifactTypeCode,)
+ArtifactTypeCode = _ArtifactTypeCode
 
 
 def _datetime_from_timestamp(value: Any) -> datetime | None:
