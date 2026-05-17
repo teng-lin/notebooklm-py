@@ -199,6 +199,7 @@ def test_representative_public_dataclasses_pickle_round_trip():
             _type_code=2,
             status=SourceStatus.READY.value,
         ),
+        source_summary,
         SourceFulltext(
             source_id="src_1",
             title="Source",

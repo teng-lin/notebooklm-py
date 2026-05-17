@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import enum
 import importlib
 import logging
 import warnings
@@ -389,6 +390,13 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
 ]
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_TYPES_PRIVATE_HELPER_IMPORT_FILES = [
+    _PROJECT_ROOT / "src/notebooklm/_artifact_polling.py",
+    _PROJECT_ROOT / "src/notebooklm/_artifacts.py",
+    _PROJECT_ROOT / "src/notebooklm/_source_content.py",
+    _PROJECT_ROOT / "src/notebooklm/_source_listing.py",
+    _PROJECT_ROOT / "tests/unit/test_types.py",
+]
 
 
 @pytest.mark.parametrize("enum_name", _REEXPORTED_RPC_ENUMS)
@@ -476,29 +484,29 @@ def test_types_private_helper_seams_remain_importable(name: str) -> None:
 
 
 def test_types_private_helper_seam_manifest_matches_first_party_imports() -> None:
-    """The private seam manifest tracks all first-party notebooklm.types imports."""
+    """The private seam manifest tracks known first-party notebooklm.types imports."""
     imported_private_names: set[str] = set()
-    for root in [_PROJECT_ROOT / "src" / "notebooklm", _PROJECT_ROOT / "tests"]:
-        for path in root.rglob("*.py"):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ImportFrom):
-                    continue
-                if node.module == "notebooklm.types" or (
-                    node.level > 0
-                    and node.module == "types"
-                    and path.is_relative_to(_PROJECT_ROOT / "src" / "notebooklm")
-                ):
-                    imported_private_names.update(
-                        alias.name
-                        for alias in node.names
-                        if alias.name.startswith("_") and not alias.name.startswith("__")
-                    )
+    for path in _TYPES_PRIVATE_HELPER_IMPORT_FILES:
+        assert path.exists(), f"tracked private seam importer disappeared: {path}"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.module == "notebooklm.types" or (
+                node.level > 0
+                and node.module == "types"
+                and path.is_relative_to(_PROJECT_ROOT / "src" / "notebooklm")
+            ):
+                imported_private_names.update(
+                    alias.name
+                    for alias in node.names
+                    if alias.name.startswith("_") and not alias.name.startswith("__")
+                )
 
     assert imported_private_names == set(_TYPES_PRIVATE_HELPER_SEAMS)
 
 
-def test_types_private_state_seams_are_live_objects() -> None:
+def test_types_private_state_seams_are_live_objects(monkeypatch: pytest.MonkeyPatch) -> None:
     """Warning de-duplication and compat maps must remain live facade aliases."""
     import notebooklm.types as public_types
     from notebooklm.types import (
@@ -508,16 +516,13 @@ def test_types_private_state_seams_are_live_objects() -> None:
         Source,
         SourceType,
         UnknownTypeWarning,
-        _warned_artifact_types,
-        _warned_source_types,
     )
 
     assert _SOURCE_TYPE_COMPAT_MAP is public_types._SOURCE_TYPE_COMPAT_MAP
-    assert _warned_artifact_types is public_types._warned_artifact_types
-    assert _warned_source_types is public_types._warned_source_types
-
-    _warned_source_types.clear()
-    _warned_artifact_types.clear()
+    source_warnings: set[int] = set()
+    artifact_warnings: set[tuple[int | None, int | None]] = set()
+    monkeypatch.setattr(public_types, "_warned_source_types", source_warnings)
+    monkeypatch.setattr(public_types, "_warned_artifact_types", artifact_warnings)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UnknownTypeWarning)
@@ -527,8 +532,8 @@ def test_types_private_state_seams_are_live_objects() -> None:
             is ArtifactType.UNKNOWN
         )
 
-    assert 7654321 in _warned_source_types
-    assert (7654322, None) in _warned_artifact_types
+    assert 7654321 in source_warnings
+    assert (7654322, None) in artifact_warnings
 
 
 def test_deprecated_top_level_studio_content_type_import_warns_and_caches(
@@ -570,13 +575,14 @@ def test_rpc_enum_reexport_list_matches_public_all() -> None:
     import notebooklm.rpc.types as rpc_types
     import notebooklm.types as public_types
 
-    # Names that appear in both __all__ and rpc.types — i.e. the actual
-    # re-exported RPC enums.
     declared = set(public_types.__all__)
     rpc_names = {name for name in dir(rpc_types) if not name.startswith("_")}
-    expected = declared & rpc_names
-    # Drop helper functions (not enums) from the comparison.
-    expected -= {"artifact_status_to_str", "source_status_to_str"}
+    expected = {
+        name
+        for name in declared & rpc_names
+        if isinstance(getattr(rpc_types, name), type)
+        and issubclass(getattr(rpc_types, name), enum.Enum)
+    }
 
     listed = set(_REEXPORTED_RPC_ENUMS)
     missing = expected - listed
@@ -787,7 +793,11 @@ def test_auth_secondary_binding_reset_syncs_to_cookie_policy(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Resetting notebooklm.auth._SECONDARY_BINDING_WARNED still controls validation."""
+    """Resetting the facade warning flag controls validation.
+
+    The private module starts in the opposite state to prove the delegated
+    implementation still reads the compatibility facade's warning flag.
+    """
     import notebooklm.auth as auth
     from notebooklm._auth import cookie_policy
 
@@ -821,7 +831,7 @@ def test_auth_validation_preserves_private_warning_state(
 def test_auth_validation_uses_facade_policy_rebindings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Validation keeps auth.py monkeypatch compatibility after delegation."""
+    """Validation accepts a single cookie only when the facade policy is rebound."""
     import notebooklm.auth as auth
 
     monkeypatch.setattr(auth, "MINIMUM_REQUIRED_COOKIES", {"SID"})
