@@ -16,7 +16,6 @@ from . import rendering as rendering_helpers
 
 ContextPathFn = Callable[..., Path]
 ListFn = Callable[[], Awaitable[list[Any]]]
-_FULL_ID_MIN_LEN = 20
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
@@ -99,9 +98,10 @@ async def _resolve_partial_id(
 ) -> str:
     """Resolve a case-insensitive partial ID prefix to a full entity ID.
 
-    Allows users to type partial IDs like ``abc`` instead of full UUIDs.
-    Matches are case-insensitive prefix matches. IDs that look complete
-    (20+ chars) are returned unchanged without a list call.
+    Allows users to type partial IDs like ``abc`` instead of full IDs.
+    Exact matches are preferred before case-insensitive prefix matches so a
+    short-but-complete ID is not treated as ambiguous when another entity
+    shares that prefix.
 
     Args:
         partial_id: Full or partial ID to resolve.
@@ -123,11 +123,14 @@ async def _resolve_partial_id(
     """
     partial_id = validate_id(partial_id, entity_name)
 
-    if len(partial_id) >= _FULL_ID_MIN_LEN:
-        return partial_id
-
     items = await list_fn()
-    matches = [item for item in items if item.id.lower().startswith(partial_id.lower())]
+    partial_id_lower = partial_id.lower()
+
+    for item in items:
+        if item.id.lower() == partial_id_lower:
+            return item.id
+
+    matches = [item for item in items if item.id.lower().startswith(partial_id_lower)]
 
     if len(matches) == 1:
         if matches[0].id != partial_id:
