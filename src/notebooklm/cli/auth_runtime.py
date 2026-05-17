@@ -13,7 +13,7 @@ import time
 from collections.abc import Awaitable, Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar, cast
 
 import click
 
@@ -21,6 +21,7 @@ from ..auth import AuthTokens
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
+_RESOLVED_AUTH_STORAGE_PATH_CTX_KEY = "_notebooklm_resolved_auth_storage_path"
 
 
 def _helpers_facade():
@@ -30,14 +31,16 @@ def _helpers_facade():
     return helpers
 
 
-def _auth_context(ctx) -> tuple[str | None, str | None]:
+def _auth_context(ctx) -> tuple[Path | str | None, str | None]:
     """Return explicit storage and profile values from a Click context."""
     storage_path = ctx.obj.get("storage_path") if ctx.obj else None
     profile = ctx.obj.get("profile") if ctx.obj else None
     return storage_path, profile
 
 
-def _resolve_auth_storage_path(storage_path: str | None, profile: str | None) -> Any | None:
+def _resolve_auth_storage_path(
+    storage_path: Path | str | None, profile: str | None
+) -> Path | str | None:
     """Resolve storage unless auth is supplied directly by environment."""
     if storage_path is not None:
         return storage_path
@@ -47,6 +50,18 @@ def _resolve_auth_storage_path(storage_path: str | None, profile: str | None) ->
     from ..paths import get_storage_path
 
     return get_storage_path(profile=profile)
+
+
+def _resolved_auth_storage_path(ctx) -> Path | str | None:
+    """Return the per-command resolved auth storage path."""
+    if ctx.obj is not None and _RESOLVED_AUTH_STORAGE_PATH_CTX_KEY in ctx.obj:
+        return cast(Path | str | None, ctx.obj[_RESOLVED_AUTH_STORAGE_PATH_CTX_KEY])
+
+    storage_path, profile = _auth_context(ctx)
+    resolved_storage_path = _resolve_auth_storage_path(storage_path, profile)
+    if ctx.obj is not None:
+        ctx.obj[_RESOLVED_AUTH_STORAGE_PATH_CTX_KEY] = resolved_storage_path
+    return resolved_storage_path
 
 
 def get_client(ctx) -> tuple[dict, str, str]:
@@ -62,15 +77,16 @@ def get_client(ctx) -> tuple[dict, str, str]:
         FileNotFoundError: If auth storage not found
     """
     helpers = _helpers_facade()
-    storage_path, profile = _auth_context(ctx)
-    resolved_storage_path = _resolve_auth_storage_path(storage_path, profile)
+    _, profile = _auth_context(ctx)
+    resolved_storage_path = _resolved_auth_storage_path(ctx)
+    typed_storage_path = cast(Path | None, resolved_storage_path)
 
     # Load from storage (which respects NOTEBOOKLM_AUTH_JSON if resolved path is None).
     cookies = helpers.load_auth_from_storage(resolved_storage_path)
 
     from ..auth import fetch_tokens_with_domains
 
-    csrf, session_id = helpers.run_async(fetch_tokens_with_domains(resolved_storage_path, profile))
+    csrf, session_id = helpers.run_async(fetch_tokens_with_domains(typed_storage_path, profile))
     return cookies, csrf, session_id
 
 
@@ -85,8 +101,9 @@ def get_auth_tokens(ctx) -> AuthTokens:
     """
     helpers = _helpers_facade()
     cookies, csrf, session_id = helpers.get_client(ctx)
-    storage_path, profile = _auth_context(ctx)
-    resolved_storage_path = _resolve_auth_storage_path(storage_path, profile)
+    storage_path, _ = _auth_context(ctx)
+    resolved_storage_path = _resolved_auth_storage_path(ctx)
+    typed_storage_path = cast(Path | None, resolved_storage_path)
 
     if os.environ.get("NOTEBOOKLM_AUTH_JSON") and storage_path is None:
         from ..auth import build_httpx_cookies_from_storage
@@ -103,10 +120,10 @@ def get_auth_tokens(ctx) -> AuthTokens:
         cookies=cookies,
         csrf_token=csrf,
         session_id=session_id,
-        storage_path=resolved_storage_path,
+        storage_path=typed_storage_path,
         cookie_jar=jar,
-        authuser=get_authuser_for_storage(resolved_storage_path),
-        account_email=get_account_email_for_storage(resolved_storage_path),
+        authuser=get_authuser_for_storage(typed_storage_path),
+        account_email=get_account_email_for_storage(typed_storage_path),
     )
 
 
