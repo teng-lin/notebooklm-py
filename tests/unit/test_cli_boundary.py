@@ -703,8 +703,19 @@ def test_completion_boundary_allows_standard_library_and_safe_relative_imports()
         ("import notebooklm._auth.tokens", "import notebooklm._auth.tokens"),
         ("from .._auth.tokens import AuthTokens", "from .._auth.tokens import ..."),
         ("from .. import _auth", "from .. import _auth"),
+        (
+            "from notebooklm._types.sources import Source",
+            "from notebooklm._types.sources import ...",
+        ),
+        ("import notebooklm._types.sources", "import notebooklm._types.sources"),
+        ("from notebooklm import _types", "from notebooklm import _types"),
+        ("from .._types.sources import Source", "from .._types.sources import ..."),
+        ("from .. import _types", "from .. import _types"),
     ],
 )
-def test_cli_boundary_blocks_auth_internal_import_shapes(source: str, expected: str) -> None:
-    """CLI auth imports must stay on notebooklm.auth, even if internals move to _auth."""
+def test_cli_boundary_blocks_private_project_import_shapes(
+    source: str,
+    expected: str,
+) -> None:
+    """CLI imports must stay on public notebooklm modules, including moved _types."""
     assert expected in _violations(ast.parse(source))

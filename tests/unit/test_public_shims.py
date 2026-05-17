@@ -78,6 +78,11 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
 }
 
 
+def _import_top_level_name_into_namespace(public_name: str, namespace: dict[str, object]) -> None:
+    module = __import__("notebooklm", fromlist=[public_name])
+    namespace[public_name] = getattr(module, public_name)
+
+
 @pytest.mark.parametrize(
     ("module_name", "public_name"),
     [
@@ -351,6 +356,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "AuthError",
     "AuthExtractionError",
     "ChatError",
+    "ChatResponseParseError",
     "ClientError",
     "ConfigurationError",
     "DecodingError",
@@ -363,6 +369,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "RateLimitError",
     "ResearchTaskMismatchError",
     "RPCError",
+    "RPCResponseTooLargeError",
     "RPCTimeoutError",
     "ServerError",
     "SourceAddError",
@@ -463,6 +470,22 @@ def test_top_level_exception_reexports_are_canonical_identities(name: str) -> No
 
     assert name in notebooklm.__all__, f"notebooklm.__all__ dropped {name!r}"
     assert getattr(notebooklm, name) is getattr(canonical, name)
+
+
+def test_top_level_exception_identity_manifest_matches_public_exception_exports() -> None:
+    """Every public top-level exception export must be covered by identity checks."""
+    import notebooklm
+    import notebooklm.exceptions as canonical
+
+    public_exception_exports = {
+        name
+        for name in notebooklm.__all__
+        if name in canonical.__all__
+        and isinstance(getattr(canonical, name), type)
+        and issubclass(getattr(canonical, name), BaseException)
+    }
+
+    assert set(_TOP_LEVEL_EXCEPTION_EXPORTS) == public_exception_exports
 
 
 def test_rpc_helper_reexports_are_canonical_identities() -> None:
@@ -633,7 +656,7 @@ def test_deprecated_top_level_studio_content_type_import_warns_and_caches(
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", DeprecationWarning)
         namespace: dict[str, object] = {}
-        exec("from notebooklm import StudioContentType", namespace)
+        _import_top_level_name_into_namespace("StudioContentType", namespace)
 
     assert namespace["StudioContentType"] is ArtifactTypeCode
     assert notebooklm.__dict__["StudioContentType"] is ArtifactTypeCode
@@ -644,9 +667,39 @@ def test_deprecated_top_level_studio_content_type_import_warns_and_caches(
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always", DeprecationWarning)
         namespace = {}
-        exec("from notebooklm import StudioContentType", namespace)
+        _import_top_level_name_into_namespace("StudioContentType", namespace)
 
     assert namespace["StudioContentType"] is ArtifactTypeCode
+    assert caught == []
+
+
+def test_deprecated_top_level_default_storage_path_import_warns_and_caches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """from notebooklm import DEFAULT_STORAGE_PATH keeps the deprecated shim contract."""
+    import notebooklm
+    from notebooklm.paths import get_storage_path
+
+    monkeypatch.delitem(notebooklm.__dict__, "DEFAULT_STORAGE_PATH", raising=False)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        namespace: dict[str, object] = {}
+        _import_top_level_name_into_namespace("DEFAULT_STORAGE_PATH", namespace)
+
+    assert namespace["DEFAULT_STORAGE_PATH"] == get_storage_path()
+    assert notebooklm.__dict__["DEFAULT_STORAGE_PATH"] == get_storage_path()
+    assert [str(warning.message) for warning in caught] == [
+        "DEFAULT_STORAGE_PATH is deprecated, use notebooklm.paths.get_storage_path() instead. "
+        "Will be removed in v0.5.0."
+    ]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        namespace = {}
+        _import_top_level_name_into_namespace("DEFAULT_STORAGE_PATH", namespace)
+
+    assert namespace["DEFAULT_STORAGE_PATH"] == get_storage_path()
     assert caught == []
 
 

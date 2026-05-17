@@ -20,13 +20,17 @@ TYPES_PATH = SRC_ROOT / "types.py"
 PRIVATE_TYPES_ROOT = SRC_ROOT / "_types"
 CLI_ROOT = SRC_ROOT / "cli"
 PUBLIC_DOC_ROOTS = (PROJECT_ROOT / "README.md", PROJECT_ROOT / "docs")
+INTERNAL_ARCHITECTURE_DOCS = {
+    PROJECT_ROOT / "docs" / "development.md",
+    PROJECT_ROOT / "docs" / "rpc-development.md",
+}
 
 # Add names here only for explicit facade wrappers that must keep a public
 # monkeypatch seam while delegating implementation to a private _types module.
 ALLOWED_TYPES_WRAPPER_BODIES = {"_datetime_from_timestamp"}
-PRIVATE_TYPES_IMPORT_RE = re.compile(
-    r"\b(?:from\s+notebooklm(?:\._types(?:\.\w+)*|\s+import\s+_types)\b"
-    r"|import\s+notebooklm\._types(?:\.\w+)*\b)"
+PRIVATE_NOTEBOOKLM_IMPORT_RE = re.compile(
+    r"\b(?:from\s+notebooklm(?:\._(?!_)\w+(?:\.\w+)*|\s+import\s+_(?!_)\w+)\b"
+    r"|import\s+notebooklm\._(?!_)\w+(?:\.\w+)*\b)"
 )
 
 
@@ -99,15 +103,17 @@ def _iter_public_docs() -> list[Path]:
         if root.is_file():
             docs.append(root)
         elif root.is_dir():
-            docs.extend(root.rglob("*.md"))
+            docs.extend(
+                path for path in root.rglob("*.md") if path not in INTERNAL_ARCHITECTURE_DOCS
+            )
     return sorted(docs)
 
 
-def _public_docs_private_type_import_offenders() -> list[str]:
+def _public_docs_private_import_offenders() -> list[str]:
     offenders: list[str] = []
     for path in _iter_public_docs():
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if PRIVATE_TYPES_IMPORT_RE.search(line):
+            if PRIVATE_NOTEBOOKLM_IMPORT_RE.search(line):
                 relative = path.relative_to(PROJECT_ROOT)
                 offenders.append(f"{relative}:{lineno}: {line.strip()}")
     return offenders
@@ -300,6 +306,35 @@ def test_types_facade_has_no_landed_implementation_bodies() -> None:
     )
 
 
+def test_private_type_modules_keep_runtime_config_imports_limited() -> None:
+    """Only sharing.py may import get_base_url to construct public notebook share URLs."""
+    allowed = {"sharing.py": {"get_base_url"}}
+    offenders: list[str] = []
+
+    for path in sorted(PRIVATE_TYPES_ROOT.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            module = node.module or ""
+            imports_env = (node.level == 2 and module == "_env") or (
+                node.level == 0 and module == "notebooklm._env"
+            )
+            if not imports_env:
+                continue
+            imported_names = {alias.name for alias in node.names}
+            if imported_names <= allowed.get(path.name, set()):
+                continue
+            offenders.append(f"{path.name}: line {node.lineno}: {ast.unparse(node)}")
+
+    assert offenders == [], (
+        "Private _types modules must not import notebooklm._env names beyond the allowlist. "
+        f"Offenders: {offenders}"
+    )
+
+
 def test_cli_modules_do_not_import_private_type_modules() -> None:
     """CLI code consumes type objects through ``notebooklm.types`` only."""
     offenders: list[str] = []
@@ -315,11 +350,11 @@ def test_cli_modules_do_not_import_private_type_modules() -> None:
     )
 
 
-def test_public_docs_do_not_recommend_private_type_imports() -> None:
-    """User-facing docs should never present ``notebooklm._types`` as an import path."""
-    offenders = _public_docs_private_type_import_offenders()
+def test_public_docs_do_not_recommend_private_module_imports() -> None:
+    """User-facing docs should never present private notebooklm modules as imports."""
+    offenders = _public_docs_private_import_offenders()
 
     assert offenders == [], (
-        "Public docs must document notebooklm.types, not private notebooklm._types imports. "
+        "Public docs must document public notebooklm modules, not private notebooklm._* imports. "
         f"Offenders: {offenders}"
     )

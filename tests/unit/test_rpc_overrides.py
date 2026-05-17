@@ -9,7 +9,9 @@ mismatched ids reach the wire as malformed requests.
 
 from __future__ import annotations
 
+import ast
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -22,6 +24,9 @@ from notebooklm.rpc import RPCMethod
 from notebooklm.rpc import overrides as rpc_overrides
 from notebooklm.rpc import types as rpc_types
 from notebooklm.rpc.overrides import _load_rpc_overrides, _parse_rpc_overrides, resolve_rpc_id
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RPC_TYPES_PATH = PROJECT_ROOT / "src" / "notebooklm" / "rpc" / "types.py"
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +53,47 @@ def test_rpc_types_override_aliases_are_identity_compatible() -> None:
     assert rpc_types._parse_rpc_overrides is rpc_overrides._parse_rpc_overrides
     assert rpc_types._load_rpc_overrides is rpc_overrides._load_rpc_overrides
     assert rpc_types._logged_override_hashes is rpc_overrides._logged_override_hashes
+
+
+def test_rpc_types_keeps_override_env_parsing_out_of_protocol_enums() -> None:
+    """RPC enum definitions may expose legacy aliases, but env parsing lives in overrides.py."""
+    assert RPC_TYPES_PATH.exists(), (
+        f"Expected RPC types module at {RPC_TYPES_PATH}; update RPC_TYPES_PATH if the source "
+        "layout changed."
+    )
+    source = RPC_TYPES_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    forbidden_imports: list[str] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            forbidden_imports.extend(
+                alias.name
+                for alias in node.names
+                if alias.name in {"json", "logging", "os"}
+                or alias.name.startswith(("json.", "logging.", "os."))
+            )
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module in {"json", "logging", "os"}:
+                forbidden_imports.append(module)
+            elif module == "functools":
+                forbidden_imports.extend(
+                    f"{module}.{alias.name}"
+                    for alias in node.names
+                    if alias.name in {"cache", "lru_cache"}
+                )
+
+    assert forbidden_imports == [], (
+        "notebooklm/rpc/types.py must not import runtime/config utilities; found: "
+        f"{forbidden_imports}"
+    )
+    assert "NOTEBOOKLM_RPC_OVERRIDES" not in source, (
+        "Env-var name NOTEBOOKLM_RPC_OVERRIDES must live in overrides.py, not rpc/types.py"
+    )
+    assert "RPC_OVERRIDES_ENV_VAR" not in source, (
+        "RPC_OVERRIDES_ENV_VAR must live in overrides.py, not rpc/types.py"
+    )
 
 
 # ---------------------------------------------------------------------------
