@@ -50,7 +50,7 @@ CLI Layer (cli/)
     ↓
 Client Layer (client.py, _*.py APIs)
     ↓
-Core Layer (_core.py)
+Core Layer (_core.py + _core_*.py seam modules)
     ↓
 RPC Layer (rpc/)
 ```
@@ -60,10 +60,13 @@ RPC Layer (rpc/)
    - `encoder.py`: Request encoding
    - `decoder.py`: Response parsing
 
-2. **Core Layer** (`src/notebooklm/_core.py`):
-   - HTTP client management
-   - RPC call abstraction
-   - Request counter handling
+2. **Core Layer** (`src/notebooklm/_core.py` + `_core_*.py` seam modules):
+   - `_core.py`: `NotebookLMClient` orchestration (will shrink further as Phase 2 lands)
+   - `_core_transport.py`, `_core_rpc.py`: HTTP client + RPC call abstraction
+   - `_core_auth.py`, `_core_cookie_persistence.py`: Auth refresh + cookie storage
+   - `_core_metrics.py`, `_core_drain.py`, `_core_reqid.py`: Telemetry, drain coordination, request-counter handling
+   - `_core_cache.py`, `_core_polling.py`: Conversation cache + artifact polling helpers
+   - `_capabilities.py`: Capability adapters for feature APIs
 
 3. **Client Layer** (`src/notebooklm/client.py`, `_*.py`):
    - `NotebookLMClient`: Main async client with namespaced APIs
@@ -91,33 +94,44 @@ RPC Layer (rpc/)
 
 ```
 src/notebooklm/
-├── __init__.py          # Public exports
-├── client.py            # NotebookLMClient
-├── auth.py              # Authentication
-├── types.py             # Dataclasses
-├── _core.py             # Core infrastructure
-├── _notebooks.py        # NotebooksAPI
-├── _sources.py          # SourcesAPI
-├── _artifacts.py        # ArtifactsAPI
-├── _chat.py             # ChatAPI
-├── _research.py         # ResearchAPI
-├── _notes.py            # NotesAPI
-├── notebooklm_cli.py    # Entry-point assembler — imports + registers cli/ groups
-├── rpc/                 # RPC protocol layer
-│   ├── types.py         # Method IDs and enums
-│   ├── encoder.py       # Request encoding
-│   └── decoder.py       # Response parsing
-└── cli/                 # CLI implementation
+├── __init__.py                  # Public exports
+├── client.py                    # NotebookLMClient
+├── auth.py                      # Authentication
+├── types.py                     # Dataclasses
+├── _core.py                     # Core orchestration (NotebookLMClient internals)
+├── _core_transport.py           # HTTP client + transport-layer concerns
+├── _core_rpc.py                 # RPC call abstraction
+├── _core_auth.py                # Auth refresh seam
+├── _core_cookie_persistence.py  # Cookie storage seam
+├── _core_metrics.py             # Telemetry / metrics seam
+├── _core_drain.py               # In-flight drain coordinator
+├── _core_reqid.py               # Request-counter / request-id helpers
+├── _core_cache.py               # Conversation cache seam
+├── _core_polling.py             # Artifact polling helpers
+│                                # (Phase 2 in progress: _core_lifecycle.py — open/close lifecycle seam)
+├── _capabilities.py             # Capability adapters for feature APIs
+├── _notebooks.py                # NotebooksAPI
+├── _sources.py                  # SourcesAPI
+├── _artifacts.py                # ArtifactsAPI
+├── _chat.py                     # ChatAPI
+├── _research.py                 # ResearchAPI
+├── _notes.py                    # NotesAPI
+├── notebooklm_cli.py            # Entry-point assembler — imports + registers cli/ groups
+├── rpc/                         # RPC protocol layer
+│   ├── types.py                 # Method IDs and enums
+│   ├── encoder.py               # Request encoding
+│   └── decoder.py               # Response parsing
+└── cli/                         # CLI implementation
     ├── __init__.py
-    ├── helpers.py       # Shared utilities
-    ├── session.py       # login, use, status, clear
-    ├── notebook.py      # list, create, delete, rename
-    ├── source.py        # source add, list, delete
-    ├── artifact.py      # artifact commands
-    ├── generate.py      # generate audio, video, etc.
-    ├── download.py      # download commands
-    ├── chat.py          # ask, configure, history
-    └── note.py          # note commands
+    ├── helpers.py               # Shared utilities
+    ├── session.py               # login, use, status, clear
+    ├── notebook.py              # list, create, delete, rename
+    ├── source.py                # source add, list, delete
+    ├── artifact.py              # artifact commands
+    ├── generate.py              # generate audio, video, etc.
+    ├── download.py              # download commands
+    ├── chat.py                  # ask, configure, history
+    └── note.py                  # note commands
 ```
 
 ## API Patterns
