@@ -63,6 +63,7 @@ __all__ = [
     "NotebookLimitError",
     # Domain: Chat
     "ChatError",
+    "ChatResponseParseError",
     # Domain: Sources
     "SourceError",
     "SourceAddError",
@@ -597,6 +598,24 @@ class NotebookLimitError(NotebookError):
 
 class ChatError(NotebookLMError):
     """Base for chat operations."""
+
+
+class ChatResponseParseError(ChatError):
+    """The streaming chat response yielded no parseable chunks.
+
+    Raised when :func:`notebooklm._chat_protocol.parse_streaming_chat_response`
+    iterates the streamed response and finds zero ``wrb.fr`` envelopes it
+    could decode — that is, the wire protocol drifted or the response body
+    was empty/malformed.
+
+    This is distinct from "the model returned an empty answer": a real
+    empty answer still produces at least one parseable ``wrb.fr`` chunk
+    (with empty answer text), in which case the parser returns a
+    ``StreamingChatParseResult("", [], conv_id)`` rather than raising.
+
+    Inherits from :class:`ChatError` so existing chat-domain ``except
+    ChatError`` clauses continue to catch it without modification.
+    """
 
 
 # =============================================================================

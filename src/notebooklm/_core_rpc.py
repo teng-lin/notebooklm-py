@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -184,7 +185,15 @@ class RpcExecutor:
 
             logger.error("RPC %s failed after %.3fs", method.name, elapsed)
             raise
-        except Exception as exc:
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+            # Narrow on purpose: only genuine shape-drift exceptions (bad
+            # JSON, missing keys/indices, type-mismatched access) get wrapped
+            # as ``RPCError``. ``AttributeError`` / ``NameError`` / other
+            # ``RuntimeError`` subclasses indicate code bugs (typos, broken
+            # invariants) and MUST propagate as their native type so they
+            # surface unmasked in stack traces and tests. Adding any of those
+            # back to this tuple re-introduces the shape-vs-bug conflation
+            # this guard exists to remove.
             elapsed = time.perf_counter() - start
             logger.error("RPC %s failed after %.3fs: %s", method.name, elapsed, exc)
             raise RPCError(

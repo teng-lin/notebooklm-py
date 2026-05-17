@@ -65,6 +65,7 @@ from .exceptions import (
     AuthExtractionError,
     # Domain: Chat
     ChatError,
+    ChatResponseParseError,
     ClientError,
     # Validation/Config
     ConfigurationError,
@@ -205,6 +206,7 @@ __all__ = [
     "NotebookLimitError",
     # Domain Exceptions: Chat
     "ChatError",
+    "ChatResponseParseError",
     # Domain Exceptions: Sources
     "SourceError",
     "SourceAddError",

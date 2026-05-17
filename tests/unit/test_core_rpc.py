@@ -503,3 +503,112 @@ def test_request_error_mapper_parity(
 
     with pytest.raises(expected_type):
         executor.raise_rpc_error_from_request_error(exc, RPCMethod.LIST_NOTEBOOKS)
+
+
+# =============================================================================
+# PR-D (I3): decode-time exception surface contract
+#
+# The ``except`` at ``_core_rpc.py::RpcExecutor.execute`` only wraps genuine
+# shape-drift exceptions (``json.JSONDecodeError``, ``KeyError``, ``IndexError``,
+# ``TypeError``) as ``RPCError``. Code bugs (``AttributeError`` and friends)
+# must propagate unmasked. These tests pin that contract.
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("decoder_exc_factory", "_label"),
+    [
+        (lambda: KeyError("missing"), "KeyError"),
+        (lambda: IndexError("oob"), "IndexError"),
+        (lambda: TypeError("bad type"), "TypeError"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_decode_shape_error_wrapped(
+    decoder_exc_factory: Callable[[], Exception], _label: str
+) -> None:
+    """Genuine shape-drift exceptions get wrapped as ``RPCError`` with the
+    ``Failed to decode response`` message and the original cause chained
+    via ``__cause__``.
+    """
+    decoder_exc = decoder_exc_factory()
+    owner = _Owner()
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise decoder_exc
+
+    with pytest.raises(RPCError) as raised:
+        await _executor(owner, decode_response_late_bound=decode).execute(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    assert "Failed to decode response for LIST_NOTEBOOKS" in str(raised.value)
+    assert raised.value.method_id == RPCMethod.LIST_NOTEBOOKS.value
+    assert raised.value.__cause__ is decoder_exc
+
+
+@pytest.mark.asyncio
+async def test_decode_shape_error_json_decode_wrapped() -> None:
+    """``json.JSONDecodeError`` (a ``ValueError`` subclass) is wrapped too —
+    it's explicitly named in the narrow tuple at the catch site so callers
+    don't have to depend on the ``ValueError`` base-class relationship.
+    """
+    import json as _json
+
+    owner = _Owner()
+    decoder_exc = _json.JSONDecodeError("expecting value", "doc", 0)
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise decoder_exc
+
+    with pytest.raises(RPCError) as raised:
+        await _executor(owner, decode_response_late_bound=decode).execute(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    assert "Failed to decode response for LIST_NOTEBOOKS" in str(raised.value)
+    assert raised.value.__cause__ is decoder_exc
+
+
+@pytest.mark.parametrize(
+    "decoder_exc_factory",
+    [
+        lambda: AttributeError("typo: response.gotcha"),
+        lambda: NameError("undefined name"),
+        lambda: RuntimeError("invariant broken"),
+        lambda: ZeroDivisionError("oops"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_decode_code_bug_propagates(
+    decoder_exc_factory: Callable[[], Exception],
+) -> None:
+    """Code-bug exceptions (``AttributeError``, ``NameError``, generic
+    ``RuntimeError``, etc.) propagate as their native type — they are NOT
+    wrapped as ``RPCError``. This is what surfaces decoder typos and
+    broken invariants instead of masking them as "API drift."
+    """
+    decoder_exc = decoder_exc_factory()
+    owner = _Owner()
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise decoder_exc
+
+    with pytest.raises(type(decoder_exc)) as raised:
+        await _executor(owner, decode_response_late_bound=decode).execute(
+            RPCMethod.LIST_NOTEBOOKS,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    assert raised.value is decoder_exc

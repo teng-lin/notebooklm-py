@@ -17,7 +17,7 @@ from urllib.parse import quote, urlencode
 
 from ._env import get_default_bl, get_default_language
 from .auth import format_authuser_value
-from .exceptions import ChatError
+from .exceptions import ChatError, ChatResponseParseError
 from .rpc.encoder import nest_source_ids
 from .rpc.types import get_query_url
 from .types import ChatReference
@@ -130,7 +130,21 @@ def build_streaming_chat_request(
 
 
 def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResult:
-    """Parse a streamed-chat response into answer, references, and conversation ID."""
+    """Parse a streamed-chat response into answer, references, and conversation ID.
+
+    Failure contract (see :class:`notebooklm.exceptions.ChatResponseParseError`):
+
+    * **Zero parseable chunks** — no chunk in the response yielded a
+      successfully decoded ``wrb.fr`` envelope. This means either the
+      response body was empty/garbage, or the API's wire format drifted
+      and the parser no longer recognizes the envelope shape. Raises
+      :class:`ChatResponseParseError`.
+    * **Chunks parsed but empty answer** — at least one ``wrb.fr`` chunk
+      decoded, but no chunk yielded answer text (the model legitimately
+      returned an empty response). Returns
+      ``StreamingChatParseResult("", refs, conv_id)`` — empty answer is
+      a valid outcome, not a parse failure.
+    """
     if response_text.startswith(")]}'"):
         response_text = response_text[4:]
 
@@ -140,13 +154,16 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     best_unmarked_answer = ""
     best_unmarked_refs: list[ChatReference] = []
     server_conv_id: str | None = None
+    parseable_chunk_count = 0
 
     def process_chunk(json_str: str) -> None:
         """Process a JSON chunk, updating best answer candidates and their refs."""
         nonlocal best_marked_answer, best_marked_refs
         nonlocal best_unmarked_answer, best_unmarked_refs
-        nonlocal server_conv_id
-        text, is_answer, refs, conv_id = extract_answer_and_refs_from_chunk(json_str)
+        nonlocal server_conv_id, parseable_chunk_count
+        text, is_answer, refs, conv_id, parseable = _extract_chunk_with_parseable(json_str)
+        if parseable:
+            parseable_chunk_count += 1
         if text:
             if is_answer and len(text) > len(best_marked_answer):
                 best_marked_answer = text
@@ -174,6 +191,16 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             process_chunk(line)
             i += 1
 
+    if parseable_chunk_count == 0:
+        # No ``wrb.fr`` envelopes recognized — distinguishable from a
+        # legitimate empty answer (which still produces at least one
+        # parseable chunk). Raise so callers can distinguish wire-drift
+        # / empty-body from "the model returned nothing."
+        raise ChatResponseParseError(
+            f"No parseable chunks in streaming chat response ({len(lines)} lines scanned). "
+            "The response was empty or the API wire format may have changed."
+        )
+
     if best_marked_answer:
         longest_answer = best_marked_answer
         final_refs = best_marked_refs
@@ -191,8 +218,9 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
 
     if not longest_answer:
         logger.warning(
-            "No answer extracted from response (%d lines parsed)",
+            "No answer extracted from response (%d lines parsed, %d parseable chunks)",
             len(lines),
+            parseable_chunk_count,
         )
 
     for idx, ref in enumerate(final_refs, start=1):
@@ -205,17 +233,41 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
 def extract_answer_and_refs_from_chunk(
     json_str: str,
 ) -> tuple[str | None, bool, list[ChatReference], str | None]:
-    """Extract answer text, references, and conversation ID from one response chunk."""
+    """Extract answer text, references, and conversation ID from one response chunk.
+
+    Public 4-tuple wrapper around :func:`_extract_chunk_with_parseable`.
+    The parseable-flag bit is internal-only — it exists for the streaming
+    parser's "zero parseable chunks" detection and is not part of this
+    module's outward-facing contract.
+    """
+    text, is_answer, refs, conv_id, _parseable = _extract_chunk_with_parseable(json_str)
+    return text, is_answer, refs, conv_id
+
+
+def _extract_chunk_with_parseable(
+    json_str: str,
+) -> tuple[str | None, bool, list[ChatReference], str | None, bool]:
+    """Extract answer/refs/conv-id from one chunk and report wire-format parseability.
+
+    The 5th element is True iff at least one ``wrb.fr`` envelope was
+    found AND its inner JSON decoded successfully — regardless of whether
+    any answer text was extracted. This lets the streaming parser
+    distinguish two failure modes:
+
+    * Zero parseable chunks → API drift or empty body (raise).
+    * At least one parseable chunk but no text → real empty answer (return).
+    """
     refs: list[ChatReference] = []
 
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError:
-        return None, False, refs, None
+        return None, False, refs, None, False
 
     if not isinstance(data, list):
-        return None, False, refs, None
+        return None, False, refs, None, False
 
+    parseable = False
     for item in data:
         if not isinstance(item, list) or len(item) < 3:
             continue
@@ -224,38 +276,17 @@ def extract_answer_and_refs_from_chunk(
 
         inner_json = item[2]
         if not isinstance(inner_json, str):
-            # item[2] is null — check item[5] for a server-side error payload
+            # item[2] is null — check item[5] for a server-side error payload.
+            # Don't flip ``parseable`` here: a null inner_json without a
+            # recognized error payload is not a successfully decoded
+            # envelope. The error-payload path raises, so flow only
+            # reaches the next iteration when item[5] was absent/unusable.
             if len(item) > 5 and isinstance(item[5], list):
                 raise_if_rate_limited(item[5])
             continue
 
         try:
             inner_data = json.loads(inner_json)
-            if isinstance(inner_data, list) and len(inner_data) > 0:
-                first = inner_data[0]
-                if isinstance(first, list) and len(first) > 0:
-                    text = first[0]
-                    if not isinstance(text, str) or not text:
-                        continue
-
-                    is_answer = (
-                        len(first) > 4
-                        and isinstance(first[4], list)
-                        and len(first[4]) > 0
-                        and first[4][-1] == 1
-                    )
-
-                    server_conv_id: str | None = None
-                    if (
-                        len(first) > 2
-                        and isinstance(first[2], list)
-                        and first[2]
-                        and isinstance(first[2][0], str)
-                    ):
-                        server_conv_id = first[2][0]
-
-                    refs = parse_citations(first)
-                    return text, is_answer, refs, server_conv_id
         except json.JSONDecodeError:
             # Hot-path stream parser: skip non-JSON chunks. Guard the
             # debug log with isEnabledFor so the redaction regex doesn't
@@ -264,7 +295,39 @@ def extract_answer_and_refs_from_chunk(
                 logger.debug("Stream parser: non-JSON chunk skipped")
             continue
 
-    return None, False, refs, None
+        # The wire envelope decoded. Mark parseable BEFORE the answer-text
+        # extraction so a real empty-answer chunk (text == "") still counts
+        # — that's exactly the case the new failure contract preserves
+        # against ``ChatResponseParseError``.
+        parseable = True
+
+        if isinstance(inner_data, list) and len(inner_data) > 0:
+            first = inner_data[0]
+            if isinstance(first, list) and len(first) > 0:
+                text = first[0]
+                if not isinstance(text, str) or not text:
+                    continue
+
+                is_answer = (
+                    len(first) > 4
+                    and isinstance(first[4], list)
+                    and len(first[4]) > 0
+                    and first[4][-1] == 1
+                )
+
+                server_conv_id: str | None = None
+                if (
+                    len(first) > 2
+                    and isinstance(first[2], list)
+                    and first[2]
+                    and isinstance(first[2][0], str)
+                ):
+                    server_conv_id = first[2][0]
+
+                refs = parse_citations(first)
+                return text, is_answer, refs, server_conv_id, parseable
+
+    return None, False, refs, None, parseable
 
 
 def raise_if_rate_limited(error_payload: list) -> None:

@@ -818,15 +818,32 @@ class TestChatAskErrorHandling:
     ):
         """Empty answer on a follow-up must not append a turn to the cache.
 
-        After issue #659, empty responses on new conversations raise
-        ``ChatError`` (no server conv_id to attach to). The cache-poison
-        guard now only matters on follow-ups, where the caller-supplied
-        conversation_id stays stable across an empty response.
+        Two paths reach this assertion under the post-PR-D contract:
+
+        * **Unparseable response body** (e.g. just the XSSI prefix, garbage,
+          or wire-drift): now raises ``ChatResponseParseError`` instead of
+          silently returning an empty answer. The "no cache poisoning"
+          guarantee falls out of the raise — no turn is appended because
+          no ``AskResult`` is constructed.
+        * **Parseable ``wrb.fr`` envelope with empty answer text** (a
+          legitimate empty answer from the model): still returns
+          ``answer == ""``, preserves the caller-supplied conversation_id,
+          and skips the cache append.
+
+        This test covers the second path — the first is covered in
+        ``tests/unit/test_chat.py::test_streaming_empty_raises``.
         """
+        import json
         import re
 
-        # Return totally empty/unparseable response
-        response_body = ")]}'\n"
+        # Parseable wrb.fr envelope with an empty answer text. The chunk
+        # decodes (so parseable_chunk_count > 0 and the parser returns)
+        # but extracts no answer — exactly the "real empty answer" case
+        # the PR-D contract preserves against ``ChatResponseParseError``.
+        inner_data = [["", None, None, None, [[], None, None, [], 1]]]
+        inner_json = json.dumps(inner_data)
+        chunk_json = json.dumps([["wrb.fr", None, inner_json]])
+        response_body = f")]}}'\n{len(chunk_json)}\n{chunk_json}\n"
 
         httpx_mock.add_response(
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
@@ -1336,13 +1353,21 @@ class TestParseAskResponseEdgeCases:
         assert answer == "Answer without prefix."
         assert conv_id is None
 
-    def test_parse_empty_response_returns_empty_string(self, auth_tokens):
-        """Test that completely empty response returns empty string (line 489)."""
+    def test_parse_empty_response_raises_chat_response_parse_error(self, auth_tokens):
+        """A response with no parseable ``wrb.fr`` chunk raises (post-PR-D).
+
+        The XSSI-prefix-only body used to return an empty
+        ``StreamingChatParseResult``. After PR-D, zero parseable chunks
+        means wire-protocol drift / empty body, which is no longer the
+        same thing as a legitimate empty answer. The parser now raises
+        ``ChatResponseParseError`` so callers can surface the failure
+        instead of silently producing an empty ``AskResult``.
+        """
+        from notebooklm.exceptions import ChatResponseParseError
+
         client = NotebookLMClient(auth_tokens)
-        answer, refs, conv_id = client.chat._parse_ask_response_with_references(")]}'\n")
-        assert answer == ""
-        assert refs == []
-        assert conv_id is None
+        with pytest.raises(ChatResponseParseError):
+            client.chat._parse_ask_response_with_references(")]}'\n")
 
     def test_parse_response_no_marked_answer_falls_back_to_unmarked(self, auth_tokens):
         """Test fallback to unmarked text when no marked answer exists (line 486)."""

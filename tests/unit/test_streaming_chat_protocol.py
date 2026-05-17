@@ -288,15 +288,20 @@ def test_unmarked_fallback_logs_under_chat_logger(caplog) -> None:
     )
 
 
-def test_empty_response_returns_empty_result_and_logs_under_chat_logger(caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger="notebooklm._chat"):
-        result = parse_streaming_chat_response("")
+def test_empty_response_raises_chat_response_parse_error() -> None:
+    """Empty response body → zero parseable ``wrb.fr`` envelopes → raise.
 
-    assert result == StreamingChatParseResult("", [], None)
-    assert any(
-        record.name == "notebooklm._chat" and "No answer extracted" in record.message
-        for record in caplog.records
-    )
+    This pins the PR-D (audit I4) contract: an empty body is wire-protocol
+    drift / a failed RPC, NOT a legitimate empty answer. The legitimate
+    empty-answer path (parseable chunk with empty text) is covered in
+    ``tests/unit/test_chat.py``.
+    """
+    from notebooklm.exceptions import ChatResponseParseError
+
+    with pytest.raises(ChatResponseParseError) as raised:
+        parse_streaming_chat_response("")
+
+    assert "No parseable chunks" in str(raised.value)
 
 
 def test_parse_citations_extracts_multiple_references_and_assigns_numbers() -> None:
