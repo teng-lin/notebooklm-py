@@ -1,7 +1,7 @@
 """Assert non-publish workflows have a top-level `permissions:` block.
 
-Phase 1 / T4: prevents supply-chain blast radius from default-permissive
-GITHUB_TOKEN scope on workflows that don't need it.
+Prevents supply-chain blast radius from default-permissive ``GITHUB_TOKEN``
+scopes on workflows that don't need them.
 
 Usage:
     python scripts/check_workflow_permissions.py

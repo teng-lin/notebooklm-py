@@ -546,3 +546,136 @@ def test_audit_repair_list_entries_exist() -> None:
     """
     missing = [name for name in AUDIT_REPAIR_LIST if not (CASSETTE_DIR / name).exists()]
     assert not missing, f"AUDIT_REPAIR_LIST references cassettes that no longer exist: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# Encoding-header coverage (issue #773 follow-up to #769 / #771)
+# ---------------------------------------------------------------------------
+# ``decode_compressed_response=True`` in :mod:`tests.vcr_config` strips
+# ``Content-Encoding`` from every recorded response. Pre-#751 that was fine
+# because the response went through ``client.post`` once and decoded
+# exactly once; #751 introduced the streaming rebuild path in
+# :func:`notebooklm._core_transport._stream_post_with_size_cap`, and the
+# combination of an upstream gzip header re-applied to already-decoded
+# bytes is what bit #769 in production. The existing cassette suite
+# couldn't surface that regression because no cassette carried the
+# header. This lint pins a floor on the encoding-header coverage so a
+# future cassette wipe (or a regression in the gzip-injection workflow
+# under ``tests/scripts/inject_gzip_into_cassette.py``) trips CI loudly.
+
+
+def _all_cassettes_recursive() -> list[Path]:
+    """Every cassette under ``tests/cassettes``, including subdirectories
+    like ``gzip_coverage/``.
+
+    Kept separate from :func:`_real_cassettes` (which is non-recursive on
+    purpose — the existing shape lint targets the canonical recorded
+    cassettes only, not derived sibling cassettes that may carry binary
+    bodies or other non-canonical shapes).
+    """
+    return sorted(CASSETTE_DIR.rglob("*.yaml"))
+
+
+# Cassette header lines for ``Content-Encoding: gzip`` follow the vcrpy
+# YAML serialization shape: the case-insensitive header name on one line
+# followed by ``- gzip`` (with optional surrounding whitespace) on the
+# next. Anchored to ``^`` so the pattern does not match `gzip` mentioned
+# in a request URL or response body. Compiled at module scope so the
+# walk-the-cassette test stays cheap on Windows runners where libyaml
+# isn't available and structural ``yaml.safe_load`` is ~10× slower —
+# the original load-every-cassette implementation timed out at 60s on
+# Windows Python 3.11 / 3.12.
+_CONTENT_ENCODING_GZIP_RE = re.compile(
+    r"^[ \t]*[Cc]ontent-[Ee]ncoding:\s*\n[ \t]*-\s*gzip\b",
+    re.MULTILINE,
+)
+
+
+def test_at_least_one_cassette_advertises_content_encoding_gzip() -> None:
+    """At least one cassette must carry ``Content-Encoding: gzip`` in a
+    response header.
+
+    Closes the test-coverage gap that hid #769. The fix lives in
+    ``tests/cassettes/gzip_coverage/`` plus the helper in
+    ``tests/scripts/inject_gzip_into_cassette.py`` that re-derives those
+    cassettes from canonical recordings. If this assertion ever fails
+    again, regenerate the gzip-coverage cassettes — do not silence the
+    test.
+
+    Scans raw cassette text rather than ``yaml.safe_load``-ing every
+    cassette — see ``_CONTENT_ENCODING_GZIP_RE`` for why.
+    """
+    matches = [
+        c
+        for c in _all_cassettes_recursive()
+        if _CONTENT_ENCODING_GZIP_RE.search(c.read_text(encoding="utf-8"))
+    ]
+    assert matches, (
+        "No cassette under tests/cassettes/ advertises Content-Encoding: gzip "
+        "on any response. The streaming rebuild path in "
+        "notebooklm._core_transport._stream_post_with_size_cap is invisible to "
+        "VCR replay without it (see #769/#771). Regenerate the gzip-coverage "
+        "cassette(s) via:\n"
+        "    uv run python tests/scripts/inject_gzip_into_cassette.py "
+        "tests/cassettes/<source>.yaml "
+        "tests/cassettes/gzip_coverage/<source>_gzipped.yaml"
+    )
+
+
+def test_gzip_coverage_cassettes_round_trip_through_helper() -> None:
+    """Every cassette under ``gzip_coverage/`` must be a fixed point of
+    the gzip-injection helper.
+
+    Catches drift between the committed cassettes and the helper's
+    current encoding choices (compression level, header casing,
+    stripped headers). Re-running the helper on a fixed cassette must
+    produce a byte-identical file; otherwise the helper changed shape
+    and the cassettes need regenerating in the same PR.
+    """
+    import importlib.util
+
+    # Safe loader + dumper — cassettes are arbitrary YAML on disk and we
+    # never need to serialize Python-specific tags here, so the safe
+    # schema is the symmetric and audit-friendly choice. ``!!binary``
+    # (the encoding gzipped bodies rely on) is part of the core YAML
+    # schema and round-trips through ``CSafeLoader`` / ``CSafeDumper``.
+    try:
+        from yaml import CSafeDumper as Dumper
+        from yaml import CSafeLoader as Loader
+    except ImportError:  # pragma: no cover — libyaml ships with PyYAML wheels
+        from yaml import SafeDumper as Dumper  # type: ignore[assignment]
+        from yaml import SafeLoader as Loader
+
+    # ``tests/`` is not a Python package, so import the helper by file path —
+    # same pattern :mod:`tests.vcr_config` uses for sibling modules.
+    helper_path = REPO_ROOT / "tests" / "scripts" / "inject_gzip_into_cassette.py"
+    spec = importlib.util.spec_from_file_location(
+        "tests_scripts_inject_gzip_into_cassette", helper_path
+    )
+    assert spec is not None and spec.loader is not None
+    helper_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper_module)
+    inject_gzip_into_cassette = helper_module.inject_gzip_into_cassette
+
+    coverage_dir = CASSETTE_DIR / "gzip_coverage"
+    cassettes = sorted(coverage_dir.glob("*.yaml")) if coverage_dir.is_dir() else []
+    assert cassettes, (
+        "No gzip-coverage cassettes found under tests/cassettes/gzip_coverage/. "
+        "test_at_least_one_cassette_advertises_content_encoding_gzip should "
+        "have failed first — investigate that failure before this one."
+    )
+    drifted: list[str] = []
+    for cassette in cassettes:
+        original = cassette.read_text(encoding="utf-8")
+        data = yaml.load(original, Loader=Loader)
+        rewritten = inject_gzip_into_cassette(data)
+        if rewritten == 0:
+            drifted.append(f"{cassette.name}: helper did not match any response")
+            continue
+        regen = yaml.dump(data, Dumper=Dumper)
+        if regen != original:
+            drifted.append(
+                f"{cassette.name}: not a fixed point of inject_gzip_into_cassette. "
+                "Regenerate via the helper and commit."
+            )
+    assert not drifted, "\n  - ".join(["gzip-coverage cassette drift:"] + drifted)
