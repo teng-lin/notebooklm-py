@@ -25,14 +25,12 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse, urlunparse
 
 import click
 from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import source_status_to_str
-from ..urls import is_youtube_url
 from .error_handler import _output_error, emit_cancelled_and_exit
 from .helpers import (
     console,
@@ -57,6 +55,8 @@ from .options import (
     prompt_file_option,
     wait_polling_options,
 )
+from .services import source_add as source_add_service
+from .services import source_clean as source_clean_service
 
 
 @contextlib.asynccontextmanager
@@ -119,180 +119,27 @@ async def _status_with_elapsed(
                 await ticker_task
 
 
-# Titles matching this pattern indicate the source was blocked by an anti-bot
-# gateway, CAPTCHA, or returned an HTTP error page instead of real content.
-_GATEWAY_TITLE_PATTERN = re.compile(
-    r"^\s*(access denied|403|404|forbidden|not found|502"
-    r"|just a moment|attention required|security check|captcha)",
-    re.IGNORECASE,
-)
-
-# Path-shape heuristic for ``source add``. When the user passes a
-# string that *looks like* a path (contains ``/`` OR ends in a recognized
-# document extension) but the path does not exist on disk, the CLI silently
-# falls through to inline-text ingestion. That's a common typo footgun
-# (``./missin.md`` -> "Added source: src_xxx" is indistinguishable from a
-# successful upload). The remediation is a stderr advisory warning; the source
-# is still added as text so the established inferred-text behavior is preserved.
-# Explicit ``--type text`` suppresses the heuristic — the user has stated intent.
-#
-# Extension list intentionally narrow: only formats that are unambiguously
-# documents/data files in the NotebookLM source domain. Adding ``.json``,
-# ``.yaml``, etc. risks false positives on legitimate inline content (e.g.
-# pasting a config snippet as a note).
-_PATH_SHAPED_EXTENSIONS = frozenset(
-    {
-        ".pdf",
-        ".txt",
-        ".md",
-        ".markdown",
-        ".html",
-        ".htm",
-        ".doc",
-        ".docx",
-        ".rtf",
-        ".odt",
-        ".csv",
-        ".tsv",
-        ".epub",
-    }
-)
-
-
 def _looks_like_path(content: str) -> bool:
-    """Return True if ``content`` is path-shaped (slash OR known extension).
-
-    Used by ``source add`` to detect the typo footgun where the user meant to
-    upload a file but the path doesn't exist. See ``_PATH_SHAPED_EXTENSIONS``
-    for the curated extension allowlist.
-    """
-    if "/" in content or "\\" in content:
-        return True
-    suffix = Path(content).suffix.lower()
-    return suffix in _PATH_SHAPED_EXTENSIONS
-
-
-# Only sources with explicit "error" status are auto-cleaned. "unknown" is
-# excluded on purpose: it covers status codes we don't recognize yet (future
-# NotebookLM states) and missing-status responses, which must not be silently
-# deleted.
-_JUNK_STATUSES = frozenset({"error"})
+    """Compatibility wrapper for tests patching source-add path detection."""
+    return source_add_service.looks_like_path(content)
 
 
 def _validate_upload_path(content: str, follow_symlinks: bool) -> Path:
-    """Validate a local-file path before uploading it as a source.
-
-    Returns the resolved ``Path`` so the caller can forward exactly the
-    artifact it validated (closing the time-of-check / time-of-use window
-    that ``add_file()`` would otherwise re-open).
-
-    Rules (default-deny):
-
-    1. If ``follow_symlinks`` is ``False`` and **any** component of the
-       path — the leaf or any parent directory — is a symlink, refuse.
-       Checking parents matters: ``dir_link/secret.pdf`` would otherwise
-       sneak past a leaf-only ``is_symlink()`` check.
-    2. The symlink check runs **before** ``exists()`` so a broken symlink
-       gets a clear "symlink" rejection instead of being treated as text
-       content via the fall-through branch.
-    3. After resolution the target must be a regular file (no
-       directories, FIFOs, devices, sockets).
-
-    Raises:
-        click.ClickException: on any of the above failures. The message
-            tells the user exactly which flag opts in.
-    """
-    raw = Path(content)
-
-    # 1) Symlink gate (leaf + every parent). Catches broken symlinks too,
-    # because ``is_symlink()`` is True for dangling links.
-    if not follow_symlinks:
-        for component in [raw, *raw.parents]:
-            if component.is_symlink():
-                raise click.ClickException(
-                    "Path is a symlink; pass --follow-symlinks to follow it "
-                    f"explicitly. Refusing to upload: {raw}"
-                )
-
-    # 2) Resolve only after the explicit --follow-symlinks opt-in (or after
-    # the no-symlink check above has passed).
-    file_path = raw.expanduser().resolve()
-
-    # 3) Reject directories, pipes, devices, sockets, and non-existent
-    # paths. Symlinks have already been handled above, so this guard now
-    # covers the non-symlink "weird filetype" cases.
-    if not file_path.is_file():
-        raise click.ClickException(f"Not a regular file: {content}")
-
-    return file_path
+    """Compatibility wrapper for tests patching source-add upload validation."""
+    try:
+        return source_add_service.validate_upload_path(content, follow_symlinks)
+    except source_add_service.SourceAddValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _normalize_url_for_dedup(url: str) -> str:
-    """Return a URL with only the fragment stripped, for dedup comparison.
-
-    Scheme and host are lowercased per RFC 3986 (both are case-insensitive),
-    so ``https://Example.com/a`` and ``https://example.com/a`` are recognised
-    as the same resource. Query strings are preserved because they often
-    disambiguate distinct resources (e.g. YouTube ``?v=ID``, Google Docs
-    ``?id=ID``, arXiv versions), so collapsing them would falsely flag
-    legitimate sources as duplicates.
-    """
-    parsed = urlparse(url)
-    return urlunparse(
-        (
-            parsed.scheme.lower(),
-            parsed.netloc.lower(),
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            "",
-        )
-    )
-
-
-# Sort key sentinel: sources with no created_at go to the END so a real,
-# dated copy is preferred as the "oldest" anchor during dedup.
-_UNDATED_SORT_KEY = float("inf")
+    """Compatibility wrapper for source-clean URL deduplication."""
+    return source_clean_service.normalize_url_for_dedup(url)
 
 
 def _classify_junk_sources(sources: list) -> list[tuple[str, str, str, str]]:
-    """Identify junk sources for cleanup.
-
-    Returns a deterministically ordered list of ``(id, title, status, reason)``
-    tuples for every source that should be deleted. ``reason`` is one of
-    ``"error_status"``, ``"gateway_title"``, or ``"duplicate_of:<short-id>"``.
-    The oldest non-junk copy of each URL is kept; later duplicates are flagged.
-    """
-    sorted_sources = sorted(
-        sources,
-        key=lambda s: s.created_at.timestamp() if s.created_at else _UNDATED_SORT_KEY,
-    )
-
-    candidates: list[tuple[str, str, str, str]] = []
-    seen_urls: dict[str, str] = {}
-
-    for s in sorted_sources:
-        title = (s.title or "").strip()
-        status = source_status_to_str(s.status) if s.status else "unknown"
-
-        if status in _JUNK_STATUSES:
-            candidates.append((s.id, title, status, "error_status"))
-            continue
-
-        if _GATEWAY_TITLE_PATTERN.match(title):
-            candidates.append((s.id, title, status, "gateway_title"))
-            continue
-
-        url = s.url or ""
-        if url:
-            normalized = _normalize_url_for_dedup(url)
-            kept = seen_urls.get(normalized)
-            if kept is not None:
-                candidates.append((s.id, title, status, f"duplicate_of:{kept[:8]}"))
-                continue
-            seen_urls[normalized] = s.id
-
-    return candidates
+    """Compatibility wrapper for tests patching source-clean classification."""
+    return source_clean_service.classify_junk_sources(sources)
 
 
 def _print_clean_candidates(candidates: list[tuple[str, str, str, str]]) -> None:
@@ -592,68 +439,19 @@ def source_add(
         source_type = "text"
 
     nb_id = require_notebook(notebook_id)
+    plan = source_add_service.build_source_add_plan(
+        content=content,
+        source_type=source_type,
+        title=title,
+        mime_type=mime_type,
+        follow_symlinks=follow_symlinks,
+        suppress_file_mime_deprecation=os.environ.get("NOTEBOOKLM_QUIET_DEPRECATIONS") == "1",
+        validate_path=_validate_upload_path,
+        looks_path_shaped=_looks_like_path,
+    )
 
-    # Auto-detect source type if not specified
-    detected_type = source_type
-    file_content = None
-    file_title = title
-    # Set once the path passes ``_validate_upload_path`` so the upload uses
-    # the resolved path we just validated (closes the TOCTOU window where a
-    # symlink could be retargeted between validation and ``add_file()``).
-    upload_path: Path | None = None
-
-    if detected_type is None:
-        if content.startswith(("http://", "https://")):
-            detected_type = "youtube" if is_youtube_url(content) else "url"
-        elif Path(content).exists() or Path(content).is_symlink():
-            # ``is_symlink()`` short-circuits ``exists()`` for broken
-            # symlinks (``exists()`` follows the link and reports False),
-            # so we OR them together to make sure the symlink gate fires
-            # on dangling links instead of letting them slip into the
-            # text fall-through branch.
-            upload_path = _validate_upload_path(content, follow_symlinks)
-            detected_type = "file"
-        else:
-            # Warn when the user passed a path-shaped string that
-            # doesn't exist on disk. Without this, ``source add ./missin.md``
-            # silently sends the literal string ``./missin.md`` as note content
-            # — the success line ("Added source: src_xxx") is indistinguishable
-            # from a real file upload. The source is still added as text so
-            # established inferred-text behavior is preserved (no breaking exit
-            # change). Suppressed when ``source_type`` is already set
-            # explicitly — the user has stated intent — but here we're inside
-            # the ``detected_type is None`` branch so an explicit override
-            # never reaches this code in the first place. See I8 in the audit.
-            if _looks_like_path(content):
-                click.echo(
-                    f"warning: '{content}' looks like a path but does not "
-                    f"exist; ingesting as inline text. Pass --type text to "
-                    f"suppress this warning, or check the path for typos.",
-                    err=True,
-                )
-            detected_type = "text"
-            file_title = title or "Pasted Text"
-    elif detected_type == "file":
-        # Explicit ``--type file``: the auto-detect block above is skipped,
-        # so apply the same symlink + regular-file gate here. Without this,
-        # ``source add link.pdf --type file`` would silently bypass the
-        # ``--follow-symlinks`` opt-in and leak the symlink target.
-        upload_path = _validate_upload_path(content, follow_symlinks)
-
-    # DEPRECATION-REMOVAL: v0.X.0 — ``--mime-type`` is a no-op on the file
-    # source path (the upload pipeline ignores it). The Drive ``--mime-type``
-    # on ``source add-drive`` is untouched. Suppressible via
-    # ``NOTEBOOKLM_QUIET_DEPRECATIONS=1`` so CI logs stay clean.
-    if (
-        mime_type is not None
-        and detected_type == "file"
-        and os.environ.get("NOTEBOOKLM_QUIET_DEPRECATIONS") != "1"
-    ):
-        click.echo(
-            "--mime-type is unused for file sources; remove the flag "
-            "(Drive sources retain this option).",
-            err=True,
-        )
+    for warning in plan.warnings:
+        click.echo(warning, err=True)
 
     client_kwargs: dict = {}
     if timeout is not None:
@@ -662,29 +460,11 @@ def source_add(
     async def _run():
         async with NotebookLMClient(client_auth, **client_kwargs) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            if detected_type == "url" or detected_type == "youtube":
-                src = await client.sources.add_url(nb_id_resolved, content)
-            elif detected_type == "text":
-                text_content = file_content if file_content is not None else content
-                text_title = file_title or "Untitled"
-                src = await client.sources.add_text(nb_id_resolved, text_title, text_content)
-            elif detected_type == "file":
-                # ``upload_path`` is always populated by the validation
-                # above when ``detected_type == "file"``. Pass the resolved
-                # path string so ``add_file()`` opens exactly the file we
-                # just validated (no second symlink hop).
-                assert upload_path is not None, (
-                    "upload_path must be set when detected_type == 'file'"
-                )
-                # ``mime_type`` is intentionally NOT forwarded: the upload
-                # pipeline ignores it and ``add_file`` warns when a non-None
-                # value is passed. The CLI deprecation echo above already
-                # informs the user that the flag is a no-op for file sources;
-                # passing it here would also trigger the library-level
-                # ``DeprecationWarning`` and double-up the signal.
-                src = await client.sources.add_file(
-                    nb_id_resolved, str(upload_path), title=file_title
-                )
+            src = await source_add_service.add_source(
+                client.sources,
+                notebook_id=nb_id_resolved,
+                plan=plan,
+            )
 
             if json_output:
                 data = {
@@ -701,7 +481,7 @@ def source_add(
             console.print(f"[green]Added source:[/green] {src.id}")
 
     if not json_output:
-        with console.status(f"Adding {detected_type} source..."):
+        with console.status(f"Adding {plan.detected_type} source..."):
             return _run()
     return _run()
 
@@ -1512,119 +1292,74 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            if json_output:
-                sources = await client.sources.list(nb_id_resolved)
-            else:
-                with console.status("Fetching sources for cleanup..."):
-                    sources = await client.sources.list(nb_id_resolved)
 
-            candidates = _classify_junk_sources(sources)
-
-            def _candidates_payload() -> list[dict]:
-                return [
-                    {"id": sid, "title": title, "status": status, "reason": reason}
-                    for sid, title, status, reason in candidates
-                ]
-
-            if not candidates:
+            async def _list_sources(notebook_id: str):
                 if json_output:
-                    json_output_response(
-                        {
-                            "action": "clean",
-                            "notebook_id": nb_id_resolved,
-                            "status": "already_clean",
-                            "candidates": [],
-                            "deleted_count": 0,
-                            "failure_count": 0,
-                        }
-                    )
-                    return
+                    return await client.sources.list(notebook_id)
+                with console.status("Fetching sources for cleanup..."):
+                    return await client.sources.list(notebook_id)
+
+            result = await source_clean_service.run_source_clean(
+                notebook_id=nb_id_resolved,
+                dry_run=dry_run,
+                yes=yes,
+                list_sources=_list_sources,
+                delete_source=client.sources.delete,
+                confirm_delete=lambda count: click.confirm(f"Delete {count} source(s)?"),
+                on_candidates=None if json_output else _print_clean_candidates,
+                on_delete_start=None
+                if json_output
+                else lambda count: console.print(
+                    f"[dim]Cleaning {count} source(s) (in chunks of 10)...[/dim]"
+                ),
+                classify_sources=_classify_junk_sources,
+            )
+
+            candidates_payload = source_clean_service.candidates_payload(result.candidates)
+
+            if json_output:
+                payload = {
+                    "action": "clean",
+                    "notebook_id": result.notebook_id,
+                    "status": result.status,
+                    "candidates": candidates_payload,
+                    "deleted_count": result.deleted_count,
+                    "failure_count": result.failure_count,
+                }
+                if result.status != "already_clean":
+                    payload["candidate_count"] = result.candidate_count
+                if result.status == "completed":
+                    payload["failures"] = [
+                        {"id": sid, "error": err} for sid, err in result.failures
+                    ]
+                json_output_response(payload)
+                return
+
+            if result.status == "already_clean":
                 console.print("[green]Notebook is already clean. No junk sources found.[/green]")
                 return
 
-            if not json_output:
-                _print_clean_candidates(candidates)
-
-            if dry_run:
-                if json_output:
-                    json_output_response(
-                        {
-                            "action": "clean",
-                            "notebook_id": nb_id_resolved,
-                            "status": "dry_run",
-                            "candidates": _candidates_payload(),
-                            "candidate_count": len(candidates),
-                            "deleted_count": 0,
-                            "failure_count": 0,
-                        }
-                    )
-                    return
+            if result.status == "dry_run":
                 console.print(
-                    f"[yellow]Dry run: would delete {len(candidates)} source(s).[/yellow]"
+                    f"[yellow]Dry run: would delete {result.candidate_count} source(s).[/yellow]"
                 )
                 return
 
-            if not yes and not click.confirm(f"Delete {len(candidates)} source(s)?"):
-                if json_output:
-                    json_output_response(
-                        {
-                            "action": "clean",
-                            "notebook_id": nb_id_resolved,
-                            "status": "cancelled",
-                            "candidates": _candidates_payload(),
-                            "candidate_count": len(candidates),
-                            "deleted_count": 0,
-                            "failure_count": 0,
-                        }
-                    )
+            if result.status == "cancelled":
                 return
 
-            if not json_output:
+            if result.failures:
                 console.print(
-                    f"[dim]Cleaning {len(candidates)} source(s) (in chunks of 10)...[/dim]"
+                    f"[yellow]Cleaned {result.deleted_count} source(s). "
+                    f"{len(result.failures)} deletion(s) failed.[/yellow]"
                 )
-
-            delete_list = [c[0] for c in candidates]
-            chunk_size = 10
-            deleted = 0
-            failures: list[tuple[str, str]] = []
-            for i in range(0, len(delete_list), chunk_size):
-                chunk = delete_list[i : i + chunk_size]
-                delete_tasks = [client.sources.delete(nb_id_resolved, sid) for sid in chunk]
-                results = await asyncio.gather(*delete_tasks, return_exceptions=True)
-                for sid, r in zip(chunk, results, strict=True):
-                    if isinstance(r, Exception):
-                        failures.append((sid, str(r)))
-                    else:
-                        deleted += 1
-                if i + chunk_size < len(delete_list):
-                    await asyncio.sleep(0.5)
-
-            if json_output:
-                json_output_response(
-                    {
-                        "action": "clean",
-                        "notebook_id": nb_id_resolved,
-                        "status": "completed",
-                        "candidates": _candidates_payload(),
-                        "candidate_count": len(candidates),
-                        "deleted_count": deleted,
-                        "failure_count": len(failures),
-                        "failures": [{"id": sid, "error": err} for sid, err in failures],
-                    }
-                )
-                return
-
-            if failures:
-                console.print(
-                    f"[yellow]Cleaned {deleted} source(s). "
-                    f"{len(failures)} deletion(s) failed.[/yellow]"
-                )
-                for sid, err in failures[:5]:
+                for sid, err in result.failures[:5]:
                     console.print(f"  [red]{sid}:[/red] {err}")
-                if len(failures) > 5:
-                    console.print(f"  [dim]...and {len(failures) - 5} more[/dim]")
+                if len(result.failures) > 5:
+                    console.print(f"  [dim]...and {len(result.failures) - 5} more[/dim]")
             else:
-                console.print(f"[green]Successfully cleaned {deleted} source(s).[/green]")
+                console.print(
+                    f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]"
+                )
 
     return _run()
