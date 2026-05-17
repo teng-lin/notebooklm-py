@@ -10,7 +10,7 @@ from .rpc import RPCMethod
 class ShareRpc(Protocol):
     """RPC surface needed by the legacy notebook share manager."""
 
-    async def rpc_call(
+    async def __call__(
         self,
         method: RPCMethod,
         params: list[Any],
@@ -50,7 +50,7 @@ class ShareManager:
         if artifact_id:
             params.append(artifact_id)
 
-        await self._rpc.rpc_call(
+        await self._rpc(
             RPCMethod.SHARE_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",

@@ -155,7 +155,7 @@ class NotebooksAPI:
             get_notebook=lambda notebook_id: self.get(notebook_id),
             source_lister=self._sources,
         )
-        self._share_manager = share_manager or ShareManager(core)
+        self._share_manager = share_manager or ShareManager(self._rpc_call)
 
     async def _rpc_call(
         self,
