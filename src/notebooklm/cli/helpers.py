@@ -1073,7 +1073,6 @@ def handle_auth_error(json_output: bool = False) -> NoReturn:
                 "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",
             },
         )
-        raise SystemExit(1)
     else:
         console.print("[red]Not logged in.[/red]\n")
         console.print("[dim]Checked locations:[/dim]")
@@ -1116,7 +1115,7 @@ def with_auth_and_errors(
         verbose_count = 0
     verbose = verbose_count >= 1
 
-    def log_result(status: str, detail: str = "") -> float:
+    def log_result(status: str, detail: str = "") -> None:
         elapsed = time.monotonic() - start
         if detail:
             logger.debug(
@@ -1128,7 +1127,6 @@ def with_auth_and_errors(
             )
         else:
             logger.debug("CLI command %s: %s (%.3fs)", status, command_name, elapsed)
-        return elapsed
 
     with handle_errors(verbose=verbose, json_output=json_output):
         # Auth bootstrap: FileNotFoundError here means the storage file is
@@ -1220,7 +1218,7 @@ def json_output_response(data: dict | list) -> None:
     click.echo(json.dumps(data, indent=2, default=str, ensure_ascii=False))
 
 
-def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
+def json_error_response(code: str, message: str, extra: dict | None = None) -> NoReturn:
     """Print JSON error and exit (no colors for machine parsing).
 
     Args:
