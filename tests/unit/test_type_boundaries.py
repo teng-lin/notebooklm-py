@@ -59,9 +59,7 @@ def _cli_private_types_import_offenders(path: Path) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "notebooklm._types" or alias.name.startswith(
-                    "notebooklm._types."
-                ):
+                if alias.name == "notebooklm._types" or alias.name.startswith("notebooklm._types."):
                     offenders.append(f"line {node.lineno}: {_import_statement_text(node)}")
             continue
 
@@ -81,7 +79,11 @@ def _cli_private_types_import_offenders(path: Path) -> list[str]:
             or (not module_parts and any(alias.name == "_types" for alias in node.names))
         )
 
-        if is_absolute_private_types or is_from_notebooklm_import_types or is_relative_private_types:
+        if (
+            is_absolute_private_types
+            or is_from_notebooklm_import_types
+            or is_relative_private_types
+        ):
             offenders.append(f"line {node.lineno}: {_import_statement_text(node)}")
 
     return offenders
