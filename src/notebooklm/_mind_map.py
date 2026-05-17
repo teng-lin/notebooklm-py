@@ -1,14 +1,14 @@
-"""Mind-map RPC primitives shared by ``ArtifactsAPI`` and ``NotesAPI``.
+"""Note-backed mind-map service shared by ``ArtifactsAPI`` and ``NotesAPI``.
 
-Mind maps live in the "notes" backend (same ``GET_NOTES_AND_MIND_MAPS`` /
-``CREATE_NOTE`` / ``UPDATE_NOTE`` / ``DELETE_NOTE`` RPCs as user notes) but
-they are AI-generated artifacts from the caller's perspective. This module
-hosts the low-level RPC primitives so neither :class:`NotesAPI` nor
-:class:`ArtifactsAPI` needs to import the other.
+Mind maps live in the same backend collection as user notes and use the same
+``GET_NOTES_AND_MIND_MAPS`` / ``CREATE_NOTE`` / ``UPDATE_NOTE`` /
+``DELETE_NOTE`` RPC family. They are still AI-generated artifacts from the
+caller's perspective, so this private module owns the note-backed composition
+that both notes and artifacts need without either facade importing the other.
 
-Functions here take a :class:`ClientCore` as their first argument and return
-raw RPC-shaped data (lists). Higher-level dataclass parsing stays in
-:mod:`_notes` / :mod:`_artifacts`.
+``MindMapService`` is the explicit private service. The module-level functions
+remain as compatibility seams for existing private imports and artifact
+monkeypatch targets.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Protocol
 
-from ._core import ClientCore
 from .rpc import RPCMethod
 from .types import Note
 
@@ -36,61 +36,244 @@ logger = logging.getLogger(__name__)
 _cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 
-async def _delete_note_best_effort(core: ClientCore, notebook_id: str, note_id: str) -> None:
-    """Best-effort DELETE_NOTE cleanup for a partially-finalized create.
+class MindMapRpc(Protocol):
+    """RPC surface needed by note-backed mind-map operations."""
 
-    Used as a fire-and-forget ``asyncio.create_task`` target when an
-    outer cancel arrives mid-UPDATE_NOTE: we never block the re-raise on
-    this call, and any failure (network, auth refresh, etc.) is logged
-    and swallowed — the only side-effect we want is the orphan-row
-    removal, not a secondary exception.
-    """
-    try:
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+    ) -> Any: ...
+
+
+_UpdateNoteCallback = Callable[[MindMapRpc, str, str, str, str], Coroutine[Any, Any, None]]
+_DeleteNoteBestEffortCallback = Callable[[MindMapRpc, str, str], Coroutine[Any, Any, None]]
+
+
+class MindMapService:
+    """Private service for note-backed mind-map rows."""
+
+    def __init__(
+        self,
+        rpc: MindMapRpc,
+        *,
+        update_note_callback: _UpdateNoteCallback | None = None,
+        delete_note_best_effort_callback: _DeleteNoteBestEffortCallback | None = None,
+    ) -> None:
+        self._rpc = rpc
+        self._update_note_callback = update_note_callback
+        self._delete_note_best_effort_callback = delete_note_best_effort_callback
+
+    async def _delete_note_best_effort(self, notebook_id: str, note_id: str) -> None:
+        """Best-effort DELETE_NOTE cleanup for a partially-finalized create.
+
+        Used as a fire-and-forget ``asyncio.create_task`` target when an
+        outer cancel arrives mid-UPDATE_NOTE: we never block the re-raise on
+        this call, and any failure (network, auth refresh, etc.) is logged
+        and swallowed. The only desired side effect is orphan-row removal.
+        """
+        try:
+            await self.delete_note(notebook_id, note_id)
+        except Exception:  # noqa: BLE001 — best-effort cleanup, must not surface
+            logger.warning(
+                "Best-effort DELETE_NOTE cleanup failed for note %s in notebook %s",
+                note_id,
+                notebook_id,
+                exc_info=True,
+            )
+
+    async def fetch_all_notes_and_mind_maps(self, notebook_id: str) -> list[Any]:
+        """Fetch all active raw note and mind-map rows for a notebook."""
+        params = [notebook_id]
+        result = await self._rpc.rpc_call(
+            RPCMethod.GET_NOTES_AND_MIND_MAPS,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+        if not (
+            result and isinstance(result, list) and len(result) > 0 and isinstance(result[0], list)
+        ):
+            return []
+
+        return [
+            item
+            for item in result[0]
+            if isinstance(item, list) and len(item) > 0 and isinstance(item[0], str)
+        ]
+
+    @staticmethod
+    def is_deleted(item: list[Any]) -> bool:
+        """Return True if a note/mind-map item is soft-deleted."""
+        if not isinstance(item, list) or len(item) < 3:
+            return False
+        return item[1] is None and item[2] == 2
+
+    @staticmethod
+    def extract_content(item: list[Any]) -> str | None:
+        """Extract the content string from a note/mind-map item."""
+        if len(item) <= 1:
+            return None
+
+        if isinstance(item[1], str):
+            return item[1]
+        if isinstance(item[1], list) and len(item[1]) > 1 and isinstance(item[1][1], str):
+            return item[1][1]
+        return None
+
+    @staticmethod
+    def is_mind_map_content(content: str | None) -> bool:
+        """Return True if content looks like a persisted mind-map payload."""
+        return bool(content and ('"children":' in content or '"nodes":' in content))
+
+    async def list_mind_maps(self, notebook_id: str) -> list[Any]:
+        """List raw mind-map rows in a notebook, excluding soft-deleted rows."""
+        all_items = await self.fetch_all_notes_and_mind_maps(notebook_id)
+        mind_maps: list[Any] = []
+        for item in all_items:
+            if self.is_deleted(item):
+                continue
+            content = self.extract_content(item)
+            if self.is_mind_map_content(content):
+                mind_maps.append(item)
+        return mind_maps
+
+    async def update_note(
+        self,
+        notebook_id: str,
+        note_id: str,
+        content: str,
+        title: str,
+    ) -> None:
+        """Update a note/mind-map row's content and title in place."""
+        logger.debug("Updating note %s in notebook %s", note_id, notebook_id)
+        params = [
+            notebook_id,
+            note_id,
+            [[[content, title, [], 0]]],
+        ]
+        await self._rpc.rpc_call(
+            RPCMethod.UPDATE_NOTE,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+
+    async def delete_note(self, notebook_id: str, note_id: str) -> bool:
+        """Delete a note-backed row using NotebookLM's soft-delete RPC."""
         params = [notebook_id, None, [note_id]]
-        await core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.DELETE_NOTE,
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-    except Exception:  # noqa: BLE001 — best-effort cleanup, must not surface
-        logger.warning(
-            "Best-effort DELETE_NOTE cleanup failed for note %s in notebook %s",
-            note_id,
-            notebook_id,
-            exc_info=True,
+        return True
+
+    async def create_note(
+        self,
+        notebook_id: str,
+        title: str = "New Note",
+        content: str = "",
+    ) -> Note:
+        """Create a note-backed row and finalize its content + title."""
+        logger.debug("Creating note in notebook %s: %s", notebook_id, title)
+        # The server currently ignores this slot (the follow-up UPDATE_NOTE is
+        # what actually persists the title) but pass the caller-supplied title
+        # rather than a hardcoded literal so the wire payload reflects the user
+        # intent if Google ever starts honoring it.
+        params = [notebook_id, "", [1], None, title]
+        result = await self._rpc.rpc_call(
+            RPCMethod.CREATE_NOTE,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+        )
+
+        note_id: str | None = None
+        if result and isinstance(result, list) and len(result) > 0:
+            if isinstance(result[0], list) and len(result[0]) > 0:
+                note_id = result[0][0]
+            elif isinstance(result[0], str):
+                note_id = result[0]
+
+        if note_id:
+            # CREATE_NOTE ignores the title param server-side, so set it via
+            # UPDATE_NOTE alongside the actual content payload.
+            #
+            # Shield the UPDATE_NOTE finalize from outer cancellation.
+            # CREATE_NOTE has already persisted a row server-side; without the
+            # shield, a cancel arriving between CREATE_NOTE and UPDATE_NOTE
+            # completion leaves an orphan row with no title/content.
+            #
+            # When CancelledError lands here, the shielded UPDATE_NOTE Task is
+            # still running on the loop. Fire a best-effort DELETE_NOTE that
+            # covers both sub-cases:
+            #   (a) UPDATE_NOTE hasn't applied yet -> orphan-row cleanup.
+            #   (b) UPDATE_NOTE completes between the cancel and DELETE_NOTE ->
+            #       the now-applied note is deleted; caller's cancel intent
+            #       (note should not exist) is honored.
+            # Strong-ref the cleanup task in ``_cleanup_tasks`` so the loop's
+            # weak-ref Task storage cannot GC it mid-flight (RUF006); the
+            # done-callback discards on completion so the set stays bounded.
+            # The re-raise never awaits the cleanup task.
+            try:
+                update_note_callback = self._update_note_callback
+                if update_note_callback is None:
+                    update_note_task = self.update_note(notebook_id, note_id, content, title)
+                else:
+                    update_note_task = update_note_callback(
+                        self._rpc,
+                        notebook_id,
+                        note_id,
+                        content,
+                        title,
+                    )
+                await asyncio.shield(update_note_task)
+            except asyncio.CancelledError:
+                delete_note_best_effort_callback = self._delete_note_best_effort_callback
+                if delete_note_best_effort_callback is None:
+                    cleanup_coro = self._delete_note_best_effort(notebook_id, note_id)
+                else:
+                    cleanup_coro = delete_note_best_effort_callback(
+                        self._rpc,
+                        notebook_id,
+                        note_id,
+                    )
+                cleanup_task = asyncio.create_task(cleanup_coro)
+                _cleanup_tasks.add(cleanup_task)
+                cleanup_task.add_done_callback(_cleanup_tasks.discard)
+                raise
+
+        return Note(
+            id=note_id or "",
+            notebook_id=notebook_id,
+            title=title,
+            content=content,
         )
 
 
-async def fetch_all_notes_and_mind_maps(core: ClientCore, notebook_id: str) -> list[Any]:
+async def _delete_note_best_effort(core: MindMapRpc, notebook_id: str, note_id: str) -> None:
+    """Best-effort DELETE_NOTE cleanup for a partially-finalized create."""
+    await MindMapService(core)._delete_note_best_effort(notebook_id, note_id)
+
+
+async def fetch_all_notes_and_mind_maps(core: MindMapRpc, notebook_id: str) -> list[Any]:
     """Fetch all notes + mind maps in a notebook.
 
     Both notes and mind maps share the same backend collection; callers
     filter by content shape (``"children":`` / ``"nodes":`` for mind maps).
 
     Args:
-        core: The shared :class:`ClientCore`.
+        core: The shared :class:`MindMapRpc`.
         notebook_id: The notebook ID to query.
 
     Returns:
         Raw list of items; each item is a list whose first element is the
         item ID. Empty list on missing/unexpected payloads.
     """
-    params = [notebook_id]
-    result = await core.rpc_call(
-        RPCMethod.GET_NOTES_AND_MIND_MAPS,
-        params,
-        source_path=f"/notebook/{notebook_id}",
-        allow_null=True,
-    )
-    if result and isinstance(result, list) and len(result) > 0 and isinstance(result[0], list):
-        notes_list = result[0]
-        valid_notes = []
-        for item in notes_list:
-            if isinstance(item, list) and len(item) > 0 and isinstance(item[0], str):
-                valid_notes.append(item)
-        return valid_notes
-    return []
+    return await MindMapService(core).fetch_all_notes_and_mind_maps(notebook_id)
 
 
 def is_deleted(item: list[Any]) -> bool:
@@ -99,9 +282,7 @@ def is_deleted(item: list[Any]) -> bool:
     Deleted items have structure ``['id', None, 2]`` — content is None and
     the third position holds the status sentinel.
     """
-    if not isinstance(item, list) or len(item) < 3:
-        return False
-    return item[1] is None and item[2] == 2
+    return MindMapService.is_deleted(item)
 
 
 def extract_content(item: list[Any]) -> str | None:
@@ -110,17 +291,15 @@ def extract_content(item: list[Any]) -> str | None:
     Handles both the legacy ``[id, content]`` and the current
     ``[id, [id, content, metadata, None, title]]`` shapes.
     """
-    if len(item) <= 1:
-        return None
-
-    if isinstance(item[1], str):
-        return item[1]
-    if isinstance(item[1], list) and len(item[1]) > 1 and isinstance(item[1][1], str):
-        return item[1][1]
-    return None
+    return MindMapService.extract_content(item)
 
 
-async def list_mind_maps(core: ClientCore, notebook_id: str) -> list[Any]:
+def is_mind_map_content(content: str | None) -> bool:
+    """Return True if content looks like a persisted mind-map payload."""
+    return MindMapService.is_mind_map_content(content)
+
+
+async def list_mind_maps(core: MindMapRpc, notebook_id: str) -> list[Any]:
     """List raw mind-map items in a notebook (excluding soft-deleted ones).
 
     Mind maps are stored in the same collection as notes but contain JSON
@@ -128,47 +307,28 @@ async def list_mind_maps(core: ClientCore, notebook_id: str) -> list[Any]:
     collection down to mind-map-shaped entries.
 
     Args:
-        core: The shared :class:`ClientCore`.
+        core: The shared :class:`MindMapRpc`.
         notebook_id: The notebook ID to query.
 
     Returns:
         List of raw mind-map items (each a list, first element is the ID).
     """
-    all_items = await fetch_all_notes_and_mind_maps(core, notebook_id)
-    mind_maps: list[Any] = []
-    for item in all_items:
-        if is_deleted(item):
-            continue
-        content = extract_content(item)
-        if content and ('"children":' in content or '"nodes":' in content):
-            mind_maps.append(item)
-    return mind_maps
+    return await MindMapService(core).list_mind_maps(notebook_id)
 
 
 async def update_note(
-    core: ClientCore,
+    core: MindMapRpc,
     notebook_id: str,
     note_id: str,
     content: str,
     title: str,
 ) -> None:
     """Update a note/mind-map row's content and title in place."""
-    logger.debug("Updating note %s in notebook %s", note_id, notebook_id)
-    params = [
-        notebook_id,
-        note_id,
-        [[[content, title, [], 0]]],
-    ]
-    await core.rpc_call(
-        RPCMethod.UPDATE_NOTE,
-        params,
-        source_path=f"/notebook/{notebook_id}",
-        allow_null=True,
-    )
+    await MindMapService(core).update_note(notebook_id, note_id, content, title)
 
 
 async def create_note(
-    core: ClientCore,
+    core: MindMapRpc,
     notebook_id: str,
     title: str = "New Note",
     content: str = "",
@@ -181,7 +341,7 @@ async def create_note(
     higher-level :class:`NotesAPI`.
 
     Args:
-        core: The shared :class:`ClientCore`.
+        core: The shared :class:`MindMapRpc`.
         notebook_id: The notebook ID to create the note in.
         title: The desired title.
         content: The desired body content (mind-map JSON, plain text, ...).
@@ -189,59 +349,11 @@ async def create_note(
     Returns:
         The created :class:`Note` with the assigned ID.
     """
-    logger.debug("Creating note in notebook %s: %s", notebook_id, title)
-    # The server currently ignores this slot (the follow-up UPDATE_NOTE is
-    # what actually persists the title) but pass the caller-supplied title
-    # rather than a hardcoded literal so the wire payload reflects the user
-    # intent if Google ever starts honoring it.
-    params = [notebook_id, "", [1], None, title]
-    result = await core.rpc_call(
-        RPCMethod.CREATE_NOTE,
-        params,
-        source_path=f"/notebook/{notebook_id}",
-    )
-
-    note_id: str | None = None
-    if result and isinstance(result, list) and len(result) > 0:
-        if isinstance(result[0], list) and len(result[0]) > 0:
-            note_id = result[0][0]
-        elif isinstance(result[0], str):
-            note_id = result[0]
-
-    if note_id:
-        # CREATE_NOTE ignores the title param server-side, so set it via
-        # UPDATE_NOTE alongside the actual content payload.
-        #
-        # Shield the UPDATE_NOTE finalize from outer cancellation.
-        # CREATE_NOTE has already persisted a row server-side; without the
-        # shield, a cancel arriving between CREATE_NOTE and UPDATE_NOTE
-        # completion leaves an orphan row with no title/content.
-        #
-        # When CancelledError lands here, the shielded UPDATE_NOTE Task is
-        # still running on the loop. Fire a best-effort DELETE_NOTE that
-        # covers both sub-cases:
-        #   (a) UPDATE_NOTE hasn't applied yet → orphan-row cleanup.
-        #   (b) UPDATE_NOTE completes between the cancel and DELETE_NOTE →
-        #       the now-applied note is deleted; caller's cancel intent
-        #       (note should not exist) is honoured.
-        # Strong-ref the cleanup task in ``_cleanup_tasks`` so the loop's
-        # weak-ref Task storage cannot GC it mid-flight (RUF006); the
-        # done-callback discards on completion so the set stays bounded.
-        # The re-raise never awaits the cleanup task.
-        try:
-            await asyncio.shield(update_note(core, notebook_id, note_id, content, title))
-        except asyncio.CancelledError:
-            cleanup_task = asyncio.create_task(_delete_note_best_effort(core, notebook_id, note_id))
-            _cleanup_tasks.add(cleanup_task)
-            cleanup_task.add_done_callback(_cleanup_tasks.discard)
-            raise
-
-    return Note(
-        id=note_id or "",
-        notebook_id=notebook_id,
-        title=title,
-        content=content,
-    )
+    return await MindMapService(
+        core,
+        update_note_callback=update_note,
+        delete_note_best_effort_callback=_delete_note_best_effort,
+    ).create_note(notebook_id, title=title, content=content)
 
 
 # Rendering-flag trailer used inside every text-passage wrapper of the
@@ -466,7 +578,7 @@ def build_save_chat_as_note_params(
 
 
 async def save_chat_answer_as_note(
-    core: ClientCore,
+    core: MindMapRpc,
     notebook_id: str,
     answer_text: str,
     references: list[ChatReference],
@@ -482,7 +594,7 @@ async def save_chat_answer_as_note(
     NotebookLM UI renders ``[N]`` markers as hover-able passage links.
 
     Args:
-        core: The shared ``ClientCore``.
+        core: The shared RPC caller.
         notebook_id: Target notebook UUID.
         answer_text: AI answer text including ``[N]`` citation markers.
         references: Citation list from ``AskResult.references``.
