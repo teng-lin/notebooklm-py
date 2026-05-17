@@ -305,8 +305,7 @@ def test_completion_boundary_detects_import_and_block_shapes(
     """Self-check the AST guardrail paths used by the live options.py test."""
     _, offenders = _completion_boundary_violations(ast.parse(source))
 
-    for offender in expected:
-        assert offender in offenders
+    assert set(offenders) == set(expected), f"Expected {expected}, got {offenders}"
 
 
 def test_completion_boundary_reports_missing_callbacks() -> None:
