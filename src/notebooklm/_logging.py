@@ -25,6 +25,7 @@ from typing import Any
 __all__ = [
     "RedactingFilter",
     "RedactingFormatter",
+    "SECRET_FAST_PATH_TOKENS",
     "apply_redaction",
     "configure_logging",
     "correlation_id",

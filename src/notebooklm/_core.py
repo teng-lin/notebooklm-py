@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import math
-import random  # noqa: F401 — keeps `notebooklm._core.random` importable for transport-test monkeypatches
+import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
 import time
 import warnings
@@ -941,9 +941,10 @@ class ClientCore:
         ``notebooklm._core.is_auth_error`` or ``notebooklm._core.asyncio.sleep``
         still affect live transport behavior after the collaborator has been
         constructed. Backoff jitter routes through ``notebooklm._backoff``,
-        which in turn calls ``random.uniform`` on the shared module — tests
-        that monkeypatch ``notebooklm._core.random.uniform`` (or any other
-        module's ``random.uniform``) still control jitter, because attribute
+        which in turn calls ``random.uniform`` on the shared module.
+        ``tests/unit/test_core_transport.py`` relies on monkeypatching
+        ``notebooklm._core.random.uniform`` to reach that jitter path; keep the
+        otherwise-unused module import so the path stays available. Attribute
         patches on the singleton ``random`` module are visible to all importers.
         """
         transport = getattr(self, "_authed_transport", None)

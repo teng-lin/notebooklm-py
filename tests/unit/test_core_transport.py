@@ -241,7 +241,7 @@ async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_authed_transport_uses_late_bound_sleep_and_uniform(monkeypatch):
+async def test_authed_transport_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch):
     core = _make_core(server_error_max_retries=1)
     await core.open()
     try:

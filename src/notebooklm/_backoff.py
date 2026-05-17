@@ -47,6 +47,7 @@ def compute_backoff_delay(
     ``rng=None`` falls back to the module's shared ``random`` source.
     Tests should pass ``rng=random.Random(seed)`` for reproducibility.
     """
+    assert jitter_ratio >= 0, "jitter_ratio must be non-negative"
     if attempt < 0:
         attempt = 0
     raw = min(base * (2**attempt), cap)

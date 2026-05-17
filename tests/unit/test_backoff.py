@@ -171,6 +171,12 @@ def test_negative_attempt_clamps_to_zero():
     assert compute_backoff_delay(-100, base=2.5, cap=30.0, jitter_ratio=0.0) == 2.5
 
 
+def test_negative_jitter_ratio_rejected():
+    """Contract guard: jitter_ratio is a non-negative spread percentage."""
+    with pytest.raises(AssertionError, match="jitter_ratio must be non-negative"):
+        compute_backoff_delay(0, jitter_ratio=-0.1)
+
+
 def test_attempt_zero_returns_base_without_jitter():
     assert compute_backoff_delay(0, base=1.0, cap=30.0, jitter_ratio=0.0) == 1.0
     assert compute_backoff_delay(0, base=3.0, cap=30.0, jitter_ratio=0.0) == 3.0

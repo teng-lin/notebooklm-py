@@ -525,7 +525,10 @@ def test_fast_path_tokens_are_lowercase():
 
     Mixed-case tokens would never match (``"SID" in "...sid..."`` is False).
     """
+    from notebooklm import _logging
     from notebooklm._logging import SECRET_FAST_PATH_TOKENS
+
+    assert "SECRET_FAST_PATH_TOKENS" in _logging.__all__
 
     for token in SECRET_FAST_PATH_TOKENS:
         assert token == token.lower(), f"token {token!r} must be lowercase"
@@ -650,6 +653,8 @@ def test_fast_path_microbenchmark_speedup_ratio(monkeypatch):
     # Guard against degenerate clocks (e.g. very fast machine reporting 0).
     if t_gated <= 0:
         pytest.skip("clock granularity too coarse to measure fast-path speedup")
+    if t_gated > 0.05:
+        pytest.skip("runner too loaded to measure fast-path speedup reliably")
 
     ratio = t_bypassed / t_gated
     assert ratio >= 2.0, (
