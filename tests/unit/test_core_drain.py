@@ -296,8 +296,10 @@ def test_token_is_frozen_dataclass() -> None:
     a mutable dataclass, which would break dict-keying and reduce safety
     around begin/finish pairing.
     """
+    from dataclasses import FrozenInstanceError
+
     token = _TransportOperationToken(task=None)
-    with pytest.raises(Exception):  # FrozenInstanceError subclasses Exception
+    with pytest.raises(FrozenInstanceError):
         token.task = None  # type: ignore[misc]
 
 
