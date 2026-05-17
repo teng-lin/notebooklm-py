@@ -48,7 +48,7 @@ class CoreReqIdProvider(Protocol):
 
 
 class ChatStreamingProvider(Protocol):
-    """Provider for the chat streaming POST transport (chat-aware error mapping still lives on ``ClientCore``)."""
+    """Transitional chat-transport capability — chat-aware error mapping still lives on ``ClientCore.query_post`` until that is extracted into a chat-owned transport."""
 
     async def query_post(
         self,

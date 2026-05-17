@@ -17,9 +17,6 @@ from typing import TYPE_CHECKING, Any, NoReturn, cast
 import httpx
 
 from ._callbacks import maybe_await_callback
-from ._core_cache import (
-    MAX_CONVERSATION_CACHE_SIZE as _DEFAULT_CONVERSATION_CACHE_SIZE,
-)
 from ._core_cookie_persistence import CookiePersistence
 from ._core_polling import PendingPolls, PollRegistry
 from ._core_rpc import RpcExecutor
@@ -72,8 +69,6 @@ class _TransportOperationToken:
 
     task: asyncio.Task[Any] | None
 
-
-MAX_CONVERSATION_CACHE_SIZE = _DEFAULT_CONVERSATION_CACHE_SIZE
 
 # Default HTTP timeouts in seconds
 DEFAULT_TIMEOUT = 30.0
