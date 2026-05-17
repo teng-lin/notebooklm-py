@@ -294,7 +294,7 @@ def test_is_clean_flags_real_email() -> None:
 
 
 def test_is_clean_flags_sid_starting_with_S_in_header_form() -> None:
-    """**I7 closure**: a real SID value starting with ``S`` is detected.
+    """Cookie-leak heuristic: a real SID value starting with ``S`` is detected.
 
     The legacy bash guard used a ``[^S"]`` character class on the cookie value,
     which exempted any real secret whose first character was ``S``. The new
@@ -308,7 +308,7 @@ def test_is_clean_flags_sid_starting_with_S_in_header_form() -> None:
 
 
 def test_is_clean_flags_sid_starting_with_S_in_storage_state() -> None:
-    """Same I7 hole in Playwright ``storage_state.json`` shape."""
+    """Same cookie-leak heuristic in Playwright ``storage_state.json`` shape."""
     text = '{"name":"SID","value":"S_REAL_VALUE","domain":".google.com"}'
     ok, leaks = is_clean(text)
     assert not ok
@@ -316,7 +316,7 @@ def test_is_clean_flags_sid_starting_with_S_in_storage_state() -> None:
 
 
 def test_is_clean_flags_sid_starting_with_S_in_json_key() -> None:
-    """Same I7 hole in the JSON-dict-with-cookie-name-as-key shape."""
+    """Same cookie-leak heuristic in the JSON-dict-with-cookie-name-as-key shape."""
     text = '{"SAPISID": "S_real_leaked_token_here"}'
     ok, _ = is_clean(text)
     assert not ok
@@ -402,7 +402,7 @@ def test_vcr_config_uses_registry_scrub_string() -> None:
 def test_vcr_config_has_no_inline_sensitive_patterns() -> None:
     """``vcr_config`` MUST NOT define its own ``SENSITIVE_PATTERNS`` list.
 
-    Audit finding I6: drift between recorder and guard. The registry is the
+    Guards against drift between recorder and guard. The registry is the
     single source of truth; this test fails if vcr_config recreates a local
     copy.
     """
@@ -471,7 +471,7 @@ def test_bad_cassette_cookie_header_payload_is_flagged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# upload + Drive token scrubbing (audit finding I17)
+# upload + Drive token scrubbing
 #
 # These tests pin down two invariants:
 #
@@ -646,7 +646,7 @@ def test_is_clean_recognizes_upload_drive_placeholders() -> None:
 
 
 # ---------------------------------------------------------------------------
-# display-name + avatar scrub patterns (audit C4 + /ogw/ group)
+# display-name + avatar scrub patterns
 #
 # These tests pin down four invariants:
 #

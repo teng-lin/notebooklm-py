@@ -138,7 +138,7 @@ async def test_download_batch_all_fail(mock_artifacts_api, tmp_path):
 
 @pytest.mark.asyncio
 async def test_download_batch_logs_warning_per_failure(mock_artifacts_api, tmp_path, caplog):
-    """Each failed URL emits a WARNING (Phase 0 redaction applies automatically)."""
+    """Each failed URL emits a WARNING (URL redaction applies automatically)."""
     api, _ = mock_artifacts_api
 
     success = _mock_response(b"ok")

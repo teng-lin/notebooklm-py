@@ -896,7 +896,7 @@ class TestDownloadErrorHandling:
 
 
 # =============================================================================
-# DOWNLOAD QUIZ + FLASHCARDS STANDARD-FLAG TESTS (P2.T4)
+# DOWNLOAD QUIZ + FLASHCARDS STANDARD-FLAG TESTS
 # =============================================================================
 
 
@@ -929,7 +929,7 @@ def make_flashcard_artifact(
 
 
 class TestDownloadQuizStandardFlags:
-    """Smoke tests for the standard flag set on `download quiz` (P2.T4)."""
+    """Smoke tests for the standard flag set on `download quiz`."""
 
     def test_quiz_help_lists_full_flag_set(self, runner):
         """Each flag from the standard download flag set must appear in --help."""
@@ -1278,7 +1278,7 @@ class TestDownloadQuizStandardFlags:
 
 
 class TestDownloadFlashcardsStandardFlags:
-    """Smoke tests for the standard flag set on `download flashcards` (P2.T4)."""
+    """Smoke tests for the standard flag set on `download flashcards`."""
 
     def test_flashcards_help_lists_full_flag_set(self, runner):
         """Each flag from the standard download flag set must appear in --help."""
@@ -1557,7 +1557,7 @@ class TestDownloadFlashcardsStandardFlags:
 
 
 # =============================================================================
-# DOWNLOAD TYPED ERROR PATH TESTS (P3.T2 / I14)
+# DOWNLOAD TYPED ERROR PATH TESTS
 # =============================================================================
 #
 # These tests pin the contract that `download <type>` exception paths route
@@ -1590,7 +1590,7 @@ class TestDownloadTypedErrorPath:
         The exception fires at the first awaited call inside
         ``_download_artifacts_generic``, which surfaces directly to the outer
         ``_run_artifact_download`` exception handler — the exact site under
-        test for I14. The single-download / --all per-artifact try/except
+        test. The single-download / --all per-artifact try/except
         blocks deliberately swallow API errors into ``{"error": ...}`` rows;
         forcing the failure on ``list`` exercises the *typed* handler path.
         """
@@ -1728,7 +1728,7 @@ class TestDownloadTypedErrorPath:
         assert "Network error" in text_result.output
         assert "internet connection" in text_result.output  # error_handler hint
 
-    # ----- JSON happy-path preservation (must not regress P2.T4 shape) -----
+    # ----- JSON happy-path preservation (must not regress shape) -----
 
     def test_json_happy_path_shape_unchanged(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """The JSON happy-path envelope is preserved (operation/status/...)."""

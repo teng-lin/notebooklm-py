@@ -120,7 +120,7 @@ def test_freq_matcher_identical_nine_param_match() -> None:
 
 
 def test_freq_matcher_param_count_mismatch_nine_vs_five() -> None:
-    """A 9-param request must not match a 5-param request (C3 regression)."""
+    """A 9-param request must not match a 5-param request."""
     nine = _nine_params()
     five = [None, "What is this notebook about?", None, [2], "conv_abc"]
     r1 = _StubRequest(_build_freq_body(nine))
@@ -186,7 +186,7 @@ def test_freq_matcher_one_unparseable_one_parseable_rejects() -> None:
 
 
 # ---------------------------------------------------------------------------
-# recompute_chunk_prefix — D7 byte-count re-derivation direct unit tests
+# recompute_chunk_prefix — byte-count re-derivation direct unit tests
 # ---------------------------------------------------------------------------
 
 

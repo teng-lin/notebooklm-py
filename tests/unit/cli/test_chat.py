@@ -312,7 +312,7 @@ class TestHistoryCommand:
             assert long_a in flat
 
     def test_history_no_truncate_outputs_full_text(self, runner, mock_auth):
-        """`history --no-truncate` lifts the ``max_width=50`` table cap (P6.T1 / I16).
+        """`history --no-truncate` lifts the ``max_width=50`` table cap.
 
         The default table preview slices each Q/A to 50 chars for the table
         cell *and* sets ``max_width=50`` on the column. ``--no-truncate``
@@ -348,7 +348,7 @@ class TestHistoryCommand:
             assert result.output.count("A") >= 100
 
     def test_history_default_truncates_to_50_chars(self, runner, mock_auth):
-        """Default (no flag) preserves the legacy 50-char preview cap (P6.T1 / I16).
+        """Default (no flag) preserves the legacy 50-char preview cap.
 
         This regression test pins the existing behavior so the new
         --no-truncate flag does not silently change the default rendering.
@@ -421,7 +421,7 @@ class TestAskTimeout:
 
 
 class TestConfigureJsonOutput:
-    """Smoke tests for `configure --json` (P2.T5 / I3)."""
+    """Smoke tests for `configure --json`."""
 
     def test_configure_mode_json(self, runner, mock_auth):
         with patch_client_for_module("chat") as mock_client_cls:
@@ -588,7 +588,7 @@ class TestAskServerResumed:
 
 
 class TestAskNewFlag:
-    """Tests for `ask --new` flag (P4.T1 / I1).
+    """Tests for `ask --new` flag.
 
     The --new flag was promised in the docstring but missing from the decorator.
     --new must skip both the local-cache and server-side conversation lookup so
@@ -708,7 +708,7 @@ class TestAskNewFlag:
 
 
 # =============================================================================
-# P7.T2 / M3 — Stdin (`-`) convention
+# Stdin (`-`) convention
 # =============================================================================
 #
 # Unix tradition: a positional argument of ``-`` means "read from stdin".

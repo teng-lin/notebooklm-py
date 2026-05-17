@@ -281,7 +281,7 @@ class TestHandleErrorsKeyboardInterrupt:
 
 
 class TestEmitCancelledAndExit:
-    """Tests for the M2 / P5.T3 SIGINT-with-resume-hint helper.
+    """Tests for the SIGINT-with-resume-hint helper.
 
     ``emit_cancelled_and_exit`` is the canonical exit point for Ctrl-C during
     a long-running ``--wait`` poll. The helper enforces the required user-

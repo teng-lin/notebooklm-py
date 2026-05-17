@@ -1,4 +1,4 @@
-"""Tests for the lifecycle drain on ``ClientCore.close`` (PR-E, audit I1).
+"""Tests for the lifecycle drain on ``ClientCore.close``.
 
 Pins down:
 

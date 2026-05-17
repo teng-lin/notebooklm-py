@@ -6,7 +6,7 @@ They intentionally stay in ``tests/unit/`` (not ``tests/integration/``)
 because the streaming flows here are too synthetic to back with a real
 ``vcrpy`` cassette — the assertions exercise specific stub-shaped chunk
 boundaries and AsyncMock-driven retries that no real RPC recording would
-faithfully reproduce. Tier-9 migration (PR-J) renamed this file from
+faithfully reproduce. An earlier rename moved this file from
 ``test_chat_integration.py`` and labeled it with the ``characterization``
 marker; see ``pyproject.toml`` markers list for the rationale.
 """
@@ -818,7 +818,7 @@ class TestChatAskErrorHandling:
     ):
         """Empty answer on a follow-up must not append a turn to the cache.
 
-        Two paths reach this assertion under the post-PR-D contract:
+        Two paths reach this assertion under the current contract:
 
         * **Unparseable response body** (e.g. just the XSSI prefix, garbage,
           or wire-drift): now raises ``ChatResponseParseError`` instead of
@@ -839,7 +839,7 @@ class TestChatAskErrorHandling:
         # Parseable wrb.fr envelope with an empty answer text. The chunk
         # decodes (so parseable_chunk_count > 0 and the parser returns)
         # but extracts no answer — exactly the "real empty answer" case
-        # the PR-D contract preserves against ``ChatResponseParseError``.
+        # the contract preserves against ``ChatResponseParseError``.
         inner_data = [["", None, None, None, [[], None, None, [], 1]]]
         inner_json = json.dumps(inner_data)
         chunk_json = json.dumps([["wrb.fr", None, inner_json]])
@@ -1354,12 +1354,12 @@ class TestParseAskResponseEdgeCases:
         assert conv_id is None
 
     def test_parse_empty_response_raises_chat_response_parse_error(self, auth_tokens):
-        """A response with no parseable ``wrb.fr`` chunk raises (post-PR-D).
+        """A response with no parseable ``wrb.fr`` chunk raises.
 
         The XSSI-prefix-only body used to return an empty
-        ``StreamingChatParseResult``. After PR-D, zero parseable chunks
-        means wire-protocol drift / empty body, which is no longer the
-        same thing as a legitimate empty answer. The parser now raises
+        ``StreamingChatParseResult``. Zero parseable chunks now means
+        wire-protocol drift / empty body, which is no longer the same
+        thing as a legitimate empty answer. The parser raises
         ``ChatResponseParseError`` so callers can surface the failure
         instead of silently producing an empty ``AskResult``.
         """

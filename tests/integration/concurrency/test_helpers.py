@@ -1,8 +1,8 @@
 """Unit tests for ``tests/integration/concurrency/helpers.py``.
 
 Each helper has happy-path + at least one edge case. Helpers are
-covered here (not via dogfooding in Phase 2 fix tests) so a
-helper-level regression surfaces before any Phase 2 PR depends on it.
+covered here (not via dogfooding in downstream fix tests) so a
+helper-level regression surfaces before any consumer PR depends on it.
 """
 
 from __future__ import annotations

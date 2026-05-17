@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time maintainer setup for the Tier 8 VCR generation notebook.
+"""One-time maintainer setup for the VCR generation notebook.
 
 This is a **manual, local-only** helper. It is NOT run by CI and must NOT be
 called from any test or workflow. Run it once per Google account that records

@@ -1,8 +1,8 @@
-"""Phase 2 P2.5 (slice) — pin ArtifactTypeCode usage consistency.
+"""Pin ArtifactTypeCode usage consistency.
 
-After P2.2 replaced inline `N,  # ArtifactTypeCode.FOO` literals with
-`ArtifactTypeCode.FOO.value`, this test fails if anyone adds a new
-literal-with-comment pattern (suggesting the migration regressed).
+After the earlier migration replaced inline `N,  # ArtifactTypeCode.FOO`
+literals with `ArtifactTypeCode.FOO.value`, this test fails if anyone
+adds a new literal-with-comment pattern (suggesting the migration regressed).
 """
 
 import re

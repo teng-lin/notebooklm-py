@@ -10,8 +10,8 @@ Why register an empty cassette at all?
     any unmatched request. Pinning ``doctor`` to an empty cassette turns
     "future refactor accidentally adds a network call" into a loud test
     failure (``CannotOverwriteExistingCassetteException``) — the author
-    must then re-record the cassette intentionally. This closes audit I10
-    (CLI VCR coverage gap) without recording fake traffic.
+    must then re-record the cassette intentionally. This closes the CLI VCR
+    coverage gap for ``doctor`` without recording fake traffic.
 
 Both tests run inside an isolated ``NOTEBOOKLM_HOME`` (``tmp_path``) so the
 real user's profile / config / storage is never touched, and the existing

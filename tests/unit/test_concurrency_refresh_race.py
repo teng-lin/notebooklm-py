@@ -138,9 +138,9 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
 
         Accepts either historical shape:
         - ``await client.post(...)`` (pre-streaming),
-        - ``await _stream_post_with_size_cap(...)`` (PR-E onwards — the helper
-          performs the streaming POST internally, so it's the same conceptual
-          POST site for the purposes of this concurrency invariant).
+        - ``await _stream_post_with_size_cap(...)`` (the helper performs the
+          streaming POST internally, so it's the same conceptual POST site for
+          the purposes of this concurrency invariant).
         """
         if not isinstance(node, ast.Await):
             return False

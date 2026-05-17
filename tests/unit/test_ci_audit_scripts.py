@@ -1,4 +1,4 @@
-"""Tests for the Phase 1 CI audit scripts.
+"""Tests for the CI audit scripts.
 
 Covers `scripts/check_workflow_permissions.py` and `scripts/check_coverage_thresholds.py`.
 """
@@ -33,7 +33,7 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def test_workflow_permissions_passes_on_real_state():
-    """Current .github/workflows passes the check (Phase 1 added the blocks)."""
+    """Current .github/workflows passes the check."""
     result = _run([str(SCRIPTS / "check_workflow_permissions.py")])
     assert result.returncode == 0, f"stderr: {result.stderr}\nstdout: {result.stdout}"
 

@@ -268,7 +268,7 @@ class TestNoteGet:
             assert "No note found" in result.output
 
     # -------------------------------------------------------------------------
-    # C1 (Phase 3) — get-on-not-found now exits 1 (was 0). Mirrors the
+    # get-on-not-found now exits 1 (was 0). Mirrors the
     # ``test_source.py`` / ``test_artifact.py`` Path A / Path B coverage so the
     # contract is uniform across all three ``get`` commands.
     # -------------------------------------------------------------------------
@@ -517,7 +517,7 @@ class TestNoteCommandsExist:
 
 
 # =============================================================================
-# JSON OUTPUT TESTS (P2.T1 — I3)
+# JSON OUTPUT TESTS
 # =============================================================================
 #
 # Each mutating subcommand (create/save/rename/delete) emits a structured
@@ -532,7 +532,7 @@ class TestNoteCommandsExist:
 
 
 class TestNoteJsonFlagsRegistered:
-    """Verify --json appears in --help for every note subcommand (I3)."""
+    """Verify --json appears in --help for every note subcommand."""
 
     @pytest.mark.parametrize("subcommand", ["get", "save", "create", "delete", "rename"])
     def test_json_flag_in_help(self, runner, subcommand):
@@ -626,7 +626,7 @@ class TestNoteGetJson:
     def test_get_resolves_but_returns_none(self, runner, mock_auth):
         """When resolve succeeds but the GET returns None, exit 1 with typed JSON.
 
-        Phase 3 (C1) flipped this from the previous exit-0 ``{found: false}``
+        The contract was flipped from the previous exit-0 ``{found: false}``
         placeholder to the standard typed JSON error envelope (``{error, code,
         message}``) + exit 1. See ``docs/cli-exit-codes.md`` and the BREAKING
         entry in ``CHANGELOG.md`` (Unreleased → Changed).
@@ -864,11 +864,11 @@ class TestNoteDeleteJson:
 
 
 # =============================================================================
-# P7.T2 / M3 — Stdin (`-`) convention for ``note create``
+# Stdin (`-`) convention for ``note create``
 # =============================================================================
 #
-# Unix tradition: ``-`` as a value means "read from stdin". P7.T2 introduces
-# a new ``--content`` flag on ``note create`` so ``cat notes.md | notebooklm
+# Unix tradition: ``-`` as a value means "read from stdin". A ``--content``
+# flag on ``note create`` makes ``cat notes.md | notebooklm
 # note create --content -`` is the canonical pipeline. The positional
 # ``CONTENT`` argument also accepts ``-`` for the same reason. Both must be
 # mutually exclusive (passing both is a UsageError).

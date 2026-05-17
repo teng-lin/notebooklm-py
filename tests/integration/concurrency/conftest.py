@@ -1,8 +1,8 @@
-"""Fixtures for the Tier 7 concurrency integration harness.
+"""Fixtures for the concurrency integration harness.
 
 Three fixtures, all explicitly named and class-based — no clever hooks,
-no monkeypatching. Phase 2 fix PRs consume these to TDD red-green
-against specific Tier 7 bugs (refresh races, semaphore gating,
+no monkeypatching. Fix PRs consume these to TDD red-green against
+specific concurrency bugs (refresh races, semaphore gating,
 cancellation propagation, etc.).
 
 Fixtures

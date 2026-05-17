@@ -196,7 +196,7 @@ def _disable_keepalive_poke_for_vcr(request, monkeypatch):
     and is not part of any cassette recorded before that poke was added.
     Letting it fire during VCR replay produces a cassette mismatch on
     ``POST accounts.google.com/RotateCookies``, which under the typed CLI
-    error handler (P3.T2 / I14) surfaces as ``UNEXPECTED_ERROR`` (exit 2) —
+    error handler surfaces as ``UNEXPECTED_ERROR`` (exit 2) —
     outside what most VCR tests accept. Disabling the poke aligns every
     replay with what the cassettes actually capture.
 

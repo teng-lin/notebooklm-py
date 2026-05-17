@@ -512,7 +512,7 @@ class TestRequireNotebook:
     def test_error_message_names_user_facing_flag_not_kwarg(self, tmp_path):
         """When `require_notebook` raises with no notebook resolvable, the user-visible
         error must name the actual CLI flag (`-n/--notebook`), not the internal
-        Python kwarg (`notebook_id`). Regression for I9/I11 (CLI UX audit).
+        Python kwarg (`notebook_id`). Regression for the user-facing-flag-name bug.
         """
         with (
             patch(
@@ -533,13 +533,13 @@ class TestRequireNotebook:
             assert "notebook_id" not in printed
             # Existing context-setup hint is preserved so the user has both options.
             assert "notebooklm use" in printed
-            # Discoverability: the env-var fallback (P7.T3 / M4) must be named
+            # Discoverability: the env-var fallback must be named
             # so the user knows the third resolution path exists.
             assert "NOTEBOOKLM_NOTEBOOK" in printed
 
     def test_returns_env_var_when_no_arg_and_no_context(self, tmp_path, monkeypatch):
         """`NOTEBOOKLM_NOTEBOOK` env var is honored when no `-n` flag is passed
-        AND no active context is set. Precedence (P7.T3 / M4):
+        AND no active context is set. Precedence:
         ``-n`` flag > ``NOTEBOOKLM_NOTEBOOK`` env > active context > error.
         """
         monkeypatch.setenv("NOTEBOOKLM_NOTEBOOK", "nb_from_env")
@@ -562,7 +562,7 @@ class TestRequireNotebook:
 
     def test_env_var_overrides_active_context(self, tmp_path, monkeypatch):
         """``NOTEBOOKLM_NOTEBOOK`` overrides the persisted active-notebook
-        context: env > context per the P7.T3 precedence ladder. This makes
+        context: env > context per the documented precedence ladder. This makes
         per-shell env-var overrides composable without clobbering the saved
         ``notebooklm use`` selection.
         """

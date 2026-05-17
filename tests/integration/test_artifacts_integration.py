@@ -1,6 +1,6 @@
 """Integration tests for ArtifactsAPI.
 
-Moved from ``tests/unit/`` to ``tests/integration/`` in Tier-9 PR-J (I13).
+Moved from ``tests/unit/`` to ``tests/integration/``.
 These tests are mock-backed (``pytest_httpx``) rather than VCR-cassette-
 backed; the ``allow_no_vcr`` module-level marker opts them out of the
 integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.

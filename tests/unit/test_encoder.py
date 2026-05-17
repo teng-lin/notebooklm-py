@@ -122,7 +122,7 @@ class TestBuildRequestBody:
 
 
 class TestNestSourceIds:
-    """Phase 2 P2.1 — `nest_source_ids` helper."""
+    """`nest_source_ids` helper."""
 
     def test_empty_returns_empty(self):
         assert nest_source_ids([], 1) == []

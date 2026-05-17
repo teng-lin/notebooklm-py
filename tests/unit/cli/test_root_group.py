@@ -1,7 +1,6 @@
 """Tests for root-group flags on the top-level ``notebooklm`` Click group.
 
-Covers the ``--quiet`` flag added in P7.T3 / M4 (env-var precedence + global
-quiet mode):
+Covers the ``--quiet`` flag (env-var precedence + global quiet mode):
 
 * ``notebooklm --quiet ...`` suppresses INFO/WARN logs from the ``notebooklm``
   package logger; only ERROR (and above) survive on stderr.
@@ -110,7 +109,7 @@ class TestQuietFlag:
 class TestNotebookOptionEnvVar:
     """The ``-n/--notebook`` option declared by ``cli/options.py:notebook_option``
     must accept ``NOTEBOOKLM_NOTEBOOK`` as a fallback so Click documents the
-    binding in ``--help`` and resolves the env value natively (P7.T3 / M4).
+    binding in ``--help`` and resolves the env value natively.
 
     Behavioral resolution (env > context > error when no flag) is exercised
     in ``test_helpers.py::TestRequireNotebook`` against the resolver itself;

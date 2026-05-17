@@ -26,7 +26,7 @@ def notes_api(mock_core):
 
 
 class TestMindMapCreateNotePrimitive:
-    """Characterize the shared mind-map note primitive before Phase 9 movement."""
+    """Characterize the shared mind-map note primitive before the planned move to notebooklm.notes."""
 
     @pytest.mark.asyncio
     async def test_create_note_uses_create_then_update_and_returns_note(self, mock_core):

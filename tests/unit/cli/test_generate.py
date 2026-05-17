@@ -131,7 +131,7 @@ class TestGenerateAudio:
 
     def test_generate_audio_with_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`generate audio --wait --timeout 60 --interval 5` plumbs both into
-        artifacts.wait_for_completion (P5.T1 / I6).
+        artifacts.wait_for_completion.
 
         The new `--timeout`/`--interval` flags must reach the polling call so
         that scripts can bound the wait and the cadence — not just toggle the
@@ -221,7 +221,7 @@ class TestGenerateAudio:
             mock_client.artifacts.wait_for_completion.assert_not_awaited()
 
     def test_generate_audio_with_wait_invokes_console_status(self, runner, mock_auth):
-        """`generate audio --wait` wraps the polling call in `console.status` (P5.T2 / I7).
+        """`generate audio --wait` wraps the polling call in `console.status`.
 
         The spinner gives interactive users feedback during the long wait, with
         a transient line naming the artifact kind (and a typical-duration hint).
@@ -2210,7 +2210,7 @@ class TestOutputMindMapNonDictMindMap:
 
 
 class TestStatusWithElapsed:
-    """Cover the spinner helpers added for P5.T2 / I7."""
+    """Cover the spinner helpers."""
 
     def test_format_status_message_known_kind_includes_typical_hint(self):
         """Known kinds get a typical-duration parenthetical so users see an ETA."""
@@ -2248,16 +2248,16 @@ class TestStatusWithElapsed:
 
 
 # =============================================================================
-# SIGINT / RESUME-HINT TESTS (M2 / P5.T3)
+# SIGINT / RESUME-HINT TESTS
 # =============================================================================
 
 
 class TestGenerateWaitSigintResumeHint:
-    """Ctrl-C during ``generate <kind> --wait`` surfaces the resume hint (M2).
+    """Ctrl-C during ``generate <kind> --wait`` surfaces the resume hint.
 
     The hint follows the canonical phrasing
     ``Cancelled. Resume with: notebooklm artifact poll <task_id>``
-    and the process exits 130. This guards against the pre-P5.T3 regression
+    and the process exits 130. This guards against the prior regression
     where Ctrl-C during a 30-min cinematic-video wait dumped a Python
     KeyboardInterrupt traceback with no actionable next step.
     """

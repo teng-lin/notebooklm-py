@@ -13,7 +13,7 @@ request/response pair under ``tests/unit/fixtures/`` is the next-best
 thing — it carries the exact wire payload Google's web UI sends when
 its "Save to note" button is clicked.
 
-Moved from ``tests/unit/`` to ``tests/integration/`` in Tier-9 PR-J (I13).
+Moved from ``tests/unit/`` to ``tests/integration/``.
 Mock-backed (``pytest_httpx``); ``allow_no_vcr`` opts out of the
 integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.
 Fixture JSON files remain under ``tests/unit/fixtures/`` because

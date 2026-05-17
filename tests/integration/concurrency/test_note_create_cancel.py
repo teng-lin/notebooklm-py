@@ -94,8 +94,8 @@ class _NoteCancelTransport(httpx.AsyncBaseTransport):
 
         if rpc_id == RPCMethod.UPDATE_NOTE.value:
             # Signal the test that UPDATE_NOTE has begun, then suspend until
-            # the test releases us. This is the precise window the C4 shield
-            # must protect.
+            # the test releases us. This is the precise window the
+            # cancellation shield must protect.
             self.update_started.set()
             await self.release_update.wait()
             return httpx.Response(

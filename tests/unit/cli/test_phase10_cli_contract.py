@@ -1,8 +1,8 @@
-"""Phase 10 CLI contract baseline before runtime refactors.
+"""CLI contract baseline captured before the runtime/auth/completion refactors.
 
-This file intentionally characterizes public behavior without moving code. Later
-T11/T12 slices can refactor runtime/auth/completion internals while comparing
-against the JSON baseline generated from ``build_phase10_cli_contract``.
+This file intentionally characterizes public behavior without moving code; later
+internal refactors can be compared against the JSON baseline generated from
+``build_phase10_cli_contract``.
 """
 
 from __future__ import annotations

@@ -302,7 +302,7 @@ def _freq_body_matcher(r1: Any, r2: Any) -> bool:
        (``method`` / ``path`` / etc.) drive the decision. If exactly one body
        parses, return ``False`` — the two requests are structurally different.
     2. **Param count** must match. A 9-param shape must not match a 5-param
-       shape (catches the C3 stale-cassette regression class).
+       shape (catches the stale-cassette regression class).
     3. **Notebook ID** at slot 7 (when the shape has at least 8 elements) must
        match. Two requests differing only in notebook_id are distinct
        interactions.
@@ -368,7 +368,7 @@ def _freq_body_matcher(r1: Any, r2: Any) -> bool:
     if p1 is None or p2 is None:
         return p1 is None and p2 is None
 
-    # Rule 1: param count must agree (catches C3 stale-cassette regression).
+    # Rule 1: param count must agree (catches stale-cassette regression).
     if len(p1) != len(p2):
         return False
 
@@ -393,7 +393,7 @@ notebooklm_vcr = vcr.VCR(
     record_mode=_record_mode,
     # Match requests by method and path, including rpcids for batchexecute.
     # All batchexecute POSTs share the same URL path; rpcids disambiguates them
-    # deterministically (closes C1: replay-order fragility on Windows CI).
+    # deterministically (closes the replay-order fragility on Windows CI).
     match_on=["method", "scheme", "host", "port", "path", "rpcids"],
     # Scrub sensitive data before recording
     before_record_request=scrub_request,

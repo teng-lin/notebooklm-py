@@ -1,4 +1,4 @@
-"""Smoke test for the Tier 7 concurrency integration harness.
+"""Smoke test for the concurrency integration harness.
 
 Demonstrates that:
 

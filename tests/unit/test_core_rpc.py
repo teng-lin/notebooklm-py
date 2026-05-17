@@ -506,7 +506,7 @@ def test_request_error_mapper_parity(
 
 
 # =============================================================================
-# PR-D (I3): decode-time exception surface contract
+# decode-time exception surface contract
 #
 # The ``except`` at ``_core_rpc.py::RpcExecutor.execute`` only wraps genuine
 # shape-drift exceptions (``json.JSONDecodeError``, ``KeyError``, ``IndexError``,

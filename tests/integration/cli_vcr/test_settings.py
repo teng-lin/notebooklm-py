@@ -1,7 +1,7 @@
 """CLI integration tests for settings commands.
 
-Audit item I20 — extend the CLI VCR coverage to the global language /
-settings surface. The canonical command in this repo is ``notebooklm
+Extends the CLI VCR coverage to the global language / settings surface.
+The canonical command in this repo is ``notebooklm
 language set <code>`` (registered as the ``language`` group with ``set``
 subcommand; see ``src/notebooklm/cli/language.py``). The task brief uses
 the conceptual name ``settings set-language``; the test exercises the

@@ -96,7 +96,7 @@ class TestSourceList:
             assert data["sources"][0]["id"] == "src_1"
 
     def test_source_list_limit_caps_rows(self, runner, mock_auth):
-        """`source list --limit N` returns at most N data rows (P6.T1 / I16)."""
+        """`source list --limit N` returns at most N data rows."""
         many = [Source(id=f"src_{i:02d}", title=f"Source {i:02d}") for i in range(20)]
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
@@ -116,7 +116,7 @@ class TestSourceList:
                 assert f"src_{i:02d}" not in result.output
 
     def test_source_list_limit_json_caps_rows(self, runner, mock_auth):
-        """`source list --limit N --json` caps the JSON `sources` array (P6.T1 / I16)."""
+        """`source list --limit N --json` caps the JSON `sources` array."""
         many = [Source(id=f"src_{i:02d}", title=f"Source {i:02d}") for i in range(20)]
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
@@ -139,7 +139,7 @@ class TestSourceList:
             assert [s["id"] for s in data["sources"]] == ["src_00", "src_01"]
 
     def test_source_list_no_truncate_disables_ellipsis(self, runner, mock_auth):
-        """`source list --no-truncate` shows full title without ellipsis (P6.T1 / I16).
+        """`source list --no-truncate` shows full title without ellipsis.
 
         The default Title column uses Rich's ``overflow="ellipsis"`` so a
         title that exceeds the auto-detected terminal width is truncated
@@ -165,7 +165,7 @@ class TestSourceList:
             assert "…" not in result.output
 
     def test_source_list_default_truncates_long_title(self, runner, mock_auth):
-        """Default rendering inserts an ellipsis for over-wide titles (P6.T1 / I16)."""
+        """Default rendering inserts an ellipsis for over-wide titles."""
         long_title = "X" * 200
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
@@ -525,7 +525,7 @@ class TestSourceGet:
             assert "No source found" in result.output
 
     # -------------------------------------------------------------------------
-    # C1 (Phase 3) — get-on-not-found now exits 1 (was 0). The new tests below
+    # get-on-not-found now exits 1 (was 0). The tests below
     # cover BOTH code paths for the not-found branch:
     #
     #   * Path A: input ID is ≥20 chars, so ``_resolve_partial_id`` skips the
@@ -1553,10 +1553,10 @@ class TestSourceAddAutoDetect:
 
 
 # =============================================================================
-# SOURCE ADD PATH-SHAPED MISSING-FILE WARNING (P4.T4 / I8)
+# SOURCE ADD PATH-SHAPED MISSING-FILE WARNING
 # =============================================================================
 #
-# Audit row I8: ``notebooklm source add ./missing.md`` currently silently
+# ``notebooklm source add ./missing.md`` historically silently
 # falls through to inline-text ingestion. Users (and AI agents) reading the
 # CLI back-channel cannot distinguish "I sent the literal string ``./missing.md``
 # as note content" from "the file uploaded successfully" — the success line
@@ -1569,7 +1569,7 @@ class TestSourceAddAutoDetect:
 
 
 class TestSourceAddPathShapedMissing:
-    """P4.T4 / I8: warn when path-shaped arg doesn't exist on disk."""
+    """Warn when path-shaped arg doesn't exist on disk."""
 
     def test_path_shaped_missing_emits_stderr_warning(self, runner, mock_auth):
         """``./missing.md`` (slash + known ext, doesn't exist) -> stderr warn.
@@ -2092,7 +2092,7 @@ class TestSourceWait:
 
     def test_source_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`source wait <id> --timeout 60 --interval 5` plumbs both into
-        wait_until_ready (P5.T1 / I6).
+        wait_until_ready.
 
         The `--interval` flag is NEW for `source wait` (previously it accepted
         only `--timeout`). After this change, `source wait` matches the
@@ -2165,7 +2165,7 @@ class TestSourceWait:
             assert data["last_status_code"] == 1
 
     def test_source_wait_invokes_console_status(self, runner, mock_auth):
-        """`source wait` wraps the polling call in `console.status` (P5.T2 / I7).
+        """`source wait` wraps the polling call in `console.status`.
 
         The spinner replaces the static "Waiting for source ..." print with a
         live transient line that includes the source ID. Asserts the wrap by
@@ -2206,7 +2206,7 @@ class TestSourceWait:
         """`source wait --json` must NOT invoke console.status (stdout stays JSON).
 
         The spinner is suppressed under JSON mode so automation parsing stdout
-        does not see Rich escape sequences leak in (P5.T2 / I7).
+        does not see Rich escape sequences leak in.
         """
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
@@ -2234,7 +2234,7 @@ class TestSourceWait:
 
     def test_source_wait_sigint_prints_resume_hint_and_exits_130(self, runner, mock_auth):
         """Ctrl-C during ``source wait`` exits 130 with a parallel resume hint
-        naming the source id (M2 / P5.T3).
+        naming the source id.
 
         Sources have no separate ``poll`` command — re-running the same wait
         IS the resume — so the hint shape is
@@ -2266,7 +2266,7 @@ class TestSourceWait:
 
     def test_source_wait_sigint_json_emits_cancelled_envelope(self, runner, mock_auth):
         """Ctrl-C under ``source wait --json`` emits a CANCELLED envelope, exits 130
-        (M2 / P5.T3)."""
+       ."""
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
@@ -2539,14 +2539,13 @@ class _CleanPatch:
 
 
 # =============================================================================
-# JSON OUTPUT SMOKE TESTS (P2.T3 / I3)
+# JSON OUTPUT SMOKE TESTS
 # =============================================================================
 
 
 class TestSourceJsonOutput:
-    """Smoke coverage for ``--json`` on the eight source subcommands shipped in
-    P2.T3: delete, rename, refresh, clean, get, delete-by-title, add-drive,
-    stale.
+    """Smoke coverage for ``--json`` on the eight source subcommands:
+    delete, rename, refresh, clean, get, delete-by-title, add-drive, stale.
 
     These tests exercise the JSON branch end-to-end through Click and assert:
 
@@ -2592,7 +2591,7 @@ class TestSourceJsonOutput:
             assert data["source"]["created_at"] == "2024-01-01T12:00:00"
 
     def test_source_get_json_not_found_exits_1_with_typed_json(self, runner, mock_auth):
-        # C1 (Phase 3) flipped this contract: ``get`` on not-found now exits 1
+        # The contract was flipped: ``get`` on not-found now exits 1
         # and emits the standard typed JSON error envelope (``{error, code,
         # message}``) instead of the previous exit-0 ``{found: false}``
         # placeholder. See ``docs/cli-exit-codes.md`` and the BREAKING entry
@@ -2874,7 +2873,7 @@ class TestSourceJsonOutput:
 
 
 # =============================================================================
-# P7.T2 / M3 — Stdin (`-`) convention for ``source add``
+# Stdin (`-`) convention for ``source add``
 # =============================================================================
 #
 # Unix tradition: ``source add -`` reads source content from stdin and

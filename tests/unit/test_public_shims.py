@@ -131,7 +131,7 @@ def test_public_facade_imports_are_identity_reexports() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PR-A section: notebooklm.research public surface
+# notebooklm.research public surface
 # ---------------------------------------------------------------------------
 
 
@@ -734,7 +734,7 @@ def test_rpc_enum_reexport_list_matches_public_all() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PR-D section: notebooklm.config / notebooklm.urls / notebooklm.log public shims
+# notebooklm.config / notebooklm.urls / notebooklm.log public shims
 # ---------------------------------------------------------------------------
 
 
@@ -872,7 +872,7 @@ _AUTH_FIRST_PARTY_COMPATIBILITY_NAMES = [
 
 @pytest.mark.parametrize("name", _AUTH_FIRST_PARTY_COMPATIBILITY_NAMES)
 def test_auth_first_party_compatibility_manifest_resolves(name: str) -> None:
-    """Phase 2 internals may move, but first-party callers keep notebooklm.auth."""
+    """Internal layout may move, but first-party callers keep notebooklm.auth."""
     import notebooklm.auth as auth
 
     assert hasattr(auth, name), f"notebooklm.auth.{name} disappeared"
@@ -1073,7 +1073,7 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
 
 
 # (shim_module_name, internal_module_name)
-# Note: notebooklm.research has targeted smoke tests in the PR-A section above
+# Note: notebooklm.research has targeted smoke tests in the research section above
 # and is intentionally excluded from this generic contract sweep.
 _SHIM_PAIRS = [
     ("notebooklm.config", "notebooklm._env"),

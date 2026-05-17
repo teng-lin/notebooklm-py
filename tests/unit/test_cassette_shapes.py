@@ -1,8 +1,8 @@
 """Cassette-shape regression lint.
 
 This module walks every VCR cassette under ``tests/cassettes`` and asserts a
-small set of structural invariants that the audit's regression classes
-(C2/C3/C4/I9) violate. The intent is to catch reintroductions of those defect
+small set of structural invariants that the known cassette-shape regression
+classes violate. The intent is to catch reintroductions of those defect
 classes before they reach ``main``.
 
 Assertions per batchexecute interaction (URL carries ``?rpcids=``):
@@ -14,20 +14,20 @@ Assertions per batchexecute interaction (URL carries ``?rpcids=``):
   Envelope ids ``"di"``, ``"af.httprm"``, ``"e"`` are housekeeping and ignored.
 
 * **B. f.req decodes.** ``f.req`` extracted from the urlencoded body must
-  URL-decode and ``json.loads`` to a list. ``f.req=SCRUBBED`` (C2) trips this.
+  URL-decode and ``json.loads`` to a list. ``f.req=SCRUBBED`` trips this.
 
 * **C. Chunked byte-counts are accurate.** Each integer prefix in the
   ``)]}'``-stripped response body must equal the UTF-8 byte length of the
-  single JSON line that follows it (I9).
+  single JSON line that follows it.
 
 * **D. No leaked patterns** (applies to ALL interactions): escaped display-
-  name JSON literals like ``\\"Capitalized Two Words\\"`` (C4),
+  name JSON literals like ``\\"Capitalized Two Words\\"``,
   ``lh3.googleusercontent.com/(a|ogw)/`` avatar URLs, and the literal IP
   ``108.5.149.175``.
 
 In addition, for the specific RPC ID ``otS69`` (chat ask) the lint enforces
 the new 9-param outer shape ``[null, "<inner-json-string>"]`` whose inner
-JSON-decoded list carries at least 9 params (C3).
+JSON-decoded list carries at least 9 params.
 
 Cassettes flagged by the audit's "needs re-recording" set are marked xfail
 with explicit reasons referencing their follow-up repair work. When the
@@ -100,7 +100,7 @@ AUDIT_REPAIR_LIST: dict[str, str] = {
 def _has_bytecount_drift(cassette: Path) -> bool:
     """Return True if the cassette has stale chunked byte-count prefixes.
 
-    This is the audit's I9 class: when the original network response used
+    This is the chunked byte-count drift class: when the original network response used
     ``\\r\\n`` line endings, the byte-count was computed against the
     pre-strip bytes but the cassette stores the ``\\r``-stripped form, so
     every chunk prefix overshoots by exactly the number of stripped
@@ -398,7 +398,7 @@ def _lint_cassette(path: Path) -> list[str]:
             failures.append(f"interaction[{idx}] f.req decode failed: {exc}")
             freq = None
 
-        # C3 — chat-ask shape guard (per-RPC). Only fires when the chat-ask
+        # chat-ask shape guard (per-RPC). Only fires when the chat-ask
         # RPC ID is present in rpcids AND the f.req decoded.
         if CHAT_ASK_RPC_ID in rpcids and freq is not None:
             shape_err = _check_chat_ask_shape(freq)
@@ -435,7 +435,7 @@ def _check_chat_ask_shape(freq: Any) -> str | None:
         isinstance(freq, list) and len(freq) == 2 and freq[0] is None and isinstance(freq[1], str)
     ):
         return (
-            "chat-ask shape regression (C3): expected outer "
+            "chat-ask shape regression: expected outer "
             f"[null, '<inner-json>'], got {type(freq).__name__} {freq!r:.120}"
         )
     try:
@@ -445,7 +445,7 @@ def _check_chat_ask_shape(freq: Any) -> str | None:
     if not isinstance(inner, list) or len(inner) < CHAT_ASK_MIN_INNER_PARAMS:
         n = len(inner) if isinstance(inner, list) else "non-list"
         return (
-            "chat-ask shape regression (C3): inner f.req has "
+            "chat-ask shape regression: inner f.req has "
             f"{n} params, need >= {CHAT_ASK_MIN_INNER_PARAMS}"
         )
     return None
@@ -507,7 +507,7 @@ def test_cassette_shape(cassette: Path, request: pytest.FixtureRequest) -> None:
 
 
 def test_bad_revise_slide_trips_freq_decode() -> None:
-    """C2 regression: f.req=SCRUBBED must fail the f.req-decode assertion."""
+    """Regression: ``f.req=SCRUBBED`` must fail the f.req-decode assertion."""
     failures = _lint_cassette(BAD_FIXTURE_DIR / "bad_revise_slide.yaml")
     assert any("f.req decode failed" in f for f in failures), (
         f"Expected f.req decode failure, got: {failures}"
@@ -515,7 +515,7 @@ def test_bad_revise_slide_trips_freq_decode() -> None:
 
 
 def test_bad_chat_ask_trips_shape_guard() -> None:
-    """C3 regression: stale 5-param chat shape must trip the otS69 shape guard."""
+    """Regression: a stale 5-param chat shape must trip the otS69 shape guard."""
     failures = _lint_cassette(BAD_FIXTURE_DIR / "bad_chat_ask.yaml")
     assert any("chat-ask shape regression" in f for f in failures), (
         f"Expected chat-ask shape regression, got: {failures}"
@@ -523,7 +523,7 @@ def test_bad_chat_ask_trips_shape_guard() -> None:
 
 
 def test_bad_sharing_trips_leak_check() -> None:
-    """C4 regression: escaped display-name JSON literal must trip the leak check."""
+    """Regression: an escaped display-name JSON literal must trip the leak check."""
     failures = _lint_cassette(BAD_FIXTURE_DIR / "bad_sharing.yaml")
     assert any("escaped display-name" in f for f in failures), (
         f"Expected escaped display-name leak, got: {failures}"
@@ -531,7 +531,7 @@ def test_bad_sharing_trips_leak_check() -> None:
 
 
 def test_bad_byte_count_trips_byte_count_check() -> None:
-    """I9 regression: chunk prefix must equal payload UTF-8 byte length."""
+    """Regression: the chunk prefix must equal the payload's UTF-8 byte length."""
     failures = _lint_cassette(BAD_FIXTURE_DIR / "bad_byte_count.yaml")
     assert any("prefix declares" in f for f in failures), (
         f"Expected byte-count mismatch, got: {failures}"

@@ -980,7 +980,7 @@ class TestLoginCommand:
 
 class TestLoginNoTraceback:
     """Regression: ``login`` must wrap unexpected failures in handle_errors so
-    users see a friendly one-liner instead of a Python traceback (I15).
+    users see a friendly one-liner instead of a Python traceback.
 
     Without the wrap, the bare ``raise`` at the end of the Playwright
     ``except Exception`` block re-raises out of the command body, escapes
@@ -1191,13 +1191,13 @@ class TestUseCommand:
 
 
 # =============================================================================
-# USE COMMAND --json + auth-aware errors (P4.T5: I12, I13)
+# USE COMMAND --json + auth-aware errors
 # =============================================================================
 
 
 class TestUseJsonOutput:
     """`notebooklm use <id> --json` emits a structured envelope with the new
-    active notebook id (I12) so script and AI-agent automation does not have
+    active notebook id so script and AI-agent automation does not have
     to scrape the rendered Rich table for the next-step ID.
     """
 
@@ -2866,7 +2866,7 @@ class TestAuthRefreshCommand:
         """Token fetch failure exits non-zero with a friendly message — picked
         up by cron logs.
 
-        The command body is wrapped in ``handle_errors`` (I15 polish), so an
+        The command body is wrapped in ``handle_errors``, so an
         unexpected ``ValueError`` flows through the UNEXPECTED_ERROR branch
         (exit 2) and the user sees a friendly 'Unexpected error: <msg>' line
         rather than a Python traceback.
@@ -2885,13 +2885,13 @@ class TestAuthRefreshCommand:
         assert "Traceback (most recent call last)" not in result.output
 
     def test_auth_refresh_failure_does_not_print_exception_class(self, runner, mock_storage_path):
-        """I15 polish: ``auth refresh`` no longer leaks ``type(exc).__name__``
-        into the user-facing message. The previous code path produced
+        """``auth refresh`` no longer leaks ``type(exc).__name__`` into the
+        user-facing message. The previous code path produced
         ``Error: ConnectTimeout: `` (with class name), which is implementation
         detail leakage. ``handle_errors`` produces ``Unexpected error: <msg>``
         instead.
 
-        Regression guard for the polish item folded into P3.T3.
+        Regression guard for the error-handler polish.
         """
         with patch(
             "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
@@ -2914,7 +2914,7 @@ class TestAuthRefreshCommand:
         self, runner, mock_storage_path
     ):
         """The ``--browser-cookies`` failure path also flows through
-        ``handle_errors`` — same I15 polish guarantee as the keepalive path.
+        ``handle_errors`` — same polish guarantee as the keepalive path.
 
         Previously the browser-cookies branch had its own bespoke
         ``except Exception: click.echo(f"Error: {type(exc).__name__}: ...")``

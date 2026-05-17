@@ -1,4 +1,4 @@
-"""Phase 1.5 P1.5.2 — conversation cache atomicity guarantee.
+"""Conversation cache atomicity guarantee.
 
 ``cache_conversation_turn`` is synchronous: under cooperative asyncio
 scheduling it runs to completion before any other coroutine resumes. This

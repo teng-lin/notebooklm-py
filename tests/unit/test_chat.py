@@ -1,6 +1,6 @@
 """Unit tests for chat-domain exception contracts.
 
-Pins the PR-D (audit I4) failure-mode contract for
+Pins the failure-mode contract for
 :func:`notebooklm._chat_protocol.parse_streaming_chat_response`:
 
 * Zero parseable chunks (empty body, garbage, or API wire drift) →

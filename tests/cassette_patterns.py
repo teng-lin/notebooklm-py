@@ -287,7 +287,7 @@ EMAIL_PROVIDERS: list[str] = [
 # inside a committed cassette. ``is_clean`` uses this set as an exact-match
 # allowlist when deciding whether a residual cookie value is a real leak — this
 # replaces the legacy ``[^S"]`` character-class heuristic that missed any real
-# secret starting with the letter ``S`` (audit finding I7).
+# secret starting with the letter ``S``.
 SCRUB_PLACEHOLDERS: frozenset[str] = frozenset(
     {
         "SCRUBBED",
@@ -307,10 +307,10 @@ SCRUB_PLACEHOLDERS: frozenset[str] = frozenset(
         "SCRUBBED_UPLOAD_URL",
         "SCRUBBED_AONS",
         "SCRUBBED_DRIVE_FILE_ID",
-        # avatar URL placeholder (audit C4 + /ogw/ group). The
-        # display-name escaped-literal scrubber reuses the existing
-        # ``SCRUBBED_NAME`` sentinel from A4 (section 6) so a cassette can
-        # carry just one canonical replacement string for human names.
+        # avatar URL placeholder (display-name + avatar scrub group).
+        # The display-name escaped-literal scrubber reuses the existing
+        # ``SCRUBBED_NAME`` sentinel so a cassette can carry just one
+        # canonical replacement string for human names.
         "SCRUBBED_AVATAR_URL",
     }
 )
@@ -643,7 +643,7 @@ _DETECT_TOKEN_FIELDS: list[tuple[str, re.Pattern[str]]] = [
 # Compiled detection-only pattern for emails (no replacement string baked in).
 _DETECT_EMAIL = re.compile(_EMAIL_PATTERN_BASE)
 
-# upload + Drive token detectors (audit I17).
+# upload + Drive token detectors.
 #
 # Each entry is (label, regex) where the regex's group(1) captures the value
 # that must match a known scrub placeholder. The regexes deliberately accept
@@ -674,7 +674,7 @@ _DETECT_UPLOAD_DRIVE_FIELDS: list[tuple[str, re.Pattern[str]]] = [
 # NOT match — so any match here is a leak).
 _DETECT_UPLOAD_URL = re.compile(r"https://notebooklm\.google\.com/upload/_/\?[^\"\s]*upload_id=")
 
-# escaped JSON display-name literal detector (audit C4).
+# escaped JSON display-name literal detector.
 #
 # Matches ``\"First Last\"`` inside a double-encoded JSON string. The
 # false-positive allowlist is consulted at the call site in ``is_clean``
@@ -684,7 +684,7 @@ _DETECT_UPLOAD_URL = re.compile(r"https://notebooklm\.google\.com/upload/_/\?[^\
 # directly.
 _DETECT_DISPLAY_NAME_ESCAPED = re.compile(r'\\"([A-Z][a-z]+(?: [A-Z][a-z]+)+)\\"')
 
-# avatar URL detector (audit /ogw/ group). The pattern matches
+# avatar URL detector (/ogw/ group). The pattern matches
 # both ``/a/`` and ``/ogw/`` path forms. The scrubber collapses the entire
 # URL to ``SCRUBBED_AVATAR_URL``, so any match here is by definition a
 # leak (the placeholder string doesn't itself contain ``lh3.``).
@@ -694,7 +694,7 @@ _DETECT_AVATAR_URL = re.compile(r"https?://lh3\.googleusercontent\.com/(?:a|ogw)
 def is_clean(text: str) -> tuple[bool, list[str]]:
     """Validate that ``text`` contains no unredacted sensitive data.
 
-    Closes audit finding I7: cookie-value cleanliness is judged by exact
+    Closes the cookie-value leak heuristic: cleanliness is judged by exact
     membership in :data:`SCRUB_PLACEHOLDERS`, NOT by the legacy "starts with
     S" character-class heuristic that allowed any real secret beginning with
     ``S`` (and there are plenty — SID values, SAPISID values, OAuth ``state``

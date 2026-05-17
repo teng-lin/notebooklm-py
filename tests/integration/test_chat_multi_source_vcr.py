@@ -392,7 +392,7 @@ class TestChatMultiSource:
 
         # Param count must match the 9-slot shape ``_build_chat_request``
         # documents. A drift here is itself a regression worth shouting
-        # about (audit C3-class stale-cassette issue).
+        # about (stale-cassette regression class).
         assert len(params) == 9, (
             f"chat f.req param count drift: expected 9, got {len(params)}. params={params!r}"
         )

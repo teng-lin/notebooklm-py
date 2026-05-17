@@ -12,7 +12,7 @@ Coverage map:
    - exits 0 on clean cassettes
    - exits 1 on email / cookie-header / JSON-key / storage_state leaks
    - explicit ``SCRUB_PLACEHOLDERS`` allowlist (NOT a "starts with S"
-     heuristic) — closes I7
+     heuristic) — closes the cookie-leak gap
    - accepts the ``SCRUBBED`` sentinel in all three cookie shapes
    - honors the repair allowlist by default; ``--strict`` disables it
    - emits ``file:line`` for every leak
@@ -259,7 +259,7 @@ def test_python_guard_exits_one_on_storage_state_value_first(tmp_path: Path) -> 
 
 
 def test_python_guard_catches_sid_starting_with_s(tmp_path: Path) -> None:
-    """Regression for I7 — a real cookie value starting with ``S`` is a leak.
+    """Regression: a real cookie value starting with ``S`` is a leak.
 
     The old bash guard's ``[^S"][^"]*`` capture rejected any value whose
     first byte was ``S``, which silently allowed a real session token that

@@ -555,7 +555,7 @@ def test_notebook_composition_services_import_cleanly(module_name: str) -> None:
 
 
 def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
-    """Phase 9 notebook metadata work depends on the final Phase 8 lister name."""
+    """Downstream notebook-metadata work depends on the finalized lister name."""
     from notebooklm._source_listing import SourceLister
     from notebooklm._sources import SourcesAPI
 

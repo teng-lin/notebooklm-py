@@ -9,9 +9,9 @@ Key differences vs. the legacy bash script:
 
 * Cross-platform — pure stdlib, runs on Linux / macOS / Windows.
 * Explicit placeholder allowlist (``SCRUB_PLACEHOLDERS``) instead of the bash
-  "starts with S" heuristic — closes I7 (a real token whose first byte is
-  ``S`` no longer slips through).
-* ``--strict`` flag disables the repair allowlist for CI gating once phase 2
+  "starts with S" heuristic — closes the cookie-value leak gap (a real token
+  whose first byte is ``S`` no longer slips through).
+* ``--strict`` flag disables the repair allowlist for CI gating once
   cleanup is done.
 * Reports ``file:line`` for every leak so a developer can jump straight to
   the offending interaction.

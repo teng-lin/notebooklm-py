@@ -7,9 +7,8 @@ A bare ``async with NotebookLMClient.from_storage(...)`` raises
 context manager. This test parses the module/class docstrings in the
 public package and asserts every example snippet stays well-formed.
 
-Audit X4 / codex #21 / C6: module docstrings in ``client.py`` and
-``__init__.py`` historically had this bug; this test exists so the bug
-cannot re-enter via copy-paste.
+Module docstrings in ``client.py`` and ``__init__.py`` historically
+had this bug; this test exists so the bug cannot re-enter via copy-paste.
 """
 
 from __future__ import annotations

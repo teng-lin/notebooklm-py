@@ -291,9 +291,9 @@ def test_unmarked_fallback_logs_under_chat_logger(caplog) -> None:
 def test_empty_response_raises_chat_response_parse_error() -> None:
     """Empty response body → zero parseable ``wrb.fr`` envelopes → raise.
 
-    This pins the PR-D (audit I4) contract: an empty body is wire-protocol
-    drift / a failed RPC, NOT a legitimate empty answer. The legitimate
-    empty-answer path (parseable chunk with empty text) is covered in
+    This pins the contract: an empty body is wire-protocol drift / a
+    failed RPC, NOT a legitimate empty answer. The legitimate empty-answer
+    path (parseable chunk with empty text) is covered in
     ``tests/unit/test_chat.py``.
     """
     from notebooklm.exceptions import ChatResponseParseError

@@ -1,4 +1,4 @@
-"""Tests for shell completion (P7.T1 / M1).
+"""Tests for shell completion.
 
 Two surfaces are exercised here:
 

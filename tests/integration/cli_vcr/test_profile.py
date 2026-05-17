@@ -11,8 +11,8 @@ Why register an empty cassette at all?
     any unmatched request. Pinning each ``profile`` subcommand to an empty
     cassette turns "future refactor accidentally adds a network call" into
     a loud test failure (``CannotOverwriteExistingCassetteException``).
-    This closes audit I10 (CLI VCR coverage gap) without recording fake
-    traffic.
+    This closes the CLI VCR coverage gap for ``profile`` without recording
+    fake traffic.
 
 Coverage scope (per task MUST-NOT: no destructive operations):
     * ``profile list``           — happy path + empty path (no profiles)

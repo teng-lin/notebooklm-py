@@ -1118,7 +1118,7 @@ def test_server_error_max_retries_negative_raises():
 
 
 # ---------------------------------------------------------------------------
-# Streamed RPC response size cap (PR-E, audit I10)
+# Streamed RPC response size cap
 # ---------------------------------------------------------------------------
 
 

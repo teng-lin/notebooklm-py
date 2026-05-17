@@ -112,7 +112,7 @@ class TestArtifactList:
 
     @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_list_limit_caps_rows(self, runner, mock_auth):
-        """`artifact list --limit N` returns at most N data rows (P6.T1 / I16)."""
+        """`artifact list --limit N` returns at most N data rows."""
         many = [
             Artifact(id=f"art_{i:02d}", title=f"Artifact {i:02d}", _artifact_type=4, status=3)
             for i in range(15)
@@ -136,7 +136,7 @@ class TestArtifactList:
 
     @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_list_limit_json_caps_rows(self, runner, mock_auth):
-        """`artifact list --limit N --json` caps the JSON `artifacts` array (P6.T1 / I16)."""
+        """`artifact list --limit N --json` caps the JSON `artifacts` array."""
         many = [
             Artifact(id=f"art_{i:02d}", title=f"Artifact {i:02d}", _artifact_type=4, status=3)
             for i in range(15)
@@ -162,7 +162,7 @@ class TestArtifactList:
             assert [a["id"] for a in data["artifacts"]] == ["art_00", "art_01"]
 
     def test_artifact_list_no_truncate_disables_ellipsis(self, runner, mock_auth):
-        """`artifact list --no-truncate` shows full title without ellipsis (P6.T1 / I16).
+        """`artifact list --no-truncate` shows full title without ellipsis.
 
         The default Title column uses Rich's ``overflow="ellipsis"`` so a
         title that exceeds the auto-detected terminal width is truncated
@@ -193,7 +193,7 @@ class TestArtifactList:
             assert "…" not in result.output
 
     def test_artifact_list_default_truncates_long_title(self, runner, mock_auth):
-        """Default rendering inserts an ellipsis for over-wide titles (P6.T1 / I16)."""
+        """Default rendering inserts an ellipsis for over-wide titles."""
         long_title = "X" * 200
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
@@ -311,14 +311,14 @@ class TestArtifactGet:
             assert "created_at" in data
 
     def test_artifact_get_json_not_found(self, runner, mock_auth):
-        """`artifact get --json` emits typed JSON error + exits 1 (C1, Phase 3).
+        """`artifact get --json` emits typed JSON error + exits 1.
 
         ``client.artifacts.get`` may return ``None`` after a successful partial-ID
         resolve when the server reports the artifact has been deleted between
-        the list call and the get call. Phase 3 (C1) flipped this from the
-        previous exit-0 ``{found: false}`` placeholder to the standard typed
-        JSON error envelope (``{error, code, message}``) + exit 1. See
-        ``docs/cli-exit-codes.md`` and the BREAKING entry in ``CHANGELOG.md``.
+        the list call and the get call. The current contract emits the standard
+        typed JSON error envelope (``{error, code, message}``) + exit 1
+        (changed from the previous exit-0 ``{found: false}`` placeholder).
+        See ``docs/cli-exit-codes.md`` and the BREAKING entry in ``CHANGELOG.md``.
         """
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
@@ -347,7 +347,7 @@ class TestArtifactGet:
             assert data["notebook_id"] == "nb_123"
 
     # -------------------------------------------------------------------------
-    # C1 (Phase 3) — get-on-not-found now exits 1 (was 0). Mirrors the
+    # get-on-not-found exits 1 (changed from 0). Mirrors the
     # ``test_source.py`` Path A / Path B coverage so the contract on the two
     # ``get`` commands matches.
     # -------------------------------------------------------------------------
@@ -906,7 +906,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_timeout_interval_forwarded(self, runner, mock_auth):
         """`artifact wait --timeout 60 --interval 5` plumbs both into
-        wait_for_completion (P5.T1 / I6).
+        wait_for_completion.
 
         Pre-existing behavior — already had `--timeout` and `--interval` —
         but pin the wiring so the shared `wait_polling_options` decorator
@@ -977,7 +977,7 @@ class TestArtifactWait:
             assert data["status"] == "timeout"
 
     def test_artifact_wait_invokes_console_status(self, runner, mock_auth):
-        """`artifact wait` wraps the polling call in `console.status` (P5.T2 / I7).
+        """`artifact wait` wraps the polling call in `console.status`.
 
         The spinner gives interactive users feedback during the blocking wait.
         Asserts the wrap by patching `notebooklm.cli.artifact.console.status`
@@ -1019,7 +1019,7 @@ class TestArtifactWait:
         """`artifact wait --json` must NOT invoke console.status (stdout stays JSON).
 
         The spinner is suppressed under JSON mode so automation parsing stdout
-        does not see Rich escape sequences leak in (P5.T2 / I7).
+        does not see Rich escape sequences leak in.
         """
         with patch_client_for_module("artifact") as mock_client_cls:
             mock_client = create_mock_client()
@@ -1051,7 +1051,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_sigint_prints_resume_hint_and_exits_130(self, runner, mock_auth):
         """Ctrl-C during ``artifact wait`` exits 130 with the canonical resume hint
-        naming the resolved artifact id (M2 / P5.T3).
+        naming the resolved artifact id.
 
         Same hint shape as ``generate <kind> --wait`` because both polling
         loops resume via ``artifact poll``. Simulates the Ctrl-C by raising
@@ -1082,7 +1082,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_sigint_json_emits_cancelled_envelope(self, runner, mock_auth):
         """Ctrl-C under ``artifact wait --json`` emits a CANCELLED envelope with
-        the resume hint, exits 130 (M2 / P5.T3).
+        the resume hint, exits 130.
 
         Keeps stdout-as-JSON automation from breaking on a Python traceback.
         """
@@ -1225,7 +1225,7 @@ class TestArtifactCommandsExist:
 
 
 # =============================================================================
-# POLL vs WAIT ID-KIND DOCUMENTATION SNAPSHOT (P4.T3 / C2)
+# POLL vs WAIT ID-KIND DOCUMENTATION SNAPSHOT
 # =============================================================================
 
 

@@ -1,4 +1,4 @@
-"""Phase 1.5 P1.5.4 — refresh state-machine regression tests.
+"""Refresh state-machine regression tests.
 
 Pins three behaviors of ``ClientCore._try_refresh_and_retry``:
 

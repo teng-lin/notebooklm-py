@@ -127,7 +127,7 @@ only applies to contributors who pass `-n auto` locally or in CI.
 
 1. Add the fixture function to `conftest.py` next to the existing three.
 2. Document the API surface in this README under "Fixture API".
-3. If the fixture needs new dependencies, **STOP** — Tier 7 ground
+3. If the fixture needs new dependencies, **STOP** — harness ground
    rules forbid adding new deps in any harness PR. Open an RFC issue
    first.
 4. Add a sanity check to `test_harness_smoke.py` so the fixture is
