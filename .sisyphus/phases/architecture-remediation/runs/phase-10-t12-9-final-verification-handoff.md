@@ -73,10 +73,10 @@ T12.8 leaves the CLI boundary in this shape:
 
 - `cli.helpers` is a compatibility facade over `rendering`, `context`,
   `runtime`, `auth_runtime`, `resolve`, `input`, and `research_import`.
-- `cli.rendering` stays below runtime/auth/context/resolve/input/completion
-  and command modules.
-- `cli.context` stays below runtime/auth/rendering/resolve/input/completion and
-  command modules.
+- `cli.rendering` stays below runtime/auth/resolve/input/completion and command
+  modules, without importing peer low-level context helpers.
+- `cli.context` stays below runtime/auth/resolve/input/completion and command
+  modules, without importing peer low-level rendering helpers.
 - `cli.runtime` remains a leaf CLI module.
 - `cli.auth_runtime` imports only the CLI collaborators `error_handler` and the
   `helpers` facade for call-time patching.
@@ -132,8 +132,8 @@ head `34c3c04`.
 
 | Command | Result |
 |---|---|
-| `rtk uv run pytest tests/unit/test_cli_boundary.py -q` | Passed: 36 passed in 0.15s |
-| `rtk uv run pytest -n auto` | Passed: 4772 passed, 12 skipped, 8 warnings in 13.41s |
+| `rtk uv run pytest tests/unit/test_cli_boundary.py -q` | Passed: 36 passed in 0.13s |
+| `rtk uv run pytest -n auto` | Passed: 4772 passed, 12 skipped, 8 warnings in 12.92s |
 | `rtk uv run ruff check .` | Passed: all checks passed |
 | `rtk uv run mypy src/notebooklm` | Passed: no issues found in 100 source files |
 | `rtk uv run pre-commit run --all-files` | Passed: ruff and ruff format |
