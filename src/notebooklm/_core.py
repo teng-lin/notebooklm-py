@@ -7,7 +7,6 @@ import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
 import time
 import warnings
-import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
@@ -508,11 +507,12 @@ class ClientCore:
         # the keepalive background task all live on ``self._lifecycle``
         # (constructed below alongside the other extracted helpers so the
         # inter-helper dependency order is obvious). Compat properties further
-        # down preserve the legacy ``_timeout`` / ``_connect_timeout`` /
-        # ``_limits`` / ``_http_client`` / ``_bound_loop`` /
-        # ``_keepalive_task`` / ``_keepalive_interval`` /
+        # down preserve the legacy ``_timeout`` / ``_http_client`` /
+        # ``_bound_loop`` / ``_keepalive_task`` / ``_keepalive_interval`` /
         # ``_keepalive_storage_path`` ivar names for tests and first-party
-        # callers that probe or assign them directly.
+        # callers that probe or assign them directly. The
+        # ``_connect_timeout`` / ``_limits`` bridges were dropped in
+        # D1-audit-full; access them via ``self._lifecycle`` if needed.
         _resolved_limits = limits if limits is not None else ConnectionLimits()
         # ``_refresh_retry_delay`` stays here directly — it is read on the
         # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
@@ -578,18 +578,22 @@ class ClientCore:
         self._metrics_obj = ClientMetrics(on_rpc_event=on_rpc_event)
         # Transport drain bookkeeping (in-flight posts, drain condition,
         # per-task operation depth, draining flag). Compat properties below
-        # (``_in_flight_posts`` / ``_drain_condition`` / ``_operation_depths``
-        # / ``_draining``) bridge the legacy ivar names back into this
-        # helper. The helper's ``__init__`` is event-loop-agnostic; the
+        # (``_in_flight_posts`` / ``_drain_condition`` / ``_draining``)
+        # bridge the legacy ivar names back into this helper. The
+        # ``_operation_depths`` bridge was dropped in D1-audit-full; access
+        # the WeakKeyDictionary on ``self._drain_tracker`` directly. The
+        # helper's ``__init__`` is event-loop-agnostic; the
         # ``asyncio.Condition`` is created lazily on first
         # ``get_drain_condition`` call.
         self._drain_tracker = TransportDrainTracker()
         # Request ID counter for chat API (must be unique per request).
         # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
         # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
-        # Compat properties below (``_reqid_counter`` /
-        # ``_reqid_counter_value`` / ``_reqid_lock``) bridge the legacy ivar
-        # names back into this helper. The ``on_lock_wait`` hook keeps the
+        # The ``_reqid_counter`` compat property below bridges the legacy
+        # ivar name back into this helper; ``_reqid_counter_value`` and
+        # ``_reqid_lock`` bridges were dropped in D1-audit-full (access
+        # ``self._reqid.value`` / ``self._reqid._lock`` directly if needed).
+        # The ``on_lock_wait`` hook keeps the
         # cumulative ``lock_wait_seconds_*`` metrics ticking inside
         # ``self._metrics_obj`` even though the counter is now extracted.
         self._reqid = ReqidCounter(on_lock_wait=self._record_lock_wait)
@@ -597,8 +601,11 @@ class ClientCore:
         # serialization, and cookie-jar sync. The coordinator owns
         # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
         # ``_auth_snapshot_lock``; field names match the legacy
-        # ``ClientCore`` ivars so the compat properties below delegate
-        # cleanly. The ``_auth_snapshot_lock`` is intentionally distinct
+        # ``ClientCore`` ivars so the surviving compat properties
+        # (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``)
+        # delegate cleanly. The ``_auth_snapshot_lock`` bridge was dropped
+        # in D1-audit-full; the live lock is reachable via
+        # :meth:`_get_auth_snapshot_lock`. The auth snapshot lock is intentionally distinct
         # from ``_refresh_lock`` — mixing them would re-introduce the
         # reentrancy ambiguity that snapshot-side serialization was added
         # to avoid. The attribute name ``_auth_coord`` is part of the
@@ -737,15 +744,8 @@ class ClientCore:
         self._ensure_observability_state()
         self._drain_tracker._drain_condition = value
 
-    @property
-    def _operation_depths(self) -> weakref.WeakKeyDictionary[asyncio.Task[Any], int]:
-        self._ensure_observability_state()
-        return self._drain_tracker._operation_depths
-
-    @_operation_depths.setter
-    def _operation_depths(self, value: weakref.WeakKeyDictionary[asyncio.Task[Any], int]) -> None:
-        self._ensure_observability_state()
-        self._drain_tracker._operation_depths = value
+    # ``_operation_depths`` compat bridge dropped (D1-audit-full): zero
+    # external callers; direct ivar lives on ``self._drain_tracker``.
 
     # ------------------------------------------------------------------
     # ``AuthRefreshCoordinator`` compat bridges. Refresh/auth-snapshot state
@@ -812,27 +812,21 @@ class ClientCore:
         self._ensure_auth_coord()
         self._auth_coord._refresh_callback = value
 
-    @property
-    def _auth_snapshot_lock(self) -> asyncio.Lock | None:
-        self._ensure_auth_coord()
-        return self._auth_coord._auth_snapshot_lock
-
-    @_auth_snapshot_lock.setter
-    def _auth_snapshot_lock(self, value: asyncio.Lock | None) -> None:
-        self._ensure_auth_coord()
-        self._auth_coord._auth_snapshot_lock = value
+    # ``_auth_snapshot_lock`` compat bridge dropped (D1-audit-full): zero
+    # external callers. Live accessor remains ``_get_auth_snapshot_lock()`` /
+    # ``AuthRefreshCoordinator.get_auth_snapshot_lock()``.
 
     # ------------------------------------------------------------------
     # ``ClientLifecycle`` compat bridges. HTTP-client lifecycle state now
-    # lives on ``self._lifecycle``; the eight legacy ivar names (
-    # ``_http_client``, ``_bound_loop``, ``_keepalive_task``,
-    # ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
-    # ``_connect_timeout``, ``_limits``) are preserved here as
-    # ``@property`` bridges. ``_http_client`` and ``_bound_loop`` carry
-    # writeable setters because tests SET them directly (15+ sites for
-    # ``_http_client``; ``_bound_loop`` setter is required by the master
-    # plan for future C1 access patterns). The other six are getter-only
-    # because no SET sites were found in the test surface.
+    # lives on ``self._lifecycle``; the six surviving legacy ivar names
+    # (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
+    # ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``)
+    # are preserved here as ``@property`` bridges. The
+    # ``_connect_timeout`` / ``_limits`` bridges were dropped in
+    # D1-audit-full (zero external callers). The ``_timeout`` bridge is
+    # retained because ``RpcExecutor`` (``_core_rpc.py``) reads
+    # ``self._owner._timeout`` via the :class:`RpcOwner` Protocol; removing
+    # it would surface as ``AttributeError`` on every RPC call.
     # ``_ensure_lifecycle`` mirrors the ``_ensure_observability_state`` /
     # ``_ensure_auth_coord`` backfill so ``__new__``-built fixtures (no
     # ``__init__`` ran) still resolve cleanly.
@@ -936,25 +930,10 @@ class ClientCore:
         self._ensure_lifecycle()
         self._lifecycle._timeout = value
 
-    @property
-    def _connect_timeout(self) -> float:
-        self._ensure_lifecycle()
-        return self._lifecycle._connect_timeout
-
-    @_connect_timeout.setter
-    def _connect_timeout(self, value: float) -> None:
-        self._ensure_lifecycle()
-        self._lifecycle._connect_timeout = value
-
-    @property
-    def _limits(self) -> "ConnectionLimits":
-        self._ensure_lifecycle()
-        return self._lifecycle._limits
-
-    @_limits.setter
-    def _limits(self, value: "ConnectionLimits") -> None:
-        self._ensure_lifecycle()
-        self._lifecycle._limits = value
+    # ``_connect_timeout`` and ``_limits`` compat bridges dropped
+    # (D1-audit-full): zero external callers; live values remain on
+    # ``self._lifecycle`` (and the lifecycle helper reads them as plain
+    # ivars when it builds the ``httpx.AsyncClient``).
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
@@ -965,14 +944,15 @@ class ClientCore:
     # values that Google rejects.
     #
     # New contract: ``await core.next_reqid()`` performs the increment under
-    # ``_reqid_lock`` and returns the post-increment value. The state lives in
-    # :class:`notebooklm._core_reqid.ReqidCounter` (``self._reqid``); the
-    # properties below are read/write bridges that keep the legacy
-    # ``_reqid_counter`` / ``_reqid_counter_value`` / ``_reqid_lock`` ivar
-    # names observable for existing tests and first-party callers. Direct
-    # mutation of ``_reqid_counter`` still works for backwards compatibility
-    # but emits ``DeprecationWarning`` — bypass the warning for legitimate
-    # test setup by writing to ``_reqid_counter_value`` instead.
+    # ``ReqidCounter._lock`` and returns the post-increment value. The state
+    # lives in :class:`notebooklm._core_reqid.ReqidCounter` (``self._reqid``);
+    # the ``_reqid_counter`` property below is the last surviving read/write
+    # bridge — direct mutation of ``_reqid_counter`` still works for
+    # backwards compatibility but emits ``DeprecationWarning``. The
+    # ``_reqid_counter_value`` / ``_reqid_lock`` compat bridges were dropped
+    # (D1-audit-full): zero external callers; tests that need to seed the
+    # counter or substitute the lock should reach through ``self._reqid``
+    # directly.
     # ------------------------------------------------------------------
 
     @property
@@ -991,34 +971,6 @@ class ClientCore:
             stacklevel=2,
         )
         self._reqid.set_value(value)
-
-    @property
-    def _reqid_counter_value(self) -> int:
-        """Bypass-warning bridge for tests that seed the counter directly.
-
-        Writing through ``_reqid_counter`` emits a ``DeprecationWarning``;
-        test fixtures that legitimately need to set the counter without
-        paying that tax write to ``_reqid_counter_value`` instead.
-        """
-        return self._reqid.value
-
-    @_reqid_counter_value.setter
-    def _reqid_counter_value(self, value: int) -> None:
-        self._reqid.set_value(value)
-
-    @property
-    def _reqid_lock(self) -> asyncio.Lock | None:
-        """Bridge to the lazily-allocated reqid lock.
-
-        Historically a plain ivar; preserved as a property with a setter so
-        test fixtures that inject their own ``asyncio.Lock`` (or reset it to
-        ``None`` to force re-allocation) continue to work.
-        """
-        return self._reqid._lock
-
-    @_reqid_lock.setter
-    def _reqid_lock(self, value: asyncio.Lock | None) -> None:
-        self._reqid._lock = value
 
     @property
     def _pending_polls(self) -> PendingPolls:

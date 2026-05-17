@@ -303,8 +303,10 @@ default, with a tighter **10-second** connection-establishment timeout. The
 shorter connect timeout helps surface network-level issues quickly while the
 longer read timeout accommodates slow server responses. Both are exposed as
 constructor arguments on `NotebookLMClient` (`timeout=` and `connect_timeout=`)
-for callers that need to tune them per-workload — see
-`src/notebooklm/_core.py:55-57, 278-295`. The chat streaming endpoint
+for callers that need to tune them per-workload — see the
+`DEFAULT_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT` constants in
+`src/notebooklm/_core.py` and `MAX_CONVERSATION_CACHE_SIZE` in
+`src/notebooklm/_core_cache.py`. The chat streaming endpoint
 (`ChatAPI.ask`) keeps its own longer per-stream deadlines because individual
 chat responses can exceed 30 seconds; refer to the Python API reference for
 its `timeout=` argument.

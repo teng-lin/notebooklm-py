@@ -233,9 +233,9 @@ class AuthRefreshCoordinator:
             raise RuntimeError(
                 "AuthRefreshCoordinator.await_refresh called without a "
                 "refresh_callback configured — wire one via "
-                "ClientCore(refresh_callback=...) or "
-                "self._auth_coord._refresh_callback = ... before triggering "
-                "an auth refresh."
+                "AuthRefreshCoordinator(refresh_callback=...) (or by "
+                "constructing ClientCore with refresh_callback=...) before "
+                "triggering an auth refresh."
             )
 
         # Lazy-init the lock on first refresh attempt. Every concurrent
