@@ -397,6 +397,14 @@ class ClientLifecycle:
         :class:`asyncio.CancelledError` from :meth:`close`.
         """
         logger.debug("Keepalive task started (interval=%.1fs)", interval)
+        # Resolved from ``notebooklm._core`` once, before the loop, so the
+        # existing ``monkeypatch.setattr("notebooklm._core._rotate_cookies",
+        # …)`` surface in ``test_close_cancellation_leak.py`` keeps affecting
+        # the live keepalive loop after the extraction. The attribute lookup
+        # on ``_core_module._rotate_cookies`` still happens at call time, so
+        # late monkeypatches remain effective without re-importing every tick.
+        from . import _core as _core_module
+
         try:
             while True:
                 await asyncio.sleep(interval)
@@ -413,13 +421,6 @@ class ClientLifecycle:
                     # concurrent layer-1 callers (e.g. spawned ``fetch_tokens``
                     # tasks on the same profile) and other keepalive loops on
                     # the same profile see the fresh rotation and skip.
-                    #
-                    # Resolved from ``notebooklm._core`` at call time so the
-                    # existing ``monkeypatch.setattr("notebooklm._core._rotate_cookies",
-                    # …)`` surface in ``test_close_cancellation_leak.py`` keeps
-                    # affecting the live keepalive loop after the extraction.
-                    from . import _core as _core_module
-
                     await _core_module._rotate_cookies(client, self._keepalive_storage_path)
                 except asyncio.CancelledError:
                     raise
