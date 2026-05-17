@@ -1112,7 +1112,7 @@ def with_auth_and_errors(
     # Use ``find_root`` so nested subcommand contexts still see it.
     try:
         verbose_count = int(ctx.find_root().params.get("verbose", 0) or 0)
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         verbose_count = 0
     verbose = verbose_count >= 1
 

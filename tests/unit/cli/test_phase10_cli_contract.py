@@ -369,13 +369,13 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
         mock_client.artifacts.list = AsyncMock(side_effect=RuntimeError("boom"))
 
     with (
-        patch.object(AuthTokens, "from_storage", new_callable=AsyncMock) as mock_from_storage,
+        patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens,
         patch_client_for_module("download") as mock_client_cls,
     ):
         if setup == "missing_storage":
-            mock_from_storage.side_effect = FileNotFoundError("Storage file not found")
+            mock_get_auth_tokens.side_effect = FileNotFoundError("Storage file not found")
         else:
-            mock_from_storage.return_value = auth
+            mock_get_auth_tokens.return_value = auth
             mock_client_cls.return_value = mock_client
 
         result = CliRunner().invoke(
