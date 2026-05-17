@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 
 import click
@@ -1049,7 +1049,7 @@ def handle_error(e: Exception):
     raise SystemExit(1)
 
 
-def handle_auth_error(json_output: bool = False):
+def handle_auth_error(json_output: bool = False) -> NoReturn:
     """Handle authentication errors with helpful context."""
     from ..paths import get_path_info, get_storage_path
 
@@ -1073,6 +1073,7 @@ def handle_auth_error(json_output: bool = False):
                 "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",
             },
         )
+        raise SystemExit(1)
     else:
         console.print("[red]Not logged in.[/red]\n")
         console.print("[dim]Checked locations:[/dim]")
