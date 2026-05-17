@@ -65,7 +65,7 @@ def cli_name_to_artifact_type(name: str) -> ArtifactType | None:
 
     name = _CLI_ARTIFACT_ALIASES.get(name, name)
     enum_name = name.upper().replace("-", "_")
-    return ArtifactType[enum_name]
+    return ArtifactType.__members__.get(enum_name)
 
 
 def json_output_response(data: dict | list) -> None:

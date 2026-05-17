@@ -210,9 +210,8 @@ class TestCliNameToArtifactType:
     def test_all_returns_none(self):
         assert cli_name_to_artifact_type("all") is None
 
-    def test_invalid_type_raises_keyerror(self):
-        with pytest.raises(KeyError):
-            cli_name_to_artifact_type("invalid-type")
+    def test_invalid_type_returns_none(self):
+        assert cli_name_to_artifact_type("invalid-type") is None
 
 
 # =============================================================================
