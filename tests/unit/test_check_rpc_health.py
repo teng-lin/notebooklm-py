@@ -90,6 +90,12 @@ def _result(
         "HTTP 429: Too Many Requests",
         "rpc error: code = RESOURCE_EXHAUSTED desc = quota exceeded",
         "RESOURCE_EXHAUSTED",
+        # The decoder raises RateLimitError with these user-displayable
+        # messages; before the marker was added they leaked through the
+        # "Parse error: ..." branch as non-transient and farmed dup
+        # issues. Pin both phrasings (decoder.py:117 and :470).
+        "Parse error: API rate limit exceeded. Please wait before retrying.",
+        "Parse error: API rate limit or quota exceeded. Please wait before retrying.",
     ],
 )
 def test_transient_markers_match(message: str) -> None:
@@ -124,11 +130,18 @@ def test_partition_errors_separates_transient_from_real() -> None:
         _result("timeout", CheckStatus.ERROR, error="Connection timeout"),
         _result("parse", CheckStatus.ERROR, error="Parse error: bad JSON"),
         _result("quota", CheckStatus.ERROR, error="RESOURCE_EXHAUSTED on RPC"),
+        # RateLimitError raised by the decoder reaches the canary wrapped in
+        # the "Parse error: ..." prefix — it must still partition as transient.
+        _result(
+            "ratelimit_leak",
+            CheckStatus.ERROR,
+            error="Parse error: API rate limit or quota exceeded. Please wait before retrying.",
+        ),
         _result("mismatch", CheckStatus.MISMATCH),
     ]
     non_transient, transient = partition_errors(results)
     assert [r.method.name for r in non_transient] == ["timeout", "parse"]
-    assert [r.method.name for r in transient] == ["rate", "quota"]
+    assert [r.method.name for r in transient] == ["rate", "quota", "ratelimit_leak"]
 
 
 @pytest.mark.asyncio
@@ -255,6 +268,41 @@ async def test_setup_temp_resources_uses_canonical_create_notebook_payload(
     assert captured["params"][1:] == [None, None, [2], [1]]
     assert results[0].status == CheckStatus.ERROR
     assert temp.notebook_id is None
+
+
+# ---------------------------------------------------------------------------
+# get_test_params: GET_SUGGESTED_REPORTS routing
+# ---------------------------------------------------------------------------
+
+
+def test_get_suggested_reports_prefers_stable_read_only_notebook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """In --full mode the temp notebook has no indexed sources, so
+    GET_SUGGESTED_REPORTS returns an empty body and trips the empty-response
+    guard. When NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID is set, the canary should
+    route this method there even if the caller passes the temp ID.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID", "stable_nb")
+    params = check_rpc_health.get_test_params(
+        check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
+        "temp_nb",
+    )
+    assert params == [[2], "stable_nb"]
+
+
+def test_get_suggested_reports_falls_back_to_caller_notebook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without the stable secret, fall back to the notebook_id the caller
+    passed (preserves quick-mode behaviour where there's no temp notebook).
+    """
+    monkeypatch.delenv("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID", raising=False)
+    params = check_rpc_health.get_test_params(
+        check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
+        "caller_nb",
+    )
+    assert params == [[2], "caller_nb"]
 
 
 # ---------------------------------------------------------------------------

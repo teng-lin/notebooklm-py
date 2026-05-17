@@ -61,24 +61,75 @@ jobs:
         echo "## RPC Health Check Results" >> "$GITHUB_STEP_SUMMARY"
         grep -A 10 "^SUMMARY$" health-report.txt >> "$GITHUB_STEP_SUMMARY" || echo "No summary found" >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Create Issue on RPC Mismatch
+    # Each issue-creating step is paired with a dedup probe that counts
+    # open issues sharing the same title + automated label. Without this,
+    # back-to-back failing runs (manual reruns, cron + workflow_dispatch,
+    # in-flight PR branches without the gate fix from #736) farm one
+    # fresh issue per run instead of letting the open one accumulate
+    # context.
+    - name: Check for existing RPC Mismatch issue
       if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '1'
+      id: dup_mismatch
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+          --state open --label automated --label rpc-breakage \
+          --search 'in:title "RPC ID Mismatch Detected"' \
+          --json number --jq 'length')
+        echo "open=${count}" >> "$GITHUB_OUTPUT"
+
+    - name: Create Issue on RPC Mismatch
+      if: |
+        github.event_name != 'pull_request'
+        && steps.health.outputs.exit_code == '1'
+        && steps.dup_mismatch.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@v6
       with:
         title: "RPC ID Mismatch Detected"
         content-filepath: health-report.txt
         labels: bug, rpc-breakage, automated
 
-    - name: Create Issue on Auth Failure
+    - name: Check for existing Auth Failure issue
       if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '2'
+      id: dup_auth
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+          --state open --label automated \
+          --search 'in:title "RPC Health Check: Authentication Failure"' \
+          --json number --jq 'length')
+        echo "open=${count}" >> "$GITHUB_OUTPUT"
+
+    - name: Create Issue on Auth Failure
+      if: |
+        github.event_name != 'pull_request'
+        && steps.health.outputs.exit_code == '2'
+        && steps.dup_auth.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@v6
       with:
         title: "RPC Health Check: Authentication Failure"
         content-filepath: health-report.txt
         labels: bug, automated
 
-    - name: Extract failing methods for ERROR issue
+    - name: Check for existing non-transient ERROR issue
       if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '3'
+      id: dup_error
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        count=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+          --state open --label automated --label rpc-error \
+          --search 'in:title "RPC Health Check: Non-transient ERROR detected"' \
+          --json number --jq 'length')
+        echo "open=${count}" >> "$GITHUB_OUTPUT"
+
+    - name: Extract failing methods for ERROR issue
+      if: |
+        github.event_name != 'pull_request'
+        && steps.health.outputs.exit_code == '3'
+        && steps.dup_error.outputs.open == '0'
       id: error_details
       shell: bash
       run: |
@@ -105,7 +156,10 @@ jobs:
         } > error-issue-body.md
 
     - name: Create Issue on Non-transient ERROR
-      if: github.event_name != 'pull_request' && steps.health.outputs.exit_code == '3'
+      if: |
+        github.event_name != 'pull_request'
+        && steps.health.outputs.exit_code == '3'
+        && steps.dup_error.outputs.open == '0'
       uses: peter-evans/create-issue-from-file@v6
       with:
         title: "RPC Health Check: Non-transient ERROR detected"

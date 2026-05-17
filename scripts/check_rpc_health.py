@@ -15,8 +15,10 @@ Priority order when multiple statuses are present:
     MISMATCH (1) > AUTH (2) > non-transient ERROR (3) > OK (0)
 
 Transient errors that still exit 0 are limited to rate-limit signals
-(HTTP 429 and gRPC ``RESOURCE_EXHAUSTED``). Everything else is treated
-as a real failure so the nightly canary can flag silent breakage.
+(HTTP 429, gRPC ``RESOURCE_EXHAUSTED``, and the decoder's user-displayable
+``API rate limit`` / quota messages raised as ``RateLimitError``).
+Everything else is treated as a real failure so the nightly canary can
+flag silent breakage.
 
 Environment variables:
     NOTEBOOKLM_AUTH_JSON - Playwright storage state JSON (required)
@@ -471,9 +473,15 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     ):
         return [notebook_id]
 
-    # GET_SUGGESTED_REPORTS has special params: [[2], notebook_id]
+    # GET_SUGGESTED_REPORTS has special params: [[2], notebook_id].
+    # Suggestions only exist once a notebook has indexed sources, so the
+    # freshly-created temp notebook used in --full mode returns an empty
+    # body and trips the empty-response guard. When a stable read-only
+    # notebook is available, route this method there instead so the
+    # canary keeps drift-checking the RPC ID.
     if method == RPCMethod.GET_SUGGESTED_REPORTS:
-        return [[2], notebook_id]
+        stable_id = os.environ.get("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID") or notebook_id
+        return [[2], stable_id]
 
     # Methods that take [[notebook_id]] as the only param.
     if method == RPCMethod.GET_NOTES_AND_MIND_MAPS:
@@ -1002,9 +1010,16 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
 # (timeouts, parse failures, unexpected HTTP errors) is treated as a real
 # failure so the nightly canary can flag silent breakage. Keep this list
 # narrow on purpose: broadening it would mask real RPC drift.
+#
+# ``API rate limit`` catches the decoder's user-displayable messages
+# raised as ``RateLimitError`` ("API rate limit exceeded..." and
+# "API rate limit or quota exceeded..."). These reach the canary via the
+# ``except RPCError`` parse-error branch in ``test_rpc_method_with_data``
+# and were previously misclassified as non-transient.
 TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
     "HTTP 429",
     "RESOURCE_EXHAUSTED",
+    "API rate limit",
 )
 
 
