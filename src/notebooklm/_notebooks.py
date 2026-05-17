@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from ._core import ClientCore
-from ._env import get_base_url
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -12,6 +11,7 @@ from ._notebook_metadata import (
     create_default_source_lister,
 )
 from ._settings import build_get_user_settings_params, extract_account_limits
+from ._sharing_manager import ShareManager
 from .exceptions import NotebookLimitError, NotebookNotFoundError, RPCError
 from .rpc import RPCMethod, safe_index
 from .types import AccountLimits, Notebook, NotebookDescription, NotebookMetadata, SuggestedTopic
@@ -137,6 +137,7 @@ class NotebooksAPI:
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,
+        share_manager: ShareManager | None = None,
     ) -> None:
         """Initialize the notebooks API.
 
@@ -144,6 +145,7 @@ class NotebooksAPI:
             core: The core client infrastructure.
             sources_api: Optional source lister for cross-API metadata composition.
             metadata_service: Optional explicit metadata service for tests or advanced wiring.
+            share_manager: Optional explicit legacy share manager for tests or advanced wiring.
         """
         self._core = core
         self._sources = sources_api or create_default_source_lister(self._rpc_call)
@@ -153,6 +155,7 @@ class NotebooksAPI:
             get_notebook=lambda notebook_id: self.get(notebook_id),
             source_lister=self._sources,
         )
+        self._share_manager = share_manager or ShareManager(core)
 
     async def _rpc_call(
         self,
@@ -542,33 +545,7 @@ class NotebooksAPI:
         Returns:
             Dict with 'public' status, 'url', and 'artifact_id'.
         """
-        share_options = [1] if public else [0]
-        if artifact_id:
-            params = [share_options, notebook_id, artifact_id]
-        else:
-            params = [share_options, notebook_id]
-
-        await self._core.rpc_call(
-            RPCMethod.SHARE_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-
-        # Build share URL
-        base_url = f"{get_base_url()}/notebook/{notebook_id}"
-        if public and artifact_id:
-            url = f"{base_url}?artifactId={artifact_id}"
-        elif public:
-            url = base_url
-        else:
-            url = None
-
-        return {
-            "public": public,
-            "url": url,
-            "artifact_id": artifact_id,
-        }
+        return await self._share_manager.share(notebook_id, public, artifact_id)
 
     def get_share_url(self, notebook_id: str, artifact_id: str | None = None) -> str:
         """Get share URL for a notebook or artifact.
@@ -583,10 +560,7 @@ class NotebooksAPI:
         Returns:
             The share URL string.
         """
-        base_url = f"{get_base_url()}/notebook/{notebook_id}"
-        if artifact_id:
-            return f"{base_url}?artifactId={artifact_id}"
-        return base_url
+        return self._share_manager.get_share_url(notebook_id, artifact_id)
 
     async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook metadata with sources list.

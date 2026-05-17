@@ -1,0 +1,135 @@
+"""Unit tests for the legacy notebook share manager."""
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from notebooklm._notebooks import NotebooksAPI
+from notebooklm._sharing_manager import ShareManager, build_share_url
+from notebooklm.rpc import RPCMethod
+
+BASE_URL = "https://notebooklm.google.com"
+
+
+def _make_rpc() -> MagicMock:
+    rpc = MagicMock()
+    rpc.rpc_call = AsyncMock(return_value=None)
+    return rpc
+
+
+def _make_manager() -> tuple[ShareManager, MagicMock]:
+    rpc = _make_rpc()
+    return ShareManager(rpc, base_url_provider=lambda: BASE_URL), rpc
+
+
+def test_build_share_url_without_artifact() -> None:
+    assert build_share_url(BASE_URL, "nb_123") == "https://notebooklm.google.com/notebook/nb_123"
+
+
+def test_build_share_url_with_artifact() -> None:
+    assert (
+        build_share_url(BASE_URL, "nb_123", "art_456")
+        == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+    )
+
+
+@pytest.mark.asyncio
+async def test_share_public_with_artifact_sends_legacy_payload_and_returns_deep_link() -> None:
+    manager, rpc = _make_manager()
+
+    result = await manager.share("nb_123", public=True, artifact_id="art_456")
+
+    assert result == {
+        "public": True,
+        "url": "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456",
+        "artifact_id": "art_456",
+    }
+    rpc.rpc_call.assert_awaited_once_with(
+        RPCMethod.SHARE_ARTIFACT,
+        [[1], "nb_123", "art_456"],
+        source_path="/notebook/nb_123",
+        allow_null=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_share_public_without_artifact_returns_notebook_url() -> None:
+    manager, rpc = _make_manager()
+
+    result = await manager.share("nb_123")
+
+    assert result == {
+        "public": True,
+        "url": "https://notebooklm.google.com/notebook/nb_123",
+        "artifact_id": None,
+    }
+    rpc.rpc_call.assert_awaited_once_with(
+        RPCMethod.SHARE_ARTIFACT,
+        [[1], "nb_123"],
+        source_path="/notebook/nb_123",
+        allow_null=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_share_private_sends_disable_payload_and_returns_no_url() -> None:
+    manager, rpc = _make_manager()
+
+    result = await manager.share("nb_123", public=False)
+
+    assert result == {"public": False, "url": None, "artifact_id": None}
+    rpc.rpc_call.assert_awaited_once_with(
+        RPCMethod.SHARE_ARTIFACT,
+        [[0], "nb_123"],
+        source_path="/notebook/nb_123",
+        allow_null=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_share_private_with_artifact_preserves_artifact_id_but_returns_no_url() -> None:
+    manager, rpc = _make_manager()
+
+    result = await manager.share("nb_123", public=False, artifact_id="art_456")
+
+    assert result == {"public": False, "url": None, "artifact_id": "art_456"}
+    rpc.rpc_call.assert_awaited_once_with(
+        RPCMethod.SHARE_ARTIFACT,
+        [[0], "nb_123", "art_456"],
+        source_path="/notebook/nb_123",
+        allow_null=True,
+    )
+
+
+def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
+    manager, rpc = _make_manager()
+
+    url = manager.get_share_url("nb_123", artifact_id="art_456")
+
+    assert url == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
+    rpc.rpc_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notebooks_api_share_delegates_to_injected_share_manager() -> None:
+    core = MagicMock()
+    share_manager = MagicMock()
+    share_manager.share = AsyncMock(return_value={"public": True, "url": "u", "artifact_id": None})
+    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+
+    result = await api.share("nb_123", public=True)
+
+    assert result == {"public": True, "url": "u", "artifact_id": None}
+    share_manager.share.assert_awaited_once_with("nb_123", True, None)
+
+
+def test_notebooks_api_get_share_url_delegates_to_injected_share_manager() -> None:
+    core = MagicMock()
+    share_manager = MagicMock()
+    share_manager.get_share_url.return_value = "https://example.test/notebook/nb_123"
+    api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
+
+    url = api.get_share_url("nb_123")
+
+    assert url == "https://example.test/notebook/nb_123"
+    share_manager.get_share_url.assert_called_once_with("nb_123", None)
