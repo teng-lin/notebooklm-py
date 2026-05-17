@@ -31,7 +31,6 @@ from notebooklm._core import ClientCore
 from notebooklm._core_metrics import ClientMetrics
 from notebooklm.types import ClientMetricsSnapshot, RpcTelemetryEvent
 
-
 # ---------------------------------------------------------------------------
 # Construction
 # ---------------------------------------------------------------------------
@@ -109,7 +108,6 @@ def test_increment_holds_metrics_lock_during_update() -> None:
     """
     metrics = ClientMetrics()
     lock_acquired_during_increment = threading.Event()
-    increment_released = threading.Event()
 
     def lock_grabber() -> None:
         # Acquire the lock; if increment held it, this blocks. Signal once
@@ -124,7 +122,6 @@ def test_increment_holds_metrics_lock_during_update() -> None:
         # The spy is blocked because we hold the lock. It must not have
         # signaled the event yet.
         assert not lock_acquired_during_increment.wait(timeout=0.05)
-        increment_released.set()
     spy.join(timeout=1.0)
     assert spy.is_alive() is False
     assert lock_acquired_during_increment.is_set()
