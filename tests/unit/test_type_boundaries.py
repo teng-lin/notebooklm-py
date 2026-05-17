@@ -23,18 +23,17 @@ PUBLIC_DOC_ROOTS = (PROJECT_ROOT / "README.md", PROJECT_ROOT / "docs")
 
 ALLOWED_TYPES_WRAPPER_BODIES = {"_datetime_from_timestamp"}
 PRIVATE_TYPES_IMPORT_RE = re.compile(
-    r"\b(?:from\s+notebooklm(?:\._types|\s+import\s+_types)\b|import\s+notebooklm\._types\b)"
+    r"\b(?:from\s+notebooklm(?:\._types(?:\.\w+)*|\s+import\s+_types)\b"
+    r"|import\s+notebooklm\._types(?:\.\w+)*\b)"
 )
 
 
 def _iter_private_type_module_names() -> list[str]:
     """Return importable private type implementation modules that have landed."""
-    import notebooklm._types as private_types
-
     return sorted(
         module_info.name
-        for module_info in pkgutil.iter_modules(private_types.__path__)
-        if not module_info.ispkg
+        for module_info in pkgutil.iter_modules([str(PRIVATE_TYPES_ROOT)])
+        if not module_info.ispkg and module_info.name != "__init__"
     )
 
 
@@ -120,14 +119,31 @@ def _assignment_target_names(node: ast.Assign | ast.AnnAssign) -> list[str]:
     return [name for target in node.targets if (name := _top_level_name(target))]
 
 
-def _module_attribute_alias(value: ast.AST | None, target_name: str) -> bool:
+def _private_type_module_aliases(tree: ast.Module) -> set[str]:
+    aliases: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if (node.level == 1 and module == "_types") or (
+                node.level == 0 and module == "notebooklm._types"
+            ):
+                aliases.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("notebooklm._types."):
+                    aliases.add(alias.asname or alias.name.rsplit(".", maxsplit=1)[-1])
+    return aliases
+
+
+def _module_attribute_alias(
+    value: ast.AST | None, target_name: str, private_type_module_aliases: set[str]
+) -> bool:
     """Return True for compatibility aliases like ``_safe = _source_types._safe``."""
     return (
         isinstance(value, ast.Attribute)
         and value.attr == target_name
         and isinstance(value.value, ast.Name)
-        and value.value.id.startswith("_")
-        and value.value.id.endswith("_types")
+        and value.value.id in private_type_module_aliases
     )
 
 
@@ -142,7 +158,9 @@ def _private_type_module_symbols() -> tuple[set[str], set[str]]:
         for node in tree.body:
             if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
                 public_type_names.add(node.name)
-            elif isinstance(node, ast.FunctionDef) and node.name.startswith("_"):
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
+                "_"
+            ):
                 private_helper_names.add(node.name)
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
                 for name in _assignment_target_names(node):
@@ -155,6 +173,7 @@ def _private_type_module_symbols() -> tuple[set[str], set[str]]:
 def _types_facade_body_offenders() -> list[str]:
     public_type_names, private_helper_names = _private_type_module_symbols()
     tree = ast.parse(TYPES_PATH.read_text(encoding="utf-8"))
+    private_type_module_aliases = _private_type_module_aliases(tree)
     offenders: list[str] = []
 
     for node in tree.body:
@@ -162,9 +181,11 @@ def _types_facade_body_offenders() -> list[str]:
             offenders.append(f"{node.name} (ClassDef line {node.lineno})")
             continue
 
-        if isinstance(node, ast.FunctionDef) and node.name in private_helper_names:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+            node.name in private_helper_names
+        ):
             if node.name not in ALLOWED_TYPES_WRAPPER_BODIES:
-                offenders.append(f"{node.name} (FunctionDef line {node.lineno})")
+                offenders.append(f"{node.name} ({type(node).__name__} line {node.lineno})")
             continue
 
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
@@ -172,7 +193,7 @@ def _types_facade_body_offenders() -> list[str]:
             for name in target_names:
                 if name not in private_helper_names:
                     continue
-                if _module_attribute_alias(node.value, name):
+                if _module_attribute_alias(node.value, name, private_type_module_aliases):
                     continue
                 offenders.append(f"{name} ({type(node).__name__} line {node.lineno})")
 
@@ -237,7 +258,7 @@ def test_types_facade_identity_reexports_for_landed_private_types() -> None:
     import notebooklm.types as public_types
 
     public_type_names, _ = _private_type_module_symbols()
-    checked: list[str] = []
+    checked: set[str] = set()
     for module_name in _iter_private_type_module_names():
         module = importlib.import_module(_private_type_module_qualname(module_name))
         for name in sorted(public_type_names):
@@ -247,9 +268,12 @@ def test_types_facade_identity_reexports_for_landed_private_types() -> None:
                 f"notebooklm.types.{name} must be an identity re-export from "
                 f"{module.__name__}.{name}"
             )
-            checked.append(f"{module.__name__}.{name}")
+            checked.add(name)
 
-    assert checked, "No landed private type identities were checked"
+    assert checked == public_type_names, (
+        "Not every landed private type identity was checked. "
+        f"Missing: {sorted(public_type_names - checked)}"
+    )
 
 
 def test_types_all_does_not_export_private_helper_names() -> None:
