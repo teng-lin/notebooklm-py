@@ -4,7 +4,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from ._core import ClientCore
+from ._capabilities import ClientCoreCapabilities
 from .rpc import RPCMethod
 from .types import AccountLimits, AccountTier
 
@@ -140,7 +140,7 @@ class SettingsAPI:
     _SET_LANGUAGE_PATH = (2, 4, 0)  # result[2][4][0]
     _GET_SETTINGS_PATH = (0, 2, 4, 0)  # result[0][2][4][0]
 
-    def __init__(self, core: ClientCore) -> None:
+    def __init__(self, core: ClientCoreCapabilities) -> None:
         """Initialize the settings API.
 
         Args:

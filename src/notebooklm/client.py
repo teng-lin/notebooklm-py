@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
+from ._capabilities import ClientCoreCapabilities
 from ._chat import ChatAPI
 from ._core import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -264,18 +265,16 @@ class NotebookLMClient:
             on_rpc_event=on_rpc_event,
         )
 
-        # Initialize sub-client APIs.
-        # ArtifactsAPI and NotesAPI both consume the shared ``_mind_map``
-        # module for mind-map primitives, so their construction order is
-        # not significant.
-        self.sources = SourcesAPI(self._core, upload_timeout=upload_timeout)
-        self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
-        self.artifacts = ArtifactsAPI(self._core, storage_path=storage_path)
-        self.notes = NotesAPI(self._core)
+        # ``_chat`` keeps the raw core: its conversation-cache methods are not on the capability surface yet.
+        capabilities = ClientCoreCapabilities(self._core)
+        self.sources = SourcesAPI(capabilities, upload_timeout=upload_timeout)
+        self.notebooks = NotebooksAPI(capabilities, sources_api=self.sources)
+        self.artifacts = ArtifactsAPI(capabilities, storage_path=storage_path)
+        self.notes = NotesAPI(capabilities)
         self.chat = ChatAPI(self._core)
-        self.research = ResearchAPI(self._core)
-        self.settings = SettingsAPI(self._core)
-        self.sharing = SharingAPI(self._core)
+        self.research = ResearchAPI(capabilities)
+        self.settings = SettingsAPI(capabilities)
+        self.sharing = SharingAPI(capabilities)
 
     @property
     def auth(self) -> AuthTokens:

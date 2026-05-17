@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError, RPCError, ValidationError
@@ -40,7 +41,7 @@ def mock_core():
 @pytest.fixture
 def sources_api(mock_core):
     """Create SourcesAPI with mocked core."""
-    return SourcesAPI(mock_core)
+    return SourcesAPI(ClientCoreCapabilities(mock_core))
 
 
 def _self_core_auth_attr_read(node: ast.AST, attr: str) -> bool:

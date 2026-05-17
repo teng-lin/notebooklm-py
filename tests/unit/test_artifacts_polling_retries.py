@@ -5,6 +5,7 @@ import pytest
 
 from notebooklm._artifact_polling import ArtifactPollingService
 from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
+from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
@@ -70,7 +71,7 @@ def api():
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     notes_api = MagicMock()
-    return ArtifactsAPI(core, notes_api)
+    return ArtifactsAPI(ClientCoreCapabilities(core), notes_api)
 
 
 @pytest.mark.asyncio
@@ -318,7 +319,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
-    api = ArtifactsAPI(core, MagicMock())
+    api = ArtifactsAPI(ClientCoreCapabilities(core), MagicMock())
 
     poll_started = asyncio.Event()
     release_poll = asyncio.Event()

@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc.decoder import RPCError
 from notebooklm.types import ArtifactDownloadError
@@ -33,7 +34,7 @@ def mock_artifacts_api():
     mock_note = MagicMock()
     mock_note.id = "created_note_123"
     mock_notes.create = AsyncMock(return_value=mock_note)
-    api = ArtifactsAPI(mock_core, notes_api=mock_notes)
+    api = ArtifactsAPI(ClientCoreCapabilities(mock_core), notes_api=mock_notes)
     return api, mock_core
 
 

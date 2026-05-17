@@ -9,7 +9,7 @@ import warnings
 from typing import Any
 
 from . import research as _research_pub
-from ._core import ClientCore
+from ._capabilities import ClientCoreCapabilities
 from .exceptions import ResearchTaskMismatchError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
@@ -200,7 +200,7 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, core: ClientCore):
+    def __init__(self, core: ClientCoreCapabilities):
         """Initialize the research API.
 
         Args:

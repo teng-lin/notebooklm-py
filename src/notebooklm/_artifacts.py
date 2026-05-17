@@ -17,7 +17,6 @@ from ._artifact_downloads import ArtifactDownloadService, DownloadResult
 from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
 from ._capabilities import ClientCoreCapabilities
-from ._core import ClientCore
 from .auth import load_httpx_cookies
 from .rpc import (
     ArtifactTypeCode,
@@ -137,7 +136,7 @@ class ArtifactsAPI:
 
     def __init__(
         self,
-        core: ClientCore,
+        core: ClientCoreCapabilities,
         notes_api: "NotesAPI | None" = None,
         storage_path: Path | None = None,
     ):
@@ -155,7 +154,7 @@ class ArtifactsAPI:
             storage_path: Path to storage state file for loading download cookies.
         """
         self._core = core
-        self._capabilities = ClientCoreCapabilities(core)
+        self._capabilities = core
         # ``notes_api`` is intentionally not stored — it is accepted only
         # so that existing call sites (tests, third-party code) keep
         # working through the deprecation cycle.

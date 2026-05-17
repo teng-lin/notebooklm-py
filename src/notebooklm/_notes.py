@@ -14,7 +14,7 @@ import logging
 from typing import Any
 
 from . import _mind_map
-from ._core import ClientCore
+from ._capabilities import ClientCoreCapabilities
 from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class NotesAPI:
 
     def __init__(
         self,
-        core: ClientCore,
+        core: ClientCoreCapabilities,
         *,
         mind_map_service: _mind_map.MindMapService | None = None,
     ):

@@ -9,6 +9,35 @@ import httpx
 
 from ._core_polling import PollRegistry
 from .auth import authuser_query, format_authuser_value
+from .rpc.types import RPCMethod
+
+
+class CoreRPCProvider(Protocol):
+    """Provider for the core ``rpc_call`` entry point.
+
+    Mirrors :meth:`ClientCore.rpc_call` exactly, including the kw-only
+    ``disable_internal_retries`` flag used by mutating-create RPCs that
+    must skip the inner 5xx/429 retry loop. Sub-clients that only need
+    to issue RPC calls type their constructor on this provider rather
+    than on the concrete ``ClientCore``.
+    """
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any: ...
+
+
+class SourceListProvider(Protocol):
+    """Provider for the notebook→source-id enumeration helper."""
+
+    async def get_source_ids(self, notebook_id: str) -> list[str]: ...
 
 
 class PollRegistryProvider(Protocol):
@@ -75,6 +104,8 @@ class UploadConcurrencyProvider(Protocol):
 
 
 class ClientCoreCapabilities(
+    CoreRPCProvider,
+    SourceListProvider,
     PollRegistryProvider,
     AuthRouteProvider,
     CookieJarProvider,
@@ -89,6 +120,28 @@ class ClientCoreCapabilities(
 
     def __init__(self, core: Any) -> None:
         self._core = core
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any:
+        return await self._core.rpc_call(
+            method,
+            params,
+            source_path=source_path,
+            allow_null=allow_null,
+            _is_retry=_is_retry,
+            disable_internal_retries=disable_internal_retries,
+        )
+
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        return await self._core.get_source_ids(notebook_id)
 
     @property
     def poll_registry(self) -> PollRegistry:

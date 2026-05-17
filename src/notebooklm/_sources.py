@@ -13,7 +13,6 @@ import httpx
 
 from . import _source_upload
 from ._capabilities import ClientCoreCapabilities
-from ._core import ClientCore
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
@@ -48,7 +47,7 @@ class SourcesAPI:
 
     def __init__(
         self,
-        core: ClientCore,
+        core: ClientCoreCapabilities,
         upload_timeout: httpx.Timeout | None = None,
     ):
         """Initialize the sources API.
@@ -67,7 +66,7 @@ class SourcesAPI:
                 avoid surprises.
         """
         self._core = core
-        self._capabilities = ClientCoreCapabilities(core)
+        self._capabilities = core
         self._adder = SourceAddService()
         self._content = SourceContentRenderer(self._rpc_call, logger=logger)
         self._lister = SourceLister(self._rpc_call)

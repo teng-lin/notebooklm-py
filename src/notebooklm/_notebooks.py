@@ -4,7 +4,7 @@ import logging
 import warnings
 from typing import Any
 
-from ._core import ClientCore
+from ._capabilities import ClientCoreCapabilities
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -134,7 +134,7 @@ class NotebooksAPI:
 
     def __init__(
         self,
-        core: ClientCore,
+        core: ClientCoreCapabilities,
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,
