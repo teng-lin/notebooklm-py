@@ -116,20 +116,38 @@ def caps(core: ClientCore) -> ClientCoreCapabilities:
     return ClientCoreCapabilities(core)
 
 
+def _ast_class_directly_inherits_protocol(node: ast.ClassDef) -> bool:
+    """Return ``True`` iff ``node`` lists ``Protocol`` in its direct bases."""
+    for base in node.bases:
+        # Bare ``class Foo(Protocol):`` shows up as ``ast.Name(id="Protocol")``.
+        if isinstance(base, ast.Name) and base.id == "Protocol":
+            return True
+        # Qualified ``class Foo(typing.Protocol):`` shows up as
+        # ``ast.Attribute(value=ast.Name("typing"), attr="Protocol")``.
+        if isinstance(base, ast.Attribute) and base.attr == "Protocol":
+            return True
+    return False
+
+
 def test_capabilities_module_declares_exactly_nine_provider_protocols() -> None:
     """Guard against silent Protocol additions/removals.
 
-    Walks the AST of ``_capabilities.py`` and counts class definitions whose
-    name ends with ``Provider``. Future contributors who add a 10th
+    Scans the **top-level** AST of ``_capabilities.py`` for class
+    definitions whose name ends with ``Provider`` AND which directly
+    inherit from ``Protocol``. Both conditions matter: a stray non-Protocol
+    ``FooProvider`` helper, or a Protocol renamed away from the ``Provider``
+    suffix, would silently miscount. Future contributors who add a 10th
     Protocol must also extend ``_BASE_PROTOCOLS`` in this test so the
-    conformance loop below covers it; this assertion forces that.
+    conformance loops cover it; the assertions force that.
     """
     source = _CAPABILITIES_SRC.read_text(encoding="utf-8")
     tree = ast.parse(source)
     provider_classes = [
         node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ClassDef) and node.name.endswith("Provider")
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name.endswith("Provider")
+        and _ast_class_directly_inherits_protocol(node)
     ]
     assert len(provider_classes) == 9, (
         f"Expected exactly 9 *Provider Protocols in _capabilities.py, found "
@@ -140,6 +158,13 @@ def test_capabilities_module_declares_exactly_nine_provider_protocols() -> None:
         "_BASE_PROTOCOLS drifted from the 9 *Provider classes in "
         "_capabilities.py; update the tuple."
     )
+    # Defence-in-depth: the AST-discovered names must match the imported tuple.
+    ast_names = set(provider_classes)
+    runtime_names = {p.__name__ for p in _BASE_PROTOCOLS}
+    assert ast_names == runtime_names, (
+        f"AST-discovered Provider classes {ast_names} do not match "
+        f"_BASE_PROTOCOLS imports {runtime_names}. Sync the tuple with the module."
+    )
 
 
 @pytest.mark.parametrize("protocol", _BASE_PROTOCOLS, ids=lambda p: p.__name__)
@@ -147,28 +172,36 @@ def test_client_core_capabilities_satisfies_protocol_structurally(
     protocol: type,
     caps: ClientCoreCapabilities,
 ) -> None:
-    """``ClientCoreCapabilities`` exposes every member each Protocol declares.
+    """``ClientCoreCapabilities`` concretely implements every Protocol member.
 
-    Uses class-level ``hasattr`` (via ``type(caps)``) rather than
-    instance-level so ``@property`` descriptors are not invoked. This keeps
-    the test purely structural and resilient to ``__new__``-only cores
-    whose underlying instance attributes are absent.
+    Uses ``name in caps_cls.__dict__`` (concrete definition on the adapter
+    itself) rather than ``hasattr(caps_cls, name)``. This matters because
+    ``ClientCoreCapabilities`` inherits from all 9 Protocols, and ``typing.
+    Protocol`` installs abstract stubs on its subclasses. A bare ``hasattr``
+    would happily fall back to the inherited Protocol stub, masking a
+    forgotten or accidentally-removed concrete implementation. The
+    ``__dict__`` check forces an own-definition.
+
+    Class-level inspection (not instance ``hasattr``) also avoids invoking
+    ``@property`` descriptors against the ``__new__``-only core fixture.
     """
     members = _protocol_members(protocol)
     assert members, (
         f"{protocol.__name__} reported zero public members — Protocol enumeration is broken."
     )
     caps_cls = type(caps)
-    missing = [name for name in members if not hasattr(caps_cls, name)]
+    missing = [name for name in members if name not in caps_cls.__dict__]
     assert not missing, (
-        f"ClientCoreCapabilities is missing members for {protocol.__name__}: {missing}"
+        f"ClientCoreCapabilities does not concretely implement members for "
+        f"{protocol.__name__}: {missing}. (A ``hasattr`` would silently fall "
+        "back to the inherited Protocol stub; an own-definition is required.)"
     )
 
     # Honor the spec recipe: iterate ``__annotations__`` directly. These are
     # currently empty (Protocols declare members via ``def``/``@property``),
     # but the loop catches any future annotation-style Protocol additions.
     for name in getattr(protocol, "__annotations__", {}):
-        assert hasattr(caps_cls, name), (
+        assert name in caps_cls.__dict__, (
             f"ClientCoreCapabilities missing annotated member {protocol.__name__}.{name}"
         )
 
@@ -206,6 +239,49 @@ def test_client_core_exposes_native_protocol_surface(
             )
 
 
+def test_client_core_capabilities_inherits_all_nine_protocols() -> None:
+    """``ClientCoreCapabilities`` must declare every base Protocol in its MRO.
+
+    Inheriting the Protocols is what makes the adapter usable as a typed
+    handle for each Provider; without this, a feature API typed on (say)
+    ``AuthRouteProvider`` could not accept a ``ClientCoreCapabilities``
+    instance even if it had every method. The conformance check above
+    confirms concrete implementations; this one confirms the type-level
+    contract that callers depend on.
+    """
+    missing_bases = [p for p in _BASE_PROTOCOLS if p not in ClientCoreCapabilities.__mro__]
+    assert not missing_bases, (
+        f"ClientCoreCapabilities no longer inherits from: "
+        f"{[p.__name__ for p in missing_bases]}. "
+        "Restore the base class so callers typed on the Protocol can pass "
+        "a ClientCoreCapabilities instance."
+    )
+
+
+def test_core_native_members_allowlist_is_symmetric(core: ClientCore) -> None:
+    """``_CORE_NATIVE_MEMBERS`` must match the actual core-resident surface.
+
+    Without this guard, the per-Protocol loops above are one-way: a member
+    name dropped from the allowlist makes the relevant check skip silently,
+    and a member renamed on ``ClientCore`` (so the old name no longer
+    enumerates) similarly slips by. Comparing both sides catches drift in
+    either direction, which is what makes the allowlist trustworthy.
+    """
+    core_cls = type(core)
+    all_protocol_members: set[str] = set()
+    for protocol in _BASE_PROTOCOLS:
+        all_protocol_members.update(_protocol_members(protocol))
+
+    actual_native = {name for name in all_protocol_members if hasattr(core_cls, name)}
+    assert actual_native == _CORE_NATIVE_MEMBERS, (
+        f"_CORE_NATIVE_MEMBERS is out of sync with ClientCore. "
+        f"Members on ClientCore but not in allowlist: "
+        f"{sorted(actual_native - _CORE_NATIVE_MEMBERS)}. "
+        f"Members in allowlist but missing from ClientCore: "
+        f"{sorted(_CORE_NATIVE_MEMBERS - actual_native)}."
+    )
+
+
 def test_protocol_member_enumeration_finds_known_members() -> None:
     """Smoke-test ``_protocol_members`` against a known Protocol.
 
@@ -231,13 +307,18 @@ def test_protocol_member_enumeration_finds_known_members() -> None:
 def test_core_fixture_skips_init(core: ClientCore) -> None:
     """The ``core`` fixture must NOT have run ``__init__``.
 
-    ``__init__`` sets ``self.poll_registry`` (among many other things);
-    its absence on the fixture proves we bypassed initialization and
-    thereby avoided opening an HTTP client / spawning tasks.
+    ``__init__`` sets several instance attributes (e.g. ``poll_registry``);
+    their absence on the fixture proves we bypassed initialization and
+    thereby avoided opening an HTTP client or spawning tasks. Asserting
+    ``vars(core)`` is empty is the strictest possible "no init ran" check
+    and is robust against future refactors that move individual
+    init-set attributes to lazy properties.
     """
     assert isinstance(core, ClientCore)
-    # Sanity: instance has no init-set attributes.
-    assert "poll_registry" not in vars(core)
+    assert vars(core) == {}, (
+        f"ClientCore.__new__ fixture has instance attributes — __init__ ran? "
+        f"vars(core)={vars(core)!r}"
+    )
 
 
 def test_inspect_get_members_returns_protocol_callables() -> None:
