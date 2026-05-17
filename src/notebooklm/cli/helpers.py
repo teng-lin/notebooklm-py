@@ -7,6 +7,9 @@ Provides common functionality for all CLI commands:
 - JSON/Rich output formatting
 - Context management (current notebook/conversation)
 - @with_client decorator for command boilerplate reduction
+
+This module is also the backward-compatible facade for older imports and test
+patch targets; see ``cli.context`` and ``cli.rendering`` for canonical helpers.
 """
 
 import asyncio
@@ -916,7 +919,6 @@ def handle_auth_error(json_output: bool = False) -> NoReturn:
                 "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",
             },
         )
-        raise SystemExit(1)
     else:
         console.print("[red]Not logged in.[/red]\n")
         console.print("[dim]Checked locations:[/dim]")
@@ -955,11 +957,11 @@ def with_auth_and_errors(
     # Use ``find_root`` so nested subcommand contexts still see it.
     try:
         verbose_count = int(ctx.find_root().params.get("verbose", 0) or 0)
-    except Exception:
+    except (AttributeError, TypeError, ValueError):
         verbose_count = 0
     verbose = verbose_count >= 1
 
-    def log_result(status: str, detail: str = "") -> float:
+    def log_result(status: str, detail: str = "") -> None:
         elapsed = time.monotonic() - start
         if detail:
             logger.debug(
@@ -971,7 +973,6 @@ def with_auth_and_errors(
             )
         else:
             logger.debug("CLI command %s: %s (%.3fs)", status, command_name, elapsed)
-        return elapsed
 
     with handle_errors(verbose=verbose, json_output=json_output):
         # Auth bootstrap: FileNotFoundError here means the storage file is
@@ -1063,7 +1064,7 @@ def json_output_response(data: dict | list) -> None:
     rendering_helpers.json_output_response(data)
 
 
-def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
+def json_error_response(code: str, message: str, extra: dict | None = None) -> NoReturn:
     """Print JSON error and exit (no colors for machine parsing)."""
     rendering_helpers.json_error_response(code, message, extra)
 

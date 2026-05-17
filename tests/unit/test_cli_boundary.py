@@ -128,6 +128,11 @@ def _cli_module_imports(path: pathlib.Path) -> set[str]:
                     imports.add(mod_parts[0])
                 else:
                     imports.update(alias.name.split(".")[0] for alias in node.names)
+            elif node.level >= 2 and mod_parts[:1] == ["cli"]:
+                if len(mod_parts) > 1:
+                    imports.add(mod_parts[1])
+                else:
+                    imports.update(alias.name.split(".")[0] for alias in node.names)
             elif node.level == 0 and mod_parts[:2] == ["notebooklm", "cli"] and len(mod_parts) > 2:
                 imports.add(mod_parts[2])
         elif isinstance(node, ast.Import):

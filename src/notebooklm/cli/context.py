@@ -60,6 +60,8 @@ def _set_context_value(
     """Set or clear a single value in context.json."""
     context_file = _resolve_context_path(context_path_fn)
     if not context_file.exists():
+        # Conversation updates are context-only: callers must select a notebook
+        # first, which creates the file and account metadata to preserve.
         return
 
     def _mutate(data: dict[str, Any]) -> dict[str, Any]:
@@ -138,6 +140,8 @@ def clear_context(
             return True
         original = dict(data)
         account = original.get("account")
+        # ``clear`` intentionally removes every non-account field so future
+        # notebook/conversation context keys do not need explicit pop entries.
         data.clear()
         if "account" in original:
             data["account"] = account

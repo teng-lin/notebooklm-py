@@ -8,7 +8,7 @@ for older imports and patch targets.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
 from rich.console import Console
@@ -33,6 +33,8 @@ def _emit_status(
     stdout_console: Console = console,
     stderr_output_console: Console = stderr_console,
 ) -> None:
+    # ``cli.helpers`` calls this private variant to preserve helper-level
+    # Console patch seams while the public rendering helper uses local defaults.
     target = stderr_output_console if json_output else stdout_console
     if style is not None:
         target.print(msg, style=style)
@@ -71,7 +73,7 @@ def json_output_response(data: dict | list) -> None:
     click.echo(json.dumps(data, indent=2, default=str, ensure_ascii=False))
 
 
-def json_error_response(code: str, message: str, extra: dict | None = None) -> None:
+def json_error_response(code: str, message: str, extra: dict | None = None) -> NoReturn:
     """Print JSON error and exit (no colors for machine parsing)."""
     response: dict[str, Any] = {"error": True, "code": code, "message": message}
     if extra:
@@ -93,6 +95,8 @@ _RESULT_TYPE_LABELS = {
 def _display_research_sources(
     sources: list[dict], max_display: int = 10, *, output_console: Console = console
 ) -> None:
+    # ``cli.helpers`` calls this private variant to inject its compatibility
+    # ``console`` patch target instead of binding to this module's Console.
     output_console.print(f"[bold]Found {len(sources)} sources[/bold]")
 
     if sources:
@@ -136,6 +140,8 @@ def _display_report(
     *,
     output_console: Console = console,
 ) -> None:
+    # ``cli.helpers`` calls this private variant to inject its compatibility
+    # ``console`` patch target instead of binding to this module's Console.
     if not report:
         return
     output_console.print("\n[bold]Report:[/bold]")
