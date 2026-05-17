@@ -133,14 +133,35 @@ def _cli_module_imports(path: pathlib.Path) -> set[str]:
                     imports.add(mod_parts[1])
                 else:
                     imports.update(alias.name.split(".")[0] for alias in node.names)
-            elif node.level == 0 and mod_parts[:2] == ["notebooklm", "cli"] and len(mod_parts) > 2:
-                imports.add(mod_parts[2])
+            elif node.level == 0 and mod_parts[:2] == ["notebooklm", "cli"]:
+                if len(mod_parts) > 2:
+                    imports.add(mod_parts[2])
+                elif len(mod_parts) == 2:
+                    imports.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 parts = alias.name.split(".")
                 if parts[:2] == ["notebooklm", "cli"] and len(parts) > 2:
                     imports.add(parts[2])
     return imports
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("from notebooklm.cli import completion\n", {"completion"}),
+        ("from notebooklm.cli.runtime import with_client\n", {"runtime"}),
+        ("from ..cli import rendering\n", {"rendering"}),
+        ("from ..cli.context import get_current_notebook\n", {"context"}),
+    ],
+)
+def test_cli_module_imports_detects_cli_import_forms(
+    tmp_path: pathlib.Path, source: str, expected: set[str]
+) -> None:
+    path = tmp_path / "sample.py"
+    path.write_text(source, encoding="utf-8")
+
+    assert _cli_module_imports(path) == expected
 
 
 def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on import shape

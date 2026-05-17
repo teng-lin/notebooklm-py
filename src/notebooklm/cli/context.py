@@ -41,6 +41,12 @@ def _get_context_value(key: str, *, context_path_fn: ContextPathFn | None = None
         return None
     try:
         data = json.loads(context_file.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            logger.warning(
+                "Context file %s has invalid shape; expected JSON object.",
+                context_file,
+            )
+            return None
         return data.get(key)
     except json.JSONDecodeError:
         logger.warning(
@@ -64,7 +70,8 @@ def _set_context_value(
         # first, which creates the file and account metadata to preserve.
         return
 
-    def _mutate(data: dict[str, Any]) -> dict[str, Any]:
+    def _mutate(existing: Any) -> dict[str, Any]:
+        data = dict(existing) if isinstance(existing, dict) else {}
         if value is not None:
             data[key] = value
         elif key in data:
@@ -99,10 +106,11 @@ def set_current_notebook(
     """Set the current notebook context."""
     context_file = _resolve_context_path(context_path_fn)
 
-    def _mutate(existing: dict[str, Any]) -> dict[str, Any]:
+    def _mutate(existing: Any) -> dict[str, Any]:
+        existing_dict = existing if isinstance(existing, dict) else {}
         data: dict[str, Any] = {}
-        if isinstance(existing.get("account"), dict):
-            data["account"] = existing["account"]
+        if isinstance(existing_dict.get("account"), dict):
+            data["account"] = existing_dict["account"]
         data["notebook_id"] = notebook_id
         if title:
             data["title"] = title

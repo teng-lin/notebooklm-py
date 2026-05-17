@@ -411,6 +411,31 @@ class TestContextManagement:
             result = get_current_notebook()
             assert result is None
 
+    def test_get_notebook_non_object_json(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        context_file.write_text("[]")
+        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+            result = get_current_notebook()
+            assert result is None
+
+    def test_set_current_notebook_recovers_non_object_json(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        context_file.write_text("[]")
+        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+            set_current_notebook("nb_new", title="New Notebook")
+
+        data = json.loads(context_file.read_text())
+        assert data["notebook_id"] == "nb_new"
+        assert data["title"] == "New Notebook"
+
+    def test_set_current_conversation_recovers_non_object_json(self, tmp_path):
+        context_file = tmp_path / "context.json"
+        context_file.write_text("[]")
+        with patch("notebooklm.cli.helpers.get_context_path", return_value=context_file):
+            set_current_conversation("conv_456")
+
+        assert json.loads(context_file.read_text()) == {"conversation_id": "conv_456"}
+
     def test_set_current_notebook_clears_conversation_on_switch(self, tmp_path):
         context_file = tmp_path / "context.json"
         context_file.write_text('{"notebook_id": "nb_old", "conversation_id": "conv_1"}')
