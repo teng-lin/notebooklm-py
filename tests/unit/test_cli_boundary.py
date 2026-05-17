@@ -192,10 +192,11 @@ def test_options_completion_callbacks_stay_on_completion_provider_boundary() -> 
                 import_offenders.append(f"module import: {alias.name}")
 
     functions = {node.name: node for node in ast.walk(tree) if isinstance(node, FUNCTION_DEF_TYPES)}
+    top_level_functions = {node.name for node in tree.body if isinstance(node, FUNCTION_DEF_TYPES)}
 
-    assert set(functions) >= COMPLETION_CALLBACKS
+    assert top_level_functions >= COMPLETION_CALLBACKS
 
-    offenders = import_offenders
+    offenders = list(import_offenders)
     for function_name, function in sorted(functions.items()):
         for node in _iter_function_body_nodes(function):
             if isinstance(node, ast.Name) and node.id in forbidden_names:
