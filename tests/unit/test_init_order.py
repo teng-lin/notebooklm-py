@@ -548,10 +548,10 @@ def test_notebook_composition_services_do_not_runtime_import_facades_or_core() -
     assert forbidden_construction_by_module == {}
 
 
-def test_notebook_composition_services_import_cleanly() -> None:
+@pytest.mark.parametrize("module_name", _NOTEBOOK_COMPOSITION_SERVICE_MODULES)
+def test_notebook_composition_services_import_cleanly(module_name: str) -> None:
     """Notebook composition services must be import-safe."""
-    for module_name in _NOTEBOOK_COMPOSITION_SERVICE_MODULES:
-        importlib.import_module(f"notebooklm.{module_name.removesuffix('.py')}")
+    importlib.import_module(f"notebooklm.{module_name.removesuffix('.py')}")
 
 
 def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> None:
