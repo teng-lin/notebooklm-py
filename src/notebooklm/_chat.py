@@ -116,7 +116,7 @@ class ChatAPI:
                 other consumer).
         """
         self._core = core
-        self._cache = conversation_cache or ConversationCache()
+        self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
         # Per-``conversation_id`` lock that serializes follow-up asks on the
         # same conversation. Without this, two
         # ``asyncio.gather``'d ``ask`` calls on the same conversation read
