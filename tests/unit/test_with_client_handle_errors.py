@@ -280,6 +280,22 @@ def test_file_not_found_json_payload(runner: CliRunner, monkeypatch) -> None:
     assert payload["code"] == "AUTH_REQUIRED"
 
 
+def test_command_body_file_not_found_is_not_auth_required(runner: CliRunner, stubbed_auth) -> None:
+    """Command-body ``FileNotFoundError`` stays on the unexpected-error path."""
+
+    async def _raise(_auth):
+        raise FileNotFoundError("missing source-file payload")
+
+    cli = _build_cli(_raise)
+    result = runner.invoke(cli, ["run", "--json"], catch_exceptions=False)
+
+    assert result.exit_code == 2, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["error"] is True
+    assert payload["code"] == "UNEXPECTED_ERROR"
+    assert payload["code"] != "AUTH_REQUIRED"
+
+
 def test_unexpected_error_json_payload_exits_2(runner: CliRunner, stubbed_auth) -> None:
     """JSON mode: unknown ``RuntimeError`` → UNEXPECTED_ERROR + exit 2 (system error)."""
 
