@@ -605,8 +605,9 @@ class ClientCore:
         # (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``)
         # delegate cleanly. The ``_auth_snapshot_lock`` bridge was dropped
         # in D1-audit-full; the live lock is reachable via
-        # :meth:`_get_auth_snapshot_lock`. The auth snapshot lock is intentionally distinct
-        # from ``_refresh_lock`` — mixing them would re-introduce the
+        # :meth:`_get_auth_snapshot_lock`.
+        # The auth snapshot lock is intentionally distinct from
+        # ``_refresh_lock`` — mixing them would re-introduce the
         # reentrancy ambiguity that snapshot-side serialization was added
         # to avoid. The attribute name ``_auth_coord`` is part of the
         # inter-helper contract for the upcoming B2/C1 extractions; do not

@@ -60,11 +60,12 @@ def _noop_record_lock_wait(_wait_seconds: float) -> None:
 class ReqidCounter:
     """Monotonic request-id counter with lazy ``asyncio.Lock`` serialisation.
 
-    Field names are deliberately the same as the legacy ``ClientCore`` ivars
-    (``_value`` mirroring ``_reqid_counter_value``, ``_lock`` mirroring
-    ``_reqid_lock``) so the compat ``@property`` bridges on ``ClientCore`` can
-    delegate with ``return self._reqid._<attr>`` / write through with
-    ``self._reqid._<attr> = value`` and stay readable.
+    The canonical accessor surface is ``self._reqid._value`` and
+    ``self._reqid._lock`` on ``ClientCore``. The ``_reqid_counter_value`` /
+    ``_reqid_lock`` compat ``@property`` bridges on ``ClientCore`` that
+    previously delegated here were dropped in D1-audit-full once their
+    callers migrated; the field names persist for direct access from
+    ``ClientCore`` and from unit-test fixtures.
     """
 
     def __init__(
@@ -74,9 +75,9 @@ class ReqidCounter:
         on_lock_wait: Callable[[float], None] | None = None,
     ) -> None:
         # Plain int; mutated only inside :meth:`next_reqid` under ``_lock`` or
-        # via the ``ClientCore._reqid_counter_value`` writethrough used by
-        # test fixtures that want to seed the counter without paying the
-        # deprecation-warning tax on the public ``_reqid_counter`` setter.
+        # via direct ``self._reqid._value = …`` writethrough from test fixtures
+        # that want to seed the counter without paying the deprecation-warning
+        # tax on the public ``_reqid_counter`` setter on ``ClientCore``.
         self._value: int = baseline
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object is constructed inside

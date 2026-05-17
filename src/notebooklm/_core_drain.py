@@ -34,10 +34,12 @@ Design constraints (load-bearing — see
   fully inside the ``async with condition`` block.
 
 Field names are deliberately the same as the legacy ``ClientCore`` ivars
-(``_in_flight_posts``, ``_draining``, ``_drain_condition``,
-``_operation_depths``) so the compat ``@property`` bridges on
-``ClientCore`` can delegate via ``return self._drain_tracker._<attr>``
-and stay readable.
+(``_in_flight_posts``, ``_draining``, ``_drain_condition``) so the
+surviving compat ``@property`` bridges on ``ClientCore`` can delegate via
+``return self._drain_tracker._<attr>`` and stay readable. The
+``_operation_depths`` compat bridge on ``ClientCore`` was dropped in
+D1-audit-full once its callers migrated; the field itself remains on
+``TransportDrainTracker`` because the drain bookkeeping needs it.
 """
 
 from __future__ import annotations
