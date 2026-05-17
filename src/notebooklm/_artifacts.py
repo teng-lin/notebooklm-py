@@ -139,6 +139,8 @@ class ArtifactsAPI:
         core: ClientCoreCapabilities,
         notes_api: "NotesAPI | None" = None,
         storage_path: Path | None = None,
+        *,
+        mind_map_service: _mind_map.MindMapService | None = None,
     ):
         """Initialize the artifacts API.
 
@@ -147,11 +149,14 @@ class ArtifactsAPI:
             notes_api: Deprecated. Retained as an optional, ignored
                 keyword for backward compatibility — ``ArtifactsAPI`` no
                 longer depends on :class:`NotesAPI`. Mind-map RPC
-                primitives are accessed directly through the
-                :mod:`_mind_map` module, so the construction order of
-                ``client.artifacts`` and ``client.notes`` is no longer
-                significant.
+                primitives are accessed through the injected
+                :class:`_mind_map.MindMapService`, so the construction
+                order of ``client.artifacts`` and ``client.notes`` is no
+                longer significant.
             storage_path: Path to storage state file for loading download cookies.
+            mind_map_service: Optional private service for note-backed
+                mind-map operations. Keyword-only so the public positional
+                constructor contract stays unchanged.
         """
         self._core = core
         self._capabilities = core
@@ -160,6 +165,7 @@ class ArtifactsAPI:
         # working through the deprecation cycle.
         del notes_api
         self._storage_path = storage_path
+        self._mind_map_service = mind_map_service or _mind_map.MindMapService(core)
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
         self._downloads = ArtifactDownloadService(self)
@@ -842,10 +848,8 @@ class ArtifactsAPI:
         return await self._generation._call_generate(notebook_id, params)
 
     async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
-        """Get raw mind-map rows through the patchable module seam."""
-        # Resolve the module seam at call time so tests patching
-        # ``notebooklm._artifacts._mind_map`` affect public listing paths.
-        return await _mind_map.list_mind_maps(self._core, notebook_id)
+        """Get raw mind-map rows via the injected mind-map service."""
+        return await self._mind_map_service.list_mind_maps(notebook_id)
 
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw artifact list data."""

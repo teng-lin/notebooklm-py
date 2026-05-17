@@ -419,8 +419,8 @@ class TestArtifactsAPI:
         assert result == artifact_rows
 
     @pytest.mark.asyncio
-    async def test_list_uses_facade_list_raw_callback_and_mind_map_patch_seam(self):
-        """list() resolves facade and mind-map seams at call time."""
+    async def test_list_uses_facade_list_raw_callback_and_mind_map_service(self):
+        """list() resolves facade _list_raw and the injected mind-map service."""
         core = MagicMock()
         api = ArtifactsAPI(ClientCoreCapabilities(core))
         studio_artifact = ["art_001", "My Report", 2, None, 3]
@@ -433,15 +433,16 @@ class TestArtifactsAPI:
             patch.object(
                 api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])
             ) as list_raw,
-            patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            patch.object(
+                api._mind_map_service,
+                "list_mind_maps",
                 new=AsyncMock(return_value=[mind_map]),
             ) as list_mind_maps,
         ):
             artifacts = await api.list("nb_123")
 
         list_raw.assert_awaited_once_with("nb_123")
-        list_mind_maps.assert_awaited_once_with(api._core, "nb_123")
+        list_mind_maps.assert_awaited_once_with("nb_123")
         assert [artifact.id for artifact in artifacts] == ["art_001", "mind_map_001"]
 
     @pytest.mark.asyncio
@@ -453,8 +454,9 @@ class TestArtifactsAPI:
 
         with (
             patch.object(api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])),
-            patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            patch.object(
+                api._mind_map_service,
+                "list_mind_maps",
                 new=AsyncMock(),
             ) as list_mind_maps,
         ):
@@ -1352,11 +1354,12 @@ class TestListMindMapErrorHandling:
         httpx_mock.add_response(content=list_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            # After the mind-map relocation, ArtifactsAPI reaches mind maps through the
-            # shared ``_mind_map`` module rather than an injected
-            # NotesAPI. Patch the primitive at its consumer-side import.
-            with patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            # After issue #691, ArtifactsAPI reaches mind-map rows through the
+            # injected MindMapService. Patch the service's list_mind_maps so
+            # the simulated error reaches ArtifactsAPI.list().
+            with patch.object(
+                client.artifacts._mind_map_service,
+                "list_mind_maps",
                 new=AsyncMock(side_effect=RPCError("mind map fetch failed")),
             ):
                 result = await client.artifacts.list("nb_123")
@@ -1381,8 +1384,9 @@ class TestListMindMapErrorHandling:
         httpx_mock.add_response(content=list_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            with patch.object(
+                client.artifacts._mind_map_service,
+                "list_mind_maps",
                 new=AsyncMock(side_effect=httpx.HTTPError("connection failed")),
             ):
                 result = await client.artifacts.list("nb_123")
