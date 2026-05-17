@@ -7,7 +7,7 @@ Generated during T12.0 against the speculative T11 stack:
 - T11.3 completion provider extraction in `notebooklm.cli.completion`
 - T11.4 options completion guardrail in `tests/unit/test_cli_boundary.py`
 
-This artifact is a migration contract for T12.1-T12.8. It is intentionally
+This artifact is a migration contract for T12.1-T12.9. It is intentionally
 refactor-only: preserve public CLI behavior, Click option wiring, JSON/text
 output, stdout/stderr routing, shell completion values, and existing test patch
 seams unless a later task explicitly migrates every affected test in the same
