@@ -71,6 +71,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    env:
+      # Pin Playwright's browser install dir to a single workspace-relative
+      # path on every OS. The previous dual-path cache stanza (``~/.cache``
+      # + ``~/AppData/Local``) intermittently failed the cache restore on
+      # Windows with ``actions/cache@v5`` — the missing Linux path tripped
+      # the post-restore validation on a cache hit. Pinning the path here
+      # lets the cache stanza below carry exactly one entry on every OS.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
     steps:
     - uses: actions/checkout@v6
@@ -98,10 +106,10 @@ jobs:
     - name: Cache Playwright browsers
       uses: actions/cache@v5
       with:
-        path: |
-          ~/.cache/ms-playwright
-          ~/AppData/Local/ms-playwright
-        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}
+        path: ${{ github.workspace }}/.playwright-browsers
+        # ``-ws`` suffix invalidates archives keyed to the prior dual-path
+        # stanza so first restores after this change land on the new path.
+        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}-ws
 
     - name: Install Playwright browsers
       run: uv run playwright install chromium

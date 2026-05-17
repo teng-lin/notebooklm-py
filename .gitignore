@@ -28,6 +28,10 @@ worktrees/
 
 # Investigation artifacts
 investigate*.py
+
+# Playwright browser binaries when PLAYWRIGHT_BROWSERS_PATH is set to a
+# workspace-relative path (used by CI; harmless locally if it ever lands).
+.playwright-browsers/
 INVESTIGATION*.md
 investigation_output/
 downloads/

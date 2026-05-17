@@ -75,6 +75,11 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    env:
+      # Pin Playwright's browser install dir to a single workspace-relative
+      # path on every OS — see test.yml for the rationale (sidesteps the
+      # actions/cache@v5 Windows dual-path restore flake).
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
     concurrency:
       group: nightly-${{ needs.resolve-branch.outputs.branch }}-${{ matrix.os }}
@@ -105,10 +110,10 @@ jobs:
     - name: Cache Playwright browsers
       uses: actions/cache@v5
       with:
-        path: |
-          ~/.cache/ms-playwright
-          ~/AppData/Local/ms-playwright
-        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}
+        path: ${{ github.workspace }}/.playwright-browsers
+        # ``-ws`` suffix invalidates archives keyed to the prior dual-path
+        # stanza so first restores after this change land on the new path.
+        key: playwright-${{ matrix.os }}-${{ steps.playwright-version.outputs.version }}-ws
 
     - name: Install Playwright browsers
       run: playwright install chromium
