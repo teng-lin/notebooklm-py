@@ -35,6 +35,18 @@ import pathlib
 import pytest
 
 CLI_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "cli"
+OPTIONS_PATH = CLI_ROOT / "options.py"
+COMPLETION_CALLBACKS = {
+    "_complete_artifacts",
+    "_complete_notebooks",
+    "_complete_sources",
+    "_resolve_notebook_for_completion",
+}
+COMPLETION_FORBIDDEN_SYMBOLS = {
+    "NotebookLMClient",
+    "get_auth_tokens",
+    "run_async",
+}
 
 
 def _is_private_segment(seg: str) -> bool:
@@ -135,6 +147,43 @@ def test_no_private_module_imports_in_cli():
         "or `_private` names out of public notebooklm modules. "
         "Promote needed symbols to a public module (config/urls/log/research/types) "
         f"and import from there.\nOffenders: {offenders}"
+    )
+
+
+def test_options_completion_callbacks_stay_on_completion_provider_boundary() -> None:
+    """Keep live completion auth/client/runtime work out of ``cli.options``."""
+    tree = ast.parse(OPTIONS_PATH.read_text(encoding="utf-8"))
+    forbidden_names = set(COMPLETION_FORBIDDEN_SYMBOLS)
+    import_offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            if alias.name not in COMPLETION_FORBIDDEN_SYMBOLS:
+                continue
+            alias_name = alias.asname or alias.name
+            forbidden_names.add(alias_name)
+            import_offenders.append(f"module import: {alias.name}")
+
+    callbacks = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in COMPLETION_CALLBACKS
+    }
+
+    assert set(callbacks) == COMPLETION_CALLBACKS
+
+    offenders = import_offenders
+    for callback_name, callback in sorted(callbacks.items()):
+        for node in ast.walk(callback):
+            if isinstance(node, ast.Name) and node.id in forbidden_names:
+                offenders.append(f"{callback_name}: {node.id}")
+            elif isinstance(node, ast.Attribute) and node.attr in COMPLETION_FORBIDDEN_SYMBOLS:
+                offenders.append(f"{callback_name}: .{node.attr}")
+
+    assert not offenders, (
+        "cli.options completion callbacks must delegate to cli.completion instead of "
+        f"constructing clients, loading auth, or running async work directly: {offenders}"
     )
 
 
