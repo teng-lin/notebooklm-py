@@ -138,11 +138,13 @@ async def _resolve_partial_id(
     items = await list_fn()
     partial_id_lower = partial_id.lower()
 
+    matches = []
     for item in items:
-        if item.id.lower() == partial_id_lower:
+        item_id_lower = item.id.lower()
+        if item_id_lower == partial_id_lower:
             return item.id
-
-    matches = [item for item in items if item.id.lower().startswith(partial_id_lower)]
+        if item_id_lower.startswith(partial_id_lower):
+            matches.append(item)
 
     if len(matches) == 1:
         if matches[0].id != partial_id:
