@@ -128,7 +128,9 @@ async def import_with_retry(
     )
 
 
-def _display_cited_import_selection(cited_selection) -> None:
+def _display_cited_import_selection(
+    cited_selection: research_import_helpers.CitedSourceSelection | None,
+) -> None:
     """Compatibility wrapper for the research import cited-source display."""
     research_import_helpers._display_cited_import_selection(
         cited_selection,
