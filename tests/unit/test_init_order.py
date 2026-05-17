@@ -399,31 +399,42 @@ def test_phase7_artifact_mind_map_patch_seams_are_current() -> None:
     assert artifact_downloads._artifact_seams()._mind_map is mind_map
 
 
-@pytest.mark.xfail(
-    raises=AssertionError,
-    strict=True,
-    reason="T10a removes hidden SourcesAPI construction from NotebooksAPI.",
-)
 def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:
-    """TODO(T10a): remove xfail after direct metadata fallback no longer uses SourcesAPI."""
-    tree = ast.parse((SRC_ROOT / "_notebooks.py").read_text(encoding="utf-8"))
+    """Notebook metadata must use a narrow lister, not hidden SourcesAPI construction."""
+    notebooks_tree = ast.parse((SRC_ROOT / "_notebooks.py").read_text(encoding="utf-8"))
     visitor = _RuntimeImportVisitor(
         forbidden_names={"SourcesAPI"},
         forbidden_modules={"_sources", "notebooklm._sources"},
     )
-    visitor.visit(tree)
+    visitor.visit(notebooks_tree)
 
-    sources_api_constructions: list[int] = []
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "SourcesAPI"
-        ):
-            sources_api_constructions.append(node.lineno)
+    def sources_api_construction_lines(tree: ast.AST) -> list[int]:
+        lines: list[int] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name) and node.func.id == "SourcesAPI":
+                lines.append(node.lineno)
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "SourcesAPI":
+                lines.append(node.lineno)
+        return lines
 
     assert visitor.forbidden == []
-    assert sources_api_constructions == []
+    assert sources_api_construction_lines(notebooks_tree) == []
+
+    metadata_tree = ast.parse((SRC_ROOT / "_notebook_metadata.py").read_text(encoding="utf-8"))
+    metadata_visitor = _RuntimeImportVisitor(
+        forbidden_names={"SourcesAPI"},
+        forbidden_modules={"_sources", "notebooklm._sources"},
+    )
+    metadata_visitor.visit(metadata_tree)
+
+    assert metadata_visitor.forbidden == []
+    assert sources_api_construction_lines(metadata_tree) == []
+
+
+def test_notebook_metadata_service_imports_cleanly() -> None:
+    importlib.import_module("notebooklm._notebook_metadata")
 
 
 def test_core_private_access_guard_detects_simple_aliases() -> None:

@@ -266,8 +266,8 @@ class NotebookLMClient:
         # ArtifactsAPI and NotesAPI both consume the shared ``_mind_map``
         # module for mind-map primitives, so their construction order is
         # not significant.
-        self.notebooks = NotebooksAPI(self._core)
         self.sources = SourcesAPI(self._core, upload_timeout=upload_timeout)
+        self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
         self.artifacts = ArtifactsAPI(self._core, storage_path=storage_path)
         self.notes = NotesAPI(self._core)
         self.chat = ChatAPI(self._core)

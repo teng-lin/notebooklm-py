@@ -1,19 +1,20 @@
 """Notebook operations API."""
 
-import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ._core import ClientCore
 from ._env import get_base_url
 from ._idempotency import idempotent_create
+from ._notebook_metadata import (
+    NotebookMetadataService,
+    NotebookSourceLister,
+    create_default_source_lister,
+)
 from ._settings import build_get_user_settings_params, extract_account_limits
 from .exceptions import NotebookLimitError, NotebookNotFoundError, RPCError
 from .rpc import RPCMethod, safe_index
 from .types import AccountLimits, Notebook, NotebookDescription, SuggestedTopic
-
-if TYPE_CHECKING:
-    from ._sources import SourcesAPI
 
 logger = logging.getLogger(__name__)
 
@@ -130,19 +131,48 @@ class NotebooksAPI:
             await client.notebooks.rename(new_nb.id, "Better Title")
     """
 
-    def __init__(self, core: ClientCore, sources_api: "SourcesAPI | None" = None):
+    def __init__(
+        self,
+        core: ClientCore,
+        sources_api: NotebookSourceLister | None = None,
+        *,
+        metadata_service: NotebookMetadataService | None = None,
+    ) -> None:
         """Initialize the notebooks API.
 
         Args:
             core: The core client infrastructure.
-            sources_api: Optional sources API for cross-API calls. If None,
-                         creates a new instance (for backward compatibility).
+            sources_api: Optional source lister for cross-API metadata composition.
+            metadata_service: Optional explicit metadata service for tests or advanced wiring.
         """
         self._core = core
-        # Lazy import to avoid circular dependency
-        from ._sources import SourcesAPI
+        self._sources = sources_api or create_default_source_lister(self._rpc_call)
+        self._metadata_service = metadata_service or NotebookMetadataService(
+            # Keep notebook lookup late-bound so tests and advanced callers that
+            # replace ``api.get`` after construction still affect get_metadata().
+            get_notebook=lambda notebook_id: self.get(notebook_id),
+            source_lister=self._sources,
+        )
 
-        self._sources = sources_api or SourcesAPI(core)
+    async def _rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> Any:
+        """Delegate through the current core RPC method for late-bound overrides."""
+        return await self._core.rpc_call(
+            method,
+            params,
+            source_path=source_path,
+            allow_null=allow_null,
+            _is_retry=_is_retry,
+            disable_internal_retries=disable_internal_retries,
+        )
 
     async def list(self) -> list[Notebook]:
         """List all notebooks.
@@ -581,33 +611,4 @@ class NotebooksAPI:
             import json
             print(json.dumps(metadata.to_dict(), indent=2))
         """
-        # Get notebook details and sources list concurrently
-        notebook, sources = await asyncio.gather(
-            self.get(notebook_id),
-            self._sources.list(notebook_id),
-        )
-
-        # Warn on potential data loss
-        if notebook.sources_count > 0 and len(sources) == 0:
-            logger.warning(
-                "Notebook %s reports %d sources but listing returned empty",
-                notebook_id,
-                notebook.sources_count,
-            )
-
-        # Build simplified source info
-        from .types import NotebookMetadata, SourceSummary
-
-        simplified_sources = [
-            SourceSummary(
-                kind=source.kind,
-                title=source.title,
-                url=source.url,
-            )
-            for source in sources
-        ]
-
-        return NotebookMetadata(
-            notebook=notebook,
-            sources=simplified_sources,
-        )
+        return await self._metadata_service.get_metadata(notebook_id)

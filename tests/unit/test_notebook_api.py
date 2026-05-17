@@ -2,11 +2,15 @@
 
 import asyncio
 import logging
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from notebooklm._notebooks import NotebooksAPI, build_create_notebook_params
+from notebooklm._source_listing import SourceLister
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import (
     NetworkError,
     NotebookLimitError,
@@ -26,6 +30,20 @@ def _make_core() -> MagicMock:
 def _make_api() -> NotebooksAPI:
     core = _make_core()
     return NotebooksAPI(core, sources_api=MagicMock())
+
+
+def _source_entry(
+    source_id: str,
+    *,
+    title: str = "Source",
+    metadata: list[Any] | None = None,
+) -> list[Any]:
+    return [
+        [source_id],
+        title,
+        metadata or [None, 11, [1704067200, 0], None, 5],
+        [None, 2],
+    ]
 
 
 def _owned_notebooks(count: int) -> list[Notebook]:
@@ -55,6 +73,70 @@ def test_direct_notebooks_api_construction_remains_supported() -> None:
     api = NotebooksAPI(core)
 
     assert hasattr(api, "_sources")
+    assert isinstance(api._sources, SourceLister)
+
+
+@pytest.mark.asyncio
+async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> None:
+    core = _make_core()
+    core.rpc_call.return_value = [
+        [
+            "Architecture",
+            [_source_entry("src_1", title="Design Paper", metadata=[None, 11, None, None, 3])],
+            "nb_123",
+        ]
+    ]
+    api = NotebooksAPI(core)
+
+    metadata = await api.get_metadata("nb_123")
+
+    assert metadata.notebook == Notebook(id="nb_123", title="Architecture", sources_count=1)
+    assert len(metadata.sources) == 1
+    assert metadata.sources[0].kind == SourceType.PDF
+    assert metadata.sources[0].title == "Design Paper"
+    assert core.rpc_call.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_direct_notebooks_api_metadata_lister_uses_late_bound_core_rpc_call() -> None:
+    core = _make_core()
+    api = NotebooksAPI(core)
+    replacement_rpc = AsyncMock(
+        return_value=[
+            [
+                "Late Bound",
+                [_source_entry("src_1", title="Design Paper", metadata=[None, 11, None, None, 3])],
+                "nb_123",
+            ]
+        ]
+    )
+    core.rpc_call = replacement_rpc
+
+    metadata = await api.get_metadata("nb_123")
+
+    assert metadata.title == "Late Bound"
+    assert metadata.sources[0].kind == SourceType.PDF
+    assert replacement_rpc.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_client_wires_sources_api_into_notebooks_as_structural_lister() -> None:
+    auth = AuthTokens(
+        cookies={"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts", "HSID": "test_hsid"},
+        csrf_token="test_csrf",
+        session_id="test_session",
+    )
+    client = NotebookLMClient(auth)
+    client.notebooks.get = AsyncMock(
+        return_value=Notebook(id="nb_123", title="Client", sources_count=1)
+    )
+    client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="Paper", _type_code=3)])
+
+    metadata = await client.notebooks.get_metadata("nb_123")
+
+    assert metadata.notebook.title == "Client"
+    assert metadata.sources[0].kind == SourceType.PDF
+    client.sources.list.assert_awaited_once_with("nb_123")
 
 
 @pytest.mark.asyncio
