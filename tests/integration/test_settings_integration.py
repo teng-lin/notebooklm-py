@@ -1,4 +1,11 @@
-"""Integration tests for SettingsAPI."""
+"""Integration tests for SettingsAPI.
+
+Moved from ``tests/unit/`` to ``tests/integration/`` in Tier-9 PR-J (I13).
+Mock-backed (``pytest_httpx``); ``allow_no_vcr`` opts out of the
+integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.
+Cassette-backed coverage lives in ``tests/integration/test_settings_vcr.py``
+and ``tests/integration/test_vcr_comprehensive.py``.
+"""
 
 import json
 from unittest.mock import AsyncMock, patch
@@ -8,6 +15,8 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm.rpc import RPCMethod
+
+pytestmark = pytest.mark.allow_no_vcr
 
 
 class TestSettingsAPI:

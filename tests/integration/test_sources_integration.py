@@ -1,4 +1,11 @@
-"""Integration tests for SourcesAPI."""
+"""Integration tests for SourcesAPI.
+
+Moved from ``tests/unit/`` to ``tests/integration/`` in Tier-9 PR-J (I13).
+Mock-backed (``pytest_httpx``); ``allow_no_vcr`` opts out of the
+integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.
+Cassette-backed coverage lives in ``tests/integration/test_vcr_comprehensive.py``
+and the various ``sources_*.yaml`` cassettes under ``tests/cassettes/``.
+"""
 
 import re
 import urllib.parse
@@ -13,6 +20,8 @@ from notebooklm import NotebookLMClient, Source, SourceType
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import SourceAddError, SourceNotFoundError
+
+pytestmark = pytest.mark.allow_no_vcr
 
 
 class TestAddSource:

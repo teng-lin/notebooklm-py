@@ -12,6 +12,13 @@ requires a live auth session against the real service. The captured
 request/response pair under ``tests/unit/fixtures/`` is the next-best
 thing — it carries the exact wire payload Google's web UI sends when
 its "Save to note" button is clicked.
+
+Moved from ``tests/unit/`` to ``tests/integration/`` in Tier-9 PR-J (I13).
+Mock-backed (``pytest_httpx``); ``allow_no_vcr`` opts out of the
+integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.
+Fixture JSON files remain under ``tests/unit/fixtures/`` because
+``tests/unit/test_save_chat_as_note_encoder.py`` still reads them; the
+``FIXTURES_DIR`` constant below points at that shared location.
 """
 
 from __future__ import annotations
@@ -27,7 +34,13 @@ from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, ChatReference
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+pytestmark = pytest.mark.allow_no_vcr
+
+# Fixtures stay under ``tests/unit/fixtures/`` so the sibling encoder test
+# (``tests/unit/test_save_chat_as_note_encoder.py``) keeps a local
+# ``Path(__file__).parent / "fixtures"`` resolution. From
+# ``tests/integration/`` we hop up two levels and back down.
+FIXTURES_DIR = Path(__file__).resolve().parent.parent / "unit" / "fixtures"
 
 
 def _load_request_params() -> list:

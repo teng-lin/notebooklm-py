@@ -1,4 +1,15 @@
-"""Integration tests for ChatAPI."""
+"""Characterization tests for ChatAPI.
+
+These tests pin current observable behavior of the ChatAPI surface against
+hand-rolled streaming stubs and synthetic ``build_rpc_response`` payloads.
+They intentionally stay in ``tests/unit/`` (not ``tests/integration/``)
+because the streaming flows here are too synthetic to back with a real
+``vcrpy`` cassette — the assertions exercise specific stub-shaped chunk
+boundaries and AsyncMock-driven retries that no real RPC recording would
+faithfully reproduce. Tier-9 migration (PR-J) renamed this file from
+``test_chat_integration.py`` and labeled it with the ``characterization``
+marker; see ``pyproject.toml`` markers list for the rationale.
+"""
 
 from unittest.mock import AsyncMock, patch
 
@@ -9,9 +20,11 @@ from notebooklm import NotebookLMClient
 from notebooklm.rpc import ChatGoal, ChatResponseLength, RPCMethod
 from notebooklm.types import ChatMode
 
+pytestmark = pytest.mark.characterization
+
 
 class TestChatAPI:
-    """Integration tests for the ChatAPI."""
+    """Characterization tests for the ChatAPI."""
 
     @pytest.mark.asyncio
     async def test_get_conversation_id(
@@ -259,7 +272,7 @@ class TestChatAPI:
 
 
 class TestChatReferences:
-    """Integration tests for chat references and citations."""
+    """Characterization tests for chat references and citations."""
 
     @pytest.mark.asyncio
     async def test_ask_with_citations_returns_references(

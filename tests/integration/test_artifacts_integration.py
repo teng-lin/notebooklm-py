@@ -1,4 +1,13 @@
-"""Integration tests for ArtifactsAPI."""
+"""Integration tests for ArtifactsAPI.
+
+Moved from ``tests/unit/`` to ``tests/integration/`` in Tier-9 PR-J (I13).
+These tests are mock-backed (``pytest_httpx``) rather than VCR-cassette-
+backed; the ``allow_no_vcr`` module-level marker opts them out of the
+integration-tree VCR enforcement hook in ``tests/integration/conftest.py``.
+Cassette-backed coverage for the same API surface lives in
+``tests/integration/test_vcr_comprehensive.py`` and adjacent
+``test_*_vcr.py`` files.
+"""
 
 import csv
 import json
@@ -24,6 +33,8 @@ from notebooklm.types import (
     ArtifactParseError,
     ArtifactType,
 )
+
+pytestmark = pytest.mark.allow_no_vcr
 
 
 class TestStudioContent:
