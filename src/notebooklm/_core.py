@@ -8,13 +8,14 @@ import threading
 import time
 import warnings
 import weakref
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import httpx
 
+from ._core_auth import AuthRefreshCoordinator
 from ._core_cookie_persistence import CookiePersistence
 from ._core_drain import TransportDrainTracker
 
@@ -70,6 +71,10 @@ from .rpc import (
 
 logger = logging.getLogger(__name__)
 _OBSERVABILITY_INIT_LOCK = threading.Lock()
+# Guards ``_auth_coord`` backfill on ``__new__``-built fixtures. Mirrors the
+# observability init lock so two threads can't both observe ``hasattr is False``
+# and race to construct competing :class:`AuthRefreshCoordinator` instances.
+_AUTH_COORD_INIT_LOCK = threading.Lock()
 
 
 # Default HTTP timeouts in seconds
@@ -467,7 +472,13 @@ class ClientCore:
         self._timeout = timeout
         self._connect_timeout = connect_timeout
         self._limits = limits if limits is not None else ConnectionLimits()
-        self._refresh_callback = refresh_callback
+        # ``_refresh_retry_delay`` stays here directly — it is read on the
+        # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
+        # by integration tests against ``client._core``. The refresh
+        # callback + the four refresh/auth-snapshot ivars (``_refresh_lock``,
+        # ``_refresh_task``, ``_refresh_callback``, ``_auth_snapshot_lock``)
+        # live on ``self._auth_coord``, constructed below alongside the other
+        # extracted helpers so the inter-helper dependency order is obvious.
         self._refresh_retry_delay = refresh_retry_delay
         if rate_limit_max_retries < 0:
             raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
@@ -519,20 +530,6 @@ class ClientCore:
         # ``_max_concurrent_rpcs is None``, the accessor returns a
         # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
         self._rpc_semaphore: asyncio.Semaphore | None = None
-        # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
-        # Python versions, and ``ClientCore`` can be constructed outside one
-        # (e.g. a sync-mode ``NotebookLMClient(...)`` instantiation before the
-        # caller's ``asyncio.run``). Use :meth:`_get_refresh_lock` to fetch
-        # the live lock on demand. Mirrors the ``_reqid_lock`` /
-        # ``_auth_snapshot_lock`` lazy-init pattern.
-        # The lock gates single-flight refresh-task creation in
-        # :meth:`_await_refresh` — the assert on ``_refresh_callback is not
-        # None`` there is the real precondition; this lock is allocated on
-        # first refresh attempt regardless of whether a callback was wired,
-        # because asyncio is single-threaded and the check-then-assign in
-        # ``_get_refresh_lock`` is race-free without an outer lock.
-        self._refresh_lock: asyncio.Lock | None = None
-        self._refresh_task: asyncio.Task[AuthTokens] | None = None
         self._http_client: httpx.AsyncClient | None = None
         # Observability counters + telemetry callback. Compat properties
         # below (``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event``) bridge
@@ -555,18 +552,18 @@ class ClientCore:
         # cumulative ``lock_wait_seconds_*`` metrics ticking inside
         # ``self._metrics_obj`` even though the counter is now extracted.
         self._reqid = ReqidCounter(on_lock_wait=self._record_lock_wait)
-        # Serializes ``_AuthSnapshot`` reads in :meth:`_snapshot` with
-        # :meth:`ClientCore.update_auth_tokens` during auth refresh
-        # . The lock holds only across the four
-        # ``self.auth.*`` scalar reads / two scalar writes — never across
-        # an ``await`` — so RPC throughput isn't serialized to refresh
-        # latency. Lazy-init mirrors ``_reqid_lock`` because ``asyncio.Lock()``
-        # needs a running loop in some Python versions. Distinct from
-        # ``_refresh_lock`` (which is owned by refresh-task creation and
-        # held across ``await self._refresh_callback()``): mixing the two
-        # would re-introduce the reentrancy ambiguity that snapshot-side
-        # serialization was added to avoid.
-        self._auth_snapshot_lock: asyncio.Lock | None = None
+        # Auth refresh coordination — single-flight refresh task, snapshot
+        # serialization, and cookie-jar sync. The coordinator owns
+        # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
+        # ``_auth_snapshot_lock``; field names match the legacy
+        # ``ClientCore`` ivars so the compat properties below delegate
+        # cleanly. The ``_auth_snapshot_lock`` is intentionally distinct
+        # from ``_refresh_lock`` — mixing them would re-introduce the
+        # reentrancy ambiguity that snapshot-side serialization was added
+        # to avoid. The attribute name ``_auth_coord`` is part of the
+        # inter-helper contract for the upcoming B2/C1 extractions; do not
+        # rename.
+        self._auth_coord = AuthRefreshCoordinator(refresh_callback=refresh_callback)
         # Event-loop affinity guard. Captured in
         # :meth:`open` and checked in :meth:`_perform_authed_post`; a cheap
         # ``is`` comparison fails fast when a caller drives the same
@@ -696,6 +693,72 @@ class ClientCore:
     def _operation_depths(self, value: weakref.WeakKeyDictionary[asyncio.Task[Any], int]) -> None:
         self._ensure_observability_state()
         self._drain_tracker._operation_depths = value
+
+    # ------------------------------------------------------------------
+    # ``AuthRefreshCoordinator`` compat bridges. Refresh/auth-snapshot state
+    # now lives on ``self._auth_coord``; the four legacy ivar names are
+    # preserved as writeable properties so the dozens of test sites that
+    # do ``core._refresh_callback = stub`` / ``core._refresh_lock = asyncio.Lock()``
+    # keep working without modification. ``_ensure_auth_coord`` mirrors the
+    # ``_ensure_observability_state`` backfill so ``__new__``-built fixtures
+    # (no ``__init__`` ran) still resolve cleanly.
+    # ------------------------------------------------------------------
+
+    def _ensure_auth_coord(self) -> None:
+        """Backfill ``_auth_coord`` for tests that construct via ``__new__``.
+
+        Mirrors :meth:`_ensure_observability_state` — uses a module-level
+        threading lock for double-checked locking so two threads racing
+        through ``hasattr`` cannot both decide they need to construct a
+        coordinator and silently discard each other's locks/refresh task.
+        """
+        if hasattr(self, "_auth_coord"):
+            return
+        with _AUTH_COORD_INIT_LOCK:
+            if not hasattr(self, "_auth_coord"):
+                self._auth_coord = AuthRefreshCoordinator(refresh_callback=None)
+
+    @property
+    def _refresh_lock(self) -> asyncio.Lock | None:
+        self._ensure_auth_coord()
+        return self._auth_coord._refresh_lock
+
+    @_refresh_lock.setter
+    def _refresh_lock(self, value: asyncio.Lock | None) -> None:
+        self._ensure_auth_coord()
+        self._auth_coord._refresh_lock = value
+
+    @property
+    def _refresh_task(self) -> asyncio.Task[AuthTokens] | None:
+        self._ensure_auth_coord()
+        return self._auth_coord._refresh_task
+
+    @_refresh_task.setter
+    def _refresh_task(self, value: asyncio.Task[AuthTokens] | None) -> None:
+        self._ensure_auth_coord()
+        self._auth_coord._refresh_task = value
+
+    @property
+    def _refresh_callback(self) -> Callable[[], Awaitable[AuthTokens]] | None:
+        self._ensure_auth_coord()
+        return self._auth_coord._refresh_callback
+
+    @_refresh_callback.setter
+    def _refresh_callback(
+        self, value: Callable[[], Awaitable[AuthTokens]] | None
+    ) -> None:
+        self._ensure_auth_coord()
+        self._auth_coord._refresh_callback = value
+
+    @property
+    def _auth_snapshot_lock(self) -> asyncio.Lock | None:
+        self._ensure_auth_coord()
+        return self._auth_coord._auth_snapshot_lock
+
+    @_auth_snapshot_lock.setter
+    def _auth_snapshot_lock(self, value: asyncio.Lock | None) -> None:
+        self._ensure_auth_coord()
+        self._auth_coord._auth_snapshot_lock = value
 
     # ------------------------------------------------------------------
     # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
@@ -1200,51 +1263,41 @@ class ClientCore:
         """Refresh auth metadata without resetting the live cookie jar.
 
         Call this after modifying auth tokens (e.g., after refresh_auth())
-        to ensure the HTTP client uses the updated credentials.
-
-        The httpx client's cookie jar is authoritative once the session is
-        open. Re-injecting startup cookies here can overwrite cookies refreshed
-        during redirects to accounts.google.com.
+        to ensure the HTTP client uses the updated credentials. Delegates
+        to :meth:`AuthRefreshCoordinator.update_auth_headers`; the cookie
+        jar source is fetched via ``self.get_http_client()`` so the open()
+        precondition (and its ``RuntimeError`` if not initialised) is
+        enforced at one site.
 
         Raises:
             RuntimeError: If client is not initialized.
         """
-        if not self._http_client:
-            raise RuntimeError("Client not initialized. Use 'async with' context.")
-
-        self.auth.cookie_jar = self._http_client.cookies
+        self._ensure_auth_coord()
+        self._auth_coord.update_auth_headers(self)
 
     def _get_auth_snapshot_lock(self) -> asyncio.Lock:
-        """Return the lazily-initialised ``_auth_snapshot_lock``.
+        """Return the lazily-initialised auth-snapshot lock.
 
-        ``asyncio.Lock()`` needs a running loop in some Python versions, so
-        ``ClientCore.__init__`` leaves the field as ``None``. Callers must
-        be inside an async context (which we are, since both
-        :meth:`_snapshot` and :meth:`update_auth_tokens` are coroutines).
-        The check-then-assign is safe without an outer lock
-        because asyncio is single-threaded — no other coroutine can
-        execute between the ``is None`` check and the assignment unless
-        we ``await``.
+        Delegates to :meth:`AuthRefreshCoordinator.get_auth_snapshot_lock`.
+        The check-then-assign there is safe without an outer lock because
+        asyncio is single-threaded — no other coroutine can execute between
+        the ``is None`` check and the assignment unless we ``await`` (and
+        the accessor does not).
         """
-        if self._auth_snapshot_lock is None:
-            self._auth_snapshot_lock = asyncio.Lock()
-        return self._auth_snapshot_lock
+        self._ensure_auth_coord()
+        return self._auth_coord.get_auth_snapshot_lock()
 
     def _get_refresh_lock(self) -> asyncio.Lock:
-        """Return the lazily-initialised ``_refresh_lock``.
+        """Return the lazily-initialised refresh lock.
 
-        ``asyncio.Lock()`` needs a running loop in some Python versions, so
-        ``ClientCore.__init__`` leaves the field as ``None``. Callers must be inside an async context — the only call site
-        is :meth:`_await_refresh`, which is itself a coroutine. The
-        check-then-assign is safe without an outer lock because asyncio is
-        single-threaded: no other coroutine can execute between the
-        ``is None`` check and the assignment unless we ``await``, so every
-        concurrent caller resolves to the *same* lock instance and the
-        single-flight refresh dedupe is preserved.
+        Delegates to :meth:`AuthRefreshCoordinator.get_refresh_lock`. Every
+        concurrent caller resolves to the *same* lock instance because the
+        check-then-assign is race-free in a single-threaded asyncio loop,
+        so the single-flight refresh dedupe in :meth:`_await_refresh` is
+        preserved.
         """
-        if self._refresh_lock is None:
-            self._refresh_lock = asyncio.Lock()
-        return self._refresh_lock
+        self._ensure_auth_coord()
+        return self._auth_coord.get_refresh_lock()
 
     async def _snapshot(self) -> _AuthSnapshot:
         """Capture the current auth headers as a frozen snapshot.
@@ -1260,14 +1313,21 @@ class ClientCore:
         reads — no ``await``s — so the lock is uncontested in steady
         state and refresh's tiny write block can't block RPC throughput.
 
-        The whole-request atomicity for ``(csrf, sid, cookies)`` on the
-        wire still depends on the no-await invariant between this method
+        Body is kept here as real code (rather than delegating to
+        :meth:`AuthRefreshCoordinator.snapshot`) so the AST guard at
+        ``tests/unit/test_concurrency_refresh_race.py::test_snapshot_acquires_auth_snapshot_lock``
+        — which inspects this method's source and asserts it contains an
+        ``async with`` over ``_auth_snapshot_lock`` — keeps operating on
+        the real implementation. The coordinator method has the same
+        semantic shape (lock acquire → scalar reads → return) but routes
+        the lock-wait metric through the host's ``_metrics_obj`` directly
+        rather than via the ``_record_lock_wait`` facade.
+
+        Whole-request atomicity for ``(csrf, sid, cookies)`` on the wire
+        still depends on the no-await invariant between this method
         returning and ``client.post(...)`` inside
-        :meth:`_perform_authed_post` (see the AST guard in
-        ``tests/unit/test_concurrency_refresh_race.py``). The lock
-        guarantees the four scalars in the snapshot are coherent with
-        each other; the no-await rule keeps the cookie axis aligned with
-        them.
+        :meth:`_perform_authed_post` (see the related AST guard in
+        ``tests/unit/test_concurrency_refresh_race.py``).
         """
         wait_start = time.perf_counter()
         async with self._get_auth_snapshot_lock():
@@ -1280,7 +1340,18 @@ class ClientCore:
             )
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
-        """Atomically update auth token scalars under the snapshot lock."""
+        """Atomically update auth token scalars under the snapshot lock.
+
+        The body is kept here as real code (rather than a delegate to
+        :meth:`AuthRefreshCoordinator.update_auth_tokens`) so the AST
+        guard at ``tests/unit/test_concurrency_refresh_race.py:304-334``
+        — which inspects the source of this method and asserts there is
+        no ``await`` inside the csrf/session_id mutation block — keeps
+        operating on the real implementation. The coordinator method
+        has the same semantic shape (lock acquire → two scalar writes)
+        but routes the lock-wait metric through the host's
+        ``_metrics_obj`` directly rather than via ``_record_lock_wait``.
+        """
         lock = self._get_auth_snapshot_lock()
         wait_start = time.perf_counter()
         await lock.acquire()
@@ -1323,43 +1394,20 @@ class ClientCore:
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.
 
-        Concurrent callers share one refresh task so a thundering herd of
-        401s on the same client triggers exactly one token refresh. The lock
-        protects task-creation only; the await on the task itself happens
-        outside the lock so other callers can join.
-
-        The join is wrapped in :func:`asyncio.shield` so
-        that a caller cancelled while waiting — e.g. via
-        ``asyncio.wait_for(..., timeout=...)`` — unwinds locally without
-        propagating the ``CancelledError`` into the *shared* refresh task.
-        Without the shield, one cancelled waiter would cancel the
-        underlying task, taking down every sibling joined to the same
-        single-flight refresh. The slot at ``self._refresh_task`` is left
-        intact across the cancellation and is replaced only on the next
-        refresh wave once the current task transitions to ``done()``.
+        Delegates to :meth:`AuthRefreshCoordinator.await_refresh`. The
+        coordinator preserves the single-flight semantics — concurrent
+        callers share one refresh task so a thundering herd of 401s on the
+        same client triggers exactly one token refresh. The lock protects
+        task-creation only; the await on the task itself happens outside
+        the lock so other callers can join, and the join is wrapped in
+        :func:`asyncio.shield` so a cancelled waiter unwinds locally
+        without propagating ``CancelledError`` into the shared task. The
+        ``_refresh_task`` slot is left intact across cancellation and is
+        replaced only on the next refresh wave once the current task
+        transitions to ``done()``.
         """
-        assert self._refresh_callback is not None
-
-        # Lazy-init the lock on first refresh attempt.
-        # Every concurrent caller resolves to the same instance because
-        # ``_get_refresh_lock`` runs synchronously in a single-threaded
-        # asyncio loop, so single-flight task creation below is preserved.
-        lock = self._get_refresh_lock()
-        wait_start = time.perf_counter()
-        await lock.acquire()
-        self._record_lock_wait(time.perf_counter() - wait_start)
-        try:
-            if self._refresh_task is not None and not self._refresh_task.done():
-                refresh_task = self._refresh_task
-                logger.debug("Joining existing refresh task")
-            else:
-                coro = cast(Coroutine[Any, Any, AuthTokens], self._refresh_callback())
-                self._refresh_task = asyncio.create_task(coro)
-                refresh_task = self._refresh_task
-        finally:
-            lock.release()
-
-        await asyncio.shield(refresh_task)
+        self._ensure_auth_coord()
+        await self._auth_coord.await_refresh(self)
 
     async def query_post(
         self,
