@@ -39,9 +39,15 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 ResearchImportResult = research_import_helpers.ResearchImportResult
 
-# Compatibility patch targets used by older tests and command paths.
-build_cookie_jar = auth_helpers.build_cookie_jar
-load_auth_from_storage = auth_helpers.load_auth_from_storage
+
+def build_cookie_jar(*args: Any, **kwargs: Any) -> Any:
+    """Compatibility patch target for auth cookie-jar construction."""
+    return auth_helpers.build_cookie_jar(*args, **kwargs)
+
+
+def load_auth_from_storage(*args: Any, **kwargs: Any) -> Any:
+    """Compatibility patch target for auth storage loading."""
+    return auth_helpers.load_auth_from_storage(*args, **kwargs)
 
 
 def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:

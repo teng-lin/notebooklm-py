@@ -12,6 +12,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from functools import wraps
+from pathlib import Path
 from typing import Any, NoReturn, TypeVar
 
 import click
@@ -29,6 +30,25 @@ def _helpers_facade():
     return helpers
 
 
+def _auth_context(ctx) -> tuple[str | None, str | None]:
+    """Return explicit storage and profile values from a Click context."""
+    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
+    profile = ctx.obj.get("profile") if ctx.obj else None
+    return storage_path, profile
+
+
+def _resolve_auth_storage_path(storage_path: str | None, profile: str | None) -> Any | None:
+    """Resolve storage unless auth is supplied directly by environment."""
+    if storage_path is not None:
+        return storage_path
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        return None
+
+    from ..paths import get_storage_path
+
+    return get_storage_path(profile=profile)
+
+
 def get_client(ctx) -> tuple[dict, str, str]:
     """Get auth components from context.
 
@@ -42,14 +62,8 @@ def get_client(ctx) -> tuple[dict, str, str]:
         FileNotFoundError: If auth storage not found
     """
     helpers = _helpers_facade()
-    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    profile = ctx.obj.get("profile") if ctx.obj else None
-
-    resolved_storage_path = storage_path
-    if resolved_storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
-        from ..paths import get_storage_path
-
-        resolved_storage_path = get_storage_path(profile=profile)
+    storage_path, profile = _auth_context(ctx)
+    resolved_storage_path = _resolve_auth_storage_path(storage_path, profile)
 
     # Load from storage (which respects NOTEBOOKLM_AUTH_JSON if resolved path is None).
     cookies = helpers.load_auth_from_storage(resolved_storage_path)
@@ -71,14 +85,8 @@ def get_auth_tokens(ctx) -> AuthTokens:
     """
     helpers = _helpers_facade()
     cookies, csrf, session_id = helpers.get_client(ctx)
-    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    profile = ctx.obj.get("profile") if ctx.obj else None
-
-    resolved_storage_path = storage_path
-    if resolved_storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
-        from ..paths import get_storage_path
-
-        resolved_storage_path = get_storage_path(profile=profile)
+    storage_path, profile = _auth_context(ctx)
+    resolved_storage_path = _resolve_auth_storage_path(storage_path, profile)
 
     if os.environ.get("NOTEBOOKLM_AUTH_JSON") and storage_path is None:
         from ..auth import build_httpx_cookies_from_storage
@@ -107,9 +115,14 @@ def handle_auth_error(json_output: bool = False) -> NoReturn:
     from ..paths import get_path_info, get_storage_path
 
     helpers = _helpers_facade()
+    ctx = click.get_current_context(silent=True)
+    profile = ctx.obj.get("profile") if ctx and ctx.obj else None
     storage_override = helpers._current_storage_override()
-    path_info = get_path_info(storage_path=storage_override)
-    storage_path = storage_override if storage_override is not None else get_storage_path()
+    path_info = get_path_info(profile=profile, storage_path=storage_override)
+    storage_path = (
+        storage_override if storage_override is not None else get_storage_path(profile=profile)
+    )
+    storage_path = Path(storage_path).expanduser().resolve()
     has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
     has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
     storage_source = path_info["home_source"]
