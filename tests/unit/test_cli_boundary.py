@@ -181,28 +181,31 @@ def test_options_completion_callbacks_stay_on_completion_provider_boundary() -> 
                     continue
                 alias_name = alias.asname or alias.name
                 forbidden_names.add(alias_name)
-                import_offenders.append(f"module import: {alias.name}")
+                import_offenders.append(f"import: {alias.name}")
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[-1] not in COMPLETION_FORBIDDEN_SYMBOLS:
+                if "." in alias.name or alias.name not in COMPLETION_FORBIDDEN_SYMBOLS:
                     continue
-                # Python binds the root import name unless an explicit alias is used.
-                alias_name = alias.asname or alias.name.split(".")[0]
+                alias_name = alias.asname or alias.name
                 forbidden_names.add(alias_name)
-                import_offenders.append(f"module import: {alias.name}")
+                import_offenders.append(f"import: {alias.name}")
 
-    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, FUNCTION_DEF_TYPES)}
+    functions = [node for node in ast.walk(tree) if isinstance(node, FUNCTION_DEF_TYPES)]
     top_level_functions = {node.name for node in tree.body if isinstance(node, FUNCTION_DEF_TYPES)}
 
-    assert top_level_functions >= COMPLETION_CALLBACKS
+    missing_callbacks = COMPLETION_CALLBACKS - top_level_functions
+    assert not missing_callbacks, (
+        "Expected top-level completion callbacks missing from cli.options: "
+        f"{sorted(missing_callbacks)}"
+    )
 
     offenders = list(import_offenders)
-    for function_name, function in sorted(functions.items()):
+    for function in sorted(functions, key=lambda node: (node.lineno, node.name)):
         for node in _iter_function_body_nodes(function):
             if isinstance(node, ast.Name) and node.id in forbidden_names:
-                offenders.append(f"{function_name}: {node.id}")
+                offenders.append(f"{function.name}: {node.id}")
             elif isinstance(node, ast.Attribute) and node.attr in COMPLETION_FORBIDDEN_SYMBOLS:
-                offenders.append(f"{function_name}: .{node.attr}")
+                offenders.append(f"{function.name}: .{node.attr}")
 
     assert not offenders, (
         "cli.options must delegate completion live auth/client/runtime work to "
