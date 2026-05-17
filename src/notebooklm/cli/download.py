@@ -28,14 +28,12 @@ from .download_helpers import (
     resolve_partial_artifact_id,
     select_artifact,
 )
-from .error_handler import handle_errors
 from .helpers import (
     console,
-    handle_auth_error,
     json_output_response,
     require_notebook,
     resolve_notebook_id,
-    run_async,
+    with_auth_and_errors,
 )
 from .options import _complete_artifacts, notebook_option
 
@@ -131,6 +129,7 @@ async def _get_completed_artifacts_as_dicts(
 
 async def _download_artifacts_generic(
     ctx,
+    client_auth,
     artifact_type_name: str,
     artifact_kind: ArtifactType,
     file_extension: str,
@@ -184,13 +183,8 @@ async def _download_artifacts_generic(
     if download_all and artifact_id:
         raise click.UsageError("Cannot specify both --all and --artifact")
 
-    # Get notebook and auth
+    # Get notebook
     nb_id = require_notebook(notebook_id)
-    storage_path = ctx.obj.get("storage_path") if ctx.obj else None
-    profile = ctx.obj.get("profile") if ctx.obj else None
-    from ..auth import AuthTokens
-
-    auth = await AuthTokens.from_storage(storage_path, profile=profile)
 
     # Adjust extension for PPTX format (must be outside _download() to avoid UnboundLocalError)
     if artifact_type_name == "slide-deck" and slide_format == "pptx":
@@ -214,7 +208,7 @@ async def _download_artifacts_generic(
             )
 
     async def _download() -> dict[str, Any]:
-        async with NotebookLMClient(auth) as client:
+        async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
 
             # Setup download method dispatch
@@ -711,12 +705,10 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
 
     Handles the common pattern across all artifact download commands.
 
-    Exception path is routed through ``cli.error_handler.handle_errors`` so
-    ``--json`` is honored on errors (typed JSON envelope on stdout),
-    ``RateLimitError.retry_after`` surfaces in the JSON body, ``AuthError``
-    shows the re-authentication hint in text mode, and exit codes follow the
-    typed policy (1 = library/user error, 2 = unexpected/system error).
-    See ``error_handler.py`` for the canonical exit-code table.
+    Exception and auth-bootstrap paths are routed through the shared
+    ``with_auth_and_errors`` runtime so download commands match decorator-based
+    commands for ``--json`` error envelopes, auth-required UX, verbose logging,
+    and exit-code policy.
 
     The "returned dict with an ``error`` field" path
     (``_download_artifacts_generic`` → ``{"error": ...}`` for empty artifact
@@ -724,58 +716,45 @@ def _run_artifact_download(ctx, artifact_type: str, **kwargs) -> None:
     typed handler — it preserves the legacy `{"error": "<msg>"}` JSON shape
     that scripts already depend on, and exits 1 directly.
 
-    Missing storage file is routed through ``handle_auth_error`` (exit 1)
-    rather than being misclassified as ``UNEXPECTED_ERROR`` (exit 2). This
-    mirrors the canonical ``with_client`` decorator pattern in
-    ``helpers.py:1079-1084`` — a missing ``storage_state.json`` is a typed
-    auth condition, not a system bug, and deserves the rich "Run
-    'notebooklm login'" UX. The narrow ``FileNotFoundError`` catch ensures
-    a ``FileNotFoundError`` raised *inside* the download body (e.g. a
-    user-supplied path that doesn't exist — see issue #153) is NOT
-    misclassified as auth failure; it propagates through ``handle_errors``'
-    UNEXPECTED_ERROR branch instead.
+    Missing storage files are handled inside ``with_auth_and_errors`` before
+    the command body runs. ``FileNotFoundError`` raised by the download body
+    still reaches the typed error handler as an unexpected command failure.
     """
     config = ARTIFACT_CONFIGS[artifact_type]
     json_output = kwargs.get("json_output", False)
-    # ``--verbose`` is captured on the root group as a count; opt-in to the
-    # extra error context (RPC method_id, etc.) only when the user asks.
-    try:
-        verbose = int(ctx.find_root().params.get("verbose", 0) or 0) >= 1
-    except Exception:
-        verbose = False
 
-    with handle_errors(verbose=verbose, json_output=json_output):
-        try:
-            result = run_async(
-                _download_artifacts_generic(
-                    ctx=ctx,
-                    artifact_type_name=artifact_type,
-                    artifact_kind=config["kind"],
-                    file_extension=config["extension"],
-                    default_output_dir=config["default_dir"],
-                    **kwargs,
-                )
-            )
-        except FileNotFoundError:
-            # Auth bootstrap missing storage_state.json — surface the rich
-            # "Not logged in" UX instead of a generic UNEXPECTED_ERROR.
-            handle_auth_error(json_output)
-            return  # unreachable — handle_auth_error raises SystemExit
+    async def body(client_auth):
+        return await _download_artifacts_generic(
+            ctx=ctx,
+            client_auth=client_auth,
+            artifact_type_name=artifact_type,
+            artifact_kind=config["kind"],
+            file_extension=config["extension"],
+            default_output_dir=config["default_dir"],
+            **kwargs,
+        )
 
-        if json_output:
-            json_output_response(result)
-            # Mirror the non-JSON exit-code behavior: any top-level "error"
-            # field means the operation failed even though we returned a
-            # parseable JSON document. Automation must see a nonzero exit.
-            # NOTE: this preserves the legacy returned-dict envelope shape
-            # (free-form ``error`` string, no typed ``code``) — see docstring.
-            if "error" in result:
-                raise SystemExit(1)
-            return
+    result = with_auth_and_errors(
+        ctx,
+        command_name=f"download_{artifact_type.replace('-', '_')}",
+        json_output=json_output,
+        body=body,
+    )
 
-        _display_download_result(result, artifact_type)
+    if json_output:
+        json_output_response(result)
+        # Mirror the non-JSON exit-code behavior: any top-level "error"
+        # field means the operation failed even though we returned a
+        # parseable JSON document. Automation must see a nonzero exit.
+        # NOTE: this preserves the legacy returned-dict envelope shape
+        # (free-form ``error`` string, no typed ``code``) — see docstring.
         if "error" in result:
             raise SystemExit(1)
+        return
+
+    _display_download_result(result, artifact_type)
+    if "error" in result:
+        raise SystemExit(1)
 
 
 @download.command("report")
