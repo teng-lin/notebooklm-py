@@ -144,20 +144,17 @@ def _violations(tree: ast.AST) -> list[str]:  # noqa: C901 - flat dispatch on im
 
 
 def _iter_block_body_nodes(block: ast.AST) -> Iterator[ast.AST]:
-    """Yield nodes from a block body without descending into nested blocks."""
-    body = getattr(block, "body", [])
-    if not isinstance(body, list):
-        return
+    """Yield nodes from a block signature/body without descending into nested blocks."""
 
-    def walk(node: ast.AST) -> Iterator[ast.AST]:
-        if isinstance(node, BLOCK_DEF_TYPES):
+    def walk(node: ast.AST, *, is_root: bool = False) -> Iterator[ast.AST]:
+        if not is_root and isinstance(node, BLOCK_DEF_TYPES):
             return
-        yield node
+        if not is_root:
+            yield node
         for child in ast.iter_child_nodes(node):
             yield from walk(child)
 
-    for statement in body:
-        yield from walk(statement)
+    yield from walk(block, is_root=True)
 
 
 def _has_forbidden_completion_boundary(parts: list[str]) -> bool:
@@ -280,6 +277,22 @@ def test_options_completion_callbacks_stay_on_completion_provider_boundary() -> 
         (
             "class Provider:\n"
             "    client = NotebookLMClient\n"
+            "def _resolve_notebook_for_completion():\n"
+            "    return None\n",
+            ["class Provider: NotebookLMClient"],
+        ),
+        (
+            "@run_async\n"
+            "def _complete_artifacts(client: NotebookLMClient = None) -> NotebookLMClient:\n"
+            "    return client\n",
+            [
+                "_complete_artifacts: run_async",
+                "_complete_artifacts: NotebookLMClient",
+            ],
+        ),
+        (
+            "class Provider(NotebookLMClient):\n"
+            "    pass\n"
             "def _resolve_notebook_for_completion():\n"
             "    return None\n",
             ["class Provider: NotebookLMClient"],
