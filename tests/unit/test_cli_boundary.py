@@ -40,6 +40,8 @@ OPTIONS_PATH = CLI_ROOT / "options.py"
 SERVICES_ROOT = CLI_ROOT / "services"
 RENDERING_PATH = CLI_ROOT / "rendering.py"
 CONTEXT_PATH = CLI_ROOT / "context.py"
+RUNTIME_PATH = CLI_ROOT / "runtime.py"
+AUTH_RUNTIME_PATH = CLI_ROOT / "auth_runtime.py"
 COMPLETION_CALLBACKS = {
     "_complete_artifacts",
     "_complete_notebooks",
@@ -86,6 +88,7 @@ CONTEXT_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "resolve",
     "runtime",
 }
+AUTH_RUNTIME_ALLOWED_MODULES = {"error_handler", "helpers"}
 
 
 def _is_private_segment(seg: str) -> bool:
@@ -353,6 +356,22 @@ def test_context_stays_on_low_level_cli_import_boundary() -> None:
         "cli.context must not import runtime/auth/rendering/resolve/input/completion "
         "or command modules. "
         f"Offenders: {sorted(imports & CONTEXT_FORBIDDEN_MODULES)}"
+    )
+
+
+def test_runtime_stays_leaf_module() -> None:
+    imports = _cli_module_imports(RUNTIME_PATH)
+
+    assert imports == set(), f"cli.runtime must not import other cli modules. Offenders: {imports}"
+
+
+def test_auth_runtime_imports_only_runtime_facade_collaborators() -> None:
+    imports = _cli_module_imports(AUTH_RUNTIME_PATH)
+
+    assert imports <= AUTH_RUNTIME_ALLOWED_MODULES, (
+        "cli.auth_runtime must not import command, rendering, context, resolve, "
+        "input, or completion modules directly. "
+        f"Offenders: {sorted(imports - AUTH_RUNTIME_ALLOWED_MODULES)}"
     )
 
 

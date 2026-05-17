@@ -11,10 +11,12 @@ import pytest
 from filelock import Timeout
 
 import notebooklm.cli._encoding as encoding_module
+import notebooklm.cli.auth_runtime as auth_runtime_module
 import notebooklm.cli.context as context_module
 import notebooklm.cli.helpers as helpers_module
 import notebooklm.cli.rendering as rendering_module
 import notebooklm.cli.research_import as research_import_module
+import notebooklm.cli.runtime as runtime_module
 from notebooklm import Artifact
 from notebooklm.cli.helpers import (
     clear_context,
@@ -1034,6 +1036,28 @@ class TestGetClient:
 
         mock_load.assert_called_once_with("/custom/path")
 
+    def test_auth_runtime_observes_helper_patch_seams(self):
+        ctx = MagicMock()
+        ctx.obj = {"storage_path": "/custom/path", "profile": "agent"}
+
+        with (
+            patch("notebooklm.cli.helpers.load_auth_from_storage") as mock_load,
+            patch("notebooklm.cli.helpers.run_async", return_value=("csrf", "session")) as runner,
+        ):
+            mock_load.return_value = {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+            token_fetch = object()
+            mock_fetch = MagicMock(return_value=token_fetch)
+
+            with patch("notebooklm.auth.fetch_tokens_with_domains", new=mock_fetch):
+                cookies, csrf, session = auth_runtime_module.get_client(ctx)
+
+        mock_load.assert_called_once_with("/custom/path")
+        mock_fetch.assert_called_once_with("/custom/path", "agent")
+        runner.assert_called_once_with(token_fetch)
+        assert cookies == {"SID": "test", "__Secure-1PSIDTS": "test_1psidts"}
+        assert csrf == "csrf"
+        assert session == "session"
+
 
 class TestGetAuthTokens:
     def test_returns_auth_tokens_object(self):
@@ -1105,6 +1129,27 @@ class TestRunAsync:
 
         result = run_async(sample_coro())
         assert result == "result"
+
+    def test_runtime_module_runs_coroutine_and_returns_result(self):
+        async def sample_coro():
+            return "result"
+
+        result = runtime_module.run_async(sample_coro())
+        assert result == "result"
+
+    def test_helpers_run_async_is_compatibility_wrapper(self):
+        async def sample_coro():
+            return "result"
+
+        coro = sample_coro()
+        try:
+            with patch("notebooklm.cli.runtime.run_async", return_value="patched") as runner:
+                result = run_async(coro)
+        finally:
+            coro.close()
+
+        runner.assert_called_once_with(coro)
+        assert result == "patched"
 
     def test_nested_event_loop_raises_helpful_error(self):
         """Calling run_async from inside a running loop raises a CLI-shaped
