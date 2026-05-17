@@ -14,6 +14,7 @@ from typing import Any, Protocol, cast
 
 import httpx
 
+from ._backoff import compute_backoff_delay
 from .exceptions import RPCResponseTooLargeError
 
 # Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
@@ -210,13 +211,11 @@ class AuthedTransport:
         *,
         is_auth_error: Callable[[Exception], bool],
         sleep: Callable[[float], Awaitable[Any]],
-        uniform: Callable[[float, float], float],
         logger: logging.Logger,
     ):
         self._host = host
         self._is_auth_error = is_auth_error
         self._sleep = sleep
-        self._uniform = uniform
         self._logger = logger
 
     async def perform_authed_post(
@@ -311,8 +310,14 @@ class AuthedTransport:
                                 sleep_seconds: float = retry_after
                                 sleep_source = f"Retry-After={retry_after}s"
                             else:
-                                backoff = min(2**rate_limit_retries, 30)
-                                backoff += self._uniform(-0.2 * backoff, 0.2 * backoff)
+                                # rng=None → module random.uniform is honored
+                                # by tests that monkeypatch the shared module.
+                                backoff = compute_backoff_delay(
+                                    rate_limit_retries,
+                                    base=1.0,
+                                    cap=30.0,
+                                    jitter_ratio=0.2,
+                                )
                                 sleep_seconds = max(0.1, backoff)
                                 sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
                             self._logger.warning(
@@ -344,9 +349,17 @@ class AuthedTransport:
                             not disable_internal_retries
                             and server_error_retries < host._server_error_max_retries
                         ):
-                            backoff = min(2**server_error_retries, 30)
-                            backoff += self._uniform(-0.2 * backoff, 0.2 * backoff)
-                            backoff = max(0.1, backoff)
+                            # rng=None → module random.uniform is honored
+                            # by tests that monkeypatch the shared module.
+                            backoff = max(
+                                0.1,
+                                compute_backoff_delay(
+                                    server_error_retries,
+                                    base=1.0,
+                                    cap=30.0,
+                                    jitter_ratio=0.2,
+                                ),
+                            )
                             status_label = (
                                 f"HTTP {exc.response.status_code}"  # type: ignore[union-attr]
                                 if is_server_error

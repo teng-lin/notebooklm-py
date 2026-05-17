@@ -9,6 +9,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
 from ._capabilities import PollRegistryProvider, TransportOperationProvider
 from .rpc import (
@@ -275,7 +276,17 @@ class ArtifactPollingService:
                 if remaining <= 0:
                     raise
                 poll_retry_count += 1
-                backoff = min(2**poll_retry_count, 8.0, remaining)
+                # No jitter here: tests assert exact 2.0/4.0/8.0 sleeps and
+                # the remaining-timeout clamp owns thundering-herd avoidance.
+                backoff = min(
+                    compute_backoff_delay(
+                        poll_retry_count,
+                        base=1.0,
+                        cap=8.0,
+                        jitter_ratio=0.0,
+                    ),
+                    remaining,
+                )
                 logger.warning(
                     "wait_for_completion: transient %s on poll #%d, retrying in %.1fs",
                     e.__class__.__name__,
