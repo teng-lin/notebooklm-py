@@ -59,6 +59,7 @@ class Notebook:
 
         is_owner = True
         if len(data) > 5 and isinstance(data[5], list) and len(data[5]) > 1:
+            # The API sends False in this slot for owner notebooks; truthy values mean shared.
             is_owner = data[5][1] is False
 
         return cls(

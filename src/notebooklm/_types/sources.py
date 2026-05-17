@@ -78,6 +78,8 @@ _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
 
 
 def _source_warning_state() -> set[int]:
+    # Read through the public facade so monkeypatch.setattr(notebooklm.types, ...)
+    # rebinding is reflected in this private implementation.
     public_types = sys.modules.get("notebooklm.types")
     if public_types is not None:
         public_state = getattr(public_types, "_warned_source_types", None)
@@ -87,6 +89,8 @@ def _source_warning_state() -> set[int]:
 
 
 def _source_compat_map() -> dict[SourceType, str]:
+    # Read through the public facade so monkeypatch.setattr(notebooklm.types, ...)
+    # rebinding is reflected in this private implementation.
     public_types = sys.modules.get("notebooklm.types")
     if public_types is not None:
         public_map = getattr(public_types, "_SOURCE_TYPE_COMPAT_MAP", None)
@@ -203,6 +207,7 @@ class Source:
                     entry = data[0][0]
                     source_id = entry[0][0] if isinstance(entry[0], list) else entry[0]
                     title = entry[1] if len(entry) > 1 else None
+                    # Fall through to the shared metadata parser below.
                 else:
                     # Medium nested: [[['id'], 'title', ...]]
                     entry = data[0]

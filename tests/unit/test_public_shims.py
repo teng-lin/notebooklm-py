@@ -389,6 +389,12 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
     "_warned_source_types",
 ]
 
+_TYPES_PRIVATE_EXTERNAL_COMPAT_SEAMS = [
+    "_SOURCE_TYPE_CODE_MAP",
+    "_extract_notebook_sources_count",
+    "_safe_source_type",
+]
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -479,9 +485,9 @@ def test_types_non_all_facade_attributes_are_frozen() -> None:
     assert not hasattr(public_types, "RPCMethod")
 
 
-@pytest.mark.parametrize("name", _TYPES_PRIVATE_HELPER_SEAMS)
+@pytest.mark.parametrize("name", _TYPES_PRIVATE_HELPER_SEAMS + _TYPES_PRIVATE_EXTERNAL_COMPAT_SEAMS)
 def test_types_private_helper_seams_remain_importable(name: str) -> None:
-    """First-party private imports from notebooklm.types stay live during T13 moves."""
+    """Private imports from notebooklm.types stay live during T13 moves."""
     import notebooklm.types as public_types
 
     imported = getattr(__import__("notebooklm.types", fromlist=[name]), name)

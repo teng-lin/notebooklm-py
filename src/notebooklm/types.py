@@ -86,6 +86,8 @@ from .rpc.types import (
     source_status_to_str,
 )
 
+# Keep private facade names that first-party tests and external callers have
+# historically imported while the implementation moves into _types modules.
 _SOURCE_TYPE_CODE_MAP = _source_types._SOURCE_TYPE_CODE_MAP
 _SOURCE_TYPE_COMPAT_MAP = _source_types._SOURCE_TYPE_COMPAT_MAP
 _extract_notebook_sources_count = _notebook_types._extract_notebook_sources_count
@@ -135,6 +137,7 @@ _ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
     8: ArtifactType.SLIDE_DECK,
     9: ArtifactType.DATA_TABLE,
 }
+
 
 def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     """Convert internal artifact type and variant to user-facing ArtifactType.
