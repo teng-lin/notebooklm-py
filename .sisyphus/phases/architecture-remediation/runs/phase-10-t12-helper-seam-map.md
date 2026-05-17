@@ -52,7 +52,7 @@ High-risk helper patch seams found:
 | `display_report` | `notebooklm.cli.rendering` | T12.1 | Preserve text truncation and JSON hint behavior. |
 | `get_artifact_type_display` | `notebooklm.cli.rendering` | T12.1 | Keep helper import stable for artifact/source command modules. |
 | `get_source_type_display` | `notebooklm.cli.rendering` | T12.1 | Keep helper import stable for source command output. |
-| `_current_storage_override` | `notebooklm.cli.context` or `notebooklm.cli.auth_runtime` | T12.1/T12.2 | Preserve the value observed by auth and context helpers. |
+| `_current_storage_override` | `notebooklm.cli.context` | T12.1/T12.2 | Preserve the value observed by auth and context helpers. Keep it out of `auth_runtime` because `context.py` cannot import `auth_runtime.py`, while `auth_runtime.py` may import `context.py`. |
 | `_get_context_value` | `notebooklm.cli.context` | T12.1 | Preserve corrupt-context recovery and context file lock behavior. |
 | `_set_context_value` | `notebooklm.cli.context` | T12.1 | Preserve account metadata and remove-key behavior. |
 | `get_current_notebook` | `notebooklm.cli.context` | T12.1 | Keep `helpers.get_current_notebook` patch target effective for completion/notebook tests until migrated. |
@@ -60,7 +60,7 @@ High-risk helper patch seams found:
 | `clear_context` | `notebooklm.cli.context` | T12.1 | Preserve `clear_account` behavior. |
 | `get_current_conversation` | `notebooklm.cli.context` | T12.1 | Preserve conversation context file shape. |
 | `set_current_conversation` | `notebooklm.cli.context` | T12.1 | Preserve delete-on-None behavior. |
-| `get_context_path` imported from `notebooklm.paths` | `notebooklm.cli.context` wrapper | T12.1 | Existing tests patch `notebooklm.cli.helpers.get_context_path`; keep that patch target effective or migrate all affected tests. |
+| `get_context_path` imported from `notebooklm.paths` | `notebooklm.cli.context` wrapper | T12.1 | Existing tests patch `notebooklm.cli.helpers.get_context_path`; resolve through that helper facade at call time or migrate all affected tests, because direct early binding to `notebooklm.paths.get_context_path` bypasses the patch. |
 | `get_client` | `notebooklm.cli.auth_runtime` | T12.2 | Preserve storage/profile/authuser/account-email lookup and return tuple shape. |
 | `get_auth_tokens` | `notebooklm.cli.auth_runtime` | T12.2 | Preserve call-time patching through `notebooklm.cli.helpers.get_auth_tokens`, including download and completion paths. |
 | `load_auth_from_storage` imported from `notebooklm.auth` | `notebooklm.cli.auth_runtime` wrapper | T12.2 | Existing tests patch `notebooklm.cli.helpers.load_auth_from_storage`; keep or migrate in same slice. |
@@ -99,7 +99,7 @@ High-risk helper patch seams found:
 |---|---|---|
 | `notebooklm.cli.helpers.console` | `helpers.py` global | T12.1 must keep this patch target effective until every test and command import is migrated. Pure re-export is not enough if moved code reads a different module global. |
 | `notebooklm.cli.helpers.stderr_console` | `helpers.py` global | T12.1 should preserve helper-level patchability for JSON stdout tests. |
-| `notebooklm.cli.helpers.get_context_path` | imported path helper | T12.1 must keep helper patch target effective for context tests, CLI VCR fixtures, chat/notebook/session/use tests. |
+| `notebooklm.cli.helpers.get_context_path` | imported path helper | T12.1 must keep helper patch target effective via call-time helper facade lookup for context tests, CLI VCR fixtures, chat/notebook/session/use tests. Moved code must not bind directly to `notebooklm.paths.get_context_path` if those tests still patch the helper symbol. |
 | `notebooklm.cli.helpers.load_auth_from_storage` | imported auth helper | T12.2 must keep helper patch target effective for broad CLI fixtures and auth tests. |
 | `notebooklm.cli.helpers.build_cookie_jar` | imported auth helper | T12.2 must keep helper patch target effective for `get_auth_tokens` and source-delete tests. |
 | `notebooklm.cli.helpers.get_auth_tokens` | helper function | T12.2 must keep call-time lookup through the helper facade for `with_auth_and_errors`, download, and completion until tests migrate. |

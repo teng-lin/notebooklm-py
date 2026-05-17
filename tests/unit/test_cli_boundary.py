@@ -36,6 +36,7 @@ import pytest
 
 CLI_ROOT = pathlib.Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "cli"
 OPTIONS_PATH = CLI_ROOT / "options.py"
+SERVICES_ROOT = CLI_ROOT / "services"
 COMPLETION_CALLBACKS = {
     "_complete_artifacts",
     "_complete_notebooks",
@@ -147,6 +148,23 @@ def test_no_private_module_imports_in_cli():
         "or `_private` names out of public notebooklm modules. "
         "Promote needed symbols to a public module (config/urls/log/research/types) "
         f"and import from there.\nOffenders: {offenders}"
+    )
+
+
+def test_cli_services_stay_on_public_library_boundary() -> None:
+    """Keep service-layer modules from binding directly to private library/RPC APIs."""
+    offenders: list[tuple[str, list[str]]] = []
+    for path in sorted(SERVICES_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        bad = _violations(tree)
+        if bad:
+            offenders.append((str(path.relative_to(CLI_ROOT.parent)), bad))
+
+    assert not offenders, (
+        "notebooklm.cli.services.* must not import notebooklm._* private modules, "
+        "notebooklm.rpc.*, or `_private` names from public notebooklm modules. "
+        "Route service collaborators through public library APIs or CLI facades.\n"
+        f"Offenders: {offenders}"
     )
 
 
