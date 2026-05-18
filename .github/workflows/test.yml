@@ -122,6 +122,11 @@ jobs:
 
     - name: Cache Playwright browsers
       uses: actions/cache@v5
+      # Tolerate transient cache-backend failures: a miss already falls
+      # through to the install step below, and a backend hiccup should be
+      # treated the same. Without this, a 29s backend flake on a single
+      # matrix entry hard-fails the job and skips the entire test run.
+      continue-on-error: true
       with:
         path: ${{ github.workspace }}/.playwright-browsers
         # ``-ws`` suffix invalidates archives keyed to the prior dual-path
