@@ -187,6 +187,7 @@ async def test_transport_rate_limited_without_retry_after_omits_retry_clause():
     assert "HTTP 429" in message
     assert "Retry after" not in message  # No "Retry after N seconds" clause.
     assert excinfo.value.__cause__ is transport_exc
+    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +217,7 @@ async def test_transport_server_error_with_http_status_error_maps_to_chat_error(
     assert "HTTP 503" in message
     assert "after retries" in message
     assert excinfo.value.__cause__ is transport_exc
+    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -236,6 +238,7 @@ async def test_transport_server_error_with_request_error_maps_to_network_error()
     assert "timed out" not in message
     assert excinfo.value.original_error is original
     assert excinfo.value.__cause__ is transport_exc
+    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -259,6 +262,7 @@ async def test_transport_server_error_with_timeout_exception_keeps_timeout_messa
     assert "network error after retries" not in message
     assert excinfo.value.original_error is original
     assert excinfo.value.__cause__ is transport_exc
+    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -284,6 +288,7 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
 
     assert "_TransportServerError.original" in str(excinfo.value)
     assert excinfo.value.__cause__ is transport_exc
+    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +316,7 @@ async def test_raw_http_status_error_maps_to_chat_error():
     assert "HTTP 404" in message
     assert "chat.ask" in message
     assert excinfo.value.__cause__ is raw_exc
+    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
