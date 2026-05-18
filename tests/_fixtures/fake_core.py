@@ -72,10 +72,10 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
     """
 
     defaults: dict[str, Any] = {
-        # CoreRPCProvider
-        "rpc_call": AsyncMock(return_value=[]),
+        # CoreRPCProvider — fresh list per call so tests can mutate without bleeding
+        "rpc_call": AsyncMock(side_effect=lambda *a, **kw: []),
         # SourceListProvider
-        "get_source_ids": AsyncMock(return_value=[]),
+        "get_source_ids": AsyncMock(side_effect=lambda *a, **kw: []),
         # CoreReqIdProvider — both the public name and the underscore alias
         "next_reqid": AsyncMock(return_value=100000),
         "_next_reqid": AsyncMock(return_value=100000),
@@ -90,16 +90,18 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         "authuser_header": MagicMock(return_value="0"),
         # CookieJarProvider
         "live_cookies": MagicMock(return_value=httpx.Cookies()),
-        # TransportOperationProvider (public and underscore-prefixed forms)
-        "begin_transport_post": AsyncMock(return_value=object()),
-        "begin_transport_task": AsyncMock(return_value=object()),
+        # TransportOperationProvider — fresh token object per call so drain tracking
+        # gets unique identities (return_value=object() would share one instance)
+        "begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
+        "begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
         "finish_transport_post": AsyncMock(return_value=None),
-        "_begin_transport_post": AsyncMock(return_value=object()),
-        "_begin_transport_task": AsyncMock(return_value=object()),
+        "_begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
+        "_begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
         "_finish_transport_post": AsyncMock(return_value=None),
         "_perform_authed_post": AsyncMock(),
-        # UploadConcurrencyProvider
-        "get_upload_semaphore": MagicMock(return_value=asyncio.Semaphore(1)),
+        # UploadConcurrencyProvider — Semaphore must be created inside a running loop
+        # (Python 3.10+ raises RuntimeError otherwise); defer via side_effect.
+        "get_upload_semaphore": MagicMock(side_effect=lambda: asyncio.Semaphore(1)),
         "record_upload_queue_wait": MagicMock(return_value=None),
         # LoopAffinityProvider — None is the silent-no-op value
         "bound_loop": None,
