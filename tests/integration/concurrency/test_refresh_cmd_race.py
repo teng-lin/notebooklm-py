@@ -527,3 +527,199 @@ async def test_cancel_settle_race_does_not_bump_on_failure(monkeypatch, tmp_path
         f"_REFRESH_GENERATIONS[{refresh_key!r}] = "
         f"{auth_mod._REFRESH_GENERATIONS.get(refresh_key, 0)} — phantom bump regression."
     )
+
+
+@pytest.mark.asyncio
+async def test_cancel_before_subprocess_registers_no_phantom_bump(monkeypatch, tmp_path):
+    """Cancel-before-registration must not phantom-bump generation (issue #816).
+
+    Narrow race: ``_coalesced_run_refresh_cmd`` exits via ``CancelledError``
+    BEFORE the inflight future is registered in
+    ``_REFRESH_INFLIGHT_BY_LOOP[loop][refresh_key]``. The caller's
+    ``CancelledError`` handler then sees ``inflight is None``, the
+    ``if inflight is None or inflight.done():`` branch is taken,
+    ``subprocess_exc`` stays ``None``, and pre-fix the code falls through to
+    the generation bump even though no subprocess ever ran.
+
+    A concurrent waiter on a different event loop sharing the same
+    ``refresh_key`` would observe the phantom generation bump on its
+    lock-re-acquire path, treat the storage as freshly-refreshed, skip its
+    own ``_run_refresh_cmd``, and proceed with STALE on-disk state.
+
+    We model the race deterministically by patching
+    ``_coalesced_run_refresh_cmd`` itself to raise ``CancelledError``
+    without touching the registry — equivalent to cancellation landing in
+    the sync prefix before the registry insert.
+
+    Post-fix: the cancel-recovery loop tracks ``observed_inflight``;
+    ``inflight is None`` keeps it ``False``; the generation bump is gated
+    on ``observed_inflight``, so the bump is skipped.
+    """
+    storage = tmp_path / "storage_state.json"
+    storage.write_text('{"cookies": [], "origins": []}')
+    monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
+
+    coalesced_calls = 0
+
+    async def fake_coalesced_run_refresh_cmd(refresh_key, storage_path, profile):
+        # Simulate the narrow window where cancellation arrives before the
+        # inflight future is registered: raise CancelledError without ever
+        # populating the registry, so the caller's recovery path observes
+        # ``inflight is None``.
+        nonlocal coalesced_calls
+        coalesced_calls += 1
+        raise asyncio.CancelledError()
+
+    async def fake_fetch_tokens_with_jar(cookie_jar, storage_path, **kwargs):
+        if not getattr(cookie_jar, "_first_fetch_done", False):
+            cookie_jar._first_fetch_done = True
+            raise ValueError("Authentication expired. Run 'notebooklm login'.")
+        return "csrf-token", "session-id"
+
+    def fake_build(_p):
+        return httpx.Cookies()
+
+    def fake_snapshot(_j):
+        return None
+
+    monkeypatch.setattr(auth_mod, "_coalesced_run_refresh_cmd", fake_coalesced_run_refresh_cmd)
+    monkeypatch.setattr(auth_mod, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(auth_mod, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(auth_mod, "snapshot_cookie_jar", fake_snapshot)
+
+    # Pre-condition: registry is empty for this refresh_key on this loop.
+    refresh_key = str(storage.expanduser().resolve())
+    registry = auth_mod._get_inflight_registry()
+    assert registry.get(refresh_key) is None, "Pre-condition: no inflight future for refresh_key"
+
+    jar = httpx.Cookies()
+    result = await asyncio.gather(
+        auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage),
+        return_exceptions=True,
+    )
+
+    # The caller's cancellation must propagate as CancelledError.
+    assert isinstance(result[0], asyncio.CancelledError), (
+        f"Expected CancelledError to propagate when _coalesced_run_refresh_cmd "
+        f"raised it before registering inflight, got {result[0]!r}"
+    )
+
+    # The patched _coalesced_run_refresh_cmd must have been invoked exactly
+    # once — this confirms the race window we are modelling actually fired.
+    assert coalesced_calls == 1, (
+        f"Expected 1 _coalesced_run_refresh_cmd invocation, saw {coalesced_calls}. "
+        "Test scaffolding mismatch."
+    )
+
+    # Post-condition: registry is STILL empty — confirms the fake faithfully
+    # modelled the cancel-before-registration race (no future was ever
+    # inserted, mirroring the production narrow window).
+    assert registry.get(refresh_key) is None, (
+        "Test scaffolding: fake_coalesced_run_refresh_cmd must not register an inflight future."
+    )
+
+    # The load-bearing assertion: generation must NOT have advanced.
+    # Pre-fix, the caller falls through to ``_REFRESH_GENERATIONS[refresh_key]
+    # = max(existing, refresh_generation + 1)`` even though no subprocess
+    # ran. A concurrent waiter on a sibling loop would then short-circuit
+    # on this phantom bump and reload stale storage.
+    assert auth_mod._REFRESH_GENERATIONS.get(refresh_key, 0) == 0, (
+        "Generation must not advance when cancellation arrived before any "
+        "subprocess registered an inflight future. "
+        f"_REFRESH_GENERATIONS[{refresh_key!r}] = "
+        f"{auth_mod._REFRESH_GENERATIONS.get(refresh_key, 0)} — issue #816 regression."
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_before_register_with_warm_registry_no_phantom_bump(monkeypatch, tmp_path):
+    """Cancel-before-registration with a STALE done future in the registry.
+
+    Warm-registry variant of issue #816. ``_settle`` intentionally leaves
+    done futures in the registry (PR #621 cancel/settle race), so after a
+    prior successful refresh the registry slot still holds that done
+    success future and ``_REFRESH_GENERATIONS[refresh_key] = 1``. If
+    cancellation arrives before ``_coalesced_run_refresh_cmd`` overwrites
+    the slot with a current-attempt future, the caller's ``CancelledError``
+    handler reads the registry and finds a NON-NONE entry — but that
+    entry is the OLD success future from a previous cycle, not proof of
+    the current attempt.
+
+    Pre-fix, ``observed_inflight`` was set to True for any non-None
+    registry entry; the cancel-before-register path then attributed the
+    prior cycle's success to this caller's no-op attempt and bumped
+    ``_REFRESH_GENERATIONS`` from 1 → 2. A concurrent waiter on a sibling
+    event loop would observe the phantom bump and skip its own refresh.
+
+    Post-fix, the cancel-recovery loop snapshots ``prior_inflight``
+    BEFORE the await and only treats the registry entry as a current
+    attempt when either the slot was overwritten (``inflight is not
+    prior_inflight``) or the pre-existing entry was active at capture
+    (``prior_was_active``). A stale done future fails both predicates,
+    so the bump is correctly skipped and generation stays at 1.
+    """
+    storage = tmp_path / "storage_state.json"
+    storage.write_text('{"cookies": [], "origins": []}')
+    monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
+
+    refresh_key = str(storage.expanduser().resolve())
+
+    # Seed the warm-registry state: a prior successful refresh on this
+    # loop left a done success future in the registry and generation=1.
+    registry = auth_mod._get_inflight_registry()
+    stale_done_future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    stale_done_future.set_result(None)
+    registry[refresh_key] = stale_done_future
+    auth_mod._REFRESH_GENERATIONS[refresh_key] = 1
+
+    async def fake_coalesced_run_refresh_cmd(refresh_key_arg, storage_path, profile):
+        # Model the narrow race: cancellation in the sync prefix before
+        # the registry insert. The stale done future stays in place.
+        raise asyncio.CancelledError()
+
+    async def fake_fetch_tokens_with_jar(cookie_jar, storage_path, **kwargs):
+        if not getattr(cookie_jar, "_first_fetch_done", False):
+            cookie_jar._first_fetch_done = True
+            raise ValueError("Authentication expired. Run 'notebooklm login'.")
+        return "csrf-token", "session-id"
+
+    def fake_build(_p):
+        return httpx.Cookies()
+
+    def fake_snapshot(_j):
+        return None
+
+    monkeypatch.setattr(auth_mod, "_coalesced_run_refresh_cmd", fake_coalesced_run_refresh_cmd)
+    monkeypatch.setattr(auth_mod, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(auth_mod, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(auth_mod, "snapshot_cookie_jar", fake_snapshot)
+
+    jar = httpx.Cookies()
+    result = await asyncio.gather(
+        auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage),
+        return_exceptions=True,
+    )
+
+    # Caller cancellation propagates.
+    assert isinstance(result[0], asyncio.CancelledError), (
+        f"Expected CancelledError to propagate, got {result[0]!r}"
+    )
+
+    # The stale done future must still be the registry entry — the fake
+    # _coalesced_run_refresh_cmd did not overwrite it.
+    assert registry.get(refresh_key) is stale_done_future, (
+        "Test scaffolding: stale done future should remain in the registry "
+        "(fake never replaced it)."
+    )
+
+    # The load-bearing assertion: generation must stay at 1. Pre-fix it
+    # bumped to 2 because the stale done success future was mistaken for
+    # the current attempt.
+    assert auth_mod._REFRESH_GENERATIONS.get(refresh_key, 0) == 1, (
+        "Generation must not advance against a STALE done future from a "
+        "prior cycle. Cancellation arrived before the current attempt "
+        "registered, so the registry slot's pre-existing entry must not "
+        "count as proof of the current attempt. "
+        f"_REFRESH_GENERATIONS[{refresh_key!r}] = "
+        f"{auth_mod._REFRESH_GENERATIONS.get(refresh_key, 0)} — warm-registry #816 regression."
+    )

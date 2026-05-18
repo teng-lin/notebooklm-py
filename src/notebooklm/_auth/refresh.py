@@ -456,11 +456,14 @@ async def _fetch_tokens_with_refresh(
         refresh_token = _REFRESH_ATTEMPTED_CONTEXT.set(True)
         try:
             async with _get_refresh_lock(refresh_storage_path):
-                # Bump generation ONLY after the subprocess succeeds AND
-                # storage is reloaded. An earlier implementation bumped the
-                # generation eagerly BEFORE ``_run_refresh_cmd`` — when the
+                # Bump generation ONLY after the current-attempt subprocess
+                # succeeds — never eagerly. An earlier implementation bumped
+                # the generation BEFORE ``_run_refresh_cmd``; when the
                 # subprocess failed, the phantom bump made concurrent waiters
-                # short-circuit and proceed with stale storage.
+                # short-circuit and proceed with stale storage. The bump
+                # itself happens just below, immediately before
+                # ``build_httpx_cookies_from_storage`` reloads the freshly-
+                # written disk state.
                 #
                 # Re-check under the sync state lock so the read is atomic
                 # ACROSS event loops. The per-loop asyncio lock only
@@ -483,38 +486,95 @@ async def _fetch_tokens_with_refresh(
                     # caller could spawn a duplicate concurrent refresh by
                     # observing the mid-flight lock release.
                     caller_cancelled = False
+                    # ``observed_inflight`` distinguishes "current-attempt
+                    # subprocess actually ran" from "cancellation arrived
+                    # before any subprocess registered for THIS attempt"
+                    # (issue #816). Only when we have proof of the current
+                    # attempt do we have license to bump the generation.
+                    observed_inflight = False
                     subprocess_exc: BaseException | None = None
+                    # Snapshot the inflight registry slot BEFORE entering
+                    # the await. The ``_settle`` callback intentionally
+                    # leaves done futures in the registry so the
+                    # cancel/settle race fix from CodeRabbit PR #621 can
+                    # still inspect ``inflight.exception()``; that
+                    # retention also means the registry may still hold a
+                    # STALE done future from a previous refresh cycle when
+                    # our await starts. We distinguish that stale slot
+                    # from a current-attempt future so the
+                    # cancel-before-register narrow window (issue #816)
+                    # does not attribute a prior cycle's success to this
+                    # caller's no-op attempt.
+                    registry = _get_inflight_registry()
+                    with _REFRESH_STATE_LOCK:
+                        prior_inflight = registry.get(refresh_key)
+                    # A pre-existing registry entry that was already done
+                    # at capture time is stale leftover from a prior cycle.
+                    # A pre-existing entry that was still active is a
+                    # sibling leader's current-cycle future — same-loop
+                    # coalescing means we legitimately follow it.
+                    prior_was_active = prior_inflight is not None and not prior_inflight.done()
                     while True:
                         try:
                             await _coalesced_run_refresh_cmd(
                                 refresh_key, refresh_storage_path, profile
                             )
+                            # Normal return only happens when the shielded
+                            # future resolved with success — i.e. a
+                            # current-attempt subprocess ran to completion.
+                            observed_inflight = True
                             break
                         except asyncio.CancelledError:
                             # Caller-side cancellation. Re-enter the await
                             # so the shielded subprocess can settle while we
                             # still hold the asyncio lock.
                             caller_cancelled = True
-                            registry = _get_inflight_registry()
                             with _REFRESH_STATE_LOCK:
                                 inflight = registry.get(refresh_key)
-                            if inflight is None or inflight.done():
-                                # Subprocess already settled; we absorbed the
-                                # cancellation. Inspect its terminal state.
-                                # Per the CodeRabbit finding on PR #621, the
-                                # ``_settle`` callback intentionally leaves
-                                # the done future in the registry so this
-                                # branch can still observe ``inflight.
-                                # exception()`` after a cancel/settle race.
-                                if inflight is not None:
-                                    if inflight.cancelled():
-                                        # Subprocess itself was cancelled —
-                                        # treat as failure (do not bump gen).
-                                        subprocess_exc = asyncio.CancelledError()
-                                    else:
-                                        subprocess_exc = inflight.exception()
+                            # Determine whether the registry slot belongs
+                            # to the CURRENT refresh attempt. Two cases
+                            # mean "yes":
+                            #   (a) the slot was overwritten during our
+                            #       await (``inflight is not prior_inflight``
+                            #       — a new leader inserted a fresh future);
+                            #   (b) the slot already held an actively-
+                            #       running sibling leader at capture time
+                            #       (``prior_was_active``) — same-loop
+                            #       coalescing means we legitimately follow
+                            #       its subprocess.
+                            # Otherwise the slot is either empty or a
+                            # stale done future that ``_settle``
+                            # intentionally left behind from a prior cycle
+                            # (PR #621 cancel/settle race retention).
+                            # Treating that stale entry as proof of our
+                            # attempt would re-bump generation against an
+                            # outdated result — the warm-registry variant
+                            # of #816.
+                            if inflight is None or (
+                                inflight is prior_inflight and not prior_was_active
+                            ):
+                                # No current-attempt future to wait on
+                                # (issue #816 narrow window: cancellation
+                                # arrived before the registry insert).
                                 break
-                            # Otherwise loop — re-await the shielded future.
+                            observed_inflight = True
+                            if inflight.done():
+                                # Current attempt already settled and we
+                                # absorbed the cancellation. ``_settle``
+                                # left the done future in the registry so
+                                # this branch can inspect its terminal
+                                # state (PR #621 cancel/settle race).
+                                if inflight.cancelled():
+                                    # Subprocess itself was cancelled —
+                                    # treat as failure (do not bump gen).
+                                    subprocess_exc = asyncio.CancelledError()
+                                else:
+                                    subprocess_exc = inflight.exception()
+                                break
+                            # Otherwise (current-attempt future still in
+                            # flight) loop and re-await the shielded
+                            # future so the asyncio lock is not released
+                            # until the subprocess settles.
                         except BaseException as exc:  # noqa: BLE001
                             subprocess_exc = exc
                             break
@@ -530,23 +590,34 @@ async def _fetch_tokens_with_refresh(
                             raise asyncio.CancelledError() from subprocess_exc
                         raise subprocess_exc
 
-                    # Subprocess succeeded AND we're about to reload
-                    # storage. Bump the generation now so other callers
-                    # (any loop) see the success and skip their own
-                    # subprocess. The bump is atomic across loops via
-                    # ``_REFRESH_STATE_LOCK``.
-                    with _REFRESH_STATE_LOCK:
-                        # ``max(...)`` defends against the rare interleaving
-                        # where another loop's pre-lock capture was AFTER
-                        # ours and bumped past us.
-                        existing = _REFRESH_GENERATIONS.get(refresh_key, 0)
-                        _REFRESH_GENERATIONS[refresh_key] = max(existing, refresh_generation + 1)
+                    if observed_inflight:
+                        # Subprocess succeeded AND we're about to reload
+                        # storage. Bump the generation now so other callers
+                        # (any loop) see the success and skip their own
+                        # subprocess. The bump is atomic across loops via
+                        # ``_REFRESH_STATE_LOCK``.
+                        with _REFRESH_STATE_LOCK:
+                            # ``max(...)`` defends against the rare
+                            # interleaving where another loop's pre-lock
+                            # capture was AFTER ours and bumped past us.
+                            existing = _REFRESH_GENERATIONS.get(refresh_key, 0)
+                            _REFRESH_GENERATIONS[refresh_key] = max(
+                                existing, refresh_generation + 1
+                            )
 
                     if caller_cancelled:
-                        # Subprocess succeeded; generation bump persists for
-                        # other callers' benefit. THIS caller still
-                        # propagates cancellation rather than completing the
-                        # retry.
+                        # Generation handling depends on whether a subprocess
+                        # actually ran:
+                        # * observed_inflight=True: subprocess succeeded (the
+                        #   failure branch already raised above); the bump
+                        #   above persists for other callers' benefit.
+                        # * observed_inflight=False: no subprocess ever
+                        #   registered, so generation stays at the pre-fetch
+                        #   baseline (issue #816) — concurrent / subsequent
+                        #   waiters re-attempt the refresh instead of
+                        #   short-circuiting on a phantom bump.
+                        # Either way THIS caller propagates cancellation
+                        # rather than completing the retry.
                         raise asyncio.CancelledError()
                 fresh_jar = build_httpx_cookies_from_storage(refresh_storage_path)
                 _replace_cookie_jar(cookie_jar, fresh_jar)
