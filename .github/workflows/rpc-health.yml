@@ -37,10 +37,14 @@ jobs:
         python-version: "3.12"
         cache: 'pip'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .
+      # `uv sync --frozen` reproduces the lockfile-pinned dep tree. The RPC
+      # health script (`scripts/check_rpc_health.py`) only needs the core
+      # runtime deps — no `[browser]`/`[dev]`/`[markdown]` extras required.
+      run: uv sync --frozen
 
     - name: Run RPC Health Check
       id: health
@@ -52,7 +56,7 @@ jobs:
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
       run: |
         set +e
-        python scripts/check_rpc_health.py --full 2>&1 | tee health-report.txt
+        uv run python scripts/check_rpc_health.py --full 2>&1 | tee health-report.txt
         exit_code=${PIPESTATUS[0]}
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
         exit "$exit_code"
@@ -71,7 +75,7 @@ jobs:
           echo "::warning::health-report.txt not produced; skipping scrub."
           exit 0
         fi
-        python - <<'PY'
+        uv run python - <<'PY'
         from pathlib import Path
         from notebooklm._logging import scrub_secrets
 

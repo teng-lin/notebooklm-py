@@ -34,12 +34,25 @@ jobs:
     - name: Build package
       run: python -m build
 
-    - name: Install built wheel + dev extras in a clean venv
+    - name: Install built wheel + canonical contributor extras in a clean venv
+      # Canonical contributor extras (`[browser,dev,markdown]`, equivalent to
+      # `[all]`) match the install path documented in `docs/installation.md`,
+      # so the release smoke exercises the same surface area users will see.
+      # Plain `[dev]` skipped playwright + markdownify, masking packaging bugs
+      # in `[browser]`/`[markdown]` until users hit them post-release.
       run: |
         python -m venv smoke-venv
         WHEEL=$(ls dist/notebooklm_py-*.whl)
-        smoke-venv/bin/pip install "${WHEEL}[dev]"
+        smoke-venv/bin/pip install "${WHEEL}[browser,dev,markdown]"
         smoke-venv/bin/python -c "import notebooklm; print(notebooklm.__version__)"
+
+    - name: Install Playwright browser for smoke
+      # `[browser]` only installs the playwright Python package; the chromium
+      # binary + Linux system libs are needed for the unit-test smoke
+      # (tests/unit/test_windows_compatibility.py drives sync_playwright()).
+      run: |
+        smoke-venv/bin/playwright install chromium
+        smoke-venv/bin/playwright install-deps chromium
 
     - name: Run unit tests against wheel
       run: smoke-venv/bin/pytest tests/unit -q --no-cov -x
