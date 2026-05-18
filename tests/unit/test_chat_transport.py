@@ -286,7 +286,12 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
             parse_label="chat.ask",
         )
 
-    assert "_TransportServerError.original" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "_TransportServerError.original" in message
+    # The diagnostic must include both the actual type and the expected
+    # types so a future invariant drift produces an actionable error
+    # (per gemini-code-assist review on PR #832).
+    assert "Expected httpx.HTTPStatusError or httpx.RequestError" in message
     assert excinfo.value.__cause__ is transport_exc
     core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
