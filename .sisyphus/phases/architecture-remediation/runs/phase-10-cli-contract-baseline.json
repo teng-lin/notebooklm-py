@@ -809,7 +809,7 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Skip the ``--new`` destructive-delete confirmation prompt.",
+          "help": "Skip the ``--new`` destructive-delete confirmation prompt. ``--json`` implies ``--yes`` so scripted callers never hang.",
           "is_flag": true,
           "kind": "option",
           "multiple": false,

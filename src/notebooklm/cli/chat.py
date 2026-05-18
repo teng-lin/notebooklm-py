@@ -99,7 +99,10 @@ def register_chat_commands(cli):
         "-y",
         "assume_yes",
         is_flag=True,
-        help="Skip the ``--new`` destructive-delete confirmation prompt.",
+        help=(
+            "Skip the ``--new`` destructive-delete confirmation prompt. "
+            "``--json`` implies ``--yes`` so scripted callers never hang."
+        ),
     )
     @click.option(
         "--source",

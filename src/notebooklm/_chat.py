@@ -563,17 +563,22 @@ class ChatAPI:
             RPC-level error raises before this returns.
         """
         logger.debug("Deleting conversation %s in notebook %s", conversation_id, notebook_id)
-        # Param shape captured from web-UI traffic. The trailing 1 is
-        # always observed; its meaning is uncharted — treated as a fixed flag.
-        params: list[Any] = [[], conversation_id, None, 1]
-        await self._core.rpc_call(
-            RPCMethod.DELETE_CONVERSATION,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
-        # Clear the cache only after a successful RPC; on failure the
-        # rpc_call above raises and we leave the cache intact for retry.
-        self._cache.clear(conversation_id)
+        # Hold the per-``conversation_id`` lock the same way ``ask`` does
+        # for follow-ups, so a concurrent follow-up ``ask`` can't read
+        # pre-delete history, then POST it after the delete has cleared
+        # both server-side state and the local cache.
+        async with self._get_conversation_lock(conversation_id):
+            # Param shape captured from web-UI traffic. The trailing 1 is
+            # always observed; its meaning is uncharted — treated as a fixed flag.
+            params: list[Any] = [[], conversation_id, None, 1]
+            await self._core.rpc_call(
+                RPCMethod.DELETE_CONVERSATION,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+            )
+            # Clear the cache only after a successful RPC; on failure the
+            # rpc_call above raises and we leave the cache intact for retry.
+            self._cache.clear(conversation_id)
         return True
 
     def clear_cache(self, conversation_id: str | None = None) -> bool:
