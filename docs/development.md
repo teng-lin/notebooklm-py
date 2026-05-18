@@ -708,10 +708,16 @@ When introducing a workflow that touches `secrets.*`:
 2. Run `python scripts/check_workflow_secret_gates.py` locally to verify the
    gate is recognised.
 3. If the new workflow references the `protected-readonly` environment for
-   the first time, double-check the Environment exists (see "One-time GitHub
-   Environment setup" above) — GitHub will *block the run* with
-   `requires approval` rather than silently passing if the environment is
-   missing, but the workflow YAML will still merge without it.
+   the first time, **double-check the Environment exists** (see "One-time
+   GitHub Environment setup" above). GitHub Actions will **silently
+   auto-create** a referenced environment that doesn't exist, **with no
+   protection rules**, so a never-configured `protected-readonly`
+   environment would let the workflow run without any approval gate —
+   exactly the opposite of what the YAML implies. The static checker
+   rejects unapproved *names* via `_APPROVED_ENVIRONMENTS`, but it cannot
+   verify that GitHub-side configuration has actually been applied; that
+   verification is the maintainer's responsibility per the smoke-test
+   step in "One-time GitHub Environment setup".
 
 ### Troubleshooting CI/CD Auth
 

@@ -705,6 +705,30 @@ def test_environment_expression_with_unapproved_literal_does_not_pass(
     assert "secrets.MY_SECRET" in err
 
 
+def test_inline_secret_on_step_header_line_detected(tmp_path, monkeypatch, capsys, script):
+    # Secret appearing on the same line as the step key (e.g.
+    # ``- run: echo ${{ secrets.X }}``) must still be detected. An
+    # earlier version of the checker ``continue``d immediately after
+    # the step header match and missed this.
+    _write_workflow(
+        tmp_path,
+        "bad_inline_step.yml",
+        """
+        name: bad-inline-step
+        on:
+          workflow_dispatch:
+        jobs:
+          oops:
+            runs-on: ubuntu-latest
+            steps:
+            - run: echo ${{ secrets.MY_SECRET }}
+        """,
+    )
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+    assert "secrets.MY_SECRET" in err
+
+
 def test_real_repo_workflows_pass(monkeypatch, capsys, script):
     """The real ``.github/workflows`` directory must pass.
 

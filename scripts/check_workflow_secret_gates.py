@@ -394,15 +394,24 @@ def _scan_workflow(path: Path) -> list[str]:
         # the per-job ``step_ifs`` list so hits in this step can be
         # gated against the step's final guard at flush time, even when
         # ``if:`` follows ``env:`` in the step body.
+        #
+        # Important: we do NOT ``continue`` after updating step state —
+        # the step header line may itself contain an inline secret
+        # reference (e.g. ``- run: echo ${{ secrets.X }}``) that must
+        # still be recorded against the new step. Fall through to the
+        # secret-detection block below.
         m_step = _STEP_HEADER_RE.match(line)
         if m_step:
             in_step = True
             current_step_index = len(step_ifs)
             step_ifs.append("")
-            continue
+            # Falls through to secret detection.
 
-        # Inside a step, capture the ``if:`` value.
-        if in_step:
+        # Inside a step, capture the ``if:`` value. We attempt the match
+        # only if the line did NOT just open a new step header — the
+        # step-if regex is anchored at indent 6, the step-header regex
+        # at indent 4 + ``- ``, so they cannot match the same line.
+        elif in_step:
             m_if = _STEP_IF_RE.match(line)
             if m_if:
                 value = m_if.group(1)

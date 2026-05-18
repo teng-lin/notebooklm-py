@@ -730,12 +730,14 @@ async def setup_temp_resources(
         temp.source_id = extract_id(data, 0, 0)
         if not temp.source_id:
             # Decoded response may carry residual credential-shaped substrings
-            # (cookies/CSRF tokens echoed in error payloads, etc.). Scrub
-            # before the diagnostic preview goes to stdout / health-report.txt.
-            print(
-                f"  WARNING: ADD_SOURCE ID extraction failed. "
-                f"Response: {scrub_secrets(repr(data)[:200])}"
-            )
+            # (cookies/CSRF tokens echoed in error payloads, etc.). Scrub the
+            # FULL repr before slicing — slicing first risks chopping a
+            # secret-shaped substring (e.g. ``cookie: SID=ab|cd``) at the
+            # 200-char boundary, leaving the prefix outside the scrub
+            # patterns. Scrub-then-truncate keeps the redaction intact even
+            # if the bytes after position 200 carried the matching anchor.
+            preview = scrub_secrets(repr(data))[:200]
+            print(f"  WARNING: ADD_SOURCE ID extraction failed. Response: {preview}")
 
     # Test ADD_SOURCE_FILE - registers file source intent (no actual upload needed)
     # Params format: [[[filename]], notebook_id, [2], [1, None, ...]]
@@ -829,13 +831,12 @@ async def setup_temp_resources(
             # Artifact ID is at response[0][0]
             temp.artifact_id = extract_id(data, 0, 0)
             if not temp.artifact_id:
-                # See the matching ADD_SOURCE failure site upstream for the
-                # rationale on scrubbing response previews — raw decoded
-                # payloads can echo cookie / CSRF material on regressions.
-                print(
-                    f"  WARNING: CREATE_ARTIFACT ID extraction failed. "
-                    f"Response: {scrub_secrets(repr(data)[:200])}"
-                )
+                # Same scrub-then-truncate ordering as the ADD_SOURCE
+                # failure site upstream — slicing first risks chopping a
+                # cookie / CSRF token at the 200-char boundary and
+                # missing the scrub-pattern anchor.
+                preview = scrub_secrets(repr(data))[:200]
+                print(f"  WARNING: CREATE_ARTIFACT ID extraction failed. Response: {preview}")
 
         # Poll for artifact completion
         if temp.artifact_id:
@@ -1010,7 +1011,12 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
                 status_icon = STATUS_ICONS[result.status]
                 line = f"{status_icon:8} {method.name} ({result.expected_id})"
                 if result.error and result.status != CheckStatus.OK:
-                    line += f" - {result.error}"
+                    # Per-method live print of the error string runs BEFORE
+                    # the summary scrub at the end of the script and BEFORE
+                    # the workflow-level scrub on health-report.txt. Scrub
+                    # at the live site too so the Actions log doesn't carry
+                    # an unredacted copy in the streamed output.
+                    line += f" - {scrub_secrets(result.error)}"
                 print(line)
 
                 if i < total and result.status != CheckStatus.SKIPPED:
