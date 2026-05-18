@@ -418,11 +418,14 @@ class SourcesAPI:
                 probe-then-retry pattern used by ``add_url`` cannot be
                 applied here. When True, raises
                 :class:`NonIdempotentRetryError` immediately. Default
-                ``False`` preserves historical behavior (the underlying
-                ``_perform_authed_post`` 5xx / 429 / network retry loop
-                still runs and can duplicate the resource on a retry that
-                follows a server-side commit). For idempotent text imports,
-                embed a UUID in the title and dedupe client-side. See
+                ``False`` no longer relies on the inner transport retry
+                loop — as of the variant-keyed idempotency rollout, the
+                ``(ADD_SOURCE, "text")`` registry entry classifies this
+                call as ``NON_IDEMPOTENT_NO_RETRY``, which force-disables
+                the inner 5xx / 429 / network retry loop so the first
+                failure surfaces immediately instead of risking a
+                duplicate on retry. For idempotent text imports, embed a
+                UUID in the title and dedupe client-side. See
                 ``docs/python-api.md#idempotency``.
 
         Returns:
@@ -590,6 +593,7 @@ class SourcesAPI:
             wait=wait,
             wait_timeout=wait_timeout,
             rpc_call=self._rpc_call,
+            list_sources=self.list,
             wait_until_ready=self.wait_until_ready,
             logger=logger,
         )
@@ -851,6 +855,8 @@ class SourcesAPI:
             notebook_id,
             filename,
             rpc_call=self._rpc_call,
+            list_sources=self.list,
+            logger=logger,
         )
 
     async def _start_resumable_upload(

@@ -84,9 +84,16 @@ class SourceAddService:
         async def _probe() -> Source | None:
             try:
                 sources = await list_sources(notebook_id)
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                # Transport- and auth-level probe failures must propagate.
+                # Silently returning None here lets ``idempotent_create``
+                # re-issue the create on top of a broken probe, which is
+                # exactly the duplicate-source bug we are guarding against
+                # (P1-2).
+                raise
             except Exception:
                 logger.debug(
-                    "add_url: probe list() failed; treating as no match",
+                    "add_url: probe list() failed with non-transport error; treating as no match",
                     exc_info=True,
                 )
                 return None
@@ -141,6 +148,7 @@ class SourceAddService:
                 RPCMethod.ADD_SOURCE,
                 params,
                 source_path=f"/notebook/{notebook_id}",
+                operation_variant="text",
             )
         except RPCError as e:
             raise SourceAddError(
@@ -169,10 +177,19 @@ class SourceAddService:
         wait: bool = False,
         wait_timeout: float = 120.0,
         rpc_call: RpcCall,
+        list_sources: ListSources,
         wait_until_ready: WaitUntilReady,
         logger: logging.Logger,
     ) -> Source:
-        """Add a Google Drive document as a source."""
+        """Add a Google Drive document as a source.
+
+        Drive sources go through the same probe-then-create idempotency
+        pattern as ``add_url`` (P0-3-sources): a 5xx / network failure
+        between server-side commit and client-side response could
+        otherwise duplicate the source on a naive retry. The probe matches
+        by ``file_id`` substring against ``source.url`` (Drive URLs embed
+        the file_id, e.g. ``https://docs.google.com/document/d/<id>/edit``).
+        """
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [
             [file_id, mime_type, 1, title],
@@ -193,15 +210,63 @@ class SourceAddService:
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
-        result = await rpc_call(
-            RPCMethod.ADD_SOURCE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
+
+        async def _create() -> Source:
+            # Preserve transport-level signals so callers can act on the
+            # specific type (AuthError -> re-login, RateLimitError -> back-off,
+            # ServerError -> transient retry). The retryable transport
+            # exceptions must propagate so idempotent_create can catch them
+            # and run the probe.
+            try:
+                result = await rpc_call(
+                    RPCMethod.ADD_SOURCE,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=True,
+                    disable_internal_retries=True,
+                    operation_variant="drive",
+                )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                raise
+            except RPCError as e:
+                raise SourceAddError(title, cause=e) from e
+
+            if result is None:
+                raise SourceAddError(
+                    title, message=f"API returned no data for Drive source: {title}"
+                )
+            return Source.from_api_response(result)
+
+        # Drive URLs canonically embed the file_id as a path segment, e.g.
+        # ``https://docs.google.com/document/d/<file_id>/edit``. Matching the
+        # ``/d/<file_id>`` segment (with separators on both sides) avoids
+        # false-positive substring matches against other file_ids that
+        # happen to contain ``<file_id>`` as an interior substring.
+        drive_url_marker = f"/d/{file_id}"
+
+        async def _probe() -> Source | None:
+            try:
+                sources = await list_sources(notebook_id)
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                # Transport- and auth-level probe failures must propagate
+                # — see the rationale in ``add_url._probe`` (P1-2).
+                raise
+            except Exception:
+                logger.debug(
+                    "add_drive: probe list() failed with non-transport error; treating as no match",
+                    exc_info=True,
+                )
+                return None
+            for source in sources:
+                if source.url and drive_url_marker in source.url:
+                    return source
+            return None
+
+        source = await idempotent_create(
+            _create,
+            _probe,
+            label=f"sources.add_drive[{file_id}]",
         )
-        if result is None:
-            raise SourceAddError(title, message=f"API returned no data for Drive source: {title}")
-        source = Source.from_api_response(result)
 
         if wait:
             return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
@@ -290,6 +355,7 @@ class SourceAddService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=False,
             disable_internal_retries=True,
+            operation_variant="url",
         )
 
     async def add_url_source(
@@ -312,6 +378,7 @@ class SourceAddService:
             params,
             source_path=f"/notebook/{notebook_id}",
             disable_internal_retries=True,
+            operation_variant="url",
         )
 
 

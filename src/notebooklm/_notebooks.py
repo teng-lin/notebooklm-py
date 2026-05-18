@@ -13,7 +13,15 @@ from ._notebook_metadata import (
 )
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
-from .exceptions import NetworkError, NotebookLimitError, NotebookNotFoundError, RPCError
+from .exceptions import (
+    AuthError,
+    NetworkError,
+    NotebookLimitError,
+    NotebookNotFoundError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+)
 from .rpc import RPCMethod, safe_index
 from .types import AccountLimits, Notebook, NotebookDescription, NotebookMetadata, SuggestedTopic
 
@@ -257,14 +265,14 @@ class NotebooksAPI:
             return notebook
 
         async def _probe() -> Notebook | None:
-            # NetworkError during the probe MUST propagate (P1-2): the
-            # original create may have committed server-side and we have
-            # no way to confirm. Silently returning None would let
-            # ``idempotent_create`` re-issue the create on the next
-            # attempt and duplicate the notebook. Surfacing the network
-            # error keeps the caller in control — they can decide whether
-            # to re-probe later (e.g. once connectivity recovers) before
-            # retrying the create.
+            # Transport- and auth-level errors during the probe MUST
+            # propagate (P1-2): the original create may have committed
+            # server-side and we have no way to confirm. Silently
+            # returning None would let ``idempotent_create`` re-issue the
+            # create on the next attempt and duplicate the notebook.
+            # Surfacing the transport error keeps the caller in control —
+            # they can decide whether to re-probe later (e.g. once
+            # connectivity recovers) before retrying the create.
             #
             # Other exception types (decoding errors, unexpected RPC
             # failures, programming bugs) are still treated as "probe
@@ -274,15 +282,20 @@ class NotebooksAPI:
             # contract of "best-effort probe".
             try:
                 current = await self.list()
-            except NetworkError:
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                # Transport- and auth-level probe failures must propagate.
+                # Silently returning None here lets ``idempotent_create``
+                # re-issue the create on top of a broken probe, which is
+                # exactly the duplicate-resource bug we are guarding against
+                # (P1-2).
                 logger.warning(
-                    "create: probe list() failed with NetworkError; propagating "
-                    "so the caller can avoid a duplicate-resource retry"
+                    "create: probe list() failed with transport/auth error; "
+                    "propagating so the caller can avoid a duplicate-resource retry"
                 )
                 raise
             except Exception:
                 logger.debug(
-                    "create: probe list() failed; treating as no match",
+                    "create: probe list() failed with non-transport error; treating as no match",
                     exc_info=True,
                 )
                 return None

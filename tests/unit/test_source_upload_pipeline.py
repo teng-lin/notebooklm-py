@@ -187,11 +187,21 @@ async def test_add_file_custom_title_waits_for_registration_before_rename(
 async def test_register_file_source_uses_rpc_shape_and_wraps_rpc_error(
     service: SourceUploadPipeline,
 ) -> None:
+    # A non-transport RPCError must propagate as SourceAddError (the
+    # wrapper preserves the original cause). The RPC layer is invoked with
+    # ``disable_internal_retries=True`` because register_file_source now
+    # owns probe-then-retry recovery via ``idempotent_create``.
     rpc_error = RPCError("bad response")
     rpc = RecordingRpc(rpc_error)
 
     with pytest.raises(SourceAddError) as exc_info:
-        await service.register_file_source("nb_123", "report.pdf", rpc_call=rpc)
+        await service.register_file_source(
+            "nb_123",
+            "report.pdf",
+            rpc_call=rpc,
+            list_sources=AsyncMock(return_value=[]),
+            logger=MagicMock(),
+        )
 
     assert exc_info.value.cause is rpc_error
     assert rpc.calls == [
@@ -205,7 +215,7 @@ async def test_register_file_source_uses_rpc_shape_and_wraps_rpc_error(
             ],
             "source_path": "/notebook/nb_123",
             "allow_null": False,
-            "disable_internal_retries": False,
+            "disable_internal_retries": True,
         }
     ]
 
@@ -217,7 +227,13 @@ async def test_register_file_source_truncates_large_string_response_preview(
     rpc = RecordingRpc("x" * 5000)
 
     with pytest.raises(SourceAddError) as exc_info:
-        await service.register_file_source("nb_123", "report.pdf", rpc_call=rpc)
+        await service.register_file_source(
+            "nb_123",
+            "report.pdf",
+            rpc_call=rpc,
+            list_sources=AsyncMock(return_value=[]),
+            logger=MagicMock(),
+        )
 
     message = str(exc_info.value)
     assert "..." in message

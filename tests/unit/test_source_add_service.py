@@ -30,6 +30,7 @@ class RecordingRpc:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         self.calls.append(
             {
@@ -38,6 +39,7 @@ class RecordingRpc:
                 "source_path": source_path,
                 "allow_null": allow_null,
                 "disable_internal_retries": disable_internal_retries,
+                "operation_variant": operation_variant,
             }
         )
         return self.response
@@ -164,6 +166,7 @@ async def test_add_text_uses_exact_rpc_shape_and_wait_hook(
             "source_path": "/notebook/nb_1",
             "allow_null": False,
             "disable_internal_retries": False,
+            "operation_variant": "text",
         }
     ]
     wait_until_ready.assert_awaited_once_with("nb_1", "src_text", timeout=9.0)
@@ -203,11 +206,16 @@ async def test_add_drive_uses_exact_rpc_shape_and_wait_hook(
         wait=True,
         wait_timeout=7.0,
         rpc_call=rpc,
+        list_sources=AsyncMock(return_value=[]),
         wait_until_ready=wait_until_ready,
         logger=logger,
     )
 
     assert result is ready
+    # add_drive now wraps with idempotent_create, which requires
+    # disable_internal_retries=True at the RPC layer (the wrapper owns
+    # probe-then-retry recovery). operation_variant="drive" routes the
+    # call through the registry's PROBE_THEN_CREATE entry.
     assert rpc.calls == [
         {
             "method": RPCMethod.ADD_SOURCE,
@@ -233,7 +241,8 @@ async def test_add_drive_uses_exact_rpc_shape_and_wait_hook(
             ],
             "source_path": "/notebook/nb_1",
             "allow_null": True,
-            "disable_internal_retries": False,
+            "disable_internal_retries": True,
+            "operation_variant": "drive",
         }
     ]
     wait_until_ready.assert_awaited_once_with("nb_1", "src_drive", timeout=7.0)
@@ -250,6 +259,7 @@ async def test_add_drive_raises_source_add_error_on_null_result(
             "drive_file",
             "Drive Doc",
             rpc_call=RecordingRpc(None),
+            list_sources=AsyncMock(return_value=[]),
             wait_until_ready=AsyncMock(),
             logger=logger,
         )
@@ -263,19 +273,23 @@ async def test_add_drive_preserves_rpc_error_propagation(
     service: SourceAddService,
     logger: logging.Logger,
 ) -> None:
+    # A non-transport RPCError (e.g. validation) must propagate through
+    # idempotent_create as a SourceAddError, just like add_url does. The
+    # cause chain preserves the original RPCError for callers that need it.
     rpc_error = RPCError("drive add failed")
 
-    with pytest.raises(RPCError) as exc_info:
+    with pytest.raises(SourceAddError) as exc_info:
         await service.add_drive(
             "nb_1",
             "drive_file",
             "Drive Doc",
             rpc_call=AsyncMock(side_effect=rpc_error),
+            list_sources=AsyncMock(return_value=[]),
             wait_until_ready=AsyncMock(),
             logger=logger,
         )
 
-    assert exc_info.value is rpc_error
+    assert exc_info.value.cause is rpc_error
 
 
 def test_extract_youtube_video_id_uses_injected_parser_and_helpers(

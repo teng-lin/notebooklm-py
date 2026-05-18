@@ -24,6 +24,25 @@ from notebooklm.types import SourceAddError, SourceNotFoundError
 pytestmark = pytest.mark.allow_no_vcr
 
 
+def _add_register_file_source_baseline_mock(httpx_mock: HTTPXMock, build_rpc_response) -> None:
+    """Register an empty GET_NOTEBOOK baseline response for ``add_file`` paths.
+
+    The ``register_file_source`` wrapper captures a baseline of source IDs
+    before the create attempt (see ``_source_upload.py:register_file_source``
+    for the rationale — pre-existing same-named sources must NOT match a
+    retry probe). For tests that exercise ``add_file`` with a single
+    ``ADD_SOURCE_FILE`` batchexecute mock, this helper adds the baseline
+    GET_NOTEBOOK response (empty notebook) that the new code path requires.
+
+    Place this BEFORE the test's ``ADD_SOURCE_FILE`` mock so the registered
+    responses match the actual request order.
+    """
+    httpx_mock.add_response(
+        url=re.compile(r".*batchexecute.*rpcids=" + RPCMethod.GET_NOTEBOOK.value + r".*"),
+        content=build_rpc_response(RPCMethod.GET_NOTEBOOK, [["", []]]).encode(),
+    )
+
+
 class TestAddSource:
     @pytest.mark.asyncio
     async def test_add_source_url(
@@ -688,6 +707,9 @@ class TestAddFileSource:
         test_file = tmp_path / "test_document.txt"
         test_file.write_text("This is test content for upload.")
 
+        # Step 0: register_file_source captures a baseline GET_NOTEBOOK
+        # before the create — see the helper docstring for the rationale.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         # Step 1: Mock RPC registration response (o4cbdc)
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
@@ -722,20 +744,24 @@ class TestAddFileSource:
         assert source.title == "test_document.txt"
         assert source.kind == "unknown"
 
-        # Verify all 3 requests were made
+        # Verify all 4 requests were made: baseline GET_NOTEBOOK + 3-step
+        # upload protocol (register + start + finalize).
         requests = httpx_mock.get_requests()
-        assert len(requests) == 3
+        assert len(requests) == 4
+
+        # Verify Step 0: baseline GET_NOTEBOOK
+        assert RPCMethod.GET_NOTEBOOK in str(requests[0].url)
 
         # Verify Step 1: RPC call
-        assert RPCMethod.ADD_SOURCE_FILE in str(requests[0].url)
+        assert RPCMethod.ADD_SOURCE_FILE in str(requests[1].url)
 
         # Verify Step 2: Upload start
-        assert "x-goog-upload-command" in requests[1].headers
-        assert requests[1].headers["x-goog-upload-command"] == "start"
-
-        # Verify Step 3: Upload finalize
         assert "x-goog-upload-command" in requests[2].headers
-        assert requests[2].headers["x-goog-upload-command"] == "upload, finalize"
+        assert requests[2].headers["x-goog-upload-command"] == "start"
+
+        # Verify Step 3: Upload finalize (now requests[3] after baseline)
+        assert "x-goog-upload-command" in requests[3].headers
+        assert requests[3].headers["x-goog-upload-command"] == "upload, finalize"
 
     @pytest.mark.asyncio
     async def test_add_file_rpc_params_format(
@@ -749,6 +775,8 @@ class TestAddFileSource:
         test_file = tmp_path / "my_file.pdf"
         test_file.write_bytes(b"%PDF-1.4 fake pdf content")
 
+        # Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         # Mock all 3 responses
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
@@ -768,7 +796,9 @@ class TestAddFileSource:
         # params[0] should be [[filename]] (double-nested within the param)
         # In the full params array JSON: [[[filename]], nb_id, ...] (3 brackets total)
         # NOT [[[[filename]]], ...] (4 brackets - the old bug)
-        rpc_request = httpx_mock.get_requests()[0]
+        # Index [1] is the ADD_SOURCE_FILE request (index [0] is the
+        # baseline GET_NOTEBOOK from the probe-then-create wrapper).
+        rpc_request = httpx_mock.get_requests()[1]
         body = urllib.parse.unquote(rpc_request.content.decode())
         # The params are JSON-encoded inside the RPC wrapper, so quotes are escaped
         # Verify 3 brackets (correct) not 4 brackets (bug)
@@ -801,6 +831,8 @@ class TestAddFileSource:
         content = "Test content " * 100
         test_file.write_text(content)
 
+        # Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
             [[[["src_abc"], "document.txt", [None, None, None, None, 0]]]],
@@ -815,8 +847,10 @@ class TestAddFileSource:
         async with NotebookLMClient(auth_tokens) as client:
             await client.sources.add_file("nb_123", test_file)
 
-        # Check upload start request (Step 2)
-        start_request = httpx_mock.get_requests()[1]
+        # Check upload start request (Step 2). Request indices: [0]
+        # baseline GET_NOTEBOOK, [1] ADD_SOURCE_FILE register, [2] upload
+        # start, [3] upload finalize.
+        start_request = httpx_mock.get_requests()[2]
 
         # Verify headers
         assert start_request.headers["x-goog-upload-protocol"] == "resumable"
@@ -843,6 +877,8 @@ class TestAddFileSource:
         binary_content = b"\x00\x01\x02\x03\xff\xfe\xfd"
         test_file.write_bytes(binary_content)
 
+        # Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
             [[[["src_bin"], "binary_file.bin", [None, None, None, None, 0]]]],
@@ -857,8 +893,10 @@ class TestAddFileSource:
         async with NotebookLMClient(auth_tokens) as client:
             await client.sources.add_file("nb_123", test_file)
 
-        # Check upload content request (Step 3)
-        upload_request = httpx_mock.get_requests()[2]
+        # Check upload content request (Step 3 — finalize POST). Request
+        # indices: [0] baseline GET_NOTEBOOK, [1] ADD_SOURCE_FILE register,
+        # [2] upload start, [3] upload finalize.
+        upload_request = httpx_mock.get_requests()[3]
 
         # Verify the actual content was sent
         assert upload_request.content == binary_content
@@ -886,6 +924,8 @@ class TestAddEpubFileSource:
             zf.writestr("OEBPS/chapter1.xhtml", "<html><body><p>Test</p></body></html>")
         test_epub.write_bytes(buffer.getvalue())
 
+        # Step 0: Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         # Step 1: Mock RPC registration
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
@@ -925,12 +965,14 @@ class TestAddEpubFileSource:
         assert source.id == "epub_source_123"
         assert source.title == "test_book.epub"
 
-        # Verify all 3 requests were made
+        # Verify all 4 requests were made: baseline GET_NOTEBOOK +
+        # 3-step upload protocol (register + start + finalize).
         requests = httpx_mock.get_requests()
-        assert len(requests) == 3
+        assert len(requests) == 4
 
-        # Verify uploaded content is the EPUB ZIP bytes
-        upload_request = requests[2]
+        # Verify uploaded content is the EPUB ZIP bytes (now requests[3]
+        # after the baseline shifted indices).
+        upload_request = requests[3]
         assert upload_request.content == test_epub.read_bytes()
 
 
@@ -2510,6 +2552,8 @@ class TestRegisterFileSourceError:
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"%PDF-1.4 fake")
 
+        # Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         # Return a response where extract_id returns None - nested empty list
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
@@ -2537,6 +2581,8 @@ class TestRegisterFileSourceError:
         test_file = tmp_path / "empty_nested.pdf"
         test_file.write_bytes(b"%PDF-1.4 content")
 
+        # Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         # Result is [[[]]] - extract_id([[]]) -> extract_id([]) -> returns None
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,
@@ -2567,6 +2613,8 @@ class TestStartResumableUploadError:
         test_file = tmp_path / "no_url.pdf"
         test_file.write_bytes(b"%PDF-1.4 content")
 
+        # Step 0: Baseline GET_NOTEBOOK for the register_file_source probe wrapper.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
         # Step 1: Successful RPC registration
         rpc_response = build_rpc_response(
             RPCMethod.ADD_SOURCE_FILE,

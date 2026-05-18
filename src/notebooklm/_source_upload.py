@@ -7,7 +7,7 @@ import json
 import os
 import re
 import warnings
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
@@ -23,6 +23,7 @@ from ._capabilities import (
     UploadConcurrencyProvider,
 )
 from ._env import get_base_url
+from ._idempotency import idempotent_create
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -141,6 +142,9 @@ class CancelUploadSession(Protocol):
     """Late-bound facade hook for best-effort upload cancellation."""
 
     async def __call__(self, upload_url: str, base_url: str, auth_route: str) -> None: ...
+
+
+ListSources = Callable[[str], Awaitable[list[Source]]]
 
 
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
@@ -313,8 +317,28 @@ class SourceUploadPipeline:
         filename: str,
         *,
         rpc_call: RpcCaller,
+        list_sources: ListSources,
+        logger: Any,
     ) -> str:
-        """Register a file source intent and get SOURCE_ID."""
+        """Register a file source intent and get SOURCE_ID.
+
+        Uses the same probe-then-create idempotency pattern as ``add_url`` /
+        ``add_drive`` (P0-3-sources). The ADD_SOURCE_FILE RPC is mutating: a
+        5xx / network failure between server-side commit and client-side
+        response could otherwise duplicate the source on a naive retry.
+
+        Probe semantics: unlike ``add_url`` (where URL equality is a stable
+        dedupe key) or ``add_drive`` (where the Drive file_id is unique
+        server-side), filenames are NOT identity-bearing — two distinct
+        uploads of ``report.pdf`` are legitimately two separate sources.
+        To avoid mis-matching a pre-existing source from an earlier upload,
+        the probe captures a baseline of source IDs *before* the first
+        create attempt and filters probe matches to IDs that are NOT in
+        the baseline (the "new since the create started" set). An
+        ambiguous match (>1 new source with the same filename, e.g. a
+        concurrent uploader added one) raises ``SourceAddError`` rather
+        than guessing.
+        """
         params = [
             [[filename]],
             notebook_id,
@@ -322,39 +346,99 @@ class SourceUploadPipeline:
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
 
+        # Capture baseline source IDs before the first create attempt so the
+        # probe can distinguish "this upload landed" from "a same-named source
+        # already existed." Mirrors the pattern in NotebooksAPI.create. A
+        # transport failure during the baseline fetch falls back to an empty
+        # set, which makes the probe maximally conservative (any pre-existing
+        # filename match is treated as ambiguous) rather than maximally
+        # permissive. The baseline list is best-effort and never blocks the
+        # primary create path.
         try:
-            result = await rpc_call(
-                RPCMethod.ADD_SOURCE_FILE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=False,
+            baseline_ids = {source.id for source in await list_sources(notebook_id)}
+        except Exception:
+            logger.debug(
+                "register_file_source: baseline list() failed; falling back to empty baseline",
+                exc_info=True,
             )
-        except (AuthError, RateLimitError, ServerError):
-            raise
-        except RPCError as exc:
+            baseline_ids = set()
+
+        async def _create() -> str:
+            try:
+                result = await rpc_call(
+                    RPCMethod.ADD_SOURCE_FILE,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=False,
+                    disable_internal_retries=True,
+                )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                # Transport-level signals must propagate so idempotent_create
+                # can catch them and run the probe before retrying.
+                raise
+            except RPCError as exc:
+                raise SourceAddError(
+                    filename,
+                    cause=exc,
+                    message=f"Failed to register file source for {filename}: {exc}",
+                ) from exc
+
+            source_id = _extract_register_file_source_id(result, filename)
+            if source_id:
+                return source_id
+
+            if isinstance(result, str):
+                preview = repr(result[:200])
+                if len(result) > 200:
+                    preview += "..."
+            else:
+                preview = repr(result)
+                if len(preview) > 200:
+                    preview = preview[:200] + "..."
             raise SourceAddError(
                 filename,
-                cause=exc,
-                message=f"Failed to register file source for {filename}: {exc}",
-            ) from exc
+                message=(
+                    f"Failed to get SOURCE_ID from registration response. Response shape: {preview}"
+                ),
+            )
 
-        source_id = _extract_register_file_source_id(result, filename)
-        if source_id:
-            return source_id
+        async def _probe() -> str | None:
+            try:
+                sources = await list_sources(notebook_id)
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                # Transport- and auth-level probe failures must propagate
+                # (P1-2) — otherwise idempotent_create would retry the
+                # register on top of a broken probe.
+                raise
+            except Exception:
+                logger.debug(
+                    "register_file_source: probe list() failed with "
+                    "non-transport error; treating as no match",
+                    exc_info=True,
+                )
+                return None
+            matches = [
+                source
+                for source in sources
+                if source.id not in baseline_ids and source.title == filename
+            ]
+            if len(matches) == 1:
+                return matches[0].id
+            if len(matches) > 1:
+                raise SourceAddError(
+                    filename,
+                    message=(
+                        f"Cannot disambiguate file source with title {filename!r}: "
+                        f"probe found {len(matches)} new sources with this title "
+                        "after a transport failure. Resolve manually before retrying."
+                    ),
+                )
+            return None
 
-        if isinstance(result, str):
-            preview = repr(result[:200])
-            if len(result) > 200:
-                preview += "..."
-        else:
-            preview = repr(result)
-            if len(preview) > 200:
-                preview = preview[:200] + "..."
-        raise SourceAddError(
-            filename,
-            message=(
-                f"Failed to get SOURCE_ID from registration response. Response shape: {preview}"
-            ),
+        return await idempotent_create(
+            _create,
+            _probe,
+            label=f"sources.register_file_source[{filename}]",
         )
 
     async def start_resumable_upload(

@@ -395,11 +395,12 @@ class IdempotencyRegistry:
 # Module-level production registry. Wave 2 classifies individual RPCs in
 # two passes:
 #
-#   * Some entries (research/notes from b-research-notes) are registered
-#     *before* the default-fill seeding pass so ``_seed_defaults`` skips
-#     them (it only populates ``(method, None)`` entries that are
-#     absent). Variant entries (``variant != None``) sit alongside the
-#     ``None`` default; the seeder leaves them alone.
+#   * Some entries (research/notes from b-research-notes, sources/
+#     ADD_SOURCE variants from b-sources) are registered *before* the
+#     default-fill seeding pass so ``_seed_defaults`` skips them (it only
+#     populates ``(method, None)`` entries that are absent). Variant
+#     entries (``variant != None``) sit alongside the ``None`` default;
+#     the seeder leaves them alone.
 #   * Other entries (delete/refresh/share from b-generation) are
 #     registered *after* the seeding pass and overwrite the
 #     UNCLASSIFIED placeholders that the seeder populated.
@@ -641,6 +642,67 @@ IDEMPOTENCY_REGISTRY.register(
         "mutates ACL; blind retry can re-send invite emails or double-flip access. "
         "GET_SHARE_STATUS exposes the server-side ACL for a future probe-then-create "
         "wrapper; today's classification suppresses the inner retry loop."
+    ),
+)
+
+
+# ----------------------------------------------------------------------------
+# Wave 2 classifications — ADD_SOURCE + ADD_SOURCE_FILE (P0-3, P1-2)
+# ----------------------------------------------------------------------------
+#
+# ADD_SOURCE is variant-shaped: the call site distinguishes ``"url"`` (web /
+# YouTube), ``"drive"`` (Google Drive document), and ``"text"`` (pasted
+# content). Each variant has a different retry-safety profile because the
+# server-side dedupe key differs:
+#
+# * ``"url"`` — probe by ``source.url == url`` on a notebook list. The probe
+#   is a single GET_NOTEBOOK; the wrapper retries the create once if the
+#   probe finds nothing. PROBE_THEN_CREATE.
+# * ``"drive"`` — probe by ``file_id in source.url`` (Drive URLs embed the
+#   file_id). Same wrapper as ``"url"``. PROBE_THEN_CREATE.
+# * ``"text"`` — no reliable dedupe key (titles non-unique, body not
+#   exposed in the source list). NON_IDEMPOTENT_NO_RETRY: force-disable the
+#   inner transport retries and let the first failure surface so the caller
+#   can decide. See the ``add_text`` rationale in
+#   ``tests/integration/concurrency/test_idempotency_create.py:17-19``.
+#
+# ADD_SOURCE_FILE is single-shape: it registers a file source by name.
+# Filenames are NOT identity-bearing (two uploads of ``report.pdf`` are
+# legitimately two distinct sources), so the per-API wrapper captures a
+# baseline of source IDs *before* the create attempt and filters probe
+# matches to "new since the create started" sources only. Ambiguous
+# matches (>1 new source with the same filename) raise rather than guess.
+# PROBE_THEN_CREATE.
+#
+# These four entries flip the executor onto the probe-then-create path
+# via ``resolve_effective_disable_internal_retries`` — the per-API call
+# sites in ``_source_add.py`` / ``_source_upload.py`` own the probe loop.
+
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.ADD_SOURCE,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    variant="url",
+    notes="probe by source.url == url on notebook list (web + YouTube)",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.ADD_SOURCE,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    variant="drive",
+    notes="probe by /d/<file_id> URL segment marker on notebook list",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.ADD_SOURCE,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    variant="text",
+    notes="no reliable dedupe key — titles non-unique, body not exposed",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.ADD_SOURCE_FILE,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    notes=(
+        "baseline-diff probe by source.title == filename — filenames are not "
+        "identity-bearing, so the wrapper captures source-id baseline before "
+        "the create and filters probe matches to new sources only"
     ),
 )
 
