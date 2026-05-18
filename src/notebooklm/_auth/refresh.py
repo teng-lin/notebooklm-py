@@ -115,6 +115,12 @@ _REFRESH_GENERATIONS: dict[str, int] = {}
 _REFRESH_INFLIGHT_BY_LOOP: weakref.WeakKeyDictionary[Any, dict[str, asyncio.Future[None]]] = (
     weakref.WeakKeyDictionary()
 )
+# Strong-ref set keyed by task identity. ``set.add`` / ``set.discard`` are
+# atomic under CPython's GIL (individual bytecode mutations on the underlying
+# hash table cannot interleave), so concurrent ``add`` / ``discard`` calls
+# from different event-loop threads are safe without an explicit lock. This is
+# implementation-specific to CPython; non-CPython runtimes would need a
+# ``threading.Lock`` here.
 _REFRESH_INFLIGHT_TASKS: set[asyncio.Task[None]] = set()
 
 

@@ -988,6 +988,9 @@ def test_auth_subpackage_init_wires_new_seam_modules() -> None:
     assert hasattr(_auth, "paths")
     assert hasattr(_auth, "extraction")
     assert hasattr(_auth, "headers")
+    # Tier-10 PR-B-high additions:
+    assert hasattr(_auth, "keepalive")
+    assert hasattr(_auth, "refresh")
 
 
 def test_auth_secondary_binding_reset_syncs_to_cookie_policy(
