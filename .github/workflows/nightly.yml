@@ -124,8 +124,15 @@ jobs:
     - name: Get Playwright version
       id: playwright-version
       shell: bash
+      # `uv pip show` / bare `pip show` after activation can resolve outside
+      # `.venv` when uv has not seeded pip into the project venv, yielding an
+      # empty version that collapses the browser cache key to
+      # `playwright-${{ matrix.os }}--ws`. `importlib.metadata` reads
+      # `.venv`'s actual installed dist-info via the active interpreter, so
+      # the version is always correct.
       run: |
-        echo "version=$(uv run pip show playwright | grep '^Version:' | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+        VERSION=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Cache Playwright browsers
       uses: actions/cache@v5

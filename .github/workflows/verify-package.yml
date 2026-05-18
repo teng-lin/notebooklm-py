@@ -61,10 +61,17 @@ jobs:
         # previous `--extra-index-url https://pypi.org/simple/` fallback would
         # silently succeed by resolving an older published version from PyPI
         # when the TestPyPI upload itself was broken or missing.
-        # --force-reinstall replaces the editable install left behind by
-        # `uv sync` with the actual built wheel under test.
-        source .venv/bin/activate
-        pip install --no-deps --force-reinstall \
+        # --reinstall replaces the editable install left behind by `uv sync`
+        # with the actual built wheel under test. --no-cache + --only-binary
+        # ensure we test the freshly-uploaded wheel, never a cached sdist.
+        #
+        # `uv pip install --python .venv/bin/python` is load-bearing: a
+        # `source .venv/bin/activate && pip install …` chain falls back to
+        # the runner's system pip when uv has not seeded pip into `.venv`,
+        # which then writes outside the venv and leaves the editable install
+        # in place — masking a broken/missing TestPyPI upload.
+        uv pip install --python .venv/bin/python \
+          --no-deps --reinstall --no-cache --only-binary=:all: \
           --index-url https://test.pypi.org/simple/ \
           "notebooklm-py==${{ steps.version.outputs.version }}"
 
@@ -72,11 +79,13 @@ jobs:
       if: inputs.source == 'pypi'
       shell: bash
       run: |
-        # Symmetric with the TestPyPI step: --no-deps + --force-reinstall
-        # swaps the locked editable install for the actual PyPI wheel without
-        # disturbing the dep tree resolved from `uv.lock`.
-        source .venv/bin/activate
-        pip install --no-deps --force-reinstall \
+        # Symmetric with the TestPyPI step: --no-deps + --reinstall swaps the
+        # locked editable install for the actual PyPI wheel without
+        # disturbing the dep tree resolved from `uv.lock`. See the TestPyPI
+        # step above for why `uv pip install --python .venv/bin/python` is
+        # used instead of activating the venv and calling bare `pip`.
+        uv pip install --python .venv/bin/python \
+          --no-deps --reinstall --no-cache --only-binary=:all: \
           "notebooklm-py==${{ steps.version.outputs.version }}"
 
     - name: Verify version
