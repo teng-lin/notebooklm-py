@@ -20,8 +20,9 @@ This module hosts two cooperating pieces:
 
    This foundation is intentionally **behavior-neutral**: every method
    defaults to :attr:`IdempotencyPolicy.UNCLASSIFIED`, which is silent
-   and reproduces today's retry behavior. Wave 2 classifies individual
-   RPCs.
+   and reproduces today's retry behavior. The Wave-2 classification
+   arc (see ADR-005, ``docs/adr/0005-idempotency-taxonomy.md``)
+   replaces these placeholders RPC-by-RPC.
 
 Per-API probes used by :func:`idempotent_create` are caller-supplied
 because there is no universal probe key (notebooks: title +
@@ -30,7 +31,9 @@ baseline-diff; sources: url-match; ``add_text``: no probe possible — see
 
 This module is private (``_idempotency.py``); call sites live in the
 domain APIs (``_notebooks.py``, ``_sources.py``) and the RPC executor
-(``_core_rpc.py``).
+(``_core_rpc.py``). The canonical home for the taxonomy itself, the
+six-policy axis, and the per-RPC classification rationale is
+ADR-005 (``docs/adr/0005-idempotency-taxonomy.md``).
 """
 
 from __future__ import annotations
@@ -183,8 +186,8 @@ class IdempotencyPolicy(str, Enum):
 
     Six policies — no more, no fewer. The axis was sized to cover all
     realistic NotebookLM RPC shapes without inventing per-method special
-    cases. See ``.sisyphus/plans/tier-9-p0-p1.md`` (B1 section) for the
-    derivation.
+    cases. See ADR-005 (``docs/adr/0005-idempotency-taxonomy.md``) for
+    the derivation and the per-policy rationale.
 
     Policies fall into three retry-safety bands:
 
@@ -586,8 +589,8 @@ IDEMPOTENCY_REGISTRY.register(
 #
 # These entries replace the UNCLASSIFIED placeholders for the five mutating
 # RPCs whose side-effect semantics are well-understood and stable. The full
-# audit decision matrix lives in ``.sisyphus/plans/tier-9-p0-p1.md``; the
-# short version follows.
+# audit decision matrix lives in ADR-005
+# (``docs/adr/0005-idempotency-taxonomy.md``); the short version follows.
 #
 # DELETE_NOTEBOOK / DELETE_SOURCE / DELETE_ARTIFACT
 #   Server-side delete is idempotent: replaying the request after a 5xx /

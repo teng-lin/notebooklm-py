@@ -17,6 +17,7 @@ Closes #<issue_number>
 - [ ] Linting passes (`ruff check .`)
 - [ ] Formatting passes (`ruff format --check .`)
 - [ ] Type checking passes (`mypy src/notebooklm --ignore-missing-imports`)
+- [ ] If this PR changes architectural shape, an ADR has been added or updated.
 
 ## Notes
 

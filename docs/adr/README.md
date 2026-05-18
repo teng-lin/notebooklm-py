@@ -1,0 +1,44 @@
+# Architecture Decision Records
+
+This directory holds the canonical decisions that shape the `notebooklm-py` codebase. Each record explains *why* a load-bearing pattern exists so that future contributors don't re-litigate (or silently re-introduce) the trade-off.
+
+## How to use this directory
+
+- Read the relevant ADR before changing the pattern it describes. If you disagree, write a new ADR that supersedes it — do not edit the original past correcting typos.
+- Numbering is append-only. Retired ADR numbers are never re-used.
+- Filenames follow `NNNN-short-title.md` (lowercase, kebab-case).
+- Status values: `Proposed`, `Accepted`, `Accepted (Sunset = <event>)`, `Superseded by ADR-NNN (#PR)`, `Deprecated`, `Rejected`.
+- Format: lightweight hybrid — six sections in this exact order: *Status*, *Context*, *Decision*, *Consequences*, *Alternatives considered*. See [0000-template.md](0000-template.md).
+
+## When an ADR is required
+
+The pull-request template asks contributors to confirm that any change to the *architectural shape* of the codebase carries an ADR addition or update. "Architectural shape" means any of:
+
+- New / removed / relocated modules in `src/notebooklm/_core*.py`, `src/notebooklm/_capabilities.py`, `src/notebooklm/auth.py`, `src/notebooklm/_auth/`, `src/notebooklm/cli/services/`.
+- Changes to the contracts between layers (CLI ↔ Client ↔ Core ↔ RPC).
+- New or retired test patterns (fixtures, monkeypatch policy, conformance tests).
+- New cross-cutting policies (retry, idempotency, scrubbing, loop affinity).
+
+Pure bug fixes, additive RPC method IDs, and CLI ergonomics changes do not require an ADR.
+
+## Index
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [0001](0001-layered-core-seams-and-property-bridge-policy.md) | Layered `_core` seams and the property-bridge policy | Accepted (retroactive) |
+| [0002](0002-capability-protocol-pattern.md) | Capability Protocol pattern (`ClientCoreCapabilities` fat union) | Accepted (Sunset = D2 cutover — to be marked Superseded when `arch-d2-cutover` PR lands) |
+| [0003](0003-auth-facade-write-through.md) | `auth.py` write-through facade (`_AuthFacadeModule`) | Accepted (Sunset = D1 auth side — to be marked Superseded when `arch-d1-auth-side` PR lands) |
+| [0004](0004-loop-affinity-contract.md) | Loop-affinity contract for `NotebookLMClient` | Accepted (retroactive) |
+| [0005](0005-idempotency-taxonomy.md) | Mutating-RPC idempotency taxonomy | Accepted (retroactive) |
+| [0006](0006-vcr-scrubber-strategy.md) | VCR cassette scrubber strategy | Accepted (retroactive) |
+| 0007 | Test monkeypatch policy | `0007-test-monkeypatch-policy.md` — reserved (ships with D1 PR-1) |
+| [0008](0008-cli-services-extraction-pattern.md) | `cli/services/` extraction pattern | Accepted (retroactive) |
+
+The 0007 slot is intentionally held open: the test-monkeypatch policy ships as part of D1 PR-1 (`arch-d1-fixtures-scaffolding`) so the ADR can reference the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) that enforce it. Publishing it now as a placeholder would create an empty record with no enforcement substrate — exactly the failure mode this directory is meant to prevent.
+
+## Related references
+
+- `docs/architecture-evolution.md` — BEFORE / AFTER / GREENFIELD diagrams that visualise the disease state and the post-remediation target.
+- `docs/architecture-post-remediation.md` — ASCII view of the layered architecture after the D3 → D2 → D1 remediation arc lands.
+- `docs/development.md` — contributor-facing process notes (testing, releasing, environment setup).
+- `CLAUDE.md` — onboarding map for AI assistants. Architectural rationale belongs here in `docs/adr/`, not in `CLAUDE.md`.
