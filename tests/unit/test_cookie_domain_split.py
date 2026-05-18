@@ -544,6 +544,12 @@ class TestLoginCliFlag:
         with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
             result = runner.invoke(cli, ["login", "--include-domains", "youtube"])
 
+        # CodeRabbit feedback: pin the failure path so the test cannot pass
+        # spuriously if the warning never fired (e.g. if Playwright became
+        # available via some other import shim). The Playwright-not-installed
+        # branch in ``_run_playwright_login`` exits 1 with a clear message.
+        assert result.exit_code == 1
+        assert "Playwright not installed" in result.output
         assert "--include-domains has no effect without --browser-cookies" not in result.output
 
 

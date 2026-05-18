@@ -26,6 +26,7 @@ parity for the Playwright path:
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import pytest
@@ -182,16 +183,22 @@ def test_empty_storage_state_round_trips() -> None:
 
 
 def test_filter_does_not_mutate_input() -> None:
-    """The helper must return a new dict so the caller can compare before/after."""
+    """The helper must return a new dict so the caller can compare before/after.
+
+    CodeRabbit feedback: deep-copy each cookie dict, not just the outer list,
+    so any in-place mutation of an individual cookie dict (e.g. accidental
+    ``cookie["domain"] = …`` inside the filter) is caught — a shallow
+    ``list(state["cookies"])`` would let nested mutations slip through.
+    """
     state = _state(
         [
             {"name": "SID", "value": "v1", "domain": ".google.com", "path": "/"},
             {"name": "MAIL_SID", "value": "v2", "domain": "mail.google.com", "path": "/"},
         ]
     )
-    original_cookies = list(state["cookies"])
+    original_cookies = copy.deepcopy(state["cookies"])
     _filter()(state)
-    # Source dict unchanged.
+    # Source dict unchanged at every depth.
     assert state["cookies"] == original_cookies
 
 
