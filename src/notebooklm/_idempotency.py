@@ -392,10 +392,76 @@ class IdempotencyRegistry:
                 self.register(method, IdempotencyPolicy.UNCLASSIFIED)
 
 
-# Module-level production registry. Wave 2 will add classifications
-# below the seeding call; for B1 the registry is pure default-fill.
+# Module-level production registry. Wave 2 adds classifications below the
+# seeding call; B1 was a pure default-fill foundation.
 IDEMPOTENCY_REGISTRY = IdempotencyRegistry()
 IDEMPOTENCY_REGISTRY._seed_defaults()
+
+
+# ----------------------------------------------------------------------------
+# Wave 2 classifications (P0-3 side-effects + P1-2 notebooks)
+# ----------------------------------------------------------------------------
+#
+# These entries replace the UNCLASSIFIED placeholders for the five mutating
+# RPCs whose side-effect semantics are well-understood and stable. The full
+# audit decision matrix lives in ``.sisyphus/plans/tier-9-p0-p1.md``; the
+# short version follows.
+#
+# DELETE_NOTEBOOK / DELETE_SOURCE / DELETE_ARTIFACT
+#   Server-side delete is idempotent: replaying the request after a 5xx /
+#   network failure yields the same final state (the resource is gone).
+#   Classification: ``IDEMPOTENT_SET_OP``. The transport retry loop keeps
+#   running unchanged — today's behavior is preserved, the registry simply
+#   documents *why* it is safe.
+#
+# REFRESH_SOURCE
+#   Refresh kicks off a server-side fetch job. A duplicate refresh job is
+#   harmless (extra bandwidth, same eventual content) but observable, so
+#   the caller has accepted at-least-once semantics. Classification:
+#   ``AT_LEAST_ONCE_ACCEPTED``. The transport may retry; the registry
+#   emits a rate-limited WARN so operators can see the trade-off when it
+#   actually fires.
+#
+# SHARE_NOTEBOOK
+#   Mutates the shared-users / public-access ACL. A blind retry after a
+#   network blip can re-send invitation emails (with ``notify=True``) or
+#   flip access between RESTRICTED / ANYONE-WITH-LINK twice. The codebase
+#   does expose a server-side probe RPC (``GET_SHARE_STATUS``) that can
+#   list the current ACL, so the *correct* policy is ``PROBE_THEN_CREATE``
+#   — the transport must NOT retry blindly, and a future wrapper can
+#   ``get_status()`` to decide whether the prior call landed before
+#   re-issuing. Wave-2 scope is the classification (which suppresses the
+#   blind retry today); the caller-side probe-then-create wrapper is a
+#   follow-up.
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.DELETE_NOTEBOOK,
+    IdempotencyPolicy.IDEMPOTENT_SET_OP,
+    notes="server-side delete is idempotent (set-op semantics)",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.DELETE_SOURCE,
+    IdempotencyPolicy.IDEMPOTENT_SET_OP,
+    notes="server-side delete is idempotent (set-op semantics)",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.DELETE_ARTIFACT,
+    IdempotencyPolicy.IDEMPOTENT_SET_OP,
+    notes="server-side delete is idempotent (set-op semantics)",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.REFRESH_SOURCE,
+    IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED,
+    notes="duplicate refresh jobs are acceptable cost (extra fetch, same content)",
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.SHARE_NOTEBOOK,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    notes=(
+        "mutates ACL; blind retry can re-send invite emails or double-flip access. "
+        "GET_SHARE_STATUS exposes the server-side ACL for a future probe-then-create "
+        "wrapper; today's classification suppresses the inner retry loop."
+    ),
+)
 
 
 # ----------------------------------------------------------------------------
