@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import httpx
 
 from ._core_transport import _AuthSnapshot
+from ._loop_affinity import assert_bound_loop
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
@@ -101,6 +102,21 @@ class AuthRefreshCoordinator:
         self._refresh_callback: Callable[[], Awaitable[AuthTokens]] | None = refresh_callback
         # Distinct from ``_refresh_lock`` — see module docstring.
         self._auth_snapshot_lock: asyncio.Lock | None = None
+        # P0-2: loop-affinity guard. Set by :meth:`ClientLifecycle.open`
+        # so :meth:`await_refresh` can short-circuit cross-loop misuse
+        # before touching the lazily-built ``_refresh_lock`` (bound to
+        # the loop the lock was first acquired under). ``None`` is a
+        # silent no-op for standalone fixtures.
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Capture or clear the event-loop binding for the affinity guard.
+
+        :meth:`ClientLifecycle.open` propagates the captured loop here.
+        Passing ``None`` clears the binding for the next ``open()``
+        (which will rebind to a fresh loop).
+        """
+        self._bound_loop = loop
 
     # ------------------------------------------------------------------
     # Lazy lock accessors. Both follow the same race-free check-then-assign
@@ -229,6 +245,11 @@ class AuthRefreshCoordinator:
         intact across the cancellation and is replaced only on the next
         refresh wave once the current task transitions to ``done()``.
         """
+        # P0-2: catch cross-loop refresh before touching ``_refresh_lock``.
+        # The lock is lazily bound to the loop that first awaited
+        # ``get_refresh_lock`` — a cross-loop call would hang on the
+        # ``await lock.acquire()`` if we let it through.
+        assert_bound_loop(self._bound_loop)
         if self._refresh_callback is None:
             raise RuntimeError(
                 "AuthRefreshCoordinator.await_refresh called without a "

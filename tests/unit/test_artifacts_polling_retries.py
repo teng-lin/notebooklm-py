@@ -11,6 +11,12 @@ from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
 
 class _FakeTransportProvider:
+    # ``ArtifactPollingService.wait_for_completion`` calls
+    # ``assert_bound_loop(self._capabilities.bound_loop)`` (P0-2). ``None``
+    # is the documented silent-no-op value for the affinity helper, so
+    # this stub stays correct without binding to a real loop.
+    bound_loop = None
+
     def __init__(
         self,
         *,

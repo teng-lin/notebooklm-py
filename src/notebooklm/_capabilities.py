@@ -125,6 +125,25 @@ class UploadConcurrencyProvider(Protocol):
         ...
 
 
+class LoopAffinityProvider(Protocol):
+    """Provider for the open-time captured event-loop reference.
+
+    Sub-clients that issue ``async`` calls touching loop-bound primitives
+    (locks, semaphores, ``httpx.AsyncClient`` pools, condition variables)
+    consult this property and forward it to
+    :func:`notebooklm._loop_affinity.assert_bound_loop` so a cross-loop
+    call surfaces an actionable ``RuntimeError`` at the call site rather
+    than hanging on a lock bound to a dead loop.
+    """
+
+    @property
+    def bound_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the loop ``ClientLifecycle.open`` captured, or ``None``
+        if the client has not yet been opened.
+        """
+        ...
+
+
 class ClientCoreCapabilities(
     CoreRPCProvider,
     SourceListProvider,
@@ -135,6 +154,7 @@ class ClientCoreCapabilities(
     CookieJarProvider,
     TransportOperationProvider,
     UploadConcurrencyProvider,
+    LoopAffinityProvider,
 ):
     """Narrow capability adapter around a ``ClientCore``-shaped object.
 
@@ -220,3 +240,31 @@ class ClientCoreCapabilities(
 
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         self._core.record_upload_queue_wait(wait_seconds)
+
+    @property
+    def bound_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the underlying core's open-time captured event loop.
+
+        Reads through to ``ClientCore._lifecycle.get_bound_loop()`` so the
+        capability adapter stays decoupled from the lifecycle helper's
+        internal attribute layout. Returns ``None`` when the underlying
+        core has no lifecycle (e.g. a ``MagicMock``-backed test fixture)
+        or returns a non-loop value, so the affinity helper falls back to
+        its silent no-op path rather than misclassifying a mock as a
+        cross-loop call.
+        """
+        # ``ClientLifecycle.get_bound_loop()`` returns ``None`` if open()
+        # has not been called; the affinity helper treats ``None`` as a
+        # silent no-op, so this property is safe before open().
+        lifecycle = getattr(self._core, "_lifecycle", None)
+        if lifecycle is None:
+            return None
+        loop = lifecycle.get_bound_loop()
+        # Defensive ``isinstance`` so a ``MagicMock``-shaped fixture
+        # whose ``_lifecycle`` auto-vivifies into a mock doesn't
+        # synthesize a fake loop object that the affinity helper would
+        # otherwise treat as a real (mismatched) loop. Production paths
+        # always store either ``None`` or a real ``AbstractEventLoop``.
+        if isinstance(loop, asyncio.AbstractEventLoop):
+            return loop
+        return None

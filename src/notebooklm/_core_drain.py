@@ -49,6 +49,8 @@ import weakref
 from dataclasses import dataclass
 from typing import Any
 
+from ._loop_affinity import assert_bound_loop
+
 
 @dataclass(frozen=True)
 class _TransportOperationToken:
@@ -99,6 +101,21 @@ class TransportDrainTracker:
         self._operation_depths: weakref.WeakKeyDictionary[asyncio.Task[Any], int] = (
             weakref.WeakKeyDictionary()
         )
+        # P0-2: loop-affinity guard. Set by :meth:`ClientLifecycle.open`
+        # so :meth:`drain` can short-circuit cross-loop misuse before
+        # touching the lazily-built ``_drain_condition`` (which is bound
+        # to the loop that constructed it). ``None`` is a silent no-op
+        # for standalone fixtures.
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Capture or clear the event-loop binding for the affinity guard.
+
+        :meth:`ClientLifecycle.open` propagates the captured loop here so
+        :meth:`drain` can short-circuit cross-loop misuse. Passing ``None``
+        clears the binding for the next ``open()`` (which will rebind).
+        """
+        self._bound_loop = loop
 
     def get_drain_condition(self) -> asyncio.Condition:
         """Return the per-instance drain ``asyncio.Condition``, creating it lazily.
@@ -195,6 +212,11 @@ class TransportDrainTracker:
         tracker remains in draining mode so shutdown callers do not
         accidentally admit new work after a missed deadline.
         """
+        # P0-2: catch cross-loop drain before touching ``_drain_condition``.
+        # The condition is lazily bound to the loop that first awaited
+        # ``get_drain_condition`` — a cross-loop call would hang on
+        # ``async with condition`` if we let it through.
+        assert_bound_loop(self._bound_loop)
         if timeout is not None and timeout < 0:
             raise ValueError(f"timeout must be >= 0 or None, got {timeout!r}")
         condition = self.get_drain_condition()

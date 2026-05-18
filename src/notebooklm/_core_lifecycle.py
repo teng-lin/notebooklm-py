@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     from ._core_drain import TransportDrainTracker
     from ._core_metrics import ClientMetrics
     from ._core_polling import PollRegistry
+    from ._core_reqid import ReqidCounter
     from ._core_rpc import RpcExecutor
     from ._core_transport import AuthedTransport
     from .types import ConnectionLimits
@@ -108,6 +109,7 @@ class _LifecycleHost(Protocol):
     _metrics_obj: ClientMetrics
     _drain_tracker: TransportDrainTracker
     _auth_coord: AuthRefreshCoordinator
+    _reqid: ReqidCounter
     cookie_persistence: CookiePersistence
     poll_registry: PollRegistry
     _authed_transport: AuthedTransport | None
@@ -205,6 +207,19 @@ class ClientLifecycle:
         # so the binding is consistent with the loop that owns every primitive
         # constructed below.
         self._bound_loop = asyncio.get_running_loop()
+        # P0-2: propagate the captured loop into every helper that owns a
+        # loop-bound primitive (lock / condition / task slot). Each helper
+        # consults its own ``_bound_loop`` at the top of its async entry
+        # points (``drain``, ``next_reqid``, ``await_refresh``) so a
+        # cross-loop call surfaces an actionable ``RuntimeError`` at the
+        # call site rather than hanging on a primitive bound to a dead
+        # loop. ``ChatAPI`` / ``ArtifactPollingService`` reach the bound
+        # loop through ``ClientCoreCapabilities.bound_loop`` (which reads
+        # ``ClientLifecycle.get_bound_loop()``) so no further propagation
+        # is needed there.
+        host._drain_tracker.set_bound_loop(self._bound_loop)
+        host._reqid.set_bound_loop(self._bound_loop)
+        host._auth_coord.set_bound_loop(self._bound_loop)
         # Reset the drain flag so a previously-drained-then-reopened client
         # admits new transport work again. Direct attribute write mirrors the
         # legacy ``self._draining = False`` line.
@@ -335,6 +350,21 @@ class ClientLifecycle:
                 self._keepalive_task.cancel()
                 await asyncio.gather(self._keepalive_task, return_exceptions=True)
                 self._keepalive_task = None
+
+            # P0-1: cancel any in-flight auth refresh task BEFORE the cookie
+            # save or shielded ``aclose()``. Without this, a slow refresh
+            # racing against close would survive the close path and continue
+            # holding the now-torn-down ``httpx.AsyncClient``, surfacing as a
+            # confusing httpx error or a "coroutine was never awaited" GC
+            # warning. ``gather(..., return_exceptions=True)`` absorbs the
+            # ``CancelledError`` so close itself stays non-raising. We check
+            # both ``is None`` (no refresh has ever fired) and ``done()`` (a
+            # successful refresh wave already finished) so the cancel is a
+            # true no-op outside the racing case.
+            refresh_task = host._auth_coord._refresh_task
+            if refresh_task is not None and not refresh_task.done():
+                refresh_task.cancel()
+                await asyncio.gather(refresh_task, return_exceptions=True)
 
             # Drain in-flight artifact poll tasks. Snapshot first so concurrent
             # registry mutations (a finishing leader removing its entry) don't

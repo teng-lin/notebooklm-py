@@ -58,9 +58,11 @@ class _StubHost:
 
     * ``auth`` — a real :class:`AuthTokens` so :meth:`ClientLifecycle.open`
       can read ``cookies`` / ``cookie_jar`` / ``storage_path``.
-    * ``_metrics_obj`` / ``_drain_tracker`` / ``_auth_coord`` —
-      ``MagicMock``s; the lifecycle only touches
-      ``_drain_tracker._draining = False`` from the open() path.
+    * ``_metrics_obj`` / ``_drain_tracker`` / ``_auth_coord`` / ``_reqid`` —
+      ``MagicMock``s; the lifecycle touches
+      ``_drain_tracker._draining = False`` and calls ``set_bound_loop`` on
+      each of the three helpers (drain / reqid / auth_coord) from the
+      open() path so cross-loop misuse can be caught.
     * ``cookie_persistence`` — a ``MagicMock`` with an async ``save``
       coroutine; assertions check it was called with the right args.
     * ``poll_registry`` — a ``MagicMock`` with ``active_tasks()`` returning
@@ -80,6 +82,12 @@ class _StubHost:
         self._drain_tracker = MagicMock()
         self._drain_tracker._draining = True  # so we can assert open() resets it
         self._auth_coord = MagicMock()
+        # ``_auth_coord._refresh_task`` is checked by ``close()`` (P0-1).
+        # Default to ``None`` so the cancel branch is skipped; tests that
+        # exercise the in-flight-refresh path overwrite it.
+        self._auth_coord._refresh_task = None
+        # ``_reqid`` is targeted by ``set_bound_loop`` from open() (P0-2).
+        self._reqid = MagicMock()
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()

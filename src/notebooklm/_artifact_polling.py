@@ -11,7 +11,8 @@ from typing import Any, Protocol
 
 from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
-from ._capabilities import PollRegistryProvider, TransportOperationProvider
+from ._capabilities import LoopAffinityProvider, PollRegistryProvider, TransportOperationProvider
+from ._loop_affinity import assert_bound_loop
 from .rpc import (
     ArtifactStatus,
     ArtifactTypeCode,
@@ -45,7 +46,12 @@ ArtifactErrorCallback = Callable[[builtins.list[Any]], str | None]
 StatusChangeCallback = Callable[[GenerationStatus], object]
 
 
-class ArtifactPollingCapabilities(PollRegistryProvider, TransportOperationProvider, Protocol):
+class ArtifactPollingCapabilities(
+    PollRegistryProvider,
+    TransportOperationProvider,
+    LoopAffinityProvider,
+    Protocol,
+):
     """Capabilities required by the artifact polling boundary."""
 
 
@@ -130,6 +136,10 @@ class ArtifactPollingService:
         deprecation_warning_stacklevel: int = 2,
     ) -> GenerationStatus:
         """Wait for a generation task to complete using a shared poll loop."""
+        # P0-2: catch cross-loop wait_for_completion before touching the
+        # poll registry (which holds futures bound to the registering
+        # loop) or spawning a poll task on a foreign loop.
+        assert_bound_loop(self._capabilities.bound_loop)
         # Backward compatibility: poll_interval overrides initial_interval.
         if poll_interval is not None:
             import warnings

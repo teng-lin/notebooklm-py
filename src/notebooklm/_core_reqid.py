@@ -39,6 +39,8 @@ import asyncio
 import time
 from collections.abc import Callable
 
+from ._loop_affinity import assert_bound_loop
+
 # Baseline counter value (matches the chat-API expectation of a large positive
 # integer). Module-level constant so tests / future callers can reference it
 # instead of hard-coding ``100000``.
@@ -90,6 +92,25 @@ class ReqidCounter:
         self._on_lock_wait: Callable[[float], None] = (
             on_lock_wait if on_lock_wait is not None else _noop_record_lock_wait
         )
+        # P0-2: loop-affinity guard. Captured at ``ClientLifecycle.open()``
+        # time via :meth:`set_bound_loop` and consulted by
+        # :meth:`next_reqid` so a cross-loop call raises an actionable
+        # ``RuntimeError`` rather than hanging on ``_lock`` (which is
+        # bound to the loop the lock was first acquired under). ``None``
+        # is a silent no-op — standalone fixtures and never-opened
+        # counters skip the check.
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
+
+    def set_bound_loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Capture or clear the event-loop binding for the affinity guard.
+
+        Called by :meth:`ClientLifecycle.open` after it captures the
+        running loop, so :meth:`next_reqid` can short-circuit cross-loop
+        misuse before touching :attr:`_lock`. Passing ``None`` clears the
+        binding (useful when a client is closed and the next ``open()``
+        will rebind to a fresh loop).
+        """
+        self._bound_loop = loop
 
     @property
     def value(self) -> int:
@@ -139,6 +160,12 @@ class ReqidCounter:
             raise TypeError(f"step must be int, got {type(step).__name__}")
         if step <= 0:
             raise ValueError(f"step must be positive, got {step!r}")
+        # P0-2 loop-affinity guard. Runs BEFORE the lazy ``Lock()`` allocation
+        # so a cross-loop call (counter created under loop A, awaited from
+        # loop B) raises ``RuntimeError`` at the call site instead of binding
+        # the lazy lock to the wrong loop. The check is a silent no-op when
+        # ``_bound_loop is None`` (standalone fixtures / unopened helpers).
+        assert_bound_loop(self._bound_loop)
         # Safe: no await between check and assign, so no other coroutine can
         # race us here. Allocating ``asyncio.Lock()`` requires a running loop
         # in some Python versions; we're already awaited so we know one is
@@ -147,20 +174,24 @@ class ReqidCounter:
             self._lock = asyncio.Lock()
         wait_start = time.perf_counter()
         await self._lock.acquire()
-        # Wrap latency recording AND the increment inside the same
-        # ``try``/``finally`` that releases the lock so a misbehaving
-        # ``on_lock_wait`` callback (in practice always
-        # ``ClientCore._record_lock_wait``, which can't raise — but the
-        # extraction makes this callback injection point reusable) cannot
-        # leak the acquisition. Tighter than the pre-extraction shape in
-        # ``ClientCore.next_reqid``, which did the recording before the
-        # ``try`` block; defense-in-depth for arbitrary future callbacks.
+        # P1-19: lock release MUST happen before the ``on_lock_wait``
+        # callback runs. A misbehaving callback (slow telemetry sink,
+        # accidental re-entry, or one that itself awaits) must not widen
+        # the critical section by holding ``_lock`` while it executes.
+        # The increment + read happens under the lock; the wait-time
+        # recording happens AFTER release. Tests:
+        # ``tests/unit/concurrency/test_reqid_callback_outside_lock.py``.
         try:
-            self._on_lock_wait(time.perf_counter() - wait_start)
             self._value += step
-            return self._value
+            new_value = self._value
         finally:
             self._lock.release()
+        # Lock is released; safe to invoke arbitrary user-supplied
+        # telemetry. Exceptions from the callback propagate to the caller
+        # (the existing contract — ``ClientCore._record_lock_wait`` can't
+        # raise, but the API surface keeps this defensive).
+        self._on_lock_wait(time.perf_counter() - wait_start)
+        return new_value
 
 
 __all__ = ["DEFAULT_BASELINE", "DEFAULT_STEP", "ReqidCounter"]

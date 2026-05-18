@@ -25,6 +25,7 @@ from ._chat_protocol import (
 from ._core import _AuthSnapshot
 from ._core_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
+from ._loop_affinity import assert_bound_loop
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (
     ChatGoal,
@@ -207,6 +208,13 @@ class ChatAPI:
             dedicated ``create conversation`` RPC that has not been
             reverse-engineered. See issue #659.
         """
+        # P0-2: catch cross-loop ``ask`` before any work — particularly
+        # before acquiring the per-conversation lock below, which would
+        # otherwise hang on a lock bound to a dead loop. The transport
+        # guard at ``_core_transport.py:258-262`` only catches misuse on
+        # the POST itself, which is *after* the conversation lock is
+        # already held — too late.
+        assert_bound_loop(self._core.bound_loop)
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
             notebook_id,

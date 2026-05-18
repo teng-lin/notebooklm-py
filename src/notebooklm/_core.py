@@ -192,6 +192,50 @@ def _get_error_injection_mode() -> str | None:
     return normalized
 
 
+def _refuse_synthetic_error_outside_test_context() -> None:
+    """Refuse :class:`ClientCore` instantiation when the test-only env var leaks.
+
+    P1-12: ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only — it
+    substitutes synthetic error responses for every batchexecute RPC. Before
+    this guard, a leaked deploy env (e.g. an unset-on-prod CI variable that
+    slipped through) would silently wrap the production transport in
+    :class:`_SyntheticErrorTransport`, returning fake 429/5xx/expired_csrf
+    responses to live callers.
+
+    The guard fires only when:
+
+    1. :func:`_get_error_injection_mode` returns a non-``None`` mode (so an
+       empty / unrecognized env-var value still allows production startup),
+       AND
+    2. ``PYTEST_CURRENT_TEST`` is unset (pytest sets this for the lifetime
+       of every test, including the ``@pytest.mark.synthetic_error`` fixture
+       path that *does* legitimately set the env var).
+
+    On refusal we log at WARNING with the env-var name and raise
+    ``RuntimeError`` with the same env-var name so an operator can grep
+    deploy configs and unset the offending variable.
+    """
+    import os
+
+    mode = _get_error_injection_mode()
+    if mode is None:
+        return
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        # Legitimate pytest run — the ``@pytest.mark.synthetic_error``
+        # fixture sets the env var inside a test context. Allow.
+        return
+    message = (
+        f"{ERROR_INJECT_ENV_VAR}={mode!r} is set but no pytest context was "
+        f"detected (PYTEST_CURRENT_TEST unset). This env var is test-only — "
+        f"it substitutes synthetic error responses for every batchexecute "
+        f"RPC and must not be set in production. Unset {ERROR_INJECT_ENV_VAR} "
+        f"to restore normal behavior, or run under pytest if synthetic-error "
+        f"recording is intended."
+    )
+    logger.warning(message)
+    raise RuntimeError(message)
+
+
 class _SyntheticErrorTransport(httpx.AsyncBaseTransport):
     """Test-only httpx transport that substitutes synthetic error responses.
 
@@ -497,7 +541,17 @@ class ClientCore:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
                 positive finite number, or if ``max_concurrent_uploads`` /
                 ``max_concurrent_rpcs`` is a non-positive integer.
+            RuntimeError: If ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to a
+                recognised mode without a ``PYTEST_CURRENT_TEST`` environment
+                marker. The env var is test-only — see
+                :func:`_refuse_synthetic_error_outside_test_context`.
         """
+        # P1-12: refuse instantiation if the test-only synthetic-error env var
+        # is set without pytest context. Catches leaked deploy envs at the
+        # earliest opportunity, before any HTTP client is constructed. The
+        # guard is a no-op for the normal production path (env var unset)
+        # and for legitimate pytest contexts (PYTEST_CURRENT_TEST set).
+        _refuse_synthetic_error_outside_test_context()
         # Lazy import to break the types.py -> _core.py cycle.
         from .types import ConnectionLimits
 

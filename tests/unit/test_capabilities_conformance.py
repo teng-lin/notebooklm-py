@@ -1,4 +1,4 @@
-"""Structural conformance tests for the 9 base Protocols in ``_capabilities.py``.
+"""Structural conformance tests for the 10 base Protocols in ``_capabilities.py``.
 
 These tests are pure structural checks: they assert that
 ``ClientCoreCapabilities`` (the adapter) — and, where applicable,
@@ -11,7 +11,7 @@ the test must run with zero runtime side-effects, so we bypass
 ``ClientCore.__init__`` entirely.
 
 This test is intentionally noisy when a Protocol is added or removed —
-the 9-Protocol count guard at the top forces future contributors to
+the 10-Protocol count guard at the top forces future contributors to
 update ``_BASE_PROTOCOLS`` in lockstep.
 """
 
@@ -31,6 +31,7 @@ from notebooklm._capabilities import (
     CookieJarProvider,
     CoreReqIdProvider,
     CoreRPCProvider,
+    LoopAffinityProvider,
     PollRegistryProvider,
     SourceListProvider,
     TransportOperationProvider,
@@ -45,7 +46,7 @@ _CAPABILITIES_SRC = Path(__file__).resolve().parents[2] / "src/notebooklm/_capab
 # checks only see the surface each *Provider* Protocol actually adds.
 _PROTOCOL_BASE_DIR: frozenset[str] = frozenset(dir(Protocol))
 
-# All 9 base Protocols, mirroring the bases of ``ClientCoreCapabilities``.
+# All 10 base Protocols, mirroring the bases of ``ClientCoreCapabilities``.
 _BASE_PROTOCOLS: tuple[type, ...] = (
     CoreRPCProvider,
     SourceListProvider,
@@ -56,9 +57,10 @@ _BASE_PROTOCOLS: tuple[type, ...] = (
     CookieJarProvider,
     TransportOperationProvider,
     UploadConcurrencyProvider,
+    LoopAffinityProvider,
 )
 
-# Members of the 9 Protocols that ``ClientCore`` itself directly exposes today.
+# Members of the 10 Protocols that ``ClientCore`` itself directly exposes today.
 # The remaining members are deliberately adapter-only on main HEAD: they are
 # either un-prefixed renames of underscored core helpers
 # (e.g. ``begin_transport_post`` → ``ClientCore._begin_transport_post``),
@@ -129,14 +131,14 @@ def _ast_class_directly_inherits_protocol(node: ast.ClassDef) -> bool:
     return False
 
 
-def test_capabilities_module_declares_exactly_nine_provider_protocols() -> None:
+def test_capabilities_module_declares_exactly_ten_provider_protocols() -> None:
     """Guard against silent Protocol additions/removals.
 
     Scans the **top-level** AST of ``_capabilities.py`` for class
     definitions whose name ends with ``Provider`` AND which directly
     inherit from ``Protocol``. Both conditions matter: a stray non-Protocol
     ``FooProvider`` helper, or a Protocol renamed away from the ``Provider``
-    suffix, would silently miscount. Future contributors who add a 10th
+    suffix, would silently miscount. Future contributors who add an 11th
     Protocol must also extend ``_BASE_PROTOCOLS`` in this test so the
     conformance loops cover it; the assertions force that.
     """
@@ -149,13 +151,13 @@ def test_capabilities_module_declares_exactly_nine_provider_protocols() -> None:
         and node.name.endswith("Provider")
         and _ast_class_directly_inherits_protocol(node)
     ]
-    assert len(provider_classes) == 9, (
-        f"Expected exactly 9 *Provider Protocols in _capabilities.py, found "
+    assert len(provider_classes) == 10, (
+        f"Expected exactly 10 *Provider Protocols in _capabilities.py, found "
         f"{len(provider_classes)}: {provider_classes}. Update _BASE_PROTOCOLS "
         "in this test if a Protocol was added or removed."
     )
-    assert len(_BASE_PROTOCOLS) == 9, (
-        "_BASE_PROTOCOLS drifted from the 9 *Provider classes in "
+    assert len(_BASE_PROTOCOLS) == 10, (
+        "_BASE_PROTOCOLS drifted from the 10 *Provider classes in "
         "_capabilities.py; update the tuple."
     )
     # Defence-in-depth: the AST-discovered names must match the imported tuple.
@@ -176,7 +178,7 @@ def test_client_core_capabilities_satisfies_protocol_structurally(
 
     Uses ``name in caps_cls.__dict__`` (concrete definition on the adapter
     itself) rather than ``hasattr(caps_cls, name)``. This matters because
-    ``ClientCoreCapabilities`` inherits from all 9 Protocols, and ``typing.
+    ``ClientCoreCapabilities`` inherits from all 10 Protocols, and ``typing.
     Protocol`` installs abstract stubs on its subclasses. A bare ``hasattr``
     would happily fall back to the inherited Protocol stub, masking a
     forgotten or accidentally-removed concrete implementation. The
@@ -239,7 +241,7 @@ def test_client_core_exposes_native_protocol_surface(
             )
 
 
-def test_client_core_capabilities_inherits_all_nine_protocols() -> None:
+def test_client_core_capabilities_inherits_all_ten_protocols() -> None:
     """``ClientCoreCapabilities`` must declare every base Protocol in its MRO.
 
     Inheriting the Protocols is what makes the adapter usable as a typed
