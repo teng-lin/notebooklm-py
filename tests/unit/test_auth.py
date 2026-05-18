@@ -3919,7 +3919,14 @@ class TestAccountMetadata:
         write_account_metadata(storage, authuser=2, email="bob@gmail.com")
         assert get_authuser_for_storage(storage) == 2
 
-    def test_write_updates_context_file_with_metadata(self, tmp_path):
+    def test_write_updates_storage_state_with_in_band_account(self, tmp_path):
+        """Post-P1-20: account metadata lands in ``storage_state.json``.
+
+        The legacy two-file behavior (account in ``context.json``) is replaced
+        by a unified atomic record under the ``notebooklm`` namespace key.
+        Non-account context state in ``context.json`` (e.g. ``notebook_id``)
+        is preserved untouched.
+        """
         from notebooklm.auth import read_account_metadata, write_account_metadata
 
         storage = tmp_path / "storage_state.json"
@@ -3929,9 +3936,13 @@ class TestAccountMetadata:
         write_account_metadata(storage, authuser=1, email="alice@example.com")
         meta = read_account_metadata(storage)
         assert meta == {"authuser": 1, "email": "alice@example.com"}
+        # P1-20: account record now lives inside storage_state.json.
+        in_band = json.loads(storage.read_text())["notebooklm"]
+        assert in_band["version"] == 1
+        assert in_band["account"] == {"authuser": 1, "email": "alice@example.com"}
+        # CLI context state in context.json survives the write.
         assert json.loads((tmp_path / "context.json").read_text()) == {
             "notebook_id": "nb_existing",
-            "account": {"authuser": 1, "email": "alice@example.com"},
         }
 
     def test_get_authuser_ignores_negative(self, tmp_path):

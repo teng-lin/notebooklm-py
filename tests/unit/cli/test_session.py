@@ -18,6 +18,25 @@ from notebooklm.types import Notebook
 from .conftest import create_mock_client, patch_main_cli_client
 
 
+def _read_account(storage_path: Path) -> dict:
+    """Test-suite helper: read account metadata via the canonical reader.
+
+    Post-P1-20 the account record lives inside ``storage_state.json`` under
+    the ``notebooklm`` namespace key; ``read_account_metadata`` handles both
+    the new in-band layout and the legacy sibling ``context.json`` fallback,
+    so tests that previously read ``context.json`` directly can route through
+    this helper without caring which on-disk shape they hit.
+    """
+    from notebooklm.auth import read_account_metadata
+
+    return read_account_metadata(storage_path)
+
+
+def _account_exists(storage_path: Path) -> bool:
+    """Test-suite helper: True iff any non-empty account record is present."""
+    return bool(_read_account(storage_path))
+
+
 @pytest.fixture
 def runner():
     return CliRunner()
@@ -3023,7 +3042,7 @@ class TestAuthRefreshCommand:
         assert result.exit_code == 0, result.output
         assert "bob@gmail.com" in result.output
         assert "authuser" not in result.output
-        assert json.loads((storage.parent / "context.json").read_text())["account"] == {
+        assert _read_account(storage) == {
             "authuser": 0,
             "email": "bob@gmail.com",
         }
@@ -3063,7 +3082,10 @@ class TestAuthRefreshCommand:
         assert "bob@gmail.com" in result.output
         assert "not signed in" in result.output.lower()
         assert "alice@example.com" in result.output
-        assert json.loads((storage.parent / "context.json").read_text())["account"] == {
+        # In this test the storage file was pre-seeded with a sibling
+        # context.json (legacy layout). The reader falls back to that record
+        # because no in-band write has occurred — assertion stays unchanged.
+        assert _read_account(storage) == {
             "authuser": 1,
             "email": "bob@gmail.com",
         }
@@ -3216,9 +3238,9 @@ class TestLoginMultiAccount:
             )
 
         assert result.exit_code == 0, result.output
-        context_json = target_dir / "context.json"
-        assert context_json.exists()
-        assert json.loads(context_json.read_text())["account"] == {
+        storage_file = target_dir / "storage_state.json"
+        assert _account_exists(storage_file)
+        assert _read_account(storage_file) == {
             "authuser": 1,
             "email": "bob@gmail.com",
         }
@@ -3301,8 +3323,8 @@ class TestLoginMultiAccount:
             result = runner.invoke(cli, ["login", "--browser-cookies", "chrome", "--all-accounts"])
 
         assert result.exit_code == 0, result.output
-        alice_meta = json.loads((target_root / "alice" / "context.json").read_text())["account"]
-        bob_meta = json.loads((target_root / "bob" / "context.json").read_text())["account"]
+        alice_meta = _read_account(target_root / "alice" / "storage_state.json")
+        bob_meta = _read_account(target_root / "bob" / "storage_state.json")
         assert alice_meta == {"authuser": 0, "email": "alice@example.com"}
         assert bob_meta == {"authuser": 1, "email": "bob@gmail.com"}
 
@@ -3380,8 +3402,9 @@ class TestLoginMultiAccount:
             result = runner.invoke(cli, ["login", "--browser-cookies", "chrome", "--all-accounts"])
 
         assert result.exit_code == 0, result.output
-        assert (target_root / "alice-2" / "context.json").exists()
-        assert json.loads((target_root / "alice-2" / "context.json").read_text())["account"] == {
+        alice2_storage = target_root / "alice-2" / "storage_state.json"
+        assert _account_exists(alice2_storage)
+        assert _read_account(alice2_storage) == {
             "authuser": 0,
             "email": "alice@example.com",
         }
@@ -3431,7 +3454,7 @@ class TestLoginMultiAccount:
 
         assert first.exit_code == 0, first.output
         assert second.exit_code == 0, second.output
-        assert json.loads((target_root / "bob" / "context.json").read_text())["account"] == {
+        assert _read_account(target_root / "bob" / "storage_state.json") == {
             "authuser": 0,
             "email": "bob@gmail.com",
         }
@@ -3541,9 +3564,10 @@ class TestLoginAllAccountsUpdate:
             preexisting={"alice": None},
         )
         assert result.exit_code == 0, result.output
-        assert (root / "alice" / "context.json").exists()
+        alice_storage = root / "alice" / "storage_state.json"
+        assert _account_exists(alice_storage)
         assert (root / "alice-2").exists() is False
-        assert json.loads((root / "alice" / "context.json").read_text())["account"] == {
+        assert _read_account(alice_storage) == {
             "authuser": 0,
             "email": "alice@example.com",
         }
@@ -3559,8 +3583,12 @@ class TestLoginAllAccountsUpdate:
             preexisting={"alice": None},
         )
         assert result.exit_code == 0, result.output
-        assert (root / "alice-2" / "context.json").exists()
-        # alice still exists but unchanged (no context.json was written there).
+        # P1-20: the new profile lands in alice-2/ with an in-band account
+        # record in its storage_state.json.
+        assert _account_exists(root / "alice-2" / "storage_state.json")
+        # alice still exists but was never touched — no account record either
+        # in-band or in the (absent) sibling context.json.
+        assert not _account_exists(root / "alice" / "storage_state.json")
         assert (root / "alice" / "context.json").exists() is False
 
     def test_update_does_not_clobber_profile_bound_to_different_email(self, runner, tmp_path):
@@ -3575,9 +3603,10 @@ class TestLoginAllAccountsUpdate:
             preexisting={"alice": {"account": {"authuser": 0, "email": "alice@OTHER.com"}}},
         )
         assert result.exit_code == 0, result.output
-        assert (root / "alice-2" / "context.json").exists()
-        # Existing alice metadata must be untouched.
-        assert json.loads((root / "alice" / "context.json").read_text())["account"] == {
+        # The new profile lands in alice-2 with an in-band record.
+        assert _account_exists(root / "alice-2" / "storage_state.json")
+        # Existing alice metadata (legacy sibling context.json) is untouched.
+        assert _read_account(root / "alice" / "storage_state.json") == {
             "authuser": 0,
             "email": "alice@OTHER.com",
         }
@@ -3596,7 +3625,11 @@ class TestLoginAllAccountsUpdate:
         )
         assert result.exit_code == 0, result.output
         assert sorted(p.name for p in root.iterdir()) == ["alice"]
-        assert json.loads((root / "alice" / "context.json").read_text())["account"] == {
+        # P1-20: --update re-writes account metadata in-band; the read goes
+        # through ``read_account_metadata`` which prefers the in-band record
+        # when present and falls back to the legacy sibling context.json
+        # otherwise. Either way the assertion is on the canonical reader.
+        assert _read_account(root / "alice" / "storage_state.json") == {
             "authuser": 0,
             "email": "alice@example.com",
         }
@@ -3627,8 +3660,10 @@ class TestLoginAllAccountsUpdate:
         # No alice-2 — the existing alice profile was reused despite the
         # casing mismatch.
         assert (root / "alice-2").exists() is False
-        # Re-stamped metadata uses the email as Google reports it now.
-        assert json.loads((root / "alice" / "context.json").read_text())["account"] == {
+        # Re-stamped metadata uses the email as Google reports it now. The
+        # in-band reader takes precedence over the legacy sibling record so
+        # the casefold-and-rewrite test sees the new value.
+        assert _read_account(root / "alice" / "storage_state.json") == {
             "authuser": 0,
             "email": "alice@gmail.com",
         }
@@ -3971,9 +4006,9 @@ class TestChromiumFanoutAllAccounts:
             result = runner.invoke(cli, ["login", "--browser-cookies", "chrome", "--all-accounts"])
 
         assert result.exit_code == 0, result.output
-        assert (target_root / "alice" / "context.json").exists()
-        assert (target_root / "bob" / "context.json").exists()
-        assert (target_root / "carol" / "context.json").exists()
+        assert _account_exists(target_root / "alice" / "storage_state.json")
+        assert _account_exists(target_root / "bob" / "storage_state.json")
+        assert _account_exists(target_root / "carol" / "storage_state.json")
         # Cookies written for "bob" must come from Profile 1, not Default —
         # this is the core bug the fan-out fixes.
         bob_storage = json.loads((target_root / "bob" / "storage_state.json").read_text())
@@ -4063,8 +4098,8 @@ class TestChromiumFanoutAllAccounts:
             result = runner.invoke(cli, ["login", "--browser-cookies", "chrome", "--all-accounts"])
 
         assert result.exit_code == 0, result.output
-        assert (target_root / "alice" / "context.json").exists()
-        assert (target_root / "carol" / "context.json").exists()
+        assert _account_exists(target_root / "alice" / "storage_state.json")
+        assert _account_exists(target_root / "carol" / "storage_state.json")
         # No profile written for the signed-out Profile 1.
         assert not any(p.name not in {"alice", "carol"} for p in target_root.iterdir())
 

@@ -5,6 +5,7 @@ across all CLI commands.
 """
 
 import json
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, NoReturn
@@ -22,6 +23,8 @@ from ..exceptions import (
     ValidationError,
 )
 from ._encoding import safe_echo
+
+logger = logging.getLogger(__name__)
 
 
 def _output_error(
@@ -184,8 +187,19 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         # Let Click handle its own exceptions (--help, bad args, etc.)
         raise
     except Exception as e:
+        # P1-18: emit only the exception's primary message (``args[0]``) to
+        # the user. ``str(e)`` would walk Python's default representation,
+        # which for some third-party exceptions includes repr of every arg
+        # — surfacing whatever the raise site put in (potentially full
+        # subprocess output, response bodies, etc.). Pinning to ``args[0]``
+        # keeps the contract: raise sites are responsible for producing a
+        # safe message; the handler does not re-render.
+        primary = e.args[0] if e.args else type(e).__name__
+        # Route the full exception (with cause chain + traceback) to the
+        # redacting DEBUG logger so ``-vv`` users can still diagnose.
+        logger.debug("Unexpected CLI exception", exc_info=True)
         _output_error(
-            f"Unexpected error: {e}",
+            f"Unexpected error: {primary}",
             "UNEXPECTED_ERROR",
             json_output,
             2,

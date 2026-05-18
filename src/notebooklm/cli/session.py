@@ -393,6 +393,70 @@ def _build_google_cookie_domains(
         )
 
 
+def _filter_storage_state_cookies_by_domain_policy(
+    state: dict[str, Any],
+    *,
+    include_optional: bool = False,
+    include_domains: set[str] | None = None,
+) -> dict[str, Any]:
+    """Filter a Playwright ``storage_state`` dict to the configured cookie-domain policy (P1-17).
+
+    The rookiepy / ``--browser-cookies`` extraction path asks Chrome only for
+    cookies on the explicit domain allowlist from
+    :func:`_build_google_cookie_domains` — so sibling-product cookies the user
+    happens to be signed into (``mail.google.com``, ``myaccount.google.com``,
+    ``docs.google.com``, ``.youtube.com``) never reach ``storage_state.json``
+    unless the user opts in via ``--include-domains=...``.
+
+    The Playwright login flow, by contrast, captures every cookie the browser
+    context holds. Without this filter, sibling-product cookies leak into the
+    persisted ``storage_state.json`` and inflate the blast radius if the file
+    is ever read by an attacker. This helper applies the same allowlist at
+    write time so both login paths produce equivalent on-disk state.
+
+    The match is exact-against-allowlist with leading-dot/no-dot equivalence
+    (``http.cookiejar`` may normalize either form). Sibling-product subdomains
+    are deliberately not matched by a broad ``.google.com`` suffix check —
+    that's the bug we're fixing.
+
+    Args:
+        state: Playwright ``storage_state`` dict (output of
+            ``BrowserContext.storage_state()``).
+        include_optional: When ``True``, opt in to every label in
+            :data:`notebooklm._auth.cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL`.
+        include_domains: Set of optional-domain labels to opt in. ``"all"``
+            is accepted as a shortcut for every label. Mirrors the rookiepy
+            path semantics.
+
+    Returns:
+        A new ``storage_state`` dict with ``cookies`` filtered and ``origins``
+        copied verbatim. The input dict is not mutated.
+    """
+    allowed_list = _build_google_cookie_domains(
+        include_optional=include_optional, include_domains=include_domains
+    )
+    # Set membership for O(1) lookup over the (modest but non-trivial) regional
+    # ccTLD list. Build a strip-leading-dot equivalence set so cookies stored
+    # with the opposite dot prefix still match. ``http.cookiejar`` normalization
+    # is the reason both ``accounts.google.com`` and ``.accounts.google.com``
+    # are listed verbatim in :data:`REQUIRED_COOKIE_DOMAINS`; the equivalence
+    # set is a defense-in-depth check in case a Playwright capture stores a
+    # cookie with only one of the two forms.
+    allowed: frozenset[str] = frozenset(allowed_list)
+    allowed_stripped: frozenset[str] = frozenset(d.lstrip(".") for d in allowed_list)
+
+    def _is_allowed(domain: str) -> bool:
+        return domain in allowed or domain.lstrip(".") in allowed_stripped
+
+    filtered_cookies = [
+        cookie for cookie in state.get("cookies", []) if _is_allowed(cookie.get("domain", ""))
+    ]
+    return {
+        "cookies": filtered_cookies,
+        "origins": list(state.get("origins", [])),
+    }
+
+
 def _split_chromium_profile_browser_spec(browser_name: str) -> tuple[str, str] | None:
     with _patched_login_service_dependencies():
         return login_service._split_chromium_profile_browser_spec(browser_name)
@@ -664,6 +728,7 @@ def _run_playwright_login(
     browser: str,
     browser_profile: Path,
     storage_path: Path,
+    include_domains: set[str] | None = None,
 ) -> None:
     """Drive the Playwright-based Google login and persist storage state.
 
@@ -671,8 +736,14 @@ def _run_playwright_login(
     on ImportError), runs the chromium pre-flight when the bundled browser is
     selected, opens a persistent context, retries navigation on transient
     connection errors, waits for login completion, pins ``.google.com``
-    cookies, atomically writes ``storage_state.json``, and clears stale
-    account metadata.
+    cookies, applies the cookie-domain allowlist filter (P1-17), atomically
+    writes ``storage_state.json``, and clears stale account metadata.
+
+    Args:
+        include_domains: Optional set of ``--include-domains`` labels. When
+            ``None`` or empty, only :data:`REQUIRED_COOKIE_DOMAINS` and the
+            regional ccTLDs survive the filter. Mirrors the rookiepy path so
+            both login surfaces produce equivalent on-disk state.
     """
     try:
         from playwright.sync_api import Error as PlaywrightError
@@ -850,8 +921,21 @@ def _run_playwright_login(
 
             # Atomic write with chmod 0o600 — Playwright's path= argument
             # writes directly (non-atomic + world-readable window).
-            state = context.storage_state()
-            atomic_write_json(storage_path, state)
+            #
+            # P1-17: apply the same cookie-domain allowlist that the rookiepy
+            # path uses (``_build_google_cookie_domains``) so sibling-product
+            # cookies (mail, myaccount, docs, youtube) the user happens to be
+            # signed into in the same browser session don't leak into
+            # ``storage_state.json``. Opt-in via ``--include-domains=...``
+            # mirrors the rookiepy semantics.
+            # Playwright's ``storage_state()`` returns a ``TypedDict``-shaped
+            # value; widen to a plain ``dict[str, Any]`` for the filter helper
+            # (which is independently testable without the Playwright import).
+            playwright_state = context.storage_state()
+            filtered_state: dict[str, Any] = _filter_storage_state_cookies_by_domain_policy(
+                dict(playwright_state), include_domains=include_domains
+            )
+            atomic_write_json(storage_path, filtered_state)
             from ..auth import clear_account_metadata
 
             try:
@@ -1084,23 +1168,17 @@ def register_session_commands(cli):
                 )
                 return
 
-            # Playwright path does not consult ``_build_google_cookie_domains``
-            # (the browser owns its own cookie jar via persistent context), so
-            # ``--include-domains`` is a no-op here. Warn rather than silently
-            # ignore so a user doesn't think it took effect.
-            if include_domains:
-                console.print(
-                    "[yellow]Warning: --include-domains has no effect without "
-                    "--browser-cookies (the Playwright login flow saves whatever "
-                    "cookies the browser context already holds).[/yellow]"
-                )
-
+            # P1-17: the Playwright path now applies the same cookie-domain
+            # allowlist as the rookiepy path. ``--include-domains`` opts the
+            # named sibling-product domains back in; default keeps only
+            # ``REQUIRED_COOKIE_DOMAINS`` + regional ccTLDs.
             profile = ctx.obj.get("profile") if ctx.obj else None
             storage_path, browser_profile = _prepare_login_paths(profile, storage, fresh)
             _run_playwright_login(
                 browser=browser,
                 browser_profile=browser_profile,
                 storage_path=storage_path,
+                include_domains=include_domains,
             )
             console.print(f"\n[green]Authentication saved to:[/green] {storage_path}")
 

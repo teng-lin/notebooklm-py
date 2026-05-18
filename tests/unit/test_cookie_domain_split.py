@@ -525,26 +525,26 @@ class TestLoginCliFlag:
         assert result.exit_code == 0, result.output
         assert "sibling-product cookies not included" not in result.output
 
-    def test_login_include_domains_without_browser_cookies_warns(self, monkeypatch, tmp_path):
-        """``--include-domains`` on the Playwright path is a no-op — warn.
+    def test_login_include_domains_on_playwright_path_no_longer_warns(self, monkeypatch, tmp_path):
+        """``--include-domains`` now applies on the Playwright path (P1-17).
 
-        Claude review feedback: a user who runs ``notebooklm login
-        --include-domains=youtube`` (no ``--browser-cookies``) gets no
-        signal that the flag did nothing. Mirror the symmetric warning
-        ``--fresh`` already prints when combined with ``--browser-cookies``.
+        Prior to P1-17 the Playwright login flow ignored ``--include-domains``
+        and emitted a "no effect" warning. Now the flag drives the
+        write-time cookie-domain allowlist filter so sibling-product cookies
+        only get persisted when the user explicitly opts in. Confirm the
+        legacy warning is gone — the test guarding the old behavior is
+        repurposed as a regression guard so we don't reintroduce it.
         """
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         runner = CliRunner()
 
-        # Stub Playwright import to break out before any real browser launch.
-        # We only care that the warning is printed before the Playwright path
-        # is attempted, so we let the import fail (no playwright in scope)
-        # and the function will SystemExit afterwards.
+        # Stub Playwright import to break out before any real browser launch;
+        # we only care about the pre-launch warning emission path.
         with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
             result = runner.invoke(cli, ["login", "--include-domains", "youtube"])
 
-        assert "--include-domains has no effect without --browser-cookies" in result.output
+        assert "--include-domains has no effect without --browser-cookies" not in result.output
 
 
 class TestAuthRefreshCliFlag:

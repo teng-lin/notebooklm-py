@@ -195,14 +195,16 @@ def test_migration_config_unparseable_logs_debug(caplog, tmp_path, monkeypatch):
     )
 
 
-def test_auth_context_unreadable_recovers_under_lock(tmp_path):
-    """auth.py — unreadable account context is recovered under the lock.
+def test_auth_corrupt_legacy_context_does_not_block_in_band_write(tmp_path):
+    """auth.py — corrupt legacy ``context.json`` no longer blocks account writes.
 
-    Previously the recovery path lived outside the lock and emitted a DEBUG
-    log before unlink-and-retry. After PR #465 the recovery is silent and
-    happens inside :func:`atomic_update_json` via ``recover_from_corrupt``,
-    so the structural assertion is now: the corrupt file is rewritten in
-    place with a valid payload containing only our new metadata.
+    Pre-P1-20, account metadata was written into ``context.json`` itself, so
+    a corrupt file there had to be recoverable inline. P1-20 moves the write
+    target into ``storage_state.json`` under the ``notebooklm`` namespace key,
+    so a corrupt sibling ``context.json`` is now irrelevant to the write
+    path — it's only consulted by the read fallback and skipped on
+    JSONDecodeError. This test pins the new contract: the in-band write
+    completes successfully even when the legacy sibling is unreadable.
     """
     import json as _json
 
@@ -215,11 +217,13 @@ def test_auth_context_unreadable_recovers_under_lock(tmp_path):
 
     auth.write_account_metadata(storage, authuser=0, email=None)
 
-    # File is now valid JSON, and only contains the account-metadata key —
-    # proving recovery treated the corrupt payload as an empty dict.
-    data = _json.loads(ctx_path.read_text(encoding="utf-8"))
-    assert auth._ACCOUNT_CONTEXT_KEY in data
-    assert data[auth._ACCOUNT_CONTEXT_KEY]["authuser"] == 0
+    # The in-band record landed in storage_state.json.
+    storage_data = _json.loads(storage.read_text(encoding="utf-8"))
+    assert storage_data["notebooklm"]["account"]["authuser"] == 0
+    # The corrupt legacy file is untouched (we don't try to recover what we
+    # no longer write to) — readers' fallback path silently treats it as
+    # empty via the ``read_account_metadata`` corruption-tolerance branch.
+    assert ctx_path.read_text(encoding="utf-8") == "{ malformed "
 
 
 def test_stream_parser_debug_guarded_by_isenabledfor(caplog):

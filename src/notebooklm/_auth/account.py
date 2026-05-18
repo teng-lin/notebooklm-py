@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import httpx
 from filelock import FileLock
 
-from .._atomic_io import atomic_update_json, atomic_write_json
+from .._atomic_io import atomic_write_json
 from .._env import get_base_url
 from .._url_utils import is_google_auth_redirect
 
@@ -199,31 +199,50 @@ async def enumerate_accounts(
 
 _ACCOUNT_CONTEXT_KEY = "account"
 
+# P1-20: the unified atomic profile-state format embeds account metadata
+# inside ``storage_state.json`` under a ``notebooklm`` namespace key, so
+# a single ``atomic_write_json`` covers both cookies and account in one
+# crash-safe commit. ``version`` is bumped only when the in-band schema
+# changes incompatibly — version 1 is the initial shape.
+_STORAGE_NAMESPACE_KEY = "notebooklm"
+_STORAGE_NAMESPACE_VERSION = 1
+
 
 def _account_context_path(storage_path: Path) -> Path:
-    """Return the context.json path that annotates ``storage_path``."""
+    """Return the context.json path that annotates ``storage_path``.
+
+    Legacy two-file layout: this sibling held ``account`` metadata before
+    P1-20 unified it into ``storage_state.json``. Post-migration, it keeps
+    CLI context state (``notebook_id``, ``conversation_id``) but no longer
+    stores the ``account`` key.
+    """
     return storage_path.with_name("context.json")
 
 
-def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
-    """Read profile account metadata from ``context.json``.
+def _read_in_band_account(storage_path: Path) -> dict[str, Any]:
+    """Read account metadata from inside ``storage_state.json``.
 
-    The ``account`` object records the Google ``authuser`` index used when
-    the profile was authenticated. Profiles from before this feature shipped
-    (and profiles for users with a single Google account) have no account
-    metadata and use ``authuser=0``.
-
-    Args:
-        storage_path: Path to ``storage_state.json``. The sibling
-            ``context.json`` stores account metadata. ``None`` means the
-            profile is loaded from ``NOTEBOOKLM_AUTH_JSON``.
-
-    Returns:
-        Parsed metadata dict, or ``{}`` if the file is missing, unreadable,
-        or malformed. Callers should treat a missing ``authuser`` key as 0.
+    Returns ``{}`` when the namespace key is missing, malformed, or the file
+    cannot be read. Callers fall back to the legacy sibling ``context.json``.
     """
-    if storage_path is None:
+    if not storage_path.exists():
         return {}
+    try:
+        data = json.loads(storage_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        logger.debug("in-band account read failed at %s: %s", storage_path, e)
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    namespace = data.get(_STORAGE_NAMESPACE_KEY)
+    if not isinstance(namespace, dict):
+        return {}
+    account = namespace.get(_ACCOUNT_CONTEXT_KEY)
+    return account if isinstance(account, dict) else {}
+
+
+def _read_legacy_account(storage_path: Path) -> dict[str, Any]:
+    """Read account metadata from the legacy sibling ``context.json``."""
     context_path = _account_context_path(storage_path)
     if not context_path.exists():
         return {}
@@ -236,6 +255,34 @@ def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
         return {}
     account = data.get(_ACCOUNT_CONTEXT_KEY)
     return account if isinstance(account, dict) else {}
+
+
+def read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
+    """Read profile account metadata, preferring the unified in-band record.
+
+    P1-20 unified layout: account metadata lives inside ``storage_state.json``
+    under the ``notebooklm`` namespace key. Legacy two-file installs are
+    still supported via fallback to sibling ``context.json``; the next write
+    will migrate them in-band.
+
+    The ``account`` object records the Google ``authuser`` index used when
+    the profile was authenticated. Profiles from before account-binding
+    shipped (and profiles for users with a single Google account) have no
+    account metadata and use ``authuser=0``.
+
+    Args:
+        storage_path: Path to ``storage_state.json``. ``None`` means the
+            profile is loaded from ``NOTEBOOKLM_AUTH_JSON``.
+
+    Returns:
+        Parsed metadata dict, or ``{}`` if no record is present.
+    """
+    if storage_path is None:
+        return {}
+    in_band = _read_in_band_account(storage_path)
+    if in_band:
+        return in_band
+    return _read_legacy_account(storage_path)
 
 
 def get_authuser_for_storage(storage_path: Path | None) -> int:
@@ -283,68 +330,150 @@ def authuser_query(authuser: int = 0, account_email: str | None = None) -> str:
     return urlencode({"authuser": format_authuser_value(authuser, account_email)})
 
 
-def write_account_metadata(storage_path: Path, *, authuser: int, email: str | None = None) -> None:
-    """Persist profile account metadata inside sibling ``context.json``.
+def _drop_legacy_account_key(storage_path: Path) -> None:
+    """Migration helper: remove ``account`` from sibling ``context.json``.
 
-    Uses :func:`atomic_update_json` so concurrent CLI invocations (e.g., a
-    ``login`` while ``use`` is in flight) cannot lose updates by writing
-    stale snapshots of ``context.json`` over each other.
-
-    Args:
-        storage_path: Path to ``storage_state.json``. The sibling
-            ``context.json`` is created or updated.
-        authuser: ``authuser`` index used when extracting cookies for this
-            profile (0 for the default account).
-        email: Optional account email to record alongside the index.
+    Preserves all other CLI context state (``notebook_id``,
+    ``conversation_id``, …). Best-effort: a failure here does not abort the
+    in-band write because the reader prefers the in-band record (legacy
+    fallback only kicks in when in-band is absent).
     """
-    context_path = _account_context_path(storage_path)
-    payload: dict[str, Any] = {"authuser": authuser}
-    if email:
-        payload["email"] = email
-
-    def _set_account(data: dict[str, Any]) -> dict[str, Any]:
-        data[_ACCOUNT_CONTEXT_KEY] = payload
-        return data
-
-    # ``recover_from_corrupt=True`` keeps the empty-dict fallback **inside**
-    # the file lock. An outside-the-lock unlink-and-retry would race a
-    # concurrent process that wrote a valid payload between our raise and
-    # our retry, causing us to delete their good write (see PR #465 review).
-    # Account metadata is unrecoverable from corrupt JSON, so silent reset
-    # under the lock is the right behaviour.
-    atomic_update_json(context_path, _set_account, recover_from_corrupt=True)
-
-
-def clear_account_metadata(storage_path: Path | None) -> None:
-    """Remove account metadata from sibling ``context.json`` if present.
-
-    Holds the same sibling ``.lock`` file used by :func:`atomic_update_json`
-    so concurrent ``write_account_metadata`` / context-mutation calls don't
-    lose updates against our clear-and-maybe-delete.
-    """
-    if storage_path is None:
-        return
     context_path = _account_context_path(storage_path)
     if not context_path.exists():
         return
     lock_path = context_path.with_suffix(context_path.suffix + ".lock")
-    context_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(str(lock_path), timeout=10.0):
+            if not context_path.exists():
+                return
+            try:
+                data = json.loads(context_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                logger.debug("legacy account-key cleanup skipped at %s: %s", context_path, e)
+                return
+            if not isinstance(data, dict) or _ACCOUNT_CONTEXT_KEY not in data:
+                return
+            del data[_ACCOUNT_CONTEXT_KEY]
+            if data:
+                atomic_write_json(context_path, data)
+            else:
+                context_path.unlink()
+    except OSError as e:
+        # Best-effort migration; the in-band reader wins.
+        logger.debug("legacy account-key cleanup failed at %s: %s", context_path, e)
+
+
+def write_account_metadata(storage_path: Path, *, authuser: int, email: str | None = None) -> None:
+    """Persist account metadata atomically inside ``storage_state.json`` (P1-20).
+
+    The account record lands under the ``notebooklm`` namespace key so the
+    (cookies, account) pair commits together via a single
+    :func:`atomic_write_json`. An external reader observing the file
+    mid-update sees either the fully-old or fully-new commit — never a mix.
+
+    The legacy sibling ``context.json[account]`` is best-effort cleaned up
+    after the in-band write succeeds. CLI context state in the same file
+    (``notebook_id`` / ``conversation_id``) is preserved.
+
+    Args:
+        storage_path: Path to ``storage_state.json``. The file is created
+            with empty ``cookies`` / ``origins`` arrays if missing — matching
+            the pre-P1-20 semantics of "writing account metadata never fails
+            because cookies haven't been written yet."
+        authuser: ``authuser`` index used when extracting cookies for this
+            profile (0 for the default account).
+        email: Optional account email to record alongside the index.
+    """
+    account_payload: dict[str, Any] = {"authuser": authuser}
+    if email:
+        account_payload["email"] = email
+
+    # Acquire a sibling-lock so concurrent callers serialize correctly during
+    # the migration window. ``filelock`` reuses the lock file across
+    # invocations; the file is zero-byte and cheap to leave on disk.
+    lock_path = storage_path.with_suffix(storage_path.suffix + ".lock")
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(str(lock_path), timeout=10.0):
-        # Re-check existence under the lock — another writer may have
-        # removed it between the early-return check and the lock acquire.
-        if not context_path.exists():
-            return
-        try:
-            data = json.loads(context_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
-            logger.debug("account metadata clear skipped for %s: %s", context_path, e)
-            return
-        if not isinstance(data, dict) or _ACCOUNT_CONTEXT_KEY not in data:
-            return
-        del data[_ACCOUNT_CONTEXT_KEY]
-        if data:
-            # atomic_update_json would re-acquire the lock; use the atomic
-            # write directly since we already hold the lock here.
-            atomic_write_json(context_path, data)
-        else:
-            context_path.unlink()
+        # Read-modify-write under the lock to avoid losing concurrent updates.
+        data = _load_storage_state_for_write(storage_path)
+        namespace = data.get(_STORAGE_NAMESPACE_KEY)
+        if not isinstance(namespace, dict):
+            namespace = {}
+        namespace["version"] = _STORAGE_NAMESPACE_VERSION
+        namespace[_ACCOUNT_CONTEXT_KEY] = account_payload
+        data[_STORAGE_NAMESPACE_KEY] = namespace
+        atomic_write_json(storage_path, data)
+
+    # Best-effort: drop the legacy account key from sibling context.json so
+    # the next reader doesn't see the same data in two places.
+    _drop_legacy_account_key(storage_path)
+
+
+def _load_storage_state_for_write(storage_path: Path) -> dict[str, Any]:
+    """Read ``storage_state.json`` for a read-modify-write under the lock.
+
+    Returns a synthetic empty document if the file is missing — matches
+    pre-P1-20 semantics where account writes never failed just because the
+    cookie file hadn't been written yet. Corruption is fatal because the
+    primary cookie data can't be recovered from account metadata; surface
+    a ``RuntimeError`` so the caller can prompt the user to re-run login.
+    """
+    if not storage_path.exists():
+        return {"cookies": [], "origins": []}
+    try:
+        loaded = json.loads(storage_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"storage state at {storage_path} is corrupted: {e}") from e
+    if not isinstance(loaded, dict):
+        raise RuntimeError(
+            f"storage state at {storage_path} has unexpected shape: {type(loaded).__name__}"
+        )
+    return loaded
+
+
+def clear_account_metadata(storage_path: Path | None) -> None:
+    """Remove account metadata from both in-band and legacy locations (P1-20).
+
+    Holds a sibling ``.lock`` file via :class:`filelock.FileLock` so
+    concurrent ``write_account_metadata`` calls serialize against the
+    migration cleanup.
+    """
+    if storage_path is None:
+        return
+    # 1. Strip the in-band record from ``storage_state.json``.
+    _clear_in_band_account(storage_path)
+    # 2. Strip the legacy sibling record too (back-compat with old installs).
+    _drop_legacy_account_key(storage_path)
+
+
+def _clear_in_band_account(storage_path: Path) -> None:
+    """Remove the ``notebooklm.account`` key from ``storage_state.json``.
+
+    No-op if the file is missing, unreadable, or doesn't carry an in-band
+    record. When the only remaining key inside the namespace is ``version``,
+    drop the namespace block entirely so the file stays compact.
+    """
+    if not storage_path.exists():
+        return
+    lock_path = storage_path.with_suffix(storage_path.suffix + ".lock")
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(str(lock_path), timeout=10.0):
+            try:
+                data = json.loads(storage_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                logger.debug("in-band account clear skipped at %s: %s", storage_path, e)
+                return
+            if not isinstance(data, dict):
+                return
+            namespace = data.get(_STORAGE_NAMESPACE_KEY)
+            if not isinstance(namespace, dict) or _ACCOUNT_CONTEXT_KEY not in namespace:
+                return
+            del namespace[_ACCOUNT_CONTEXT_KEY]
+            if set(namespace.keys()) <= {"version"}:
+                del data[_STORAGE_NAMESPACE_KEY]
+            else:
+                data[_STORAGE_NAMESPACE_KEY] = namespace
+            atomic_write_json(storage_path, data)
+    except OSError as e:
+        logger.debug("in-band account clear failed at %s: %s", storage_path, e)

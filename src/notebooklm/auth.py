@@ -40,7 +40,7 @@ import time
 import weakref
 from collections.abc import Iterator
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import Any, TypeAlias
@@ -294,13 +294,18 @@ class AuthTokens:
             of snapshotting the already-mutated jar as clean state.
     """
 
-    cookies: DomainCookieMap
-    csrf_token: str
-    session_id: str
+    # Secret fields are excluded from the dataclass-generated ``__repr__`` via
+    # ``field(repr=False)`` and re-surfaced as redacted placeholders by the
+    # custom ``__repr__`` below (P1-1). This prevents accidental secret
+    # leakage through ``logger.debug("%r", auth)``, ``pytest -vv`` failure
+    # diffs, and any third-party tooling that calls ``repr()`` on the dataclass.
+    cookies: DomainCookieMap = field(repr=False)
+    csrf_token: str = field(repr=False)
+    session_id: str = field(repr=False)
     storage_path: Path | None = None
-    cookie_jar: httpx.Cookies | None = None
+    cookie_jar: httpx.Cookies | None = field(default=None, repr=False)
     authuser: int = 0
-    cookie_snapshot: CookieSnapshot | None = None
+    cookie_snapshot: CookieSnapshot | None = field(default=None, repr=False)
     account_email: str | None = None
 
     def __post_init__(self) -> None:
@@ -308,6 +313,32 @@ class AuthTokens:
         self.cookies = normalize_cookie_map(self.cookies)
         if self.cookie_jar is None:
             self.cookie_jar = build_cookie_jar(cookies=self.cookies, storage_path=self.storage_path)
+
+    def __repr__(self) -> str:
+        """Return a redacted representation safe for logs and pytest diffs.
+
+        Cookie values, CSRF + session tokens, the live ``cookie_jar``, and the
+        ``cookie_snapshot`` are all credential-equivalent and never appear
+        verbatim. The cookie count is preserved so reprs remain useful for
+        debugging (e.g. "expected 4 cookies, got 2"). Non-secret identity
+        fields (``authuser``, ``account_email``, ``storage_path``) are kept
+        for the same reason — they help identify *which* profile is involved
+        without leaking *how to impersonate it*.
+        """
+        jar_summary = "<redacted>" if self.cookie_jar is not None else "None"
+        snapshot_summary = "<redacted>" if self.cookie_snapshot is not None else "None"
+        return (
+            "AuthTokens("
+            f"cookies=<{len(self.cookies)} redacted>, "
+            "csrf_token=<redacted>, "
+            "session_id=<redacted>, "
+            f"storage_path={self.storage_path!r}, "
+            f"cookie_jar={jar_summary}, "
+            f"authuser={self.authuser!r}, "
+            f"cookie_snapshot={snapshot_summary}, "
+            f"account_email={self.account_email!r}"
+            ")"
+        )
 
     @property
     def cookie_header(self) -> str:
@@ -962,8 +993,32 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
             f"{NOTEBOOKLM_REFRESH_CMD_ENV} failed to execute: {refresh_err}"
         ) from refresh_err
     if result.returncode != 0:
-        output = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"{NOTEBOOKLM_REFRESH_CMD_ENV} exited {result.returncode}: {output}")
+        # P1-18: do NOT interpolate stdout/stderr into the user-facing raise.
+        # Subprocesses commonly print bearer tokens, cookies, and absolute
+        # paths into a user's credentials directory. ``RuntimeError`` bubbles
+        # up through ``cli.error_handler`` and lands on stderr (or a JSON
+        # envelope), which is the wrong audience for that material.
+        #
+        # Two-channel disclosure: the user sees only exit code + executable
+        # basename; developers running with ``-vv`` get the full output
+        # through the package's redacting DEBUG logger.
+        executable_basename = (
+            os.path.basename(run_target[0])
+            if isinstance(run_target, list) and run_target
+            else "shell"
+        )
+        logger.debug(
+            "%s exited %d. stdout=%r stderr=%r",
+            NOTEBOOKLM_REFRESH_CMD_ENV,
+            result.returncode,
+            result.stdout,
+            result.stderr,
+        )
+        raise RuntimeError(
+            f"{NOTEBOOKLM_REFRESH_CMD_ENV} exited {result.returncode} "
+            f"(executable: {executable_basename}). "
+            f"Run with --verbose to see captured stdout/stderr in the debug log."
+        )
     logger.info("NotebookLM cookies refreshed via %s", NOTEBOOKLM_REFRESH_CMD_ENV)
 
 
