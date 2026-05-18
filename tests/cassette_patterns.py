@@ -302,6 +302,10 @@ SCRUB_PLACEHOLDERS: frozenset[str] = frozenset(
         # ``SCRUBBED_EMAIL@example.com`` is the rendered form of the email
         # replacement; ``is_clean`` checks the full token, so we list it too.
         "SCRUBBED_EMAIL@example.com",
+        # URL-encoded form for ``?authuser=`` query params. The provider-
+        # agnostic URL detector would otherwise re-flag the canonical
+        # placeholder as a leak (idempotency).
+        "authuser=SCRUBBED_EMAIL%40example.com",
         # upload + Drive token placeholders.
         "SCRUBBED_UPLOAD_ID",
         "SCRUBBED_UPLOAD_URL",
@@ -766,8 +770,14 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
                 )
 
     # --- 2. Real email addresses (any provider we redact) -------------------
+    # Skip canonical placeholders so the provider-agnostic ``authuser=``
+    # branch of ``_DETECT_EMAIL`` (which matches any TLD) doesn't re-flag
+    # the scrubbed replacement on a second pass.
     for match in _DETECT_EMAIL.finditer(text):
-        leaks.append(f"Leak (email): {match.group(0)!r}")
+        matched = match.group(0)
+        if matched in SCRUB_PLACEHOLDERS:
+            continue
+        leaks.append(f"Leak (email): {matched!r}")
 
     # --- 3. Token / ID fields that should be redacted ----------------------
     for label, regex in _DETECT_TOKEN_FIELDS:
