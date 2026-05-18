@@ -2564,6 +2564,10 @@ class TestRegisterFileSourceError:
             url=re.compile(r".*batchexecute.*"),
             content=rpc_response.encode(),
         )
+        # register_file_source now runs the probe BEFORE raising on a
+        # source-less response (CodeRabbit fix), so a second baseline-shape
+        # response is needed for the probe lookup.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
 
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(SourceAddError, match="Failed to get SOURCE_ID"):
@@ -2592,6 +2596,10 @@ class TestRegisterFileSourceError:
             url=re.compile(r".*batchexecute.*"),
             content=rpc_response.encode(),
         )
+        # register_file_source now runs the probe BEFORE raising on a
+        # source-less response (CodeRabbit fix), so a second baseline-shape
+        # response is needed for the probe lookup.
+        _add_register_file_source_baseline_mock(httpx_mock, build_rpc_response)
 
         async with NotebookLMClient(auth_tokens) as client:
             with pytest.raises(SourceAddError):

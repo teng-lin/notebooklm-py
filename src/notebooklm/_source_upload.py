@@ -348,22 +348,71 @@ class SourceUploadPipeline:
 
         # Capture baseline source IDs before the first create attempt so the
         # probe can distinguish "this upload landed" from "a same-named source
-        # already existed." Mirrors the pattern in NotebooksAPI.create. A
-        # transport failure during the baseline fetch falls back to an empty
-        # set, which makes the probe maximally permissive (any same-named
-        # source is treated as a potential match, including pre-existing
-        # ones). This is a doubly-exceptional scenario — baseline list failure
-        # AND a same-name collision — and is accepted as a known limitation
-        # mirroring the parallel note in NotebooksAPI.create. The baseline
-        # fetch is best-effort and never blocks the primary create path.
+        # already existed." Mirrors the pattern in NotebooksAPI.create.
+        #
+        # ``None`` is the "baseline unavailable" sentinel — used when the
+        # baseline fetch failed (e.g. transient 5xx). The probe treats this
+        # as "we cannot safely distinguish new sources from pre-existing
+        # ones" and raises ``SourceAddError`` on any same-titled match,
+        # rather than risk returning a pre-existing source as if it were the
+        # just-created one. This protects against the silent
+        # data-corruption mode where a failed create + pre-existing
+        # same-name source would otherwise direct the subsequent upload
+        # stream to the wrong source.
+        baseline_ids: set[str] | None
         try:
             baseline_ids = {source.id for source in await list_sources(notebook_id)}
         except Exception:
             logger.debug(
-                "register_file_source: baseline list() failed; falling back to empty baseline",
+                "register_file_source: baseline list() failed; baseline unavailable",
                 exc_info=True,
             )
-            baseline_ids = set()
+            baseline_ids = None
+
+        async def _probe() -> str | None:
+            try:
+                sources = await list_sources(notebook_id)
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                # Transport- and auth-level probe failures must propagate
+                # (P1-2) — otherwise idempotent_create would retry the
+                # register on top of a broken probe.
+                raise
+            except Exception:
+                logger.debug(
+                    "register_file_source: probe list() failed with "
+                    "non-transport error; treating as no match",
+                    exc_info=True,
+                )
+                return None
+            matches = [source for source in sources if source.title == filename]
+            if baseline_ids is not None:
+                matches = [source for source in matches if source.id not in baseline_ids]
+            elif matches:
+                # Baseline was unavailable so we cannot safely tell a new
+                # source apart from a pre-existing one with the same name.
+                # Surface this as an ambiguity rather than guessing — see
+                # the ``baseline_ids`` comment above for the failure mode
+                # this guards against.
+                raise SourceAddError(
+                    filename,
+                    message=(
+                        f"Cannot disambiguate file source with title {filename!r}: "
+                        "baseline snapshot was unavailable, so a matching title may "
+                        "predate this upload. Resolve manually before retrying."
+                    ),
+                )
+            if len(matches) == 1:
+                return matches[0].id
+            if len(matches) > 1:
+                raise SourceAddError(
+                    filename,
+                    message=(
+                        f"Cannot disambiguate file source with title {filename!r}: "
+                        f"probe found {len(matches)} new sources with this title "
+                        "after a transport failure. Resolve manually before retrying."
+                    ),
+                )
+            return None
 
         async def _create() -> str:
             try:
@@ -389,6 +438,21 @@ class SourceUploadPipeline:
             if source_id:
                 return source_id
 
+            # The RPC returned successfully but the response shape did not
+            # contain a parseable SOURCE_ID. Before raising, run the probe
+            # to see if the source landed server-side anyway — the
+            # extraction can fail for schema-drift reasons (#474) while the
+            # create has actually committed. This converts a recoverable
+            # success into the same probe-recovery path that 5xx uses.
+            probed_source_id = await _probe()
+            if probed_source_id is not None:
+                logger.info(
+                    "register_file_source[%s]: response missing SOURCE_ID but "
+                    "probe found a freshly committed source",
+                    filename,
+                )
+                return probed_source_id
+
             if isinstance(result, str):
                 preview = repr(result[:200])
                 if len(result) > 200:
@@ -403,39 +467,6 @@ class SourceUploadPipeline:
                     f"Failed to get SOURCE_ID from registration response. Response shape: {preview}"
                 ),
             )
-
-        async def _probe() -> str | None:
-            try:
-                sources = await list_sources(notebook_id)
-            except (AuthError, RateLimitError, ServerError, NetworkError):
-                # Transport- and auth-level probe failures must propagate
-                # (P1-2) — otherwise idempotent_create would retry the
-                # register on top of a broken probe.
-                raise
-            except Exception:
-                logger.debug(
-                    "register_file_source: probe list() failed with "
-                    "non-transport error; treating as no match",
-                    exc_info=True,
-                )
-                return None
-            matches = [
-                source
-                for source in sources
-                if source.id not in baseline_ids and source.title == filename
-            ]
-            if len(matches) == 1:
-                return matches[0].id
-            if len(matches) > 1:
-                raise SourceAddError(
-                    filename,
-                    message=(
-                        f"Cannot disambiguate file source with title {filename!r}: "
-                        f"probe found {len(matches)} new sources with this title "
-                        "after a transport failure. Resolve manually before retrying."
-                    ),
-                )
-            return None
 
         return await idempotent_create(
             _create,

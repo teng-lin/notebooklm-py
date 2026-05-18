@@ -503,6 +503,81 @@ async def test_register_file_source_does_not_match_pre_existing_filename(
     assert get_count >= 1, f"expected ≥1 GET_NOTEBOOK, got {get_count}"
 
 
+async def test_register_file_source_baseline_unavailable_raises_on_ambiguity(
+    auth_tokens, tmp_path: Path
+) -> None:
+    """Baseline fetch failure + same-name match → raise ``SourceAddError``.
+
+    When the baseline GET_NOTEBOOK fails (e.g. transient 5xx) AND the probe
+    later finds a same-named source, the wrapper cannot safely distinguish
+    "this upload landed" from "a pre-existing source has the same filename."
+    Surfacing this as an ambiguity is the correct behavior — silently
+    returning the existing source would direct the subsequent upload stream
+    to the wrong source (the original CodeRabbit critical concern).
+
+    Scenario:
+      - baseline list raises (server 503)
+      - create gets 503
+      - probe lists notebook → finds same-named source
+      - baseline_ids is None (sentinel) → wrapper raises SourceAddError
+        rather than returning the existing source's id
+    """
+    notebook_id = "nb_test"
+    filename = "report.pdf"
+    pre_existing_src_id = "src_OLD_report"
+
+    test_file = tmp_path / filename
+    test_file.write_bytes(b"%PDF-1.4 minimal pdf")
+
+    register_count = 0
+    get_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal register_count, get_count
+        rpc_id = _rpc_id_in_request(request)
+        if rpc_id == RPCMethod.ADD_SOURCE_FILE.value:
+            register_count += 1
+            return httpx.Response(503, text="service unavailable")
+        if rpc_id == RPCMethod.GET_NOTEBOOK.value:
+            get_count += 1
+            # First call (baseline) — 503 to simulate transport failure.
+            # Subsequent calls (probe) — return the pre-existing source.
+            if get_count == 1:
+                return httpx.Response(503, text="service unavailable")
+            return httpx.Response(
+                200,
+                text=_get_notebook_with_sources_response(
+                    notebook_id, [(pre_existing_src_id, filename, None)]
+                ),
+            )
+        return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
+
+    transport = httpx.MockTransport(handler)
+    client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=0)
+    try:
+        with (
+            patch.object(
+                client.sources,
+                "_start_resumable_upload",
+                AsyncMock(return_value="https://upload.example/scotty"),
+            ),
+            patch.object(
+                client.sources,
+                "_upload_file_streaming",
+                AsyncMock(return_value=None),
+            ),
+            pytest.raises(NotebookLMError, match="baseline snapshot was unavailable"),
+        ):
+            await client.sources.add_file(notebook_id, test_file)
+    finally:
+        await client._core._http_client.aclose()
+
+    # Pre-existing source's id was NOT silently returned — instead the
+    # baseline-unavailable ambiguity guard fired.
+    assert register_count >= 1
+    assert get_count >= 2  # baseline + at least one probe
+
+
 # ---------------------------------------------------------------------------
 # add_text — NON_IDEMPOTENT_NO_RETRY enforcement
 # ---------------------------------------------------------------------------
