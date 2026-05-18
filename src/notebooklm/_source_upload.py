@@ -350,10 +350,12 @@ class SourceUploadPipeline:
         # probe can distinguish "this upload landed" from "a same-named source
         # already existed." Mirrors the pattern in NotebooksAPI.create. A
         # transport failure during the baseline fetch falls back to an empty
-        # set, which makes the probe maximally conservative (any pre-existing
-        # filename match is treated as ambiguous) rather than maximally
-        # permissive. The baseline list is best-effort and never blocks the
-        # primary create path.
+        # set, which makes the probe maximally permissive (any same-named
+        # source is treated as a potential match, including pre-existing
+        # ones). This is a doubly-exceptional scenario — baseline list failure
+        # AND a same-name collision — and is accepted as a known limitation
+        # mirroring the parallel note in NotebooksAPI.create. The baseline
+        # fetch is best-effort and never blocks the primary create path.
         try:
             baseline_ids = {source.id for source in await list_sources(notebook_id)}
         except Exception:

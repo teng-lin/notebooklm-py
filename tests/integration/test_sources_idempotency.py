@@ -17,8 +17,13 @@ sources when the server already committed the write before returning the
    the second attempt. The probe is variant-specific:
 
      - ``add_url`` probes by ``source.url == url``
-     - ``add_drive`` probes by ``file_id in source.url``
-     - ``register_file_source`` probes by ``source.title == filename``
+     - ``add_drive`` probes by ``/d/<file_id>`` URL-segment marker with a
+       trailing boundary (avoids interior-substring + prefix-collision
+       false-positives)
+     - ``register_file_source`` probes by baseline-diff + ``source.title ==
+       filename`` (filenames are not identity-bearing, so the wrapper
+       captures source-ids before the create and filters probe matches to
+       sources that appeared after the create started)
 
    The "commit-lost-response" test sequence is: first call returns 200
    (server commits + returns success), second call returns 503 (lost
@@ -179,12 +184,13 @@ async def test_add_url_probe_short_circuits_when_first_response_lost(auth_tokens
 
 
 async def test_add_drive_probe_short_circuits_when_first_response_lost(auth_tokens) -> None:
-    """Drive sources: 503 + probe-by-file_id-substring returns existing source.
+    """Drive sources: 503 + ``/d/<file_id>`` segment probe returns existing source.
 
-    Drive sources surface their file_id as a substring of the URL stored
-    server-side (typical shape: ``https://docs.google.com/document/d/<file_id>/edit``).
-    The probe matches by substring containment, so any URL that embeds the
-    file_id counts as a hit.
+    Drive sources canonically embed the file_id as a path segment of
+    ``source.url`` (typical shape: ``https://docs.google.com/document/d/<file_id>/edit``).
+    The probe matches by ``/d/<file_id>/`` segment marker (with trailing
+    boundary) so neither interior-substring nor prefix collisions can
+    spuriously match — see the dedicated false-positive tests below.
     """
     notebook_id = "nb_test"
     file_id = "drive_file_abc123xyz"
@@ -222,30 +228,84 @@ async def test_add_drive_probe_short_circuits_when_first_response_lost(auth_toke
     assert get_count == 1, f"expected 1 GET_NOTEBOOK probe, got {get_count}"
 
 
+async def test_add_drive_probe_matches_segment_at_end_of_url(auth_tokens) -> None:
+    """Drive probe correctly handles ``/d/<file_id>`` at the very end of the URL.
+
+    Some Drive URLs are stored without a trailing ``/edit`` or other path
+    suffix (e.g. ``https://docs.google.com/document/d/<file_id>``). The
+    end-of-string branch of the probe ensures these still match.
+    """
+    notebook_id = "nb_test"
+    file_id = "drive_file_xyz123"
+    title = "Untrailing Drive Doc"
+    src_id = "src_drive_no_trailing"
+    drive_url = f"https://docs.google.com/document/d/{file_id}"  # no trailing /
+
+    add_count = 0
+    get_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal add_count, get_count
+        rpc_id = _rpc_id_in_request(request)
+        if rpc_id == RPCMethod.ADD_SOURCE.value:
+            add_count += 1
+            return httpx.Response(502, text="bad gateway")
+        if rpc_id == RPCMethod.GET_NOTEBOOK.value:
+            get_count += 1
+            return httpx.Response(
+                200,
+                text=_get_notebook_with_sources_response(notebook_id, [(src_id, title, drive_url)]),
+            )
+        return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
+
+    transport = httpx.MockTransport(handler)
+    client = _make_client_with_transport(transport, auth_tokens)
+    try:
+        source = await client.sources.add_drive(notebook_id, file_id, title)
+    finally:
+        await client._core._http_client.aclose()
+
+    assert source.id == src_id
+    assert add_count == 1, f"expected 1 ADD_SOURCE, got {add_count}"
+    assert get_count == 1, f"expected 1 GET_NOTEBOOK probe, got {get_count}"
+
+
+@pytest.mark.parametrize(
+    "other_drive_url",
+    [
+        # Interior substring: contains ``abc`` but not as a ``/d/abc/`` segment.
+        "https://docs.google.com/document/d/xabcy/edit",
+        # Prefix collision: another file_id begins with the target file_id.
+        # ``/d/abc`` IS a substring of ``/d/abcdef/edit`` but the trailing
+        # boundary check rejects it.
+        "https://docs.google.com/document/d/abcdef/edit",
+    ],
+    ids=["interior_substring", "prefix_collision"],
+)
 async def test_add_drive_probe_does_not_substring_match_unrelated_file_id(
-    auth_tokens,
+    auth_tokens, other_drive_url: str
 ) -> None:
-    """Drive probe uses ``/d/<file_id>`` segment match, not naked substring.
+    """Drive probe uses ``/d/<file_id>/`` segment match with trailing boundary.
 
-    Regression guard: if the probe used ``file_id in source.url`` directly,
-    a file_id like ``abc`` could spuriously match a URL containing the
-    substring ``xabcy``. Using the ``/d/<file_id>`` path-segment marker
-    constrains the match to the canonical Drive URL shape.
+    Regression guard against two false-positive shapes the probe must reject:
 
-    Scenario: notebook contains a Drive source whose URL embeds a DIFFERENT
-    file_id that happens to contain our target file_id as an interior
-    substring. The probe must NOT match it.
+    * **Interior substring**: ``/d/xabcy/`` contains ``abc`` as a naked
+      substring, so the original ``file_id in source.url`` check would
+      spuriously match.
+    * **Prefix collision**: ``/d/abc`` is also a substring of ``/d/abcdef/``,
+      so the simpler ``/d/<file_id>`` segment marker (without a trailing
+      boundary) would still false-positive. Real-world Drive IDs are 33–44
+      character Base64URL strings making prefix collisions astronomically
+      unlikely, but the boundary check is essentially free.
+
+    In both cases the probe must return ``None`` so ``idempotent_create``
+    retries the create rather than returning the unrelated source.
     """
     from notebooklm.exceptions import ServerError
 
     notebook_id = "nb_test"
     target_file_id = "abc"  # short file_id chosen to maximize collision chance
     title = "My Drive Doc"
-    other_drive_url = (
-        # URL embeds "xabcy" — contains "abc" as a substring but NOT as a
-        # ``/d/abc`` segment.
-        "https://docs.google.com/document/d/xabcy/edit"
-    )
 
     add_count = 0
     get_count = 0

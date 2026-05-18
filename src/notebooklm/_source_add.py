@@ -238,11 +238,15 @@ class SourceAddService:
             return Source.from_api_response(result)
 
         # Drive URLs canonically embed the file_id as a path segment, e.g.
-        # ``https://docs.google.com/document/d/<file_id>/edit``. Matching the
-        # ``/d/<file_id>`` segment (with separators on both sides) avoids
-        # false-positive substring matches against other file_ids that
-        # happen to contain ``<file_id>`` as an interior substring.
-        drive_url_marker = f"/d/{file_id}"
+        # ``https://docs.google.com/document/d/<file_id>/edit``. Match the
+        # ``/d/<file_id>`` slug with a trailing segment boundary (either a
+        # ``/`` or end-of-string) so neither an interior substring nor a
+        # prefix-collision (e.g. ``/d/abc`` matching ``/d/abcdef/edit``)
+        # produces a false-positive. Real-world Drive IDs are 33–44-char
+        # Base64URL strings making prefix collisions astronomically unlikely
+        # in practice, but the boundary check costs nothing.
+        drive_url_marker = f"/d/{file_id}/"
+        drive_url_tail = f"/d/{file_id}"
 
         async def _probe() -> Source | None:
             try:
@@ -258,7 +262,9 @@ class SourceAddService:
                 )
                 return None
             for source in sources:
-                if source.url and drive_url_marker in source.url:
+                if source.url and (
+                    drive_url_marker in source.url or source.url.endswith(drive_url_tail)
+                ):
                     return source
             return None
 
