@@ -93,7 +93,8 @@ async def chat_aware_authed_post(
             # invariant ever drifts.
             if not isinstance(exc.original, httpx.RequestError):
                 raise TypeError(
-                    f"Unexpected _TransportServerError.original type: {type(exc.original)}"
+                    f"Unexpected _TransportServerError.original type: {type(exc.original)}. "
+                    "Expected httpx.HTTPStatusError or httpx.RequestError."
                 ) from exc
             # Preserve the timeout-specific message: TimeoutException is a
             # subclass of RequestError, so without this branch read/connect
