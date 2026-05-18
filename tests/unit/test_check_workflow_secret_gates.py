@@ -705,6 +705,31 @@ def test_environment_expression_with_unapproved_literal_does_not_pass(
     assert "secrets.MY_SECRET" in err
 
 
+def test_github_actor_positive_pin_passes(tmp_path, monkeypatch, capsys, script):
+    # ``github.actor == '<name>'`` is the alternate spelling of the
+    # sender.login pin; both are recognised as trusted job-level guards.
+    _write_workflow(
+        tmp_path,
+        "ok_github_actor.yml",
+        """
+        name: ok-github-actor
+        on:
+          workflow_dispatch:
+        jobs:
+          fine:
+            if: github.actor == 'teng-lin'
+            runs-on: ubuntu-latest
+            steps:
+            - name: use
+              env:
+                X: ${{ secrets.MY_SECRET }}
+              run: echo "$X"
+        """,
+    )
+    rc, _out, _err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 0
+
+
 def test_inline_secret_on_step_header_line_detected(tmp_path, monkeypatch, capsys, script):
     # Secret appearing on the same line as the step key (e.g.
     # ``- run: echo ${{ secrets.X }}``) must still be detected. An

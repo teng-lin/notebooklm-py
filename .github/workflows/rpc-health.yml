@@ -80,7 +80,14 @@ jobs:
         scrubbed = scrub_secrets(original)
         if scrubbed != original:
             report.write_text(scrubbed, encoding="utf-8")
-            print(f"Scrubbed {len(original) - len(scrubbed)} chars from health-report.txt")
+            # ``abs`` because replacement tokens (``***``) may be longer
+            # OR shorter than the redacted secret depending on the
+            # pattern, so the raw delta can be negative; the magnitude
+            # is what's interesting for sanity-checking the scrub.
+            print(
+                f"Scrubbed health-report.txt "
+                f"(delta {abs(len(original) - len(scrubbed))} chars)."
+            )
         else:
             print("No secret-shaped substrings detected in health-report.txt.")
         PY
