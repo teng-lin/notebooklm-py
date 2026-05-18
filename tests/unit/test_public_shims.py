@@ -1259,11 +1259,5 @@ def test_error_injection_symbols_resolve_through_core():
     from notebooklm import _core_error_injection
 
     assert _core.ERROR_INJECT_ENV_VAR is _core_error_injection.ERROR_INJECT_ENV_VAR
-    assert (
-        _core._get_error_injection_mode
-        is _core_error_injection._get_error_injection_mode
-    )
-    assert (
-        _core._SyntheticErrorTransport
-        is _core_error_injection._SyntheticErrorTransport
-    )
+    assert _core._get_error_injection_mode is _core_error_injection._get_error_injection_mode
+    assert _core._SyntheticErrorTransport is _core_error_injection._SyntheticErrorTransport
