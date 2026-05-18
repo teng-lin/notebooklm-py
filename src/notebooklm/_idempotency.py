@@ -398,6 +398,75 @@ IDEMPOTENCY_REGISTRY = IdempotencyRegistry()
 IDEMPOTENCY_REGISTRY._seed_defaults()
 
 
+# ---------------------------------------------------------------------------
+# Wave 2 classifications
+# ---------------------------------------------------------------------------
+#
+# CREATE_ARTIFACT (P0-3) — mutating create. Params are nested positional
+# lists shaped like ``[[2], notebook_id, [None, None, type_code,
+# source_ids_triple, ..., config]]`` for every artifact variant (audio,
+# video, report, quiz, etc.; see ``_artifact_generation.py`` lines 75-99,
+# 143-161, 266-291, ...). Every position is structural — there is no
+# caller-supplied client-token slot. The server allocates the artifact_id
+# in the response (``_parse_generation_result`` line 711 reads
+# ``result[0][0]``), so a CLIENT_TOKEN_DEDUPE classification is impossible.
+#
+# PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
+# which suppresses ``_perform_authed_post``'s inner retry loop. Without
+# this, a 5xx between server-side commit and client-side response would
+# trigger a naive re-POST and duplicate the artifact (the original P0-3
+# audit finding). Callers can layer a list-based probe + retry on top of
+# this foundation via ``idempotent_create`` in a follow-up; for B-generation
+# the classification alone removes the duplicate-write risk.
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.CREATE_ARTIFACT,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    notes=(
+        "P0-3: mutating create with no caller-supplied client-token slot. "
+        "Server allocates artifact_id in the response. PROBE_THEN_CREATE "
+        "forces the inner retry loop off to prevent duplicate-write on 5xx; "
+        "a list-based probe wrapper can be layered via idempotent_create "
+        "in a follow-up."
+    ),
+)
+
+# GENERATE_MIND_MAP (P0-3) — generation RPC with no client-token slot.
+# Params are ``[source_ids_nested, None, None, None, None,
+# ["interactive_mindmap", [["[CONTEXT]", instructions]], language], None,
+# [2, None, [1]]]`` (see ``_artifact_generation.py`` line 595-604). Every
+# slot is structural (sources, content config, language, mode triple). The
+# response carries the mind-map JSON directly (line 614-622 reads
+# ``result[0][0]``) — there is no task_id to probe with after the fact, so
+# CLIENT_TOKEN_DEDUPE is impossible here too.
+#
+# Note: ``GENERATE_MIND_MAP`` itself does NOT persist the note server-side
+# (see ``tests/integration/test_mind_map_chain_vcr.py`` header). The actual
+# persistence is the subsequent ``CREATE_NOTE`` + ``UPDATE_NOTE`` chain in
+# ``_mind_map.create_note()``. PROBE_THEN_CREATE here suppresses the inner
+# retry loop on the *generation* RPC for two reasons: (a) a blind re-POST
+# wastes the expensive LLM inference, and (b) LLM nondeterminism means a
+# retried generation may return a *different* mind-map JSON, which would
+# silently mismatch what the client saw on the first commit before the
+# response was lost. Classifying CREATE_NOTE for the persisted-write side
+# of the chain is a separate follow-up (out of scope per the b-generation
+# task spec, which restricts edits to ``_artifact_generation.py`` and
+# ``_idempotency.py``).
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.GENERATE_MIND_MAP,
+    IdempotencyPolicy.PROBE_THEN_CREATE,
+    notes=(
+        "P0-3: generation RPC with no caller-supplied client-token slot. "
+        "Response carries the mind-map JSON directly. PROBE_THEN_CREATE "
+        "forces the inner retry loop off so a 5xx after server-side "
+        "generation does not trigger a fresh LLM inference whose result "
+        "may diverge from the first (lost) response. The persisted-note "
+        "side of the mind-map chain (CREATE_NOTE / UPDATE_NOTE in "
+        "_mind_map.create_note) remains UNCLASSIFIED and is the subject "
+        "of a follow-up classification task."
+    ),
+)
+
+
 # ----------------------------------------------------------------------------
 # Wave 2 classifications (P0-3 side-effects + P1-2 notebooks)
 # ----------------------------------------------------------------------------

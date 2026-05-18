@@ -603,11 +603,17 @@ class ArtifactGenerationService:
             [2, None, [1]],
         ]
 
+        # GENERATE_MIND_MAP is classified PROBE_THEN_CREATE in
+        # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is passed
+        # explicitly to document this call site as the no-variant default
+        # (the registry resolves the same entry either way; the explicit
+        # kwarg is a future-proofing marker for a possible variant table).
         result = await api._core.rpc_call(
             RPCMethod.GENERATE_MIND_MAP,
             params,
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
+            operation_variant=None,
         )
 
         if result and isinstance(result, list) and len(result) > 0:
@@ -681,11 +687,18 @@ class ArtifactGenerationService:
         artifact_type = params[2][2] if len(params) > 2 and len(params[2]) > 2 else "unknown"
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
         try:
+            # CREATE_ARTIFACT is classified PROBE_THEN_CREATE in
+            # ``_idempotency.py`` (P0-3). ``operation_variant=None`` is
+            # passed explicitly to document this call site as the
+            # no-variant default (the registry resolves the same entry
+            # either way; the explicit kwarg is a future-proofing marker
+            # for a possible variant table).
             result = await api._core.rpc_call(
                 RPCMethod.CREATE_ARTIFACT,
                 params,
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
+                operation_variant=None,
             )
         except RPCError as e:
             if e.rpc_code == "USER_DISPLAYABLE_ERROR":
