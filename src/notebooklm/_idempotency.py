@@ -245,12 +245,12 @@ class IdempotencyEntry:
         probe_key_fn: Optional probe-key extractor for PROBE_THEN_CREATE
             entries. ``None`` for policies that don't probe. Wave 2 wires
             this into the per-API probe loops.
-        client_token_field: For CLIENT_TOKEN_DEDUPE entries, the name of
-            the parameter slot that receives the auto-injected
-            ``uuid4().hex`` token. ``None`` for other policies, or for
-            CLIENT_TOKEN_DEDUPE entries whose params use a positional
-            slot (Wave 2 will extend the type to ``str | int`` if
-            positional access is needed).
+        client_token_field: For CLIENT_TOKEN_DEDUPE entries, the slot
+            in the params payload that receives the auto-injected
+            ``uuid4().hex`` token. ``str`` keys are used when the RPC
+            params are a dict; ``int`` keys are used to inject into a
+            positional slot inside the list-shaped params that the
+            batchexecute encoder consumes. ``None`` for other policies.
         notes: Free-form human-readable note. UNCLASSIFIED entries
             registered without an explicit ``notes`` value receive the
             placeholder marker that flags them for Wave 2 classification;
@@ -259,7 +259,7 @@ class IdempotencyEntry:
 
     policy: IdempotencyPolicy
     probe_key_fn: ProbeKeyFn | None = None
-    client_token_field: str | None = None
+    client_token_field: str | int | None = None
     notes: str = ""
 
 
@@ -305,7 +305,7 @@ class IdempotencyRegistry:
         *,
         variant: str | None = None,
         probe_key_fn: ProbeKeyFn | None = None,
-        client_token_field: str | None = None,
+        client_token_field: str | int | None = None,
         notes: str | None = None,
     ) -> None:
         """Register (or overwrite) the entry for ``(method, variant)``.
@@ -489,33 +489,69 @@ def maybe_inject_client_token(
 ) -> None:
     """Inject a fresh ``uuid4().hex`` client-token for CLIENT_TOKEN_DEDUPE
     methods, when (and only when) the caller did not already populate the
-    token field.
+    token slot.
 
-    ``params`` is mutated in place. The expected shape is a ``dict`` keyed
-    by field name; non-dict params are skipped (a future Wave 2 variant
-    may extend this to positional injection — out of scope for B1).
+    ``params`` is mutated in place. Two shapes are supported, matching
+    the two shapes that ``RpcExecutor.execute`` is asked to encode:
+
+    * ``dict``-shaped params with a ``str`` ``client_token_field`` key:
+      ``params[field_name] = uuid4().hex`` if the key is absent or maps
+      to a falsy value.
+    * ``list``-shaped params (the batchexecute-typical shape) with an
+      ``int`` ``client_token_field`` index: ``params[index] = uuid4().hex``
+      when ``0 <= index < len(params)`` and the existing slot is falsy
+      (``None``, empty string). If the index is out of range the
+      function logs a warning and returns without raising — this is a
+      foundation safety guard so a mis-registered entry doesn't crash a
+      live RPC; Wave 2 owns the per-method registration audit.
 
     No-op for policies other than ``CLIENT_TOKEN_DEDUPE``, for entries
-    without a ``client_token_field``, and for entries where ``params``
-    already contains a non-empty value at that field. Raises
+    without a ``client_token_field``, for entries where the slot already
+    holds a non-falsy value (caller-provided token wins), and for params
+    whose shape doesn't match the field type (``int`` field on a non-list
+    or ``str`` field on a non-dict). Raises
     :class:`~notebooklm.exceptions.IdempotencyVariantError` for unknown
     variants on methods with explicit variant tables.
     """
     entry = registry.get_entry(method, operation_variant=operation_variant)
     if entry.policy is not IdempotencyPolicy.CLIENT_TOKEN_DEDUPE:
         return
-    field_name = entry.client_token_field
-    if field_name is None:
+    field_key = entry.client_token_field
+    if field_key is None:
         return
-    if not isinstance(params, dict):
-        # Positional client-token injection is intentionally deferred;
-        # see docstring. Wave 2 may revisit if a positional RPC ever
-        # needs CLIENT_TOKEN_DEDUPE.
+
+    if isinstance(field_key, str):
+        if not isinstance(params, dict):
+            # Shape mismatch — registry registered a dict-style field
+            # but caller passed a list. No-op rather than crash.
+            return
+        if params.get(field_key):
+            # Caller-provided token wins.
+            return
+        params[field_key] = uuid.uuid4().hex
         return
-    if params.get(field_name):
-        # Caller-provided token wins.
+
+    # Positional injection into list params (batchexecute typical shape).
+    if not isinstance(params, list):
+        # Shape mismatch — registry registered a positional slot but
+        # caller passed a dict / scalar. No-op.
         return
-    params[field_name] = uuid.uuid4().hex
+    if not (0 <= field_key < len(params)):
+        # Out-of-range index — likely a Wave 2 mis-registration. Don't
+        # crash a live RPC; log once and let the caller surface it via
+        # logs rather than via exception.
+        logger.warning(
+            "CLIENT_TOKEN_DEDUPE for RPC %s has out-of-range "
+            "client_token_field=%d for params of length %d; skipping injection",
+            method.name,
+            field_key,
+            len(params),
+        )
+        return
+    if params[field_key]:
+        # Caller-provided token (or other truthy value) wins.
+        return
+    params[field_key] = uuid.uuid4().hex
 
 
 __all__ = [
