@@ -440,11 +440,18 @@ IDEMPOTENCY_REGISTRY = IdempotencyRegistry()
 # the ``sources.add_text(idempotent=True)`` precedent (also
 # NON_IDEMPOTENT_NO_RETRY for the same "no reliable dedupe key" reason).
 
-_RESEARCH_NOT_IDEMPOTENT_NOTE = (
-    "research start/import: no client-token slot in params and the available "
-    "probes (ResearchAPI.poll / SourcesAPI.list) cannot reliably disambiguate "
-    "a commit-lost retry from a pre-existing peer task — surface the first "
-    "failure and let the caller poll/list to decide"
+_START_RESEARCH_NOT_IDEMPOTENT_NOTE = (
+    "research start: no client-token slot in params and ResearchAPI.poll "
+    "keyed by (notebook_id, query) is ambiguous when peer tasks exist with "
+    "the same query — surface the first failure and let the caller poll to "
+    "decide whether the write landed"
+)
+_IMPORT_RESEARCH_NOT_IDEMPOTENT_NOTE = (
+    "research import: no client-token slot in params; source rows are not "
+    "granular per-task on the wire so a post-commit-lost SourcesAPI.list "
+    "probe cannot bind URL-matched rows to this specific import batch "
+    "(collides with prior workflows that imported the same URLs) — surface "
+    "the failure and let the caller list-and-disambiguate"
 )
 _CREATE_NOTE_NOT_IDEMPOTENT_NOTE = (
     "CREATE_NOTE has no client-token slot and no client-visible note_id on "
@@ -456,17 +463,17 @@ _CREATE_NOTE_NOT_IDEMPOTENT_NOTE = (
 IDEMPOTENCY_REGISTRY.register(
     RPCMethod.START_FAST_RESEARCH,
     IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-    notes=_RESEARCH_NOT_IDEMPOTENT_NOTE,
+    notes=_START_RESEARCH_NOT_IDEMPOTENT_NOTE,
 )
 IDEMPOTENCY_REGISTRY.register(
     RPCMethod.START_DEEP_RESEARCH,
     IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-    notes=_RESEARCH_NOT_IDEMPOTENT_NOTE,
+    notes=_START_RESEARCH_NOT_IDEMPOTENT_NOTE,
 )
 IDEMPOTENCY_REGISTRY.register(
     RPCMethod.IMPORT_RESEARCH,
     IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-    notes=_RESEARCH_NOT_IDEMPOTENT_NOTE,
+    notes=_IMPORT_RESEARCH_NOT_IDEMPOTENT_NOTE,
 )
 
 # CREATE_NOTE has two operation variants on the wire:
