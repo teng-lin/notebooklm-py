@@ -29,6 +29,13 @@ at call time so the monkeypatch surface remains hot.
 
 from __future__ import annotations
 
+__all__ = [
+    "ERROR_INJECT_ENV_VAR",
+    "_SyntheticErrorTransport",
+    "_get_error_injection_mode",
+    "_refuse_synthetic_error_outside_test_context",
+]
+
 import importlib.util
 import logging
 import os

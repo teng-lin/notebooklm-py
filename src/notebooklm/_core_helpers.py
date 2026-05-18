@@ -11,6 +11,12 @@ data-only.
 
 from __future__ import annotations
 
+__all__ = [
+    "AUTH_ERROR_PATTERNS",
+    "_resolve_keepalive_interval",
+    "is_auth_error",
+]
+
 import math
 
 import httpx

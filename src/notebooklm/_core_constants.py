@@ -11,6 +11,14 @@ below for guidance on when an operator would want to override them via the
 
 from __future__ import annotations
 
+__all__ = [
+    "DEFAULT_CONNECT_TIMEOUT",
+    "DEFAULT_KEEPALIVE_MIN_INTERVAL",
+    "DEFAULT_MAX_CONCURRENT_RPCS",
+    "DEFAULT_MAX_CONCURRENT_UPLOADS",
+    "DEFAULT_TIMEOUT",
+]
+
 # Default HTTP timeouts in seconds
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_CONNECT_TIMEOUT = 10.0  # Connection establishment timeout
