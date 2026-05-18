@@ -24,6 +24,15 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: python
+          # ``py/clear-text-logging-sensitive-data`` flags every path
+          # where a value tagged as secret reaches a print statement,
+          # even when the project's local sanitiser
+          # ``notebooklm._logging.scrub_secrets`` has already redacted
+          # the value. ``codeql-config.yml`` scopes the suppression
+          # narrowly to ``scripts/check_rpc_health.py`` (the only
+          # script that prints decoded RPC responses for diagnostics);
+          # the query still runs everywhere else.
+          config-file: .github/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
