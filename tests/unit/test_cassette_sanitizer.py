@@ -326,8 +326,16 @@ def test_python_guard_skips_allowlisted_basename(tmp_path: Path) -> None:
     assert "0 cassettes scanned" in result.stdout
 
 
-def test_python_guard_strict_flag_disables_allowlist(tmp_path: Path) -> None:
-    """``--strict`` re-arms the guard against allow-listed cassettes."""
+def test_python_guard_strict_flag_fails_on_nonempty_allowlist(tmp_path: Path) -> None:
+    """``--strict`` fails with exit 1 if the repair allowlist is non-empty (P1-5).
+
+    Strict mode is the one-way ratchet against the allowlist growing past
+    the cleanup phase. The guard exits before scanning any cassettes so the
+    operator sees a clear actionable error message naming each lingering
+    entry. (Before P1-5, ``--strict`` merely disabled the allowlist for
+    skip purposes and reported leaks per-cassette; the new behaviour is
+    strictly more conservative.)
+    """
     cassette = tmp_path / "leak_in_allowlist.yaml"
     cassette.write_text('{"email":"realname@gmail.com"}\n')
     allowlist = tmp_path / "allowlist.txt"
@@ -339,7 +347,80 @@ def test_python_guard_strict_flag_disables_allowlist(tmp_path: Path) -> None:
         str(cassette),
     )
     assert result.returncode == 1
+    assert "--strict requires the allowlist to be empty" in result.stdout
+    # The lingering entry is listed by basename so the operator can act on it.
+    assert "leak_in_allowlist.yaml" in result.stdout
+
+
+def test_python_guard_strict_flag_passes_on_empty_allowlist(tmp_path: Path) -> None:
+    """``--strict`` with an empty (or all-comment) allowlist scans normally.
+
+    Companion to ``test_python_guard_strict_flag_fails_on_nonempty_allowlist``:
+    once the allowlist is cleared (the P1-5 end state) strict mode passes
+    through to the regular scan. A leak in the cassette is still reported
+    as ``Leak (email)`` and the exit code is 1.
+    """
+    cassette = tmp_path / "leak_in_allowlist.yaml"
+    cassette.write_text('{"email":"realname@gmail.com"}\n')
+    allowlist = tmp_path / "allowlist.txt"
+    allowlist.write_text("# header only, no entries\n")
+    result = _run_guard(
+        "--strict",
+        "--allowlist",
+        str(allowlist),
+        str(cassette),
+    )
+    assert result.returncode == 1
     assert "Leak (email)" in result.stdout
+
+
+def test_python_guard_recursive_flag_descends_into_subdirs(tmp_path: Path) -> None:
+    """``--recursive`` scans nested ``*.yaml`` files (P1-5).
+
+    A leak in ``tmp/sub/leak.yaml`` is invisible without ``--recursive`` and
+    flagged when the flag is on. The ``examples/`` exclusion is enforced via
+    a separate path filter — covered by
+    ``test_python_guard_recursive_skips_examples_subdir``.
+    """
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    cassette = nested / "leak.yaml"
+    cassette.write_text('{"email":"realname@gmail.com"}\n')
+
+    # Without --recursive, the nested file is invisible.
+    res_no_recurse = _run_guard(str(tmp_path))
+    assert res_no_recurse.returncode == 0
+    # No top-level cassettes means "no cassettes to scan" — the OK message.
+    assert "no cassettes" in res_no_recurse.stdout
+
+    # With --recursive, the nested file is scanned and the leak surfaces.
+    res_recurse = _run_guard("--recursive", str(tmp_path))
+    assert res_recurse.returncode == 1
+    assert "Leak (email)" in res_recurse.stdout
+
+
+def test_python_guard_recursive_skips_examples_subdir(tmp_path: Path) -> None:
+    """``--recursive`` skips any file under an ``examples/`` directory (P1-5).
+
+    Example fixtures carry placeholder cookies and YAML formatting quirks
+    that look like leaks under the scanner but aren't real secrets — the
+    scanner filters them by directory name. Explicit-path scans still hit
+    them (the operator asked by name).
+    """
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    cassette = examples / "example_leak.yaml"
+    cassette.write_text('{"email":"realname@gmail.com"}\n')
+
+    # Recursive directory scan should skip the ``examples/`` file entirely.
+    res_recurse = _run_guard("--recursive", str(tmp_path))
+    assert res_recurse.returncode == 0
+    assert "0 cassettes scanned" in res_recurse.stdout or "no cassettes" in res_recurse.stdout
+
+    # But an explicit file path still scans it — the operator opted in.
+    res_explicit = _run_guard(str(cassette))
+    assert res_explicit.returncode == 1
+    assert "Leak (email)" in res_explicit.stdout
 
 
 def test_python_guard_exits_zero_when_no_cassettes_found(tmp_path: Path) -> None:

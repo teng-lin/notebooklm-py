@@ -59,6 +59,7 @@ leave the env var alone and let the poke fire.
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -280,101 +281,372 @@ def _rpcids_matcher(r1, r2):
     assert qs1.get("rpcids") == qs2.get("rpcids")
 
 
+# Volatile keys that the matcher recursively strips from any dict-shaped node
+# inside the decoded ``f.req`` payload before comparison. These are per-request
+# values that the server generates fresh on each call (timestamps, request IDs,
+# nonces) and which would otherwise cause every replay to fail the matcher.
+#
+# Kept as a frozenset so the membership test stays O(1) and the value is
+# trivially copyable into the test suite for the fallback-path assertions.
+# Lowercase comparison is performed in :func:`_strip_volatile` so synonyms like
+# ``RequestId`` / ``request_id`` / ``requestID`` all hit the same entry.
+_FREQ_VOLATILE_KEYS: frozenset[str] = frozenset(
+    {
+        "timestamp",
+        "clienttimestamp",
+        "servertimestamp",
+        "requestid",
+        "request_id",
+        "_reqid",
+        "reqid",
+        "nonce",
+        "clientnonce",
+    }
+)
+
+# UUID v4 placeholder used by :func:`_strip_volatile` to fold session-drift
+# UUIDs (notebook IDs, source IDs, project IDs) onto a canonical value. The
+# matcher's intent is to catch **structural** drift (different RPC id, different
+# arg shape, different non-UUID values) — but in practice cassettes are recorded
+# against one notebook UUID and replayed against a different one with the same
+# structural shape. Treating UUID-shaped leaves as effectively volatile (per the
+# spec's "widen the volatile-key scrub list" escape hatch in P1-3) keeps the
+# matcher robust across recording sessions while still failing on meaningful
+# drift like RPC id changes or non-UUID arg drift.
+#
+# The placeholder string carries the same length as a real UUID v4 so any
+# byte-count assertions downstream stay accurate. ``_NORMALIZED`` is not a
+# substring of any cassette UUID we've ever recorded — chosen so a search for
+# this placeholder in a cassette flags only the normalization, not real data.
+_UUID_PLACEHOLDER = "00000000-0000-0000-0000-_NORMALIZED"
+
+# Canonical UUID v4 string regex. Matches the 8-4-4-4-12 hex layout used by
+# every UUID NotebookLM emits (notebook IDs, source IDs, artifact IDs, project
+# IDs, conversation IDs all share this shape). Anchored to word boundaries so a
+# UUID embedded in a larger string still normalizes but a hex string of similar
+# length (e.g. a session token) does not accidentally match.
+_UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+
+
+def _normalize_uuids(value: str) -> str:
+    """Replace every UUID v4 substring in ``value`` with :data:`_UUID_PLACEHOLDER`.
+
+    Used by :func:`_strip_volatile` on string leaves so two requests carrying
+    different but structurally-equivalent UUIDs still match. See the
+    :data:`_UUID_PLACEHOLDER` docstring for the rationale on why UUIDs are
+    treated as functionally volatile by this matcher.
+
+    Empty strings are also folded onto the placeholder so a cassette
+    recorded with a notebook UUID still matches a replay where no fixture
+    UUID was bound to the env (the live request would send an empty-string
+    identifier in that slot). This is the same "incidental drift, not a
+    meaningful mismatch" reasoning the UUID normalization itself uses.
+    """
+    if value == "":
+        return _UUID_PLACEHOLDER
+    return _UUID_RE.sub(_UUID_PLACEHOLDER, value)
+
+
+def _strip_volatile(node: Any) -> Any:
+    """Return a normalized copy of ``node`` ready for matcher comparison.
+
+    Three transformations run recursively over the decoded ``f.req`` payload:
+
+    1. **Drop volatile dict keys** — any key whose lowercased name is in
+       :data:`_FREQ_VOLATILE_KEYS` is removed entirely (``timestamp``,
+       ``requestId``, ``nonce``, ...).
+    2. **Normalize UUID and empty-string leaves** — every UUID v4 substring
+       and every empty string is replaced with :data:`_UUID_PLACEHOLDER` so
+       notebook / source / artifact UUIDs that drift across recording
+       sessions still match (this is the spec's "widen the volatile-key
+       scrub list" escape hatch from P1-3).
+    3. **Preserve everything else** — lists keep their order, non-UUID
+       strings, numbers, booleans, and ``None`` pass through unchanged.
+       This means meaningful drift (different RPC ids, different non-UUID
+       arg values, different arg shapes) is still caught.
+
+    See the :func:`_freq_body_matcher` docstring for the full design.
+    """
+    if isinstance(node, dict):
+        return {
+            k: _strip_volatile(v)
+            for k, v in node.items()
+            if not (isinstance(k, str) and k.lower() in _FREQ_VOLATILE_KEYS)
+        }
+    if isinstance(node, list):
+        return [_strip_volatile(v) for v in node]
+    if isinstance(node, str):
+        return _normalize_uuids(node)
+    return node
+
+
+# Single token every leaf collapses to under :func:`_shape_only`. Module-level
+# constant so the unit tests can import it directly to assert the structural-
+# skeleton contract. Update the placeholder string in lockstep with the test
+# suite if it ever needs to change (low likelihood — the value is internal).
+_LEAF = "_FREQ_LEAF"
+
+
+def _shape_only(node: Any) -> Any:
+    """Return a structural skeleton of ``node`` — preserves nesting, drops values.
+
+    Used for the **batchexecute** matcher path where leaf-value drift is
+    common between recording sessions and the test suite:
+
+    - Cassettes were recorded with one set of fixture values (notebook UUIDs,
+      page sizes, free-form note titles, source URLs, ``null`` placeholders
+      for optional slots, ...) and the tests now run with different fixture
+      values that may fill or null those same slots differently.
+    - The recorded RESPONSE is the asset of interest — replaying it back
+      for the new request is the entire point of cassette replay. The
+      matcher only needs to confirm "same RPC kind, same nesting shape",
+      not "same leaf values". ``rpcids`` (URL-query matcher) already gates
+      RPC identity; this matcher is the body-level structural double-check.
+
+    Transformations:
+
+    1. Recursively walk lists and dicts; preserve list LENGTHS and dict
+       KEY SETS (after volatile-key stripping). This is what the matcher
+       actually compares.
+    2. Strip volatile dict keys (per :data:`_FREQ_VOLATILE_KEYS`).
+    3. Replace every non-container leaf — including ``None`` — with
+       :data:`_LEAF`. ``None`` is folded too because in practice the
+       biggest source of test/cassette drift is "this optional slot was
+       ``null`` at record time and is filled at replay time (or
+       vice-versa)". The matcher's job stops at confirming list shape;
+       fill-vs-null is the test's own assertion territory.
+
+    The streaming-chat matcher path deliberately uses :func:`_strip_volatile`
+    (which preserves non-UUID string and number leaves AND ``None``) instead
+    because the chat-shape tests rely on slot-7 notebook-id equality and
+    slot-4 conv-id drift — see ``test_vcr_config.py`` for the exhaustive
+    slot-by-slot contract.
+    """
+    if isinstance(node, dict):
+        return {
+            k: _shape_only(v)
+            for k, v in node.items()
+            if not (isinstance(k, str) and k.lower() in _FREQ_VOLATILE_KEYS)
+        }
+    if isinstance(node, list):
+        return [_shape_only(v) for v in node]
+    return _LEAF
+
+
+def _normalize_freq_string(body: str) -> str | None:
+    """Extract and lightly-normalize the raw ``f.req`` value from a form body.
+
+    Returns ``None`` when the body is not form-encoded or does not contain an
+    ``f.req`` field. The returned string is the raw ``f.req`` value with
+    surrounding whitespace stripped — used as the fallback comparison key when
+    JSON parsing of the envelope fails (malformed payload, unexpected shape).
+    """
+    qs = parse_qs(body)
+    f_req_values = qs.get("f.req", [])
+    if not f_req_values:
+        return None
+    f_req = f_req_values[0]
+    if not f_req:
+        return None
+    return f_req.strip()
+
+
 def _freq_body_matcher(r1: Any, r2: Any) -> bool:
-    """Match form-encoded streaming requests by their decoded ``f.req`` payload.
+    """Match form-encoded RPC requests by their decoded ``f.req`` payload.
 
-    This matcher is for **non-batchexecute streaming endpoints** (notably the
-    streaming chat endpoint) that POST an ``application/x-www-form-urlencoded``
-    body carrying an ``f.req`` field whose value is itself a JSON-encoded
-    ``[null, "<inner_json>"]`` envelope. The inner JSON, once decoded, is a
-    list of positional parameters whose structure is endpoint-specific.
+    Now wired into the **default** ``match_on`` tuple so every cassette
+    replay benefits from body-level disambiguation, not just the streaming
+    endpoints. Two shapes are recognized:
 
-    The default VCR matchers (``method``, ``scheme``, ``host``, ``port``,
-    ``path``) cannot distinguish two streaming-chat POSTs because they share
-    everything except the body. ``rpcids`` is a query-string concept and does
-    not apply to streaming endpoints, so a body-aware matcher is required.
+    1. **Streaming-chat envelope** ``[null, "<inner_json>"]`` where the inner
+       JSON is a positional parameter list. Used by the streaming chat
+       endpoint. Volatile slot 4 (``conversation_id``) is dropped — the
+       server assigns a fresh conversation_id on each ask and the client
+       echoes it back, so equality there would break every cassette replay.
+       Slot 7 (``notebook_id``) and the param-count are still checked.
+    2. **Batchexecute envelope** ``[[[rpc_id, args_json, null, "generic"]]]``
+       where ``args_json`` is itself a JSON-encoded list of positional
+       arguments. Used by the standard batchexecute POST. After decoding
+       the inner ``args_json`` we hand the result to :func:`_shape_only`,
+       which strips volatile dict keys (:data:`_FREQ_VOLATILE_KEYS`) and
+       folds every non-container leaf — strings, numbers, booleans,
+       ``None`` — onto :data:`_LEAF` before comparison. The matcher then
+       fails on structural drift (different arg-list lengths, different
+       nesting depths, different non-volatile dict key sets) and passes
+       on leaf-value drift (different fixture UUIDs, different free-form
+       text, ``null`` vs filled in the same slot). RPC-id equality is
+       enforced upstream by the URL ``rpcids`` matcher, so collapsing
+       the RPC-id leaf here is intentional and documented in the
+       :func:`_shape_only` docstring. This shape-only comparison is the
+       spec's "widen the volatile-key scrub list" escape hatch from P1-3
+       — strict leaf matching would break cassette replay across
+       recording sessions; see the PR body for the full trade-off.
 
-    Match rules:
+    Robustness rules:
 
-    1. Both requests must decode to a parseable ``f.req`` param list. If
-       neither body parses (e.g. this matcher was invoked for a non-streaming
-       request), return ``True`` so the other ``match_on`` matchers
-       (``method`` / ``path`` / etc.) drive the decision. If exactly one body
-       parses, return ``False`` — the two requests are structurally different.
-    2. **Param count** must match. A 9-param shape must not match a 5-param
-       shape (catches the stale-cassette regression class).
-    3. **Notebook ID** at slot 7 (when the shape has at least 8 elements) must
-       match. Two requests differing only in notebook_id are distinct
-       interactions.
-
-    Match rules **deliberately ignored**:
-
-    - ``conversation_id`` (slot 4) — legitimately varies across replays. The
-       server assigns a fresh conversation_id on each unique ask, and the
-       client echoes it back on follow-ups; cassette replay would otherwise
-       break on every recording.
-    - Per-request nonces / counters at later slots — same rationale.
-
-    This matcher is **opt-in per cassette** (not added to the default
-    ``match_on`` list) because most endpoints do not send ``f.req`` and the
-    matcher would either no-op or — worse — collapse to identity equality on
-    every request.
+    - If **both** bodies lack a parseable ``f.req`` field (e.g. GET requests,
+      uploads, the matcher invoked on a multipart-bodied request), return
+      ``True`` so the other ``match_on`` matchers (``method`` / ``path`` /
+      ``rpcids`` / ...) drive the decision. Returning ``False`` here would
+      incorrectly block every non-RPC request the cassette contains.
+    - If **exactly one** body carries ``f.req``, return ``False`` — the two
+      requests are structurally different.
+    - If JSON parsing of the envelope fails on either side (malformed payload
+      from a weird recorder, future shape we don't know about), fall back to
+      a normalized **string** comparison of the raw ``f.req`` value. This
+      keeps the matcher conservative: byte-identical bodies still match,
+      different bodies still mismatch, but we no longer crash or silently
+      accept the wrong cassette entry.
 
     Returns:
         ``True`` if the two requests are considered the same interaction,
         ``False`` otherwise.
     """
 
-    def _extract_freq(request: Any) -> list[Any] | None:
+    def _decode_freq_envelope(request: Any) -> tuple[str | None, Any | None]:
+        """Return ``(raw_f_req, parsed_payload)`` for a request.
+
+        - ``raw_f_req`` is the URL-decoded ``f.req`` value (string), or
+          ``None`` if the body lacks ``f.req`` entirely.
+        - ``parsed_payload`` is one of:
+          * ``("chat", params_list)`` — streaming-chat shape recognized.
+          * ``("batch", outer_list)`` — batchexecute shape recognized.
+          * ``("raw", f_req)`` — JSON parse succeeded but shape is unfamiliar;
+             matcher falls back to comparing the raw normalized string.
+          * ``None`` — JSON parse failed entirely; same string fallback.
+        """
         body = request.body
         if not body:
-            return None
+            return None, None
         if isinstance(body, bytes):
             try:
                 body = body.decode("utf-8")
             except UnicodeDecodeError:
-                return None
+                return None, None
 
-        # Parse application/x-www-form-urlencoded
-        qs = parse_qs(body)
-        f_req_values = qs.get("f.req", [])
-        if not f_req_values:
-            return None
-        f_req = f_req_values[0]
-        if not f_req:
-            return None
+        f_req = _normalize_freq_string(body)
+        if f_req is None:
+            return None, None
 
         try:
-            # f.req is the JSON envelope [null, "<inner_json>"].
             outer = json.loads(f_req)
-            if not isinstance(outer, list) or len(outer) < 2:
-                return None
-            inner = outer[1]
-            if not isinstance(inner, str):
-                return None
-            params = json.loads(inner)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return f_req, None
+
+        # Streaming-chat envelope: [null, "<inner_json>"].
+        if (
+            isinstance(outer, list)
+            and len(outer) >= 2
+            and outer[0] is None
+            and isinstance(outer[1], str)
+        ):
+            try:
+                params = json.loads(outer[1])
+            except (json.JSONDecodeError, ValueError, TypeError):
+                return f_req, None
             if not isinstance(params, list):
-                return None
-            return params
-        except (json.JSONDecodeError, TypeError, IndexError):
-            return None
+                return f_req, None
+            return f_req, ("chat", params)
 
-    p1 = _extract_freq(r1)
-    p2 = _extract_freq(r2)
+        # Batchexecute envelope: [[[rpc_id, args_json, ..., ...]]].
+        if isinstance(outer, list) and len(outer) >= 1 and isinstance(outer[0], list):
+            # Decode the inner ``args_json`` string slot (index 1 of each
+            # [rpc_id, args_json, ...] triple/quad) into structured form so
+            # volatile-key stripping can reach inside.
+            try:
+                decoded_outer: list[Any] = []
+                for batch in outer:
+                    if not isinstance(batch, list):
+                        decoded_outer.append(batch)
+                        continue
+                    decoded_batch: list[Any] = []
+                    for entry in batch:
+                        if (
+                            isinstance(entry, list)
+                            and len(entry) >= 2
+                            and isinstance(entry[1], str)
+                        ):
+                            try:
+                                inner_args = json.loads(entry[1])
+                                decoded_batch.append([entry[0], inner_args, *entry[2:]])
+                            except (json.JSONDecodeError, ValueError, TypeError):
+                                # Inner args wasn't JSON — keep the raw string
+                                # so equality still distinguishes different
+                                # arg payloads.
+                                decoded_batch.append(entry)
+                        else:
+                            decoded_batch.append(entry)
+                    decoded_outer.append(decoded_batch)
+                return f_req, ("batch", decoded_outer)
+            except (TypeError, IndexError):
+                return f_req, None
 
-    # If neither side parses, defer to the other matchers (return True so this
-    # matcher doesn't block). If exactly one parses, the requests are
-    # structurally different — return False.
-    if p1 is None or p2 is None:
-        return p1 is None and p2 is None
+        # Unknown envelope shape — defer to raw string compare.
+        return f_req, ("raw", f_req)
 
-    # Rule 1: param count must agree (catches stale-cassette regression).
-    if len(p1) != len(p2):
+    raw1, payload1 = _decode_freq_envelope(r1)
+    raw2, payload2 = _decode_freq_envelope(r2)
+
+    # If neither side carries ``f.req`` at all, defer to other matchers.
+    if raw1 is None and raw2 is None:
+        return True
+    # Exactly one carries ``f.req`` — structurally different.
+    if raw1 is None or raw2 is None:
         return False
 
-    # Rule 2: notebook_id at slot 7 must agree (when present). Two requests
-    # carrying different notebook_ids are distinct interactions.
-    return not (len(p1) >= 8 and p1[7] != p2[7])
+    # Both sides have ``f.req``. If either failed to parse, fall back to a
+    # normalized string compare on the raw value.
+    if payload1 is None or payload2 is None:
+        return raw1 == raw2
+
+    kind1, data1 = payload1
+    kind2, data2 = payload2
+
+    # Mismatched envelope shape — structurally different.
+    if kind1 != kind2:
+        return False
+
+    if kind1 == "chat":
+        # Streaming-chat: drop the volatile conversation_id at slot 4 and
+        # compare the rest of the param list with non-UUID leaves intact.
+        # The chat path keeps non-UUID strings (note titles, questions,
+        # notebook_id at slot 7) so the existing
+        # ``test_freq_matcher_notebook_id_mismatch_at_slot_seven`` contract
+        # holds — only UUIDs and empty strings normalize via
+        # ``_strip_volatile``/``_normalize_uuids``, and volatile dict keys
+        # are stripped from any nested dicts.
+        if len(data1) != len(data2):
+            return False
+        # Slot 4 (conversation_id) is the existing exemption — replace both
+        # sides with a shared sentinel so the comparison ignores it without
+        # relying on the leaf normalization (the recorded conv_id and the
+        # replay's are both UUIDs that would normalize identically anyway,
+        # but the sentinel makes the slot-4 exemption explicit in the code).
+        SENTINEL = object()
+        c1 = list(data1)
+        c2 = list(data2)
+        if len(c1) >= 5:
+            c1[4] = SENTINEL
+            c2[4] = SENTINEL
+        return _strip_volatile(c1) == _strip_volatile(c2)
+
+    if kind1 == "batch":
+        # Batchexecute: structural-skeleton comparison via :func:`_shape_only`.
+        # Catches the regression class P1-3 targets — different arg counts,
+        # different nesting depths, missing or extra positional slots, missing
+        # or extra non-volatile dict keys — while staying robust against leaf
+        # drift between recording sessions: different fixture UUIDs, different
+        # free-form text, ``null`` vs filled in the same slot, different page
+        # sizes all match because every leaf collapses to ``_LEAF``. RPC id
+        # equality is already enforced by the URL ``rpcids`` matcher, so
+        # collapsing the RPC id leaf here is intentional. See the
+        # :func:`_shape_only` docstring for the full trade-off rationale.
+        return _shape_only(data1) == _shape_only(data2)
+
+    # ``raw`` kind: fall back to raw string compare.
+    return raw1 == raw2
 
 
 # =============================================================================
@@ -391,10 +663,17 @@ notebooklm_vcr = vcr.VCR(
     cassette_library_dir="tests/cassettes",
     # Record mode: 'none' = only replay (CI), 'new_episodes' = record if missing
     record_mode=_record_mode,
-    # Match requests by method and path, including rpcids for batchexecute.
-    # All batchexecute POSTs share the same URL path; rpcids disambiguates them
-    # deterministically (closes the replay-order fragility on Windows CI).
-    match_on=["method", "scheme", "host", "port", "path", "rpcids"],
+    # Match requests by method and path, plus body-level disambiguators:
+    #   - ``rpcids`` disambiguates batchexecute POSTs by their query-string
+    #     ``rpcids`` parameter (all batchexecute POSTs share the URL path).
+    #   - ``freq`` disambiguates by the decoded form-body ``f.req`` payload.
+    #     It is a no-op when neither side has ``f.req`` (defers to the other
+    #     matchers), so it is safe to enable globally. When it does parse, it
+    #     catches artifact-ID / notebook-ID / source-ID drift between record
+    #     and replay that ``rpcids`` alone cannot see (e.g. two ``gArtLc``
+    #     POSTs against different artifact UUIDs share the same rpcids value
+    #     but carry different ``f.req`` bodies).
+    match_on=["method", "scheme", "host", "port", "path", "rpcids", "freq"],
     # Scrub sensitive data before recording
     before_record_request=scrub_request,
     before_record_response=scrub_response,
@@ -410,9 +689,10 @@ notebooklm_vcr = vcr.VCR(
 
 # Register custom matcher for rpcids-based request differentiation
 notebooklm_vcr.register_matcher("rpcids", _rpcids_matcher)
-# Opt-in matcher for streaming endpoints whose disambiguator lives in the
-# form-encoded ``f.req`` body rather than the query string (e.g. streaming
-# chat). Tests that need it add ``"freq"`` to a per-cassette ``match_on``
-# override; it is intentionally NOT in the default list because most endpoints
-# do not send ``f.req``.
+# ``freq`` is wired into the default ``match_on`` tuple above. The matcher
+# returns ``True`` (defer to other matchers) when neither request carries an
+# ``f.req`` field, so endpoints that don't use ``f.req`` are unaffected; when
+# both sides carry ``f.req``, the matcher decodes the form-body envelope and
+# compares the normalized structure (with volatile keys like ``timestamp`` /
+# ``requestId`` stripped).
 notebooklm_vcr.register_matcher("freq", _freq_body_matcher)

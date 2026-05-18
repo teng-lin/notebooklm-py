@@ -46,12 +46,18 @@ WRB payload shifted its length.
 
 Architecture notes
 ------------------
-The script parses each cassette with PyYAML (the same loader vcrpy uses —
-``yaml.CLoader`` if libyaml is available, else ``yaml.Loader``) and applies
-the scrubbers to every ``response.body.string`` field. After scrubbing, the
-cassette is re-emitted with ``yaml.dump(data, Dumper=Dumper)`` — matching
-vcrpy's own serializer (``vcrpy/serializers/yamlserializer.py``) — so a
-clean cassette round-trips identically.
+The script parses each cassette with PyYAML's **safe** loader
+(``yaml.CSafeLoader`` if libyaml is available, else ``yaml.SafeLoader``) and
+applies the scrubbers to every ``response.body.string`` field. After
+scrubbing, the cassette is re-emitted with ``yaml.dump(data, Dumper=Dumper)``
+— matching vcrpy's own serializer (``vcrpy/serializers/yamlserializer.py``)
+— so a clean cassette round-trips identically. The safe-loader choice is
+intentional (P1-22): the previous ``CLoader`` / ``Loader`` family
+deserializes arbitrary Python via ``!!python/object`` tags and is a
+documented remote-code-execution risk on untrusted input. The dumper side
+stays on the standard ``CDumper`` / ``Dumper`` because the round-trip data
+contains only ``str`` / ``bytes`` / ``dict`` / ``list`` / ``None`` /
+``int`` — all of which the safe loader accepts without trouble.
 
 We deliberately do NOT scrub the raw YAML text: a regex applied to the
 wrapped YAML form could match across YAML line-wrap boundaries and corrupt
@@ -80,14 +86,25 @@ from pathlib import Path
 
 import yaml
 
-# Use libyaml-backed loader/dumper when available — matches vcrpy's
-# ``serializers/yamlserializer.py`` exactly so a clean cassette round-trips
-# identically through this script.
+# Use libyaml-backed SAFE loader/dumper when available (P1-22). The previous
+# implementation imported the unsafe ``CLoader`` / ``Loader`` family, which
+# can deserialize arbitrary Python objects via tags like ``!!python/object``
+# and is documented as a remote-code-execution risk on untrusted YAML.
+# Cassettes are committed to the repo so the input is not adversarial today,
+# but the rescrub tool runs on any path the operator passes — including
+# downloaded cassettes from third-party debugging — so the safe loader is
+# the right default.
+#
+# The dumper side stays on the standard (non-safe) ``CDumper`` / ``Dumper``
+# because cassettes legitimately serialize ``str`` and ``bytes`` (vcrpy's
+# YAML serializer does the same), neither of which the safe loader rejects
+# on round-trip. The risk vector is on the LOAD path, not the DUMP path.
 try:
     from yaml import CDumper as Dumper
-    from yaml import CLoader as Loader
+    from yaml import CSafeLoader as Loader
 except ImportError:  # pragma: no cover — libyaml is a hard dep on dev machines
-    from yaml import Dumper, Loader  # type: ignore[assignment]
+    from yaml import Dumper  # type: ignore[assignment]
+    from yaml import SafeLoader as Loader
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _TESTS_DIR = _REPO_ROOT / "tests"
@@ -155,6 +172,9 @@ def _rescrub_cassette(path: Path) -> tuple[bool, int]:
     per-file diff stat the script prints at the end of a run.
     """
     raw = path.read_text(encoding="utf-8")
+    # ``Loader`` is bound to ``CSafeLoader`` / ``SafeLoader`` at import time
+    # above — no ``!!python/object`` tags will be deserialized regardless
+    # of what the cassette contains (P1-22).
     data = yaml.load(raw, Loader=Loader)
     if not isinstance(data, dict):
         return False, 0

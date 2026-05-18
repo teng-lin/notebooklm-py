@@ -68,28 +68,67 @@ def _load_allowlist(path: Path) -> set[str]:
     }
 
 
-def _iter_cassettes(paths: list[str]) -> list[Path]:
+# Subdirectories of ``tests/cassettes/`` that hold ILLUSTRATIVE fixtures
+# (not real recordings) and are filtered out of the recursive scan. These
+# files use placeholder cookie / token values with intentional formatting
+# quirks (truncated YAML strings, hand-edited content) that would trip the
+# leak detector even though they contain no actual secrets — see the
+# README in ``tests/cassettes/examples/`` for the design intent.
+#
+# The ``tests/integration/conftest.py`` cassette-availability check already
+# excludes ``example_*`` cassettes from the "real recordings present"
+# count via a similar filter; this constant carries the same exclusion
+# semantic onto the guard tool.
+_EXAMPLE_SUBDIRS: frozenset[str] = frozenset({"examples"})
+
+
+def _iter_cassettes(paths: list[str], recursive: bool = False) -> list[Path]:
     """Resolve CLI arguments into a concrete list of cassette files.
 
-    * If no paths are given, scan ``tests/cassettes/*.yaml``.
-    * If a directory is given, scan ``*.yaml`` inside it (non-recursive — the
-      bash original was also single-level).
+    * If no paths are given, scan ``tests/cassettes/*.yaml`` (non-recursive)
+      OR ``tests/cassettes/**/*.yaml`` when ``recursive=True``.
+    * If a directory is given, scan ``*.yaml`` inside it (recursively when
+      ``recursive=True``).
     * If a file is given, scan it directly.
     * Non-existent paths are silently skipped — matches the bash original's
       "scan what exists" behaviour and keeps the tool friendly to pre-commit
       hooks that may pass deleted-but-still-staged paths.
+    * Files under ``tests/cassettes/examples/`` (any depth) are excluded
+      from recursive scans — they are illustrative fixtures with placeholder
+      cookies and intentional YAML quirks, not real recordings (see
+      :data:`_EXAMPLE_SUBDIRS`).
+
+    The ``recursive`` flag is what P1-5 adds: CI now scans subdirectories of
+    ``tests/cassettes/`` (e.g. ``gzip_coverage/``) so a recorder cannot
+    smuggle a leak into a nested folder. The default stays non-recursive so
+    existing developer workflows (running the guard on a single file or the
+    top-level directory) are unchanged.
     """
+    glob_pattern = "**/*.yaml" if recursive else "*.yaml"
+
+    def _is_example_path(p: Path) -> bool:
+        # An ``example_`` file at the top level OR any file under a
+        # ``examples/`` directory anywhere in the cassette tree is treated
+        # as illustrative and excluded from recursive scans.
+        if p.name.startswith("example_"):
+            return True
+        return any(part in _EXAMPLE_SUBDIRS for part in p.parts)
+
     if not paths:
         if not DEFAULT_CASSETTE_DIR.exists():
             return []
-        return sorted(DEFAULT_CASSETTE_DIR.glob("*.yaml"))
+        found = sorted(DEFAULT_CASSETTE_DIR.glob(glob_pattern))
+        return [p for p in found if not _is_example_path(p)]
 
     resolved: list[Path] = []
     for raw in paths:
         candidate = Path(raw)
         if candidate.is_dir():
-            resolved.extend(sorted(candidate.glob("*.yaml")))
+            sub = sorted(candidate.glob(glob_pattern))
+            resolved.extend(p for p in sub if not _is_example_path(p))
         elif candidate.is_file():
+            # Explicit file paths are always scanned, even if under
+            # ``examples/`` — the operator asked for them by name.
             resolved.append(candidate)
     return resolved
 
@@ -141,9 +180,21 @@ def main(argv: list[str] | None = None) -> int:
         "--strict",
         action="store_true",
         help=(
-            "Ignore the repair allowlist. Use this in CI after the phase-2 "
-            "cassette cleanup is done so newly-leaking cassettes can no "
-            "longer be silently allow-listed."
+            "Ignore the repair allowlist AND fail with exit code 1 if any "
+            "allowlist entry is present in the working tree. Use this in "
+            "CI: the allowlist is a one-way ratchet for cleanup, and "
+            "``--strict`` flips it from 'best-effort suppressor' to "
+            "'must be empty'."
+        ),
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help=(
+            "Scan ``tests/cassettes/**/*.yaml`` (recurse into subdirectories) "
+            "instead of the default top-level-only ``tests/cassettes/*.yaml``. "
+            "Required in CI so a recorder cannot smuggle a leak into a nested "
+            "folder like ``tests/cassettes/gzip_coverage/``."
         ),
     )
     parser.add_argument(
@@ -157,14 +208,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    cassettes = _iter_cassettes(args.paths)
+    cassettes = _iter_cassettes(args.paths, recursive=args.recursive)
     if not cassettes:
         # Fresh checkout with no recorded cassettes — that's a valid clean
         # state, matching the bash original's behaviour.
         print("OK: no cassettes to scan")
         return 0
 
-    allowlist = set() if args.strict else _load_allowlist(args.allowlist)
+    if args.strict:
+        # Strict mode: ignore the allowlist for scan-skip purposes AND
+        # require the allowlist to be empty (or non-existent). Any entry
+        # present in the file is treated as a CI failure so the allowlist
+        # cannot quietly grow past the cleanup phase.
+        allowlist: set[str] = set()
+        present_in_allowlist = _load_allowlist(args.allowlist)
+        if present_in_allowlist:
+            print(
+                f"ERROR (--strict): {args.allowlist} contains "
+                f"{len(present_in_allowlist)} entries; --strict requires the "
+                "allowlist to be empty. Either drop the entries or run "
+                "without --strict for the cleanup-in-progress workflow."
+            )
+            for entry in sorted(present_in_allowlist):
+                print(f"  - {entry}")
+            return 1
+    else:
+        allowlist = _load_allowlist(args.allowlist)
 
     scanned = 0
     skipped = 0

@@ -223,6 +223,127 @@ def _disable_keepalive_poke_for_vcr(request, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
 
 
+# =============================================================================
+# Autouse network guard for VCR replay mode (P1-4)
+# =============================================================================
+
+
+def _has_active_vcr_cassette() -> bool:
+    """Return ``True`` if a VCR cassette is currently installed on httpx stubs.
+
+    VCR installs its httpx / httpcore stubs as a global side effect when a
+    cassette context enters. Detecting that installation lets the network
+    guard distinguish "test legitimately replaying a cassette" from "test
+    accidentally leaking an unbound HTTP request out to the wire". We look
+    for vcrpy's signature class-attribute mutations rather than poking at
+    private state so this stays robust against vcrpy version bumps.
+
+    The check is best-effort: if vcrpy's stubs are not detectable for any
+    reason, the guard falls open (returns ``True``) so it doesn't break
+    legitimate replay flows. The stricter ``record_mode='none'`` setting
+    on ``notebooklm_vcr`` is the primary protection — this guard is a
+    secondary belt-and-braces check for unbound requests.
+    """
+    try:
+        import httpcore  # type: ignore[import-not-found]
+
+        # When a vcrpy cassette is active, httpcore's AsyncConnectionPool gets
+        # its ``handle_async_request`` patched with a vcr-aware wrapper. The
+        # wrapper has a ``__wrapped__`` reference back to the original. If we
+        # see a wrapper, a cassette context is active somewhere.
+        handle = getattr(httpcore.AsyncConnectionPool, "handle_async_request", None)
+        if handle is None:
+            return True
+        # vcrpy uses ``functools.wraps`` or sets ``__wrapped__`` on its stubs.
+        return getattr(handle, "__wrapped__", None) is not None
+    except (ImportError, AttributeError):
+        # If httpcore is missing or vcr stubs aren't introspectable, fall
+        # open — we shouldn't break tests on environmental quirks.
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _block_unbound_network_in_replay(request, monkeypatch):
+    """Refuse unbound httpx network requests when in VCR replay mode (P1-4).
+
+    Companion to the ``pytest_collection_modifyitems`` enforcement hook
+    above: that hook gates **collection** by requiring every
+    ``tests/integration/`` test to carry ``@pytest.mark.vcr``,
+    ``@notebooklm_vcr.use_cassette``, or ``@pytest.mark.allow_no_vcr``.
+    This fixture gates **runtime** — even a properly-marked test could try
+    to make an HTTP request OUTSIDE its cassette context (e.g. setup or
+    teardown that bypassed the cassette stub). When that happens during
+    replay mode, the request would silently hit the real network. We
+    monkeypatch ``httpx.AsyncClient.send`` to raise instead.
+
+    The fixture is autouse + function-scoped so it runs alongside the
+    existing ``_disable_keepalive_poke_for_vcr`` autouse. It only takes
+    effect when:
+
+    1. VCR record mode is OFF (replay mode), and
+    2. The test is NOT marked ``allow_no_vcr``, and
+    3. The test IS marked ``vcr`` OR carries a
+       ``@notebooklm_vcr.use_cassette`` decorator OR uses the ``vcr``
+       pytest fixture (any of the three known cassette-binding paths).
+
+    When all three conditions hold, we wrap ``httpx.AsyncClient.send`` so
+    that any request reaching it without an active vcrpy cassette context
+    raises ``RuntimeError`` with a clear message instead of leaking
+    traffic to the real backend.
+    """
+    if _vcr_record_mode:
+        return  # Recording: real network calls are intentional.
+
+    if request.node.get_closest_marker("allow_no_vcr") is not None:
+        return  # Mock-only test legitimately doesn't use VCR.
+
+    is_vcr_marked = request.node.get_closest_marker("vcr") is not None
+    has_decorator = _has_use_cassette_decorator(request.node)
+    # ``vcr`` pytest fixture (pytest-vcr) binds a cassette via fixture
+    # resolution rather than a marker; detect by name in ``fixturenames``.
+    uses_vcr_fixture = "vcr" in getattr(request.node, "fixturenames", ())
+
+    if not (is_vcr_marked or has_decorator or uses_vcr_fixture):
+        # Not a VCR-tier test (and not allow_no_vcr — that's already
+        # filtered above). The collection hook should have rejected this
+        # at collect time, so reaching here is a defensive no-op.
+        return
+
+    # Patch BOTH ``send`` and ``stream`` — the production RPC transport in
+    # ``src/notebooklm/_core_transport.py`` uses ``client.stream(...)`` for the
+    # streaming-chat endpoint, which httpx routes through a separate codepath
+    # from ``send``. Patching only ``send`` would let an unbound streaming
+    # request slip past the guard. The vcrpy stubs intercept at the lower
+    # ``httpcore`` layer so both routes are covered there; this fixture just
+    # ensures the belt-and-braces wrapper covers the same two surfaces httpx
+    # exposes to callers.
+    original_send = httpx.AsyncClient.send
+    original_stream = httpx.AsyncClient.stream
+
+    def _refuse(verb: str, target: str) -> None:
+        raise RuntimeError(
+            f"VCR replay mode: refusing unbound httpx {verb} ({target}). "
+            "The test is marked VCR-tier but no cassette context is "
+            "currently active. Either wrap the request in "
+            "@notebooklm_vcr.use_cassette / @pytest.mark.vcr cassette "
+            "binding, or mark the test @pytest.mark.allow_no_vcr if it "
+            "legitimately should not use a cassette."
+        )
+
+    async def _guarded_send(self: httpx.AsyncClient, request: httpx.Request, **kwargs):
+        if not _has_active_vcr_cassette():
+            _refuse("request", f"{request.method} {request.url}")
+        return await original_send(self, request, **kwargs)
+
+    def _guarded_stream(self: httpx.AsyncClient, method: str, url: Any, **kwargs):
+        if not _has_active_vcr_cassette():
+            _refuse("stream", f"{method} {url}")
+        return original_stream(self, method, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", _guarded_send)
+    monkeypatch.setattr(httpx.AsyncClient, "stream", _guarded_stream)
+
+
 @pytest.fixture
 def auth_tokens():
     """Create test authentication tokens for integration tests.

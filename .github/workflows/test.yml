@@ -127,7 +127,14 @@ jobs:
       # Runs on all matrix entries (ubuntu, macos, windows × 5 Python versions).
       # An earlier bash-only gate was replaced by a portable Python invocation
       # so the check runs uniformly across the cross-platform test matrix.
-      run: uv run python tests/scripts/check_cassettes_clean.py
+      #
+      # ``--strict`` flips the repair-allowlist from "best-effort suppressor"
+      # to "must be empty" — the phase-2 cassette cleanup is done, so any
+      # entry sneaking back in is a CI failure (P1-5).
+      # ``--recursive`` extends the scan from ``tests/cassettes/*.yaml`` to
+      # ``tests/cassettes/**/*.yaml`` so a recorder can't smuggle a leak
+      # into a nested folder like ``tests/cassettes/gzip_coverage/`` (P1-5).
+      run: uv run python tests/scripts/check_cassettes_clean.py --strict --recursive
 
     - name: Run tests with coverage
       # Emit coverage.json so the per-file floor check below can read it
