@@ -927,6 +927,69 @@ def test_auth_cookie_conversion_facade_delegates_to_private_module() -> None:
     assert auth._replace_cookie_jar is cookies._replace_cookie_jar
 
 
+def test_auth_paths_facade_delegates_to_private_module() -> None:
+    """Env-var names + rotation-lock-path live in ``_auth.paths`` but stay
+    reachable through ``notebooklm.auth`` for public + white-box callers."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import paths
+
+    # Public-surface env-var names (listed in notebooklm.auth.__all__).
+    assert auth.NOTEBOOKLM_REFRESH_CMD_ENV == paths.NOTEBOOKLM_REFRESH_CMD_ENV
+    assert auth.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV == paths.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV
+    assert auth.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV == paths.NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV
+    # White-box affordances.
+    assert auth._REFRESH_ATTEMPTED_ENV == paths._REFRESH_ATTEMPTED_ENV
+    assert auth._rotation_lock_path is paths._rotation_lock_path
+
+
+def test_auth_extraction_facade_delegates_to_private_module() -> None:
+    """WIZ field token extraction lives in ``_auth.extraction`` but stays
+    reachable through ``notebooklm.auth`` (public surface + white-box)."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import extraction
+
+    # Public-surface (listed in notebooklm.auth.__all__).
+    assert auth.extract_csrf_from_html is extraction.extract_csrf_from_html
+    assert auth.extract_session_id_from_html is extraction.extract_session_id_from_html
+    assert auth.extract_wiz_field is extraction.extract_wiz_field
+    # White-box affordances.
+    assert auth._safe_url is extraction._safe_url
+    assert auth._build_wiz_field_patterns is extraction._build_wiz_field_patterns
+
+
+def test_auth_extract_email_from_html_still_routed_via_account_module() -> None:
+    """Sanity check: ``extract_email_from_html`` was NOT moved by PR-B-low.
+
+    It already lives in ``_auth.account`` (the post-tier-9 baseline), routed
+    through ``_AUTH_ACCOUNT_FACADE_NAMES``. PR-B-low must not duplicate it
+    into ``_auth.extraction``.
+    """
+    import notebooklm.auth as auth
+    from notebooklm._auth import account, extraction
+
+    assert auth.extract_email_from_html is account.extract_email_from_html
+    assert not hasattr(extraction, "extract_email_from_html")
+
+
+def test_auth_headers_facade_delegates_to_private_module() -> None:
+    """``_resolve_token_route_kwargs`` lives in ``_auth.headers`` but stays
+    reachable through ``notebooklm.auth`` for internal callers and tests."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import headers
+
+    assert auth._resolve_token_route_kwargs is headers._resolve_token_route_kwargs
+
+
+def test_auth_subpackage_init_wires_new_seam_modules() -> None:
+    """The ``_auth`` package re-exports the new seam modules so that
+    ``from notebooklm._auth import extraction`` style imports keep working."""
+    from notebooklm import _auth
+
+    assert hasattr(_auth, "paths")
+    assert hasattr(_auth, "extraction")
+    assert hasattr(_auth, "headers")
+
+
 def test_auth_secondary_binding_reset_syncs_to_cookie_policy(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
