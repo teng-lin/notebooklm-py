@@ -392,9 +392,114 @@ class IdempotencyRegistry:
                 self.register(method, IdempotencyPolicy.UNCLASSIFIED)
 
 
-# Module-level production registry. Wave 2 adds classifications below the
-# seeding call; B1 was a pure default-fill foundation.
+# Module-level production registry. Wave 2 classifies individual RPCs in
+# two passes:
+#
+#   * Some entries (research/notes from b-research-notes) are registered
+#     *before* the default-fill seeding pass so ``_seed_defaults`` skips
+#     them (it only populates ``(method, None)`` entries that are
+#     absent). Variant entries (``variant != None``) sit alongside the
+#     ``None`` default; the seeder leaves them alone.
+#   * Other entries (delete/refresh/share from b-generation) are
+#     registered *after* the seeding pass and overwrite the
+#     UNCLASSIFIED placeholders that the seeder populated.
+#
+# Both orderings yield the same final registry shape; the difference is
+# stylistic. Future Wave-2 classifications may use either approach.
 IDEMPOTENCY_REGISTRY = IdempotencyRegistry()
+
+
+# ----------------------------------------------------------------------------
+# Wave 2 classifications — P0-3 (b-research-notes)
+# ----------------------------------------------------------------------------
+#
+# Three RPCs in the research + notes family are ``NON_IDEMPOTENT_NO_RETRY``.
+# None of them accept a caller-supplied client-token slot, and the
+# probe surfaces available to the client (``ResearchAPI.poll`` /
+# ``SourcesAPI.list`` / ``GET_NOTES_AND_MIND_MAPS``) cannot reliably
+# disambiguate a commit-lost retry from a pre-existing peer resource:
+#
+# * START_FAST_RESEARCH / START_DEEP_RESEARCH — multiple in-flight
+#   research tasks for the same ``(notebook_id, query)`` are valid, so a
+#   query-based probe is ambiguous when the user has previously started
+#   the same query on the same notebook.
+# * IMPORT_RESEARCH — source URLs may already exist in the notebook
+#   from prior workflows, so a URL-based probe cannot bind to "the row
+#   this specific import committed".
+# * CREATE_NOTE — both variants. The plain 5-element variant gets no
+#   client-visible ``note_id`` on commit-lost (CREATE_NOTE failed before
+#   returning), so a probe against ``GET_NOTES_AND_MIND_MAPS`` cannot
+#   bind to the row. The 7-element saved-from-chat variant has a title
+#   but the server may apply smart-title generation, breaking
+#   title-based probes; chat-answer fingerprints are not unique enough
+#   to safely dedupe either.
+#
+# Caller recourse on failure: poll/list and decide manually (e.g.
+# ``client.research.poll(notebook_id)`` after a START_RESEARCH failure
+# returns the freshly committed task if the write landed). This mirrors
+# the ``sources.add_text(idempotent=True)`` precedent (also
+# NON_IDEMPOTENT_NO_RETRY for the same "no reliable dedupe key" reason).
+
+_RESEARCH_NOT_IDEMPOTENT_NOTE = (
+    "research start/import: no client-token slot in params and the available "
+    "probes (ResearchAPI.poll / SourcesAPI.list) cannot reliably disambiguate "
+    "a commit-lost retry from a pre-existing peer task — surface the first "
+    "failure and let the caller poll/list to decide"
+)
+_CREATE_NOTE_NOT_IDEMPOTENT_NOTE = (
+    "CREATE_NOTE has no client-token slot and no client-visible note_id on "
+    "commit-lost; title-based probes break under server-side smart-title "
+    "generation (saved_from_chat variant). Caller must list notes and "
+    "disambiguate on failure"
+)
+
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.START_FAST_RESEARCH,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    notes=_RESEARCH_NOT_IDEMPOTENT_NOTE,
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.START_DEEP_RESEARCH,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    notes=_RESEARCH_NOT_IDEMPOTENT_NOTE,
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.IMPORT_RESEARCH,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    notes=_RESEARCH_NOT_IDEMPOTENT_NOTE,
+)
+
+# CREATE_NOTE has two operation variants on the wire:
+#   * ``"plain"`` — 5-element params from ``MindMapService.create_note``
+#     (default for ``notes.create()`` and mind-map row creation). The
+#     ``(CREATE_NOTE, None)`` default mirrors the same policy so callers
+#     that omit ``operation_variant`` still get NON_IDEMPOTENT_NO_RETRY.
+#   * ``"saved_from_chat"`` — 7-element params from
+#     ``save_chat_answer_as_note`` (issue #660). Used by
+#     ``notes.create_from_chat``.
+# Both variants share the policy; explicit registration documents the
+# two distinct param shapes for future-classification work.
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.CREATE_NOTE,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    notes=_CREATE_NOTE_NOT_IDEMPOTENT_NOTE,
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.CREATE_NOTE,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    variant="plain",
+    notes=_CREATE_NOTE_NOT_IDEMPOTENT_NOTE,
+)
+IDEMPOTENCY_REGISTRY.register(
+    RPCMethod.CREATE_NOTE,
+    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    variant="saved_from_chat",
+    notes=_CREATE_NOTE_NOT_IDEMPOTENT_NOTE,
+)
+
+# Default-fill every remaining method with the UNCLASSIFIED placeholder.
+# Methods classified above are skipped by the absence check inside
+# ``_seed_defaults``.
 IDEMPOTENCY_REGISTRY._seed_defaults()
 
 
