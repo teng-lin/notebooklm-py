@@ -1093,9 +1093,13 @@ async def ask(
   `conversation_id=` for follow-ups works as expected.
 - `conversation_id=<existing-id>` is a follow-up: the question is appended
   to the named conversation.
-- There is no public API to force a brand-new conversation today — the
-  required "create conversation" RPC has not been reverse-engineered. If
-  you need a fresh thread, create a new notebook.
+- To force a brand-new conversation, call
+  `client.chat.delete_conversation(notebook_id, last_conversation_id)`
+  first — the server then has nothing to extend and the next null-conv
+  `ask()` starts a fresh thread. **This is destructive: deleted turns
+  are not recoverable.** The method mirrors the web UI's "Delete
+  history" button (`J7Gthc` RPC) and is the same primitive the CLI's
+  `notebooklm ask --new` is built on.
 
 **Example:**
 ```python
@@ -1124,6 +1128,14 @@ result = await client.chat.ask(
     "Can you elaborate on the first point?",
     conversation_id=result.conversation_id
 )
+
+# Force a fresh conversation (destructive — turns are not recoverable).
+# Mirrors the web UI's "Delete history" button.
+last_conv_id = await client.chat.get_conversation_id(nb_id)
+if last_conv_id:
+    await client.chat.delete_conversation(nb_id, last_conv_id)
+result = await client.chat.ask(nb_id, "Start fresh — what are the themes?")
+assert result.turn_number == 1
 
 # Configure persona
 await client.chat.configure(

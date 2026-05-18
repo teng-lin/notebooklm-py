@@ -87,7 +87,19 @@ def register_chat_commands(cli):
         "--new",
         "new_conversation",
         is_flag=True,
-        help="Start a fresh conversation, skipping the auto-resume of the last one.",
+        help=(
+            "Start a fresh conversation. DESTRUCTIVE: this deletes the "
+            "notebook's current server-side conversation (turns are not "
+            "recoverable) before asking. Prompts for confirmation unless "
+            "``--yes`` is passed."
+        ),
+    )
+    @click.option(
+        "--yes",
+        "-y",
+        "assume_yes",
+        is_flag=True,
+        help="Skip the ``--new`` destructive-delete confirmation prompt.",
     )
     @click.option(
         "--source",
@@ -128,6 +140,7 @@ def register_chat_commands(cli):
         notebook_id,
         conversation_id,
         new_conversation,
+        assume_yes,
         source_ids,
         json_output,
         save_as_note,
@@ -166,8 +179,36 @@ def register_chat_commands(cli):
             async with NotebookLMClient(client_auth, **client_kwargs) as client:
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
                 if new_conversation:
-                    # --new: skip both the local-cache and server-side resume so the
-                    # server treats this turn as the start of a new conversation.
+                    # Dropping ``conversation_id`` alone extends the most-recent
+                    # conversation (see ChatAPI.ask Note). Deleting it first
+                    # leaves the next ask nothing to attach to. No prior
+                    # conversation is fine — skip both the prompt and the
+                    # delete; ``ask`` then creates the notebook's first one.
+                    last_conv_id = await client.chat.get_conversation_id(nb_id_resolved)
+                    if last_conv_id:
+                        # ``--json`` implies ``--yes`` so scripted callers don't
+                        # hang on stdin (which would also clobber JSON stdout
+                        # purity). See cli/artifact.py:artifact_delete for the
+                        # same pattern.
+                        if (
+                            not assume_yes
+                            and not json_output
+                            and not click.confirm(
+                                f"This will permanently delete conversation "
+                                f"{last_conv_id[:8]}... and all its turns. Continue?",
+                                default=False,
+                            )
+                        ):
+                            # Exit 1 (BaseException-bypassing ``SystemExit``)
+                            # so scripts can distinguish "user said no" from
+                            # "ask succeeded" — the intended ``ask`` did not
+                            # run. ``click.exceptions.Exit`` and ``ctx.exit``
+                            # both raise ``RuntimeError`` subclasses that the
+                            # ``handle_errors`` catch-all (error_handler.py)
+                            # would remap to exit 2.
+                            console.print("[yellow]Aborted — no conversation deleted.[/yellow]")
+                            raise SystemExit(1)
+                        await client.chat.delete_conversation(nb_id_resolved, last_conv_id)
                     effective_conv_id: str | None = None
                 else:
                     effective_conv_id = _determine_conversation_id(

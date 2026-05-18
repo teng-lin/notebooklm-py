@@ -176,6 +176,40 @@ def test_email_scrub_negative_unrelated_text() -> None:
     assert scrub_string(text) == text
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Public provider (already covered, kept here as regression baseline).
+        "https://notebooklm.google.com/path?authuser=alice%40gmail.com&rt=c",
+        # Workspace / custom domain — the leak class the round-2 scrubber widening
+        # closes. Provider-anchored detection would miss this.
+        "https://notebooklm.google.com/path?authuser=alice%40company.com&rt=c",
+        # Plus-aliased local part, custom domain. URL-encoded ``+`` arrives as
+        # ``%2B`` in the wire form.
+        "https://notebooklm.google.com/path?authuser=alice%2Btag%40corp.example.io&rt=c",
+        # Multi-dot subdomain TLD.
+        "https://notebooklm.google.com/path?authuser=ops%40eng.corp.example.co.uk&rt=c",
+    ],
+)
+def test_authuser_email_scrubbed_for_any_domain(url: str) -> None:
+    """``?authuser=<email>`` URL params get scrubbed regardless of provider.
+
+    Pins the round-2 scrubber widening: anchoring on ``authuser=`` (not the
+    email's domain) is what prevents the Workspace / corporate email-leak
+    class. A regression that re-narrows the pattern to the public-provider
+    allowlist would fail this test.
+    """
+    scrubbed = scrub_string(url)
+    # The original email value is gone in every shape.
+    assert "alice" not in scrubbed
+    assert "ops" not in scrubbed
+    assert "company.com" not in scrubbed
+    assert "corp.example" not in scrubbed
+    # And the canonical placeholder is present with the URL-encoded ``%40`` shape
+    # so VCR's URL-match path still sees a well-formed ``authuser=`` value.
+    assert "authuser=SCRUBBED_EMAIL%40example.com" in scrubbed
+
+
 # ---------------------------------------------------------------------------
 # Python guard tool: ``tests/scripts/check_cassettes_clean.py``
 #

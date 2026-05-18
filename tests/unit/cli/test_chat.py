@@ -590,13 +590,16 @@ class TestAskServerResumed:
 class TestAskNewFlag:
     """Tests for `ask --new` flag.
 
-    The --new flag was promised in the docstring but missing from the decorator.
-    --new must skip both the local-cache and server-side conversation lookup so
-    a fresh conversation is started, and it must conflict with --conversation-id.
+    ``--new`` deletes the most-recent server-side conversation (web UI's
+    "Delete history" action via ``J7Gthc``) so the next ``ask`` has
+    nothing to attach to and starts genuinely fresh. The flag must also
+    conflict with ``--conversation-id``.
     """
 
-    def test_ask_new_starts_fresh_conversation(self, runner, mock_auth, tmp_path):
-        """`ask --new` should NOT pass conversation_id to client.chat.ask."""
+    def test_ask_new_with_yes_deletes_last_conversation_then_asks_fresh(
+        self, runner, mock_auth, tmp_path
+    ):
+        """`ask --new -y` should delete server's last conversation, then ask with no conversation_id."""
         # Pre-populate context with a cached conversation that would normally resume.
         context_file = tmp_path / "context.json"
         context_file.write_text('{"notebook_id": "nb_123", "conversation_id": "conv-cached-abc"}')
@@ -613,8 +616,8 @@ class TestAskNewFlag:
         with patch_client_for_module("chat") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=fresh_result)
-            # Server also has a conversation, but --new should skip both lookups.
             mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
+            mock_client.chat.delete_conversation = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
             with (
@@ -625,18 +628,87 @@ class TestAskNewFlag:
                 patch("notebooklm.cli.context.get_context_path", return_value=context_file),
             ):
                 mock_fetch.return_value = ("csrf", "session")
-                result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "question"])
+                result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "-y", "question"])
 
         assert result.exit_code == 0, result.output
-        # Server lookup must be skipped when --new is set.
-        mock_client.chat.get_conversation_id.assert_not_awaited()
-        # client.chat.ask must be called with conversation_id=None to start fresh.
+        mock_client.chat.get_conversation_id.assert_awaited_once_with("nb_123")
+        mock_client.chat.delete_conversation.assert_awaited_once_with("nb_123", "conv-server-abc")
         mock_client.chat.ask.assert_awaited_once()
         call = mock_client.chat.ask.call_args
         assert call.kwargs.get("conversation_id") is None, (
             f"expected conversation_id=None, got {call.kwargs.get('conversation_id')!r}"
         )
         assert "New conversation: conv-fresh-xyz" in result.output
+
+    def test_ask_new_prompts_for_confirmation_and_aborts_on_no(self, runner, mock_auth, tmp_path):
+        """``--new`` without ``--yes`` must prompt; answering "n" aborts before delete or ask."""
+        context_file = tmp_path / "context.json"
+        context_file.write_text('{"notebook_id": "nb_123"}')
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock()
+            mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
+            mock_client.chat.delete_conversation = AsyncMock()
+            mock_client_cls.return_value = mock_client
+
+            with (
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
+                patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+            ):
+                mock_fetch.return_value = ("csrf", "session")
+                # User answers "n" at the prompt.
+                result = runner.invoke(
+                    cli, ["ask", "-n", "nb_123", "--new", "question"], input="n\n"
+                )
+
+        # Exit 1 distinguishes "user aborted" from "ask succeeded" for
+        # scripted callers (the intended ``ask`` did not run).
+        assert result.exit_code == 1, result.output
+        assert "permanently delete conversation" in result.output
+        assert "Aborted" in result.output
+        mock_client.chat.delete_conversation.assert_not_awaited()
+        mock_client.chat.ask.assert_not_awaited()
+
+    def test_ask_new_json_implies_yes_no_prompt(self, runner, mock_auth, tmp_path):
+        """``--new --json`` must NOT prompt (would hang) — ``--json`` implies ``--yes``."""
+        context_file = tmp_path / "context.json"
+        context_file.write_text('{"notebook_id": "nb_123"}')
+
+        fresh_result = AskResult(
+            answer="Fresh answer.",
+            conversation_id="conv-fresh-xyz",
+            turn_number=1,
+            is_follow_up=False,
+            references=[],
+            raw_response="",
+        )
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=fresh_result)
+            mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
+            mock_client.chat.delete_conversation = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with (
+                patch(
+                    "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+                ) as mock_fetch,
+                patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
+                patch("notebooklm.cli.context.get_context_path", return_value=context_file),
+            ):
+                mock_fetch.return_value = ("csrf", "session")
+                # No ``input=`` — if we prompted we'd hang.
+                result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "--json", "question"])
+
+        assert result.exit_code == 0, result.output
+        assert "permanently delete conversation" not in result.output
+        mock_client.chat.delete_conversation.assert_awaited_once_with("nb_123", "conv-server-abc")
+        mock_client.chat.ask.assert_awaited_once()
 
     def test_ask_new_conflicts_with_conversation_id(self, runner, mock_auth):
         """`ask --new --conversation-id <id>` should raise UsageError (exit 2)."""
@@ -669,8 +741,8 @@ class TestAskNewFlag:
             # client.chat.ask must not have been awaited — error came before dispatch.
             mock_client.chat.ask.assert_not_awaited()
 
-    def test_ask_new_skips_server_resume_when_no_local_cache(self, runner, mock_auth, tmp_path):
-        """`ask --new` with no cached conversation must still skip the server fetch."""
+    def test_ask_new_skips_delete_when_no_prior_conversation(self, runner, mock_auth, tmp_path):
+        """`ask --new` is a no-op delete when the server has no prior conversation."""
         # Empty context (no cached conversation_id).
         context_file = tmp_path / "context.json"
         context_file.write_text('{"notebook_id": "nb_123"}')
@@ -687,8 +759,8 @@ class TestAskNewFlag:
         with patch_client_for_module("chat") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=fresh_result)
-            # Server has a conversation, but --new must NOT consult it.
-            mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.chat.delete_conversation = AsyncMock(return_value=True)
             mock_client_cls.return_value = mock_client
 
             with (
@@ -702,7 +774,9 @@ class TestAskNewFlag:
                 result = runner.invoke(cli, ["ask", "-n", "nb_123", "--new", "question"])
 
         assert result.exit_code == 0, result.output
-        mock_client.chat.get_conversation_id.assert_not_awaited()
+        mock_client.chat.get_conversation_id.assert_awaited_once_with("nb_123")
+        # With no last conversation, delete must NOT be called.
+        mock_client.chat.delete_conversation.assert_not_awaited()
         call = mock_client.chat.ask.call_args
         assert call.kwargs.get("conversation_id") is None
 

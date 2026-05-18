@@ -36,6 +36,7 @@
 | `KmcKPe` | REVISE_SLIDE | Revise an individual slide via prompt | `_artifacts.py` |
 | `hPTbtc` | GET_LAST_CONVERSATION_ID | Get most recent conversation ID | `_chat.py` |
 | `khqZz` | GET_CONVERSATION_TURNS | Get Q&A turns for a conversation | `_chat.py` |
+| `J7Gthc` | DELETE_CONVERSATION | Delete a conversation (web UI's "Delete history") | `_chat.py` |
 | `CYK0Xb` | CREATE_NOTE | Create a note (placeholder) | `_notes.py` |
 | `cYAfTb` | UPDATE_NOTE | Update note content/title | `_notes.py` |
 | `AH0mwd` | DELETE_NOTE | Delete a note | `_notes.py` |
@@ -464,6 +465,29 @@ params = [
 **Response turn structure:**
 - `turn[2] == 1`: User question — text is at `turn[3]`
 - `turn[2] == 2`: AI answer — text is at `turn[4][0][0]`
+
+---
+
+### RPC: DELETE_CONVERSATION (J7Gthc)
+
+**Source:** `_chat.py::delete_conversation()`
+
+Deletes a conversation server-side. Mirrors the NotebookLM web UI's "Delete
+history" button. After the call, the next `ask()` with no `conversation_id`
+starts a brand-new conversation instead of extending the deleted one.
+
+```python
+params = [
+    [],              # 0: Empty / reserved
+    conversation_id, # 1: Conversation to delete
+    None,            # 2
+    1,               # 3: Always observed as 1; meaning unconfirmed
+]
+# source_path = f"/notebook/{notebook_id}"  — notebook scope rides on the URL
+```
+
+**Response:** empty `[]` body inside the standard `wrb.fr` envelope. Success
+is signaled by the absence of an error — there is no return payload.
 
 ---
 

@@ -130,6 +130,7 @@ FULL_MODE_ONLY_METHODS = {
     RPCMethod.DELETE_SOURCE,
     RPCMethod.DELETE_ARTIFACT,  # Main RPC for artifact deletion
     RPCMethod.DELETE_NOTEBOOK,
+    RPCMethod.DELETE_CONVERSATION,  # Destructive; needs a real conversation to delete
 }
 
 # Methods always skipped (even in full mode)

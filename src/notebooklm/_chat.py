@@ -204,9 +204,9 @@ class ChatAPI:
         Note:
             Repeated ``ask()`` calls without ``conversation_id`` all extend
             the same most-recent conversation. To force a fresh
-            conversation, no public API exists yet — this would require a
-            dedicated ``create conversation`` RPC that has not been
-            reverse-engineered. See issue #659.
+            conversation, first call ``delete_conversation(notebook_id,
+            last_conversation_id)`` — the server then has nothing to
+            extend and the next ``ask()`` starts a new conversation.
         """
         # P0-2: catch cross-loop ``ask`` before any work — particularly
         # before acquiring the per-conversation lock below, which would
@@ -546,6 +546,35 @@ class ChatAPI:
             )
             for turn in cached
         ]
+
+    async def delete_conversation(self, notebook_id: str, conversation_id: str) -> bool:
+        """Delete a conversation from the server.
+
+        Mirrors the web UI's "Delete history" action. After deletion the
+        next ``ask()`` with no ``conversation_id`` starts a fresh
+        server-side conversation rather than extending the deleted one.
+
+        Args:
+            notebook_id: The notebook that owns the conversation.
+            conversation_id: The conversation to delete.
+
+        Returns:
+            True on success. The server returns an empty body; any
+            RPC-level error raises before this returns.
+        """
+        logger.debug("Deleting conversation %s in notebook %s", conversation_id, notebook_id)
+        # Param shape captured from web-UI traffic. The trailing 1 is
+        # always observed; its meaning is uncharted — treated as a fixed flag.
+        params: list[Any] = [[], conversation_id, None, 1]
+        await self._core.rpc_call(
+            RPCMethod.DELETE_CONVERSATION,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+        )
+        # Clear the cache only after a successful RPC; on failure the
+        # rpc_call above raises and we leave the cache intact for retry.
+        self._cache.clear(conversation_id)
+        return True
 
     def clear_cache(self, conversation_id: str | None = None) -> bool:
         """Clear conversation cache.

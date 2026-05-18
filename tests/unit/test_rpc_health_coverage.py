@@ -85,6 +85,10 @@ MUTATING_SKIP_LIST: frozenset[str] = frozenset(
         "CREATE_NOTE",
         # Permanently deletes a note — write op, --full only.
         "DELETE_NOTE",
+        # Permanently deletes a server-side conversation (web UI's "Delete
+        # history") — destructive write op, needs a real conversation to
+        # delete and is exercised via the e2e suite, not the canary.
+        "DELETE_CONVERSATION",
         # Kicks off a fast-research task on the server — long-running write
         # op. Tested via --full setup to verify the RPC ID still echoes.
         "START_FAST_RESEARCH",

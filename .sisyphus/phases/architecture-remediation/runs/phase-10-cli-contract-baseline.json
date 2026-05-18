@@ -791,13 +791,32 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Start a fresh conversation, skipping the auto-resume of the last one.",
+          "help": "Start a fresh conversation. DESTRUCTIVE: this deletes the notebook's current server-side conversation (turns are not recoverable) before asking. Prompts for confirmation unless ``--yes`` is passed.",
           "is_flag": true,
           "kind": "option",
           "multiple": false,
           "name": "new_conversation",
           "opts": [
             "--new"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Skip the ``--new`` destructive-delete confirmation prompt.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "assume_yes",
+          "opts": [
+            "--yes",
+            "-y"
           ],
           "required": false,
           "secondary_opts": [],

@@ -337,9 +337,7 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
 
             # ``--json`` implies ``--yes`` so a script that pipes ``--json`` but
             # forgets ``-y`` does not hang on ``click.confirm``'s stdin read
-            # (which would also clobber JSON stdout purity). Interactive users
-            # who want a confirm prompt should omit ``--json``; scripts that
-            # explicitly want the confirm round-trip can omit ``--json``.
+            # (which would also clobber JSON stdout purity).
             if not yes and not json_output and not click.confirm(f"Delete artifact {resolved_id}?"):
                 return
 

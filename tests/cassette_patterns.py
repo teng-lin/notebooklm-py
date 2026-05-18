@@ -443,6 +443,17 @@ SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     # JSON-quoted form. The replacement embeds ``@example.com`` so a second
     # scrub pass on already-scrubbed content is a no-op (idempotent).
     (f'"{_EMAIL_PATTERN_BASE}"', '"SCRUBBED_EMAIL@example.com"'),
+    # ``authuser=<email>`` query-param form. The client appends this to
+    # every batchexecute URL whenever ``account_email`` is set, so request
+    # URIs would otherwise leak the maintainer's email. Anchoring on
+    # ``authuser=`` (not the email's domain) scrubs Workspace / corporate
+    # addresses the provider-list pattern misses, with no false-positive
+    # risk elsewhere. The replacement keeps the ``%40`` shape so VCR
+    # matchers still see a well-formed value on replay.
+    (
+        r"authuser=[A-Za-z0-9._%+\-]+%40[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+        "authuser=SCRUBBED_EMAIL%40example.com",
+    ),
     # Unquoted-context fallback (mailto: hrefs, raw HTML/JS chunks).
     (_EMAIL_PATTERN_BASE, "SCRUBBED_EMAIL@example.com"),
     # -------------------------------------------------------------------------
@@ -641,7 +652,15 @@ _DETECT_TOKEN_FIELDS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # Compiled detection-only pattern for emails (no replacement string baked in).
-_DETECT_EMAIL = re.compile(_EMAIL_PATTERN_BASE)
+# Two-shape detector — mirrors the two scrubber patterns in section 5 above:
+#   1. Literal ``@`` form on the provider allowlist (JSON, mailto: hrefs).
+#   2. URL-encoded ``authuser=<email>`` query-param form for *any* domain.
+_DETECT_EMAIL = re.compile(
+    r"[A-Za-z0-9._%+\-]+@(?:"
+    + "|".join(EMAIL_PROVIDERS)
+    + r")\.com"
+    + r"|authuser=[A-Za-z0-9._%+\-]+%40[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+)
 
 # upload + Drive token detectors.
 #

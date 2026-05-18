@@ -396,38 +396,41 @@ async def retry_with_backoff(coro, max_retries=3):
     raise Exception("Max retries exceeded")
 ```
 
-### Cannot start a brand-new conversation from the SDK (issue #659)
+### Starting a brand-new conversation (resolves the older issue #659 workaround)
 
 `client.chat.ask(notebook_id, question)` with `conversation_id=None`
-(and the CLI's `notebooklm ask --new`) attach the question to the user's
-**current** conversation on the notebook — they do not start a brand-new
-one. This matches the web UI's default behavior: the UI continues the
-most-recent conversation unless you explicitly click "New conversation"
-in the UI.
+attaches the question to the user's **current** conversation on the
+notebook — by design. The SDK still fetches the server-recorded
+conversation_id via `hPTbtc` after the ask and returns it on
+`AskResult.conversation_id`, so follow-ups using that id work
+correctly.
 
-The SDK fetches the server-recorded conversation_id via `hPTbtc` after
-each new-conversation ask and returns it on `AskResult.conversation_id`,
-so follow-ups using that id work correctly. Repeated `ask()` calls
-without `conversation_id` extend the same conversation; they do not
-restart.
+To force a brand-new server-side conversation, delete the existing
+one first — this mirrors the web UI's "Delete history" button:
 
-If you need a truly fresh conversation, create a new notebook:
-
-```bash
-notebooklm create "Fresh thread"
-notebooklm use <new-notebook-id>
-notebooklm ask "Starting question"
+```python
+last_conv_id = await client.chat.get_conversation_id(nb_id)
+if last_conv_id:
+    await client.chat.delete_conversation(nb_id, last_conv_id)
+result = await client.chat.ask(nb_id, "Start fresh")
 ```
 
-The dedicated "create conversation" RPC the web UI's "+ New" button
-calls has not been reverse-engineered. PRs welcome.
+Or via the CLI (prompts for confirmation; `-y` skips):
 
-**History:** Before this fix, the SDK minted a client-side `uuid.uuid4()`
-at the wire `conversation_id` slot. The server accepted the question and
-returned an answer, but the conversation was orphaned from the web UI
-conversation list and follow-ups using `result.conversation_id` produced
-ghost turns the server never recorded. Live API testing confirmed the
-correct contract is to send `null` and recover the id via `hPTbtc`.
+```bash
+notebooklm ask --new -y "Start fresh"
+```
+
+**This is destructive: deleted turns are not recoverable.** The CLI
+shows the conversation's short id in the prompt and defaults to "No".
+`--json` implies `--yes` so scripted callers don't hang on stdin.
+
+**History:** Before the SDK gained `delete_conversation` it had no way
+to honor the "fresh conversation" intent — both the SDK and the CLI's
+`--new` flag would silently extend the most-recent conversation, so
+users worked around it by creating a new notebook for each thread.
+The `J7Gthc` RPC was reverse-engineered from the web UI's "Delete
+history" button and removes the need for that workaround.
 
 ### Quota Restrictions
 
