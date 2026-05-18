@@ -217,4 +217,9 @@ jobs:
         fi
         echo "Initial E2E run failed. Sleeping 600s before retrying failed tests."
         sleep 600
-        uv run pytest --last-failed -s -v --tb=short
+        # Pin ``tests/e2e`` so pyproject's ``addopts = --ignore=tests/e2e``
+        # doesn't drop every lastfailed entry; otherwise pytest's default
+        # ``--last-failed-no-failures=all`` would expand to the full non-e2e
+        # suite under NOTEBOOKLM_AUTH_JSON. ``=none`` makes a missing cache
+        # fail fast instead.
+        uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short
