@@ -646,10 +646,11 @@ async def fetch_tokens(
 
     Prefer AuthTokens.from_storage() which preserves cookie domains. If
     ``NOTEBOOKLM_REFRESH_CMD`` is set and auth has expired, the command is run
-    through the platform shell, cookies are reloaded from ``storage_path`` or
-    the active profile storage path, and token fetch is retried once. Refresh
-    commands receive ``NOTEBOOKLM_REFRESH_STORAGE_PATH`` and
-    ``NOTEBOOKLM_REFRESH_PROFILE`` in their environment.
+    with ``shell=False`` by default (or via the platform shell when
+    ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1``), cookies are reloaded from
+    ``storage_path`` or the active profile storage path, and token fetch is
+    retried once. Refresh commands receive ``NOTEBOOKLM_REFRESH_STORAGE_PATH``
+    and ``NOTEBOOKLM_REFRESH_PROFILE`` in their environment.
 
     Args:
         cookies: Google auth cookies. Mutated in place on refresh.
