@@ -19,6 +19,14 @@ jobs:
   verify:
     name: Verify from ${{ inputs.source }}
     runs-on: ubuntu-latest
+    # Secret-bearing job (steps below reference secrets.NOTEBOOKLM_AUTH_JSON
+    # + secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID for the live E2E pass). The
+    # workflow is workflow_dispatch-only, so every run is human-initiated;
+    # this `protected-readonly` environment requires a maintainer to approve
+    # the dispatch before any secret is exposed. Non-maintainer dispatches
+    # block at the approval prompt rather than acquiring tokens.
+    # See docs/development.md → "Workflow secret gates".
+    environment: protected-readonly
 
     steps:
     - uses: actions/checkout@v6

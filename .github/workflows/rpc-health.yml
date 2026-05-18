@@ -18,6 +18,15 @@ jobs:
   health-check:
     name: RPC Health Check
     runs-on: ubuntu-latest
+    # Secret-bearing job. The scheduled cron canary must keep running without
+    # human-in-the-loop approval (it's the whole point of the canary), but
+    # `workflow_dispatch` runs are human-initiated and may originate from
+    # non-maintainers — those go through the `protected-readonly` GitHub
+    # Environment, which requires maintainer approval before secrets unlock.
+    # An empty environment string means "no environment association" (GHA
+    # treats falsy expressions as unset), so schedule runs are unaffected.
+    # See docs/development.md → "Workflow secret gates".
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}
 
     steps:
     - uses: actions/checkout@v6
@@ -47,6 +56,34 @@ jobs:
         exit_code=${PIPESTATUS[0]}
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
         exit "$exit_code"
+
+    - name: Scrub secrets from health-report.txt
+      # Defence-in-depth: the script itself avoids printing credential-shaped
+      # data, but raw response bodies and exception tracebacks can still
+      # surface session/CSRF/cookie material on regressions. We re-run the
+      # report through ``notebooklm._logging.scrub_secrets`` before any
+      # downstream consumer reads it (Add Summary, Create Issue on …,
+      # Upload Report). Idempotent — safe to re-apply on subsequent runs.
+      if: always()
+      shell: bash
+      run: |
+        if [ ! -f health-report.txt ]; then
+          echo "::warning::health-report.txt not produced; skipping scrub."
+          exit 0
+        fi
+        python - <<'PY'
+        from pathlib import Path
+        from notebooklm._logging import scrub_secrets
+
+        report = Path("health-report.txt")
+        original = report.read_text(encoding="utf-8", errors="replace")
+        scrubbed = scrub_secrets(original)
+        if scrubbed != original:
+            report.write_text(scrubbed, encoding="utf-8")
+            print(f"Scrubbed {len(original) - len(scrubbed)} chars from health-report.txt")
+        else:
+            print("No secret-shaped substrings detected in health-report.txt.")
+        PY
 
     - name: Add Summary
       if: always()

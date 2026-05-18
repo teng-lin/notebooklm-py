@@ -71,6 +71,21 @@ jobs:
     name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}/${{ matrix.os }})
     needs: resolve-branch
     runs-on: ${{ matrix.os }}
+    # Secret-bearing job. Two-layer gating:
+    #
+    # 1. ``needs.resolve-branch.outputs.is_standard`` — set by the upstream
+    #    ``resolve-branch`` job. Only ``main`` and ``develop`` (or scheduled
+    #    cron triggers, which resolve to one of those) flip this to ``true``;
+    #    any other branch keeps it ``false`` and the secret-using steps below
+    #    skip outright (no secret values land in the runner env).
+    # 2. ``environment: protected-readonly`` (workflow_dispatch only) —
+    #    surfaces an approval prompt before secrets unlock when a human kicks
+    #    off a manual run. The expression yields an empty string on schedule
+    #    triggers so cron canary runs are unaffected. Together with (1) this
+    #    means a non-maintainer ``gh workflow run nightly.yml`` either skips
+    #    the secret steps (non-standard branch) OR pauses at the maintainer
+    #    approval gate. See docs/development.md → "Workflow secret gates".
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +139,13 @@ jobs:
 
     - name: Run E2E tests
       id: e2e
+      # Hard gate: only standard branches (main/develop, or scheduled cron
+      # runs which resolve to one of those) expose credentials. Any other
+      # branch — including ad-hoc workflow_dispatch on a feature branch —
+      # gets ``is_standard == 'false'`` from resolve-branch and skips here
+      # outright. The job-level ``environment:`` adds the maintainer approval
+      # layer for workflow_dispatch runs that DO resolve as standard.
+      if: needs.resolve-branch.outputs.is_standard == 'true'
       # Don't fail the job here — the retry step below gets a 10-min cool-down
       # shot at any failures, and its exit code is what marks the job red.
       continue-on-error: true
@@ -161,7 +183,12 @@ jobs:
     - name: Retry failed E2E tests after 10-min cool-down
       # Tests still throttled after the cool-down become skips via the
       # _install_chat_rate_limit_skip fixture in tests/e2e/conftest.py.
-      if: steps.e2e.outcome == 'failure'
+      # Same ``is_standard`` hard gate as the primary E2E step above — the
+      # retry must never expose secrets on a non-standard branch even if a
+      # previous step somehow ran (e.g. re-run with edited workflow inputs).
+      if: |
+        needs.resolve-branch.outputs.is_standard == 'true'
+        && steps.e2e.outcome == 'failure'
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}

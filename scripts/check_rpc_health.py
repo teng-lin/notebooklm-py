@@ -49,6 +49,7 @@ from uuid import uuid4
 import httpx
 
 from notebooklm._env import get_default_language
+from notebooklm._logging import scrub_secrets
 from notebooklm._notebooks import build_create_notebook_params
 from notebooklm.auth import (
     AuthTokens,
@@ -728,7 +729,13 @@ async def setup_temp_resources(
     if result.status == CheckStatus.OK:
         temp.source_id = extract_id(data, 0, 0)
         if not temp.source_id:
-            print(f"  WARNING: ADD_SOURCE ID extraction failed. Response: {repr(data)[:200]}")
+            # Decoded response may carry residual credential-shaped substrings
+            # (cookies/CSRF tokens echoed in error payloads, etc.). Scrub
+            # before the diagnostic preview goes to stdout / health-report.txt.
+            print(
+                f"  WARNING: ADD_SOURCE ID extraction failed. "
+                f"Response: {scrub_secrets(repr(data)[:200])}"
+            )
 
     # Test ADD_SOURCE_FILE - registers file source intent (no actual upload needed)
     # Params format: [[[filename]], notebook_id, [2], [1, None, ...]]
@@ -822,8 +829,12 @@ async def setup_temp_resources(
             # Artifact ID is at response[0][0]
             temp.artifact_id = extract_id(data, 0, 0)
             if not temp.artifact_id:
+                # See the matching ADD_SOURCE failure site upstream for the
+                # rationale on scrubbing response previews — raw decoded
+                # payloads can echo cookie / CSRF material on regressions.
                 print(
-                    f"  WARNING: CREATE_ARTIFACT ID extraction failed. Response: {repr(data)[:200]}"
+                    f"  WARNING: CREATE_ARTIFACT ID extraction failed. "
+                    f"Response: {scrub_secrets(repr(data)[:200])}"
                 )
 
         # Poll for artifact completion
@@ -956,10 +967,15 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     try:
         csrf_token, session_id = await fetch_tokens(cookies, storage_path=storage_path)
     except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {scrub_secrets(e)}", file=sys.stderr)
         sys.exit(2)
     except httpx.HTTPError as e:
-        print(f"ERROR: Network error while fetching auth tokens: {e}", file=sys.stderr)
+        # ``httpx`` exception strings can echo full request URLs including
+        # ``f.sid=<session_id>`` query params, so scrub before logging.
+        print(
+            f"ERROR: Network error while fetching auth tokens: {scrub_secrets(e)}",
+            file=sys.stderr,
+        )
         sys.exit(2)
     auth = AuthTokens(
         cookies=cookies,
@@ -1118,9 +1134,14 @@ def print_summary(results: list[CheckResult]) -> int:
         print("ERROR DETAILS:")
         print("-" * 40)
         for r in non_transient_errors:
-            print(f"  [non-transient] {r.method.name} ({r.expected_id}): {r.error}")
+            # ``r.error`` is a free-form error string produced by the RPC
+            # call paths; if the upstream library ever quotes a request
+            # URL or cookie jar in its message, the workflow's later
+            # file scrub catches it but the live Actions log would not.
+            # Belt-and-braces: scrub at the print site too.
+            print(f"  [non-transient] {r.method.name} ({r.expected_id}): {scrub_secrets(r.error)}")
         for r in transient_errors:
-            print(f"  [transient]     {r.method.name} ({r.expected_id}): {r.error}")
+            print(f"  [transient]     {r.method.name} ({r.expected_id}): {scrub_secrets(r.error)}")
         print()
 
     # Return exit code.

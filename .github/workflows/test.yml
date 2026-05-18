@@ -43,6 +43,14 @@ jobs:
     - name: Assert workflow permissions are scoped
       run: uv run python scripts/check_workflow_permissions.py
 
+    - name: Assert workflow secret-bearing jobs are gated
+      # Companion to the permissions check: prevents a new
+      # ``${{ secrets.NAME }}`` reference from landing without picking up
+      # a job-level ``environment:`` declaration or a step-level
+      # ``is_standard`` guard. See docs/development.md →
+      # "Workflow secret gates".
+      run: uv run python scripts/check_workflow_secret_gates.py
+
     - name: Assert coverage thresholds match
       run: uv run python scripts/check_coverage_thresholds.py
 
