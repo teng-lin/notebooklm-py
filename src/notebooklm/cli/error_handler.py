@@ -194,7 +194,12 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         # subprocess output, response bodies, etc.). Pinning to ``args[0]``
         # keeps the contract: raise sites are responsible for producing a
         # safe message; the handler does not re-render.
-        primary = e.args[0] if e.args else type(e).__name__
+        # Claude bot review feedback: third-party exceptions can put non-string
+        # objects in ``args[0]`` (e.g. ``ValueError(42)``, ``SomeErr({"code":
+        # 404})``). The f-string below would call ``str()`` implicitly anyway,
+        # but the explicit cast makes the contract obvious and avoids surprises
+        # if the f-string is ever replaced with a different formatter.
+        primary = str(e.args[0]) if e.args else type(e).__name__
         # Route the full exception (with cause chain + traceback) to the
         # redacting DEBUG logger so ``-vv`` users can still diagnose.
         logger.debug("Unexpected CLI exception", exc_info=True)

@@ -1002,11 +1002,16 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
         # Two-channel disclosure: the user sees only exit code + executable
         # basename; developers running with ``-vv`` get the full output
         # through the package's redacting DEBUG logger.
-        executable_basename = (
-            os.path.basename(run_target[0])
-            if isinstance(run_target, list) and run_target
-            else "shell"
-        )
+        # Claude bot review feedback: in shell-mode ``run_target`` is the raw
+        # command STRING, not a list. Extract the basename of its first token
+        # so users still see a useful script name (the string is user-supplied
+        # and not a secret — its argv[0] equivalent is safe to surface).
+        if isinstance(run_target, list) and run_target:
+            executable_basename = os.path.basename(run_target[0])
+        elif isinstance(run_target, str) and run_target.strip():
+            executable_basename = os.path.basename(run_target.split()[0])
+        else:
+            executable_basename = "shell"
         logger.debug(
             "%s exited %d. stdout=%r stderr=%r",
             NOTEBOOKLM_REFRESH_CMD_ENV,

@@ -152,6 +152,22 @@ def test_error_handler_prints_only_exc_args_for_unexpected_exception(
     assert redacted_message in combined
 
 
+def test_error_handler_handles_non_string_first_arg(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Claude bot review feedback: ``e.args[0]`` may be non-string for
+    third-party exceptions (e.g. ``ValueError(42)``). Confirm the handler
+    str-casts defensively rather than relying on f-string implicit ``str()``.
+    """
+    from notebooklm.cli.error_handler import handle_errors
+
+    with pytest.raises(SystemExit) as exc_info, handle_errors():
+        raise ValueError(42)
+    assert exc_info.value.code == 2
+    captured = capsys.readouterr()
+    assert "Unexpected error: 42" in (captured.out + captured.err)
+
+
 def test_error_handler_routes_traceback_to_debug(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
