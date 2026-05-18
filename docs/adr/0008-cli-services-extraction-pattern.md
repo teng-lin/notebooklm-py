@@ -16,7 +16,7 @@ The audit identified three concrete failure modes:
 
 The cli-ux-remediation arc moved business logic into a sibling sub-package:
 
-```
+```text
 src/notebooklm/cli/services/
 ├── __init__.py
 ├── artifact_generation.py   business logic for `generate audio/video/...`

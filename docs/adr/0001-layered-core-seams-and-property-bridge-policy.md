@@ -15,7 +15,7 @@ Documents a pattern shipped incrementally across tier-1 through tier-10 (PRs rou
 
 Tier 8/9/10 extracted the cross-cutting concerns into named seam modules. As of HEAD the seams are:
 
-```
+```text
 _core_transport.py            authed-POST path + retry loops
 _core_rpc.py                  RPC dispatch executor (DecodeResponse, RpcOwner protocols)
 _core_auth.py                 AuthRefreshCoordinator + auth-snapshot lock

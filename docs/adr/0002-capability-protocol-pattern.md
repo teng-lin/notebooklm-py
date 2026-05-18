@@ -17,7 +17,7 @@ Two non-negotiable forces shaped the original design:
 
 The codebase resolved both forces with a *capability Protocol* pattern. Ten narrow `Protocol` classes describe individual collaborator surfaces:
 
-```
+```text
 CoreRPCProvider · SourceListProvider · CoreReqIdProvider
 ChatStreamingProvider · PollRegistryProvider · AuthRouteProvider
 CookieJarProvider · TransportOperationProvider

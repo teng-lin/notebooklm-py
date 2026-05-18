@@ -8,7 +8,7 @@ This directory holds the canonical decisions that shape the `notebooklm-py` code
 - Numbering is append-only. Retired ADR numbers are never re-used.
 - Filenames follow `NNNN-short-title.md` (lowercase, kebab-case).
 - Status values: `Proposed`, `Accepted`, `Accepted (Sunset = <event>)`, `Superseded by ADR-NNN (#PR)`, `Deprecated`, `Rejected`.
-- Format: lightweight hybrid — six sections in this exact order: *Status*, *Context*, *Decision*, *Consequences*, *Alternatives considered*. See [0000-template.md](0000-template.md).
+- Format: lightweight hybrid — six sections in this exact order: *Title heading* (`# ADR-NNN: <Title>`), *Status*, *Context*, *Decision*, *Consequences*, *Alternatives considered*. See [0000-template.md](0000-template.md).
 
 ## When an ADR is required
 
@@ -31,7 +31,7 @@ Pure bug fixes, additive RPC method IDs, and CLI ergonomics changes do not requi
 | [0004](0004-loop-affinity-contract.md) | Loop-affinity contract for `NotebookLMClient` | Accepted (retroactive) |
 | [0005](0005-idempotency-taxonomy.md) | Mutating-RPC idempotency taxonomy | Accepted (retroactive) |
 | [0006](0006-vcr-scrubber-strategy.md) | VCR cassette scrubber strategy | Accepted (retroactive) |
-| 0007 | Test monkeypatch policy | `0007-test-monkeypatch-policy.md` — reserved (ships with D1 PR-1) |
+| 0007 | Test monkeypatch policy | Reserved (ships with D1 PR-1) |
 | [0008](0008-cli-services-extraction-pattern.md) | `cli/services/` extraction pattern | Accepted (retroactive) |
 
 The 0007 slot is intentionally held open: the test-monkeypatch policy ships as part of D1 PR-1 (`arch-d1-fixtures-scaffolding`) so the ADR can reference the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) that enforce it. Publishing it now as a placeholder would create an empty record with no enforcement substrate — exactly the failure mode this directory is meant to prevent.

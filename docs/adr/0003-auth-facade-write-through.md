@@ -10,7 +10,7 @@ This ADR documents an active compatibility mechanism. It is scheduled for retire
 
 Authentication concerns (cookie extraction, header construction, refresh, keepalive, account selection, storage on disk) lived in a single `auth.py` module through tier 7. That module reached ~1,600 lines spanning seven loosely-related concerns. Tier 7 (private-module reorg) split it into a `_auth/` subpackage with ten focused modules:
 
-```
+```text
 _auth/paths.py            storage paths + filesystem helpers
 _auth/extraction.py       cookie/token extraction from browser sessions
 _auth/headers.py          HTTP header construction
