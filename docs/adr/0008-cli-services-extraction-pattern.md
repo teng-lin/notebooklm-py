@@ -57,7 +57,7 @@ The pattern is deliberately *light*: there is no service-layer base class, no DI
 
 **Wanted:**
 
-- CLI commands are short. The post-cli-ux-remediation target for `cli/session.py` is ≤ 1,100 lines (down from 1,973), achieved by moving the browser-profile logic to `cli/services/login.py`.
+- CLI commands shrink toward thin shells. The post-cli-ux-remediation target for `cli/session.py` is ≤ 1,100 lines (down from the current 1,973); the residual proxy block that prevents reaching that target is on the deletion list for the D1 CLI-side PR (`arch-d1-cli-side`). The extraction pattern itself — business logic in `cli/services/login.py`, command shell in `cli/session.py` — is already in place; the line-count gate lands when the proxy block goes.
 - Business logic is unit-testable without driving Click. Tests can call `build_source_add_plan(...)` directly and assert on the returned plan; tests can call `execute_source_add(plan, fake_facade)` and assert on the facade calls.
 - The service modules document the *contract* of each CLI domain via their `Plan` dataclass and their facade `Protocol`. A reviewer reading `cli/services/source_add.py` sees the entire decision graph for `source add` in one file.
 - Business logic is re-usable. The Python API can import from `cli/services/<domain>.py` when a Python-side feature wants the same logic without re-implementing it (this is rare but real — `cli/services/source_clean.py` is consumed by both the CLI and an internal cleanup helper).

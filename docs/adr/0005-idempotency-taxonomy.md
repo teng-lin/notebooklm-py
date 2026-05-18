@@ -14,7 +14,7 @@ Six retry-safety profiles cover every realistic NotebookLM RPC shape:
 
 | Policy | Meaning | Effect on the inner retry loop |
 |---|---|---|
-| `UNCLASSIFIED` | Placeholder; never classified | Silent, retries enabled (preserves pre-taxonomy behaviour) |
+| `UNCLASSIFIED` | Placeholder; never classified | Silent, retries enabled (preserves pre-taxonomy behavior) |
 | `PROBE_THEN_CREATE` | Caller owns a probe loop; transport must not blind-retry | Force-disable inner retries |
 | `IDEMPOTENT_SET_OP` | Server applies set semantics (delete / rename) | Retries are safe; left enabled |
 | `CLIENT_TOKEN_DEDUPE` | Server dedupes on an injected token | Retries are safe; client-token injected before encoding |
@@ -31,7 +31,7 @@ Every `RPCMethod` is registered in `IDEMPOTENCY_REGISTRY` (in `_idempotency.py`)
 
 The classification rules are:
 
-- **Read-only RPCs** are not classified (the taxonomy applies to mutating RPCs only); the executor's existing retry behaviour is correct for them.
+- **Read-only RPCs** are not classified (the taxonomy applies to mutating RPCs only); the executor's existing retry behavior is correct for them.
 - **Mutating RPCs with a stable server-side dedupe key** classify as `IDEMPOTENT_SET_OP` (delete / rename / set-state) — retries are explicitly safe.
 - **Mutating RPCs with a client-injectable token slot** classify as `CLIENT_TOKEN_DEDUPE`; the registry records the param-slot index (or dict key) and the executor injects a fresh `uuid4().hex` before encoding when the slot is empty.
 - **Mutating RPCs without a dedupe key but with a probe RPC** classify as `PROBE_THEN_CREATE`; the inner retry loop is force-disabled, and the per-API call site owns a probe-then-create wrapper (see `idempotent_create()` in `_idempotency.py` and the per-API uses in `_notebooks.py`, `_sources.py`).
@@ -46,16 +46,16 @@ The six-policy axis is *closed*. Adding a seventh policy requires updating this 
 
 **Wanted:**
 
-- Retry safety is now a *property of the RPC*, not a property of the call site. New call sites inherit the safe behaviour without re-deriving it.
+- Retry safety is now a *property of the RPC*, not a property of the call site. New call sites inherit the safe behavior without re-deriving it.
 - The executor's retry logic is small and local; the policy decisions live in the registry where they can be reviewed in isolation.
 - The taxonomy is small enough (six policies) that a reviewer can hold it in mind during a code review. A seventh policy would push past that threshold and is rejected by design.
-- The `CLIENT_TOKEN_DEDUPE` injection is automatic and behaviour-neutral when callers do not provide a token, which matters for the test path: tests that construct params manually don't have to special-case the token slot.
+- The `CLIENT_TOKEN_DEDUPE` injection is automatic and behavior-neutral when callers do not provide a token, which matters for the test path: tests that construct params manually don't have to special-case the token slot.
 
 **Unwanted:**
 
 - The registry is populated at module import time and is effectively immutable. A test that wants to override a classification needs to construct a fresh `IdempotencyRegistry` instance (the contract documents this, but it is friction).
-- `AT_LEAST_ONCE_ACCEPTED`'s rate-limited WARN log is per-process-state (a module-level dict). Tests that observe the log behaviour have to manage state across test cases; the WARN is throttled to one emission per 30 seconds per `(method, variant)` to avoid drowning operators in spam, which means a noisy test environment can suppress emissions that would have fired in production.
-- The taxonomy is *opinionated about caller behaviour*. `AT_LEAST_ONCE_ACCEPTED` says "the caller has accepted at-least-once semantics"; if a future contributor classifies an RPC that way without the caller actually having opted in, the registry will silently green-light duplicate side effects. Reviews of new `AT_LEAST_ONCE_ACCEPTED` classifications need to be careful.
+- `AT_LEAST_ONCE_ACCEPTED`'s rate-limited WARN log is per-process-state (a module-level dict). Tests that observe the log behavior have to manage state across test cases; the WARN is throttled to one emission per 30 seconds per `(method, variant)` to avoid drowning operators in spam, which means a noisy test environment can suppress emissions that would have fired in production.
+- The taxonomy is *opinionated about caller behavior*. `AT_LEAST_ONCE_ACCEPTED` says "the caller has accepted at-least-once semantics"; if a future contributor classifies an RPC that way without the caller actually having opted in, the registry will silently green-light duplicate side effects. Reviews of new `AT_LEAST_ONCE_ACCEPTED` classifications need to be careful.
 - The variant-table fallback (`get_entry(method, variant=v)` on a method with no variant table silently falls back to `(method, None)`; the same call on a method *with* a variant table but for an unknown variant raises) is subtle. The contract is documented in the registry class docstring but is the kind of rule that takes a second read to absorb.
 
 ## Alternatives considered

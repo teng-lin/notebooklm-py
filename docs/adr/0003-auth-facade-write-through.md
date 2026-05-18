@@ -25,7 +25,7 @@ _auth/refresh.py          token refresh driver
 
 `auth.py` survived the split as a *facade module* that re-exports the public surface (functions, dataclasses, constants) and preserves the `notebooklm.auth.<name>` import path for downstream callers. So far so unremarkable.
 
-What makes this ADR necessary is the *write-through* behaviour. The codebase contains ~152 test sites that patch `auth.py`-level names with `monkeypatch.setattr(notebooklm.auth, "<attr>", fake)` (object-attribute form) or `monkeypatch.setattr("notebooklm.auth.<attr>", fake)` (string-target form). Those names had originally lived inside `auth.py`; after the split they live inside `_auth/storage.py`, `_auth/account.py`, `_auth/keepalive.py`, and `_auth/refresh.py`. The patches would silently do nothing if the facade were a passive re-export, because the *consumers* of those names import them directly from the `_auth/*` modules.
+What makes this ADR necessary is the *write-through* behavior. The codebase contains ~152 test sites that patch `auth.py`-level names with `monkeypatch.setattr(notebooklm.auth, "<attr>", fake)` (object-attribute form) or `monkeypatch.setattr("notebooklm.auth.<attr>", fake)` (string-target form). Those names had originally lived inside `auth.py`; after the split they live inside `_auth/storage.py`, `_auth/account.py`, `_auth/keepalive.py`, and `_auth/refresh.py`. The patches would silently do nothing if the facade were a passive re-export, because the *consumers* of those names import them directly from the `_auth/*` modules.
 
 The mitigation (`src/notebooklm/auth.py:288-339`) is `_AuthFacadeModule`, a subclass of `types.ModuleType` that overrides `__setattr__` to *mirror* writes from `notebooklm.auth` into each owning seam:
 
@@ -62,7 +62,7 @@ The mechanism is *Accepted* today because:
 **Wanted:**
 
 - Tier 7's `auth.py` → `_auth/*` extraction shipped without simultaneously rewriting ~152 test sites. The arc could land incrementally.
-- Production behaviour is identical to a flat re-export module; the facade has no runtime cost beyond a single `isinstance`-style branch on attribute writes (which production never executes).
+- Production behavior is identical to a flat re-export module; the facade has no runtime cost beyond a single `isinstance`-style branch on attribute writes (which production never executes).
 
 **Unwanted (and the reason for the sunset clause):**
 

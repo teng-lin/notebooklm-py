@@ -61,7 +61,7 @@ Property bridges in `_core.py` are *permitted but tracked*. Each bridge must:
 - Read and write through to the owning seam — never store state of its own.
 - Be retired the moment its only readers are themselves retired (see ADR-002 for the sub-client-compat half; ADR-007 will cover the test-compat half).
 
-The seam extractions are behaviour-preserving moves. Each one ships with a unit-test fixture that exercises the seam in isolation; nothing on the seam should require a full `ClientCore` to test.
+The seam extractions are behavior-preserving moves. Each one ships with a unit-test fixture that exercises the seam in isolation; nothing on the seam should require a full `ClientCore` to test.
 
 ## Consequences
 

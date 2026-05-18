@@ -8,7 +8,7 @@ A *sunset clause* records the conditions under which the decision is expected to
 
 ## Context
 
-What is the problem? What forces are in play (technical, organisational, historical)? What constraints does the codebase impose that make this decision non-obvious? Cite specific files / line ranges so a future reader can find the artefact the decision shaped.
+What is the problem? What forces are in play (technical, organizational, historical)? What constraints does the codebase impose that make this decision non-obvious? Cite specific files / line ranges so a future reader can find the artifact the decision shaped.
 
 Keep this section short and load-bearing. Anything that does not help the reader make the same call again is noise.
 
