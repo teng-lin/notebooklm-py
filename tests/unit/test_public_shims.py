@@ -1261,3 +1261,227 @@ def test_error_injection_symbols_resolve_through_core():
     assert _core.ERROR_INJECT_ENV_VAR is _core_error_injection.ERROR_INJECT_ENV_VAR
     assert _core._get_error_injection_mode is _core_error_injection._get_error_injection_mode
     assert _core._SyntheticErrorTransport is _core_error_injection._SyntheticErrorTransport
+
+
+# ---------------------------------------------------------------------------
+# Tier-10 PR-B-high: semantic patch-and-execute tests for the keepalive +
+# refresh extraction.
+#
+# These do NOT just smoke-check that ``hasattr(notebooklm.auth, X)`` resolves —
+# they patch via ``auth_mod.X = fake`` and then EXECUTE the moved caller to
+# prove the patch actually rebinds the call site inside the moved module.
+# Without the facade write-through wiring this would silently regress when a
+# caller resolves the name from its own module's namespace.
+#
+# The five names covered match the high-risk signoff list:
+#   _run_refresh_cmd, _fetch_tokens_with_jar, _get_refresh_lock,
+#   _poke_session, _rotate_cookies.
+# ---------------------------------------------------------------------------
+
+
+def test_auth_keepalive_facade_module_wires_keepalive_names() -> None:
+    """``_AuthFacadeModule`` exposes every name in ``_AUTH_KEEPALIVE_FACADE_NAMES``."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import keepalive
+
+    for name in auth._AUTH_KEEPALIVE_FACADE_NAMES:
+        assert hasattr(keepalive, name), f"_auth.keepalive missing {name}"
+        assert getattr(auth, name) is getattr(keepalive, name), f"identity drift for {name}"
+
+
+def test_auth_refresh_facade_module_wires_refresh_names() -> None:
+    """``_AuthFacadeModule`` exposes every name in ``_AUTH_REFRESH_FACADE_NAMES``."""
+    import notebooklm.auth as auth
+    from notebooklm._auth import refresh
+
+    for name in auth._AUTH_REFRESH_FACADE_NAMES:
+        assert hasattr(refresh, name), f"_auth.refresh missing {name}"
+        assert getattr(auth, name) is getattr(refresh, name), f"identity drift for {name}"
+
+
+def test_auth_keepalive_state_dicts_share_identity_with_seam() -> None:
+    """``tests/conftest.py`` clears ``_LAST_POKE_ATTEMPT_MONOTONIC`` and
+    ``_POKE_LOCKS_BY_LOOP`` on ``notebooklm.auth``. The dicts MUST be the same
+    objects in the keepalive seam so mutations through the facade flow into
+    the moved bodies that consume the dicts.
+    """
+    import notebooklm.auth as auth
+    from notebooklm._auth import keepalive
+
+    assert auth._LAST_POKE_ATTEMPT_MONOTONIC is keepalive._LAST_POKE_ATTEMPT_MONOTONIC
+    assert auth._POKE_LOCKS_BY_LOOP is keepalive._POKE_LOCKS_BY_LOOP
+
+
+def test_auth_subprocess_reexport_lets_tests_patch_run() -> None:
+    """White-box tests patch ``auth_mod.subprocess.run`` to intercept the
+    refresh-cmd subprocess. The re-exported ``subprocess`` module must be the
+    standard library module shared with ``_auth.refresh``.
+    """
+    import subprocess
+
+    import notebooklm.auth as auth
+    from notebooklm._auth import refresh
+
+    assert auth.subprocess is subprocess
+    assert refresh.subprocess is subprocess
+
+
+def test_auth_facade_propagates_run_refresh_cmd_patch_to_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEMANTIC: patching ``auth_mod._run_refresh_cmd = fake`` must rebind the
+    name inside ``_auth.refresh`` so ``_coalesced_run_refresh_cmd`` resolves
+    the fake instead of the original.
+    """
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import refresh
+
+    sentinel = object()
+
+    async def fake(*args: object, **kwargs: object) -> object:
+        return sentinel
+
+    monkeypatch.setattr(auth_mod, "_run_refresh_cmd", fake)
+    assert refresh._run_refresh_cmd is fake
+    # ``_coalesced_run_refresh_cmd`` spawns ``_run_refresh_cmd`` through a bare
+    # name lookup in ``refresh.py``; the facade write-through must have
+    # rebound that name for the patch to take effect.
+
+
+@pytest.mark.asyncio
+async def test_auth_facade_propagates_fetch_tokens_with_jar_patch_to_seam(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """SEMANTIC: patching ``auth_mod._fetch_tokens_with_jar = fake`` must rebind
+    the name inside ``_auth.refresh`` so ``_fetch_tokens_with_refresh`` calls
+    the fake when no refresh is needed.
+    """
+    import httpx
+
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import refresh
+
+    calls: list[str] = []
+
+    async def fake_jar(jar, storage_path, **kwargs):
+        calls.append("called")
+        return "csrf-fake", "session-fake"
+
+    monkeypatch.setattr(auth_mod, "_fetch_tokens_with_jar", fake_jar)
+    assert refresh._fetch_tokens_with_jar is fake_jar
+
+    csrf, sid, refreshed, snapshot = await auth_mod._fetch_tokens_with_refresh(
+        httpx.Cookies(), tmp_path / "missing.json"
+    )
+    assert calls == ["called"]
+    assert csrf == "csrf-fake"
+    assert sid == "session-fake"
+    assert refreshed is False
+    assert snapshot is None
+
+
+def test_auth_facade_propagates_get_refresh_lock_patch_to_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEMANTIC: patching ``auth_mod._get_refresh_lock = fake`` must rebind the
+    name inside ``_auth.refresh`` so ``_fetch_tokens_with_refresh`` picks up
+    the fake when it acquires the per-loop lock.
+    """
+    import asyncio
+
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import refresh
+
+    def fake_lock(_p):
+        return asyncio.Lock()
+
+    monkeypatch.setattr(auth_mod, "_get_refresh_lock", fake_lock)
+    assert refresh._get_refresh_lock is fake_lock
+
+
+def test_auth_facade_propagates_poke_session_patch_to_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEMANTIC: patching ``auth_mod._poke_session = fake`` must rebind the
+    name in BOTH ``_auth.keepalive`` (the owner) AND ``_auth.refresh`` (which
+    aliased ``_poke_session`` from keepalive at import time). The refresh
+    module's ``_fetch_tokens_with_jar`` resolves ``_poke_session`` as a bare
+    name; without the cross-module mirror the patch would only land in the
+    keepalive owner.
+    """
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import keepalive, refresh
+
+    async def fake_poke(client, sp=None):
+        return None
+
+    monkeypatch.setattr(auth_mod, "_poke_session", fake_poke)
+    assert keepalive._poke_session is fake_poke
+    assert refresh._poke_session is fake_poke
+
+
+def test_auth_facade_propagates_rotate_cookies_patch_to_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEMANTIC: patching ``auth_mod._rotate_cookies = fake`` must rebind the
+    name inside ``_auth.keepalive`` so ``_poke_session`` calls the fake.
+    """
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import keepalive
+
+    async def fake_rot(client, sp=None):
+        return None
+
+    monkeypatch.setattr(auth_mod, "_rotate_cookies", fake_rot)
+    assert keepalive._rotate_cookies is fake_rot
+
+
+def test_auth_facade_propagates_snapshot_cookie_jar_to_refresh_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEMANTIC: ``snapshot_cookie_jar`` physically lives in ``_auth.storage``
+    but ``_auth.refresh`` aliased it at import time as a rebindable bare
+    name. Patching it on ``auth_mod`` must mirror into BOTH ``_auth.storage``
+    (via ``_AUTH_STORAGE_FACADE_NAMES``) AND ``_auth.refresh`` (via the
+    cross-module mirror) so the moved ``_fetch_tokens_with_refresh`` /
+    ``fetch_tokens_with_domains`` bodies observe the patch.
+    """
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import refresh, storage
+
+    def fake_snap(_jar):
+        return None
+
+    monkeypatch.setattr(auth_mod, "snapshot_cookie_jar", fake_snap)
+    assert storage.snapshot_cookie_jar is fake_snap
+    assert refresh.snapshot_cookie_jar is fake_snap
+
+
+def test_auth_facade_propagates_build_httpx_cookies_to_refresh_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEMANTIC: ``build_httpx_cookies_from_storage`` physically lives in
+    ``_auth.cookies`` but the refresh path calls it as a bare name. Patching
+    on ``auth_mod`` must mirror into ``_auth.refresh``.
+    """
+    import httpx
+
+    import notebooklm.auth as auth_mod
+    from notebooklm._auth import refresh
+
+    def fake_build(_p):
+        return httpx.Cookies()
+
+    monkeypatch.setattr(auth_mod, "build_httpx_cookies_from_storage", fake_build)
+    assert refresh.build_httpx_cookies_from_storage is fake_build
+
+
+def test_auth_update_cookie_input_lives_in_cookies_module() -> None:
+    """``_update_cookie_input`` was moved into ``_auth.cookies`` (cohesive
+    with ``flatten_cookie_map`` which it consumes); the public facade keeps
+    re-exporting it for the ``_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES`` manifest.
+    """
+    import notebooklm.auth as auth
+    from notebooklm._auth import cookies
+
+    assert auth._update_cookie_input is cookies._update_cookie_input

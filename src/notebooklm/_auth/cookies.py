@@ -587,3 +587,32 @@ def _cookie_map_from_jar(cookie_jar: httpx.Cookies) -> DomainCookieMap:
         and cookie.value is not None
         and _is_allowed_auth_domain(cookie.domain)
     }
+
+
+def _update_cookie_input(target: CookieInput, fresh: DomainCookieMap) -> None:
+    """Update caller-provided cookies in place while preserving key style.
+
+    The caller's ``target`` may use any of the three accepted shapes (flat
+    ``name -> value``, legacy ``(name, domain) -> value``, or path-aware
+    ``(name, domain, path) -> value``). The freshly-fetched delta is always the
+    path-aware shape; we collapse it back to the caller's original shape so
+    they don't observe an in-place type change.
+    """
+    if any(isinstance(key, tuple) and len(key) == 2 for key in target):
+        # Legacy 2-tuple caller. Collapse the path dimension by keeping the
+        # first occurrence per (name, domain); for cookies that share name and
+        # domain at distinct paths this is lossy, but legacy callers had no
+        # way to express path either, so this matches their original contract.
+        legacy: dict[tuple[str, str], str] = {}
+        for (name, domain, _path), value in fresh.items():
+            legacy.setdefault((name, domain), value)
+        target.clear()
+        target.update(legacy)  # type: ignore[arg-type]
+        return
+
+    use_domain_keys = any(isinstance(key, tuple) for key in target)
+    target.clear()
+    if use_domain_keys:
+        target.update(fresh)  # type: ignore[arg-type]
+    else:
+        target.update(flatten_cookie_map(fresh))  # type: ignore[arg-type]
