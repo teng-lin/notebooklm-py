@@ -81,12 +81,10 @@ UNMARKED_TEST = textwrap.dedent(
 
 
 def _scaffold(pytester: pytest.Pytester, *, test_body: str) -> None:
-    pytester.makepyfile(
-        **{
-            "conftest.py": HOOK_SOURCE,
-            "test_under_test.py": test_body,
-        }
-    )
+    # ``pytester.makepyfile`` appends ``.py`` internally via
+    # ``Path.with_suffix(".py")``, so keys are passed *without* the
+    # extension (idiomatic per the pytest docs).
+    pytester.makepyfile(conftest=HOOK_SOURCE, test_under_test=test_body)
 
 
 def test_marker_is_noop_when_playwright_installed(
