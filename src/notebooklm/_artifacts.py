@@ -10,13 +10,19 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from . import _artifact_formatters, _artifact_polling, _mind_map
 from ._artifact_downloads import ArtifactDownloadService, DownloadResult
 from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
-from ._capabilities import ClientCoreCapabilities
+from ._capabilities import (
+    AuthRouteProvider,
+    ClientCoreCapabilities,
+    CoreRPCProvider,
+    PollRegistryProvider,
+    TransportOperationProvider,
+)
 from .auth import load_httpx_cookies
 from .rpc import (
     ArtifactTypeCode,
@@ -48,6 +54,30 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _ArtifactsCore(
+    CoreRPCProvider,
+    AuthRouteProvider,
+    PollRegistryProvider,
+    TransportOperationProvider,
+    Protocol,
+):
+    """Narrow per-sub-client view of the core required by :class:`ArtifactsAPI`.
+
+    Co-located with the sub-client that consumes it (per ADR-002). Inherits
+    only the capabilities ArtifactsAPI actually uses: ``rpc_call`` (from
+    :class:`CoreRPCProvider`), authuser routing (from
+    :class:`AuthRouteProvider`), the shared artifact poll registry (from
+    :class:`PollRegistryProvider`), and transport-operation bookkeeping for
+    long-running download streams (from :class:`TransportOperationProvider`).
+    The cutover to swap :class:`ArtifactsAPI.__init__` annotation from
+    :class:`ClientCoreCapabilities` to ``_ArtifactsCore`` lives in
+    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    """
+
+    pass
+
 
 if TYPE_CHECKING:
     from ._notes import NotesAPI  # retained for backward-compatible type hints

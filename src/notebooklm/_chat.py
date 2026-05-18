@@ -8,9 +8,15 @@ import asyncio
 import contextlib
 import logging
 import weakref
-from typing import Any
+from typing import Any, Protocol
 
-from ._capabilities import ClientCoreCapabilities
+import httpx
+
+from ._capabilities import (
+    ClientCoreCapabilities,
+    CoreReqIdProvider,
+    TransportOperationProvider,
+)
 from ._chat_protocol import (
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -24,6 +30,7 @@ from ._chat_protocol import (
 )
 from ._core import _AuthSnapshot
 from ._core_cache import ConversationCache
+from ._core_transport import _BuildRequest
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._loop_affinity import assert_bound_loop
 from .exceptions import ChatError, NetworkError, ValidationError
@@ -36,6 +43,55 @@ from .rpc import (
 from .types import AskResult, ChatMode, ChatReference, ConversationTurn
 
 logger = logging.getLogger(__name__)
+
+
+class _ChatCore(TransportOperationProvider, CoreReqIdProvider, Protocol):
+    """Narrow per-sub-client view of the core required by :class:`ChatAPI`.
+
+    Co-located with the sub-client that consumes it (per ADR-002). Chat
+    uses transport primitives directly rather than ``rpc_call``: the
+    streaming-chat path issues an authed POST against ``batchexecute``
+    and parses the streamed response inline, so :class:`CoreRPCProvider`
+    is intentionally absent.
+
+    Inherits the transport-operation bookkeeping (from
+    :class:`TransportOperationProvider`) and the shared request-id
+    counter (from :class:`CoreReqIdProvider`). The three underscore-
+    private members declared below are exposed under their native
+    :class:`ClientCore` names because :func:`_chat_transport.chat_aware_authed_post`
+    calls them by those names; they are the same transport capabilities the
+    inherited :class:`TransportOperationProvider` describes, just under the
+    underlying core's private names rather than the adapter's public ones
+    (the adapter is removed in ``arch-d2-cutover``).
+
+    Cutover note (for ``arch-d2-cutover``): until then, this Protocol is
+    intentionally over-constrained — a concrete class must expose both the
+    public ``begin_transport_post`` (from ``TransportOperationProvider``)
+    AND the underscore-private ``_begin_transport_post`` declared here. The
+    real ``ClientCore`` only has the underscore form; the public form lives
+    on the ``ClientCoreCapabilities`` adapter. D2 PR-2 reshapes
+    ``TransportOperationProvider`` so ``ClientCore`` becomes the canonical
+    implementer of the narrow Protocols (i.e. the no-underscore facade is
+    retired with ``ClientCoreCapabilities``).
+
+    The cutover to swap :class:`ChatAPI.__init__` annotation from
+    :class:`ClientCoreCapabilities` to ``_ChatCore`` and flip the
+    ``self._core.query_post`` call site to
+    :func:`_chat_transport.chat_aware_authed_post` lives in
+    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    """
+
+    async def _begin_transport_post(self, log_label: str) -> Any: ...
+
+    async def _finish_transport_post(self, token: Any) -> None: ...
+
+    async def _perform_authed_post(
+        self,
+        *,
+        build_request: _BuildRequest,
+        log_label: str,
+        disable_internal_retries: bool = False,
+    ) -> httpx.Response: ...
 
 
 def _extract_next_turn_content(next_turn: Any) -> str | None:

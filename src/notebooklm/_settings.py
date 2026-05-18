@@ -2,13 +2,28 @@
 
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Protocol
 
-from ._capabilities import ClientCoreCapabilities
+from ._capabilities import ClientCoreCapabilities, CoreRPCProvider
 from .rpc import RPCMethod
 from .types import AccountLimits, AccountTier
 
 logger = logging.getLogger(__name__)
+
+
+class _SettingsCore(CoreRPCProvider, Protocol):
+    """Narrow per-sub-client view of the core required by :class:`SettingsAPI`.
+
+    Co-located with the sub-client that consumes it (per ADR-002). Inherits
+    only the single capability the settings RPCs use: ``rpc_call`` (from
+    :class:`CoreRPCProvider`). The cutover to swap the settings sub-client's
+    ``__init__`` annotation from :class:`ClientCoreCapabilities` to
+    ``_SettingsCore`` lives in ``arch-d2-cutover`` (D2 PR-2); this class is
+    additive scaffolding.
+    """
+
+    pass
+
 
 _ACCOUNT_LIMITS_PATH = (0, 1)
 _NOTEBOOK_LIMIT_INDEX = 1

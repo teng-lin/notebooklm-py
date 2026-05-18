@@ -6,13 +6,18 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
-from typing import IO, TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
 
 from . import _source_upload
-from ._capabilities import ClientCoreCapabilities
+from ._capabilities import (
+    AuthRouteProvider,
+    ClientCoreCapabilities,
+    CoreRPCProvider,
+    UploadConcurrencyProvider,
+)
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
@@ -29,6 +34,23 @@ if TYPE_CHECKING:
     from ._core import ClientCore
 
 logger = logging.getLogger(__name__)
+
+
+class _SourcesCore(CoreRPCProvider, AuthRouteProvider, UploadConcurrencyProvider, Protocol):
+    """Narrow per-sub-client view of the core required by :class:`SourcesAPI`.
+
+    Co-located with the sub-client that consumes it (per ADR-002). Inherits
+    only the capabilities SourcesAPI actually uses: ``rpc_call`` (from
+    :class:`CoreRPCProvider`), the NotebookLM authuser routing surface
+    (from :class:`AuthRouteProvider`), and the upload-concurrency semaphore
+    + queue-wait recorder (from :class:`UploadConcurrencyProvider`). The
+    cutover to swap :class:`SourcesAPI.__init__` annotation from
+    :class:`ClientCoreCapabilities` to ``_SourcesCore`` lives in
+    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    """
+
+    pass
+
 
 _SOURCE_ID_UUID_PATTERN = _source_upload._SOURCE_ID_UUID_PATTERN
 _extract_register_file_source_id = _source_upload._extract_register_file_source_id

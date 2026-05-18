@@ -2,9 +2,9 @@
 
 import logging
 import warnings
-from typing import Any
+from typing import Any, Protocol
 
-from ._capabilities import ClientCoreCapabilities
+from ._capabilities import AuthRouteProvider, ClientCoreCapabilities, CoreRPCProvider
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -26,6 +26,22 @@ from .rpc import RPCMethod, safe_index
 from .types import AccountLimits, Notebook, NotebookDescription, NotebookMetadata, SuggestedTopic
 
 logger = logging.getLogger(__name__)
+
+
+class _NotebooksCore(CoreRPCProvider, AuthRouteProvider, Protocol):
+    """Narrow per-sub-client view of the core required by :class:`NotebooksAPI`.
+
+    Co-located with the sub-client that consumes it (per ADR-002 §"narrow
+    Protocols, co-located"). Inherits only the capabilities NotebooksAPI
+    actually uses: ``rpc_call`` (from :class:`CoreRPCProvider`) and the
+    NotebookLM authuser routing surface (from :class:`AuthRouteProvider`).
+    The cutover to swap :class:`NotebooksAPI.__init__` annotation from
+    :class:`ClientCoreCapabilities` to ``_NotebooksCore`` lives in
+    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    """
+
+    pass
+
 
 CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
 

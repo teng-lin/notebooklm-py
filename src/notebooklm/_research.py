@@ -6,10 +6,10 @@ and importing discovered sources into notebooks.
 
 import logging
 import warnings
-from typing import Any
+from typing import Any, Protocol
 
 from . import research as _research_pub
-from ._capabilities import ClientCoreCapabilities
+from ._capabilities import ClientCoreCapabilities, CoreRPCProvider, PollRegistryProvider
 from .exceptions import ResearchTaskMismatchError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
@@ -17,6 +17,22 @@ from .types import CitedSourceSelection
 __all__ = ["CitedSourceSelection", "ResearchAPI"]
 
 logger = logging.getLogger(__name__)
+
+
+class _ResearchCore(CoreRPCProvider, PollRegistryProvider, Protocol):
+    """Narrow per-sub-client view of the core required by :class:`ResearchAPI`.
+
+    Co-located with the sub-client that consumes it (per ADR-002). Inherits
+    only the capabilities ResearchAPI actually uses: ``rpc_call`` (from
+    :class:`CoreRPCProvider`) and the shared artifact poll registry (from
+    :class:`PollRegistryProvider`). The cutover to swap
+    :class:`ResearchAPI.__init__` annotation from
+    :class:`ClientCoreCapabilities` to ``_ResearchCore`` lives in
+    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    """
+
+    pass
+
 
 _RESEARCH_RESULT_TYPE_ALIASES = {
     "web": 1,
