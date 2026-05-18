@@ -20,6 +20,11 @@ from ._core_transport import (
     _TransportServerError,
 )
 from ._env import get_default_language
+from ._idempotency import (
+    IDEMPOTENCY_REGISTRY,
+    maybe_inject_client_token,
+    resolve_effective_disable_internal_retries,
+)
 from ._logging import get_request_id, reset_request_id, set_request_id
 from .auth import format_authuser_value
 from .exceptions import ChatError
@@ -70,6 +75,7 @@ class RpcOwner(Protocol):
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any: ...
 
     async def _rpc_call_impl(
@@ -81,6 +87,7 @@ class RpcOwner(Protocol):
         _is_retry: bool,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any: ...
 
     async def _begin_transport_post(self, log_label: str) -> Any: ...
@@ -117,6 +124,7 @@ class RpcExecutor:
         _is_retry: bool,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         """Run an RPC wrapped with telemetry, reqid, and drain bookkeeping.
 
@@ -133,6 +141,12 @@ class RpcExecutor:
         The ``_is_retry`` flag suppresses telemetry/reqid wrapping so the
         decode-time refresh-and-retry leg inherits the parent's
         request id and reports under one ``[req=<id>]`` line in logs.
+
+        The ``operation_variant`` kwarg (default ``None``) routes through
+        the :class:`IdempotencyRegistry` lookup in :meth:`execute` so the
+        executor can pick a method-variant-specific policy. Currently
+        every method default-resolves to ``UNCLASSIFIED`` (silent + no
+        behavior change); Wave 2 will populate variant entries.
         """
         if not self._owner._http_client:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
@@ -151,6 +165,7 @@ class RpcExecutor:
                 allow_null,
                 _is_retry,
                 disable_internal_retries=disable_internal_retries,
+                operation_variant=operation_variant,
             )
 
         method_name = getattr(method, "name", str(method))
@@ -166,6 +181,7 @@ class RpcExecutor:
                 allow_null,
                 _is_retry,
                 disable_internal_retries=disable_internal_retries,
+                operation_variant=operation_variant,
             )
         except Exception as exc:
             elapsed = time.perf_counter() - start
@@ -298,9 +314,39 @@ class RpcExecutor:
         _is_retry: bool,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         start = time.perf_counter()
         logger.debug("RPC %s starting", method.name)
+
+        # Consult the idempotency registry. The registry is the single
+        # source of truth for "how should this RPC behave under retry?";
+        # the caller's explicit ``disable_internal_retries=True`` always
+        # wins (caller intent > policy). For UNCLASSIFIED entries (the
+        # B1-foundation default for every method), the effective value
+        # equals the caller's value and no log is emitted — today's
+        # retries fire identically.
+        #
+        # The registry call also raises ``IdempotencyVariantError`` if
+        # the caller passed an unknown ``operation_variant`` to a method
+        # with an explicit variant table.
+        effective_disable_internal_retries = resolve_effective_disable_internal_retries(
+            IDEMPOTENCY_REGISTRY,
+            method,
+            caller_disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
+        )
+
+        # For CLIENT_TOKEN_DEDUPE policies, inject a fresh ``uuid4().hex``
+        # into the registry-named param field UNLESS the caller already
+        # populated it. No-op for every other policy, so this is a
+        # zero-cost call for the UNCLASSIFIED-everywhere B1 default.
+        maybe_inject_client_token(
+            IDEMPOTENCY_REGISTRY,
+            method,
+            params,
+            operation_variant=operation_variant,
+        )
 
         # Resolve once per logical call so URL, body, and decode use the same
         # override-aware RPC id.
@@ -316,7 +362,7 @@ class RpcExecutor:
             response = await self._owner._perform_authed_post(
                 build_request=_build,
                 log_label=f"RPC {method.name}",
-                disable_internal_retries=disable_internal_retries,
+                disable_internal_retries=effective_disable_internal_retries,
             )
         except _TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.
@@ -384,6 +430,7 @@ class RpcExecutor:
                     allow_null,
                     exc,
                     disable_internal_retries=disable_internal_retries,
+                    operation_variant=operation_variant,
                 )
                 return refreshed
 
@@ -505,6 +552,7 @@ class RpcExecutor:
         original_error: Exception,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any | None:
         """Refresh auth after a decode-time auth error and retry once."""
         logger.info("RPC %s auth error detected, attempting token refresh", method.name)
@@ -526,4 +574,5 @@ class RpcExecutor:
             allow_null,
             _is_retry=True,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )

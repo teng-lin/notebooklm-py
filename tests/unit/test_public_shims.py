@@ -1024,6 +1024,7 @@ async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
         allow_null=True,
         _is_retry=True,
         disable_internal_retries=True,
+        operation_variant=None,
     )
 
 
@@ -1055,6 +1056,7 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
         allow_null=False,
         _is_retry=False,
         disable_internal_retries=False,
+        operation_variant=None,
     )
 
 

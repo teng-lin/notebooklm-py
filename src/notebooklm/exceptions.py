@@ -59,6 +59,7 @@ __all__ = [
     "RPCResponseTooLargeError",
     # Idempotency
     "NonIdempotentRetryError",
+    "IdempotencyVariantError",
     # Domain: Notebooks
     "NotebookError",
     "NotebookNotFoundError",
@@ -527,6 +528,23 @@ class NonIdempotentRetryError(NotebookLMError):
 
     See ``docs/python-api.md#idempotency`` for guidance on building
     idempotent text-source workflows.
+    """
+
+
+class IdempotencyVariantError(NotebookLMError):
+    """Raised when an unknown ``operation_variant`` is requested for an RPC
+    that has explicit variant-table entries.
+
+    The mutating-RPC idempotency registry keys policies on
+    ``(RPCMethod, operation_variant | None)``. When a method has variant
+    entries (e.g. ``"upsert"``, ``"overwrite"``) AND the caller supplies a
+    variant name that is not in that table, the registry MUST raise this
+    error rather than silently falling back to the ``(method, None)``
+    default — silent fallback would hide caller typos and API drift.
+
+    Methods that only have a ``(method, None)`` entry tolerate any variant
+    name (the variant table is effectively empty, so there is no typo to
+    catch). See :func:`notebooklm._idempotency.IdempotencyRegistry.get_entry`.
     """
 
 

@@ -18,9 +18,10 @@ class CoreRPCProvider(Protocol):
 
     Mirrors :meth:`ClientCore.rpc_call` exactly, including the kw-only
     ``disable_internal_retries`` flag used by mutating-create RPCs that
-    must skip the inner 5xx/429 retry loop. Sub-clients that only need
-    to issue RPC calls type their constructor on this provider rather
-    than on the concrete ``ClientCore``.
+    must skip the inner 5xx/429 retry loop and the ``operation_variant``
+    kwarg consulted by the mutating-RPC idempotency registry. Sub-clients
+    that only need to issue RPC calls type their constructor on this
+    provider rather than on the concrete ``ClientCore``.
     """
 
     async def rpc_call(
@@ -32,6 +33,7 @@ class CoreRPCProvider(Protocol):
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any: ...
 
 
@@ -154,6 +156,7 @@ class ClientCoreCapabilities(
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         return await self._core.rpc_call(
             method,
@@ -162,6 +165,7 @@ class ClientCoreCapabilities(
             allow_null=allow_null,
             _is_retry=_is_retry,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:

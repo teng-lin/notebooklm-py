@@ -67,6 +67,7 @@ class RpcCaller(Protocol):
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any: ...
 
 

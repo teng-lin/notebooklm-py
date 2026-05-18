@@ -370,6 +370,7 @@ class NotebookLMClient:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         """Make a raw NotebookLM RPC call.
 
@@ -380,6 +381,10 @@ class NotebookLMClient:
         exposed only to mirror ``ClientCore.rpc_call`` exactly; callers should
         leave it at the default unless they are intentionally reproducing core
         retry behavior.
+
+        The optional ``operation_variant`` selects a method-variant-specific
+        policy in the mutating-RPC idempotency registry. Most callers should
+        leave it ``None`` (the default) — Wave 2 will add variant entries.
         """
         return await self._core.rpc_call(
             method=method,
@@ -388,6 +393,7 @@ class NotebookLMClient:
             allow_null=allow_null,
             _is_retry=_is_retry,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     @property

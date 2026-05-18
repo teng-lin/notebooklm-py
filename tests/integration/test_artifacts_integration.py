@@ -401,6 +401,7 @@ class TestArtifactsAPI:
             allow_null=True,
             _is_retry=False,
             disable_internal_retries=False,
+            operation_variant=None,
         )
 
     @pytest.mark.asyncio

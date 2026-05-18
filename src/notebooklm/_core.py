@@ -1419,6 +1419,7 @@ class ClientCore:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         """Compatibility wrapper around :meth:`RpcExecutor.execute_with_telemetry`.
 
@@ -1428,8 +1429,8 @@ class ClientCore:
         attribute keep working. See
         :meth:`notebooklm._core_rpc.RpcExecutor.execute_with_telemetry` for
         the full contract (kwargs ``_is_retry`` / ``disable_internal_retries``
-        flow through unchanged; ``RuntimeError`` is raised if the client is
-        not initialized).
+        / ``operation_variant`` flow through unchanged; ``RuntimeError`` is
+        raised if the client is not initialized).
         """
         return await self._get_rpc_executor().execute_with_telemetry(
             method,
@@ -1438,6 +1439,7 @@ class ClientCore:
             allow_null,
             _is_retry,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     async def _rpc_call_impl(
@@ -1449,6 +1451,7 @@ class ClientCore:
         _is_retry: bool,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         """Compatibility wrapper around :class:`RpcExecutor`."""
         return await self._get_rpc_executor().execute(
@@ -1458,6 +1461,7 @@ class ClientCore:
             allow_null,
             _is_retry,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     def _raise_rpc_error_from_http_status(
@@ -1485,6 +1489,7 @@ class ClientCore:
         original_error: Exception,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any | None:
         """Compatibility wrapper around :class:`RpcExecutor`."""
         return await self._get_rpc_executor().try_refresh_and_retry(
@@ -1494,6 +1499,7 @@ class ClientCore:
             allow_null,
             original_error,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     def get_http_client(self) -> httpx.AsyncClient:

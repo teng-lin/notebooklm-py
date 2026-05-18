@@ -159,6 +159,7 @@ class SourcesAPI:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         """Delegate through the current core RPC method for late-bound test overrides."""
         return await self._core.rpc_call(
@@ -168,6 +169,7 @@ class SourcesAPI:
             allow_null=allow_null,
             _is_retry=_is_retry,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:

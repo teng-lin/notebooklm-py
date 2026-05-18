@@ -100,6 +100,7 @@ class _Owner:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
         self.rpc_retry_calls.append(
             {
@@ -109,6 +110,7 @@ class _Owner:
                 "allow_null": allow_null,
                 "_is_retry": _is_retry,
                 "disable_internal_retries": disable_internal_retries,
+                "operation_variant": operation_variant,
             }
         )
         return self.rpc_retry_result
@@ -239,9 +241,15 @@ async def test_client_core_rpc_wrappers_delegate_to_rpc_executor(monkeypatch) ->
         "request_error",
         "try_refresh",
     ]
-    assert calls[0][2] == {"disable_internal_retries": True}
+    assert calls[0][2] == {
+        "disable_internal_retries": True,
+        "operation_variant": None,
+    }
     assert calls[1][2] == {"rpc_id_override": None}
-    assert calls[-1][2] == {"disable_internal_retries": True}
+    assert calls[-1][2] == {
+        "disable_internal_retries": True,
+        "operation_variant": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -363,6 +371,7 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
             "allow_null": True,
             "_is_retry": True,
             "disable_internal_retries": True,
+            "operation_variant": None,
         }
     ]
 
@@ -422,6 +431,7 @@ async def test_core_sleep_monkeypatch_after_executor_construction(monkeypatch) -
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> dict[str, bool]:
         assert method is RPCMethod.LIST_NOTEBOOKS
         assert params == ["param"]
@@ -429,6 +439,7 @@ async def test_core_sleep_monkeypatch_after_executor_construction(monkeypatch) -
         assert allow_null is True
         assert _is_retry is True
         assert disable_internal_retries is True
+        assert operation_variant is None
         return {"ok": True}
 
     async def fake_sleep(seconds: float) -> None:
