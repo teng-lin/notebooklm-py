@@ -6,12 +6,16 @@ on:
       - "v*"
 
 jobs:
-  build-and-publish:
-    name: Build and publish to PyPI
+  build-and-test:
+    name: Build wheel and run release smoke
     runs-on: ubuntu-latest
-    environment: release
+    # Smoke install pulls `[browser,dev,markdown]` extras (pytest, playwright,
+    # mypy, ruff, markdownify, transitive deps). A compromised dep here is a
+    # supply-chain concern but cannot mint a Trusted Publishing OIDC token,
+    # because this job is not granted `id-token: write`. The publish job
+    # below carries that scope and runs nothing except the trusted PyPA
+    # action. See issue #820 for the threat model.
     permissions:
-      id-token: write
       contents: read
 
     steps:
@@ -41,6 +45,23 @@ jobs:
       run: |
         python -m build
 
+    - name: Upload distribution artifacts
+      # Capture pristine wheel + sdist BEFORE any third-party code (smoke
+      # install, playwright, pytest) runs against `dist/`. If we uploaded
+      # after the smoke install, a compromised dev/test dep could mutate
+      # `dist/` post-build, and the publish job would upload tampered bytes
+      # — attested with the project's trusted OIDC identity. Uploading here
+      # snapshots the build output before any attacker-controlled code has
+      # touched the runner. Smoke install/test below still runs against
+      # `dist/` for behavior validation but can no longer influence what
+      # the publish job receives.
+      uses: actions/upload-artifact@v7
+      with:
+        name: python-distribution
+        path: dist/
+        if-no-files-found: error
+        retention-days: 1
+
     - name: Install built wheel + canonical contributor extras in a clean venv
       # Canonical contributor extras (`[browser,dev,markdown]`, equivalent to
       # `[all]`) match the install path documented in `docs/installation.md`,
@@ -63,6 +84,26 @@ jobs:
 
     - name: Run unit tests against wheel
       run: smoke-venv/bin/pytest tests/unit -q --no-cov -x
+
+  publish:
+    name: Publish to PyPI
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: release
+    # Minimum-scope publish job: only the trusted PyPA action runs here. No
+    # `actions/checkout`, no Python install, no third-party dependencies in
+    # the runner environment — so the OIDC token request that `id-token:
+    # write` enables has no co-tenant code that could exfiltrate it.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+    - name: Download distribution artifacts
+      uses: actions/download-artifact@v7
+      with:
+        name: python-distribution
+        path: dist/
 
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # @ v1.14.0
