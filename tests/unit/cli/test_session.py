@@ -196,6 +196,13 @@ class TestLoginCommand:
         block. Yields (mock_ensure, mock_launch) for assertions on chromium
         install check and launch_persistent_context kwargs.
         """
+        # patch() below resolves the target module at setup time and raises
+        # ModuleNotFoundError if playwright is not installed. Skip cleanly
+        # so local runs without ``uv sync --extra browser`` don't crash.
+        pytest.importorskip(
+            "playwright.sync_api",
+            reason="playwright not installed; install with: uv sync --extra browser",
+        )
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed") as mock_ensure,
             patch("playwright.sync_api.sync_playwright") as mock_pw,
@@ -249,6 +256,7 @@ class TestLoginCommand:
             ("chrome", "Google Chrome", "google.com/chrome"),
         ],
     )
+    @pytest.mark.requires_playwright
     def test_login_channel_browser_not_installed_shows_helpful_error(
         self, runner, tmp_path, browser, expected_label, expected_install_url_fragment
     ):
@@ -286,6 +294,11 @@ class TestLoginCommand:
         reports it is already on the NotebookLM host, so the auto-detect
         fast-path is taken.
         """
+        # See ``mock_login_browser`` above — same playwright-missing skip path.
+        pytest.importorskip(
+            "playwright.sync_api",
+            reason="playwright not installed; install with: uv sync --extra browser",
+        )
         storage_file = tmp_path / "storage.json"
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
@@ -320,6 +333,7 @@ class TestLoginCommand:
             ),
         ],
     )
+    @pytest.mark.requires_playwright
     def test_login_handles_navigation_interrupted_error(
         self, runner, mock_login_browser_with_storage, error_message
     ):
@@ -346,6 +360,7 @@ class TestLoginCommand:
         assert result.exit_code == 0
         assert "Authentication saved" in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_reraises_non_navigation_playwright_errors(
         self, runner, mock_login_browser_with_storage
     ):
@@ -415,6 +430,7 @@ class TestLoginCommand:
         assert mock_page.wait_for_url.call_args.kwargs.get("timeout") == 300_000
         assert "Login detected" in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_auto_detect_timeout_exits_with_helpful_message(
         self, runner, mock_login_browser_with_storage
     ):
@@ -430,6 +446,7 @@ class TestLoginCommand:
         assert result.exit_code == 1
         assert "Login not detected within 5 minutes" in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_auto_detect_browser_closed_during_wait_shows_help(
         self, runner, mock_login_browser_with_storage
     ):
@@ -472,6 +489,7 @@ class TestLoginCommand:
         assert "Unexpected URL after login" in result.output
         assert "Authentication saved" not in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_retries_on_connection_closed_error(
         self, runner, mock_login_browser_with_storage
     ):
@@ -501,6 +519,7 @@ class TestLoginCommand:
         # Verify that goto was called more than once (retried)
         assert mock_page.goto.call_count >= 2
 
+    @pytest.mark.requires_playwright
     def test_login_retries_on_connection_reset_error(self, runner, mock_login_browser_with_storage):
         """Test login retries when initial navigation fails with ERR_CONNECTION_RESET (#243)."""
         mock_page = mock_login_browser_with_storage
@@ -526,6 +545,7 @@ class TestLoginCommand:
         assert result.exit_code == 0
         assert "Authentication saved" in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_exits_after_max_retries(self, runner, mock_login_browser_with_storage):
         """Test login exits with error message after 3 failed connection attempts (#243)."""
         mock_page = mock_login_browser_with_storage
@@ -547,6 +567,7 @@ class TestLoginCommand:
         # Verify retry attempts were made
         assert mock_page.goto.call_count == 3
 
+    @pytest.mark.requires_playwright
     def test_login_fails_fast_on_non_retryable_errors(
         self, runner, mock_login_browser_with_storage
     ):
@@ -569,6 +590,7 @@ class TestLoginCommand:
         # Should fail immediately without retrying (only 1 call)
         assert mock_page.goto.call_count == 1
 
+    @pytest.mark.requires_playwright
     def test_login_displays_help_text_after_exhausting_retries(
         self, runner, mock_login_browser_with_storage
     ):
@@ -596,6 +618,7 @@ class TestLoginCommand:
         # Verify exactly 3 retry attempts
         assert mock_page.goto.call_count == 3
 
+    @pytest.mark.requires_playwright
     def test_login_fresh_deletes_browser_profile(self, runner, tmp_path):
         """Test --fresh deletes existing browser_profile directory before login."""
         browser_dir = tmp_path / "profile"
@@ -634,6 +657,7 @@ class TestLoginCommand:
         assert not (browser_dir / "Default" / "Cookies").exists()
         assert "Cleared cached browser session" in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_fresh_works_when_no_profile_exists(self, runner, tmp_path):
         """Test --fresh works when browser_profile doesn't exist yet (first login)."""
         browser_dir = tmp_path / "profile"
@@ -666,6 +690,7 @@ class TestLoginCommand:
         assert result.exit_code == 0
         assert "Authentication saved" in result.output
 
+    @pytest.mark.requires_playwright
     def test_playwright_login_clears_stale_account_metadata(self, runner, tmp_path):
         """Interactive login targets the visible account, so stale browser-cookie
         account routing metadata must not survive the new storage state."""
@@ -741,6 +766,7 @@ class TestLoginCommand:
         assert result.exit_code == 1
         assert "Cannot clear browser profile" in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_recovers_from_target_closed_on_initial_navigation(self, runner, tmp_path):
         """Test login retries with fresh page when initial goto gets TargetClosedError (#246)."""
         storage_file = tmp_path / "storage.json"
@@ -787,6 +813,7 @@ class TestLoginCommand:
         # Verify new_page was called to recover from the stale page
         mock_context.new_page.assert_called()
 
+    @pytest.mark.requires_playwright
     def test_login_recovers_from_target_closed_in_cookie_forcing(self, runner, tmp_path):
         """Test login recovers when cookie-forcing goto hits TargetClosedError (#246).
 
@@ -846,6 +873,7 @@ class TestLoginCommand:
         # Verify new_page was called to get a fresh page after the stale one died
         mock_context.new_page.assert_called()
 
+    @pytest.mark.requires_playwright
     def test_login_ignores_navigation_interrupted_after_recovering_page(self, runner, tmp_path):
         """Test recovered pages can also hit the Playwright navigation race (#317)."""
         storage_file = tmp_path / "storage.json"
@@ -899,6 +927,7 @@ class TestLoginCommand:
         assert "Authentication saved" in result.output
         mock_context.new_page.assert_called()
 
+    @pytest.mark.requires_playwright
     def test_login_shows_browser_closed_message_after_exhausting_retries(self, runner, tmp_path):
         """Test login shows browser-specific error (not network error) when TargetClosedError exhausts retries."""
         storage_file = tmp_path / "storage.json"
@@ -940,6 +969,7 @@ class TestLoginCommand:
         assert "browser" in result.output.lower() and "closed" in result.output.lower()
         assert "Network connectivity" not in result.output
 
+    @pytest.mark.requires_playwright
     def test_login_cookie_forcing_double_failure_shows_browser_closed(self, runner, tmp_path):
         """Test cookie-forcing shows BROWSER_CLOSED_HELP when recovered page also raises TargetClosedError (#246).
 
@@ -1020,6 +1050,11 @@ class TestLoginNoTraceback:
         Hermetic: ``NOTEBOOKLM_HOME=tmp_path`` so the test never touches the
         real ``~/.notebooklm/`` (would fail with PermissionError in sandboxes).
         """
+        # See ``mock_login_browser`` above — same playwright-missing skip path.
+        pytest.importorskip(
+            "playwright.sync_api",
+            reason="playwright not installed; install with: uv sync --extra browser",
+        )
         monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),

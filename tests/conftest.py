@@ -1,5 +1,6 @@
 """Shared test fixtures."""
 
+import importlib.util
 import json
 import os
 import re
@@ -8,6 +9,8 @@ import pytest
 
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
+
+_PLAYWRIGHT_INSTALLED = importlib.util.find_spec("playwright") is not None
 
 
 @pytest.fixture(autouse=True)
@@ -126,12 +129,39 @@ def pytest_configure(config):
         "Used by error-cassette recording to produce cassettes with "
         "synthetic error shapes. Mode must be one of: 429, 5xx, expired_csrf.",
     )
+    config.addinivalue_line(
+        "markers",
+        "requires_playwright: skip the test unless the ``playwright`` Python "
+        "package is importable. Install with ``uv sync --extra browser``. "
+        "Apply to tests that import from ``playwright.sync_api`` at runtime; "
+        "leave OFF tests that intentionally exercise the playwright-missing "
+        "code path via ``patch.dict('sys.modules', {'playwright': None})``. "
+        "CI always installs the browser extra so marked tests run there.",
+    )
     # Disable Rich/Click formatting in tests to avoid ANSI escape codes in output
     # This ensures consistent test assertions regardless of -s flag
     # NO_COLOR disables colors, TERM=dumb disables all formatting (bold, etc.)
     # Force these values to ensure consistent behavior across all environments
     os.environ["NO_COLOR"] = "1"
     os.environ["TERM"] = "dumb"
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip ``@pytest.mark.requires_playwright`` items when playwright is missing.
+
+    Resolves the marker at collection time so local runs without the ``browser``
+    extra (``uv sync`` without ``--extra browser``) skip cleanly instead of
+    raising ``ImportError`` at runtime. CI installs the extra, so this is a
+    no-op there.
+    """
+    if _PLAYWRIGHT_INSTALLED:
+        return
+    skip_marker = pytest.mark.skip(
+        reason="playwright not installed; install with: uv sync --extra browser"
+    )
+    for item in items:
+        if "requires_playwright" in item.keywords:
+            item.add_marker(skip_marker)
 
 
 @pytest.fixture

@@ -20,6 +20,7 @@ import pytest
 from notebooklm.cli.session import _windows_playwright_event_loop
 
 
+@pytest.mark.requires_playwright
 class TestPlaywrightSmokeTest:
     """Smoke tests that actually invoke Playwright to catch real integration issues.
 
