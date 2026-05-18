@@ -1158,3 +1158,24 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
     assert len(all_list) == len(declared), (
         f"{shim_name}.__all__ contains duplicates: {sorted(all_list)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Re-export identity pins for the tier-10 PR-A seam split.
+#
+# When ``_core.py``'s preamble was split into ``_core_constants.py``,
+# ``_core_error_injection.py``, and ``_core_helpers.py``, the legacy import
+# surface (``from notebooklm._core import …``) was preserved via re-export
+# aliases. These tests pin that the re-exported name on ``notebooklm._core``
+# is the **same object** as the canonical name on the seam module — so if a
+# future refactor accidentally rebinds the alias or shadows the symbol, the
+# drift surfaces here instead of at the next ``monkeypatch.setattr`` call
+# site in the wider test suite.
+# ---------------------------------------------------------------------------
+
+
+def test_is_auth_error_resolves_through_module():
+    import notebooklm._core as _core
+    from notebooklm import _core_helpers
+
+    assert _core.is_auth_error is _core_helpers.is_auth_error

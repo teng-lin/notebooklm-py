@@ -11,8 +11,8 @@ inline on ``ClientCore``:
   ``accounts.google.com/RotateCookies`` while the client is open.
 * ``_keepalive_interval`` / ``_keepalive_storage_path`` — keepalive
   configuration; the interval is clamped against ``keepalive_min_interval``
-  via :func:`_resolve_keepalive_interval` (which stays in ``_core.py``'s
-  module preamble — see master plan).
+  via :func:`notebooklm._core_helpers._resolve_keepalive_interval` (re-exported
+  from :mod:`notebooklm._core` so the legacy import path keeps resolving).
 * ``_timeout`` / ``_connect_timeout`` / ``_limits`` — HTTP timeouts and
   connection-pool tuning consumed in :meth:`open`.
 
@@ -144,9 +144,10 @@ class ClientLifecycle:
         # here). Keeping the default-resolution out of this helper avoids a
         # types.py import cycle.
         self._limits: ConnectionLimits = limits
-        # Pre-clamped by :func:`notebooklm._core._resolve_keepalive_interval`
-        # at the ``ClientCore`` boundary so the floor-vs-user-value branching
-        # stays in one place (the module preamble) per master plan.
+        # Pre-clamped by :func:`notebooklm._core_helpers._resolve_keepalive_interval`
+        # (re-exported as ``notebooklm._core._resolve_keepalive_interval``) at
+        # the ``ClientCore`` boundary so the floor-vs-user-value branching
+        # stays in one place — the seam helper.
         self._keepalive_interval: float | None = keepalive_interval
         self._keepalive_storage_path: Path | None = keepalive_storage_path
         # Lazily set inside :meth:`open` / nulled inside :meth:`close`.
@@ -246,7 +247,8 @@ class ClientLifecycle:
         # Opt-in synthetic-error transport wrapper. When the env var is unset
         # (the default) this is a no-op and the AsyncClient is constructed
         # exactly as before. See ``_SyntheticErrorTransport`` docstring in
-        # ``_core.py`` module preamble.
+        # :mod:`notebooklm._core_error_injection` (re-exported on
+        # ``notebooklm._core`` for the legacy import surface).
         error_mode = _core_module._get_error_injection_mode()
         synthetic_transport: httpx.AsyncBaseTransport | None = None
         if error_mode is not None:

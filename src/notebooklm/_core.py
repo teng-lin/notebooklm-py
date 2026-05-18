@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import math
 import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
 import time
@@ -10,11 +9,34 @@ import warnings
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
 from ._core_auth import AuthRefreshCoordinator
+
+# Re-exports for the public-on-private import contract. ``_core.py``'s preamble
+# historically held the ``DEFAULT_*`` constants, the auth-error helpers, and the
+# test-only synthetic-error transport plumbing inline. They now live in
+# dedicated seam modules; the imports below preserve the
+# ``from notebooklm._core import …`` surface that tests and first-party callers
+# rely on. Each ``as`` alias keeps ruff's ``unused-import`` lint satisfied while
+# making the re-export intent explicit at the source.
+from ._core_constants import (
+    DEFAULT_CONNECT_TIMEOUT as DEFAULT_CONNECT_TIMEOUT,
+)
+from ._core_constants import (
+    DEFAULT_KEEPALIVE_MIN_INTERVAL as DEFAULT_KEEPALIVE_MIN_INTERVAL,
+)
+from ._core_constants import (
+    DEFAULT_MAX_CONCURRENT_RPCS as DEFAULT_MAX_CONCURRENT_RPCS,
+)
+from ._core_constants import (
+    DEFAULT_MAX_CONCURRENT_UPLOADS as DEFAULT_MAX_CONCURRENT_UPLOADS,
+)
+from ._core_constants import (
+    DEFAULT_TIMEOUT as DEFAULT_TIMEOUT,
+)
 from ._core_cookie_persistence import CookiePersistence
 from ._core_drain import TransportDrainTracker
 
@@ -23,6 +45,39 @@ from ._core_drain import TransportDrainTracker
 # ``_core_drain``. ``_core_drain`` is the source of truth for the token
 # shape; the alias below is the backwards-compat anchor.
 from ._core_drain import _TransportOperationToken as _TransportOperationToken
+
+# Synthetic-error transport plumbing — re-exported so
+# ``tests/unit/test_vcr_config.py``, ``tests/conftest.py``, and
+# ``tests/unit/test_core_lifecycle.py`` (which monkeypatches
+# ``_get_error_injection_mode`` through the ``_core`` module attribute) keep
+# resolving these names as documented. ``_core_lifecycle.ClientLifecycle.open``
+# also reads ``_get_error_injection_mode`` / ``_SyntheticErrorTransport`` via
+# ``from . import _core as _core_module`` at call time so the monkeypatch
+# surface remains hot.
+from ._core_error_injection import (
+    ERROR_INJECT_ENV_VAR as ERROR_INJECT_ENV_VAR,
+)
+from ._core_error_injection import (
+    _get_error_injection_mode as _get_error_injection_mode,
+)
+from ._core_error_injection import (
+    _refuse_synthetic_error_outside_test_context as _refuse_synthetic_error_outside_test_context,
+)
+from ._core_error_injection import (
+    _SyntheticErrorTransport as _SyntheticErrorTransport,
+)
+
+# Cross-seam helpers — re-exported so ``from notebooklm._core import
+# is_auth_error`` keeps working for sub-clients and tests.
+from ._core_helpers import (
+    AUTH_ERROR_PATTERNS as AUTH_ERROR_PATTERNS,
+)
+from ._core_helpers import (
+    _resolve_keepalive_interval as _resolve_keepalive_interval,
+)
+from ._core_helpers import (
+    is_auth_error as is_auth_error,
+)
 from ._core_lifecycle import ClientLifecycle
 from ._core_metrics import ClientMetrics
 from ._core_polling import PendingPolls, PollRegistry
@@ -82,14 +137,7 @@ if TYPE_CHECKING:
     from .types import ConnectionLimits
 
 from .rpc import (
-    AuthError,
-    ClientError,
-    NetworkError,
-    RateLimitError,
-    RPCError,
     RPCMethod,
-    RPCTimeoutError,
-    ServerError,
     decode_response,
 )
 
@@ -108,316 +156,6 @@ _OBSERVABILITY_INIT_LOCK = threading.Lock()
 # Any change to auth-snapshot invariants must be applied to BOTH sites. Grep
 # anchor for future maintainers: ``_AUTH_COORD_INIT_LOCK``.
 _AUTH_COORD_INIT_LOCK = threading.Lock()
-
-
-# Default HTTP timeouts in seconds
-DEFAULT_TIMEOUT = 30.0
-DEFAULT_CONNECT_TIMEOUT = 10.0  # Connection establishment timeout
-
-# Minimum keepalive interval to avoid accidentally rate-limiting accounts.google.com
-DEFAULT_KEEPALIVE_MIN_INTERVAL = 60.0
-
-# Default ceiling on concurrent in-flight ``SourcesAPI.add_file`` uploads.
-# Each in-flight upload holds one open file descriptor for the duration of
-# the upload, so the cap is also an FD-exhaustion guard. Sized for typical
-# interactive workloads; tune higher for batch ingestion pipelines that
-# ingest dozens of files in parallel and have headroom in the process FD
-# limit (``ulimit -n``).
-DEFAULT_MAX_CONCURRENT_UPLOADS = 4
-
-# Default ceiling on simultaneous in-flight ``_perform_authed_post``
-# RPC POSTs. Sits *below* the default httpx pool
-# size (``ConnectionLimits.max_connections=100``) so short-lived helper
-# requests outside the RPC path — refresh GETs, resumable-upload
-# preflights — have pool headroom even when the RPC semaphore is
-# saturated. The default is intentionally conservative because
-# batchexecute itself rate-limits aggressive fan-out; callers with a
-# higher account tier (or an external rate-limiter) can opt out via
-# ``max_concurrent_rpcs=None``.
-DEFAULT_MAX_CONCURRENT_RPCS = 16
-
-# Auth error detection patterns (case-insensitive)
-
-# -----------------------------------------------------------------------------
-# Test-only synthetic-error transport (opt-in via env var)
-# -----------------------------------------------------------------------------
-#
-# When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to one of ``429`` / ``5xx`` /
-# ``expired_csrf``, the next outgoing batchexecute RPC gets a substituted
-# synthetic response that the client maps onto its own exception domain. This
-# plumbing exists so error-cassette recording can produce cassettes whose
-# response shapes match what the client's exception mapping keys on — see
-# ``tests/cassette_patterns.py:build_synthetic_error_response``.
-#
-# **Production behavior is unchanged when the env var is unset.** The transport
-# wrapper is only constructed when the env var resolves to a valid mode; the
-# default ``httpx.AsyncClient`` is built with no explicit transport otherwise.
-#
-# This is deliberately wired through the client's HTTP layer (not just the VCR
-# config) so the substitution sits BELOW VCR — VCR records the synthetic
-# response into the cassette as if it had come from the wire. Wiring it at the
-# VCR-config layer only would mean the substitution never ran in record mode,
-# leaving the plumbing inert (the Momus iter-1 rejection rationale).
-
-ERROR_INJECT_ENV_VAR = "NOTEBOOKLM_VCR_RECORD_ERRORS"
-
-
-def _get_error_injection_mode() -> str | None:
-    """Return the synthetic-error mode from ``NOTEBOOKLM_VCR_RECORD_ERRORS``.
-
-    Returns ``None`` when the env var is unset, empty, or carries an
-    unrecognized value (we deliberately fail open rather than crash a
-    cassette-recording run on a typo — the unit tests catch the typo path,
-    and the VCR config validates the value separately).
-
-    The valid-mode set is hardcoded here (rather than imported from
-    ``tests.cassette_patterns``) so production import time never reaches into
-    the test tree. The same set is mirrored in
-    ``tests.cassette_patterns.VALID_ERROR_MODES`` and the
-    ``synthetic_error`` marker validator in ``tests/conftest.py``; the
-    duplication is intentional and bounded — adding a fourth mode requires
-    updating all three sites, which the unit tests in ``tests/unit/
-    test_vcr_config.py`` will surface immediately.
-    """
-    import os
-
-    raw = os.environ.get(ERROR_INJECT_ENV_VAR, "").strip()
-    if not raw:
-        return None
-    # Lowercase-normalize so callers can use ``"5XX"`` / ``"429"`` / etc.
-    normalized = raw.lower()
-    valid = {"429", "5xx", "expired_csrf"}
-    if normalized not in valid:
-        return None
-    return normalized
-
-
-def _refuse_synthetic_error_outside_test_context() -> None:
-    """Refuse :class:`ClientCore` instantiation when the test-only env var leaks.
-
-    P1-12: ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only — it
-    substitutes synthetic error responses for every batchexecute RPC. Before
-    this guard, a leaked deploy env (e.g. an unset-on-prod CI variable that
-    slipped through) would silently wrap the production transport in
-    :class:`_SyntheticErrorTransport`, returning fake 429/5xx/expired_csrf
-    responses to live callers.
-
-    The guard fires only when:
-
-    1. :func:`_get_error_injection_mode` returns a non-``None`` mode (so an
-       empty / unrecognized env-var value still allows production startup),
-       AND
-    2. ``PYTEST_CURRENT_TEST`` is unset (pytest sets this for the lifetime
-       of every test, including the ``@pytest.mark.synthetic_error`` fixture
-       path that *does* legitimately set the env var).
-
-    On refusal we log at WARNING with the env-var name and raise
-    ``RuntimeError`` with the same env-var name so an operator can grep
-    deploy configs and unset the offending variable.
-    """
-    import os
-
-    mode = _get_error_injection_mode()
-    if mode is None:
-        return
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        # Legitimate pytest run — the ``@pytest.mark.synthetic_error``
-        # fixture sets the env var inside a test context. Allow.
-        return
-    message = (
-        f"{ERROR_INJECT_ENV_VAR}={mode!r} is set but no pytest context was "
-        f"detected (PYTEST_CURRENT_TEST unset). This env var is test-only — "
-        f"it substitutes synthetic error responses for every batchexecute "
-        f"RPC and must not be set in production. Unset {ERROR_INJECT_ENV_VAR} "
-        f"to restore normal behavior, or run under pytest if synthetic-error "
-        f"recording is intended."
-    )
-    logger.warning(message)
-    raise RuntimeError(message)
-
-
-class _SyntheticErrorTransport(httpx.AsyncBaseTransport):
-    """Test-only httpx transport that substitutes synthetic error responses.
-
-    Wraps an inner ``httpx.AsyncBaseTransport`` and substitutes a synthetic
-    error response on outgoing batchexecute POSTs, built by
-    ``tests.cassette_patterns.build_synthetic_error_response``. Non-batchexecute
-    traffic (Scotty uploads, ``RotateCookies`` pokes, the homepage GET that
-    extracts CSRF) passes through unchanged because none of those endpoints
-    are in scope for error-shape cassettes.
-
-    Substitution scope is controlled by ``always``:
-
-    - ``always=True`` (the default for record-mode use): every batchexecute
-      POST is substituted. This matters because the client's auth-refresh
-      path re-issues the same RPC; we want the SAME error to fire on every
-      retry inside the recording window so the cassette captures the full
-      retry-and-fail sequence rather than substituting once and then letting
-      a real response slip through on the retry.
-    - ``always=False``: only the FIRST batchexecute POST is substituted; later
-      POSTs fall through to the inner transport. Useful for tests that want
-      to assert the client recovers after a single transient failure.
-
-    This class is OPT-IN — ``ClientCore`` only wraps the transport when
-    ``_get_error_injection_mode()`` returns a non-``None`` value, so removing
-    the env var restores byte-for-byte production behavior.
-    """
-
-    def __init__(
-        self,
-        mode: str,
-        inner: httpx.AsyncBaseTransport,
-        *,
-        always: bool = True,
-    ):
-        self._mode = mode
-        self._inner = inner
-        self._always = always
-        self._fired = False
-        # Resolved lazily on first use so this module doesn't import the test
-        # tree at module load time.
-        self._builder: Callable[[str], tuple[int, bytes, dict[str, str]]] | None = None
-
-    def _is_batchexecute(self, request: httpx.Request) -> bool:
-        # NotebookLM's batchexecute endpoint lives under
-        # ``notebooklm.google.com/_/LabsTailwindUi/data/batchexecute``. We
-        # match on the path suffix so any subdomain / region variant still
-        # triggers substitution.
-        return request.url.path.endswith("/batchexecute")
-
-    def _load_builder(
-        self,
-    ) -> Callable[[str], tuple[int, bytes, dict[str, str]]]:
-        if self._builder is not None:
-            return self._builder
-        # Import lazily and via importlib to avoid a hard dependency on the
-        # tests tree from production code. The env var that gates this whole
-        # path is itself test-only, so this import only ever runs in
-        # recording / unit-test contexts.
-        import importlib.util
-        from pathlib import Path
-
-        # Walk up from src/notebooklm/_core.py to the repo root, then dive
-        # into tests/cassette_patterns.py. This keeps the lookup robust to
-        # installed-package layouts (where ``tests/`` may not exist) — in
-        # that case we raise a clear error rather than silently no-oping.
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        target = repo_root / "tests" / "cassette_patterns.py"
-        if not target.exists():
-            raise RuntimeError(
-                f"{ERROR_INJECT_ENV_VAR} is set but "
-                f"tests/cassette_patterns.py is not available at {target}. "
-                f"This plumbing is test-only — unset {ERROR_INJECT_ENV_VAR} "
-                f"to restore normal behavior."
-            )
-        spec = importlib.util.spec_from_file_location("_notebooklm_cassette_patterns", target)
-        # NOT ``assert`` — runtime invariant must survive ``python -O``. The
-        # check is defensive (spec_from_file_location on an existing .py file
-        # virtually always succeeds) but if it ever fails the user has clear
-        # remediation via the env var.
-        if spec is None or spec.loader is None:
-            raise RuntimeError(
-                f"Failed to load module spec for {target}. "
-                f"Unset {ERROR_INJECT_ENV_VAR} to restore normal behavior."
-            )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        self._builder = cast(
-            Callable[[str], tuple[int, bytes, dict[str, str]]],
-            mod.build_synthetic_error_response,
-        )
-        return self._builder
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        # Substitute ONLY on POST batchexecute calls. Non-POST traffic on the
-        # same path (a hypothetical GET batchexecute probe, OPTIONS preflight,
-        # etc.) is out of scope for error-shape cassettes and must pass through
-        # unchanged — see CodeRabbit feedback on PR #638.
-        if (
-            request.method.upper() == "POST"
-            and self._is_batchexecute(request)
-            and (self._always or not self._fired)
-        ):
-            self._fired = True
-            status_code, body, headers = self._load_builder()(self._mode)
-            response = httpx.Response(
-                status_code=status_code,
-                headers=headers,
-                content=body,
-                request=request,
-            )
-            # ``httpx.Response`` constructed this way is already "read" — VCR
-            # can serialize it directly via its standard before_record hook.
-            return response
-        return await self._inner.handle_async_request(request)
-
-    async def aclose(self) -> None:
-        await self._inner.aclose()
-
-
-AUTH_ERROR_PATTERNS = (
-    "authentication",
-    "expired",
-    "unauthorized",
-    "login",
-    "re-authenticate",
-)
-
-
-def _resolve_keepalive_interval(keepalive: float | None, min_interval: float) -> float | None:
-    """Validate and clamp the keepalive interval.
-
-    ``None`` disables the background task. Otherwise both values must be
-    positive finite numbers; the effective interval is ``max(keepalive,
-    min_interval)`` so callers can't accidentally lower the rate-limit floor.
-    """
-    if not (math.isfinite(min_interval) and min_interval > 0):
-        raise ValueError(
-            f"keepalive_min_interval must be a positive finite number, got {min_interval!r}"
-        )
-    if keepalive is None:
-        return None
-    if not (math.isfinite(keepalive) and keepalive > 0):
-        raise ValueError(f"keepalive must be None or a positive finite number, got {keepalive!r}")
-    return max(keepalive, min_interval)
-
-
-def is_auth_error(error: Exception) -> bool:
-    """Check if an exception indicates an authentication failure.
-
-    Args:
-        error: The exception to check.
-
-    Returns:
-        True if the error is likely due to authentication issues.
-    """
-    # AuthError is always an auth error
-    if isinstance(error, AuthError):
-        return True
-
-    # Don't treat network/rate limit/server errors as auth errors
-    # even if they're subclasses of RPCError
-    if isinstance(
-        error,
-        NetworkError | RPCTimeoutError | RateLimitError | ServerError | ClientError,
-    ):
-        return False
-
-    # HTTP 400/401/403 are auth errors.
-    # Google returns 400 for expired CSRF tokens (not 401/403). Layer-1
-    # recovery (refresh_auth) re-extracts SNlM0e from the NotebookLM
-    # homepage and retries with a fresh token. The retry guard
-    # (``_is_retry`` in ``rpc_call``) bounds wasted refreshes on legitimate
-    # 400s (bad payload) to one extra GET per call.
-    if isinstance(error, httpx.HTTPStatusError):
-        return error.response.status_code in (400, 401, 403)
-
-    # RPCError with auth-related message
-    if isinstance(error, RPCError):
-        message = str(error).lower()
-        return any(pattern in message for pattern in AUTH_ERROR_PATTERNS)
-
-    return False
 
 
 def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
@@ -671,12 +409,10 @@ class ClientCore:
         # ``_keepalive_task``, ``_keepalive_interval``,
         # ``_keepalive_storage_path``, ``_timeout``, ``_connect_timeout``,
         # ``_limits``. Compat properties further down preserve the legacy
-        # ivar names. The ``_resolve_keepalive_interval`` clamp stays in
-        # this module's preamble (see top of file) because
-        # ``tests/unit/test_vcr_config.py`` imports
-        # ``_SyntheticErrorTransport`` / ``_get_error_injection_mode`` from
-        # ``notebooklm._core`` by name, and the master plan pins the
-        # preamble surface as the public-on-private contract.
+        # ivar names. The ``_resolve_keepalive_interval`` clamp now lives in
+        # :mod:`notebooklm._core_helpers` and is re-exported above so
+        # ``from notebooklm._core import _resolve_keepalive_interval`` keeps
+        # resolving; we call it through the re-exported binding here.
         #
         # Event-loop affinity guard rationale: the lifecycle captures
         # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
