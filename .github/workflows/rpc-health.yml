@@ -123,7 +123,7 @@ jobs:
       if: |
         steps.health.outputs.exit_code == '1'
         && steps.dup_mismatch.outputs.open == '0'
-      uses: peter-evans/create-issue-from-file@v6
+      uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
       with:
         title: "RPC ID Mismatch Detected"
         content-filepath: health-report.txt
@@ -148,7 +148,7 @@ jobs:
       if: |
         steps.health.outputs.exit_code == '2'
         && steps.dup_auth.outputs.open == '0'
-      uses: peter-evans/create-issue-from-file@v6
+      uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
       with:
         title: "RPC Health Check: Authentication Failure"
         content-filepath: health-report.txt
@@ -202,7 +202,7 @@ jobs:
       if: |
         steps.health.outputs.exit_code == '3'
         && steps.dup_error.outputs.open == '0'
-      uses: peter-evans/create-issue-from-file@v6
+      uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710  # @ v6.0.0
       with:
         title: "RPC Health Check: Non-transient ERROR detected"
         content-filepath: error-issue-body.md

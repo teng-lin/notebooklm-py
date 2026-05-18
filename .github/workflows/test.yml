@@ -51,6 +51,15 @@ jobs:
       # "Workflow secret gates".
       run: uv run python scripts/check_workflow_secret_gates.py
 
+    - name: Assert third-party actions in privileged workflows are SHA-pinned
+      # Supply-chain gate: every third-party action (non ``actions/*``) in
+      # publish / testpypi-publish / claude / rpc-health / nightly /
+      # verify-package must use a 40-char commit SHA, not a floating
+      # ``@v1`` / ``@release/v1`` / branch ref. Dependabot bumps the
+      # SHAs weekly via the grouped ``actions`` updates in
+      # ``.github/dependabot.yml``.
+      run: uv run python scripts/check_action_pinning.py
+
     - name: Assert coverage thresholds match
       run: uv run python scripts/check_coverage_thresholds.py
 
