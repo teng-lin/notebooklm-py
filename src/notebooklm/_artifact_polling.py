@@ -152,7 +152,8 @@ class ArtifactPollingService:
             import warnings
 
             warnings.warn(
-                "poll_interval is deprecated, use initial_interval instead",
+                "poll_interval is deprecated and will be removed in v0.6.0; "
+                "use initial_interval instead",
                 DeprecationWarning,
                 stacklevel=deprecation_warning_stacklevel,
             )

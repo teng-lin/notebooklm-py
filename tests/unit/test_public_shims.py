@@ -77,11 +77,6 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
 }
 
 
-def _import_top_level_name_into_namespace(public_name: str, namespace: dict[str, object]) -> None:
-    module = __import__("notebooklm", fromlist=[public_name])
-    namespace[public_name] = getattr(module, public_name)
-
-
 @pytest.mark.parametrize(
     ("module_name", "public_name"),
     [
@@ -394,7 +389,6 @@ _TYPES_PRIVATE_HELPER_SEAMS = [
     "_is_valid_artifact_url",
     "_map_artifact_kind",
     "_warned_artifact_types",
-    "_warned_deprecated_properties",
     "_warned_source_types",
 ]
 
@@ -643,64 +637,24 @@ def test_facade_unknown_type_warning_filter_suppresses_parser_warnings() -> None
     assert (8765433, None) in public_types._warned_artifact_types
 
 
-def test_deprecated_top_level_studio_content_type_import_warns_and_caches(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """from notebooklm import StudioContentType keeps the deprecated shim contract."""
+def test_top_level_studio_content_type_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """from notebooklm import StudioContentType is removed in v0.5.0."""
     import notebooklm
-    from notebooklm.rpc.types import ArtifactTypeCode
 
     monkeypatch.delitem(notebooklm.__dict__, "StudioContentType", raising=False)
-    assert "StudioContentType" in notebooklm.__all__
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", DeprecationWarning)
-        namespace: dict[str, object] = {}
-        _import_top_level_name_into_namespace("StudioContentType", namespace)
-
-    assert namespace["StudioContentType"] is ArtifactTypeCode
-    assert notebooklm.__dict__["StudioContentType"] is ArtifactTypeCode
-    assert [str(warning.message) for warning in caught] == [
-        "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.5.0."
-    ]
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", DeprecationWarning)
-        namespace = {}
-        _import_top_level_name_into_namespace("StudioContentType", namespace)
-
-    assert namespace["StudioContentType"] is ArtifactTypeCode
-    assert caught == []
+    assert "StudioContentType" not in notebooklm.__all__
+    with pytest.raises(AttributeError):
+        _ = notebooklm.StudioContentType  # type: ignore[attr-defined]
 
 
-def test_deprecated_top_level_default_storage_path_import_warns_and_caches(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """from notebooklm import DEFAULT_STORAGE_PATH keeps the deprecated shim contract."""
+def test_top_level_default_storage_path_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """from notebooklm import DEFAULT_STORAGE_PATH is removed in v0.5.0."""
     import notebooklm
-    from notebooklm.paths import get_storage_path
 
     monkeypatch.delitem(notebooklm.__dict__, "DEFAULT_STORAGE_PATH", raising=False)
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", DeprecationWarning)
-        namespace: dict[str, object] = {}
-        _import_top_level_name_into_namespace("DEFAULT_STORAGE_PATH", namespace)
-
-    assert namespace["DEFAULT_STORAGE_PATH"] == get_storage_path()
-    assert notebooklm.__dict__["DEFAULT_STORAGE_PATH"] == get_storage_path()
-    assert [str(warning.message) for warning in caught] == [
-        "DEFAULT_STORAGE_PATH is deprecated, use notebooklm.paths.get_storage_path() instead. "
-        "Will be removed in v0.5.0."
-    ]
-
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", DeprecationWarning)
-        namespace = {}
-        _import_top_level_name_into_namespace("DEFAULT_STORAGE_PATH", namespace)
-
-    assert namespace["DEFAULT_STORAGE_PATH"] == get_storage_path()
-    assert caught == []
+    with pytest.raises(AttributeError):
+        _ = notebooklm.DEFAULT_STORAGE_PATH  # type: ignore[attr-defined]
+    assert "DEFAULT_STORAGE_PATH" not in notebooklm.__all__
 
 
 def test_rpc_enum_reexport_list_matches_public_all() -> None:

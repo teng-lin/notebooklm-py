@@ -174,14 +174,10 @@ class TestGenerateAudio:
             mock_client.artifacts.wait_for_completion.assert_awaited_once()
             kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
             assert kwargs.get("timeout") == 60.0
-            # interval may be plumbed as either initial_interval (preferred new
-            # parameter name) or poll_interval (legacy compatibility shim);
-            # accept whichever the implementation chose so this test does not
-            # over-constrain the wiring choice.
-            interval_value = kwargs.get("initial_interval", kwargs.get("poll_interval"))
-            assert interval_value == 5.0, (
+            assert kwargs.get("initial_interval") == 5.0, (
                 f"expected --interval=5 to plumb into wait_for_completion, got kwargs={kwargs}"
             )
+            assert "poll_interval" not in kwargs
 
     def test_generate_audio_timeout_interval_without_wait_is_no_op(self, runner, mock_auth):
         """`generate audio --timeout 60 --interval 5` (without --wait) is

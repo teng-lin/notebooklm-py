@@ -424,8 +424,7 @@ class SourcesAPI:
             mime_type: Deprecated; unused. Retained as a positional argument for
                 backward compatibility. The MIME type is inferred server-side
                 from the filename extension. Passing a non-None value emits a
-                ``DeprecationWarning``. Slated for removal in a future minor
-                release (see ``# DEPRECATION-REMOVAL: v0.X.0`` below).
+                ``DeprecationWarning``. Slated for removal in v0.6.0.
             title: Optional display title. When provided and different from the
                 source filename, a rename is issued after upload so the source
                 appears with this title in the UI and API responses. Leading and
@@ -666,7 +665,7 @@ class SourcesAPI:
                 'notebooklm-py[markdown]'``).
 
         Returns:
-            SourceFulltext object with content, title, source_type, url, and char_count.
+            SourceFulltext object with content, title, kind, url, and char_count.
 
         Raises:
             SourceNotFoundError: If the source is not found or returns no data.

@@ -143,11 +143,6 @@ def _save_config(config: dict) -> None:
         json.dump(config, fh, indent=2, ensure_ascii=False)
 
 
-# Deprecated public alias retained for any external importer that latched
-# onto the legacy name. Internal call sites should use ``_save_config``.
-save_config = _save_config
-
-
 def get_language() -> str | None:
     """Get the configured language, or None if not set."""
     return get_config().get("language")

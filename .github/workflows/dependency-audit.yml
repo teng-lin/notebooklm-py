@@ -44,4 +44,9 @@ jobs:
         # Hard merge gate: any unresolved advisory fails the job. If a
         # transient advisory genuinely needs to be ignored, pin the fix in
         # uv.lock or use pip-audit's --ignore-vuln for a tracked exception.
-        run: uv run pip-audit --strict
+        # Audit the exported lock graph instead of the installed environment so
+        # unreleased local package versions do not fail strict collection.
+        run: |
+          set -o pipefail
+          uv export --frozen --extra browser --extra dev --extra markdown --format requirements-txt --no-emit-project \
+            | uv run pip-audit --strict --require-hashes --disable-pip -r /dev/stdin

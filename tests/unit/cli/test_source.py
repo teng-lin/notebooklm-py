@@ -351,6 +351,7 @@ class TestSourceAdd:
         # If the runner fixture is ever switched to ``mix_stderr=False`` this
         # assertion would silently pass — flip to ``result.stderr`` if so.
         assert "unused for file sources" in result.output
+        assert "v0.6.0" in result.output
         # ``add_file`` must NOT receive the unused mime_type — passing it would
         # also trip the library-level DeprecationWarning, doubling the noise.
         call_kwargs = mock_client.sources.add_file.call_args.kwargs

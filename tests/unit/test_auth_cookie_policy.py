@@ -7,7 +7,6 @@ files alongside the deletion of ``_AuthFacadeModule``; see ADR-003
 """
 
 import json
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -1387,23 +1386,3 @@ class TestAllowedCookieDomains:
 # =============================================================================
 # REGIONAL GOOGLE DOMAIN TESTS (Issue #20 fix)
 # =============================================================================
-
-
-class TestDefaultStoragePath:
-    """Test default storage path constant (deprecated, now via __getattr__)."""
-
-    def test_default_storage_path_via_package(self):
-        """Test DEFAULT_STORAGE_PATH is available via notebooklm package with deprecation warning."""
-        import warnings
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            from notebooklm import DEFAULT_STORAGE_PATH
-
-            assert DEFAULT_STORAGE_PATH is not None
-            assert isinstance(DEFAULT_STORAGE_PATH, Path)
-            assert DEFAULT_STORAGE_PATH.name == "storage_state.json"
-            # Should have emitted a deprecation warning
-            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
-            assert len(deprecation_warnings) >= 1
-            assert "deprecated" in str(deprecation_warnings[0].message).lower()

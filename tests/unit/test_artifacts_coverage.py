@@ -414,6 +414,7 @@ class TestDeprecationWarnings:
         assert len(w) == 1
         assert issubclass(w[0].category, DeprecationWarning)
         assert "poll_interval is deprecated" in str(w[0].message)
+        assert "v0.6.0" in str(w[0].message)
 
 
 # =============================================================================

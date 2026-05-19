@@ -123,16 +123,15 @@ class TestRPCErrorAttributes:
         assert e.method_id == "abc123"
 
     def test_rpc_error_backward_compat_rpc_id(self):
-        """RPCError supports backward-compatible rpc_id alias with deprecation warning."""
+        """RPCError supports permanent backward-compatible rpc_id alias without warning."""
         import warnings
 
         e = RPCError("Failed", method_id="abc123")
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             assert e.rpc_id == "abc123"  # Alias
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "rpc_id" in str(w[0].message)
+        deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert deprecation_warnings == []
 
     def test_rpc_error_stores_rpc_code(self):
         """RPCError stores rpc_code attribute."""
@@ -140,16 +139,15 @@ class TestRPCErrorAttributes:
         assert e.rpc_code == 404
 
     def test_rpc_error_backward_compat_code(self):
-        """RPCError supports backward-compatible code alias with deprecation warning."""
+        """RPCError supports permanent backward-compatible code alias without warning."""
         import warnings
 
         e = RPCError("Failed", rpc_code="NOT_FOUND")
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             assert e.code == "NOT_FOUND"  # Alias
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "code" in str(w[0].message)
+        deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert deprecation_warnings == []
 
     def test_rpc_error_truncates_raw_response(self, monkeypatch):
         """RPCError truncates raw_response to 80 chars + '...' by default."""

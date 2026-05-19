@@ -947,10 +947,10 @@ class TestArtifactWait:
             mock_client.artifacts.wait_for_completion.assert_awaited_once()
             kwargs = mock_client.artifacts.wait_for_completion.await_args.kwargs
             assert kwargs.get("timeout") == 60.0
-            interval_value = kwargs.get("initial_interval", kwargs.get("poll_interval"))
-            assert interval_value == 5.0, (
+            assert kwargs.get("initial_interval") == 5.0, (
                 f"expected --interval=5 to plumb into wait_for_completion, got kwargs={kwargs}"
             )
+            assert "poll_interval" not in kwargs
 
     def test_artifact_wait_timeout_json_output(self, runner, mock_auth):
         """Test timeout with JSON output."""

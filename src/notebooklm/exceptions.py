@@ -185,26 +185,22 @@ class RPCError(NotebookLMError):
     # Backward compatibility aliases
     @property
     def rpc_id(self) -> str | None:
-        """Alias for method_id (deprecated, use method_id instead)."""
-        import warnings
+        """Permanent backward-compatibility alias for ``method_id``.
 
-        warnings.warn(
-            "The 'rpc_id' attribute is deprecated, use 'method_id' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        Exception diagnostic aliases are exempt from the standard deprecation
+        cycle because removal can mask the original exception inside
+        ``except`` handlers.
+        """
         return self.method_id
 
     @property
     def code(self) -> str | int | None:
-        """Alias for rpc_code (deprecated, use rpc_code instead)."""
-        import warnings
+        """Permanent backward-compatibility alias for ``rpc_code``.
 
-        warnings.warn(
-            "The 'code' attribute is deprecated, use 'rpc_code' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        Exception diagnostic aliases are exempt from the standard deprecation
+        cycle because removal can mask the original exception inside
+        ``except`` handlers.
+        """
         return self.rpc_code
 
 

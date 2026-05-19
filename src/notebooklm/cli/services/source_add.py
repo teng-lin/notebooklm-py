@@ -130,7 +130,7 @@ def build_source_add_plan(
     if mime_type is not None and detected_type == "file" and not suppress_file_mime_deprecation:
         warnings.append(
             "--mime-type is unused for file sources; remove the flag "
-            "(Drive sources retain this option)."
+            "before v0.6.0 (Drive sources retain this option)."
         )
 
     return SourceAddPlan(

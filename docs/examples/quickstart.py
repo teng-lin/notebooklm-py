@@ -51,7 +51,7 @@ async def main():
 
         # Wait for completion
         final = await client.artifacts.wait_for_completion(
-            nb.id, status.task_id, timeout=300, poll_interval=10
+            nb.id, status.task_id, timeout=300, initial_interval=10
         )
 
         if final.is_complete:

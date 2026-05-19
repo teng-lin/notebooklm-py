@@ -2,17 +2,17 @@
 
 This file is **passive at every version < 0.5.0**: the 6 removal-assertion
 tests are skipped automatically and only the version-parse smoke test runs.
-Once ``notebooklm.__version__`` parses to ``Version("0.5.0")`` or higher
-(the next minor bump), every gated test activates and asserts that the
+Once ``notebooklm.__version__`` parses to ``Version("0.5.0")`` or higher,
+every gated test activates and asserts that the
 matching deprecated public symbol from ``docs/stability.md`` is no longer
 reachable — either the access raises ``AttributeError`` outright (for the
-two module-level symbols) or the per-instance ``@property`` accessor is gone.
+module-level symbols) or the per-instance ``@property`` accessor is gone.
 
 Why this lives here instead of a release-checklist doc:
 
 * The removal can't ship without flipping these tests green, so the gate
   is impossible to forget.
-* At v0.4.x there is exactly zero cost: 6 skips + 1 pass per run.
+* At v0.4.x there is exactly zero cost: gated skips + 1 pass per run.
 * When the 0.5.0 PR lands, the gate test transitions from "skipped" to
   "passing" with no changes to the file itself — the same code asserts
   both the current ("deprecated, still present") state and the future
@@ -98,3 +98,22 @@ def test_default_storage_path_removed() -> None:
     """``notebooklm.DEFAULT_STORAGE_PATH`` (deprecated) is removed at 0.5.0."""
     with pytest.raises(AttributeError):
         _ = notebooklm.DEFAULT_STORAGE_PATH  # type: ignore[attr-defined]
+
+
+@_AT_OR_PAST_050
+def test_rpc_types_studio_content_type_removed() -> None:
+    """``notebooklm.rpc.types.StudioContentType`` alias is removed at 0.5.0."""
+    import notebooklm.rpc.types as rpc_types
+
+    with pytest.raises(AttributeError):
+        _ = rpc_types.StudioContentType  # type: ignore[attr-defined]
+
+
+@_AT_OR_PAST_050
+def test_rpc_studio_content_type_removed() -> None:
+    """``notebooklm.rpc.StudioContentType`` re-export is removed at 0.5.0."""
+    import notebooklm.rpc as rpc
+
+    with pytest.raises(AttributeError):
+        _ = rpc.StudioContentType  # type: ignore[attr-defined]
+    assert "StudioContentType" not in rpc.__all__

@@ -254,42 +254,4 @@ __all__ = [
     "ShareAccess",
     "ShareViewLevel",
     "SharePermission",
-    # Deprecated (will be removed in v0.5.0)
-    "StudioContentType",
 ]
-
-
-def __getattr__(name: str):
-    """Emit deprecation warnings for deprecated module-level names.
-
-    This allows us to provide backward-compatible imports with warnings.
-    Uses globals() caching to avoid duplicate warnings on repeated access.
-    """
-    import warnings
-
-    if name == "DEFAULT_STORAGE_PATH":
-        from .paths import get_storage_path
-
-        warnings.warn(
-            "DEFAULT_STORAGE_PATH is deprecated, use notebooklm.paths.get_storage_path() instead. "
-            "Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        val = get_storage_path()
-        globals()[name] = val
-        return val
-
-    if name == "StudioContentType":
-        from .rpc.types import ArtifactTypeCode
-
-        warnings.warn(
-            "StudioContentType is deprecated, use ArtifactType instead. Will be removed in v0.5.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Cache to prevent duplicate warnings on repeated access
-        globals()[name] = ArtifactTypeCode
-        return ArtifactTypeCode
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

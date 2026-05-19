@@ -724,10 +724,10 @@ The `--mime-type` flag on `notebooklm source add` (file-source path) is a
 **no-op** and is deprecated. The upload pipeline never consumed it; the MIME
 type is derived server-side from the filename extension. Using the flag with
 a file source prints a deprecation notice to stderr and is scheduled for
-removal in a future minor release.
+removal in v0.6.0.
 
 ```bash
-# Deprecated — stderr: "--mime-type is unused for file sources; remove the flag"
+# Deprecated — stderr: "--mime-type is unused for file sources; remove the flag before v0.6.0"
 notebooklm source add ./report.pdf --type file --mime-type application/pdf
 
 # Migrated — drop the flag

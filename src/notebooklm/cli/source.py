@@ -346,7 +346,7 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
     help="Source type (auto-detected if not specified)",
 )
 @click.option("--title", help="Custom title for text and uploaded-file sources")
-# DEPRECATION-REMOVAL: v0.X.0 — ``--mime-type`` on the file-source path is a
+# DEPRECATION-REMOVAL: v0.6.0 — ``--mime-type`` on the file-source path is a
 # no-op (the upload pipeline ignores it; the server derives the MIME type from
 # the filename extension). A deprecation note is echoed to stderr when the flag
 # is used with a file source. The separate Drive-source ``--mime-type`` on the

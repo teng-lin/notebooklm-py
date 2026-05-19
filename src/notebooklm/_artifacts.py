@@ -727,7 +727,8 @@ class ArtifactsAPI:
             max_interval: Maximum seconds between status checks
                 (leader only).
             timeout: Maximum seconds to wait (leader only).
-            poll_interval: Deprecated. Use initial_interval instead.
+            poll_interval: Deprecated. Use initial_interval instead. Scheduled
+                for removal in v0.6.0.
             max_not_found: Consecutive "not found" polls before treating
                 the task as failed.  When the API removes an artifact
                 from the list (e.g. after a daily-quota rejection), the

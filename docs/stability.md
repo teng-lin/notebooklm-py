@@ -102,7 +102,7 @@ DriveMimeType, ExportType
 
 # Auth
 AuthTokens
-# (DEFAULT_STORAGE_PATH is deprecated; use notebooklm.paths.get_storage_path())
+notebooklm.paths.get_storage_path()
 
 # Helpers (cookies extra) - imported from notebooklm.auth
 notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"` — see docs/installation.md#optional-extras-matrix
@@ -118,7 +118,7 @@ notebooklm.auth.OPTIONAL_COOKIE_DOMAINS_BY_LABEL
 The following symbols appear in `notebooklm/__all__` so that downstream code can
 import them via `from notebooklm import ...`, but they are **not** covered by
 the stability guarantee above. They support narrow integration use cases
-(typed exception handling, warning filters, deprecated-name shims) and may be
+(typed exception handling and warning filters) and may be
 renamed, narrowed, or removed in a future minor release. Prefer the stable
 surface when possible.
 
@@ -127,7 +127,6 @@ CitedSourceSelection      # Chat citation payload — internal shape, exposed fo
 AuthExtractionError       # Specialized AuthError raised by browser-based login
 NotebookLimitError        # Raised when account notebook quota is exhausted
 UnknownTypeWarning        # Warning category emitted when .kind falls back to UNKNOWN
-StudioContentType         # ⚠️ Deprecated — use ArtifactType (see "Currently Deprecated" below)
 ```
 
 ### Internal (May change without notice)
@@ -183,18 +182,44 @@ for the design rationale behind the default flip.
 
 ### Currently Deprecated
 
-The following are deprecated and will be removed in **v0.5.0**:
+The following are deprecated and will be removed in **v0.6.0**:
 
 | Deprecated | Replacement | Notes |
 |------------|-------------|-------|
+| `SourcesAPI.add_file(mime_type=...)` | omit `mime_type` | Server infers MIME from filename extension |
+| `notebooklm source add --mime-type` for file sources | omit `--mime-type` | Drive-source `--mime-type` remains live |
+| `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` | Same polling cadence, clearer name |
+
+### Removed in v0.5.0
+
+The following v0.3-era deprecations completed their removal cycle in v0.5.0:
+
+| Removed | Replacement | Notes |
+|---------|-------------|-------|
 | `Source.source_type` | `Source.kind` | Returns `SourceType` str enum |
 | `Artifact.artifact_type` | `Artifact.kind` | Returns `ArtifactType` str enum |
 | `Artifact.variant` | `Artifact.kind` | Use `.is_quiz` / `.is_flashcards` |
 | `SourceFulltext.source_type` | `SourceFulltext.kind` | Returns `SourceType` str enum |
-| `StudioContentType` | `ArtifactType` | Str enum for user-facing code |
-| `DEFAULT_STORAGE_PATH` | `notebooklm.paths.get_storage_path()` | Module-level constant replaced by helper |
+| `notebooklm.StudioContentType` | `ArtifactType` | Str enum for user-facing code |
+| `notebooklm.DEFAULT_STORAGE_PATH` | `notebooklm.paths.get_storage_path()` | Module-level constant replaced by helper |
+| `notebooklm.rpc.types.StudioContentType` | `ArtifactType` | Internal raw code alias removed |
+| `notebooklm.rpc.StudioContentType` | `ArtifactType` | Internal re-export removed |
+| `notebooklm.cli.language.save_config` | `_save_config` | Private low-level write primitive only |
 
-> **Note:** These were originally targeted for removal in v0.4.0. The removal was deferred one release to give downstream users more time to migrate. They continue to emit `DeprecationWarning` and will be removed in v0.5.0.
+### Deprecated for a future major release
+
+| Deprecated | Replacement | Notes |
+|------------|-------------|-------|
+| `NotebooksAPI.share()` | `client.sharing.set_public()` | Compatibility wrapper around the sharing API |
+
+### Permanent aliases
+
+`RPCError.rpc_id` and `RPCError.code` are permanent backward-compatibility
+aliases for `RPCError.method_id` and `RPCError.rpc_code`. Exception diagnostic
+aliases are exempt from the standard deprecation cycle because removal can mask
+the original exception inside `except` handlers. New code should prefer the
+canonical attribute names, but existing exception handlers may keep using the
+aliases.
 
 ## Migration Guides
 
@@ -204,19 +229,19 @@ Version 0.4.0 is backward compatible with v0.3.x. Notable additions:
 
 - **Multi-account profiles** - Existing single-account setups continue to work as the implicit default profile. Your existing `~/.notebooklm/storage_state.json` is auto-detected — no manual migration is required. New accounts can be added via `notebooklm profile create <name>`.
 - **`[cookies]` optional extra** - To reuse cookies from your existing browser, install with `pip install "notebooklm-py[cookies]"` (requires `rookiepy`; full extras matrix: [docs/installation.md#optional-extras-matrix](installation.md#optional-extras-matrix)).
-- **Deprecation removal deferred** - The deprecated attributes originally scheduled for v0.4.0 (`Source.source_type`, `Artifact.artifact_type`, `Artifact.variant`, `SourceFulltext.source_type`, `StudioContentType`, `DEFAULT_STORAGE_PATH`) will now be removed in v0.5.0. They still emit `DeprecationWarning` — please migrate before v0.5.0.
+- **Deprecation removal deferred** - The deprecated attributes originally scheduled for v0.4.0 (`Source.source_type`, `Artifact.artifact_type`, `Artifact.variant`, `SourceFulltext.source_type`, `StudioContentType`, `DEFAULT_STORAGE_PATH`) were deferred to v0.5.0. In v0.5.0 and later, use the replacements listed in [Removed in v0.5.0](#removed-in-v050).
 
 ### Migrating from v0.2.x to v0.3.0
 
-Version 0.3.0 introduces **deprecated** attributes that emit `DeprecationWarning` when accessed.
-These will be removed in v0.5.0. Update your code now to avoid breakage.
+Version 0.3.0 introduced attributes that were deprecated until their v0.5.0
+removal. The historical migration examples below show the replacement surface.
 
 #### 1. `Source.source_type` → `Source.kind`
 
-**Before (deprecated):**
+**Before (removed in v0.5.0):**
 ```python
 source = await client.sources.list(notebook_id)[0]
-if source.source_type == "pdf":  # ⚠️ Emits DeprecationWarning
+if source.source_type == "pdf":
     print("This is a PDF")
 ```
 
@@ -240,12 +265,10 @@ if source.kind == "pdf":
 
 #### 2. `Artifact.artifact_type` → `Artifact.kind`
 
-**Before (deprecated):**
+**Before (removed in v0.5.0):**
 ```python
-from notebooklm import StudioContentType  # ⚠️ Emits DeprecationWarning
-
 artifact = await client.artifacts.list(notebook_id)[0]
-if artifact.artifact_type == StudioContentType.AUDIO:  # ⚠️ Emits DeprecationWarning
+if artifact.artifact_type == 1:
     print("This is an audio artifact")
 ```
 
@@ -269,9 +292,9 @@ if artifact.kind == "audio":
 
 #### 3. `Artifact.variant` → `Artifact.kind` or helpers
 
-**Before (deprecated):**
+**Before (removed in v0.5.0):**
 ```python
-if artifact.artifact_type == 4 and artifact.variant == 2:  # ⚠️ Deprecated
+if artifact.artifact_type == 4 and artifact.variant == 2:
     print("This is a quiz")
 ```
 

@@ -13,7 +13,6 @@ from ..rpc.types import SourceStatus
 from .common import (
     UnknownTypeWarning,
     _datetime_from_timestamp,
-    _deprecated_property_warning_state,
 )
 
 
@@ -172,19 +171,6 @@ class Source:
         return _safe_source_type(self._type_code)
 
     @property
-    def source_type(self) -> str:
-        """Deprecated: Use .kind instead."""
-        _warned = _deprecated_property_warning_state()
-        if "Source.source_type" not in _warned:
-            _warned.add("Source.source_type")
-            warnings.warn(
-                "Source.source_type is deprecated, use .kind instead. Will be removed in v0.5.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return _source_compat_map().get(self.kind, "text")
-
-    @property
     def is_ready(self) -> bool:
         """Check if source is ready for use (status=READY)."""
         return self.status == SourceStatus.READY
@@ -278,20 +264,6 @@ class SourceFulltext:
     def kind(self) -> SourceType:
         """Get source type as SourceType enum."""
         return _safe_source_type(self._type_code)
-
-    @property
-    def source_type(self) -> str:
-        """Deprecated: Use .kind instead."""
-        _warned = _deprecated_property_warning_state()
-        if "SourceFulltext.source_type" not in _warned:
-            _warned.add("SourceFulltext.source_type")
-            warnings.warn(
-                "SourceFulltext.source_type is deprecated, use .kind instead. "
-                "Will be removed in v0.5.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return _source_compat_map().get(self.kind, "text")
 
     def find_citation_context(
         self,

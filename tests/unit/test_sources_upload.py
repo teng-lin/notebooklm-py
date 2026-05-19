@@ -908,6 +908,7 @@ class TestAddFile:
 
         # Deprecation is non-fatal: the upload still completes normally.
         assert result.id == "src_png"
+        assert "v0.6.0" in str(caught[0].message)
         assert caught[0].filename.endswith("test_sources_upload.py")
 
     @pytest.mark.asyncio

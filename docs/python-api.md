@@ -705,7 +705,7 @@ async with await NotebookLMClient.from_storage(rate_limit_max_retries=0) as clie
 | `get_description(notebook_id)` | `notebook_id: str` | `NotebookDescription` | Get AI summary and topics |
 | `get_metadata(notebook_id)` | `notebook_id: str` | `NotebookMetadata` | Get notebook metadata and sources |
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
-| `share(notebook_id, public=True, artifact_id=None)` | `notebook_id: str, bool, str \| None` | `dict` | Create or update a share link |
+| `share(notebook_id, public=True, artifact_id=None)` | `notebook_id: str, bool, str \| None` | `dict` | Deprecated; use `client.sharing.set_public()` for notebook-level public sharing |
 | `get_share_url(notebook_id, artifact_id=None)` | `notebook_id: str, str \| None` | `str` | Get a share URL |
 | `remove_from_recent(notebook_id)` | `notebook_id: str` | `None` | Remove from recently viewed |
 | `get_raw(notebook_id)` | `notebook_id: str` | `Any` | Get raw API response data |
@@ -759,7 +759,7 @@ print(url)
 | `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
 | `add_url(notebook_id, url, wait=False, wait_timeout=120.0)` | `str, str, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately) |
 | `add_text(notebook_id, title, content, wait=False, wait_timeout=120.0)` | `str, str, str, bool, float` | `Source` | Add text content |
-| `add_file(notebook_id, file_path, mime_type=None, wait=False, wait_timeout=120.0, *, title=None, on_progress=None)` | `str, str \| Path, str \| None, bool, float, *, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` raises `DeprecationWarning`. `title` (keyword-only) sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
+| `add_file(notebook_id, file_path, mime_type=None, wait=False, wait_timeout=120.0, *, title=None, on_progress=None)` | `str, str \| Path, str \| None, bool, float, *, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` emits `DeprecationWarning` and is scheduled for removal in v0.6.0. `title` (keyword-only) sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type)` | `str, str, str, str` | `Source` | Add Google Drive doc |
 | `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
@@ -781,7 +781,8 @@ await client.sources.add_file(nb_id, Path("./document.pdf"))
 
 # Upload a file with a custom display title (rename happens after upload via
 # UPDATE_SOURCE — a brief registration wait runs even when wait=False so the
-# rename can land). The mime_type kwarg is deprecated; the server infers
+# rename can land). The mime_type kwarg is deprecated and scheduled for
+# removal in v0.6.0; the server infers
 # MIME type from the filename extension.
 await client.sources.add_file(nb_id, Path("./document.pdf"), title="Q4 Strategy Memo")
 
@@ -1050,7 +1051,7 @@ final = await client.artifacts.wait_for_completion(
     nb_id,
     status.task_id,
     timeout=300,      # Max wait time in seconds
-    poll_interval=5   # Seconds between polls
+    initial_interval=5  # Initial seconds between polls
 )
 
 if final.is_complete:
@@ -1445,7 +1446,8 @@ class Source:
         """status == SourceStatus.ERROR"""
 ```
 
-> **Deprecated:** `Source.source_type` emits `DeprecationWarning` and will be removed in v0.5.0 — use `Source.kind` instead. See [stability.md → Currently Deprecated](stability.md#currently-deprecated) for the full migration table.
+> **Removed in v0.5.0:** `Source.source_type` was replaced by `Source.kind`.
+> See [stability.md → Removed in v0.5.0](stability.md#removed-in-v050).
 
 **Type Identification:**
 
@@ -1503,9 +1505,11 @@ class Artifact:
         """
 ```
 
-**Note on `_artifact_type` / `_variant`:** these are private (leading-underscore) fields with `repr=False` and are part of the dataclass for `from_api_response()` round-tripping. Always consume them via the public `.kind`, `.is_quiz`, `.is_flashcards`, and `.report_subtype` accessors — the underscore prefix signals that direct access is unsupported and subject to change without notice.
+**Note on `_artifact_type` / `_variant`:** these are private (leading-underscore) fields with `repr=False` and are part of the dataclass for `from_api_response()` round-tripping. Always consume them via the public `.kind`, `.is_quiz`, `.is_flashcards`, and `.report_subtype` accessors.
 
-> **Deprecated:** `Artifact.artifact_type` and `Artifact.variant` emit `DeprecationWarning` and will be removed in v0.5.0 — use `Artifact.kind` (plus `.is_quiz` / `.is_flashcards`) instead. See [stability.md → Currently Deprecated](stability.md#currently-deprecated) for the full migration table.
+> **Removed in v0.5.0:** `Artifact.artifact_type` and `Artifact.variant`
+> were replaced by `Artifact.kind` plus `.is_quiz` / `.is_flashcards`.
+> See [stability.md → Removed in v0.5.0](stability.md#removed-in-v050).
 
 **Type Identification:**
 
@@ -1702,7 +1706,9 @@ class SourceFulltext:
         """Search for citation text, return list of (context, position) tuples."""
 ```
 
-> **Deprecated:** `SourceFulltext.source_type` emits `DeprecationWarning` and will be removed in v0.5.0 — use `SourceFulltext.kind` instead. See [stability.md → Currently Deprecated](stability.md#currently-deprecated) for the full migration table.
+> **Removed in v0.5.0:** `SourceFulltext.source_type` was replaced by
+> `SourceFulltext.kind`. See
+> [stability.md → Removed in v0.5.0](stability.md#removed-in-v050).
 
 **Type Identification:**
 

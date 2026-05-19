@@ -141,10 +141,6 @@ class ArtifactTypeCode(int, Enum):
     DATA_TABLE = 9
 
 
-# Deprecated alias for backward compatibility
-StudioContentType = ArtifactTypeCode
-
-
 class ArtifactStatus(int, Enum):
     """Processing status of an artifact.
 

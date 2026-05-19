@@ -261,7 +261,7 @@ class SourceUploadPipeline:
         logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
         if mime_type is not None:
             warnings.warn(
-                "mime_type parameter is unused and will be removed in v0.X.0; "
+                "mime_type parameter is unused and will be removed in v0.6.0; "
                 "rely on filename extension instead",
                 DeprecationWarning,
                 stacklevel=deprecation_warning_stacklevel,

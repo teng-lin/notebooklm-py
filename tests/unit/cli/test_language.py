@@ -16,6 +16,12 @@ from notebooklm.notebooklm_cli import cli
 language_module = importlib.import_module("notebooklm.cli.language")
 
 
+def test_save_config_alias_removed() -> None:
+    """The deprecated public ``save_config`` alias is removed in v0.5.0."""
+    assert not hasattr(language_module, "save_config")
+    assert hasattr(language_module, "_save_config")
+
+
 @pytest.fixture
 def runner():
     return CliRunner()

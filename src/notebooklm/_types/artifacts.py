@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any
 
 from ..rpc.types import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
-from .common import UnknownTypeWarning, _deprecated_property_warning_state
+from .common import UnknownTypeWarning
 from .common import _datetime_from_timestamp as _common_datetime_from_timestamp
 
 
@@ -242,48 +242,6 @@ class Artifact:
             unrecognized type codes (with a warning on first occurrence).
         """
         return _map_artifact_kind(self._artifact_type, self._variant)
-
-    @property
-    def artifact_type(self) -> int:
-        """Deprecated: Use .kind instead.
-
-        Returns the raw integer type code for backward compatibility.
-
-        .. deprecated:: 0.3.0
-            Use the ``.kind`` property which returns an ``ArtifactType`` enum.
-            Will be removed in v0.5.0.
-        """
-        _warned = _deprecated_property_warning_state()
-        if "Artifact.artifact_type" not in _warned:
-            _warned.add("Artifact.artifact_type")
-            warnings.warn(
-                "Artifact.artifact_type is deprecated, use .kind instead. "
-                "Will be removed in v0.5.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return self._artifact_type
-
-    @property
-    def variant(self) -> int | None:
-        """Deprecated: Use .kind, .is_quiz, or .is_flashcards instead.
-
-        Returns the variant code for type 4 artifacts (1=flashcards, 2=quiz).
-
-        .. deprecated:: 0.3.0
-            Use ``.kind == ArtifactType.QUIZ`` or ``.is_quiz`` / ``.is_flashcards``.
-            Will be removed in v0.5.0.
-        """
-        _warned = _deprecated_property_warning_state()
-        if "Artifact.variant" not in _warned:
-            _warned.add("Artifact.variant")
-            warnings.warn(
-                "Artifact.variant is deprecated. Use .kind, .is_quiz, or .is_flashcards "
-                "instead. Will be removed in v0.5.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return self._variant
 
     @classmethod
     def from_api_response(cls, data: list[Any]) -> Artifact:
