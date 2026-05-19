@@ -20,14 +20,22 @@ STRICT_DECODE_ENV = "NOTEBOOKLM_STRICT_DECODE"
 
 
 def is_strict_decode_enabled() -> bool:
-    """Return True if the strict-decode mode is enabled.
+    """Return True if strict-decode mode is enabled.
 
-    By default, schema-drift helpers (e.g. ``safe_index``) fall back to
-    warn-and-return-None during the soft-rollout window. Setting
-    ``NOTEBOOKLM_STRICT_DECODE=1`` (or ``true``/``True``) flips them to raise
-    ``UnknownRPCMethodError`` instead, surfacing drift early.
+    Strict mode is the default since PR 13.9a: when
+    ``NOTEBOOKLM_STRICT_DECODE`` is unset (or set to one of ``"1"``,
+    ``"true"``, ``"True"``), schema-drift helpers — notably
+    :func:`notebooklm.rpc.safe_index` — raise
+    :class:`~notebooklm.exceptions.UnknownRPCMethodError` on descent failure
+    so callers learn about Google-side shape drift immediately.
+
+    Set ``NOTEBOOKLM_STRICT_DECODE=0`` (or any other non-truthy value such
+    as ``"false"``, ``"no"``, or ``""``) to opt back into the legacy
+    warn-and-return-``None`` fallback for one release window. See
+    ``docs/adr/0011-schema-validation-policy.md`` for the rationale and the
+    opt-out retirement timeline.
     """
-    return os.environ.get(STRICT_DECODE_ENV, "0") in ("1", "true", "True")
+    return os.environ.get(STRICT_DECODE_ENV, "1") in ("1", "true", "True")
 
 
 def get_base_url() -> str:

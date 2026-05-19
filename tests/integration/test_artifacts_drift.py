@@ -4,9 +4,11 @@ These tests pin down the contract that PR establishes:
 
 * ``_parse_generation_result`` accepts ``method_id`` as a keyword argument and
   threads it through ``safe_index`` so drift diagnostics know which RPC failed.
-* Under the default soft-strict mode (``NOTEBOOKLM_STRICT_DECODE=0``) drift
+* Under explicit soft-mode opt-out (``NOTEBOOKLM_STRICT_DECODE=0``) drift
   returns the legacy ``GenerationStatus(status="failed", task_id="")`` shape,
   preserving backward compatibility with callers that handle that sentinel.
+  (Post-PR 13.9a the default flipped to strict; soft mode is the opt-out
+  path for one release window — see ADR-011.)
 * Under strict mode (``NOTEBOOKLM_STRICT_DECODE=1``) drift raises
   ``UnknownRPCMethodError`` carrying the supplied ``method_id`` so operators
   can detect that Google's response shape moved out from under us.
@@ -77,15 +79,22 @@ class TestParseGenerationResultHappyPath:
 
 
 # ---------------------------------------------------------------------------
-# Drift: soft mode (default) preserves legacy "failed" sentinel.
+# Drift: explicit soft-mode opt-out (`NOTEBOOKLM_STRICT_DECODE=0`) preserves
+# the legacy "failed" sentinel for callers that still need it.
 # ---------------------------------------------------------------------------
 
 
 class TestParseGenerationResultSoftDrift:
-    """Soft mode (``NOTEBOOKLM_STRICT_DECODE`` unset) returns legacy failure."""
+    """Soft-mode opt-out (``NOTEBOOKLM_STRICT_DECODE=0``) returns legacy failure.
+
+    Post-PR 13.9a strict is the default; this class pins the explicit
+    opt-out contract for one release before ADR-011 retirement.
+    """
 
     def test_none_result_returns_failed(self, artifacts_api, monkeypatch):
-        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+        # Post-PR 13.9a the unset env-var maps to strict mode; the soft-mode
+        # contract this class pins requires an explicit `"0"` opt-out.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
         status = artifacts_api._parse_generation_result(
             None, method_id=RPCMethod.CREATE_ARTIFACT.value

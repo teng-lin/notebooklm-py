@@ -286,8 +286,13 @@ class TestPollEdgeCases:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
         """Line 137: task_data is not a list — continue, eventually return no_research."""
+        # Soft-mode opt-in (post-PR 13.9a default is strict): the
+        # "skip-and-continue" semantics pinned here depend on safe_index
+        # returning None on the malformed first entry rather than raising.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         # Outer list contains a non-list item then a too-short list
         response = build_rpc_response(
             RPCMethod.POLL_RESEARCH,
@@ -581,8 +586,13 @@ class TestPollEdgeCases:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
         """Line 193: all items in the loop fail validation — final no_research is returned."""
+        # Soft-mode opt-in: the iteration's `continue` path depends on
+        # safe_index returning None for the missing task_info slot under
+        # the legacy default. Post-PR 13.9a the default is strict.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         # All task_data entries are short lists (len < 2) so every iteration hits `continue`
         response = build_rpc_response(
             RPCMethod.POLL_RESEARCH,

@@ -70,8 +70,15 @@ async def test_get_source_ids_happy_path_no_warning(caplog):
     assert warnings == []
 
 
-def test_qa_pairs_warns_on_unguarded_shape(caplog):
-    """_chat.py: QA-pair parser warns when next_turn[4] is not indexable."""
+def test_qa_pairs_warns_on_unguarded_shape(caplog, monkeypatch):
+    """_chat.py: QA-pair parser warns when next_turn[4] is not indexable.
+
+    Pins the soft-mode contract — the QA-pair parser preserves an empty answer
+    for callers that walked drifted turns under the legacy fallback. Post-PR
+    13.9a the default is strict, so this site needs an explicit opt-out via
+    ``NOTEBOOKLM_STRICT_DECODE=0`` to keep exercising the warn-and-empty path.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     from notebooklm._chat import ChatAPI
 
     # next_turn[4] is a string — string[0] returns a char (no error), but
@@ -113,8 +120,10 @@ async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
     """
     from notebooklm._notebooks import NotebooksAPI
 
-    # Pin soft mode so safe_index warns instead of raising.
-    monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+    # Pin soft mode so safe_index warns instead of raising. Post-PR 13.9a the
+    # default is strict; this site needs explicit opt-out to keep asserting
+    # the warn-and-return-"" legacy behavior the CLI's truthiness check relies on.
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
     api = NotebooksAPI.__new__(NotebooksAPI)
     mock_core = MagicMock()

@@ -583,8 +583,16 @@ class TestNotebookEdgeCases:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
-        """Test getting summary when empty."""
+        """Test getting summary when empty.
+
+        Soft-mode opt-out (post-PR 13.9a default is strict): pins the legacy
+        warn-and-return-"" behavior that the CLI's truthiness check relies
+        on at ``cli/notebook.py``. Strict-mode coverage of the same drift
+        shape lives in ``tests/integration/test_get_summary_drift.py``.
+        """
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         response = build_rpc_response(RPCMethod.SUMMARIZE, [])
         httpx_mock.add_response(content=response.encode())
 

@@ -124,8 +124,15 @@ class TestParseTurnsToQaPairs:
         # The 42 at i+1 is not a valid answer turn, so Q gets empty answer
         assert result == [("Question?", "")]
 
-    def test_answer_with_index_error(self):
-        """Answer turn with broken structure yields empty answer string."""
+    def test_answer_with_index_error(self, monkeypatch: pytest.MonkeyPatch):
+        """Answer turn with broken structure yields empty answer string.
+
+        Soft-mode fallback contract: the parser preserves an empty answer when
+        the inner shape can't be descended into. Post-PR 13.9a the default is
+        strict, so this site explicitly opts back into soft mode to keep
+        exercising the legacy degraded-payload contract.
+        """
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         turns_data = [
             [
                 [None, None, 1, "Question?"],

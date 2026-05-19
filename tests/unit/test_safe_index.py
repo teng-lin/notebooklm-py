@@ -42,7 +42,7 @@ def test_descent_with_no_path_returns_root():
 
 
 def test_drift_outer_index_soft_mode_returns_none_with_warning(monkeypatch, caplog):
-    monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     data = ["only-one"]
     with caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"):
         result = safe_index(data, 5, method_id="abc", source="test.outer")
@@ -54,7 +54,7 @@ def test_drift_outer_index_soft_mode_returns_none_with_warning(monkeypatch, capl
 
 
 def test_drift_inner_index_soft_mode_returns_none(monkeypatch):
-    monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     data = [[["leaf"]]]
     # Outer ok, inner index out of range.
     result = safe_index(data, 0, 0, 9, method_id="abc", source="test.inner")
@@ -124,7 +124,12 @@ def test_strict_mode_truthy_values(monkeypatch):
 
 
 def test_strict_mode_falsy_values(monkeypatch, caplog):
-    """``0``, unset, and arbitrary strings should keep soft mode."""
+    """Explicit falsy values (``"0"``, ``"no"``, ``"false"``, ``""``) opt out of strict mode.
+
+    Post-PR 13.9a the unset default is now ``True`` (see
+    ``test_strict_decode_default.py``); soft mode is reached via explicit
+    opt-out only.
+    """
     for value in ("0", "no", "false", ""):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", value)
         with caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"):

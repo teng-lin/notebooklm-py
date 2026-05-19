@@ -205,7 +205,10 @@ class TestExtractTaskId:
     def test_happy_path(self):
         assert _extract_task_id(["task_abc", ["info"]]) == "task_abc"
 
-    def test_empty_list_drift_returns_none(self, caplog):
+    def test_empty_list_drift_returns_none(self, caplog, monkeypatch):
+        # Post-PR 13.9a default is strict; pin soft mode to keep asserting
+        # the warn-and-return-None contract these helpers expose.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with caplog.at_level(logging.WARNING):
             assert _extract_task_id([]) is None
         assert "safe_index drift" in caplog.text
@@ -215,7 +218,11 @@ class TestExtractTaskId:
             assert _extract_task_id([42, ["info"]]) is None
         assert "task_data[0] is not a string" in caplog.text
 
-    def test_non_list_input_returns_none(self, caplog):
+    def test_non_list_input_returns_none(self, caplog, monkeypatch):
+        # Soft-mode opt-in: the helper's outer guard returns None without
+        # invoking safe_index; the descent path under strict mode would
+        # otherwise surface UnknownRPCMethodError for the inner safe_index hop.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with caplog.at_level(logging.WARNING):
             assert _extract_task_id(None) is None
 
@@ -227,7 +234,8 @@ class TestExtractTaskInfo:
         info = [None, ["q"], None, [[]], 2]
         assert _extract_task_info(["task_id", info]) is info
 
-    def test_missing_index_returns_none(self, caplog):
+    def test_missing_index_returns_none(self, caplog, monkeypatch):
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with caplog.at_level(logging.WARNING):
             assert _extract_task_info(["only_id"]) is None
         assert "safe_index drift" in caplog.text
@@ -245,7 +253,8 @@ class TestExtractQueryText:
         task_info = [None, ["quantum computing", "extra"], None, [], 1]
         assert _extract_query_text(task_info) == "quantum computing"
 
-    def test_missing_query_info_returns_none(self, caplog):
+    def test_missing_query_info_returns_none(self, caplog, monkeypatch):
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with caplog.at_level(logging.WARNING):
             # task_info[1] missing entirely
             assert _extract_query_text([None]) is None
@@ -269,7 +278,8 @@ class TestExtractStatusCode:
     def test_happy_path_deep_completed(self):
         assert _extract_status_code([None, ["q"], None, [], 6]) == 6
 
-    def test_missing_index_returns_none(self, caplog):
+    def test_missing_index_returns_none(self, caplog, monkeypatch):
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with caplog.at_level(logging.WARNING):
             assert _extract_status_code([None, ["q"], None, []]) is None
         assert "safe_index drift" in caplog.text
@@ -306,7 +316,8 @@ class TestExtractSourcesAndSummary:
         assert sources == [["url", "title"]]
         assert summary is None
 
-    def test_missing_bundle_returns_empty(self, caplog):
+    def test_missing_bundle_returns_empty(self, caplog, monkeypatch):
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with caplog.at_level(logging.WARNING):
             sources, summary = _extract_sources_and_summary([None, ["q"], None])
         assert sources == []

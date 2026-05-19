@@ -1467,8 +1467,16 @@ class TestReviseSlide:
         auth_tokens,
         httpx_mock: HTTPXMock,
         build_rpc_response,
+        monkeypatch,
     ):
-        """revise_slide logs warning and returns GenerationStatus when RPC returns null."""
+        """revise_slide logs warning and returns GenerationStatus when RPC returns null.
+
+        Soft-mode opt-out (post-PR 13.9a default is strict): pins the legacy
+        warn-and-failed-GenerationStatus contract for null RPC results.
+        Strict-mode coverage of the same shape lives in
+        ``tests/integration/test_artifacts_drift.py``.
+        """
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         # Build a null response (allow_null=True path)
         null_response = build_rpc_response(RPCMethod.REVISE_SLIDE, None)
         httpx_mock.add_response(content=null_response.encode())
@@ -2144,10 +2152,11 @@ class TestParseGenerationResult:
         monkeypatch,
     ):
         """_parse_generation_result returns failed status when result has no artifact_id."""
-        # These tests pin down soft-strict behavior; guard against CI flipping
-        # NOTEBOOKLM_STRICT_DECODE on in the future. Strict-mode coverage of
-        # the same inputs lives in test_artifacts_drift.py.
-        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+        # Soft-mode opt-out (post-PR 13.9a default is strict): this class pins
+        # the legacy GenerationStatus(failed, "") sentinel that downstream
+        # callers handle. Strict-mode coverage of the same inputs lives in
+        # tests/integration/test_artifacts_drift.py.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -2181,7 +2190,9 @@ class TestParseGenerationResult:
         monkeypatch,
     ):
         """_parse_generation_result returns failed status when result is None."""
-        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+        # Post-PR 13.9a default is strict; pin soft mode to preserve the
+        # legacy GenerationStatus(failed) sentinel this test covers.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [
@@ -2214,7 +2225,9 @@ class TestParseGenerationResult:
         monkeypatch,
     ):
         """_parse_generation_result reads status_code from artifact_data[4]."""
-        monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+        # Post-PR 13.9a default is strict; pin soft mode to preserve the
+        # legacy GenerationStatus(failed) sentinel this test covers.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         notebook_response = build_rpc_response(
             RPCMethod.GET_NOTEBOOK,
             [

@@ -308,8 +308,16 @@ class TestWaitForCompletion:
 class TestParseGenerationResult:
     """Test _parse_generation_result parsing logic."""
 
-    def test_parse_null_result(self, mock_artifacts_api):
-        """Test parsing None result returns failed status."""
+    def test_parse_null_result(self, mock_artifacts_api, monkeypatch):
+        """Test parsing None result returns failed status.
+
+        Soft-mode opt-in: post-PR 13.9a the strict-decode default raises on
+        the missing artifact_id descent. The "GenerationStatus(failed, '')"
+        sentinel is the legacy fallback this test pins, so opt back into
+        soft mode explicitly. Strict-mode coverage of the same input lives
+        in ``tests/integration/test_artifacts_drift.py``.
+        """
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         api, _ = mock_artifacts_api
 
         result = api._parse_generation_result(None, method_id="R7cb6c")
@@ -318,8 +326,9 @@ class TestParseGenerationResult:
         assert result.task_id == ""
         assert "no artifact_id" in result.error.lower()
 
-    def test_parse_empty_list_result(self, mock_artifacts_api):
+    def test_parse_empty_list_result(self, mock_artifacts_api, monkeypatch):
         """Test parsing empty list returns failed status."""
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         api, _ = mock_artifacts_api
 
         result = api._parse_generation_result([], method_id="R7cb6c")

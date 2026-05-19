@@ -4,9 +4,10 @@ The site at ``_notebooks.py:get_summary`` used to swallow ``IndexError`` /
 ``TypeError`` from an unguarded ``result[0][0][0]`` descent. It was migrated
 to ``safe_index`` so:
 
-* In the default soft rollout (``NOTEBOOKLM_STRICT_DECODE`` unset), drift
+* In the soft-mode opt-out (``NOTEBOOKLM_STRICT_DECODE=0``), drift
   warn-logs and the method still returns ``""`` — preserving legacy semantics
-  for the single caller at ``cli/notebook.py``.
+  for the single caller at ``cli/notebook.py``. Post-PR 13.9a the unset
+  default flipped to strict; soft mode is now the opt-out path (ADR-011).
 * With ``NOTEBOOKLM_STRICT_DECODE=1``, drift raises
   ``UnknownRPCMethodError`` carrying ``method_id=RPCMethod.SUMMARIZE.value``
   and ``source='_notebooks.get_summary'`` for debuggability.
@@ -39,7 +40,7 @@ def _make_api(rpc_return):
 @pytest.mark.asyncio
 async def test_get_summary_happy_path_returns_string(monkeypatch):
     """Well-formed response shape extracts the summary string."""
-    monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     # Real shape: [[[summary_string, ...], topics, ...]]
     api = _make_api([[["the summary text"]]])
 
@@ -61,12 +62,14 @@ async def test_get_summary_happy_path_also_holds_under_strict(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_summary_drift_soft_mode_returns_empty_with_warning(monkeypatch, caplog):
-    """Default soft mode: drift returns ``""`` and emits a warn-level log.
+    """Soft-mode opt-out (``NOTEBOOKLM_STRICT_DECODE=0``): drift returns ``""`` and emits a warn-level log.
 
-    Preserves legacy CLI behavior — ``description.summary`` truthiness check
-    at ``cli/notebook.py:213`` continues to work without spurious errors.
+    Post-PR 13.9a strict is the default; this test pins the explicit
+    opt-out contract that preserves the legacy CLI behavior — the
+    ``description.summary`` truthiness check at ``cli/notebook.py:213``
+    continues to work without spurious errors when the opt-out is set.
     """
-    monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     # result[0] is an empty list → result[0][0] raises IndexError.
     api = _make_api([[]])
 
@@ -111,7 +114,7 @@ async def test_get_summary_falsy_summary_returns_empty(monkeypatch):
     Distinguishes "drift" (shape mismatch) from "empty value" (valid shape,
     nothing to surface) — both produce ``""`` but only the former logs.
     """
-    monkeypatch.delenv("NOTEBOOKLM_STRICT_DECODE", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     api = _make_api([[[None]]])
 
     summary = await api.get_summary("nb_empty_value")

@@ -122,7 +122,7 @@ A persistent Chromium user data directory used during `notebooklm login`.
 | `NOTEBOOKLM_LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` | `WARNING` |
 | `NOTEBOOKLM_DEBUG_RPC` | Legacy: Enable RPC debug logging (use `LOG_LEVEL=DEBUG` instead) | `false` |
 | `NOTEBOOKLM_DEBUG` | Show untruncated RPC response bodies in error messages instead of the default 80-char preview (verbose; intended for deep debugging) | `0` |
-| `NOTEBOOKLM_STRICT_DECODE` | Raise `UnknownRPCMethodError` on schema drift instead of warn-and-fallback | `0` |
+| `NOTEBOOKLM_STRICT_DECODE` | Raise `UnknownRPCMethodError` on schema drift (default since PR 13.9a). Set to `0` to opt back into warn-and-fallback for one release window. | `1` |
 | `NOTEBOOKLM_RPC_OVERRIDES` | JSON object mapping `RPCMethod` enum names to RPC ID strings (community self-patch when Google rotates a method ID; e.g. `{"LIST_NOTEBOOKS":"AbC123"}`) | - |
 | `NOTEBOOKLM_REFRESH_CMD` | Optional command (argv list, or shell string with `_USE_SHELL=1`) invoked when auth refresh is required. Must exit `0` after writing a refreshed `storage_state.json`; the parent reloads from disk | - |
 | `NOTEBOOKLM_REFRESH_CMD_USE_SHELL` | Opt the `NOTEBOOKLM_REFRESH_CMD` subprocess back into `shell=True` execution. Default `shell=False` (argv list) — set to the literal `1` (only `"1"` is honored — not `true`/`yes`/`on`) when the refresh command requires shell metacharacters | `0` |
@@ -150,7 +150,7 @@ be audited from one location.
 | `NOTEBOOKLM_NOTEBOOK` | Default notebook ID when no `-n/--notebook` flag is passed. Composes with `notebooklm use <id>` so per-shell overrides do not clobber the persisted active-notebook context. | `-n/--notebook` flag → `NOTEBOOKLM_NOTEBOOK` → active context (from `notebooklm use`) → error | `cli.helpers.require_notebook` (Click also reads it natively via `cli/options.py:notebook_option`'s `envvar=`) |
 | `NOTEBOOKLM_RPC_OVERRIDES` | **JSON object** mapping `RPCMethod` enum names to RPC ID strings (e.g. `{"LIST_NOTEBOOKS": "AbC123"}`). Overrides runtime RPC IDs — community self-patch when Google rotates a method ID. Empty string / unset disables the mechanism; invalid JSON or non-object payloads emit a `WARNING` and are ignored. | Process env, evaluated per RPC resolve (cached on the raw env string). | `notebooklm.rpc.overrides._parse_rpc_overrides` |
 | `NOTEBOOKLM_QUIET_DEPRECATIONS` | Suppress stderr deprecation notices for deprecated CLI flags (e.g. `source add --mime-type` on file sources). Library-level `DeprecationWarning`s are unaffected. | Set to `1` to suppress; any other value (or unset) leaves the notice enabled. | individual CLI commands; see `NOTEBOOKLM_QUIET_DEPRECATIONS` section below |
-| `NOTEBOOKLM_STRICT_DECODE` | Toggle the decoder's drift behavior — warn-and-fallback (`0`, default) vs raise `UnknownRPCMethodError` (`1`/`true`/`True`). | Process env on each decode call. | `_env.is_strict_decode_enabled` |
+| `NOTEBOOKLM_STRICT_DECODE` | Toggle the decoder's drift behavior — raise `UnknownRPCMethodError` (unset/`1`/`true`/`True`, default since PR 13.9a) vs warn-and-fallback opt-out (`0`/`false`/`no`/`""`). | Process env on each decode call. | `_env.is_strict_decode_enabled` |
 | `NOTEBOOKLM_BASE_URL` | NotebookLM base URL. Constrained to `https://notebooklm.google.com` (personal) or `https://notebooklm.cloud.google.com` (enterprise); other schemes/hosts/paths raise `ValueError`. | Process env on every base-URL lookup. | `_env.get_base_url` |
 | `NOTEBOOKLM_BL` | `bl` (build label) URL parameter sent on the chat streaming endpoint (`ChatAPI.ask`). Pins the frontend build the request is attributed to. | Process env on every chat stream call; whitespace-only falls back to `_env.DEFAULT_BL`. | `_env.get_default_bl` |
 | `NOTEBOOKLM_DEBUG` | When `1`, RPC error messages include the **full** untruncated response body instead of the default 80-char preview. Verbose; intended for deep debugging only. | Process env on each error formatting call. | `exceptions._truncate_response_preview` |
@@ -160,9 +160,12 @@ be audited from one location.
 | `NOTEBOOKLM_REFRESH_STORAGE_PATH` | Child env var injected into `NOTEBOOKLM_REFRESH_CMD`; points to the `storage_state.json` file the command must rewrite before exiting `0`. Refresh scripts may read it, but setting it in the parent shell does not select storage. | Set by `auth` refresh-spawn helper from the explicit storage path or profile-aware storage path. | `auth._run_refresh_cmd` |
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (constant `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV` in `notebooklm.auth`) |
 
-**Boolean handling.** `NOTEBOOKLM_DEBUG_RPC` and `NOTEBOOKLM_STRICT_DECODE`
-treat `1` / `true` / `yes` (case-insensitive) as truthy; everything else is
-falsy. `NOTEBOOKLM_QUIET_DEPRECATIONS` requires the literal string `1`.
+**Boolean handling.** `NOTEBOOKLM_DEBUG_RPC` treats `1` / `true` / `yes`
+(case-insensitive) as truthy; everything else is falsy.
+`NOTEBOOKLM_STRICT_DECODE` treats `1` / `true` / `True` as truthy (the unset
+default also resolves to truthy post-PR 13.9a); everything else (`0`,
+`false`, `no`, `""`) is falsy and opts back into the soft-mode fallback.
+`NOTEBOOKLM_QUIET_DEPRECATIONS` requires the literal string `1`.
 `NOTEBOOKLM_NOTEBOOK` is treated as unset when empty or whitespace-only so a
 bare `export NOTEBOOKLM_NOTEBOOK=` does not block `notebooklm use` /
 `-n/--notebook` from resolving.
@@ -320,17 +323,29 @@ the value at a step isn't indexable), behavior depends on
 
 | Value | Behavior |
 |-------|----------|
-| `0` (default) | Log a warning with the failing path, `method_id`, `source` label, and a truncated repr of the data. Return `None` so legacy callers keep working. |
-| `1` / `true` / `True` | Raise `UnknownRPCMethodError` (a subclass of `DecodingError` / `RPCError`) with structured `method_id`, `path`, `source`, and `data_at_failure` attributes. |
+| unset / `1` / `true` / `True` (default since PR 13.9a) | Raise `UnknownRPCMethodError` (a subclass of `DecodingError` / `RPCError`) with structured `method_id`, `path`, `source`, and `data_at_failure` attributes. |
+| `0` / `false` / `no` / `""` (opt-out) | Log a warning with the failing path, `method_id`, `source` label, and a truncated repr of the data. Return `None` so legacy callers keep working. |
 
-The default of `0` is a soft-rollout safeguard for this release while
-call sites migrate to defensive indexing. A future release will flip the
-default to `1` — set `NOTEBOOKLM_STRICT_DECODE=1` in your CI/staging
-environments now to catch drift early.
+The flipped default (PR 13.9a) closes the Tier-12/13 soft-rollout window the
+shared `safe_index` helper was introduced under: every call site that
+descends through `safe_index` already handles both modes, and the
+strict-by-default contract surfaces real schema drift (Google rotating a
+response shape) as a typed exception instead of a silent `None` return. A
+small number of legacy positional decoders in `_artifact_downloads`,
+`_artifact_polling`, and `_chat_protocol` predate the helper and still have
+their own feature-local error-recovery paths; they will be migrated to
+`safe_index` in Tier 13.x follow-ups and are unaffected by this flip. Set
+`NOTEBOOKLM_STRICT_DECODE=0` to opt back into the legacy warn-and-fallback
+for one release if downstream code is not yet ready for the typed exception
+path; the opt-out is scheduled for removal in a future release alongside
+ADR-011's enforcement timeline.
 
 The same `UnknownRPCMethodError` is also raised by `decode_response()` when the
 batchexecute response contains RPC IDs but not the one the call requested
 (typically a sign that Google rotated the method ID).
+
+> Background and rationale for the flip: see
+> [`docs/adr/0011-schema-validation-policy.md`](adr/0011-schema-validation-policy.md).
 
 ## CLI Options
 

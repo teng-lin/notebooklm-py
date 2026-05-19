@@ -145,6 +145,35 @@ For raw-RPC power-user calls, import the method enum explicitly:
 from notebooklm.rpc import RPCMethod
 ```
 
+### Strict-decode default (since PR 13.9a)
+
+Schema-drift helpers (notably :func:`notebooklm.rpc.safe_index`) **raise**
+:class:`~notebooklm.exceptions.UnknownRPCMethodError` by default when Google's
+batchexecute response shape does not match what the decoder expects. Pre-flip
+the default was warn-and-return-``None``; the soft-mode opt-in lives at
+``NOTEBOOKLM_STRICT_DECODE=0`` for one release window so downstream code that
+relies on the legacy sentinel can migrate at its own pace before the env
+var is retired.
+
+Stability implications:
+
+- **Exception type is stable.** ``UnknownRPCMethodError`` is a subclass of
+  ``DecodingError`` and ``RPCError`` (both public-API exceptions). Code that
+  already catches ``RPCError`` continues to handle drift correctly under the
+  new default.
+- **No silent shape changes.** Methods that previously returned ``None`` /
+  empty values on drift may now raise. Callers that treated ``None`` as a
+  valid sentinel must add an ``except UnknownRPCMethodError`` branch *or*
+  opt out via ``NOTEBOOKLM_STRICT_DECODE=0`` for one release while migrating.
+- **Removal of opt-out.** The ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out path is
+  scheduled for retirement once downstream call sites have migrated; see
+  `docs/adr/0011-schema-validation-policy.md` for the policy and timeline.
+
+See [`docs/configuration.md#decoder-strictness`](configuration.md#decoder-strictness)
+for the env-var contract and
+[`docs/adr/0011-schema-validation-policy.md`](adr/0011-schema-validation-policy.md)
+for the design rationale behind the default flip.
+
 ## Deprecation Policy
 
 1. **Deprecation Notice**: Deprecated features emit `DeprecationWarning`

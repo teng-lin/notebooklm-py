@@ -48,10 +48,15 @@ def test_extract_data_table_rows_happy_path() -> None:
 
 def test_extract_data_table_rows_missing_inner_list(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Inner ``[4]`` slot exists but lacks the ``[2]`` rows entry."""
     # The table-content section ([type, flags, rows_array]) is truncated to
     # ``[type, flags]`` — descending to index 2 must miss without raising.
+    # Post-PR 13.9a the strict-decode default would raise, so pin soft mode
+    # explicitly to keep exercising the "must NOT raise" contract this file
+    # documents.
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data = [[[[[0, 100, None, None, [6, 7]]]]]]
 
     with caplog.at_level(logging.WARNING):
@@ -63,8 +68,11 @@ def test_extract_data_table_rows_missing_inner_list(
     assert any("safe_index" in rec.message or "drift" in rec.message for rec in caplog.records)
 
 
-def test_extract_data_table_rows_wrong_type_at_one_level() -> None:
+def test_extract_data_table_rows_wrong_type_at_one_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """One of the wrapper hops is a string, not a list. Must return ``[]``."""
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     # Replace the third wrapper layer with a non-indexable string.
     raw_data = [[[["not-a-list", [[0, 100, None, None, [6, 7, []]]]]]]]
 
@@ -73,8 +81,11 @@ def test_extract_data_table_rows_wrong_type_at_one_level() -> None:
     assert result == []
 
 
-def test_extract_data_table_rows_truncated_structure() -> None:
+def test_extract_data_table_rows_truncated_structure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Outer wrapper is only 3 levels deep — descent stops well before [4][2]."""
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data: list = [[[]]]
 
     result = _extract_data_table_rows(raw_data)
@@ -89,12 +100,14 @@ def test_extract_data_table_rows_truncated_structure() -> None:
 
 def test_extract_data_table_rows_non_list_inner_value(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Inner ``[2]`` is a scalar (e.g. None) instead of a list. Returns ``[]``.
 
     This guards the ``isinstance(rows_array, list)`` normalisation branch in
     the helper, which keeps the caller's "empty data table" path uniform.
     """
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data = [[[[[0, 100, None, None, [6, 7, None]]]]]]
 
     with caplog.at_level(logging.WARNING):
@@ -108,13 +121,16 @@ def test_extract_data_table_rows_non_list_inner_value(
 # ---------------------------------------------------------------------------
 
 
-def test_parse_data_table_raises_artifact_parse_error_on_drift() -> None:
+def test_parse_data_table_raises_artifact_parse_error_on_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The fallback at _artifacts.py:236-240 must still raise on shape drift.
 
     Even though the helper returns ``[]`` on drift, ``_parse_data_table`` must
     convert that to :class:`ArtifactParseError` so the
     ``download_data_table`` surface is unchanged.
     """
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     truncated: list = [[[]]]  # same shape as drift test above
 
     with pytest.raises(ArtifactParseError):

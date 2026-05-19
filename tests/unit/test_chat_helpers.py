@@ -39,8 +39,12 @@ def test_extract_next_turn_content_happy_path() -> None:
 
 def test_extract_next_turn_content_missing_inner_list(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``turn[4]`` exists but is an empty list — descent stops at index 0."""
+    # Post-PR 13.9a the default is strict; this site pins the soft-mode
+    # warn-and-return-None contract by opting back in.
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     next_turn = [None, None, 2, None, []]
 
     with caplog.at_level(logging.WARNING):
@@ -54,8 +58,10 @@ def test_extract_next_turn_content_missing_inner_list(
 
 def test_extract_next_turn_content_wrong_type_at_level(
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``turn[4][0]`` is a string instead of a list — descent must fail soft."""
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     # The inner wrapper is a scalar, so descending to index ``[0]`` of a
     # string would succeed (yielding 'n'), but descending again would not —
     # safe_index normalises this to ``None`` via its TypeError/IndexError
@@ -90,12 +96,15 @@ def test_extract_next_turn_content_non_string_leaf() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_parse_turns_to_qa_pairs_drift_yields_empty_answer() -> None:
+def test_parse_turns_to_qa_pairs_drift_yields_empty_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Answer turn with broken inner shape yields an empty answer string.
 
     Pins the contract that the named extractor preserves the previous
     empty-answer fallback semantics of :meth:`_parse_turns_to_qa_pairs`.
     """
+    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     turns_data = [
         [
             [None, None, 1, "Question?"],

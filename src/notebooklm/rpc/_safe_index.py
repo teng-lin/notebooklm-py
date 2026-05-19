@@ -1,10 +1,11 @@
 """Shared schema-drift helper for indexing into decoded RPC payloads.
 
 ``safe_index`` walks a nested list/tuple by integer keys with soft-strict
-semantics. In the default soft-rollout mode it logs a warning and returns
-``None`` on drift; setting ``NOTEBOOKLM_STRICT_DECODE=1`` flips it to raise
-``UnknownRPCMethodError`` so callers fail fast when Google's response shape
-moves out from under us.
+semantics. Since PR 13.9a the default is strict: drift raises
+``UnknownRPCMethodError`` so callers fail fast when Google's response
+shape moves out from under us. Setting ``NOTEBOOKLM_STRICT_DECODE=0``
+opts back into the legacy warn-and-return-``None`` fallback for one
+release window (see ``docs/adr/0011-schema-validation-policy.md``).
 
 This is the single shared point of policy for "the payload didn't look like
 we expected" — call sites should migrate to ``safe_index`` rather than

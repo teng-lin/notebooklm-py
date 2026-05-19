@@ -26,8 +26,13 @@ class TestExtractSummary:
         assert _extract_summary(outer) == "the summary"
 
     def test_drift_missing_inner_index_returns_empty_string(
-        self, caplog: pytest.LogCaptureFixture
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # Post-PR 13.9a default is strict; this test pins the soft-mode
+        # warn-and-return-"" contract by opting back in explicitly.
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         # outer[0] is an empty list — outer[0][0] would IndexError.
         outer: list = [[], [[["Q", "P"]]]]
 
@@ -48,8 +53,11 @@ class TestExtractSummary:
         )
 
     def test_drift_wrong_type_at_outer_zero_returns_empty_string(
-        self, caplog: pytest.LogCaptureFixture
+        self,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         # outer[0] is an int — outer[0][0] raises TypeError.
         outer = [42, [[["Q", "P"]]]]
 
