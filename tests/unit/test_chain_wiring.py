@@ -8,7 +8,8 @@ PR 12.2 of the Tier-12/13 greenfield migration wires
 ``RpcRequest.context`` and delegates to
 :meth:`AuthedTransport.perform_authed_post` — the shared seam covering both
 :meth:`ClientCore._perform_authed_post` AND ``RpcExecutor.execute`` (which
-calls ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
+calls ``self._owner._perform_authed_post`` inside its retry loop in
+``_core_rpc.py``).
 
 These tests verify the wiring contract from
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160 and ADR-009

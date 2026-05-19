@@ -36,7 +36,7 @@ import pytest
 # canonical import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
 from notebooklm._core_metrics import ClientMetrics
-from notebooklm._logging import get_request_id, set_request_id
+from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._middleware import (
     NextCall,
     RpcRequest,
@@ -300,15 +300,13 @@ async def test_event_carries_current_request_id(
         assert get_request_id() == "test-req-id-7f2a"
         await chain(request)
     finally:
-        # Best-effort reset to keep test isolation tight. The reqid
-        # contextvar is process-scoped but pytest gives each test a
-        # fresh frame, so leaking here would not affect other tests in
-        # practice; resetting anyway is the disciplined choice.
-        import contextvars
-
-        contextvars.copy_context()  # no-op; the token cleanup happens
-        # automatically when the test function frame exits.
-        del token
+        # Restore the prior reqid context. ``ContextVar`` tokens are not
+        # cleared when the function frame exits — they must be explicitly
+        # ``reset()``-ed (see ``ContextVar.reset`` docs). pytest-asyncio
+        # gives each async test its own task + ``copy_context()`` snapshot,
+        # so a leak here usually doesn't affect sibling tests in practice,
+        # but the disciplined cleanup is to reset the token we minted.
+        reset_request_id(token)
 
     assert len(captured) == 1
     assert captured[0].request_id == "test-req-id-7f2a"

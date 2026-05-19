@@ -40,7 +40,6 @@ from .rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
-from .types import RpcTelemetryEvent
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +94,6 @@ class RpcOwner(Protocol):
     async def _finish_transport_post(self, token: Any) -> None: ...
 
     def _increment_metrics(self, **increments: int | float) -> None: ...
-
-    async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None: ...
 
 
 class RpcExecutor:

@@ -574,6 +574,9 @@ async def test_default_registry_preserves_today_behavior(
     )
 
     assert captured["disable_internal_retries"] is False
+    # Pin ``rpc_method`` propagation through the executor → transport seam
+    # so a regression in the kwarg threading can't slip past the suite.
+    assert captured["rpc_method"] == RPCMethod.LIST_NOTEBOOKS.name
 
 
 @pytest.mark.asyncio
