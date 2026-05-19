@@ -14,7 +14,6 @@ from notebooklm import (
     get_request_id,
 )
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core import ClientCore
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
@@ -129,7 +128,7 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 @pytest.mark.asyncio
 async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
     core = ClientCore(auth_tokens)
-    api = ArtifactsAPI(ClientCoreCapabilities(core))
+    api = ArtifactsAPI(core)
     first_poll_started = asyncio.Event()
     release_first_poll = asyncio.Event()
     poll_count = 0
@@ -222,7 +221,7 @@ async def test_upload_progress_callback_receives_byte_counts(
     core = ClientCore(auth_tokens)
     await core.open()
     try:
-        api = SourcesAPI(ClientCoreCapabilities(core))
+        api = SourcesAPI(core)
         test_file = tmp_path / "upload.txt"
         content = b"hello progress"
         test_file.write_bytes(content)
@@ -259,7 +258,7 @@ async def test_upload_progress_callback_receives_byte_counts(
 @pytest.mark.asyncio
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
     core = ClientCore(auth_tokens)
-    api = ArtifactsAPI(ClientCoreCapabilities(core))
+    api = ArtifactsAPI(core)
     statuses = [
         GenerationStatus(task_id="task_1", status="in_progress"),
         GenerationStatus(task_id="task_1", status="completed", url="https://example.test/out"),

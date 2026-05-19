@@ -15,10 +15,10 @@ patterns.
 Design choices (documented in ADR-007 "Alternatives considered"):
 
 - ``FakeClientCore`` is a plain class with explicit attribute storage
-  (``types.SimpleNamespace``-shaped). It is *not* a
-  ``MagicMock(spec=ClientCoreCapabilities)`` because spec-based mocks
-  silently auto-vivify attributes and tie the factory to the
-  fat-union adapter that D2 PR-2 deletes.
+  (``types.SimpleNamespace``-shaped). It is *not* a spec-based
+  ``MagicMock`` because spec-based mocks silently auto-vivify
+  attributes and would tie the factory to a single concrete class
+  shape rather than the open set of narrow Protocols.
 - Async-surface defaults use :class:`unittest.mock.AsyncMock`;
   sync-surface defaults use :class:`unittest.mock.MagicMock`. Both are
   configured with benign return values so a test that only exercises one
@@ -79,8 +79,6 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         # CoreReqIdProvider — both the public name and the underscore alias
         "next_reqid": AsyncMock(return_value=100000),
         "_next_reqid": AsyncMock(return_value=100000),
-        # ChatStreamingProvider — transitional; retires in D2 PR-2
-        "query_post": AsyncMock(),
         # PollRegistryProvider
         "poll_registry": MagicMock(),
         # AuthRouteProvider — sync helpers, used during request build
@@ -91,14 +89,18 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         # CookieJarProvider
         "live_cookies": MagicMock(return_value=httpx.Cookies()),
         # TransportOperationProvider — fresh token object per call so drain tracking
-        # gets unique identities (return_value=object() would share one instance)
-        "begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
-        "begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
-        "finish_transport_post": AsyncMock(return_value=None),
+        # gets unique identities (return_value=object() would share one instance).
+        # The Protocol declares the underscore-private names that ClientCore
+        # exposes directly; the no-underscore aliases below are preserved as
+        # forward-compat shims so any legacy callers that still reach for the
+        # adapter-era names land on benign mocks rather than AttributeError.
         "_begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
         "_begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
         "_finish_transport_post": AsyncMock(return_value=None),
         "_perform_authed_post": AsyncMock(),
+        "begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
+        "begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
+        "finish_transport_post": AsyncMock(return_value=None),
         # UploadConcurrencyProvider — Semaphore must be created inside a running loop
         # (Python 3.10+ raises RuntimeError otherwise); defer via side_effect.
         "get_upload_semaphore": MagicMock(side_effect=lambda: asyncio.Semaphore(1)),

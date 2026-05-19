@@ -13,8 +13,10 @@ from typing import Any, Protocol
 import httpx
 
 from ._capabilities import (
-    ClientCoreCapabilities,
     CoreReqIdProvider,
+    CoreRPCProvider,
+    LoopAffinityProvider,
+    SourceListProvider,
     TransportOperationProvider,
 )
 from ._chat_protocol import (
@@ -28,6 +30,7 @@ from ._chat_protocol import (
     parse_streaming_chat_response,
     raise_if_rate_limited,
 )
+from ._chat_transport import chat_aware_authed_post
 from ._core import _AuthSnapshot
 from ._core_cache import ConversationCache
 from ._core_transport import _BuildRequest
@@ -45,45 +48,37 @@ from .types import AskResult, ChatMode, ChatReference, ConversationTurn
 logger = logging.getLogger(__name__)
 
 
-class _ChatCore(TransportOperationProvider, CoreReqIdProvider, Protocol):
+class _ChatCore(
+    CoreRPCProvider,
+    TransportOperationProvider,
+    CoreReqIdProvider,
+    SourceListProvider,
+    LoopAffinityProvider,
+    Protocol,
+):
     """Narrow per-sub-client view of the core required by :class:`ChatAPI`.
 
     Co-located with the sub-client that consumes it (per ADR-002). Chat
-    uses transport primitives directly rather than ``rpc_call``: the
-    streaming-chat path issues an authed POST against ``batchexecute``
-    and parses the streamed response inline, so :class:`CoreRPCProvider`
-    is intentionally absent.
+    is unusual among sub-clients in that the streaming-chat path
+    (``ask``) issues an authed POST against ``batchexecute`` directly
+    through :func:`_chat_transport.chat_aware_authed_post`, while the
+    follow-up conversation and history RPCs (``get_conversation``,
+    ``delete_conversation``, ``get_conversation_id``,
+    ``list_conversations``) go through the standard ``rpc_call`` path.
 
-    Inherits the transport-operation bookkeeping (from
-    :class:`TransportOperationProvider`) and the shared request-id
-    counter (from :class:`CoreReqIdProvider`). The three underscore-
-    private members declared below are exposed under their native
-    :class:`ClientCore` names because :func:`_chat_transport.chat_aware_authed_post`
-    calls them by those names; they are the same transport capabilities the
-    inherited :class:`TransportOperationProvider` describes, just under the
-    underlying core's private names rather than the adapter's public ones
-    (the adapter is removed in ``arch-d2-cutover``).
-
-    Cutover note (for ``arch-d2-cutover``): until then, this Protocol is
-    intentionally over-constrained — a concrete class must expose both the
-    public ``begin_transport_post`` (from ``TransportOperationProvider``)
-    AND the underscore-private ``_begin_transport_post`` declared here. The
-    real ``ClientCore`` only has the underscore form; the public form lives
-    on the ``ClientCoreCapabilities`` adapter. D2 PR-2 reshapes
-    ``TransportOperationProvider`` so ``ClientCore`` becomes the canonical
-    implementer of the narrow Protocols (i.e. the no-underscore facade is
-    retired with ``ClientCoreCapabilities``).
-
-    The cutover to swap :class:`ChatAPI.__init__` annotation from
-    :class:`ClientCoreCapabilities` to ``_ChatCore`` and flip the
-    ``self._core.query_post`` call site to
-    :func:`_chat_transport.chat_aware_authed_post` lives in
-    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    Inherits the discrete capability surfaces chat exercises:
+    ``rpc_call`` (from :class:`CoreRPCProvider`), underscore-private
+    transport-operation bookkeeping (from
+    :class:`TransportOperationProvider`), the shared request-id counter
+    (from :class:`CoreReqIdProvider`), the source-id enumeration helper
+    (from :class:`SourceListProvider`), and the open-time event-loop
+    reference (from :class:`LoopAffinityProvider`). The single member
+    declared inline below — ``_perform_authed_post`` — is the underlying
+    streaming-chat transport entry point that
+    :func:`_chat_transport.chat_aware_authed_post` invokes; it does not
+    belong on any cross-sub-client base Protocol because chat is the
+    sole consumer.
     """
-
-    async def _begin_transport_post(self, log_label: str) -> Any: ...
-
-    async def _finish_transport_post(self, token: Any) -> None: ...
 
     async def _perform_authed_post(
         self,
@@ -160,7 +155,7 @@ class ChatAPI:
 
     def __init__(
         self,
-        core: ClientCoreCapabilities,
+        core: _ChatCore,
         *,
         conversation_cache: ConversationCache | None = None,
     ):
@@ -330,14 +325,16 @@ class ChatAPI:
                     reqid=reqid,
                 )
 
-            # ``query_post`` owns the retry/refresh/429 transport pipeline plus
-            # the transport→ChatError/NetworkError mapping that ``ask`` used to
-            # duplicate inline. The request-id context lives here so retries
-            # inside the helper share the same ``[req=<id>]`` log prefix as the
-            # initial attempt.
+            # ``chat_aware_authed_post`` owns the chat-flavored exception
+            # mapping (transport→ChatError/NetworkError) and drain
+            # bookkeeping that ``ask`` used to duplicate inline. The
+            # request-id context lives here so retries inside the helper
+            # share the same ``[req=<id>]`` log prefix as the initial
+            # attempt.
             reqid_token = None if get_request_id() is not None else set_request_id()
             try:
-                response = await self._core.query_post(
+                response = await chat_aware_authed_post(
+                    self._core,
                     build_request=build_request,
                     parse_label="chat.ask",
                 )

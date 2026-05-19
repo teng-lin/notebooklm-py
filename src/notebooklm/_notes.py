@@ -14,7 +14,7 @@ import logging
 from typing import Any, Protocol
 
 from . import _mind_map
-from ._capabilities import ClientCoreCapabilities, CoreRPCProvider
+from ._capabilities import CoreRPCProvider
 from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
@@ -25,9 +25,7 @@ class _NotesCore(CoreRPCProvider, Protocol):
 
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
     only the single capability NotesAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`). The cutover to swap :class:`NotesAPI.__init__`
-    annotation from :class:`ClientCoreCapabilities` to ``_NotesCore`` lives
-    in ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    :class:`CoreRPCProvider`).
     """
 
     pass
@@ -52,7 +50,7 @@ class NotesAPI:
 
     def __init__(
         self,
-        core: ClientCoreCapabilities,
+        core: _NotesCore,
         *,
         mind_map_service: _mind_map.MindMapService | None = None,
     ):

@@ -126,7 +126,13 @@ from .auth import (
     _rotate_cookies as _rotate_cookies,
 )
 from .auth import (
+    authuser_query as _authuser_query_value,
+)
+from .auth import (
     build_cookie_jar as build_cookie_jar,
+)
+from .auth import (
+    format_authuser_value as _format_authuser_header_value,
 )
 from .auth import (
     save_cookies_to_storage as save_cookies_to_storage,
@@ -452,9 +458,7 @@ class ClientCore:
         """Compatibility bridge to ``CookiePersistence``'s in-process save lock."""
         return self.cookie_persistence.save_lock
 
-    @_save_lock.setter
-    def _save_lock(self, value: threading.Lock) -> None:
-        self.cookie_persistence.save_lock = value
+    # ``_save_lock`` setter dropped in arch-d2-cutover: zero external callers.
 
     @property
     def _loaded_cookie_snapshot(self) -> CookieSnapshot | None:
@@ -588,10 +592,7 @@ class ClientCore:
         self._ensure_auth_coord()
         return self._auth_coord._refresh_task
 
-    @_refresh_task.setter
-    def _refresh_task(self, value: asyncio.Task[AuthTokens] | None) -> None:
-        self._ensure_auth_coord()
-        self._auth_coord._refresh_task = value
+    # ``_refresh_task`` setter dropped in arch-d2-cutover: zero external callers.
 
     @property
     def _refresh_callback(self) -> Callable[[], Awaitable[AuthTokens]] | None:
@@ -669,6 +670,9 @@ class ClientCore:
 
     @_bound_loop.setter
     def _bound_loop(self, value: asyncio.AbstractEventLoop | None) -> None:
+        # Required by the ``_AuthedTransportHost`` Protocol (declares
+        # ``_bound_loop`` as a settable variable). No external SET sites,
+        # but the Protocol contract demands a settable property.
         self._ensure_lifecycle()
         self._lifecycle._bound_loop = value
 
@@ -677,14 +681,7 @@ class ClientCore:
         self._ensure_lifecycle()
         return self._lifecycle._keepalive_task
 
-    @_keepalive_task.setter
-    def _keepalive_task(self, value: asyncio.Task[None] | None) -> None:
-        # Setter retained because these were plain ivars pre-extraction
-        # (and Python attributes are writeable by default). No SET sites in
-        # the current test surface, but mirroring the pre-extraction
-        # contract avoids future friction.
-        self._ensure_lifecycle()
-        self._lifecycle._keepalive_task = value
+    # ``_keepalive_task`` setter dropped in arch-d2-cutover: zero external callers.
 
     @property
     def _keepalive_interval(self) -> float | None:
@@ -701,10 +698,8 @@ class ClientCore:
         self._ensure_lifecycle()
         return self._lifecycle._keepalive_storage_path
 
-    @_keepalive_storage_path.setter
-    def _keepalive_storage_path(self, value: Path | None) -> None:
-        self._ensure_lifecycle()
-        self._lifecycle._keepalive_storage_path = value
+    # ``_keepalive_storage_path`` setter dropped in arch-d2-cutover: zero
+    # external callers.
 
     @property
     def _timeout(self) -> float:
@@ -820,6 +815,43 @@ class ClientCore:
         """Record time spent waiting for the upload semaphore."""
         self._ensure_observability_state()
         self._metrics_obj.record_upload_queue_wait(wait_seconds)
+
+    # Sub-client capability surface — satisfies the narrow Protocols in
+    # :mod:`notebooklm._capabilities` directly so sub-clients consume
+    # ``ClientCore`` itself (see ADR-002).
+    @property
+    def authuser(self) -> int:
+        return self.auth.authuser
+
+    @property
+    def account_email(self) -> str | None:
+        return self.auth.account_email
+
+    def authuser_query(self) -> str:
+        return _authuser_query_value(self.authuser, self.account_email)
+
+    def authuser_header(self) -> str:
+        return _format_authuser_header_value(self.authuser, self.account_email)
+
+    def live_cookies(self) -> httpx.Cookies:
+        return self.get_http_client().cookies
+
+    @property
+    def bound_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the open-time captured event loop (``LoopAffinityProvider``).
+
+        Defensive ``isinstance`` so a ``MagicMock``-shaped fixture whose
+        ``_lifecycle`` auto-vivifies into a mock doesn't synthesize a fake
+        loop object that the affinity helper would otherwise treat as a
+        real (mismatched) loop. Returns ``None`` when the underlying core
+        has no lifecycle or has not been opened; the affinity helper
+        treats ``None`` as a silent no-op.
+        """
+        lifecycle = getattr(self, "_lifecycle", None)
+        if lifecycle is None:
+            return None
+        loop = lifecycle.get_bound_loop()
+        return loop if isinstance(loop, asyncio.AbstractEventLoop) else None
 
     def _record_lock_wait(self, wait_seconds: float) -> None:
         self._ensure_observability_state()
@@ -1181,24 +1213,6 @@ class ClientCore:
         """
         self._ensure_auth_coord()
         await self._auth_coord.await_refresh(self)
-
-    async def query_post(
-        self,
-        *,
-        build_request: _BuildRequest,
-        parse_label: str,
-    ) -> httpx.Response:
-        """Compatibility wrapper around :meth:`RpcExecutor.query_post`.
-
-        The chat-flavored exception mapping (``ChatError`` / ``NetworkError``
-        translation, drain-aware operation-token bookkeeping) lives on the
-        executor; this facade preserves the method shape so callers and tests
-        can mock ``core.query_post = AsyncMock(...)`` by attribute.
-        """
-        return await self._get_rpc_executor().query_post(
-            build_request=build_request,
-            parse_label=parse_label,
-        )
 
     async def rpc_call(
         self,

@@ -15,21 +15,21 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._chat import ChatAPI
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import InfographicStyle, VideoFormat, VideoStyle
 
 
 @pytest.fixture
-def mock_core():
+def mock_core(monkeypatch):
     """Create a mock ClientCore.
 
-    After , ``ChatAPI.ask`` goes through ``core.query_post`` and
-    ``core.next_reqid`` instead of the legacy direct ``post`` / counter
-    mutation. Tests that need to assert on URL or body now drive
-    ``query_post`` via its ``build_request`` factory rather than poking the
-    raw httpx client.
+    After the D2 cutover, ``ChatAPI.ask`` calls
+    :func:`notebooklm._chat_transport.chat_aware_authed_post` (not
+    ``core.query_post``). Tests that need to assert on the chat URL or
+    body patch ``chat_aware_authed_post`` at the
+    ``notebooklm._chat.chat_aware_authed_post`` binding so the
+    ``build_request`` factory runs against a frozen snapshot.
     """
     from notebooklm._core import _AuthSnapshot
 
@@ -62,14 +62,16 @@ def mock_core():
     # ``_reqid_counter`` attribute remains for backwards-compat assertions.
     core._reqid_counter = 0
     core.next_reqid = AsyncMock(return_value=100000)
+    core.bound_loop = None
     core.get_http_client = MagicMock()
 
-    # Default ``query_post`` stub: invokes the caller-supplied
-    # ``build_request`` factory with a frozen snapshot (so the URL/body the
-    # test wants to assert on actually gets assembled) and returns a stock
-    # answer response. Individual tests that need to inspect the URL/body
-    # can read ``core._last_chat_request`` after calling ``ChatAPI.ask``.
-    async def _query_post_default(*, build_request, parse_label):
+    # Default ``chat_aware_authed_post`` stub: invokes the caller-supplied
+    # ``build_request`` factory with a frozen snapshot (so the URL/body
+    # the test wants to assert on actually gets assembled) and returns a
+    # stock answer response. Individual tests that need to inspect the
+    # URL/body can read ``core._last_chat_request`` after calling
+    # ``ChatAPI.ask``.
+    async def _chat_aware_authed_post_default(core_arg, *, build_request, parse_label):
         snapshot = _AuthSnapshot(
             csrf_token=core.auth.csrf_token,
             session_id=core.auth.session_id,
@@ -96,7 +98,10 @@ def mock_core():
         resp.text = f")]}}'\n{len(chunk)}\n{chunk}\n"
         return resp
 
-    core.query_post = AsyncMock(side_effect=_query_post_default)
+    # Track call counts so tests can assert on transport invocation.
+    chat_post_mock = AsyncMock(side_effect=_chat_aware_authed_post_default)
+    monkeypatch.setattr("notebooklm._chat.chat_aware_authed_post", chat_post_mock)
+    core._chat_aware_authed_post_mock = chat_post_mock
     return core
 
 
@@ -122,7 +127,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_with_explicit_source_ids(self, mock_core):
         """Test ask() with explicitly provided source_ids."""
-        api = ChatAPI(ClientCoreCapabilities(mock_core))
+        api = ChatAPI(mock_core)
 
         result = await api.ask(
             notebook_id="nb_123",
@@ -132,7 +137,7 @@ class TestChatSourceSelection:
 
         assert result.answer == "Default answer long enough to be valid."
 
-        # query_post is the transport entry point; the request body is
+        # chat_aware_authed_post is the transport entry point; the request body is
         # captured into ``_last_chat_request`` by the mock_core fixture.
         body = mock_core._last_chat_request["body"]
 
@@ -145,7 +150,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_with_none_fetches_all_sources(self, mock_core):
         """Test ask() with source_ids=None fetches all sources."""
-        api = ChatAPI(ClientCoreCapabilities(mock_core))
+        api = ChatAPI(mock_core)
 
         # Mock get_source_ids to return source IDs
         mock_core.get_source_ids.return_value = ["src_001", "src_002", "src_003"]
@@ -164,7 +169,7 @@ class TestChatSourceSelection:
     @pytest.mark.asyncio
     async def test_ask_source_encoding_format(self, mock_core):
         """Verify the correct encoding format for source IDs in ask()."""
-        api = ChatAPI(ClientCoreCapabilities(mock_core))
+        api = ChatAPI(mock_core)
 
         await api.ask(
             notebook_id="nb_123",
@@ -172,9 +177,9 @@ class TestChatSourceSelection:
             source_ids=["s1", "s2", "s3"],
         )
 
-        # query_post should have been called once with a build_request factory
+        # chat_aware_authed_post should have been called once with a build_request factory
         # that produces the URL-encoded body with the triple-nested sources.
-        mock_core.query_post.assert_called_once()
+        mock_core._chat_aware_authed_post_mock.assert_called_once()
         body = mock_core._last_chat_request["body"]
 
         # The body contains URL-encoded f.req parameter
@@ -203,7 +208,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_notes_api):
         """Test generate_audio with explicitly provided source_ids."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         # Mock successful generation response
         mock_core.rpc_call.return_value = [
@@ -244,7 +249,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_audio_with_none_fetches_all_sources(self, mock_core, mock_notes_api):
         """Test generate_audio with source_ids=None fetches all sources."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         # Mock get_source_ids to return source IDs
         mock_core.get_source_ids.return_value = ["src_001", "src_002"]
@@ -274,7 +279,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_video_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_video has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
@@ -303,7 +308,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_prompt_encoding(self, mock_core, mock_notes_api):
         """Test custom video style prompt is encoded after the style code."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
         await api.generate_video(
@@ -320,7 +325,7 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_requires_prompt(self, mock_core, mock_notes_api):
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -333,7 +338,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_empty_prompt(
         self, mock_core, mock_notes_api
     ):
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -347,7 +352,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_custom_style_rejects_blank_prompt(
         self, mock_core, mock_notes_api
     ):
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -361,7 +366,7 @@ class TestArtifactsSourceSelection:
     async def test_generate_video_style_prompt_requires_custom_style(
         self, mock_core, mock_notes_api
     ):
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         with pytest.raises(ValidationError, match="style_prompt requires"):
             await api.generate_video(
@@ -373,7 +378,7 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_cinematic_rejects_style_prompt(self, mock_core, mock_notes_api):
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         with pytest.raises(ValidationError, match="cinematic"):
             await api.generate_video(
@@ -386,7 +391,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_report_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_report has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
@@ -415,7 +420,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_report_extra_instructions_appended(self, mock_core, mock_notes_api):
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -438,7 +443,7 @@ class TestArtifactsSourceSelection:
         """extra_instructions has no effect when report_format is CUSTOM."""
         from notebooklm.rpc.types import ReportFormat
 
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -459,7 +464,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_quiz_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_quiz has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
 
@@ -484,7 +489,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_flashcards_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_flashcards has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
 
@@ -504,7 +509,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_infographic_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_infographic has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -524,7 +529,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_infographic_style_encoding(self, mock_core, mock_notes_api):
         """Test generate_infographic encodes style in config slot 5."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -545,7 +550,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_slide_deck_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_slide_deck has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
 
@@ -565,7 +570,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_data_table_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_data_table has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_table", "Table", 9, None, 1]]
 
@@ -585,7 +590,7 @@ class TestArtifactsSourceSelection:
     @pytest.mark.asyncio
     async def test_generate_mind_map_source_encoding(self, mock_core, mock_notes_api):
         """Test generate_mind_map has correct source encoding format."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         # Mock get_source_ids to return source IDs
         mock_core.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
@@ -620,7 +625,7 @@ class TestArtifactsSourceSelection:
         self, mock_core, mock_notes_api
     ):
         """Test generate_mind_map passes language and instructions to RPC payload."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.get_source_ids.return_value = ["src_1"]
         mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
@@ -649,7 +654,7 @@ class TestArtifactsSourceSelection:
         """Test suggest_reports uses GET_SUGGESTED_REPORTS RPC."""
         from notebooklm.rpc.types import RPCMethod
 
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         # Mock the GET_SUGGESTED_REPORTS RPC call
         # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
@@ -676,7 +681,7 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_generate_with_empty_source_list(self, mock_core, mock_notes_api):
         """Test generation with empty source_ids list produces empty arrays."""
-        api = ArtifactsAPI(ClientCoreCapabilities(mock_core), mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api)
 
         mock_core.rpc_call.return_value = [["artifact_empty", "Audio", 1, None, 1]]
 
@@ -699,7 +704,7 @@ class TestEmptySourceIds:
     @pytest.mark.asyncio
     async def test_ask_with_empty_source_list(self, mock_core):
         """Test ask with empty source_ids list."""
-        api = ChatAPI(ClientCoreCapabilities(mock_core))
+        api = ChatAPI(mock_core)
 
         await api.ask(
             notebook_id="nb_123",

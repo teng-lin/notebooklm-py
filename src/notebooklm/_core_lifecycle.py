@@ -215,7 +215,7 @@ class ClientLifecycle:
         # cross-loop call surfaces an actionable ``RuntimeError`` at the
         # call site rather than hanging on a primitive bound to a dead
         # loop. ``ChatAPI`` / ``ArtifactPollingService`` reach the bound
-        # loop through ``ClientCoreCapabilities.bound_loop`` (which reads
+        # loop through ``ClientCore.bound_loop`` (which reads
         # ``ClientLifecycle.get_bound_loop()``) so no further propagation
         # is needed there.
         host._drain_tracker.set_bound_loop(self._bound_loop)

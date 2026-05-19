@@ -17,14 +17,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm import _mind_map
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._notes import NotesAPI
 
 
 @pytest.mark.asyncio
 async def test_get_all_notes_delegates_to_injected_service():
     """``_get_all_notes_and_mind_maps`` calls the injected service."""
-    core = ClientCoreCapabilities(MagicMock())
+    core = MagicMock()
     fake_service = MagicMock(spec=_mind_map.MindMapService)
     fake_service.fetch_all_notes_and_mind_maps = AsyncMock(return_value=["sentinel-row"])
 
@@ -37,7 +36,7 @@ async def test_get_all_notes_delegates_to_injected_service():
 
 def test_default_mind_map_service_installed_when_not_injected():
     """``NotesAPI(core)`` installs a default ``MindMapService(core)``."""
-    core = ClientCoreCapabilities(MagicMock())
+    core = MagicMock()
     api = NotesAPI(core)
     assert isinstance(api._mind_map_service, _mind_map.MindMapService)
 
@@ -45,7 +44,7 @@ def test_default_mind_map_service_installed_when_not_injected():
 def test_mind_map_service_is_keyword_only():
     """``mind_map_service`` is keyword-only so the positional constructor
     contract (``core``) stays unchanged."""
-    core = ClientCoreCapabilities(MagicMock())
+    core = MagicMock()
     fake_service = MagicMock(spec=_mind_map.MindMapService)
     with pytest.raises(TypeError):
         # Passing mind_map_service positionally must fail because the
@@ -66,7 +65,7 @@ def test_falsy_mind_map_service_instance_is_preserved():
         def __bool__(self) -> bool:
             return False
 
-    core = ClientCoreCapabilities(MagicMock())
+    core = MagicMock()
     falsy_service = _FalsyService(core)
 
     api = NotesAPI(core, mind_map_service=falsy_service)

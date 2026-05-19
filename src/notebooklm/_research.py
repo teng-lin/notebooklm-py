@@ -9,7 +9,7 @@ import warnings
 from typing import Any, Protocol
 
 from . import research as _research_pub
-from ._capabilities import ClientCoreCapabilities, CoreRPCProvider, PollRegistryProvider
+from ._capabilities import CoreRPCProvider, PollRegistryProvider
 from .exceptions import ResearchTaskMismatchError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
@@ -25,10 +25,7 @@ class _ResearchCore(CoreRPCProvider, PollRegistryProvider, Protocol):
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
     only the capabilities ResearchAPI actually uses: ``rpc_call`` (from
     :class:`CoreRPCProvider`) and the shared artifact poll registry (from
-    :class:`PollRegistryProvider`). The cutover to swap
-    :class:`ResearchAPI.__init__` annotation from
-    :class:`ClientCoreCapabilities` to ``_ResearchCore`` lives in
-    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    :class:`PollRegistryProvider`).
     """
 
     pass
@@ -216,7 +213,7 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, core: ClientCoreCapabilities):
+    def __init__(self, core: _ResearchCore):
         """Initialize the research API.
 
         Args:

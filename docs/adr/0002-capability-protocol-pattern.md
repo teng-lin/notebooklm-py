@@ -2,9 +2,9 @@
 
 ## Status
 
-Accepted (Sunset = D2 cutover — to be marked Superseded when the `arch-d2-cutover` PR lands).
+Superseded by the `arch-d2-cutover` PR (D2 PR-2). The `ClientCoreCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol have been deleted; sub-clients now consume `ClientCore` directly, typed against per-sub-client narrow Protocols (`_NotebooksCore`, `_SourcesCore`, `_ArtifactsCore`, `_ChatCore`, `_ResearchCore`, `_NotesCore`, `_SettingsCore`, `_SharingCore`) co-located with each sub-client. The base capability Protocols (`CoreRPCProvider`, `SourceListProvider`, `CoreReqIdProvider`, `PollRegistryProvider`, `AuthRouteProvider`, `CookieJarProvider`, `TransportOperationProvider`, `UploadConcurrencyProvider`, `LoopAffinityProvider`) remain in `src/notebooklm/_capabilities.py` because multiple sub-clients compose them.
 
-This ADR documents a pattern that exists today and is scheduled for retirement. The "Decision" section below describes the current state; the "Alternatives considered" section describes the replacement that the D2 cutover will adopt.
+This ADR documents the pre-cutover pattern for historical context. The "Decision" section below describes the state prior to D2 cutover; the "Alternatives considered" section describes the replacement now adopted.
 
 ## Context
 

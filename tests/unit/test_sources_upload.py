@@ -9,7 +9,6 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.exceptions import NetworkError, RPCError, ValidationError
@@ -33,6 +32,26 @@ def mock_core():
     live_cookie_jar = MagicMock(name="live_cookie_jar")
     core.auth.cookie_jar = auth_cookie_jar
     core.get_http_client.return_value.cookies = live_cookie_jar
+    # After D2 cutover, ``_source_upload`` reaches the live cookie jar via
+    # ``capabilities.live_cookies()`` (the ``CookieJarProvider`` Protocol).
+    # Wire the same ``live_cookie_jar`` to that method so the
+    # ``_assert_async_client_uses_live_cookies`` invariant still proves the
+    # upload pipeline reuses the live jar.
+    core.live_cookies = MagicMock(return_value=live_cookie_jar)
+    # Mirror ``ClientCore``'s ``AuthRouteProvider`` surface. The
+    # ``authuser_query()`` and ``authuser_header()`` callables read
+    # ``core.auth.authuser`` / ``core.auth.account_email`` at call time so
+    # tests that mutate ``mock_core.auth.authuser`` mid-test still observe
+    # the updated routing.
+    from notebooklm.auth import authuser_query as _authuser_query
+    from notebooklm.auth import format_authuser_value as _authuser_header
+
+    core.authuser_query = MagicMock(
+        side_effect=lambda: _authuser_query(core.auth.authuser, core.auth.account_email)
+    )
+    core.authuser_header = MagicMock(
+        side_effect=lambda: _authuser_header(core.auth.authuser, core.auth.account_email)
+    )
     core._begin_transport_post = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.record_upload_queue_wait = MagicMock()
@@ -42,7 +61,7 @@ def mock_core():
 @pytest.fixture
 def sources_api(mock_core):
     """Create SourcesAPI with mocked core."""
-    return SourcesAPI(ClientCoreCapabilities(mock_core))
+    return SourcesAPI(mock_core)
 
 
 def _self_core_auth_attr_read(node: ast.AST, attr: str) -> bool:
@@ -84,7 +103,7 @@ def _self_core_http_client_cookies_read(node: ast.AST) -> bool:
     ],
 )
 def test_upload_helpers_do_not_read_core_auth_or_live_cookies_directly(helper):
-    """Upload helpers must route through ClientCoreCapabilities, not broad core internals."""
+    """Upload helpers must route through the narrow capability Protocols, not broad core internals."""
     tree = ast.parse(textwrap.dedent(inspect.getsource(helper)))
     violations = [
         ast.unparse(node)

@@ -257,7 +257,7 @@ class SourceUploadPipeline:
             operation_token = None
             try:
                 file_size = os.fstat(file_obj.fileno()).st_size
-                operation_token = await capabilities.begin_transport_post(
+                operation_token = await capabilities._begin_transport_post(
                     f"source upload {filename}"
                 )
                 source_id = await register_file_source(notebook_id, filename)
@@ -278,7 +278,7 @@ class SourceUploadPipeline:
             finally:
                 try:
                     if operation_token is not None:
-                        await capabilities.finish_transport_post(operation_token)
+                        await capabilities._finish_transport_post(operation_token)
                 finally:
                     if not handed_off:
                         file_obj.close()

@@ -3,7 +3,6 @@
 import logging
 from unittest.mock import MagicMock
 
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._chat import ChatAPI
 
 
@@ -13,7 +12,7 @@ class MalformedErrorPayload(list):
 
 
 def test_rate_limit_payload_parse_failure_logs_debug(caplog):
-    api = ChatAPI(core=ClientCoreCapabilities(MagicMock()))
+    api = ChatAPI(core=MagicMock())
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm._chat"):
         api._raise_if_rate_limited(MalformedErrorPayload())

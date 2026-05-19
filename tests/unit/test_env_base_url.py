@@ -2,7 +2,6 @@
 
 import pytest
 
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core import ClientCore
 from notebooklm._env import get_base_host, get_base_url
 from notebooklm._sources import SourcesAPI
@@ -101,7 +100,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
     core = ClientCore(auth)
     await core.open()
     try:
-        result = await SourcesAPI(ClientCoreCapabilities(core))._start_resumable_upload(
+        result = await SourcesAPI(core)._start_resumable_upload(
             "nb_123",
             "file.txt",
             12,

@@ -9,12 +9,9 @@ exceptions (``_TransportAuthExpired``, ``_TransportRateLimited``,
 or ``NetworkError`` so callers (currently only :class:`ChatAPI.ask`)
 stay free of HTTP-status branching.
 
-Body is the function-level extraction of the pre-existing
-``_RpcExecutor.query_post`` at ``_core_rpc.py:222-306`` — preserved
-verbatim modulo the rename of ``self._owner`` to ``core``. The cutover
-that flips :meth:`ChatAPI.ask` to call :func:`chat_aware_authed_post`
-directly and deletes the old ``query_post`` chain lives in
-``arch-d2-cutover`` (D2 PR-2); this file is additive scaffolding.
+After the D2 cutover (PR-2 / arch-d2-cutover), :meth:`ChatAPI.ask`
+calls :func:`chat_aware_authed_post` directly, replacing the prior
+chat-side wrapper that lived on the core's RPC executor.
 """
 
 from __future__ import annotations
@@ -50,7 +47,9 @@ async def chat_aware_authed_post(
     :class:`~notebooklm.exceptions.NetworkError` /
     :class:`~notebooklm.exceptions.ChatError` respectively. This keeps
     ChatAPI free of HTTP-status branching and matches the historical
-    contract of ``ChatAPI.ask`` (a planned follow-up will migrate that caller).
+    contract of ``ChatAPI.ask``, which calls this helper directly
+    post-D2-cutover (replacing the prior wrapper on the core's RPC
+    executor).
 
     Args:
         core: The chat-side narrow core view (declares the underscore-

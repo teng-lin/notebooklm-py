@@ -314,36 +314,34 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
     )
 
 
-def test_capabilities_private_core_access_is_limited_to_transport_adapter_calls() -> None:
+def test_capabilities_has_no_private_core_access() -> None:
+    """After ``arch-d2-cutover`` deleted ``ClientCoreCapabilities``, the
+    module holds only narrow Protocol declarations — no concrete class
+    forwards into ``ClientCore``'s underscore-private surface anymore.
+    """
     observed = _collect_core_private_accesses(SRC_ROOT / "_capabilities.py")
     observed_counts = Counter(attr for _, attr in observed)
 
-    assert observed_counts == Counter(
-        {
-            "_begin_transport_post": 1,
-            "_begin_transport_task": 1,
-            "_finish_transport_post": 1,
-        }
-    )
+    assert observed_counts == Counter()
 
 
-def test_capabilities_does_not_import_transport_operation_token() -> None:
+def test_capabilities_imports_transport_operation_token_for_protocol_signature() -> None:
+    """After ``arch-d2-cutover``, ``TransportOperationProvider`` declares
+    the underscore-private :class:`ClientCore` methods exactly — including
+    the concrete :class:`_TransportOperationToken` return type — so a
+    ``ClientCore`` instance structurally satisfies the Protocol under
+    mypy's strict variance checks.
+    """
     tree = ast.parse((SRC_ROOT / "_capabilities.py").read_text(encoding="utf-8"))
-    forbidden_imports: list[str] = []
+    imports: list[str] = []
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            forbidden_imports.extend(
+            imports.extend(
                 alias.name for alias in node.names if alias.name == "_TransportOperationToken"
             )
-        elif isinstance(node, ast.Import):
-            forbidden_imports.extend(
-                alias.name
-                for alias in node.names
-                if alias.name.endswith("._TransportOperationToken")
-            )
 
-    assert forbidden_imports == []
+    assert imports == ["_TransportOperationToken"]
 
 
 def _is_type_checking_guard(node: ast.AST) -> bool:
