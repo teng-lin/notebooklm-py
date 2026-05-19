@@ -104,6 +104,13 @@ from ._core_transport import (
 from ._core_transport import (
     _TransportServerError as _TransportServerError,
 )
+from ._middleware import (
+    Middleware,
+    NextCall,
+    RpcRequest,
+    RpcResponse,
+    build_chain,
+)
 from ._sources import fetch_source_ids
 
 # ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
@@ -452,6 +459,26 @@ class ClientCore:
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
+        # Tier-12 PR 12.2: empty middleware chain wired around
+        # ``AuthedTransport.perform_authed_post`` (the shared seam covering
+        # ``ClientCore._perform_authed_post`` here and ``RpcExecutor.execute``'s
+        # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
+        # Middlewares land one per PR in 12.3–12.8 (Tracing, Metrics, Drain,
+        # ErrorInjection, Retry, AuthRefresh) and are inserted into the empty
+        # list below; the wiring shape stays unchanged.
+        #
+        # The terminal adapter reads ``build_request`` / ``log_label`` /
+        # ``disable_internal_retries`` from ``RpcRequest.context`` and
+        # delegates to ``self._get_authed_transport().perform_authed_post``.
+        # ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
+        # stay unpopulated until PRs 12.5/12.7/12.8 start lifting behavior
+        # out of ``AuthedTransport``. See ADR-009 §"Per-request behavior"
+        # and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
+        self._middlewares: list[Middleware] = []
+        self._authed_post_chain: NextCall = build_chain(
+            self._middlewares,
+            self._authed_post_chain_terminal,
+        )
 
     @property
     def _save_lock(self) -> threading.Lock:
@@ -802,6 +829,36 @@ class ClientCore:
                 self._metrics_obj = ClientMetrics(on_rpc_event=None)
             if not hasattr(self, "_drain_tracker"):
                 self._drain_tracker = TransportDrainTracker()
+
+    def _ensure_authed_post_chain(self) -> None:
+        """Backfill the middleware chain for tests that construct via ``__new__``.
+
+        Mirrors :meth:`_ensure_observability_state` — a ``__new__``-built
+        fixture skips ``__init__`` and so misses both ``_middlewares`` and
+        ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
+        on such a fixture would raise ``AttributeError``; this helper
+        backfills both slots with the same shape ``__init__`` would have
+        constructed (empty middleware list around the terminal adapter).
+
+        Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
+        :meth:`_ensure_observability_state` is — two threads observing
+        ``hasattr is False`` simultaneously must not both construct a
+        chain (one would clobber the other and break the
+        ``self._middlewares`` ↔ ``self._authed_post_chain`` linkage that
+        later middleware PRs rely on). The lock is uncontested on the
+        happy ``__init__`` path because the chain is already populated.
+        """
+        if hasattr(self, "_authed_post_chain"):
+            return
+        with _OBSERVABILITY_INIT_LOCK:
+            if hasattr(self, "_authed_post_chain"):
+                return
+            if not hasattr(self, "_middlewares"):
+                self._middlewares = []
+            self._authed_post_chain = build_chain(
+                self._middlewares,
+                self._authed_post_chain_terminal,
+            )
 
     def _increment_metrics(self, **increments: int | float) -> None:
         self._ensure_observability_state()
@@ -1182,6 +1239,38 @@ class ClientCore:
             rpc_id_override=rpc_id_override,
         )
 
+    async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
+        """Chain leaf — adapts ``RpcRequest`` into ``AuthedTransport`` call shape.
+
+        Reads ``build_request`` / ``log_label`` / ``disable_internal_retries``
+        from ``request.context`` and delegates to
+        :meth:`AuthedTransport.perform_authed_post` — the shared seam that
+        covers both :meth:`ClientCore._perform_authed_post` and
+        ``RpcExecutor.execute`` (which calls ``_perform_authed_post`` at
+        ``_core_rpc.py:275``). Wraps the returned :class:`httpx.Response` in
+        an :class:`RpcResponse` so middlewares above the leaf see the chain
+        contract from ``_middleware.py``.
+
+        ``self._get_authed_transport()`` is resolved on every invocation so
+        late-bound monkeypatches of ``_get_authed_transport`` (e.g. fixtures
+        that swap the transport mid-test) still affect live behavior. The
+        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
+        dataclass fields stay unpopulated for the empty chain — PRs
+        12.5/12.7/12.8 begin populating them as middlewares strip behavior
+        out of :class:`AuthedTransport`. See ADR-009 §"RpcRequest.context
+        keys" for the metadata vocabulary.
+        """
+        context = request.context
+        build_request = context["build_request"]
+        log_label = context["log_label"]
+        disable_internal_retries = context.get("disable_internal_retries", False)
+        response = await self._get_authed_transport().perform_authed_post(
+            build_request=build_request,
+            log_label=log_label,
+            disable_internal_retries=disable_internal_retries,
+        )
+        return RpcResponse(response=response, context=context)
+
     async def _perform_authed_post(
         self,
         *,
@@ -1189,12 +1278,34 @@ class ClientCore:
         log_label: str,
         disable_internal_retries: bool = False,
     ) -> httpx.Response:
-        """Compatibility wrapper around :class:`AuthedTransport`."""
-        return await self._get_authed_transport().perform_authed_post(
-            build_request=build_request,
-            log_label=log_label,
-            disable_internal_retries=disable_internal_retries,
+        """Authed POST entry point — routes through the middleware chain.
+
+        Compatibility surface preserved so ``RpcExecutor.execute``
+        (``_core_rpc.py:275``), ``_chat_transport`` (``_chat_transport.py:64``),
+        and direct callers (``client._core._perform_authed_post(...)``) keep
+        the same keyword-only signature. The body now builds an
+        :class:`RpcRequest` with the three keyword-only args stashed into
+        ``context`` and dispatches into :attr:`_authed_post_chain` — the
+        empty middleware chain wired in :meth:`__init__`. Middlewares land
+        one per PR in 12.3–12.8; the wiring shape stays unchanged.
+
+        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
+        intentionally stay empty until PRs 12.5/12.7/12.8 begin populating
+        them as middlewares strip behavior out of :class:`AuthedTransport`.
+        """
+        self._ensure_authed_post_chain()
+        request = RpcRequest(
+            url="",
+            headers={},
+            body=b"",
+            context={
+                "build_request": build_request,
+                "log_label": log_label,
+                "disable_internal_retries": disable_internal_retries,
+            },
         )
+        result = await self._authed_post_chain(request)
+        return result.response
 
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.
