@@ -44,7 +44,10 @@ def test_descent_with_no_path_returns_root():
 def test_drift_outer_index_soft_mode_returns_none_with_warning(monkeypatch, caplog):
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     data = ["only-one"]
-    with caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"):
+    with (
+        caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"),
+        pytest.warns(DeprecationWarning, match="NOTEBOOKLM_STRICT_DECODE=0"),
+    ):
         result = safe_index(data, 5, method_id="abc", source="test.outer")
     assert result is None
     assert any(
@@ -57,7 +60,8 @@ def test_drift_inner_index_soft_mode_returns_none(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     data = [[["leaf"]]]
     # Outer ok, inner index out of range.
-    result = safe_index(data, 0, 0, 9, method_id="abc", source="test.inner")
+    with pytest.warns(DeprecationWarning, match="test.inner"):
+        result = safe_index(data, 0, 0, 9, method_id="abc", source="test.inner")
     assert result is None
 
 
@@ -132,7 +136,10 @@ def test_strict_mode_falsy_values(monkeypatch, caplog):
     """
     for value in ("0", "no", "false", ""):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", value)
-        with caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"):
+        with (
+            caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"),
+            pytest.warns(DeprecationWarning, match="NOTEBOOKLM_STRICT_DECODE=0"),
+        ):
             result = safe_index([], 0, method_id="abc", source="test")
         assert result is None
 

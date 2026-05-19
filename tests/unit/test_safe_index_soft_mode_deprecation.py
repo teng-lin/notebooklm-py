@@ -20,7 +20,7 @@ def test_soft_mode_drift_emits_deprecation_warning_and_logs(monkeypatch, caplog)
         caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"),
         pytest.warns(
             DeprecationWarning,
-            match=r"NOTEBOOKLM_STRICT_DECODE=0.*test.soft.*v0\.6\.0",
+            match=r"NOTEBOOKLM_STRICT_DECODE=0.*test\.soft.*v0\.6\.0",
         ),
     ):
         result = safe_index([], 0, method_id="abc", source="test.soft")

@@ -68,7 +68,10 @@ def test_opt_out_with_zero_returns_soft_mode(monkeypatch, caplog):
     monkeypatch.setenv(STRICT_DECODE_ENV, "0")
     assert is_strict_decode_enabled() is False
 
-    with caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"):
+    with (
+        caplog.at_level(logging.WARNING, logger="notebooklm.rpc._safe_index"),
+        pytest.warns(DeprecationWarning, match="NOTEBOOKLM_STRICT_DECODE=0"),
+    ):
         result = safe_index([], 0, method_id="abc", source="test.opt_out")
 
     assert result is None
