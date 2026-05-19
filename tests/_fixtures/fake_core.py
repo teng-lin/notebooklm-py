@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -79,7 +80,17 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
 
         return scope()
 
+    live_cookies = httpx.Cookies()
+    fake_http_client = SimpleNamespace(cookies=live_cookies)
+    auth = SimpleNamespace(authuser=0, account_email=None)
+    kernel = SimpleNamespace(
+        cookies=live_cookies,
+        get_http_client=MagicMock(return_value=fake_http_client),
+    )
+
     defaults: dict[str, Any] = {
+        "auth": auth,
+        "kernel": kernel,
         # Session — fresh list per call so tests can mutate without bleeding
         "rpc_call": AsyncMock(side_effect=lambda *a, **kw: []),
         "transport_post": AsyncMock(),
@@ -97,8 +108,8 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         "account_email": None,
         "authuser_query": MagicMock(return_value="authuser=0"),
         "authuser_header": MagicMock(return_value="0"),
-        "get_http_client": MagicMock(),
-        "live_cookies": MagicMock(return_value=httpx.Cookies()),
+        "get_http_client": MagicMock(return_value=fake_http_client),
+        "live_cookies": MagicMock(return_value=live_cookies),
         # Legacy transport drain helpers — fresh token object per call so drain tracking
         # gets unique identities (return_value=object() would share one instance).
         # The Protocol declares the underscore-private names that ClientCore
@@ -128,7 +139,7 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         defaults["_drain_hooks"][name] = hook
 
     defaults["register_drain_hook"] = MagicMock(side_effect=_register_drain_hook)
-    defaults["get_http_client"].return_value.cookies = httpx.Cookies()
+    defaults["get_http_client"].return_value.cookies = live_cookies
 
     # Validate overrides early so a typo like ``rpc_cal=`` fails loudly
     # rather than landing as an unread attribute.

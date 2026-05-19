@@ -267,7 +267,7 @@ class NotebookLMClient:
 
         source_uploader = SourceUploadPipeline(
             self._core,
-            self._core._kernel,
+            self._core.kernel,
             self._core.auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,

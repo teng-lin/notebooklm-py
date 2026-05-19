@@ -21,8 +21,40 @@ from ._request_types import BuildRequest
 from .rpc.types import RPCMethod
 
 
+class AuthMetadata(Protocol):
+    """Selected-account routing metadata required by upload flows."""
+
+    @property
+    def authuser(self) -> int: ...
+
+    @property
+    def account_email(self) -> str | None: ...
+
+
+class Kernel(Protocol):
+    """Pure transport surface owned by the concrete Kernel in PR 13.2."""
+
+    async def post(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        body: bytes,
+    ) -> httpx.Response: ...
+
+    @property
+    def cookies(self) -> httpx.Cookies: ...
+
+    async def aclose(self) -> None: ...
+
+
 class Session(Protocol):
     """Orchestration surface consumed by feature APIs after Tier 13."""
+
+    @property
+    def auth(self) -> AuthMetadata: ...
+
+    @property
+    def kernel(self) -> Kernel: ...
 
     async def rpc_call(
         self,
@@ -50,21 +82,11 @@ class Session(Protocol):
 
     def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]: ...
 
-
-class Kernel(Protocol):
-    """Pure transport surface owned by the concrete Kernel in PR 13.2."""
-
-    async def post(
+    def register_drain_hook(
         self,
-        url: str,
-        headers: Mapping[str, str],
-        body: bytes,
-    ) -> httpx.Response: ...
-
-    @property
-    def cookies(self) -> httpx.Cookies: ...
-
-    async def aclose(self) -> None: ...
+        name: str,
+        hook: Callable[[], Awaitable[None]],
+    ) -> None: ...
 
 
 class DrainHookRegistration(Protocol):
@@ -78,6 +100,7 @@ class DrainHookRegistration(Protocol):
 
 
 __all__ = [
+    "AuthMetadata",
     "DrainHookRegistration",
     "Kernel",
     "Session",

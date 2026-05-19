@@ -34,6 +34,7 @@ def mock_core():
     live_cookie_jar = MagicMock(name="live_cookie_jar")
     core.auth.cookie_jar = auth_cookie_jar
     core.get_http_client.return_value.cookies = live_cookie_jar
+    core.kernel = core
     # The stateful upload pipeline reaches the live cookie jar through the
     # injected kernel/session compatibility path. Keep this distinct from
     # auth.cookie_jar so the invariant still proves uploads reuse the live jar.

@@ -1028,6 +1028,10 @@ class ClientCore:
 
     # Session/support surface consumed by feature APIs and private helpers.
     @property
+    def kernel(self) -> Kernel:
+        return self._kernel
+
+    @property
     def authuser(self) -> int:
         return self.auth.authuser
 

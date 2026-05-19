@@ -10,7 +10,7 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from . import _artifact_formatters, _artifact_polling, _mind_map
 from ._artifact_downloads import ArtifactDownloadService, DownloadResult
@@ -190,7 +190,7 @@ class ArtifactsAPI:
             self._poll_registry,
         )
         if drain_hooks is None:
-            drain_hooks = cast(DrainHookRegistration, session)
+            drain_hooks = session
         drain_hooks.register_drain_hook("artifacts.polls", self._polling.drain)
 
     # =========================================================================

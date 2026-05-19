@@ -6,14 +6,13 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
-from typing import IO, Any, Literal, cast
+from typing import IO, Any, Literal
 from urllib.parse import urlparse
 
 import httpx
 
 from . import _source_upload
 from ._core_constants import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ._kernel import Kernel
 from ._session_contracts import Session
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
@@ -21,7 +20,6 @@ from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
 from ._source_upload import SourceUploadPipeline
 from ._url_utils import is_youtube_url
-from .auth import AuthTokens
 from .rpc import RPCMethod
 from .types import (
     Source,
@@ -83,19 +81,12 @@ class SourcesAPI:
         self._upload_timeout = upload_timeout
         self._uploader = uploader or SourceUploadPipeline(
             session,
-            self._compat_kernel(session),
-            cast(AuthTokens, getattr(session, "auth", None)),
+            session.kernel,
+            session.auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
             record_upload_queue_wait=getattr(session, "record_upload_queue_wait", None),
         )
-
-    @staticmethod
-    def _compat_kernel(session: Session) -> Kernel:
-        kernel = getattr(session, "__dict__", {}).get("_kernel")
-        if kernel is not None:
-            return cast(Kernel, kernel)
-        return cast(Kernel, session)
 
     async def _rpc_call(
         self,

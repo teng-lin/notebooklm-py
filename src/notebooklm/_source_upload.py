@@ -22,8 +22,8 @@ from ._core_constants import (
 )
 from ._env import get_base_url
 from ._idempotency import idempotent_create
-from ._session_contracts import Kernel, Session
-from .auth import AuthTokens, authuser_query, format_authuser_value
+from ._session_contracts import AuthMetadata, Kernel, Session
+from .auth import authuser_query, format_authuser_value
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -184,7 +184,7 @@ class SourceUploadPipeline:
         self,
         session: Session,
         kernel: Kernel,
-        auth: AuthTokens,
+        auth: AuthMetadata,
         upload_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         *,
