@@ -23,9 +23,9 @@ from ._chat_protocol import (
 )
 from ._chat_transport import chat_aware_authed_post
 from ._core_cache import ConversationCache
+from ._core_transport import _AuthSnapshot
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._notebook_metadata import NotebookSourceIdProvider
-from ._session import _AuthSnapshot
 from ._session_contracts import Session
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (

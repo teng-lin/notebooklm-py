@@ -549,7 +549,7 @@ def test_core_get_error_injection_mode_typo_returns_none(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["429", "5xx", "expired_csrf"])
-async def test_error_injection_middleware_present_when_env_var_set_in_clientcore(monkeypatch, mode):
+async def test_error_injection_middleware_present_when_env_var_set_in_session(monkeypatch, mode):
     """When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, ``Session`` wires
     ``ErrorInjectionMiddleware`` into the chain so each chain invocation
     short-circuits with the synthetic shape."""
