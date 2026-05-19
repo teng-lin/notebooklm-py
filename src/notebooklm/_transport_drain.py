@@ -8,7 +8,7 @@ so the drain surface has one home (this file) instead of being woven into
 
 Design constraints (load-bearing — see
 ``tests/unit/concurrency/test_close_cancellation_leak.py``,
-``tests/unit/test_core_close.py``, and ``tests/unit/test_observability.py``):
+``tests/unit/test_session_close.py``, and ``tests/unit/test_observability.py``):
 
 * ``__init__`` MUST be event-loop-agnostic. ``Session`` is routinely
   constructed outside a running loop (sync-mode

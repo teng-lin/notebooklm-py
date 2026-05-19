@@ -1,4 +1,4 @@
-"""Unit tests for :class:`notebooklm._core_metrics.ClientMetrics`.
+"""Unit tests for :class:`notebooklm._client_metrics.ClientMetrics`.
 
 Covers the metrics helper in isolation — the ``Session`` facade contract
 (``metrics_snapshot``, ``_increment_metrics``, ``_record_rpc_queue_wait``,
@@ -27,7 +27,7 @@ import threading
 
 import pytest
 
-from notebooklm._core_metrics import ClientMetrics
+from notebooklm._client_metrics import ClientMetrics
 from notebooklm._session import Session
 from notebooklm.types import ClientMetricsSnapshot, RpcTelemetryEvent
 

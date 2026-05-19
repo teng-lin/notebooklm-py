@@ -98,7 +98,7 @@ async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> 
 
 
 @pytest.mark.asyncio
-async def test_direct_notebooks_api_metadata_lister_uses_late_bound_core_rpc_call() -> None:
+async def test_direct_notebooks_api_metadata_lister_uses_late_bound_rpc_executor_call() -> None:
     core = _make_core()
     api = NotebooksAPI(core)
     replacement_rpc = AsyncMock(

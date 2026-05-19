@@ -16,12 +16,12 @@ from typing import IO, Any, Protocol, cast
 import httpx
 
 from ._callbacks import maybe_await_callback
-from ._core_constants import (
+from ._env import get_base_url
+from ._idempotency import idempotent_create
+from ._session_config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
-from ._env import get_base_url
-from ._idempotency import idempotent_create
 from ._session_contracts import AuthMetadata, Kernel, Session
 from .auth import authuser_query, format_authuser_value
 from .exceptions import (

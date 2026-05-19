@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from ._core_transport import (
+from ._authed_transport import (
     _AuthSnapshot,
     _BuildRequest,
     _parse_retry_after,

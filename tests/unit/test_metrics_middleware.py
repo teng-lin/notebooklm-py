@@ -35,7 +35,7 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the
 # canonical import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._core_metrics import ClientMetrics
+from notebooklm._client_metrics import ClientMetrics
 from notebooklm._logging import get_request_id, reset_request_id, set_request_id
 from notebooklm._middleware import (
     NextCall,

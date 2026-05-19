@@ -63,8 +63,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm._core_rpc import RpcExecutor
-from notebooklm._core_transport import AuthedTransport
+from notebooklm._authed_transport import AuthedTransport
+from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session import Session
 from notebooklm.rpc import RPCMethod
 

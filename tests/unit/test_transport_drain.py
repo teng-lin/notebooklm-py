@@ -1,4 +1,4 @@
-"""Unit tests for :class:`notebooklm._core_drain.TransportDrainTracker`.
+"""Unit tests for :class:`notebooklm._transport_drain.TransportDrainTracker`.
 
 Covers the drain helper in isolation — the ``Session`` facade contract
 (``drain``, ``_begin_transport_post``, ``_begin_transport_task``,
@@ -33,8 +33,8 @@ import asyncio
 
 import pytest
 
-from notebooklm._core_drain import TransportDrainTracker, _TransportOperationToken
 from notebooklm._session import Session
+from notebooklm._transport_drain import TransportDrainTracker, _TransportOperationToken
 
 # ---------------------------------------------------------------------------
 # Construction
@@ -307,7 +307,7 @@ def test_token_reexported_from_core_module() -> None:
     """``from notebooklm._session import _TransportOperationToken`` must still work.
 
     Master plan mandate: the legacy import path stays available after the
-    dataclass moves into ``_core_drain``.
+    dataclass moves into ``_transport_drain``.
     """
     from notebooklm._session import _TransportOperationToken as Aliased
 

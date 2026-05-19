@@ -61,7 +61,7 @@ fact that ``AuthRefreshMiddleware`` only retries ONCE per ``next_call``
 invocation.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_core_auth.py`` for :class:`AuthRefreshCoordinator`
+``src/notebooklm/_session_auth.py`` for :class:`AuthRefreshCoordinator`
 (coalesced refresh + auth-snapshot lock), and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.8 for the
 PR sequence.
@@ -76,12 +76,12 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from ._core_constants import CORE_LOGGER_NAME
-from ._core_transport import _TransportAuthExpired
+from ._authed_transport import _TransportAuthExpired
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._session_config import CORE_LOGGER_NAME
 
 if TYPE_CHECKING:
-    from ._core_metrics import ClientMetrics
+    from ._client_metrics import ClientMetrics
 
 
 class AuthRefreshMiddleware:
@@ -101,7 +101,7 @@ class AuthRefreshMiddleware:
       and testable.
     - ``is_auth_error``: predicate that decides whether an exception is
       an auth failure (HTTP 400 / 401 / 403). Production wires
-      :func:`notebooklm._core_helpers.is_auth_error` through a lambda
+      :func:`notebooklm._session_helpers.is_auth_error` through a lambda
       that resolves it via ``notebooklm._core``'s module globals at
       call time, so ``monkeypatch.setattr("notebooklm._core.is_auth_error",
       ...)`` reaches the chain live; tests that build the middleware

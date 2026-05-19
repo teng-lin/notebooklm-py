@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`notebooklm._core_auth`.
+"""Unit tests for :mod:`notebooklm._session_auth`.
 
 Covers the load-bearing behaviors of :class:`AuthRefreshCoordinator` directly,
 in addition to the existing ``Session``-shaped tests in
@@ -34,8 +34,8 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._core_auth import AuthRefreshCoordinator
-from notebooklm._core_metrics import ClientMetrics
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._session_auth import AuthRefreshCoordinator
 from notebooklm.auth import AuthTokens
 
 # Tight enough to fail fast if a regression hangs the suite, generous enough
@@ -136,7 +136,7 @@ async def test_snapshot_and_refresh_locks_are_distinct() -> None:
 
     Mixing them would re-introduce the reentrancy ambiguity that the
     separate snapshot-side serialization was added to avoid — see the
-    module docstring for ``_core_auth.py``.
+    module docstring for ``_session_auth.py``.
     """
     coord = AuthRefreshCoordinator()
     refresh_lock = coord.get_refresh_lock()

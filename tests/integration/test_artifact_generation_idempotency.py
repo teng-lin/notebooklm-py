@@ -240,8 +240,8 @@ async def test_create_artifact_429_does_not_re_post(auth_tokens) -> None:
 
     ``_perform_authed_post`` shares the same ``disable_internal_retries``
     short-circuit for both 429 and 5xx paths
-    (``_core_transport.py:325-361`` for 429,
-    ``_core_transport.py:363-409`` for 5xx). The PROBE_THEN_CREATE
+    (``_authed_transport.py:325-361`` for 429,
+    ``_authed_transport.py:363-409`` for 5xx). The PROBE_THEN_CREATE
     classification must therefore prevent rate-limit retries from
     silently re-issuing a committed-but-throttled-response request.
     """

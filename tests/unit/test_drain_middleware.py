@@ -34,7 +34,6 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the
 # canonical import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._core_drain import TransportDrainTracker
 from notebooklm._middleware import (
     NextCall,
     RpcRequest,
@@ -42,6 +41,7 @@ from notebooklm._middleware import (
     build_chain,
 )
 from notebooklm._middleware_drain import DrainMiddleware
+from notebooklm._transport_drain import TransportDrainTracker
 
 
 def _terminal_returning(response: httpx.Response) -> NextCall:

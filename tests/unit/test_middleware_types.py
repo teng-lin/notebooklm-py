@@ -319,7 +319,7 @@ def test_auth_snapshot_alias_is_same_object_as_underscore_original() -> None:
     PR 12.9 will collapse the alias by relocating the definition into
     ``_request_types.py``; until then, the two names point at the same class.
     """
-    from notebooklm._core_transport import _AuthSnapshot
+    from notebooklm._authed_transport import _AuthSnapshot
 
     assert AuthSnapshot is _AuthSnapshot
 
@@ -345,7 +345,7 @@ def test_build_request_alias_is_callable_type() -> None:
 
 def test_build_request_alias_is_same_object_as_underscore_original() -> None:
     """``BuildRequest`` is the same type alias as ``_BuildRequest``."""
-    from notebooklm._core_transport import _BuildRequest
+    from notebooklm._authed_transport import _BuildRequest
 
     assert BuildRequest is _BuildRequest
 

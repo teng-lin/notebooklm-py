@@ -551,27 +551,28 @@ floor checks). All raise `ValueError`:
 the `httpx.AsyncClient`, glues the authed transport to RPC dispatch, and
 holds the `AuthTokens` for the running session. The supporting state
 (metrics, drain bookkeeping, request-id counter, transport plumbing,
-conversation cache, etc.) is split across single-responsibility seam
-modules under `notebooklm._core_*`. The split is internal — first-party
-legacy private callers can still import the documented constants
-from `notebooklm._core` — but it matters when reading the source, when
-writing unit tests against a stub host, or when tracing where a
-particular ivar lives.
+conversation cache, etc.) is split across single-responsibility session
+and kernel collaborator modules such as `notebooklm._authed_transport`,
+`notebooklm._rpc_executor`, and `notebooklm._transport_drain`. The split
+is internal — first-party legacy private callers can still import the
+documented constants from `notebooklm._core` — but it matters when
+reading the source, when writing unit tests against a stub host, or when
+tracing where a particular ivar lives.
 
 | Module | Owns | Notes |
 |---|---|---|
 | `_session` | Concrete `Session` orchestrator; HTTP client lifecycle; module-level constants (`MAX_RETRY_AFTER_SECONDS`, `DEFAULT_TIMEOUT`, etc.); `is_auth_error`, `save_cookies_to_storage`; error-injection seam `_get_error_injection_mode`. | Concrete implementation. |
 | `_core` | Compatibility shim that re-exports legacy private import names. | Legacy private imports continue to resolve while first-party code uses `_session`. |
-| `_core_auth` (Phase 2 in progress) | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
-| `_core_cache` | Per-instance LRU `_conversation_cache` for `ChatAPI` continuity. | Pure in-process state; not shared across `Session` instances. |
-| `_core_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
-| `_core_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
-| `_core_lifecycle` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Session lifecycle collaborator. |
-| `_core_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
-| `_core_polling` | Pending-poll registry shared by long-running artifact generations. | Concrete registry type retained for the `Session.poll_registry` compatibility bridge. |
-| `_core_reqid` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
-| `_core_rpc` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
-| `_core_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |
+| `_session_auth` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
+| `_conversation_cache` | Per-instance LRU `_conversation_cache` for `ChatAPI` continuity. | Pure in-process state; not shared across `Session` instances. |
+| `_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
+| `_transport_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
+| `_session_lifecycle` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Session lifecycle collaborator. |
+| `_client_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
+| `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts and the legacy `Session._pending_polls` compatibility bridge. |
+| `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
+| `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
+| `_authed_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |
 
 Feature APIs depend on the shared `notebooklm._session_contracts.Session`
 Protocol rather than concrete session internals.

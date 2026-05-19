@@ -34,7 +34,7 @@ import asyncio
 
 import pytest
 
-from notebooklm._core_reqid import ReqidCounter
+from notebooklm._reqid_counter import ReqidCounter
 
 
 @pytest.mark.asyncio

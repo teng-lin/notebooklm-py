@@ -1,4 +1,4 @@
-"""Module-level constants for the NotebookLM core client.
+"""Module-level constants for the NotebookLM session client.
 
 Holds the ``DEFAULT_*`` knobs that historically lived in :mod:`notebooklm._core`'s
 preamble. Each constant is re-exported from :mod:`notebooklm._core` so existing
@@ -21,8 +21,8 @@ __all__ = [
     "normalize_max_concurrent_uploads",
 ]
 
-# Single source of truth for the logger name every ``_core_*.py`` /
-# ``_middleware_*.py`` seam pins. Tests that filter logs via
+# Single source of truth for the logger name every session /
+# middleware seam pins. Tests that filter logs via
 # ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` (or, more commonly,
 # the literal string) match this name. PR 12.9 audit fix: was previously
 # repeated verbatim across seven modules; promoting it here eliminates

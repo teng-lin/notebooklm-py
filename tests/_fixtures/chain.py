@@ -8,7 +8,7 @@ behaviour" without re-inventing the chain plumbing per PR.
 Three helpers live here:
 
 - :class:`FakeAuthedPost` — programmable stub matching the shape of
-  :meth:`notebooklm._core_transport.AuthedTransport.perform_authed_post`. This
+  :meth:`notebooklm._authed_transport.AuthedTransport.perform_authed_post`. This
   is **not** ``FakeKernel`` — the ``Kernel`` Protocol doesn't exist until
   PR 13.2, and renaming to ``FakeKernel`` is part of PR 13.2's scope. Until
   then, the terminal call still goes through ``AuthedTransport``.
@@ -98,7 +98,7 @@ class FakeAuthedPost:
         """Record the call and return the configured response.
 
         Signature mirrors
-        :meth:`notebooklm._core_transport.AuthedTransport.perform_authed_post`
+        :meth:`notebooklm._authed_transport.AuthedTransport.perform_authed_post`
         verbatim (keyword-only ``build_request`` / ``log_label`` /
         ``disable_internal_retries``). ``build_request`` is typed as
         :data:`BuildRequest` so a signature drift in the real transport

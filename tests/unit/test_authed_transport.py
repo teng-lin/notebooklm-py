@@ -33,7 +33,7 @@ import httpx
 import pytest
 
 from conftest import install_post_as_stream
-from notebooklm._core_transport import AuthedTransport
+from notebooklm._authed_transport import AuthedTransport
 from notebooklm._logging import get_request_id
 from notebooklm._session import (
     Session,
@@ -97,7 +97,7 @@ def _status_error(code: int, *, retry_after: str | None = None) -> httpx.HTTPSta
 
 def test_core_reexports_transport_private_names():
     """Private imports from ``notebooklm._core`` remain source compatible."""
-    from notebooklm import _core, _core_transport
+    from notebooklm import _authed_transport, _core
 
     moved_names = [
         "_AuthSnapshot",
@@ -108,13 +108,13 @@ def test_core_reexports_transport_private_names():
         "_parse_retry_after",
     ]
     for name in moved_names:
-        assert getattr(_core, name) is getattr(_core_transport, name)
-    assert _core.MAX_RETRY_AFTER_SECONDS == _core_transport.MAX_RETRY_AFTER_SECONDS
+        assert getattr(_core, name) is getattr(_authed_transport, name)
+    assert _core.MAX_RETRY_AFTER_SECONDS == _authed_transport.MAX_RETRY_AFTER_SECONDS
 
 
-def test_core_transport_has_no_runtime_core_imports():
+def test_authed_transport_has_no_runtime_core_imports():
     """The collaborator must not create a runtime import cycle back to _core."""
-    path = Path(__file__).parents[2] / "src/notebooklm/_core_transport.py"
+    path = Path(__file__).parents[2] / "src/notebooklm/_authed_transport.py"
     tree = ast.parse(path.read_text())
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
@@ -983,7 +983,7 @@ async def test_streamed_response_size_cap(monkeypatch):
     """
     from contextlib import asynccontextmanager
 
-    from notebooklm._core_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import _stream_post_with_size_cap
     from notebooklm.exceptions import RPCResponseTooLargeError
 
     cap = 1024  # 1 KiB cap so the test stays fast and small.
@@ -1039,7 +1039,7 @@ async def test_normal_response_below_cap_works(monkeypatch):
     """A normal-sized response decodes through the streaming wrapper unchanged."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._core_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import _stream_post_with_size_cap
 
     payload = b"hello world" * 1000  # ~11 KB, well under the 50 MiB default
 
@@ -1086,7 +1086,7 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
     auth-refresh / 429 / 5xx branches see the same error they always did."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._core_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import _stream_post_with_size_cap
 
     chunk_reads = 0
 
@@ -1169,7 +1169,7 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
         pytest.importorskip("zstandard")
     from contextlib import asynccontextmanager
 
-    from notebooklm._core_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import _stream_post_with_size_cap
 
     # Realistic batchexecute prefix; only the bytes matter, not the framing.
     decoded_payload = b')]}\'\n\n[["wrb.fr",null,"[1]",null,null,null,"generic"]]'
@@ -1226,10 +1226,10 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
 
 
 def test_max_rpc_response_bytes_constant_lives_in_transport_module():
-    """Constant is owned by ``_core_transport`` (not ``_core``) to avoid an
-    import cycle — ``_core`` already imports from ``_core_transport``."""
-    from notebooklm import _core_transport
+    """Constant is owned by ``_authed_transport`` (not ``_core``) to avoid an
+    import cycle — ``_core`` already imports from ``_authed_transport``."""
+    from notebooklm import _authed_transport
 
-    assert _core_transport.MAX_RPC_RESPONSE_BYTES == 50 * 1024 * 1024
+    assert _authed_transport.MAX_RPC_RESPONSE_BYTES == 50 * 1024 * 1024
     # Sanity: it sits next to the other transport-layer constant.
-    assert _core_transport.MAX_RETRY_AFTER_SECONDS == 300
+    assert _authed_transport.MAX_RETRY_AFTER_SECONDS == 300

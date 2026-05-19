@@ -8,8 +8,8 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._core_rpc import RpcExecutor
-from notebooklm._core_transport import _AuthSnapshot
+from notebooklm._authed_transport import _AuthSnapshot
+from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import (
@@ -138,8 +138,8 @@ def _executor(
     )
 
 
-def test_core_rpc_has_no_runtime_core_imports() -> None:
-    path = Path(__file__).parents[2] / "src/notebooklm/_core_rpc.py"
+def test_rpc_executor_has_no_runtime_core_imports() -> None:
+    path = Path(__file__).parents[2] / "src/notebooklm/_rpc_executor.py"
     tree = ast.parse(path.read_text())
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
@@ -170,7 +170,7 @@ def test_core_rpc_has_no_runtime_core_imports() -> None:
 
 
 @pytest.mark.asyncio
-async def test_client_core_rpc_wrappers_delegate_to_rpc_executor(monkeypatch) -> None:
+async def test_client_rpc_executor_wrappers_delegate_to_rpc_executor(monkeypatch) -> None:
     core = Session(_auth_tokens())
     snapshot = _AuthSnapshot(
         csrf_token="csrf",
@@ -521,7 +521,7 @@ def test_request_error_mapper_parity(
 # =============================================================================
 # decode-time exception surface contract
 #
-# The ``except`` at ``_core_rpc.py::RpcExecutor.execute`` only wraps genuine
+# The ``except`` at ``_rpc_executor.py::RpcExecutor.execute`` only wraps genuine
 # shape-drift exceptions (``json.JSONDecodeError``, ``KeyError``, ``IndexError``,
 # ``TypeError``) as ``RPCError``. Code bugs (``AttributeError`` and friends)
 # must propagate unmasked. These tests pin that contract.

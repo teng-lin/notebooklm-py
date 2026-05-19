@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (Tier 13 PR 13.9a).
+Accepted (Tier 13 PR 13.9a). Amended by Tier 13 PR 13.8 to reflect
+the retirement of the lifted `_core_*` modules.
 
 ## Context
 
@@ -11,8 +12,9 @@ the time of this ADR, `src/notebooklm/` contains 13 public-named modules
 (`auth.py`, `client.py`, `config.py`, `exceptions.py`, `io.py`, `log.py`,
 `migration.py`, `notebooklm_cli.py`, `paths.py`, `research.py`,
 `types.py`, `urls.py`, `utils.py`) and roughly 50 underscore-prefixed
-seam modules (`_session.py`, `_session_contracts.py`, `_core.py`,
-`_core_*.py`, `_artifacts.py`, `_artifact_*.py`, `_chat.py`,
+seam modules (`_core.py`, `_session.py`, `_kernel.py`,
+`_session_contracts.py`, `_session_*`, `_authed_transport.py`,
+`_rpc_executor.py`, `_artifacts.py`, `_artifact_*.py`, `_chat.py`,
 `_chat_*.py`, `_middleware_*.py`, the `_auth/` subpackage, etc.).
 The seam modules carry the bulk of the implementation; the
 public-named modules are mostly thin re-export facades or lifecycle
@@ -23,10 +25,10 @@ Tier-11 / Tier-12 / Tier-13 remediations. Each tier extracted one or
 more concerns out of `_core.py` (or out of a feature module like
 `_artifacts.py`) into a new `_<scope>_<concern>.py` seam, with a
 re-export from the parent module preserved for one cycle and then
-removed. The seams that remain in `_core_*.py` are the load-bearing
-ones: `_core_constants.py` (knobs), `_core_helpers.py` (pure
-utilities), `_core_transport.py` (HTTP), `_core_rpc.py` (RPC
-dispatch), and so on. The same pattern applies inside
+removed. Tier 13 retired the lifted `_core_*` file names in favor of
+ownership names: `_session_config.py` (knobs), `_session_helpers.py`
+(pure utilities), `_authed_transport.py` (HTTP), `_rpc_executor.py`
+(RPC dispatch), and so on. The same pattern applies inside
 `_artifact_*.py` and `_chat_*.py`.
 
 Downstream code, however, sees no documented rule that distinguishes
@@ -122,9 +124,17 @@ but internal contents) MUST be added to this list before merging.
 src/notebooklm/
 ├── _session.py                  # Session concrete orchestrator
 ├── _core.py                     # legacy compatibility shim
-├── _core_*.py                   # per-concern core seams (transport, RPC, drain, etc.)
 ├── _session_contracts.py        # Session/Kernel Protocols (Tier-13)
 ├── _kernel.py                   # Kernel concrete (Tier-13)
+├── _session_*.py                # session helpers/config/lifecycle/auth
+├── _authed_transport.py         # authed POST leaf
+├── _rpc_executor.py             # RPC dispatch executor
+├── _transport_drain.py          # in-flight transport drain state
+├── _client_metrics.py           # metrics state and callbacks
+├── _reqid_counter.py            # chat request-id counter
+├── _conversation_cache.py       # chat conversation cache
+├── _polling_registry.py         # artifact polling registry
+├── _cookie_persistence.py       # cookie save state
 ├── _middleware_*.py             # middleware-chain modules
 ├── _artifacts.py                # ArtifactsAPI implementation
 ├── _artifact_*.py               # per-concern artifact seams
@@ -251,7 +261,7 @@ exceeds the benefit for a single-process library.
 
 **Put all seams under a single `notebooklm._internal` subpackage.**
 Rejected. The seams are already organised by domain
-(`_core_*`, `_artifact_*`, `_chat_*`, `_middleware_*`); collapsing
+(`_session_*`, `_artifact_*`, `_chat_*`, `_middleware_*`); collapsing
 them under a single `_internal/` subpackage would either lose the
 domain grouping (one flat `_internal/` directory with 50 modules) or
 duplicate it (`_internal/core/`, `_internal/artifacts/`, ...) for no

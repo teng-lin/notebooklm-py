@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from notebooklm._core_cache import ConversationCache
+from notebooklm._conversation_cache import ConversationCache
 
 
 def test_cache_conversation_turn_appends_turns() -> None:

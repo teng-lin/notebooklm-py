@@ -45,7 +45,7 @@ the codebase had before this PR. Same scope (``Exception``-aware via
 ``try/finally``, not via narrow ``except``) and same reason.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_core_drain.py`` for the underlying tracker, and
+``src/notebooklm/_transport_drain.py`` for the underlying tracker, and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.5 for the
 PR sequence.
 """
@@ -57,7 +57,7 @@ from typing import TYPE_CHECKING
 from ._middleware import NextCall, RpcRequest, RpcResponse
 
 if TYPE_CHECKING:
-    from ._core_drain import TransportDrainTracker
+    from ._transport_drain import TransportDrainTracker
 
 
 class DrainMiddleware:

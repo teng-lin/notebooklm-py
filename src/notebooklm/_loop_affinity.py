@@ -3,8 +3,8 @@
 A single small helper that compares a previously-captured event loop reference
 against ``asyncio.get_running_loop()`` and raises an actionable
 :class:`RuntimeError` on mismatch. Lives in its own module so the helpers
-that need to call it (``_core_drain.py`` / ``_core_reqid.py`` /
-``_core_auth.py`` / ``_artifact_polling.py`` / ``_chat.py``) can import it
+that need to call it (``_transport_drain.py`` / ``_reqid_counter.py`` /
+``_session_auth.py`` / ``_artifact_polling.py`` / ``_chat.py``) can import it
 without dragging in :class:`notebooklm._session.Session` — none of those
 modules currently have a direct ``Session`` reference and adding one
 just to reach a bound-loop attribute would re-couple them.
@@ -22,7 +22,7 @@ Design constraints:
   a special-case branch on every call site.
 
 * The error message is intentionally identical in spirit to the inline
-  guard at ``_core_transport.py:258-262`` so downstream call sites can
+  guard at ``_authed_transport.py:258-262`` so downstream call sites can
   surface a uniform diagnostic regardless of which seam the cross-loop
   call hit first.
 
@@ -48,7 +48,7 @@ def assert_bound_loop(bound_loop: asyncio.AbstractEventLoop | None) -> None:
     Raises:
         RuntimeError: When ``bound_loop`` is non-``None`` and differs from
             ``asyncio.get_running_loop()``. The message mirrors the inline
-            guard in ``_core_transport.AuthedTransport.perform_authed_post``
+            guard in ``_authed_transport.AuthedTransport.perform_authed_post``
             so callers see a consistent diagnostic regardless of which
             entry point caught the mismatch.
     """

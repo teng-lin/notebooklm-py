@@ -1,10 +1,10 @@
 """Public-ish request-shape aliases for the Tier-12 middleware chain.
 
 This module promotes a small set of types that were previously private to
-``_core_transport.py`` so the Tier-12 middleware chain (introduced in PRs
+``_authed_transport.py`` so the Tier-12 middleware chain (introduced in PRs
 12.1–12.9) can refer to them without reaching across underscore-prefixed
 seams. The originals (``_AuthSnapshot`` and ``_BuildRequest`` in
-``_core_transport.py``) remain in place; this module simply exposes them
+``_authed_transport.py``) remain in place; this module simply exposes them
 under names without a leading underscore. PR 12.9 collapses the aliases by
 relocating the definitions into this module and deleting the underscore
 originals.
@@ -12,7 +12,7 @@ originals.
 Three names live here:
 
 - :data:`AuthSnapshot` — point-in-time view of auth headers used to build
-  one HTTP attempt; alias for :class:`notebooklm._core_transport._AuthSnapshot`.
+  one HTTP attempt; alias for :class:`notebooklm._authed_transport._AuthSnapshot`.
   ADR-009 pins this as the public input type of the
   ``AuthRefreshMiddleware`` callbacks.
 - :data:`BuildRequest` — sync callable that maps an ``AuthSnapshot`` to a
@@ -45,11 +45,11 @@ from dataclasses import dataclass
 
 # Re-exported under public names below. The underscore originals are also
 # kept importable from this module (see ``__all__`` note above).
-from ._core_transport import _AuthSnapshot, _BuildRequest
+from ._authed_transport import _AuthSnapshot, _BuildRequest
 
 #: Point-in-time view of auth headers used to build one HTTP attempt.
 #:
-#: Alias for :class:`notebooklm._core_transport._AuthSnapshot`. The underscore
+#: Alias for :class:`notebooklm._authed_transport._AuthSnapshot`. The underscore
 #: original remains the canonical definition site for one cycle; PR 12.9
 #: collapses the alias by relocating the dataclass definition here.
 AuthSnapshot = _AuthSnapshot
@@ -58,7 +58,7 @@ AuthSnapshot = _AuthSnapshot
 #:
 #: Receives a fresh ``AuthSnapshot`` and returns a ``(url, body, headers)``
 #: tuple for one HTTP attempt. Alias for the existing
-#: :data:`notebooklm._core_transport._BuildRequest` type. Carried in
+#: :data:`notebooklm._authed_transport._BuildRequest` type. Carried in
 #: :attr:`notebooklm._middleware.RpcRequest.context` under the
 #: ``"build_request"`` key (PR 12.2 wires the chain leaf).
 BuildRequest = _BuildRequest
@@ -96,7 +96,7 @@ class BuildRequestResult:
 
 # Only the public-named symbols are part of the module's documented API.
 # ``_AuthSnapshot`` and ``_BuildRequest`` remain importable from this module
-# (because they are bound at module scope by the ``from ._core_transport ...``
+# (because they are bound at module scope by the ``from ._authed_transport ...``
 # line above) but are excluded from ``__all__`` so ``from notebooklm._request_types
 # import *`` does not propagate the private names.
 __all__ = [

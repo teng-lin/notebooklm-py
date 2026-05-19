@@ -6,8 +6,8 @@ read-modify-write under concurrent ``ChatAPI.ask`` callers. Lifted out of
 ``_core.py`` so the reqid surface has one home (this file) instead of being
 woven into ``Session.__init__`` alongside metrics, drain, and auth state.
 
-Design constraints (load-bearing — see ``tests/unit/test_core_reqid.py`` and
-``tests/unit/test_core_reqid_concurrent.py``):
+Design constraints (load-bearing — see ``tests/unit/test_reqid_counter.py`` and
+``tests/unit/test_reqid_counter_concurrent.py``):
 
 * ``__init__`` MUST be event-loop-agnostic — it must NOT instantiate
   ``asyncio.Lock()`` eagerly. ``Session`` is routinely built outside a
@@ -28,7 +28,7 @@ Design constraints (load-bearing — see ``tests/unit/test_core_reqid.py`` and
 
 * Optional ``on_lock_wait`` callback receives the seconds spent blocked on
   :attr:`_lock`. Decouples the counter from
-  :class:`notebooklm._core_metrics.ClientMetrics` so this class is unit-
+  :class:`notebooklm._client_metrics.ClientMetrics` so this class is unit-
   testable in isolation; ``Session`` wires it up to
   ``self._record_lock_wait`` at construction.
 """
@@ -55,7 +55,7 @@ def _noop_record_lock_wait(_wait_seconds: float) -> None:
     """Default ``on_lock_wait`` — does nothing.
 
     Used when the counter is constructed standalone (e.g. in
-    ``tests/unit/test_core_reqid_unit.py``) without a metrics sink wired up.
+    ``tests/unit/test_reqid_counter_unit.py``) without a metrics sink wired up.
     """
 
 

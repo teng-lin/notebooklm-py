@@ -10,9 +10,9 @@ from typing import Any
 import httpx
 import pytest
 
+import notebooklm._cookie_persistence as persistence_module
 import notebooklm._core as core_module
-import notebooklm._core_cookie_persistence as persistence_module
-from notebooklm._core_cookie_persistence import CookiePersistence
+from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm._session import Session
 from notebooklm.auth import (
     AuthTokens,
@@ -207,9 +207,9 @@ async def test_cookie_persistence_advances_baseline_only_on_accepted_saves(
     assert persistence.loaded_cookie_snapshot[psidts_key].value == "psidts-final"
 
 
-def test_core_cookie_persistence_does_not_import_client_core_at_runtime() -> None:
+def test_cookie_persistence_does_not_import_client_core_at_runtime() -> None:
     source = (
-        Path(__file__).resolve().parents[2] / "src/notebooklm/_core_cookie_persistence.py"
+        Path(__file__).resolve().parents[2] / "src/notebooklm/_cookie_persistence.py"
     ).read_text(encoding="utf-8")
     tree = ast.parse(source)
 

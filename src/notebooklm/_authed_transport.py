@@ -91,7 +91,7 @@ class _TransportAuthExpired(Exception):
     PR 12.8 lifted that branch into
     :class:`notebooklm._middleware_auth_refresh.AuthRefreshMiddleware`;
     the class definition stays here so the existing import path
-    (``from notebooklm._core_transport import _TransportAuthExpired``)
+    (``from notebooklm._authed_transport import _TransportAuthExpired``)
     keeps working for ``_chat_transport.chat_aware_authed_post`` and its
     tests.
 
@@ -190,7 +190,7 @@ async def _stream_post_with_size_cap(
                     bytes_read=len(buffer),
                 )
         # Reconstruct a fully-buffered Response so downstream consumers
-        # (``_core_rpc.py`` decode path) can use ``.text`` / ``.content``
+        # (``_rpc_executor.py`` decode path) can use ``.text`` / ``.content``
         # without dealing with stream state. The request handle is carried
         # over so log/repr surfaces still point at the originating request.
         #

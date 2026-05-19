@@ -88,7 +88,7 @@ async def test_active_tasks_returns_empty_for_fresh_registry() -> None:
 
 
 @pytest.mark.asyncio
-async def test_core_close_drains_artifact_poll_hook() -> None:
+async def test_session_close_drains_artifact_poll_hook() -> None:
     """``close()`` cancels in-flight poll tasks within 1s and tears down cleanly."""
     core = Session(_auth())
     artifacts = ArtifactsAPI(core)
@@ -122,7 +122,7 @@ async def test_core_close_drains_artifact_poll_hook() -> None:
 
 
 @pytest.mark.asyncio
-async def test_core_close_absorbs_drain_hook_errors() -> None:
+async def test_session_close_absorbs_drain_hook_errors() -> None:
     """A drain hook raising during close does not block transport teardown."""
     core = Session(_auth())
     await core.open()
@@ -139,7 +139,7 @@ async def test_core_close_absorbs_drain_hook_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_core_close_with_no_polls_is_noop_on_drain_step() -> None:
+async def test_session_close_with_no_polls_is_noop_on_drain_step() -> None:
     """``close()`` works unchanged when no polls are registered."""
     core = Session(_auth())
     await core.open()

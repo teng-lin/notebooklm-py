@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import httpx
 
 from . import _source_upload
-from ._core_constants import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._session_config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._session_contracts import Session
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer

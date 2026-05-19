@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from ._core_transport import (
+from ._authed_transport import (
     _TransportAuthExpired,
     _TransportRateLimited,
     _TransportServerError,

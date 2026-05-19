@@ -2,15 +2,15 @@
 
 The free helper :func:`notebooklm._loop_affinity.assert_bound_loop` is the
 new shared chokepoint that every async entry point on the seam helpers
-(``_core_drain.TransportDrainTracker.drain``,
-``_core_reqid.ReqidCounter.next_reqid``,
-``_core_auth.AuthRefreshCoordinator.await_refresh``,
+(``_transport_drain.TransportDrainTracker.drain``,
+``_reqid_counter.ReqidCounter.next_reqid``,
+``_session_auth.AuthRefreshCoordinator.await_refresh``,
 ``_artifact_polling.ArtifactPollingService.wait_for_completion``,
 ``_chat.ChatAPI.ask``) now consults so a cross-loop call surfaces an
 actionable ``RuntimeError`` at the call site rather than hanging on a
 lock bound to a dead loop.
 
-The inline guard at ``_core_transport.py:258-262`` already covers the
+The inline guard at ``_authed_transport.py:258-262`` already covers the
 transport-POST path. The new guard extends the same contract to the four
 async entry points that don't pass through that POST path (drain, reqid,
 auth refresh, artifact polling) and to the chat-ask lock that
@@ -36,10 +36,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from notebooklm._artifact_polling import ArtifactPollingService
-from notebooklm._core_auth import AuthRefreshCoordinator
-from notebooklm._core_drain import TransportDrainTracker
-from notebooklm._core_reqid import ReqidCounter
 from notebooklm._loop_affinity import assert_bound_loop
+from notebooklm._reqid_counter import ReqidCounter
+from notebooklm._session_auth import AuthRefreshCoordinator
+from notebooklm._transport_drain import TransportDrainTracker
 
 # ---------------------------------------------------------------------------
 # Free helper — the building block.

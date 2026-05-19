@@ -191,7 +191,7 @@ def test_call_site_artifact_polling_matches_legacy_min_powers_of_two():
 
 
 def test_call_site_transport_matches_legacy_with_zero_jitter(monkeypatch):
-    """Pin the _core_transport curve with jitter monkeypatched to 0."""
+    """Pin the _authed_transport curve with jitter monkeypatched to 0."""
     monkeypatch.setattr("notebooklm._backoff._random.uniform", lambda a, b: 0.0)
     out = [compute_backoff_delay(n, base=1.0, cap=30.0, jitter_ratio=0.2) for n in range(7)]
     # 1, 2, 4, 8, 16, 30, 30

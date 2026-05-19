@@ -24,7 +24,7 @@ def install_post_as_stream(
     """Adapt a ``fake_post(...) -> Response`` mock to the streaming API.
 
     The RPC POST path uses :meth:`httpx.AsyncClient.stream` (so a running
-    size guard can enforce :data:`notebooklm._core_transport.MAX_RPC_RESPONSE_BYTES`).
+    size guard can enforce :data:`notebooklm._authed_transport.MAX_RPC_RESPONSE_BYTES`).
     The bulk of the unit suite predates that switch and still expresses test
     intent as ``monkeypatch.setattr(client, "post", fake_post)``. This helper
     bridges the gap: it installs an ``async with client.stream(...)``-compatible

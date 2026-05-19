@@ -35,10 +35,10 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm._core_auth import AuthRefreshCoordinator
-from notebooklm._core_drain import TransportDrainTracker
-from notebooklm._core_lifecycle import ClientLifecycle
-from notebooklm._core_metrics import ClientMetrics
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._session_auth import AuthRefreshCoordinator
+from notebooklm._session_lifecycle import ClientLifecycle
+from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 

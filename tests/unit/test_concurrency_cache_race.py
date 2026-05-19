@@ -15,8 +15,8 @@ import textwrap
 
 import pytest
 
-from notebooklm import _core_cache
-from notebooklm._core_cache import ConversationCache
+from notebooklm import _conversation_cache
+from notebooklm._conversation_cache import ConversationCache
 
 
 def _assert_method_has_no_yield_points(method, label: str) -> None:
@@ -53,7 +53,7 @@ def test_conversation_cache_mutation_remains_synchronous():
 
 
 def test_cache_eviction_preserves_invariant_size(monkeypatch):
-    monkeypatch.setattr(_core_cache, "MAX_CONVERSATION_CACHE_SIZE", 3)
+    monkeypatch.setattr(_conversation_cache, "MAX_CONVERSATION_CACHE_SIZE", 3)
     cache = ConversationCache()
     for i in range(10):
         cache.cache_conversation_turn(
@@ -61,7 +61,7 @@ def test_cache_eviction_preserves_invariant_size(monkeypatch):
             "q",
             "a",
             0,
-            max_size=_core_cache.MAX_CONVERSATION_CACHE_SIZE,
+            max_size=_conversation_cache.MAX_CONVERSATION_CACHE_SIZE,
         )
     assert len(cache.conversations) == 3
     assert list(cache.conversations.keys()) == ["conv-7", "conv-8", "conv-9"]

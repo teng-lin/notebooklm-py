@@ -13,41 +13,28 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
-from ._core_auth import AuthRefreshCoordinator
-
-# Re-exports for the public-on-private import contract. ``_core.py``'s preamble
-# historically held the ``DEFAULT_*`` constants, the auth-error helpers, and the
-# test-only synthetic-error transport plumbing inline. They now live in
-# dedicated seam modules; the imports below preserve the
-# ``from notebooklm._core import …`` surface that tests and first-party callers
-# rely on. Each ``as`` alias keeps ruff's ``unused-import`` lint satisfied while
-# making the re-export intent explicit at the source.
-from ._core_constants import (
-    DEFAULT_CONNECT_TIMEOUT as DEFAULT_CONNECT_TIMEOUT,
+from ._authed_transport import (
+    MAX_RETRY_AFTER_SECONDS as MAX_RETRY_AFTER_SECONDS,
 )
-from ._core_constants import (
-    DEFAULT_KEEPALIVE_MIN_INTERVAL as DEFAULT_KEEPALIVE_MIN_INTERVAL,
+from ._authed_transport import (
+    AuthedTransport,
+    _AuthSnapshot,
+    _BuildRequest,
 )
-from ._core_constants import (
-    DEFAULT_MAX_CONCURRENT_RPCS as DEFAULT_MAX_CONCURRENT_RPCS,
+from ._authed_transport import (
+    _parse_retry_after as _parse_retry_after,
 )
-from ._core_constants import (
-    DEFAULT_MAX_CONCURRENT_UPLOADS as DEFAULT_MAX_CONCURRENT_UPLOADS,
+from ._authed_transport import (
+    _TransportAuthExpired as _TransportAuthExpired,
 )
-from ._core_constants import (
-    DEFAULT_TIMEOUT as DEFAULT_TIMEOUT,
+from ._authed_transport import (
+    _TransportRateLimited as _TransportRateLimited,
 )
-from ._core_constants import (
-    normalize_max_concurrent_uploads,
+from ._authed_transport import (
+    _TransportServerError as _TransportServerError,
 )
-from ._core_cookie_persistence import CookiePersistence
-from ._core_drain import TransportDrainTracker
-
-# Re-exported so the existing import path ``from notebooklm._core import
-# _TransportOperationToken`` keeps working after the dataclass moved into
-# ``_core_drain``. ``_core_drain`` is the source of truth for the token
-# shape; the alias below is the backwards-compat anchor.
-from ._core_drain import _TransportOperationToken as _TransportOperationToken
+from ._client_metrics import ClientMetrics
+from ._cookie_persistence import CookiePersistence
 
 # Synthetic-error helpers — re-exported so ``tests/conftest.py``,
 # ``tests/unit/test_vcr_config.py``, and any other test that imports
@@ -56,51 +43,14 @@ from ._core_drain import _TransportOperationToken as _TransportOperationToken
 # deleted in PR 12.9 (substitution moved into
 # ``ErrorInjectionMiddleware`` in PR 12.6); only the env-var resolver
 # and the startup guard remain.
-from ._core_error_injection import (
+from ._error_injection import (
     ERROR_INJECT_ENV_VAR as ERROR_INJECT_ENV_VAR,
 )
-from ._core_error_injection import (
+from ._error_injection import (
     _get_error_injection_mode as _get_error_injection_mode,
 )
-from ._core_error_injection import (
+from ._error_injection import (
     _refuse_synthetic_error_outside_test_context as _refuse_synthetic_error_outside_test_context,
-)
-
-# Cross-seam helpers — re-exported so ``from notebooklm._core import
-# is_auth_error`` keeps working for sub-clients and tests.
-from ._core_helpers import (
-    AUTH_ERROR_PATTERNS as AUTH_ERROR_PATTERNS,
-)
-from ._core_helpers import (
-    _resolve_keepalive_interval as _resolve_keepalive_interval,
-)
-from ._core_helpers import (
-    is_auth_error as is_auth_error,
-)
-from ._core_lifecycle import ClientLifecycle
-from ._core_metrics import ClientMetrics
-from ._core_reqid import DEFAULT_STEP as _REQID_DEFAULT_STEP
-from ._core_reqid import ReqidCounter
-from ._core_rpc import RpcExecutor
-from ._core_transport import (
-    MAX_RETRY_AFTER_SECONDS as MAX_RETRY_AFTER_SECONDS,
-)
-from ._core_transport import (
-    AuthedTransport,
-    _AuthSnapshot,
-    _BuildRequest,
-)
-from ._core_transport import (
-    _parse_retry_after as _parse_retry_after,
-)
-from ._core_transport import (
-    _TransportAuthExpired as _TransportAuthExpired,
-)
-from ._core_transport import (
-    _TransportRateLimited as _TransportRateLimited,
-)
-from ._core_transport import (
-    _TransportServerError as _TransportServerError,
 )
 from ._kernel import Kernel
 from ._loop_affinity import assert_bound_loop
@@ -119,11 +69,61 @@ from ._middleware_retry import RetryMiddleware
 from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY, SemaphoreMiddleware
 from ._middleware_tracing import TracingMiddleware
 from ._polling_registry import PendingPolls, PollRegistry
+from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
+from ._reqid_counter import ReqidCounter
+from ._rpc_executor import RpcExecutor
+from ._session_auth import AuthRefreshCoordinator
+
+# Re-exports for the public-on-private import contract. ``_core.py``'s preamble
+# historically held the ``DEFAULT_*`` constants, the auth-error helpers, and the
+# test-only synthetic-error transport plumbing inline. They now live in
+# dedicated seam modules; the imports below preserve the
+# ``from notebooklm._core import …`` surface that tests and first-party callers
+# rely on. Each ``as`` alias keeps ruff's ``unused-import`` lint satisfied while
+# making the re-export intent explicit at the source.
+from ._session_config import (
+    DEFAULT_CONNECT_TIMEOUT as DEFAULT_CONNECT_TIMEOUT,
+)
+from ._session_config import (
+    DEFAULT_KEEPALIVE_MIN_INTERVAL as DEFAULT_KEEPALIVE_MIN_INTERVAL,
+)
+from ._session_config import (
+    DEFAULT_MAX_CONCURRENT_RPCS as DEFAULT_MAX_CONCURRENT_RPCS,
+)
+from ._session_config import (
+    DEFAULT_MAX_CONCURRENT_UPLOADS as DEFAULT_MAX_CONCURRENT_UPLOADS,
+)
+from ._session_config import (
+    DEFAULT_TIMEOUT as DEFAULT_TIMEOUT,
+)
+from ._session_config import (
+    normalize_max_concurrent_uploads,
+)
+
+# Cross-seam helpers — re-exported so ``from notebooklm._core import
+# is_auth_error`` keeps working for sub-clients and tests.
+from ._session_helpers import (
+    AUTH_ERROR_PATTERNS as AUTH_ERROR_PATTERNS,
+)
+from ._session_helpers import (
+    _resolve_keepalive_interval as _resolve_keepalive_interval,
+)
+from ._session_helpers import (
+    is_auth_error as is_auth_error,
+)
+from ._session_lifecycle import ClientLifecycle
+from ._transport_drain import TransportDrainTracker
+
+# Re-exported so the existing import path ``from notebooklm._core import
+# _TransportOperationToken`` keeps working after the dataclass moved into
+# ``_transport_drain``. ``_transport_drain`` is the source of truth for the token
+# shape; the alias below is the backwards-compat anchor.
+from ._transport_drain import _TransportOperationToken as _TransportOperationToken
 
 # ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
 # so existing ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
 # sites in tests keep working (used in 8+ test files). The lifecycle helper
-# (``_core_lifecycle.ClientLifecycle.save_cookies``) reads the attribute via
+# (``_session_lifecycle.ClientLifecycle.save_cookies``) reads the attribute via
 # ``from . import _core; _core.save_cookies_to_storage`` at call time so the
 # monkeypatched value is what runs on the live save path.
 #
@@ -431,7 +431,7 @@ class Session:
         # ordering while delegating the live ``httpx.AsyncClient`` to
         # ``self._kernel``. Compat properties further down preserve the legacy
         # ivar names. The ``_resolve_keepalive_interval`` clamp now lives in
-        # :mod:`notebooklm._core_helpers` and is re-exported above so
+        # :mod:`notebooklm._session_helpers` and is re-exported above so
         # ``from notebooklm._core import _resolve_keepalive_interval`` keeps
         # resolving; we call it through the re-exported binding here.
         #
@@ -474,7 +474,7 @@ class Session:
         # Tier-12 PR 12.2: empty middleware chain wired around
         # ``AuthedTransport.perform_authed_post`` (the shared seam covering
         # ``Session._perform_authed_post`` here and ``RpcExecutor.execute``'s
-        # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
+        # call to ``self._owner._perform_authed_post`` at ``_rpc_executor.py:275``).
         # PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
         # ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware``
         # outermost, PR 12.6 inserted ``ErrorInjectionMiddleware`` between
@@ -725,7 +725,7 @@ class Session:
     # are preserved here as ``@property`` bridges. The
     # ``_connect_timeout`` / ``_limits`` bridges were dropped in
     # D1-audit-full (zero external callers). The ``_timeout`` bridge is
-    # retained because ``RpcExecutor`` (``_core_rpc.py``) reads
+    # retained because ``RpcExecutor`` (``_rpc_executor.py``) reads
     # ``self._owner._timeout`` via the :class:`RpcOwner` Protocol; removing
     # it would surface as ``AttributeError`` on every RPC call.
     # ``_ensure_lifecycle`` mirrors the ``_ensure_observability_state`` /
@@ -819,7 +819,7 @@ class Session:
 
     @_timeout.setter
     def _timeout(self, value: float) -> None:
-        # Required by ``RpcOwner`` Protocol (``_core_rpc.py``) which
+        # Required by ``RpcOwner`` Protocol (``_rpc_executor.py``) which
         # declares ``_timeout: float`` as a settable variable. Pre-extraction
         # ``_timeout`` was a plain ivar so attribute assignment worked
         # implicitly; the property bridge needs an explicit setter to
@@ -842,7 +842,7 @@ class Session:
     #
     # New contract: ``await core.next_reqid()`` performs the increment under
     # ``ReqidCounter._lock`` and returns the post-increment value. The state
-    # lives in :class:`notebooklm._core_reqid.ReqidCounter` (``self._reqid``);
+    # lives in :class:`notebooklm._reqid_counter.ReqidCounter` (``self._reqid``);
     # the ``_reqid_counter`` property below is the last surviving read/write
     # bridge — direct mutation of ``_reqid_counter`` still works for
     # backwards compatibility but emits ``DeprecationWarning``. The
@@ -891,9 +891,9 @@ class Session:
         """Atomically increment the request-id counter and return the new value.
 
         Thin facade over :meth:`ReqidCounter.next_reqid`. The default ``step``
-        is sourced from :data:`notebooklm._core_reqid.DEFAULT_STEP` so the
+        is sourced from :data:`notebooklm._reqid_counter.DEFAULT_STEP` so the
         facade and the underlying helper cannot silently drift apart; see
-        :class:`notebooklm._core_reqid.ReqidCounter` for the full contract,
+        :class:`notebooklm._reqid_counter.ReqidCounter` for the full contract,
         validation rules, and lazy-lock semantics.
         """
         return await self._reqid.next_reqid(step)
@@ -1165,7 +1165,7 @@ class Session:
         still affect live transport behavior after the collaborator has been
         constructed. Backoff jitter routes through ``notebooklm._backoff``,
         which in turn calls ``random.uniform`` on the shared module.
-        ``tests/unit/test_core_transport.py`` relies on monkeypatching
+        ``tests/unit/test_authed_transport.py`` relies on monkeypatching
         ``notebooklm._core.random.uniform`` to reach that jitter path; keep the
         otherwise-unused module import so the path stays available. Attribute
         patches on the singleton ``random`` module are visible to all importers.
@@ -1388,7 +1388,7 @@ class Session:
         :meth:`AuthedTransport.perform_authed_post` — the shared seam that
         covers both :meth:`Session._perform_authed_post` and
         ``RpcExecutor.execute`` (which calls ``_perform_authed_post`` at
-        ``_core_rpc.py:275``). Wraps the returned :class:`httpx.Response` in
+        ``_rpc_executor.py:275``). Wraps the returned :class:`httpx.Response` in
         an :class:`RpcResponse` so middlewares above the leaf see the chain
         contract from ``_middleware.py``.
 
@@ -1427,7 +1427,7 @@ class Session:
         """Authed POST entry point — routes through the middleware chain.
 
         Compatibility surface preserved so ``RpcExecutor.execute``
-        (``_core_rpc.py:275``), ``_chat_transport`` (``_chat_transport.py:64``),
+        (``_rpc_executor.py:275``), ``_chat_transport`` (``_chat_transport.py:64``),
         and direct callers (``client._core._perform_authed_post(...)``) keep
         the same keyword-only signature. The body now builds an
         :class:`RpcRequest` with the three keyword-only args stashed into
@@ -1539,7 +1539,7 @@ class Session:
         refresh-and-retry plumbing; this facade preserves the method shape so
         the 30+ tests that mock ``core.rpc_call = AsyncMock(...)`` by
         attribute keep working. See
-        :meth:`notebooklm._core_rpc.RpcExecutor.execute_with_telemetry` for
+        :meth:`notebooklm._rpc_executor.RpcExecutor.execute_with_telemetry` for
         the full contract (kwargs ``_is_retry`` / ``disable_internal_retries``
         / ``operation_variant`` flow through unchanged; ``RuntimeError`` is
         raised if the client is not initialized).

@@ -28,7 +28,7 @@ canonical chain fixtures (``make_request`` and a one-shot terminal stub)
 rather than mocking the substitution logic. Activation is flipped via
 :func:`monkeypatch.setenv` against ``NOTEBOOKLM_VCR_RECORD_ERRORS`` so the
 production env-var resolution code path
-(:func:`notebooklm._core_error_injection._get_error_injection_mode`) is
+(:func:`notebooklm._error_injection._get_error_injection_mode`) is
 exercised end-to-end.
 """
 
@@ -40,8 +40,8 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._core_error_injection import ERROR_INJECT_ENV_VAR
-from notebooklm._core_transport import _TransportRateLimited, _TransportServerError
+from notebooklm._authed_transport import _TransportRateLimited, _TransportServerError
+from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
 
@@ -353,8 +353,8 @@ async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_
     ADR-009 §"Retry semantics" means refresh runs exactly once and the
     second 400 propagates without recursion.
     """
-    from notebooklm._core_helpers import is_auth_error as auth_error_predicate
     from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+    from notebooklm._session_helpers import is_auth_error as auth_error_predicate
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
@@ -398,8 +398,8 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
     chain returns 200 cleanly. This pins the full refresh-then-retry
     success path, not just the propagation path.
     """
-    from notebooklm._core_helpers import is_auth_error as auth_error_predicate
     from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+    from notebooklm._session_helpers import is_auth_error as auth_error_predicate
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     refresh_calls: list[None] = []
@@ -505,10 +505,10 @@ async def test_monkeypatch_setattr_on_get_error_injection_mode_is_live(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The middleware resolves ``_get_error_injection_mode`` through the
-    module at call time, so ``monkeypatch.setattr(_core_error_injection,
+    module at call time, so ``monkeypatch.setattr(_error_injection,
     "_get_error_injection_mode", …)`` reaches the chain.
     """
-    from notebooklm import _core_error_injection as _eim_module
+    from notebooklm import _error_injection as _eim_module
 
     monkeypatch.delenv(ERROR_INJECT_ENV_VAR, raising=False)
     monkeypatch.setattr(_eim_module, "_get_error_injection_mode", lambda: "5xx")

@@ -51,12 +51,12 @@ substitution path going forward.
 
 | Concern | Pre-Tier-12 | Post-Tier-12 (PR 12.9 → today) |
 |---|---|---|
-| In-flight drain tracking | `TransportDrainTracker.begin/end` around the call (`_core_drain.py`) | `DrainMiddleware` (chain pos 0) |
-| Metrics emission | `ClientMetrics.on_rpc_event` callbacks woven through `AuthedTransport` (`_core_metrics.py`) | `MetricsMiddleware` (chain pos 1) |
+| In-flight drain tracking | `TransportDrainTracker.begin/end` around the call (`_transport_drain.py`) | `DrainMiddleware` (chain pos 0) |
+| Metrics emission | `ClientMetrics.on_rpc_event` callbacks woven through `AuthedTransport` (`_client_metrics.py`) | `MetricsMiddleware` (chain pos 1) |
 | RPC concurrency gate | `asyncio.Semaphore` inside `AuthedTransport.perform_authed_post` | `SemaphoreMiddleware` (chain pos 2) |
 | Retry on 5xx / 429 | inline loops inside `AuthedTransport.perform_authed_post` | `RetryMiddleware` (chain pos 3) |
-| Auth refresh on 401 | inline branch inside `AuthedTransport.perform_authed_post` (`_core_auth.py`) | `AuthRefreshMiddleware` (chain pos 4) |
-| Synthetic error injection (tests) | `_SyntheticErrorTransport` wraps the httpx client (`_core_error_injection.py`) — DELETED PR 12.9 | `ErrorInjectionMiddleware` (chain pos 5) |
+| Auth refresh on 401 | inline branch inside `AuthedTransport.perform_authed_post` (`_session_auth.py`) | `AuthRefreshMiddleware` (chain pos 4) |
+| Synthetic error injection (tests) | `_SyntheticErrorTransport` wraps the httpx client (`_error_injection.py`) — DELETED PR 12.9 | `ErrorInjectionMiddleware` (chain pos 5) |
 | Per-attempt tracing/logging | scattered `logger.debug` calls inside the retry loop | `TracingMiddleware` (chain pos 6) |
 
 Adding a seventh concern (e.g. an idempotency-routing wrapper for retry
@@ -264,7 +264,7 @@ class AuthRefreshMiddleware:
 Pinned details:
 
 - `coordinator: AuthRefreshCoordinator` — the existing seam from
-  `_core_auth.py:53` (`AuthRefreshCoordinator`). PR 12.8 reuses it.
+  `_session_auth.py:53` (`AuthRefreshCoordinator`). PR 12.8 reuses it.
 - `rebuild_headers: Callable[[AuthSnapshot], Mapping[str, str]]` — **sync**
   (no I/O; pure header construction from snapshot). Returns the *full*
   base header dict for the retry, not a delta. The middleware copies the
@@ -282,7 +282,7 @@ Pinned details:
   (snapshot-derived auth: CSRF token, session id, X-Goog-AuthUser, etc.).
   `BuildRequestResult.headers` is an *overlay*: when non-`None`, the
   middleware merges it on top of the base via `dict.update`. This mirrors
-  today's `_core_transport.py:282` semantics where the `headers` slot in
+  today's `_authed_transport.py:282` semantics where the `headers` slot in
   the `_BuildRequest` tuple represents per-request extras (e.g. an
   explicit `Content-Type` for an upload variant) that win over the
   snapshot defaults. Most call sites today pass `None` here, in which
@@ -318,7 +318,7 @@ of the two callbacks, the retry semantics, the types) is fixed here.
   `_AuthedTransportHost`.
 - The chain ordering becomes a single line of code (`[Drain, Metrics,
   Retry, AuthRefresh, ErrorInjection, Tracing]`) instead of an implicit
-  invariant scattered across `_core_transport.py:243`-`379`.
+  invariant scattered across `_authed_transport.py:243`-`379`.
 
 **Unwanted:**
 
@@ -380,8 +380,8 @@ lists construct different `Session` instances.
 **Inline the dataclass definitions in `_middleware.py` and skip
 `_request_types.py`.** Rejected. The `AuthSnapshot` and `BuildRequest`
 aliases are not chain-specific — they describe types that already live in
-`_core_transport.py` and are read by `_chat.py`, `_chat_transport.py`, and
-`_core_rpc.py`. Promoting them into a sibling module (`_request_types.py`)
+`_authed_transport.py` and are read by `_chat.py`, `_chat_transport.py`, and
+`_rpc_executor.py`. Promoting them into a sibling module (`_request_types.py`)
 keeps `_middleware.py` focused on the chain envelope shape and gives
 non-chain callers a stable import path that survives PR 12.9's underscore
 removal.

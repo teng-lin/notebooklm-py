@@ -50,13 +50,13 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
-from ._core_constants import CORE_LOGGER_NAME
-from ._core_transport import _AuthSnapshot
+from ._authed_transport import _AuthSnapshot
 from ._loop_affinity import assert_bound_loop
+from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
-    from ._core_metrics import ClientMetrics
+    from ._client_metrics import ClientMetrics
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —

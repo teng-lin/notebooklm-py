@@ -5,8 +5,8 @@ counter's invariants (monotonicity, lazy lock allocation, type/value
 validation, mutator semantics, optional ``on_lock_wait`` hook) are pinned
 down without dragging in the full client surface. The ``Session``-shaped
 ``DeprecationWarning`` contract continues to live in
-``tests/unit/test_core_reqid.py``; the concurrent-contention pin continues
-to live in ``tests/unit/test_core_reqid_concurrent.py``.
+``tests/unit/test_reqid_counter.py``; the concurrent-contention pin continues
+to live in ``tests/unit/test_reqid_counter_concurrent.py``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import inspect
 
 import pytest
 
-from notebooklm._core_reqid import DEFAULT_BASELINE, DEFAULT_STEP, ReqidCounter
+from notebooklm._reqid_counter import DEFAULT_BASELINE, DEFAULT_STEP, ReqidCounter
 
 # ---------------------------------------------------------------------------
 # Construction / sync accessors
@@ -46,7 +46,7 @@ def test_default_step_constant_matches_signature_default() -> None:
 
 def test_client_core_next_reqid_default_matches_default_step() -> None:
     """``Session.next_reqid``'s ``step`` default is sourced from
-    :data:`notebooklm._core_reqid.DEFAULT_STEP`.
+    :data:`notebooklm._reqid_counter.DEFAULT_STEP`.
 
     Pins the facade signature to the helper's constant so a silent change to
     one cannot drift past the other. ``Session`` imports

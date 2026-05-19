@@ -11,7 +11,7 @@ This module hosts two cooperating pieces:
    then probe for a server-side commit before re-issuing.
 
 2. :class:`IdempotencyRegistry` — the 6-policy classification layer that
-   :class:`~notebooklm._core_rpc.RpcExecutor` consults to compute the
+   :class:`~notebooklm._rpc_executor.RpcExecutor` consults to compute the
    *effective* ``disable_internal_retries`` value (and, for
    ``CLIENT_TOKEN_DEDUPE`` policies, inject a fresh client-token into
    request params before encoding). The registry is a single source of
@@ -31,7 +31,7 @@ baseline-diff; sources: url-match; ``add_text``: no probe possible — see
 
 This module is private (``_idempotency.py``); call sites live in the
 domain APIs (``_notebooks.py``, ``_sources.py``) and the RPC executor
-(``_core_rpc.py``). The canonical home for the taxonomy itself, the
+(``_rpc_executor.py``). The canonical home for the taxonomy itself, the
 six-policy axis, and the per-RPC classification rationale is
 ADR-005 (``docs/adr/0005-idempotency-taxonomy.md``).
 """

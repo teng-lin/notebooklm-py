@@ -1205,8 +1205,8 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
 # ---------------------------------------------------------------------------
 # Re-export identity pins for the tier-10 PR-A seam split.
 #
-# When ``_core.py``'s preamble was split into ``_core_constants.py``,
-# ``_core_error_injection.py``, and ``_core_helpers.py``, the legacy import
+# When ``_core.py``'s preamble was split into ``_session_config.py``,
+# ``_error_injection.py``, and ``_session_helpers.py``, the legacy import
 # surface (``from notebooklm._core import …``) was preserved via re-export
 # aliases. These tests pin that the re-exported name on ``notebooklm._core``
 # is the **same object** as the canonical name on the seam module — so if a
@@ -1218,15 +1218,15 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
 
 def test_is_auth_error_resolves_through_module():
     import notebooklm._core as _core
-    from notebooklm import _core_helpers
+    from notebooklm import _session_helpers
 
-    assert _core.is_auth_error is _core_helpers.is_auth_error
+    assert _core.is_auth_error is _session_helpers.is_auth_error
 
 
 def test_error_injection_symbols_resolve_through_core():
     """Pin re-export identity for the highest-risk monkeypatch surfaces.
 
-    ``test_core_lifecycle.py`` monkeypatches ``_get_error_injection_mode``
+    ``test_session_lifecycle.py`` monkeypatches ``_get_error_injection_mode``
     through ``notebooklm._core``, and ``tests/conftest.py`` /
     ``tests/unit/test_vcr_config.py`` import ``ERROR_INJECT_ENV_VAR`` from
     ``notebooklm._core``. A future refactor that accidentally shadows the
@@ -1240,10 +1240,10 @@ def test_error_injection_symbols_resolve_through_core():
     now, so that identity pin is gone.
     """
     import notebooklm._core as _core
-    from notebooklm import _core_error_injection
+    from notebooklm import _error_injection
 
-    assert _core.ERROR_INJECT_ENV_VAR is _core_error_injection.ERROR_INJECT_ENV_VAR
-    assert _core._get_error_injection_mode is _core_error_injection._get_error_injection_mode
+    assert _core.ERROR_INJECT_ENV_VAR is _error_injection.ERROR_INJECT_ENV_VAR
+    assert _core._get_error_injection_mode is _error_injection._get_error_injection_mode
 
 
 # ---------------------------------------------------------------------------

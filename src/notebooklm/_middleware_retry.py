@@ -56,7 +56,7 @@ collapses this back into a single coordinated refresh path by lifting
 auth-refresh into a chain middleware outside this one.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_core_transport.py`` for the (slimmed) leaf and the
+``src/notebooklm/_authed_transport.py`` for the (slimmed) leaf and the
 exception types this middleware catches, and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.7 for the
 PR sequence.
@@ -69,13 +69,13 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from ._authed_transport import _parse_retry_after, _TransportRateLimited, _TransportServerError
 from ._backoff import compute_backoff_delay
-from ._core_constants import CORE_LOGGER_NAME
-from ._core_transport import _parse_retry_after, _TransportRateLimited, _TransportServerError
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._session_config import CORE_LOGGER_NAME
 
 if TYPE_CHECKING:
-    from ._core_metrics import ClientMetrics
+    from ._client_metrics import ClientMetrics
 
 
 # Backoff parameters lifted verbatim from the pre-PR-12.7 retry loop in

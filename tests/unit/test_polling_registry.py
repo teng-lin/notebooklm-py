@@ -1,4 +1,4 @@
-"""Unit tests for the core polling collaborator."""
+"""Unit tests for the polling registry collaborator."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 
-from notebooklm._core_polling import PollRegistry as ShimPollRegistry
 from notebooklm._polling_registry import PendingPolls, PollRegistry
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -40,12 +39,11 @@ def test_poll_registry_preserves_seeded_pending_mapping_identity() -> None:
     assert registry.pending is pending
 
 
-def test_client_core_exposes_poll_registry_and_pending_polls_bridge() -> None:
+def test_session_exposes_poll_registry_and_pending_polls_bridge() -> None:
     core = Session(_auth_tokens())
 
     assert isinstance(core.poll_registry, PollRegistry)
     assert core._pending_polls is core.poll_registry.pending
-    assert ShimPollRegistry is PollRegistry
 
 
 def test_client_core_pending_polls_assignment_replaces_registry_backing_mapping() -> None:

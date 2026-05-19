@@ -529,8 +529,8 @@ reading `auth.py` against the lifecycle of `NotebookLMClient` /
 #### 3.4.1 Stale in-memory clobbers fresh disk (the "few-hours" pattern)
 
 > **Resolved in #361.** ``CookiePersistence`` (see
-> ``src/notebooklm/_core_cookie_persistence.py``; driven by ``ClientLifecycle``
-> at open-time, ``src/notebooklm/_core_lifecycle.py``) now captures an
+> ``src/notebooklm/_cookie_persistence.py``; driven by ``ClientLifecycle``
+> at open-time, ``src/notebooklm/_session_lifecycle.py``) now captures an
 > open-time ``CookieSnapshotKey -> CookieSnapshotValue`` snapshot of its jar;
 > ``save_cookies_to_storage``
 > accepts an ``original_snapshot=...`` kwarg and, when provided, writes only

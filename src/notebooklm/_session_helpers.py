@@ -4,7 +4,7 @@ Small, pure helpers extracted from :mod:`notebooklm._core`'s preamble. Each
 helper is re-exported from :mod:`notebooklm._core` so existing
 ``from notebooklm._core import is_auth_error`` imports keep working unchanged.
 
-These helpers stay separate from :mod:`notebooklm._core_constants` because
+These helpers stay separate from :mod:`notebooklm._session_config` because
 they carry behavior (and therefore tests), while the constants module is
 data-only.
 """

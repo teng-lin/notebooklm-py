@@ -126,7 +126,7 @@ def test_get_share_url_is_sync_and_does_not_call_rpc() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notebooks_api_default_share_manager_uses_late_bound_core_rpc_call() -> None:
+async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_call() -> None:
     core = MagicMock()
     core.rpc_call = AsyncMock(return_value=None)
     api = NotebooksAPI(core, sources_api=MagicMock())

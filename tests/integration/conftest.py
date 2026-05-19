@@ -310,7 +310,7 @@ def _block_unbound_network_in_replay(request, monkeypatch):
         return
 
     # Patch BOTH ``send`` and ``stream`` — the production RPC transport in
-    # ``src/notebooklm/_core_transport.py`` uses ``client.stream(...)`` for the
+    # ``src/notebooklm/_authed_transport.py`` uses ``client.stream(...)`` for the
     # streaming-chat endpoint, which httpx routes through a separate codepath
     # from ``send``. Patching only ``send`` would let an unbound streaming
     # request slip past the guard. The vcrpy stubs intercept at the lower

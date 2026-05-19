@@ -10,6 +10,7 @@ import logging
 import weakref
 from typing import Any
 
+from ._authed_transport import _AuthSnapshot
 from ._chat_protocol import (
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -22,8 +23,7 @@ from ._chat_protocol import (
     raise_if_rate_limited,
 )
 from ._chat_transport import chat_aware_authed_post
-from ._core_cache import ConversationCache
-from ._core_transport import _AuthSnapshot
+from ._conversation_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._session_contracts import Session
@@ -231,7 +231,7 @@ class ChatAPI:
         # P0-2: catch cross-loop ``ask`` before any work — particularly
         # before acquiring the per-conversation lock below, which would
         # otherwise hang on a lock bound to a dead loop. The transport
-        # guard at ``_core_transport.py:258-262`` only catches misuse on
+        # guard at ``_authed_transport.py:258-262`` only catches misuse on
         # the POST itself, which is *after* the conversation lock is
         # already held — too late.
         self._core.assert_bound_loop()

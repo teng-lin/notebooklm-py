@@ -194,7 +194,7 @@ class TestGetSource:
         assert source.title == "Source Title"
 
     @pytest.mark.asyncio
-    async def test_list_uses_current_core_rpc_call(self, auth_tokens):
+    async def test_list_uses_current_rpc_executor_call(self, auth_tokens):
         first_rpc = AsyncMock(return_value=[["Notebook", []]])
         second_rpc = AsyncMock(
             return_value=[

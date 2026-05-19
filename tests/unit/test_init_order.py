@@ -320,6 +320,11 @@ def test_legacy_capabilities_module_is_deleted() -> None:
     assert not (SRC_ROOT / "_capabilities.py").exists()
 
 
+def test_lifted_core_modules_are_retired() -> None:
+    """Session collaborators should not regress to the old ``_core_*`` layout."""
+    assert sorted(path.name for path in SRC_ROOT.glob("_core_*.py")) == []
+
+
 def _is_type_checking_guard(node: ast.AST) -> bool:
     return (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
         isinstance(node, ast.Attribute)

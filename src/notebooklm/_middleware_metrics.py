@@ -69,7 +69,7 @@ from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._types.common import RpcTelemetryEvent
 
 if TYPE_CHECKING:
-    from ._core_metrics import ClientMetrics
+    from ._client_metrics import ClientMetrics
 
 
 class MetricsMiddleware:

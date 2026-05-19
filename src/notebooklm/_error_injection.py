@@ -45,12 +45,11 @@ __all__ = [
 import logging
 import os
 
-from ._core_constants import CORE_LOGGER_NAME
+from ._session_config import CORE_LOGGER_NAME
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` — keep
-# matching. Every ``_core_*.py`` / ``_middleware_*.py`` seam shares the
-# same name.
+# matching. Session collaborators and middleware seams share the same name.
 logger = logging.getLogger(CORE_LOGGER_NAME)
 
 

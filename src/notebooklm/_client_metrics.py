@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from ._callbacks import maybe_await_callback
-from ._core_constants import CORE_LOGGER_NAME
+from ._session_config import CORE_LOGGER_NAME
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so users and tests

@@ -85,30 +85,30 @@ src/notebooklm/
 |-------|-------|----------------|
 | **CLI** | `cli/*.py` | User commands, input validation, Rich output |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Session** | `_session.py`, `_core.py`, `_core_*.py` | `Session` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
+| **Session** | `_session.py`, `_core.py`, `_kernel.py`, session/kernel collaborators | `Session` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
 
 #### Session-layer seam modules
 
 The `Session` layer is split across `_session.py` (orchestrator), `_core.py`
-(legacy compatibility shim), and a family of single-responsibility `_core_*.py`
-helper modules. Each helper exposes a
+(legacy compatibility shim), `_kernel.py` (HTTP client owner), and
+single-responsibility collaborator modules. Each helper exposes a
 Protocol-shim host interface so it can be unit-tested against a stub `Session`:
 
 | Module | Class | Responsibility |
 |---|---|---|
 | `_session.py` | `Session` | Orchestrator owning the `httpx.AsyncClient` + `AuthTokens`; module-level constants and re-exports; error-injection seam (`_get_error_injection_mode`) used by middleware-level error injection. |
 | `_core.py` | shim | Compatibility re-export surface for legacy private imports. |
-| `_core_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
-| `_core_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
-| `_core_reqid.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
-| `_core_auth.py` (Phase 2 in progress) | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. |
-| `_core_lifecycle.py` (Phase 2 in progress) | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
-| `_core_rpc.py` | `RpcExecutor` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols. |
-| `_core_transport.py` | `AuthedTransport` | Authed HTTP POST path, retry loops (429 + 5xx). |
-| `_core_cache.py` | `ConversationCache` | Per-instance LRU conversation cache for `ChatAPI` continuity. |
-| `_core_polling.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
-| `_core_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
+| `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
+| `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
+| `_reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
+| `_session_auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. |
+| `_session_lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
+| `_rpc_executor.py` | `RpcExecutor` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols. |
+| `_authed_transport.py` | `AuthedTransport` | Authed HTTP POST path, retry loops (429 + 5xx). |
+| `_conversation_cache.py` | `ConversationCache` | Per-instance LRU conversation cache for `ChatAPI` continuity. |
+| `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
+| `_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
 
 The feature-facing session surface is pinned in
 `notebooklm._session_contracts.Session`. Adding or removing a method on that
@@ -309,7 +309,7 @@ tests/
 │   ├── test_auto_refresh.py         # Keepalive/refresh integration
 │   ├── test_chat.py                 # ChatAPI integration
 │   ├── test_cli_source_delete.py    # CLI source-delete path
-│   ├── test_core.py                 # Session + RPC plumbing
+│   ├── test_session_integration.py  # Session + RPC plumbing
 │   ├── test_download_multi_artifact.py
 │   ├── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
 │   ├── test_notebooks.py            # NotebooksAPI integration

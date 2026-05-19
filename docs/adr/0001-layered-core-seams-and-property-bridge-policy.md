@@ -16,19 +16,19 @@ Documents a pattern shipped incrementally across tier-1 through tier-10 (PRs rou
 Tier 8/9/10 extracted the cross-cutting concerns into named seam modules. As of HEAD the seams are:
 
 ```text
-_core_transport.py            authed-POST path + retry loops
-_core_rpc.py                  RPC dispatch executor (DecodeResponse, RpcOwner protocols)
-_core_auth.py                 AuthRefreshCoordinator + auth-snapshot lock
-_core_drain.py                TransportDrainTracker + _TransportOperationToken
-_core_metrics.py              ClientMetrics counters + on_rpc_event callback
-_core_reqid.py                ReqidCounter (monotonic _reqid for chat backend)
-_core_cache.py                Per-instance LRU conversation cache
-_core_polling.py              Pending-poll registry for long-running artifact gens
-_core_lifecycle.py            Open/close lifecycle (loop-affinity guard + keepalive task)
-_core_cookie_persistence.py   Cookie-jar persistence + __Secure-1PSIDTS rotation
-_core_constants.py            Module-level DEFAULT_* knobs
-_core_helpers.py              is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
-_core_error_injection.py      _SyntheticErrorTransport + env-var guard
+_authed_transport.py            authed-POST path + retry loops
+_rpc_executor.py                  RPC dispatch executor (DecodeResponse, RpcOwner protocols)
+_session_auth.py                 AuthRefreshCoordinator + auth-snapshot lock
+_transport_drain.py                TransportDrainTracker + _TransportOperationToken
+_client_metrics.py              ClientMetrics counters + on_rpc_event callback
+_reqid_counter.py                ReqidCounter (monotonic _reqid for chat backend)
+_conversation_cache.py                Per-instance LRU conversation cache
+_polling_registry.py              Pending-poll registry for long-running artifact gens
+_session_lifecycle.py            Open/close lifecycle (loop-affinity guard + keepalive task)
+_cookie_persistence.py   Cookie-jar persistence + __Secure-1PSIDTS rotation
+_session_config.py            Module-level DEFAULT_* knobs
+_session_helpers.py              is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
+_error_injection.py      _SyntheticErrorTransport + env-var guard
 ```
 
 The extraction was constrained by an unusually high test-coupling load: tests reach into the live `Session` instance with `core._save_lock`, `core._metrics_lock`, `core._on_rpc_event`, and many other private attributes — patterns that pre-date the seam extraction. When the storage for these attributes moved into the seams, the legacy attribute names had to keep resolving on the `Session` instance or hundreds of tests would break in a single PR.

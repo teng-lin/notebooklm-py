@@ -26,7 +26,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm._core_cookie_persistence import CookiePersistence
+from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
@@ -168,9 +168,7 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
     """
 
     source_path = Path(inspect.getsourcefile(CookiePersistence) or "")
-    assert source_path.is_file(), (
-        f"could not locate _core_cookie_persistence.py source: {source_path!r}"
-    )
+    assert source_path.is_file(), f"could not locate _cookie_persistence.py source: {source_path!r}"
     tree = ast.parse(source_path.read_text())
 
     # Find every ``with self.save_lock:`` or closure-aliased ``with lock:`` by
@@ -228,7 +226,7 @@ def test_save_lock_only_acquired_inside_save_closure() -> None:
         "_save_lock contract violation: blocking lock acquisition found "
         f"outside the ``_save`` closure: {offenders!r}. The lock must "
         "ONLY be acquired inside ``_save()`` (run via asyncio.to_thread). "
-        "See ``_core_cookie_persistence.py`` "
+        "See ``_cookie_persistence.py`` "
         "for the contract details."
     )
     assert acquisition_sites, "expected CookiePersistence.save to acquire the save lock"

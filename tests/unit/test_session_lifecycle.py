@@ -1,8 +1,8 @@
-"""Unit tests for :mod:`notebooklm._core_lifecycle`.
+"""Unit tests for :mod:`notebooklm._session_lifecycle`.
 
 Covers the load-bearing behaviors of :class:`ClientLifecycle` directly, in
 addition to the existing ``Session``-shaped tests in
-``test_core_close.py`` / ``test_client_keepalive.py`` / ``test_vcr_config.py``
+``test_session_close.py`` / ``test_client_keepalive.py`` / ``test_vcr_config.py``
 which exercise the same helper through the compat facade.
 
 Specifically pinned here:
@@ -47,8 +47,8 @@ import httpx
 import pytest
 
 from notebooklm import _core as _core_module
-from notebooklm._core_lifecycle import ClientLifecycle
 from notebooklm._session import _resolve_keepalive_interval
+from notebooklm._session_lifecycle import ClientLifecycle
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 

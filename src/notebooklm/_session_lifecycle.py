@@ -13,13 +13,13 @@ Owns the session-side open/close ordering that historically lived inline on
   ``accounts.google.com/RotateCookies`` while the client is open.
 * ``_keepalive_interval`` / ``_keepalive_storage_path`` — keepalive
   configuration; the interval is clamped against ``keepalive_min_interval``
-  via :func:`notebooklm._core_helpers._resolve_keepalive_interval` (re-exported
+  via :func:`notebooklm._session_helpers._resolve_keepalive_interval` (re-exported
   from :mod:`notebooklm._core` so the legacy import path keeps resolving).
 * ``_timeout`` / ``_connect_timeout`` / ``_limits`` — HTTP timeouts and
   connection-pool tuning consumed in :meth:`open`.
 
 Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``,
-``tests/unit/test_core_close.py``, ``tests/unit/test_vcr_config.py``, and
+``tests/unit/test_session_close.py``, ``tests/unit/test_vcr_config.py``, and
 ``tests/unit/test_auth_cookie_save_race.py``):
 
 * ``__init__`` MUST be event-loop-agnostic. ``Session`` is routinely
@@ -34,7 +34,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 
 * :meth:`close` cancellation ordering: stop keepalive → run registered drain
   hooks → save cookies → shielded Kernel ``aclose()``. Reversing any of these
-  reintroduces the leak modes ``test_core_close.py`` pins down. The shielded
+  reintroduces the leak modes ``test_session_close.py`` pins down. The shielded
   ``aclose()`` is critical: without it, a ``CancelledError`` arriving
   mid-close leaks the underlying httpx transport.
 
@@ -74,18 +74,18 @@ from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
-from ._core_constants import CORE_LOGGER_NAME
 from ._kernel import Kernel
+from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
-    from ._core_auth import AuthRefreshCoordinator
-    from ._core_cookie_persistence import CookiePersistence
-    from ._core_drain import TransportDrainTracker
-    from ._core_metrics import ClientMetrics
-    from ._core_reqid import ReqidCounter
-    from ._core_rpc import RpcExecutor
-    from ._core_transport import AuthedTransport
+    from ._authed_transport import AuthedTransport
+    from ._client_metrics import ClientMetrics
+    from ._cookie_persistence import CookiePersistence
+    from ._reqid_counter import ReqidCounter
+    from ._rpc_executor import RpcExecutor
+    from ._session_auth import AuthRefreshCoordinator
+    from ._transport_drain import TransportDrainTracker
     from .types import ConnectionLimits
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
@@ -150,7 +150,7 @@ class ClientLifecycle:
         # here). Keeping the default-resolution out of this helper avoids a
         # types.py import cycle.
         self._limits: ConnectionLimits = limits
-        # Pre-clamped by :func:`notebooklm._core_helpers._resolve_keepalive_interval`
+        # Pre-clamped by :func:`notebooklm._session_helpers._resolve_keepalive_interval`
         # (re-exported as ``notebooklm._core._resolve_keepalive_interval``) at
         # the ``Session`` boundary so the floor-vs-user-value branching
         # stays in one place — the seam helper.

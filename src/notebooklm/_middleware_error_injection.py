@@ -12,16 +12,16 @@ PRs 12.7–12.8 insert ``Retry`` and ``AuthRefresh`` BETWEEN ``Metrics`` and
 Test-only path. Production behavior is unchanged when ``NOTEBOOKLM_VCR_RECORD_ERRORS``
 is unset — the middleware delegates straight to ``next_call``. When the env var
 resolves to ``"429"`` / ``"5xx"`` / ``"expired_csrf"`` (via
-:func:`_core_error_injection._get_error_injection_mode`), every chain invocation
+:func:`_error_injection._get_error_injection_mode`), every chain invocation
 short-circuits with a synthetic :class:`httpx.Response` built by
 ``tests/cassette_patterns.build_synthetic_error_response`` — the chain leaf
 (``_perform_authed_post``) is NOT called. The same env-var startup guard
-(:func:`_core_error_injection._refuse_synthetic_error_outside_test_context`)
+(:func:`_error_injection._refuse_synthetic_error_outside_test_context`)
 still fires at ``Session`` construction so a leaked deploy env never reaches
 this code path in production.
 
 Tier-12 history: PR 12.6 lifted the substitution from the pre-Tier-12
-httpx transport (``_core_error_injection._SyntheticErrorTransport``,
+httpx transport (``_error_injection._SyntheticErrorTransport``,
 which wrapped ``httpx.AsyncClient`` in ``ClientLifecycle``) into this
 middleware. PR 12.9 deleted the legacy transport class outright; this
 middleware is now the only production substitution surface.
@@ -61,7 +61,7 @@ middleware, which re-raises — matching the pre-PR-12.6 "every retry
 re-fires the synthetic error" behavior bit-for-bit.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_core_error_injection.py`` for the env-var / startup-guard
+``src/notebooklm/_error_injection.py`` for the env-var / startup-guard
 helpers, and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.6
 for the PR sequence.
 """
@@ -76,15 +76,15 @@ from typing import cast
 
 import httpx
 
-from . import _core_error_injection
-from ._core_constants import CORE_LOGGER_NAME
-from ._core_error_injection import ERROR_INJECT_ENV_VAR
-from ._core_transport import (
+from . import _error_injection
+from ._authed_transport import (
     _parse_retry_after,
     _TransportRateLimited,
     _TransportServerError,
 )
+from ._error_injection import ERROR_INJECT_ENV_VAR
 from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._session_config import CORE_LOGGER_NAME
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` — keep
@@ -110,7 +110,7 @@ class ErrorInjectionMiddleware:
         # Cached after first ``_load_builder`` call; ``None`` means "not yet loaded".
         self._builder: _SyntheticBuilder | None = None
         # Gates the one-shot "injection enabled" log line — preserves the
-        # pre-PR-12.6 ``_core_lifecycle`` log signal that operators running
+        # pre-PR-12.6 ``_session_lifecycle`` log signal that operators running
         # cassette-recording flows rely on to confirm their env var was picked up.
         self._logged_activation = False
 
@@ -122,17 +122,17 @@ class ErrorInjectionMiddleware:
         """Substitute a synthetic error response when the env var is set.
 
         Reads the env var via
-        :func:`_core_error_injection._get_error_injection_mode` at call
+        :func:`_error_injection._get_error_injection_mode` at call
         time (not construction time) so tests that flip the var
         per-test — via :func:`monkeypatch.setenv` or by monkeypatching the
-        function itself on :mod:`notebooklm._core_error_injection` —
+        function itself on :mod:`notebooklm._error_injection` —
         see the change without rebuilding the chain. Resolving through the
         module (rather than a value-imported binding) keeps the
         :func:`monkeypatch.setattr` seam live: a value-import would freeze
         the binding at module-load time and silently dead-letter any
         function swap.
         """
-        mode = _core_error_injection._get_error_injection_mode()
+        mode = _error_injection._get_error_injection_mode()
         if mode is None:
             return await next_call(request)
 
@@ -215,7 +215,7 @@ class ErrorInjectionMiddleware:
         relative to ``src/notebooklm/``.
 
         This was previously duplicated in the (now-deleted)
-        ``_core_error_injection._SyntheticErrorTransport._load_builder``;
+        ``_error_injection._SyntheticErrorTransport._load_builder``;
         PR 12.9 removed that class so the chain middleware is the single
         source of truth for synthetic-response loading.
         """

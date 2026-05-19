@@ -8,7 +8,7 @@ Accepted (retroactive). Documents the six-policy classification shipped in tier-
 
 The NotebookLM RPC surface is `batchexecute` over HTTPS, and any mutating call (create, delete, refresh, share, generate, …) is susceptible to a *commit-lost* failure: the server commits the write, then the response is lost in transit. A naive retry produces a duplicate write — a duplicate notebook, a duplicate source, an extra LLM inference, a re-sent invite email — depending on the RPC.
 
-The transport layer in `_core_transport.py` runs an inner retry loop for transient 5xx / 429 / network-error failures. That loop is *correct* for read-only RPCs and dangerous for mutating ones. Before the taxonomy existed, the only mitigation was a per-call-site decision (`disable_internal_retries=True`) that did not document *why* an RPC was retry-unsafe, so the decision was easy to lose during refactors.
+The transport layer in `_authed_transport.py` runs an inner retry loop for transient 5xx / 429 / network-error failures. That loop is *correct* for read-only RPCs and dangerous for mutating ones. Before the taxonomy existed, the only mitigation was a per-call-site decision (`disable_internal_retries=True`) that did not document *why* an RPC was retry-unsafe, so the decision was easy to lose during refactors.
 
 Six retry-safety profiles cover every realistic NotebookLM RPC shape:
 

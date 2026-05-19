@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._core_polling import PollRegistry
+from notebooklm._polling_registry import PollRegistry
 from notebooklm.rpc.decoder import RPCError
 from notebooklm.types import ArtifactDownloadError
 

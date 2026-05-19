@@ -40,7 +40,7 @@ recorded) HTTP calls. Today these include:
   parser doesn't go through HTTP.
 - `test_auto_refresh.py` — asserts that the refresh callback is *wired*;
   doesn't fire a real refresh.
-- `test_core.py` — `httpx.MockTransport` + `AsyncMock` exercising error
+- `test_session_integration.py` — `httpx.MockTransport` + `AsyncMock` exercising error
   paths; no real socket.
 - `test_download_multi_artifact.py` — pure helper-logic tests for
   `select_artifact` / `artifact_title_to_filename`.

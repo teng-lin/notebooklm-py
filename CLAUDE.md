@@ -50,7 +50,7 @@ CLI Layer (cli/)
     ↓
 Client Layer (client.py, _*.py APIs)
     ↓
-Session Layer (_session.py + _core_*.py seam modules)
+Session Layer (_session.py + session/kernel collaborator modules)
     ↓
 RPC Layer (rpc/)
 ```
@@ -60,15 +60,15 @@ RPC Layer (rpc/)
    - `encoder.py`: Request encoding
    - `decoder.py`: Response parsing
 
-2. **Session Layer** (`src/notebooklm/_session.py` + `_core_*.py` seam modules):
+2. **Session Layer** (`src/notebooklm/_session.py` + session/kernel collaborators):
    - `_session.py`: concrete `Session` orchestration
    - `_core.py`: compatibility shim for legacy private imports
-   - `_core_transport.py`, `_core_rpc.py`: HTTP client + RPC call abstraction
-   - `_core_auth.py`, `_core_cookie_persistence.py`: Auth refresh + cookie storage
-   - `_core_metrics.py`, `_core_drain.py`, `_core_reqid.py`: Telemetry, drain coordination, request-counter handling
-   - `_core_cache.py`, `_core_polling.py`: Conversation cache + artifact polling helpers
-   - `_core_constants.py`, `_core_helpers.py`, `_core_error_injection.py`: Module-level constants, helper utilities, synthetic-error transport
-   - `_core_lifecycle.py`: Open/close lifecycle (loop-affinity guard + keepalive task)
+   - `_authed_transport.py`, `_rpc_executor.py`: HTTP client + RPC call abstraction
+   - `_session_auth.py`, `_cookie_persistence.py`: Auth refresh + cookie storage
+   - `_client_metrics.py`, `_transport_drain.py`, `_reqid_counter.py`: Telemetry, drain coordination, request-counter handling
+   - `_conversation_cache.py`, `_polling_registry.py`: Conversation cache + artifact polling helpers
+   - `_session_config.py`, `_session_helpers.py`, `_error_injection.py`: Module-level constants, helper utilities, synthetic-error transport
+   - `_session_lifecycle.py`: Open/close lifecycle (loop-affinity guard + keepalive task)
    - `_session_contracts.py`: Shared session Protocols consumed by feature APIs
 
 3. **Client Layer** (`src/notebooklm/client.py`, `_*.py`):
@@ -86,19 +86,19 @@ RPC Layer (rpc/)
 | `client.py` | Main `NotebookLMClient` class |
 | `_session.py` | Concrete `Session` orchestrator; HTTP client lifecycle; late-binding wrappers |
 | `_core.py` | Compatibility shim for legacy private imports |
-| `_core_constants.py` | `DEFAULT_*` knobs and module-level constants |
-| `_core_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
-| `_core_error_injection.py` | `_SyntheticErrorTransport` + env-var guard for fault injection |
-| `_core_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
-| `_core_drain.py` | `TransportDrainTracker` — in-flight transport counters + `_TransportOperationToken` |
-| `_core_reqid.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
-| `_core_auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
-| `_core_lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
-| `_core_rpc.py` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols |
-| `_core_transport.py` | Authed POST path, retry loops, `_AuthedTransportHost` Protocol |
-| `_core_cache.py` | Per-instance LRU conversation cache for `ChatAPI` |
-| `_core_polling.py` | Pending-poll registry for long-running artifact generations |
-| `_core_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
+| `_session_config.py` | `DEFAULT_*` knobs and module-level constants |
+| `_session_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
+| `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
+| `_client_metrics.py` | `ClientMetrics` — `ClientMetricsSnapshot` counters + `on_rpc_event` callback |
+| `_transport_drain.py` | `TransportDrainTracker` — in-flight transport counters + `_TransportOperationToken` |
+| `_reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
+| `_session_auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
+| `_session_lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
+| `_rpc_executor.py` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols |
+| `_authed_transport.py` | Authed POST path, retry loops, `_AuthedTransportHost` Protocol |
+| `_conversation_cache.py` | Per-instance LRU conversation cache for `ChatAPI` |
+| `_polling_registry.py` | Pending-poll registry for long-running artifact generations |
+| `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_session_contracts.py` | Shared session Protocols consumed by sub-clients |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_sources.py` | `client.sources` API |
@@ -128,19 +128,19 @@ src/notebooklm/
 ├── types.py                     # Dataclasses
 ├── _session.py                  # Concrete Session orchestration (NotebookLMClient internals)
 ├── _core.py                     # Compatibility shim for legacy private imports
-├── _core_constants.py           # DEFAULT_* knobs + module-level constants
-├── _core_helpers.py             # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
-├── _core_error_injection.py     # _SyntheticErrorTransport + fault-injection env-var guard
-├── _core_transport.py           # HTTP client + transport-layer concerns
-├── _core_rpc.py                 # RPC call abstraction
-├── _core_auth.py                # Auth refresh seam
-├── _core_cookie_persistence.py  # Cookie storage seam
-├── _core_metrics.py             # Telemetry / metrics seam
-├── _core_drain.py               # In-flight drain coordinator
-├── _core_reqid.py               # Request-counter / request-id helpers
-├── _core_cache.py               # Conversation cache seam
-├── _core_polling.py             # Artifact polling helpers
-├── _core_lifecycle.py           # Open/close lifecycle seam (loop affinity + keepalive task)
+├── _session_config.py           # DEFAULT_* knobs + module-level constants
+├── _session_helpers.py          # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
+├── _error_injection.py          # Synthetic-error env-var resolver + startup guard
+├── _authed_transport.py         # HTTP client + transport-layer concerns
+├── _rpc_executor.py             # RPC call abstraction
+├── _session_auth.py             # Auth refresh seam
+├── _cookie_persistence.py       # Cookie storage seam
+├── _client_metrics.py           # Telemetry / metrics seam
+├── _transport_drain.py          # In-flight drain coordinator
+├── _reqid_counter.py            # Request-counter / request-id helpers
+├── _conversation_cache.py       # Conversation cache seam
+├── _polling_registry.py         # Artifact polling helpers
+├── _session_lifecycle.py        # Open/close lifecycle seam (loop affinity + keepalive task)
 ├── _session_contracts.py        # Shared session Protocols consumed by feature APIs
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py
