@@ -59,6 +59,8 @@ from __future__ import annotations
 import asyncio
 import builtins
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -105,6 +107,16 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
     core.get_http_client.return_value.cookies = MagicMock(name="live_cookie_jar")
     core._begin_transport_post = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
+    core.operation_scope = MagicMock()
+
+    def operation_scope(_label):
+        @asynccontextmanager
+        async def scope() -> AsyncIterator[None]:
+            yield None
+
+        return scope()
+
+    core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
     return SourcesAPI(core), core
 

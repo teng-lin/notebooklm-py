@@ -29,7 +29,8 @@ Design choices (documented in ADR-007 "Alternatives considered"):
 
 from __future__ import annotations
 
-import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -71,6 +72,13 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         fake.rpc_call.assert_awaited_once()
     """
 
+    def _operation_scope(_label: str):
+        @asynccontextmanager
+        async def scope() -> AsyncIterator[None]:
+            yield None
+
+        return scope()
+
     defaults: dict[str, Any] = {
         # CoreRPCProvider — fresh list per call so tests can mutate without bleeding
         "rpc_call": AsyncMock(side_effect=lambda *a, **kw: []),
@@ -106,9 +114,8 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         "begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
         "begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
         "finish_transport_post": AsyncMock(return_value=None),
-        # UploadConcurrencyProvider — Semaphore must be created inside a running loop
-        # (Python 3.10+ raises RuntimeError otherwise); defer via side_effect.
-        "get_upload_semaphore": MagicMock(side_effect=lambda: asyncio.Semaphore(1)),
+        # OperationScopeProvider / UploadConcurrencyProvider
+        "operation_scope": MagicMock(side_effect=_operation_scope),
         "record_upload_queue_wait": MagicMock(return_value=None),
         # LoopAffinityProvider — None is the silent-no-op value
         "bound_loop": None,

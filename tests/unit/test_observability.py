@@ -150,6 +150,20 @@ async def test_drain_allows_nested_work_inside_accepted_operation(
 
 
 @pytest.mark.asyncio
+async def test_operation_scope_tracks_drain_without_upload_semaphore(
+    auth_tokens: AuthTokens,
+) -> None:
+    core = ClientCore(auth_tokens)
+
+    async with core.operation_scope("plain-operation"):
+        assert core._in_flight_posts == 1
+        assert not hasattr(core, "get_upload_semaphore")
+
+    assert core._in_flight_posts == 0
+    assert "_upload_semaphore" not in core.__dict__
+
+
+@pytest.mark.asyncio
 async def test_drain_rejects_child_task_spawned_from_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:

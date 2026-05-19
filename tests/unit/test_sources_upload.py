@@ -4,6 +4,8 @@ import ast
 import inspect
 import textwrap
 import warnings
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -54,6 +56,16 @@ def mock_core():
     )
     core._begin_transport_post = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
+    core.operation_scope = MagicMock()
+
+    def operation_scope(_label):
+        @asynccontextmanager
+        async def scope() -> AsyncIterator[None]:
+            yield None
+
+        return scope()
+
+    core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
     return core
 
@@ -804,6 +816,7 @@ class TestAddFile:
         assert result.kind == "unknown"
         # 2 RPCs: GET_NOTEBOOK baseline + ADD_SOURCE_FILE register.
         assert mock_core.rpc_call.call_count == 2
+        mock_core.operation_scope.assert_called_once_with("upload:0")
 
     @pytest.mark.asyncio
     async def test_add_file_raises_file_not_found(self, sources_api, mock_core):

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,32 +18,24 @@ from notebooklm.types import Source, SourceAddError
 
 class UploadRuntime:
     def __init__(self) -> None:
-        self.semaphore = asyncio.Semaphore(1)
         self.queue_waits: list[float] = []
         self.labels: list[str] = []
-        self.finished: list[object] = []
-
-    def get_upload_semaphore(self) -> asyncio.Semaphore:
-        return self.semaphore
+        self.finished: list[str] = []
 
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         self.queue_waits.append(wait_seconds)
 
-    async def _begin_transport_post(self, log_label: str) -> object:
-        token = object()
+    def operation_scope(self, log_label: str):
         self.labels.append(log_label)
-        return token
 
-    async def _begin_transport_task(
-        self,
-        task: asyncio.Task[Any],
-        log_label: str,
-    ) -> object:
-        self.labels.append(log_label)
-        return object()
+        @asynccontextmanager
+        async def scope() -> AsyncIterator[None]:
+            try:
+                yield None
+            finally:
+                self.finished.append(log_label)
 
-    async def _finish_transport_post(self, token: object) -> None:
-        self.finished.append(token)
+        return scope()
 
 
 class HttpRuntime:
@@ -107,6 +101,15 @@ def test_extract_register_file_source_id_skips_large_string_candidates() -> None
 
 
 @pytest.mark.asyncio
+async def test_upload_semaphore_is_owned_per_pipeline() -> None:
+    first = SourceUploadPipeline(max_concurrent_uploads=1)
+    second = SourceUploadPipeline(max_concurrent_uploads=1)
+
+    assert first.get_upload_semaphore() is first.get_upload_semaphore()
+    assert first.get_upload_semaphore() is not second.get_upload_semaphore()
+
+
+@pytest.mark.asyncio
 async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
     service: SourceUploadPipeline,
     tmp_path,
@@ -141,10 +144,59 @@ async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
     assert source.id == "src_123"
     assert source.title == "report.pdf"
     assert source.is_processing
-    assert runtime.labels == ["source upload report.pdf"]
-    assert len(runtime.finished) == 1
+    assert runtime.labels == ["upload:0"]
+    assert runtime.finished == ["upload:0"]
+    assert len(runtime.queue_waits) == 1
     register_file_source.assert_awaited_once_with("nb_123", "report.pdf")
     start_resumable_upload.assert_awaited_once_with("nb_123", "report.pdf", 5, "src_123")
+
+
+@pytest.mark.asyncio
+async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -> None:
+    first_file = tmp_path / "first.pdf"
+    second_file = tmp_path / "second.pdf"
+    first_file.write_bytes(b"first")
+    second_file.write_bytes(b"second")
+    runtime = UploadRuntime()
+    service = SourceUploadPipeline(max_concurrent_uploads=1)
+    first_streaming_started = asyncio.Event()
+    release_first_streaming = asyncio.Event()
+
+    async def upload_file_streaming(_upload_url, file_obj, **kwargs):
+        if kwargs["filename"] == "first.pdf":
+            first_streaming_started.set()
+            await release_first_streaming.wait()
+        file_obj.close()
+
+    async def add(path):
+        return await service.add_file(
+            "nb_123",
+            path,
+            capabilities=runtime,
+            register_file_source=AsyncMock(return_value=f"src_{path.stem}"),
+            start_resumable_upload=AsyncMock(return_value="https://upload.example.com/session"),
+            upload_file_streaming=upload_file_streaming,
+            wait_until_ready=AsyncMock(),
+            wait_until_registered=AsyncMock(),
+            rename=AsyncMock(),
+            logger=MagicMock(),
+        )
+
+    first_task = asyncio.create_task(add(first_file))
+    await first_streaming_started.wait()
+
+    second_task = asyncio.create_task(add(second_file))
+    while len(runtime.labels) < 2:
+        await asyncio.sleep(0)
+
+    assert runtime.labels == ["upload:0", "upload:0"]
+    assert len(runtime.queue_waits) == 1
+
+    release_first_streaming.set()
+    sources = await asyncio.gather(first_task, second_task)
+
+    assert [source.id for source in sources] == ["src_first", "src_second"]
+    assert len(runtime.queue_waits) == 2
 
 
 @pytest.mark.asyncio

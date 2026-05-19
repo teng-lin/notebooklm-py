@@ -18,6 +18,7 @@ __all__ = [
     "DEFAULT_MAX_CONCURRENT_RPCS",
     "DEFAULT_MAX_CONCURRENT_UPLOADS",
     "DEFAULT_TIMEOUT",
+    "normalize_max_concurrent_uploads",
 ]
 
 # Single source of truth for the logger name every ``_core_*.py`` /
@@ -54,3 +55,12 @@ DEFAULT_MAX_CONCURRENT_UPLOADS = 4
 # higher account tier (or an external rate-limiter) can opt out via
 # ``max_concurrent_rpcs=None``.
 DEFAULT_MAX_CONCURRENT_RPCS = 16
+
+
+def normalize_max_concurrent_uploads(max_concurrent_uploads: int | None) -> int:
+    """Normalize and validate the source-upload concurrency limit."""
+    if max_concurrent_uploads is None:
+        return DEFAULT_MAX_CONCURRENT_UPLOADS
+    if max_concurrent_uploads < 1:
+        raise ValueError(f"max_concurrent_uploads must be >= 1, got {max_concurrent_uploads!r}")
+    return max_concurrent_uploads

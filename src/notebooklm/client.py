@@ -267,7 +267,11 @@ class NotebookLMClient:
         # After D2 cutover, sub-clients consume ``ClientCore`` directly,
         # typed against their per-sub-client narrow Protocol (defined
         # co-located in each sub-client file).
-        self.sources = SourcesAPI(self._core, upload_timeout=upload_timeout)
+        self.sources = SourcesAPI(
+            self._core,
+            upload_timeout=upload_timeout,
+            max_concurrent_uploads=max_concurrent_uploads,
+        )
         self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
         self.artifacts = ArtifactsAPI(self._core, storage_path=storage_path)
         self.notes = NotesAPI(self._core)

@@ -6,8 +6,8 @@ import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
 import time
 import warnings
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager, nullcontext
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -36,6 +36,9 @@ from ._core_constants import (
 )
 from ._core_constants import (
     DEFAULT_TIMEOUT as DEFAULT_TIMEOUT,
+)
+from ._core_constants import (
+    normalize_max_concurrent_uploads,
 )
 from ._core_cookie_persistence import CookiePersistence
 from ._core_drain import TransportDrainTracker
@@ -354,27 +357,9 @@ class ClientCore:
                 f"server_error_max_retries must be >= 0, got {server_error_max_retries}"
             )
         self._server_error_max_retries = server_error_max_retries
-        # ``None`` resolves to the default (``DEFAULT_MAX_CONCURRENT_UPLOADS``)
-        # rather than meaning "unbounded" — the FD-exhaustion guard is the
-        # whole point of the knob; an unbounded fan-out of ``add_file`` would
-        # exhaust the per-process FD limit before the upload semaphore could
-        # save us. Reject ``<= 0`` loudly at construction
-        # rather than allowing a silently-misconfigured pipeline.
-        if max_concurrent_uploads is None:
-            self._max_concurrent_uploads = DEFAULT_MAX_CONCURRENT_UPLOADS
-        else:
-            if max_concurrent_uploads < 1:
-                raise ValueError(
-                    f"max_concurrent_uploads must be >= 1, got {max_concurrent_uploads!r}"
-                )
-            self._max_concurrent_uploads = max_concurrent_uploads
-        # Lazily-created (``asyncio.Semaphore()`` needs a running loop in
-        # some Python versions, and ``ClientCore`` can be constructed
-        # outside one). Use ``get_upload_semaphore()`` to fetch the live
-        # semaphore on demand. Per-instance — never module-global — so two
-        # ``NotebookLMClient`` instances in the same process have
-        # independent upload budgets.
-        self._upload_semaphore: asyncio.Semaphore | None = None
+        # Keep fail-fast validation for private ClientCore callers, but the
+        # actual upload semaphore state is owned by ``SourceUploadPipeline``.
+        normalize_max_concurrent_uploads(max_concurrent_uploads)
         # RPC-fanout throttle. ``None`` means "no
         # gate" (caller has an external rate-limiter, or this is a
         # single-shot CLI invocation). Default ``DEFAULT_MAX_CONCURRENT_RPCS``
@@ -390,9 +375,9 @@ class ClientCore:
             if max_concurrent_rpcs < 1:
                 raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
             self._max_concurrent_rpcs = max_concurrent_rpcs
-        # Lazily-created for the same reason as ``_upload_semaphore``
-        # (``asyncio.Semaphore()`` binds to the running loop in some
-        # Python versions). Per-instance, never module-global. When
+        # Lazily-created because ``asyncio.Semaphore()`` binds to the
+        # running loop in some Python versions. Per-instance, never
+        # module-global. When
         # ``_max_concurrent_rpcs is None``, the accessor returns a
         # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
         self._rpc_semaphore: asyncio.Semaphore | None = None
@@ -451,7 +436,7 @@ class ClientCore:
         # :class:`AuthedTransport`) does a cheap ``is`` comparison against
         # it. Each client is per-loop — the asyncio primitives we hold
         # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
-        # ``_upload_semaphore``, ``_rpc_semaphore``, the ``httpx.AsyncClient``
+        # ``_rpc_semaphore``, the ``httpx.AsyncClient``
         # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)
         # are all bound to the loop that ``open()`` ran on; reusing them
         # under a different loop produces hangs and ``RuntimeError`` deep
@@ -1113,6 +1098,19 @@ class ClientCore:
         self._ensure_observability_state()
         await self._drain_tracker.finish_transport_post(token)
 
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        """Return a drain-tracked operation scope for feature-owned work."""
+
+        @asynccontextmanager
+        async def scope() -> AsyncIterator[None]:
+            token = await self._begin_transport_post(label)
+            try:
+                yield None
+            finally:
+                await self._finish_transport_post(token)
+
+        return scope()
+
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new client operations and wait for in-flight ones to finish.
 
@@ -1122,40 +1120,6 @@ class ClientCore:
         """
         self._ensure_observability_state()
         await self._drain_tracker.drain(timeout)
-
-    def get_upload_semaphore(self) -> asyncio.Semaphore:
-        """Return the per-instance upload semaphore, creating it on first use.
-
-        The semaphore caps the number of in-flight ``SourcesAPI.add_file``
-        uploads at ``max_concurrent_uploads`` (default
-        ``DEFAULT_MAX_CONCURRENT_UPLOADS``). Each in-flight upload holds
-        one open file descriptor for its duration, so the cap is also an
-        FD-exhaustion guard.
-
-        Scope of the cap:
-          - The ``async with`` block in ``add_file`` covers FD-open,
-            the two pre-upload RPCs (``_register_file_source`` and
-            ``_start_resumable_upload``), and the streaming upload. The
-            semaphore therefore also serializes those two RPCs — a side
-            effect of the FD guard, not a separate quota.
-          - The cap applies to the *blocking* ``add_file`` call. On
-            post-finalize cancel, the shielded background
-            ``finalize_task`` continues running with the FD still open
-            after ``add_file``'s ``async with`` exits, so the
-            instantaneous open-FD count can briefly exceed
-            ``max_concurrent_uploads`` by the number of concurrently
-            draining background tasks.
-
-        Lazy construction is required because ``asyncio.Semaphore()`` in
-        some Python versions binds to the running event loop at creation
-        time, and ``ClientCore`` can be constructed outside any loop.
-        Callers must invoke this from inside the loop where the upload
-        will run — typically inside the ``async with`` block of
-        ``add_file``.
-        """
-        if self._upload_semaphore is None:
-            self._upload_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
-        return self._upload_semaphore
 
     def _get_rpc_semaphore(self) -> AbstractAsyncContextManager[Any]:
         """Return the per-instance RPC semaphore (or a null-context).
@@ -1167,7 +1131,7 @@ class ClientCore:
         out of the gate). Otherwise it lazily constructs an
         ``asyncio.Semaphore`` bound to the running loop on first use,
         mirroring the lazy-init pattern of :attr:`_reqid_lock` /
-        :attr:`_auth_snapshot_lock` / :meth:`get_upload_semaphore`.
+        :attr:`_auth_snapshot_lock`.
 
         The check-then-assign is safe without an outer lock because
         asyncio is single-threaded: no other coroutine can execute

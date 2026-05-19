@@ -19,8 +19,12 @@ from ._callbacks import maybe_await_callback
 from ._capabilities import (
     AuthRouteProvider,
     CookieJarProvider,
-    TransportOperationProvider,
+    OperationScopeProvider,
     UploadConcurrencyProvider,
+)
+from ._core_constants import (
+    DEFAULT_MAX_CONCURRENT_UPLOADS,
+    normalize_max_concurrent_uploads,
 )
 from ._env import get_base_url
 from ._idempotency import idempotent_create
@@ -42,7 +46,7 @@ _SOURCE_ID_UUID_PATTERN = re.compile(
 
 class SourceUploadRuntime(
     UploadConcurrencyProvider,
-    TransportOperationProvider,
+    OperationScopeProvider,
     Protocol,
 ):
     """Capabilities needed by public file-upload orchestration."""
@@ -207,6 +211,23 @@ def _looks_like_id_string(candidate: str) -> bool:
 class SourceUploadPipeline:
     """Own file registration and resumable upload orchestration."""
 
+    def __init__(self, max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS):
+        self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
+        self._upload_semaphore: asyncio.Semaphore | None = None
+
+    def get_upload_semaphore(self) -> asyncio.Semaphore:
+        """Return the Sources-owned upload semaphore, creating it on first use.
+
+        The semaphore caps the section that opens the source FD, registers the
+        source, starts the resumable upload, and streams the body. Lazy
+        construction keeps ``SourceUploadPipeline`` usable outside a running
+        event loop. On post-finalize cancellation, the shielded finalize task
+        may briefly keep an FD open after ``add_file`` exits the semaphore.
+        """
+        if self._upload_semaphore is None:
+            self._upload_semaphore = asyncio.Semaphore(self._max_concurrent_uploads)
+        return self._upload_semaphore
+
     async def add_file(
         self,
         notebook_id: str,
@@ -218,6 +239,7 @@ class SourceUploadPipeline:
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
         deprecation_warning_stacklevel: int = 2,
+        upload_index: int = 0,
         capabilities: SourceUploadRuntime,
         register_file_source: RegisterFileSource,
         start_resumable_upload: StartResumableUpload,
@@ -248,37 +270,30 @@ class SourceUploadPipeline:
             raise ValidationError(f"Not a regular file: {file_path}")
 
         filename = file_path.name
-        upload_sem = capabilities.get_upload_semaphore()
-        upload_wait_start = monotonic()
-        async with upload_sem:
-            capabilities.record_upload_queue_wait(monotonic() - upload_wait_start)
-            file_obj = open(file_path, "rb")  # noqa: SIM115
-            handed_off = False
-            operation_token = None
-            try:
-                file_size = os.fstat(file_obj.fileno()).st_size
-                operation_token = await capabilities._begin_transport_post(
-                    f"source upload {filename}"
-                )
-                source_id = await register_file_source(notebook_id, filename)
-                upload_url = await start_resumable_upload(
-                    notebook_id,
-                    filename,
-                    file_size,
-                    source_id,
-                )
-                handed_off = True
-                await upload_file_streaming(
-                    upload_url,
-                    file_obj,
-                    filename=filename,
-                    on_progress=on_progress,
-                    total_bytes=file_size,
-                )
-            finally:
+        async with capabilities.operation_scope(f"upload:{upload_index}"):
+            upload_sem = self.get_upload_semaphore()
+            upload_wait_start = monotonic()
+            async with upload_sem:
+                capabilities.record_upload_queue_wait(monotonic() - upload_wait_start)
+                file_obj = open(file_path, "rb")  # noqa: SIM115
+                handed_off = False
                 try:
-                    if operation_token is not None:
-                        await capabilities._finish_transport_post(operation_token)
+                    file_size = os.fstat(file_obj.fileno()).st_size
+                    source_id = await register_file_source(notebook_id, filename)
+                    upload_url = await start_resumable_upload(
+                        notebook_id,
+                        filename,
+                        file_size,
+                        source_id,
+                    )
+                    handed_off = True
+                    await upload_file_streaming(
+                        upload_url,
+                        file_obj,
+                        filename=filename,
+                        on_progress=on_progress,
+                        total_bytes=file_size,
+                    )
                 finally:
                     if not handed_off:
                         file_obj.close()

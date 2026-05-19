@@ -11,6 +11,7 @@ dependency cycles. See ADR-002 for the design.
 from __future__ import annotations
 
 import asyncio
+from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol
 
 import httpx
@@ -108,12 +109,16 @@ class TransportOperationProvider(Protocol):
     async def _finish_transport_post(self, token: _TransportOperationToken) -> None: ...
 
 
-class UploadConcurrencyProvider(Protocol):
-    """Provider for shared source-upload concurrency and queue metrics."""
+class OperationScopeProvider(Protocol):
+    """Provider for structured operation scopes used by Sources uploads."""
 
-    def get_upload_semaphore(self) -> asyncio.Semaphore:
-        """Return the existing per-core upload semaphore."""
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        """Return a drain-tracked operation scope labelled for observability."""
         ...
+
+
+class UploadConcurrencyProvider(Protocol):
+    """Provider for source-upload queue metrics."""
 
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         """Record how long an upload waited for the semaphore."""

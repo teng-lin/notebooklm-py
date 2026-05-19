@@ -16,9 +16,10 @@ from ._capabilities import (
     AuthRouteProvider,
     CookieJarProvider,
     CoreRPCProvider,
-    TransportOperationProvider,
+    OperationScopeProvider,
     UploadConcurrencyProvider,
 )
+from ._core_constants import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
@@ -41,7 +42,7 @@ class _SourcesCore(
     CoreRPCProvider,
     AuthRouteProvider,
     UploadConcurrencyProvider,
-    TransportOperationProvider,
+    OperationScopeProvider,
     CookieJarProvider,
     Protocol,
 ):
@@ -51,11 +52,10 @@ class _SourcesCore(
     the capabilities SourcesAPI uses through its upload pipeline:
     ``rpc_call`` (from :class:`CoreRPCProvider`), authuser routing
     (from :class:`AuthRouteProvider`), the upload-concurrency semaphore
-    + queue-wait recorder (from :class:`UploadConcurrencyProvider`),
-    transport-operation bookkeeping for the streaming upload POST
-    (from :class:`TransportOperationProvider`), and the live cookie
-    jar consumed by the Scotty upload HTTP path (from
-    :class:`CookieJarProvider`).
+    owned by :class:`SourceUploadPipeline`, queue-wait recording (from
+    :class:`UploadConcurrencyProvider`), structured drain scopes (from
+    :class:`OperationScopeProvider`), and the live cookie jar consumed by
+    the Scotty upload HTTP path (from :class:`CookieJarProvider`).
     """
 
     pass
@@ -156,6 +156,7 @@ class SourcesAPI:
         self,
         core: _SourcesCore,
         upload_timeout: httpx.Timeout | None = None,
+        max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
     ):
         """Initialize the sources API.
 
@@ -171,6 +172,9 @@ class SourcesAPI:
                 defaults, NOT the original 10.0s. Specify all components
                 explicitly (e.g. ``httpx.Timeout(10.0, read=600.0)``) to
                 avoid surprises.
+            max_concurrent_uploads: Ceiling for concurrent
+                :meth:`add_file` uploads. The semaphore is owned by this
+                Sources upload pipeline, not by the shared core/session.
         """
         self._core = core
         self._capabilities = core
@@ -178,7 +182,7 @@ class SourcesAPI:
         self._content = SourceContentRenderer(self._rpc_call, logger=logger)
         self._lister = SourceLister(self._rpc_call)
         self._poller = SourcePoller()
-        self._uploader = SourceUploadPipeline()
+        self._uploader = SourceUploadPipeline(max_concurrent_uploads=max_concurrent_uploads)
         self._upload_timeout = upload_timeout
 
     async def _rpc_call(
@@ -499,9 +503,12 @@ class SourcesAPI:
            ``UPDATE_SOURCE`` is the only way to set one).
 
         Concurrency / FD lifecycle:
-            The upload section runs under
-            ``ClientCore.get_upload_semaphore()`` which bounds simultaneous
-            in-flight uploads at ``max_concurrent_uploads`` (default 4).
+            ``add_file`` enters a drain-tracked ``operation_scope("upload:0")``
+            before waiting on the Sources-owned semaphore, so graceful
+            shutdown tracks both active and semaphore-queued uploads.
+            The upload section runs under the Sources-owned upload
+            pipeline semaphore, which bounds simultaneous in-flight
+            uploads at ``max_concurrent_uploads`` (default 4).
             Each in-flight upload holds **one open file descriptor** for
             the duration of the upload, so the cap doubles as an
             FD-exhaustion guard. The file is opened ONCE during validation
