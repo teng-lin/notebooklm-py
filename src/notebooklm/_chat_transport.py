@@ -47,7 +47,9 @@ async def chat_aware_authed_post(
     :class:`~notebooklm.exceptions.NetworkError` /
     :class:`~notebooklm.exceptions.ChatError` respectively. This keeps
     ChatAPI free of HTTP-status branching and matches the historical
-    contract of ``ChatAPI.ask`` (a planned follow-up will migrate that caller).
+    contract of ``ChatAPI.ask``, which calls this helper directly
+    post-D2-cutover (replacing the prior wrapper on the core's RPC
+    executor).
 
     Args:
         core: The chat-side narrow core view (declares the underscore-
