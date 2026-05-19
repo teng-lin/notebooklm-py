@@ -2,9 +2,22 @@
 
 ## Status
 
-Accepted (Sunset = D1 auth side — to be marked Superseded when the `arch-d1-auth-side` PR lands).
+Superseded by `arch-d1-auth-side` (D1 PR-2).
 
-This ADR documents an active compatibility mechanism. It is scheduled for retirement once the D1 test-pattern migration completes.
+The write-through facade (`_AuthFacadeModule` + the 5 `_AUTH_*_FACADE_NAMES` /
+`_REFRESH_DEP_MIRROR_NAMES` / `_KEEPALIVE_DEP_MIRROR_NAMES` mirror tables)
+was deleted from `src/notebooklm/auth.py` in D1 PR-2. The remediation
+moved test-side mirroring into a small `tests/_fixtures/auth_seam.py`
+helper (`patch_auth_seam(monkeypatch, name, value)`), which walks the
+known `_auth/*` seam modules and patches every one that already binds
+the name. New tests should prefer constructor injection via
+`tests._fixtures.make_fake_core` (ADR-007); the helper exists only to
+bridge a small set of legacy tests that exercise module-level seam state
+(file locks, refresh-retry registries) where constructor injection is
+not a natural fit.
+
+The rest of this ADR is preserved as the historical record of why the
+facade existed at all.
 
 ## Context
 

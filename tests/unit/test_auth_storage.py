@@ -6,43 +6,15 @@ files alongside the deletion of ``_AuthFacadeModule``; see ADR-003
 (superseded) and ADR-007 (test-monkeypatch policy) for the rationale.
 """
 
-import asyncio
 import json
-import os
-import re
-import shlex
-import subprocess
-import sys
-from pathlib import Path
-from typing import Any
 
-import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from notebooklm import auth as auth_module
-from notebooklm._auth import account as _auth_account
-from notebooklm._auth import keepalive as _auth_keepalive
-from notebooklm._auth import refresh as _auth_refresh
 from notebooklm.auth import (
-    KEEPALIVE_ROTATE_URL,
-    NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV,
-    Account,
     AuthTokens,
-    build_httpx_cookies_from_storage,
-    convert_rookiepy_cookies_to_storage_state,
-    enumerate_accounts,
-    extract_cookies_from_storage,
-    extract_cookies_with_domains,
-    extract_csrf_from_html,
-    extract_email_from_html,
-    extract_session_id_from_html,
-    fetch_tokens,
-    fetch_tokens_with_domains,
     load_auth_from_storage,
     load_httpx_cookies,
-    save_cookies_to_storage,
-    snapshot_cookie_jar,
 )
 
 
@@ -504,5 +476,3 @@ class TestLoaderFlatCookieParity:
 # =============================================================================
 # COOKIE DOMAIN VALIDATION TESTS
 # =============================================================================
-
-

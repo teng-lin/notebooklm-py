@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import enum
 import importlib
-import logging
 import warnings
 from pathlib import Path
 from types import ModuleType
@@ -1276,6 +1275,7 @@ def test_auth_subprocess_reexport_lets_tests_patch_run() -> None:
 
     assert auth.subprocess is subprocess
     assert refresh.subprocess is subprocess
+
 
 def test_auth_update_cookie_input_lives_in_cookies_module() -> None:
     """``_update_cookie_input`` was moved into ``_auth.cookies`` (cohesive

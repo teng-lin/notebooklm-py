@@ -144,7 +144,9 @@ class TestSnapshotCookieJar:
     def test_facade_monkeypatches_propagate_to_storage_helpers(self, monkeypatch):
         """Facade patches still affect helpers moved behind ``_auth.storage``."""
         import notebooklm.auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
 
         def fake_cookie_is_http_only(cookie) -> bool:
             return True
@@ -881,8 +883,10 @@ class TestRefreshCmdResnapshot:
     async def test_fetch_tokens_with_domains_re_snapshots_after_refresh(
         self, tmp_path, monkeypatch
     ):
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
         from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -931,8 +935,10 @@ class TestRefreshCmdResnapshot:
 
     @pytest.mark.asyncio
     async def test_auth_tokens_from_storage_re_snapshots_after_refresh(self, tmp_path, monkeypatch):
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
         from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -1040,8 +1046,9 @@ class TestFlockUnavailableWarning:
         import contextlib as _contextlib
         import logging as _logging
 
-        from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
 
         # Reset the one-shot guard so this test isn't dependent on test order.
         patch_auth_seam(monkeypatch, "_FLOCK_UNAVAILABLE_WARNED", False)
@@ -1075,8 +1082,9 @@ class TestFlockUnavailableWarning:
         import contextlib as _contextlib
         import logging as _logging
 
-        from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
 
         patch_auth_seam(monkeypatch, "_FLOCK_UNAVAILABLE_WARNED", False)
 
@@ -1159,8 +1167,10 @@ class TestBaselineNotAdvancedOnSaveFailure:
         self, tmp_path, monkeypatch
     ):
         """Pre-client fetch rotations must be retried if their save fails."""
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
         from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
         from notebooklm._core import ClientCore
 
         storage = tmp_path / "storage_state.json"
@@ -1479,8 +1489,10 @@ class TestCASVariantAware:
            second save recognizes convergence, advances cleanly, and a later
            rotation can persist without re-clobbering the sibling write.
         """
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
         from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
         from notebooklm._core import ClientCore
 
         storage = tmp_path / "storage_state.json"
@@ -1610,7 +1622,6 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
         import asyncio
 
         from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
         from notebooklm._core import ClientCore
 
         storage = tmp_path / "storage_state.json"
@@ -1737,8 +1748,10 @@ class TestRefreshCmdSnapshotCapturedBeforeRetryFetch:
 
     @pytest.mark.asyncio
     async def test_retry_fetch_rotations_persist_to_disk(self, tmp_path, monkeypatch):
+        from _fixtures import (
+            patch_auth_seam,  # noqa: PLC0415 — co-local with auth_mod facade migration
+        )
         from notebooklm import auth as auth_mod
-        from _fixtures import patch_auth_seam  # noqa: PLC0415 — co-local with auth_mod facade migration
 
         storage = tmp_path / "storage_state.json"
         _write_storage(

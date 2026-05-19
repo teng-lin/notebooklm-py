@@ -6,13 +6,7 @@ files alongside the deletion of ``_AuthFacadeModule``; see ADR-003
 (superseded) and ADR-007 (test-monkeypatch policy) for the rationale.
 """
 
-import asyncio
 import json
-import os
-import re
-import shlex
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,27 +16,11 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import auth as auth_module
 from notebooklm._auth import account as _auth_account
-from notebooklm._auth import keepalive as _auth_keepalive
-from notebooklm._auth import refresh as _auth_refresh
 from notebooklm.auth import (
-    KEEPALIVE_ROTATE_URL,
-    NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV,
     Account,
-    AuthTokens,
-    build_httpx_cookies_from_storage,
-    convert_rookiepy_cookies_to_storage_state,
     enumerate_accounts,
-    extract_cookies_from_storage,
-    extract_cookies_with_domains,
-    extract_csrf_from_html,
     extract_email_from_html,
-    extract_session_id_from_html,
-    fetch_tokens,
     fetch_tokens_with_domains,
-    load_auth_from_storage,
-    load_httpx_cookies,
-    save_cookies_to_storage,
-    snapshot_cookie_jar,
 )
 
 
@@ -212,9 +190,7 @@ class TestAccountMetadata:
 
         # Seam-aliased object-attribute patch (ADR-007): patches the owning
         # module so bare-name lookups inside ``_auth.account`` observe the fake.
-        monkeypatch.setattr(
-            _auth_account, "read_account_metadata", fake_read_account_metadata
-        )
+        monkeypatch.setattr(_auth_account, "read_account_metadata", fake_read_account_metadata)
 
         assert auth_module.get_authuser_for_storage(storage) == 3
         assert auth_module.get_account_email_for_storage(storage) == "carol@example.com"
@@ -303,7 +279,7 @@ class TestAuthuserPlumbing:
     async def test_fetch_tokens_with_domains_prefers_persisted_email(
         self, tmp_path, httpx_mock: HTTPXMock
     ):
-        from notebooklm.auth import fetch_tokens_with_domains, write_account_metadata
+        from notebooklm.auth import write_account_metadata
 
         storage = tmp_path / "storage_state.json"
         storage.write_text(
@@ -339,7 +315,6 @@ class TestAuthuserPlumbing:
     async def test_fetch_tokens_with_domains_uses_explicit_authuser_without_email(
         self, tmp_path, httpx_mock: HTTPXMock
     ):
-        from notebooklm.auth import fetch_tokens_with_domains
 
         storage = tmp_path / "storage_state.json"
         storage.write_text(
@@ -369,7 +344,7 @@ class TestAuthuserPlumbing:
     async def test_explicit_authuser_overrides_persisted_email(
         self, tmp_path, httpx_mock: HTTPXMock
     ):
-        from notebooklm.auth import fetch_tokens_with_domains, write_account_metadata
+        from notebooklm.auth import write_account_metadata
 
         storage = tmp_path / "storage_state.json"
         storage.write_text(

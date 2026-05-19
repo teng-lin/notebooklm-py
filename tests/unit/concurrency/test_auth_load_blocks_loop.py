@@ -33,9 +33,9 @@ import time
 import pytest
 from pytest_httpx import HTTPXMock
 
+from _fixtures import patch_auth_seam
 from notebooklm import auth as auth_module
 from notebooklm.auth import AuthTokens
-from _fixtures import patch_auth_seam
 
 # Time budget for the "blocking sleep" injected into save_cookies_to_storage.
 # Half a second is comfortably above the asyncio scheduler resolution but

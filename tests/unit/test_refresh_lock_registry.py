@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm import auth as auth_mod
 from _fixtures import patch_auth_seam
+from notebooklm import auth as auth_mod
 
 
 @pytest.fixture(autouse=True)

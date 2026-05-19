@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm import auth as auth_module
 from _fixtures import patch_auth_seam
+from notebooklm import auth as auth_module
 
 # Cookie set that passes the Tier 1 required-cookies check but lacks any
 # secondary binding (no OSID, no APISID/SAPISID pair). This triggers the

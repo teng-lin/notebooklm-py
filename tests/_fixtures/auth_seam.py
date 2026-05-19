@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import notebooklm.auth as _auth_mod
 import notebooklm._auth.account as _auth_account
 import notebooklm._auth.cookie_policy as _auth_cookie_policy
 import notebooklm._auth.cookies as _auth_cookies
 import notebooklm._auth.keepalive as _auth_keepalive
 import notebooklm._auth.refresh as _auth_refresh
 import notebooklm._auth.storage as _auth_storage
+import notebooklm.auth as _auth_mod
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch
@@ -47,7 +47,7 @@ _SEAM_MODULES = (
 )
 
 
-def patch_auth_seam(monkeypatch: "MonkeyPatch", name: str, value: Any) -> None:
+def patch_auth_seam(monkeypatch: MonkeyPatch, name: str, value: Any) -> None:
     """Patch ``name`` onto every ``notebooklm.auth`` + ``_auth/*`` seam module that binds it.
 
     Mirrors the legacy ``setattr(notebooklm.auth, name, value)``
