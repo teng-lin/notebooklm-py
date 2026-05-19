@@ -492,7 +492,7 @@ class ClientCore:
         # ``AuthRefreshMiddleware`` BETWEEN ``RetryMiddleware`` and
         # ``ErrorInjectionMiddleware`` so the list now reads the
         # **final** ADR-009 ordering
-        # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
+        # ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``
         # (outermost → innermost). ``build_chain`` composes the leftmost
         # entry as the outermost wrapper, so keeping ``TracingMiddleware``
         # at the RIGHT end of the list preserves Tracing as the innermost
@@ -949,10 +949,10 @@ class ClientCore:
         ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
         on such a fixture would raise ``AttributeError``; this helper
         backfills both slots with the same shape ``__init__`` would have
-        constructed (``[DrainMiddleware, MetricsMiddleware, RetryMiddleware,
-        AuthRefreshMiddleware, ErrorInjectionMiddleware, TracingMiddleware]``-seeded
-        chain around the terminal adapter, matching the seed in
-        ``__init__``).
+        constructed (``[DrainMiddleware, MetricsMiddleware, SemaphoreMiddleware,
+        RetryMiddleware, AuthRefreshMiddleware, ErrorInjectionMiddleware,
+        TracingMiddleware]``-seeded chain around the terminal adapter, matching
+        the seed in ``__init__``).
 
         Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
         :meth:`_ensure_observability_state` is — two threads observing
@@ -1488,10 +1488,23 @@ class ClientCore:
         # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` so the recorder
         # below can forward it to ``ClientMetrics`` without giving the
         # middleware an opinionated ``ClientMetrics`` dependency.
-        result = await self._authed_post_chain(request)
-        queue_wait = request.context.get(RPC_QUEUE_WAIT_CONTEXT_KEY, 0.0)
-        self._record_rpc_queue_wait(queue_wait)
-        return result.response
+        try:
+            result = await self._authed_post_chain(request)
+            return result.response
+        finally:
+            # Record queue wait even if the chain raised — pre-Tier-12
+            # ``AuthedTransport.perform_authed_post`` recorded the wait
+            # immediately after semaphore acquisition, so a failed chain
+            # (RetryMiddleware budget exhaustion, AuthRefreshMiddleware
+            # refresh failure, etc.) MUST still surface the queue-wait
+            # latency. ``SemaphoreMiddleware`` writes the duration to
+            # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` after the
+            # semaphore is acquired; absence of the key means the slot
+            # was never acquired and there's nothing to record (gemini
+            # PR 12.9 finding).
+            queue_wait = request.context.get(RPC_QUEUE_WAIT_CONTEXT_KEY)
+            if queue_wait is not None:
+                self._record_rpc_queue_wait(queue_wait)
 
     async def transport_post(
         self,

@@ -2,10 +2,11 @@
 
 Per ADR-009 §"Chain ordering", ``AuthRefreshMiddleware`` sits just *inside*
 ``RetryMiddleware`` and just *outside* ``ErrorInjectionMiddleware``. The final
-Tier-12 chain is
-``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` — PR 12.8
-inserts ``AuthRefresh`` between ``Retry`` and ``ErrorInjection`` so this
-ordering is now realized end-to-end.
+Tier-12 chain (post-PR 12.9, after ``SemaphoreMiddleware`` was inserted between
+``Metrics`` and ``Retry``) is
+``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]`` —
+PR 12.8 inserts ``AuthRefresh`` between ``Retry`` and ``ErrorInjection`` so
+this ordering is now realized end-to-end.
 
 This PR lifts the **auth-refresh-once retry** loop out of
 ``AuthedTransport.perform_authed_post`` (the chain leaf). After PR 12.8 the

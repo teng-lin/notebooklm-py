@@ -9,10 +9,10 @@ type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
 landed without production wiring. PR 12.2 wired an empty chain into
 `ClientCore`. PRs 12.3 through 12.8 each extracted one cross-cutting
 concern into a dedicated middleware. **PR 12.9 closes the tier** — the
-six-middleware chain `[Drain, Metrics, Retry, AuthRefresh, ErrorInjection,
-Tracing]` is fully wired, the leaf (`AuthedTransport.perform_authed_post`)
-is a pure POST, and the underscore-prefixed compatibility aliases were
-removed. The chain ordering, the `RpcRequest.context` key vocabulary, and
+seven-middleware chain `[Drain, Metrics, Semaphore, Retry, AuthRefresh,
+ErrorInjection, Tracing]` is fully wired, the leaf
+(`AuthedTransport.perform_authed_post`) is a pure POST, and the
+underscore-prefixed compatibility aliases were removed. The chain ordering, the `RpcRequest.context` key vocabulary, and
 the Protocol shape pinned below are the load-bearing contract going
 forward into Tier 13.
 
@@ -144,7 +144,7 @@ The leftmost middleware in the sequence becomes the outermost wrapper.
 `build_chain` enforces this ordering by composing in reverse (last
 middleware is wrapped first around `terminal`).
 
-`SemaphoreMiddleware` was inserted at chain position 3 in PR 12.9 (see
+`SemaphoreMiddleware` was inserted at chain position 2 in PR 12.9 (see
 "PR 12.9 close-out notes" below) after the first cut of the audit-find
 moved the `max_concurrent_rpcs` slot to `ClientCore._perform_authed_post`
 (outside the chain) and codex caught the resulting Drain-admission

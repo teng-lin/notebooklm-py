@@ -2,8 +2,9 @@
 
 Per ADR-009 §"Chain ordering", ``ErrorInjectionMiddleware`` sits just *inside*
 ``RetryMiddleware`` / ``AuthRefreshMiddleware`` (which extract in PRs 12.7–12.8)
-and just *outside* ``TracingMiddleware``. The final Tier-12 chain is
-``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``. PR 12.6 ships
+and just *outside* ``TracingMiddleware``. The final Tier-12 chain (post-PR 12.9,
+after ``SemaphoreMiddleware`` was inserted between ``Metrics`` and ``Retry``) is
+``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``. PR 12.6 ships
 the interim 4-middleware chain ``[Drain, Metrics, ErrorInjection, Tracing]``;
 PRs 12.7–12.8 insert ``Retry`` and ``AuthRefresh`` BETWEEN ``Metrics`` and
 ``ErrorInjection`` so the ordering rationale holds at every step.
