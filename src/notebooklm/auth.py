@@ -167,7 +167,17 @@ def _validate_required_cookies(
     context: str = "",
     extra_diagnostics: list[str] | None = None,
 ) -> None:
-    """Delegate required-cookie validation through the compatibility facade."""
+    """Copy-forward shim into ``_cookie_policy`` for legacy patch sites.
+
+    Propagates test-patched policy names (``MINIMUM_REQUIRED_COOKIES``,
+    ``_EXTRACTION_HINT``, ``_has_valid_secondary_binding``) bound on
+    ``auth.py`` into ``_cookie_policy`` before delegating, then mirrors
+    ``_SECONDARY_BINDING_WARNED`` back in the ``finally`` block. Tests that
+    patch ``auth.MINIMUM_REQUIRED_COOKIES`` (or sibling names) continue to
+    work without going through ``patch_auth_seam``; modern tests should
+    prefer the seam helper. The ``_AuthFacadeModule`` write-through was
+    retired in D1 PR-2 (ADR-003).
+    """
     global _SECONDARY_BINDING_WARNED
     _cookie_policy.MINIMUM_REQUIRED_COOKIES = MINIMUM_REQUIRED_COOKIES
     _cookie_policy._EXTRACTION_HINT = _EXTRACTION_HINT

@@ -300,7 +300,12 @@ class TestFetchTokens:
 
         assert storage_file.stat().st_mode & 0o777 == 0o600
         storage_state = json.loads(storage_file.read_text())
-        assert storage_state["cookies"][0]["value"] == "new"
+        sid_cookie = next(
+            c
+            for c in storage_state["cookies"]
+            if c["name"] == "SID" and c["domain"] == ".google.com"
+        )
+        assert sid_cookie["value"] == "new"
 
 
 class TestFetchTokensAutoRefresh:
