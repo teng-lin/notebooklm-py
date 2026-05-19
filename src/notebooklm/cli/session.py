@@ -30,9 +30,6 @@ if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
     from rich.console import Console
 
-    from ..auth import Account
-    from ._chromium_profiles import ChromiumProfile
-
 from ..client import NotebookLMClient
 from ..config import get_base_host, get_base_url
 from ..exceptions import AuthError, NotebookNotFoundError
@@ -54,7 +51,50 @@ from .error_handler import handle_errors
 from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id
 from .runtime import run_async
-from .services import login as login_service
+
+# D1 PR-3: direct re-imports from ``cli.services.login``.
+#
+# Pre-refactor, this module wrapped every helper in a per-call
+# ``_patched_login_service_dependencies`` context that copied test
+# monkeypatches forward into ``cli.services.login``. The wrapper machinery
+# (~350 LOC) existed solely to forward ``patch("notebooklm.cli.session.X")``
+# style monkeypatches into the underlying service module.
+#
+# After D1 PR-3, the re-imports below give the same patch surface — tests
+# that do ``patch("notebooklm.cli.session._foo", ...)`` rebind the module-
+# level name in ``session``'s namespace, and ``session``'s own code resolves
+# ``_foo`` through that namespace. Tests that need to override the
+# helpers' *internal* dependencies (e.g. ``services.login.NotebookLMClient``)
+# must now patch the service module directly — see ADR-008 + tests/_fixtures.
+from .services.login import (
+    _INCLUDE_DOMAINS_ALL,
+    _ROOKIEPY_BROWSER_ALIASES,
+    _build_google_cookie_domains,
+    _enumerate_browser_accounts,
+    _enumerate_chromium_profiles_fanout,
+    _enumerate_one_jar,
+    _handle_rookiepy_error,
+    _login_all_accounts_from_browser,
+    _login_browser_cookies_single,
+    _login_with_browser_cookies,
+    _maybe_warn_firefox_containers_in_use,
+    _next_available_profile_name,
+    _parse_include_domains,
+    _profile_account_email,
+    _profiles_by_account_email,
+    _read_browser_cookies,
+    _read_chromium_profile_cookies_from_selector,
+    _read_firefox_container_cookies,
+    _refresh_from_browser_cookies,
+    _resolve_all_accounts_target,
+    _resolve_optional_cookie_domains,
+    _select_account,
+    _select_refresh_account,
+    _split_chromium_profile_browser_spec,
+    _sync_server_language_to_config,
+    _warn_missing_optional_domains,
+    _write_extracted_cookies,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,264 +175,6 @@ _CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
     "chrome": ("Google Chrome", "https://www.google.com/chrome"),
 }
 
-# Backwards-compatible patch targets for tests and downstream users. The
-# implementation lives in ``notebooklm.cli.services.login``; these shims keep
-# historical ``notebooklm.cli.session.<helper>`` monkeypatches effective.
-_ROOKIEPY_BROWSER_ALIASES = login_service._ROOKIEPY_BROWSER_ALIASES
-_INCLUDE_DOMAINS_ALL = login_service._INCLUDE_DOMAINS_ALL
-_ORIGINAL_SESSION_PATCH_TARGETS: dict[str, object] = {}
-_LOGIN_SERVICE_ALWAYS_SYNC = (
-    "NotebookLMClient",
-    "console",
-    "fetch_tokens_with_domains",
-    "get_storage_path",
-    "run_async",
-)
-_LOGIN_SERVICE_PATCH_TARGETS = (
-    "_build_google_cookie_domains",
-    "_enumerate_browser_accounts",
-    "_enumerate_chromium_profiles_fanout",
-    "_enumerate_one_jar",
-    "_handle_rookiepy_error",
-    "_login_all_accounts_from_browser",
-    "_login_browser_cookies_single",
-    "_login_with_browser_cookies",
-    "_maybe_warn_firefox_containers_in_use",
-    "_next_available_profile_name",
-    "_parse_include_domains",
-    "_profile_account_email",
-    "_profiles_by_account_email",
-    "_read_browser_cookies",
-    "_read_chromium_profile_cookies_from_selector",
-    "_read_firefox_container_cookies",
-    "_refresh_from_browser_cookies",
-    "_resolve_all_accounts_target",
-    "_resolve_optional_cookie_domains",
-    "_select_account",
-    "_select_refresh_account",
-    "_split_chromium_profile_browser_spec",
-    "_sync_server_language_to_config",
-    "_warn_missing_optional_domains",
-    "_write_extracted_cookies",
-)
-
-
-def _service_attr_is_patched(name: str) -> bool:
-    return globals().get(name) is not _ORIGINAL_SESSION_PATCH_TARGETS.get(name)
-
-
-@contextmanager
-def _patched_login_service_dependencies() -> Iterator[None]:
-    login_service_mutable: Any = login_service
-    originals = {
-        name: getattr(login_service, name)
-        for name in (*_LOGIN_SERVICE_ALWAYS_SYNC, *_LOGIN_SERVICE_PATCH_TARGETS)
-    }
-    always_sync_values = {
-        "NotebookLMClient": NotebookLMClient,
-        "console": console,
-        "fetch_tokens_with_domains": fetch_tokens_with_domains,
-        "get_storage_path": get_storage_path,
-        "run_async": run_async,
-    }
-    for name, value in always_sync_values.items():
-        setattr(login_service_mutable, name, value)
-    for name in _LOGIN_SERVICE_PATCH_TARGETS:
-        if _service_attr_is_patched(name):
-            setattr(login_service_mutable, name, globals()[name])
-    try:
-        yield
-    finally:
-        for name, value in originals.items():
-            setattr(login_service, name, value)
-
-
-def _handle_rookiepy_error(e: Exception, browser_name: str) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._handle_rookiepy_error(e, browser_name)
-
-
-def _enumerate_one_jar(
-    raw_cookies: list[dict[str, Any]],
-    browser_name: str,
-    browser_profile: str | None,
-    *,
-    quiet: bool = False,
-) -> list[Account]:
-    with _patched_login_service_dependencies():
-        return login_service._enumerate_one_jar(
-            raw_cookies, browser_name, browser_profile, quiet=quiet
-        )
-
-
-def _enumerate_browser_accounts(
-    browser_name: str,
-    *,
-    verbose: bool = True,
-    include_domains: set[str] | None = None,
-) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]]:
-    with _patched_login_service_dependencies():
-        return login_service._enumerate_browser_accounts(
-            browser_name, verbose=verbose, include_domains=include_domains
-        )
-
-
-def _enumerate_chromium_profiles_fanout(
-    browser_name: str,
-    profiles: list[ChromiumProfile],
-    *,
-    verbose: bool,
-    include_domains: set[str] | None,
-) -> tuple[dict[str | None, list[dict[str, Any]]], list[Account]]:
-    with _patched_login_service_dependencies():
-        return login_service._enumerate_chromium_profiles_fanout(
-            browser_name, profiles, verbose=verbose, include_domains=include_domains
-        )
-
-
-def _login_browser_cookies_single(
-    browser_cookies: str,
-    *,
-    storage: str | None,
-    account_email: str | None,
-    profile_name: str | None,
-    active_profile: str | None,
-    include_domains: set[str] | None = None,
-) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._login_browser_cookies_single(
-            browser_cookies,
-            storage=storage,
-            account_email=account_email,
-            profile_name=profile_name,
-            active_profile=active_profile,
-            include_domains=include_domains,
-        )
-
-
-def _profiles_by_account_email(profile_names: list[str]) -> dict[str, str]:
-    with _patched_login_service_dependencies():
-        return login_service._profiles_by_account_email(profile_names)
-
-
-def _profile_account_email(profile: str) -> str | None:
-    with _patched_login_service_dependencies():
-        return login_service._profile_account_email(profile)
-
-
-def _next_available_profile_name(base_name: str, unavailable: set[str]) -> str:
-    with _patched_login_service_dependencies():
-        return login_service._next_available_profile_name(base_name, unavailable)
-
-
-def _login_all_accounts_from_browser(
-    browser_cookies: str,
-    *,
-    update: bool = False,
-    include_domains: set[str] | None = None,
-) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._login_all_accounts_from_browser(
-            browser_cookies, update=update, include_domains=include_domains
-        )
-
-
-def _resolve_all_accounts_target(
-    *,
-    base_name: str,
-    account_email: str,
-    existing_profiles: set[str],
-    unavailable: set[str],
-    claimed: set[str],
-    update: bool,
-) -> str:
-    with _patched_login_service_dependencies():
-        return login_service._resolve_all_accounts_target(
-            base_name=base_name,
-            account_email=account_email,
-            existing_profiles=existing_profiles,
-            unavailable=unavailable,
-            claimed=claimed,
-            update=update,
-        )
-
-
-def _select_account(accounts: list[Any], *, account_email: str | None) -> Any:
-    with _patched_login_service_dependencies():
-        return login_service._select_account(accounts, account_email=account_email)
-
-
-def _write_extracted_cookies(
-    raw_cookies: list[dict[str, Any]],
-    *,
-    storage_path: Path,
-    profile: str | None,
-    authuser: int,
-    email: str,
-    quiet: bool = False,
-) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._write_extracted_cookies(
-            raw_cookies,
-            storage_path=storage_path,
-            profile=profile,
-            authuser=authuser,
-            email=email,
-            quiet=quiet,
-        )
-
-
-def _select_refresh_account(
-    accounts: list[Any], metadata: dict[str, Any], browser_name: str
-) -> Any:
-    with _patched_login_service_dependencies():
-        return login_service._select_refresh_account(accounts, metadata, browser_name)
-
-
-def _refresh_from_browser_cookies(
-    browser_name: str,
-    *,
-    storage_path: Path,
-    profile: str | None,
-    quiet: bool,
-    include_domains: set[str] | None = None,
-) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._refresh_from_browser_cookies(
-            browser_name,
-            storage_path=storage_path,
-            profile=profile,
-            quiet=quiet,
-            include_domains=include_domains,
-        )
-
-
-def _parse_include_domains(values: tuple[str, ...]) -> set[str]:
-    with _patched_login_service_dependencies():
-        return login_service._parse_include_domains(values)
-
-
-def _warn_missing_optional_domains(include_domains: set[str]) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._warn_missing_optional_domains(include_domains)
-
-
-def _resolve_optional_cookie_domains(labels: set[str]) -> frozenset[str]:
-    with _patched_login_service_dependencies():
-        return login_service._resolve_optional_cookie_domains(labels)
-
-
-def _build_google_cookie_domains(
-    *,
-    include_optional: bool = False,
-    include_domains: set[str] | None = None,
-) -> list[str]:
-    with _patched_login_service_dependencies():
-        return login_service._build_google_cookie_domains(
-            include_optional=include_optional, include_domains=include_domains
-        )
-
-
 def _filter_storage_state_cookies_by_domain_policy(
     state: dict[str, Any],
     *,
@@ -455,86 +237,6 @@ def _filter_storage_state_cookies_by_domain_policy(
         "cookies": filtered_cookies,
         "origins": list(state.get("origins", [])),
     }
-
-
-def _split_chromium_profile_browser_spec(browser_name: str) -> tuple[str, str] | None:
-    with _patched_login_service_dependencies():
-        return login_service._split_chromium_profile_browser_spec(browser_name)
-
-
-def _read_chromium_profile_cookies_from_selector(
-    browser_name: str,
-    profile_selector: str,
-    *,
-    verbose: bool,
-    include_domains: set[str] | None,
-) -> tuple[ChromiumProfile, list[dict[str, Any]]]:
-    with _patched_login_service_dependencies():
-        return login_service._read_chromium_profile_cookies_from_selector(
-            browser_name,
-            profile_selector,
-            verbose=verbose,
-            include_domains=include_domains,
-        )
-
-
-def _read_firefox_container_cookies(
-    container_spec: str,
-    *,
-    verbose: bool = True,
-    include_domains: set[str] | None = None,
-) -> list[dict[str, Any]]:
-    with _patched_login_service_dependencies():
-        return login_service._read_firefox_container_cookies(
-            container_spec, verbose=verbose, include_domains=include_domains
-        )
-
-
-def _maybe_warn_firefox_containers_in_use() -> None:
-    with _patched_login_service_dependencies():
-        return login_service._maybe_warn_firefox_containers_in_use()
-
-
-def _read_browser_cookies(
-    browser_name: str,
-    *,
-    verbose: bool = True,
-    include_domains: set[str] | None = None,
-) -> list[dict[str, Any]]:
-    with _patched_login_service_dependencies():
-        return login_service._read_browser_cookies(
-            browser_name, verbose=verbose, include_domains=include_domains
-        )
-
-
-def _login_with_browser_cookies(
-    storage_path: Path,
-    browser_name: str,
-    profile: str | None = None,
-    *,
-    authuser: int = 0,
-    email: str | None = None,
-    include_domains: set[str] | None = None,
-) -> None:
-    with _patched_login_service_dependencies():
-        return login_service._login_with_browser_cookies(
-            storage_path,
-            browser_name,
-            profile,
-            authuser=authuser,
-            email=email,
-            include_domains=include_domains,
-        )
-
-
-def _sync_server_language_to_config() -> None:
-    with _patched_login_service_dependencies():
-        return login_service._sync_server_language_to_config()
-
-
-_ORIGINAL_SESSION_PATCH_TARGETS.update(
-    {name: globals()[name] for name in _LOGIN_SERVICE_PATCH_TARGETS}
-)
 
 
 @contextmanager

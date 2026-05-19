@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import click
 import httpx
 import pytest
+from _fixtures import patch_session_login_dual
 from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
@@ -206,8 +207,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed") as mock_ensure,
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch(
-                "notebooklm.cli.session.get_storage_path", return_value=tmp_path / "storage.json"
+            patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"
             ),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
@@ -264,8 +264,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch(
-                "notebooklm.cli.session.get_storage_path", return_value=tmp_path / "storage.json"
+            patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"
             ),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
@@ -303,7 +302,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=tmp_path / "profile",
@@ -631,7 +630,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -667,7 +666,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -709,7 +708,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -737,8 +736,8 @@ class TestLoginCommand:
         """Test --fresh warns and is ignored when combined with --browser-cookies."""
         # Pass explicit "auto" value for cross-platform Click compatibility.
         with (
-            patch("notebooklm.cli.session._login_with_browser_cookies"),
-            patch("notebooklm.cli.session.get_storage_path", return_value=tmp_path / "s.json"),
+            patch_session_login_dual("_login_with_browser_cookies"),
+            patch_session_login_dual("get_storage_path", return_value=tmp_path / "s.json"),
         ):
             result = runner.invoke(cli, ["login", "--fresh", "--browser-cookies", "auto"])
         assert "--fresh has no effect" in result.output
@@ -754,7 +753,7 @@ class TestLoginCommand:
         browser_dir.mkdir()
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=tmp_path / "s.json"),
+            patch_session_login_dual("get_storage_path", return_value=tmp_path / "s.json"),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -775,7 +774,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -827,7 +826,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -882,7 +881,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -936,7 +935,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -982,7 +981,7 @@ class TestLoginCommand:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -1059,8 +1058,7 @@ class TestLoginNoTraceback:
         with (
             patch("notebooklm.cli.session._ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright") as mock_pw,
-            patch(
-                "notebooklm.cli.session.get_storage_path", return_value=tmp_path / "storage.json"
+            patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"
             ),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
@@ -1571,7 +1569,7 @@ class TestAuthCheckCommand:
     def mock_storage_path(self, tmp_path):
         """Provide a temporary storage path for testing."""
         storage_file = tmp_path / "storage_state.json"
-        with patch("notebooklm.cli.session.get_storage_path", return_value=storage_file):
+        with patch_session_login_dual("get_storage_path", return_value=storage_file):
             yield storage_file
 
     def test_auth_check_storage_not_found(self, runner, mock_storage_path):
@@ -1897,7 +1895,7 @@ class TestLoginLanguageSync:
         config_path = tmp_path / "config.json"
 
         with (
-            patch("notebooklm.cli.session.NotebookLMClient") as mock_client_cls,
+            patch_session_login_dual("NotebookLMClient") as mock_client_cls,
             patch.object(self.language_mod, "get_config_path", return_value=config_path),
             patch.object(self.language_mod, "get_home_dir"),
         ):
@@ -1919,7 +1917,7 @@ class TestLoginLanguageSync:
         config_path = tmp_path / "config.json"
 
         with (
-            patch("notebooklm.cli.session.NotebookLMClient") as mock_client_cls,
+            patch_session_login_dual("NotebookLMClient") as mock_client_cls,
             patch.object(self.language_mod, "get_config_path", return_value=config_path),
         ):
             mock_client = create_mock_client()
@@ -1937,8 +1935,8 @@ class TestLoginLanguageSync:
         from notebooklm.cli.session import _sync_server_language_to_config
 
         with (
-            patch("notebooklm.cli.session.NotebookLMClient") as mock_client_cls,
-            patch("notebooklm.cli.session.console") as mock_console,
+            patch_session_login_dual("NotebookLMClient") as mock_client_cls,
+            patch_session_login_dual("console") as mock_console,
         ):
             mock_client_cls.from_storage = AsyncMock(side_effect=Exception("Network error"))
 
@@ -2202,10 +2200,9 @@ class TestLoginBrowserCookies:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2242,10 +2239,9 @@ class TestLoginBrowserCookies:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2261,8 +2257,7 @@ class TestLoginBrowserCookies:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
         ):
@@ -2277,8 +2272,7 @@ class TestLoginBrowserCookies:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
         ):
@@ -2342,10 +2336,9 @@ class TestLoginBrowserCookies:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2363,8 +2356,7 @@ class TestLoginBrowserCookies:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
         ):
@@ -2419,10 +2411,9 @@ class TestLoginBrowserCookies:
                 "notebooklm.cli._firefox_containers.extract_firefox_container_cookies",
                 return_value=mock_cookies,
             ) as mock_extract,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2472,10 +2463,9 @@ class TestLoginBrowserCookies:
                 "notebooklm.cli._firefox_containers.extract_firefox_container_cookies",
                 return_value=mock_cookies,
             ) as mock_extract,
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2502,8 +2492,7 @@ class TestLoginBrowserCookies:
                     "Firefox container 'Nope' not found. Available containers: 'Work', 'Personal'."
                 ),
             ),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
         ):
@@ -2520,8 +2509,7 @@ class TestLoginBrowserCookies:
                 "notebooklm.cli._firefox_containers.find_firefox_profile_path",
                 return_value=None,
             ),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
         ):
@@ -2539,8 +2527,7 @@ class TestLoginBrowserCookies:
         """
         with (
             patch.dict("sys.modules", {"rookiepy": MagicMock()}),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
         ):
@@ -2586,10 +2573,9 @@ class TestLoginBrowserCookies:
                 "notebooklm.cli._firefox_containers.has_container_cookies_in_use",
                 return_value=True,
             ),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2635,10 +2621,9 @@ class TestLoginBrowserCookies:
                 "notebooklm.cli._firefox_containers.has_container_cookies_in_use",
                 return_value=False,
             ),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -2669,7 +2654,7 @@ class TestAuthLogoutCommand:
         (browser_dir / "Default" / "Cookies").write_text("data")
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2690,7 +2675,7 @@ class TestAuthLogoutCommand:
         # Neither exists
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2709,7 +2694,7 @@ class TestAuthLogoutCommand:
         # browser_dir does not exist
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2731,7 +2716,7 @@ class TestAuthLogoutCommand:
         browser_dir.mkdir()
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2756,7 +2741,7 @@ class TestAuthLogoutCommand:
         # No browser dir
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2798,7 +2783,7 @@ class TestAuthLogoutCommand:
         assert mock_context_file.exists()
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2824,7 +2809,7 @@ class TestAuthLogoutCommand:
         assert not mock_context_file.exists()
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2851,7 +2836,7 @@ class TestAuthLogoutCommand:
         mock_context_file.write_text('{"notebook_id": "stale"}')
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
                 "notebooklm.cli.session.get_browser_profile_dir",
                 return_value=browser_dir,
@@ -2892,7 +2877,7 @@ class TestAuthRefreshCommand:
                 }
             )
         )
-        with patch("notebooklm.cli.session.get_storage_path", return_value=storage_file):
+        with patch_session_login_dual("get_storage_path", return_value=storage_file):
             yield storage_file
 
     def test_auth_refresh_success(self, runner, mock_storage_path):
@@ -2974,7 +2959,7 @@ class TestAuthRefreshCommand:
         ``except Exception: click.echo(f"Error: {type(exc).__name__}: ...")``
         block; it now relies on the wrapping ``with handle_errors():``.
         """
-        with patch("notebooklm.cli.session._refresh_from_browser_cookies") as mock_refresh:
+        with patch_session_login_dual("_refresh_from_browser_cookies") as mock_refresh:
             mock_refresh.side_effect = RuntimeError("rookiepy could not read cookies")
             result = runner.invoke(cli, ["auth", "refresh", "--browser-cookies", "chrome"])
         assert result.exit_code == 2  # unexpected error per error_handler policy
@@ -3028,7 +3013,7 @@ class TestAuthRefreshCommand:
             return work_storage
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_storage_path),
             patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,
@@ -3064,10 +3049,9 @@ class TestAuthRefreshCommand:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage),
+            patch_session_login_dual("get_storage_path", return_value=storage),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf_ok", "session_ok"),
             ) as mock_fetch,
@@ -3104,10 +3088,9 @@ class TestAuthRefreshCommand:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage),
+            patch_session_login_dual("get_storage_path", return_value=storage),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
             ) as mock_fetch,
         ):
@@ -3165,7 +3148,7 @@ class TestAuthInspect:
 
         with (
             patch("notebooklm.auth.enumerate_accounts", return_value=object()),
-            patch("notebooklm.cli.session.run_async", return_value=accounts) as mock_run_async,
+            patch_session_login_dual("run_async", return_value=accounts) as mock_run_async,
         ):
             result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
 
@@ -3181,7 +3164,7 @@ class TestAuthInspect:
             Account(authuser=1, email="bob@gmail.com", is_default=False),
         ]
 
-        with patch("notebooklm.cli.session.console") as mock_console:
+        with patch_session_login_dual("console") as mock_console:
             selected = _select_account(accounts, account_email=None)
 
         assert selected == accounts[0]
@@ -3203,8 +3186,7 @@ class TestAuthInspect:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch(
-                "notebooklm.cli.session.run_async",
+            patch_session_login_dual("run_async",
                 side_effect=lambda c: c.send(None) if False else __import__("asyncio").run(c),
             ),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
@@ -3258,11 +3240,10 @@ class TestLoginMultiAccount:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -3284,7 +3265,7 @@ class TestLoginMultiAccount:
         target = tmp_path / "storage_state.json"
 
         with (
-            patch("notebooklm.cli.session._login_with_browser_cookies") as login_mock,
+            patch_session_login_dual("_login_with_browser_cookies") as login_mock,
             patch(
                 "notebooklm.auth.enumerate_accounts",
                 side_effect=AssertionError("should not enumerate accounts"),
@@ -3310,8 +3291,7 @@ class TestLoginMultiAccount:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch(
-                "notebooklm.cli.session.get_storage_path",
+            patch_session_login_dual("get_storage_path",
                 return_value=tmp_path / "storage.json",
             ),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
@@ -3346,11 +3326,10 @@ class TestLoginMultiAccount:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -3386,11 +3365,10 @@ class TestLoginMultiAccount:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -3425,11 +3403,10 @@ class TestLoginMultiAccount:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -3475,11 +3452,10 @@ class TestLoginMultiAccount:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -3575,11 +3551,10 @@ class TestLoginAllAccountsUpdate:
             argv.append("--update")
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -3737,10 +3712,9 @@ class TestStaleAccountMetadataCleanup:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -4030,10 +4004,9 @@ class TestChromiumFanoutAllAccounts:
 
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -4122,10 +4095,9 @@ class TestChromiumFanoutAllAccounts:
                 side_effect=fake_read,
             ),
             patch("notebooklm.auth.enumerate_accounts", side_effect=fake_enumerate),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -4166,10 +4138,9 @@ class TestChromiumFanoutAccountSelector:
 
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts),
-            patch("notebooklm.cli.session.get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -4243,10 +4214,9 @@ class TestChromiumExplicitProfileSelector:
 
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls),
-            patch("notebooklm.cli.session.get_storage_path", return_value=storage_file),
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch("notebooklm.cli.session._sync_server_language_to_config"),
-            patch(
-                "notebooklm.cli.session.fetch_tokens_with_domains",
+            patch_session_login_dual("fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf", "sess"),
             ),
@@ -4279,8 +4249,7 @@ class TestChromiumExplicitProfileSelector:
 
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls),
-            patch(
-                "notebooklm.cli.session._write_extracted_cookies",
+            patch_session_login_dual("_write_extracted_cookies",
                 side_effect=AssertionError("must not write cookies for an account mismatch"),
             ),
         ):
