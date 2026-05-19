@@ -1,0 +1,175 @@
+"""Typing checks for the Tier-13 Session/Kernel protocol contracts."""
+
+from __future__ import annotations
+
+import inspect
+from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractAsyncContextManager
+from types import TracebackType
+from typing import Any
+
+import httpx
+
+from notebooklm._request_types import BuildRequest
+from notebooklm._session_contracts import DrainHookRegistration, Kernel, Session
+from notebooklm.rpc.types import RPCMethod
+
+
+class _NoopOperationScope:
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        return False
+
+
+class _SessionImpl:
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+    ) -> Any:
+        return None
+
+    async def transport_post(
+        self,
+        build_request: BuildRequest,
+        parse_label: str,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> httpx.Response:
+        return httpx.Response(200, content=b"")
+
+    async def next_reqid(self, step: int = 100000) -> int:
+        return step
+
+    def assert_bound_loop(self) -> None:
+        return None
+
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        return _NoopOperationScope()
+
+
+class _KernelImpl:
+    async def post(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        body: bytes,
+    ) -> httpx.Response:
+        return httpx.Response(200, content=body)
+
+    @property
+    def cookies(self) -> httpx.Cookies:
+        return httpx.Cookies()
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _DrainHookRegistrationImpl:
+    def register_drain_hook(
+        self,
+        name: str,
+        hook: Callable[[], Awaitable[None]],
+    ) -> None:
+        return None
+
+
+def _public_contract_members(protocol: type[Any]) -> set[str]:
+    return {name for name in protocol.__dict__ if not name.startswith("_")}
+
+
+def test_session_protocol_has_exactly_five_members() -> None:
+    assert _public_contract_members(Session) == {
+        "rpc_call",
+        "transport_post",
+        "next_reqid",
+        "assert_bound_loop",
+        "operation_scope",
+    }
+
+
+def test_kernel_protocol_has_exactly_three_members() -> None:
+    assert _public_contract_members(Kernel) == {"post", "cookies", "aclose"}
+
+
+def test_drain_hook_registration_protocol_has_exactly_one_member() -> None:
+    assert _public_contract_members(DrainHookRegistration) == {"register_drain_hook"}
+
+
+def test_session_protocol_signatures_are_pinned() -> None:
+    rpc_call = inspect.signature(Session.rpc_call)
+    assert list(rpc_call.parameters) == [
+        "self",
+        "method",
+        "params",
+        "source_path",
+        "allow_null",
+        "_is_retry",
+        "disable_internal_retries",
+        "operation_variant",
+    ]
+    assert rpc_call.parameters["source_path"].default == "/"
+    assert rpc_call.parameters["allow_null"].default is False
+    assert rpc_call.parameters["_is_retry"].default is False
+    assert rpc_call.parameters["disable_internal_retries"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert rpc_call.parameters["disable_internal_retries"].default is False
+    assert rpc_call.parameters["operation_variant"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert rpc_call.parameters["operation_variant"].default is None
+
+    transport_post = inspect.signature(Session.transport_post)
+    assert transport_post.parameters["build_request"].annotation == "BuildRequest"
+    assert transport_post.parameters["parse_label"].annotation == "str"
+    assert transport_post.parameters["disable_internal_retries"].kind is (
+        inspect.Parameter.KEYWORD_ONLY
+    )
+    assert "_BuildRequest" not in str(transport_post)
+
+    next_reqid = inspect.signature(Session.next_reqid)
+    assert next_reqid.parameters["step"].default == 100000
+    assert next_reqid.return_annotation == "int"
+
+    operation_scope = inspect.signature(Session.operation_scope)
+    assert operation_scope.return_annotation == "AbstractAsyncContextManager[None]"
+
+
+def test_kernel_and_drain_hook_signatures_are_pinned() -> None:
+    post = inspect.signature(Kernel.post)
+    assert list(post.parameters) == ["self", "url", "headers", "body"]
+    assert post.parameters["headers"].annotation == "Mapping[str, str]"
+    assert post.parameters["body"].annotation == "bytes"
+    assert post.return_annotation == "httpx.Response"
+
+    cookies = inspect.signature(Kernel.cookies.fget)
+    assert cookies.return_annotation == "httpx.Cookies"
+
+    aclose = inspect.signature(Kernel.aclose)
+    assert list(aclose.parameters) == ["self"]
+    assert aclose.return_annotation == "None"
+
+    register_drain_hook = inspect.signature(DrainHookRegistration.register_drain_hook)
+    assert list(register_drain_hook.parameters) == ["self", "name", "hook"]
+    assert register_drain_hook.parameters["hook"].annotation == "Callable[[], Awaitable[None]]"
+    assert register_drain_hook.return_annotation == "None"
+
+
+def test_structural_implementations_satisfy_protocols() -> None:
+    session: Session = _SessionImpl()
+    kernel: Kernel = _KernelImpl()
+    drain_hooks: DrainHookRegistration = _DrainHookRegistrationImpl()
+
+    assert isinstance(session, _SessionImpl)
+    assert isinstance(kernel, _KernelImpl)
+    assert isinstance(drain_hooks, _DrainHookRegistrationImpl)
