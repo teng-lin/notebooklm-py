@@ -198,7 +198,7 @@ class ArtifactPollingService:
         )
         pending[key] = (future, poll_task)
         try:
-            poll_operation_token = await self._capabilities.begin_transport_task(
+            poll_operation_token = await self._capabilities._begin_transport_task(
                 poll_task,
                 f"artifact wait {task_id}",
             )
@@ -216,7 +216,7 @@ class ArtifactPollingService:
 
         async def _finish_poll_operation() -> None:
             try:
-                await self._capabilities.finish_transport_post(poll_operation_token)
+                await self._capabilities._finish_transport_post(poll_operation_token)
             except Exception as cleanup_exc:  # noqa: BLE001 - cleanup should not mask poll result
                 logger.warning("Artifact poll drain bookkeeping failed: %s", cleanup_exc)
 

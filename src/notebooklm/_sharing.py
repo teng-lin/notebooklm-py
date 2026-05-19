@@ -3,7 +3,7 @@
 import logging
 from typing import Protocol
 
-from ._capabilities import AuthRouteProvider, ClientCoreCapabilities, CoreRPCProvider
+from ._capabilities import AuthRouteProvider, CoreRPCProvider
 from .rpc import RPCMethod
 from .rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from .types import ShareStatus
@@ -17,10 +17,7 @@ class _SharingCore(CoreRPCProvider, AuthRouteProvider, Protocol):
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
     only the capabilities SharingAPI actually uses: ``rpc_call`` (from
     :class:`CoreRPCProvider`) and authuser routing (from
-    :class:`AuthRouteProvider`). The cutover to swap
-    :class:`SharingAPI.__init__` annotation from
-    :class:`ClientCoreCapabilities` to ``_SharingCore`` lives in
-    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    :class:`AuthRouteProvider`).
     """
 
     pass
@@ -50,7 +47,7 @@ class SharingAPI:
             )
     """
 
-    def __init__(self, core: ClientCoreCapabilities):
+    def __init__(self, core: _SharingCore):
         """Initialize the sharing API.
 
         Args:

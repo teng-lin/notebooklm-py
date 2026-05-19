@@ -1,4 +1,4 @@
-"""Regression tests for ``ChatAPI.ask`` after the ``core.query_post`` refactor.
+"""Regression tests for ``ChatAPI.ask`` after the chat-transport refactor.
 
 These assertions pin down the new contract:
 
@@ -28,7 +28,6 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._chat import ChatAPI
 from notebooklm._core import ClientCore, _AuthSnapshot
 from notebooklm.auth import AuthTokens
@@ -312,7 +311,7 @@ class TestChatRefreshRetry:
             assert core._http_client is not None
             install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
-            api = ChatAPI(ClientCoreCapabilities(core))
+            api = ChatAPI(core)
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])
 
             assert call_count["n"] == 2
@@ -323,7 +322,7 @@ class TestChatRefreshRetry:
             assert "at=NEW_CSRF" not in observed_bodies[0]
             # Second attempt body carries NEW_CSRF (post-refresh snapshot)
             # — this is the snapshot-per-attempt contract surfacing
-            # through query_post.
+            # through chat_aware_authed_post.
             assert "at=NEW_CSRF" in observed_bodies[1]
             assert "at=OLD_CSRF" not in observed_bodies[1]
         finally:
@@ -407,14 +406,14 @@ class TestBuildChatRequestFactory:
     """Direct unit tests for the new ``ChatAPI._build_chat_request`` factory.
 
     Bypassing the full ``ask`` plumbing keeps these checks focused on the
-    URL/body assembly contract that ``core.query_post`` relies on.
+    URL/body assembly contract that ``chat_aware_authed_post`` relies on.
     """
 
     def _factory(self) -> ChatAPI:
         from unittest.mock import MagicMock
 
         core = MagicMock(spec=ClientCore)
-        return ChatAPI(ClientCoreCapabilities(core))
+        return ChatAPI(core)
 
     def test_build_request_omits_authuser_for_default_profile(self):
         chat = self._factory()

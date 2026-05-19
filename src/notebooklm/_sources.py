@@ -14,8 +14,9 @@ import httpx
 from . import _source_upload
 from ._capabilities import (
     AuthRouteProvider,
-    ClientCoreCapabilities,
+    CookieJarProvider,
     CoreRPCProvider,
+    TransportOperationProvider,
     UploadConcurrencyProvider,
 )
 from ._source_add import SourceAddService
@@ -36,17 +37,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _SourcesCore(CoreRPCProvider, AuthRouteProvider, UploadConcurrencyProvider, Protocol):
+class _SourcesCore(
+    CoreRPCProvider,
+    AuthRouteProvider,
+    UploadConcurrencyProvider,
+    TransportOperationProvider,
+    CookieJarProvider,
+    Protocol,
+):
     """Narrow per-sub-client view of the core required by :class:`SourcesAPI`.
 
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    only the capabilities SourcesAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`), the NotebookLM authuser routing surface
-    (from :class:`AuthRouteProvider`), and the upload-concurrency semaphore
-    + queue-wait recorder (from :class:`UploadConcurrencyProvider`). The
-    cutover to swap :class:`SourcesAPI.__init__` annotation from
-    :class:`ClientCoreCapabilities` to ``_SourcesCore`` lives in
-    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    the capabilities SourcesAPI uses through its upload pipeline:
+    ``rpc_call`` (from :class:`CoreRPCProvider`), authuser routing
+    (from :class:`AuthRouteProvider`), the upload-concurrency semaphore
+    + queue-wait recorder (from :class:`UploadConcurrencyProvider`),
+    transport-operation bookkeeping for the streaming upload POST
+    (from :class:`TransportOperationProvider`), and the live cookie
+    jar consumed by the Scotty upload HTTP path (from
+    :class:`CookieJarProvider`).
     """
 
     pass
@@ -145,7 +154,7 @@ class SourcesAPI:
 
     def __init__(
         self,
-        core: ClientCoreCapabilities,
+        core: _SourcesCore,
         upload_timeout: httpx.Timeout | None = None,
     ):
         """Initialize the sources API.

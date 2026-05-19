@@ -4,7 +4,7 @@ import logging
 import warnings
 from typing import Any, Protocol
 
-from ._capabilities import AuthRouteProvider, ClientCoreCapabilities, CoreRPCProvider
+from ._capabilities import AuthRouteProvider, CoreRPCProvider
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
@@ -35,9 +35,6 @@ class _NotebooksCore(CoreRPCProvider, AuthRouteProvider, Protocol):
     Protocols, co-located"). Inherits only the capabilities NotebooksAPI
     actually uses: ``rpc_call`` (from :class:`CoreRPCProvider`) and the
     NotebookLM authuser routing surface (from :class:`AuthRouteProvider`).
-    The cutover to swap :class:`NotebooksAPI.__init__` annotation from
-    :class:`ClientCoreCapabilities` to ``_NotebooksCore`` lives in
-    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
     """
 
     pass
@@ -158,7 +155,7 @@ class NotebooksAPI:
 
     def __init__(
         self,
-        core: ClientCoreCapabilities,
+        core: _NotebooksCore,
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,

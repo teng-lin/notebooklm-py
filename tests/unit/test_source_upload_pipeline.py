@@ -27,12 +27,12 @@ class UploadRuntime:
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         self.queue_waits.append(wait_seconds)
 
-    async def begin_transport_post(self, log_label: str) -> object:
+    async def _begin_transport_post(self, log_label: str) -> object:
         token = object()
         self.labels.append(log_label)
         return token
 
-    async def begin_transport_task(
+    async def _begin_transport_task(
         self,
         task: asyncio.Task[Any],
         log_label: str,
@@ -40,7 +40,7 @@ class UploadRuntime:
         self.labels.append(log_label)
         return object()
 
-    async def finish_transport_post(self, token: object) -> None:
+    async def _finish_transport_post(self, token: object) -> None:
         self.finished.append(token)
 
 

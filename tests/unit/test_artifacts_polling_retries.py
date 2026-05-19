@@ -5,7 +5,6 @@ import pytest
 
 from notebooklm._artifact_polling import ArtifactPollingService
 from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
@@ -40,10 +39,10 @@ class _FakeTransportProvider:
         self.finish_started = asyncio.Event()
         self.finish_finished = asyncio.Event()
 
-    async def begin_transport_post(self, log_label: str) -> object:
-        raise AssertionError(f"unexpected begin_transport_post({log_label!r})")
+    async def _begin_transport_post(self, log_label: str) -> object:
+        raise AssertionError(f"unexpected _begin_transport_post({log_label!r})")
 
-    async def begin_transport_task(
+    async def _begin_transport_task(
         self,
         task: asyncio.Task[object],
         log_label: str,
@@ -60,7 +59,7 @@ class _FakeTransportProvider:
             raise self.begin_error
         return self.token
 
-    async def finish_transport_post(self, token: object) -> None:
+    async def _finish_transport_post(self, token: object) -> None:
         self.finish_tokens.append(token)
         self.finish_started.set()
         if self.finish_release is not None:
@@ -76,8 +75,9 @@ def api():
     core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
+    core.bound_loop = None
     notes_api = MagicMock()
-    return ArtifactsAPI(ClientCoreCapabilities(core), notes_api)
+    return ArtifactsAPI(core, notes_api)
 
 
 @pytest.mark.asyncio
@@ -325,7 +325,8 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
-    api = ArtifactsAPI(ClientCoreCapabilities(core), MagicMock())
+    core.bound_loop = None
+    api = ArtifactsAPI(core, MagicMock())
 
     poll_started = asyncio.Event()
     release_poll = asyncio.Event()

@@ -18,8 +18,8 @@ from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
 from ._capabilities import (
     AuthRouteProvider,
-    ClientCoreCapabilities,
     CoreRPCProvider,
+    LoopAffinityProvider,
     PollRegistryProvider,
     TransportOperationProvider,
 )
@@ -61,6 +61,7 @@ class _ArtifactsCore(
     AuthRouteProvider,
     PollRegistryProvider,
     TransportOperationProvider,
+    LoopAffinityProvider,
     Protocol,
 ):
     """Narrow per-sub-client view of the core required by :class:`ArtifactsAPI`.
@@ -69,11 +70,10 @@ class _ArtifactsCore(
     only the capabilities ArtifactsAPI actually uses: ``rpc_call`` (from
     :class:`CoreRPCProvider`), authuser routing (from
     :class:`AuthRouteProvider`), the shared artifact poll registry (from
-    :class:`PollRegistryProvider`), and transport-operation bookkeeping for
-    long-running download streams (from :class:`TransportOperationProvider`).
-    The cutover to swap :class:`ArtifactsAPI.__init__` annotation from
-    :class:`ClientCoreCapabilities` to ``_ArtifactsCore`` lives in
-    ``arch-d2-cutover`` (D2 PR-2); this class is additive scaffolding.
+    :class:`PollRegistryProvider`), transport-operation bookkeeping for
+    long-running download streams (from :class:`TransportOperationProvider`),
+    and the open-time event loop forwarded into the artifact polling
+    boundary's loop-affinity guard (from :class:`LoopAffinityProvider`).
     """
 
     pass
@@ -166,7 +166,7 @@ class ArtifactsAPI:
 
     def __init__(
         self,
-        core: ClientCoreCapabilities,
+        core: _ArtifactsCore,
         notes_api: "NotesAPI | None" = None,
         storage_path: Path | None = None,
         *,

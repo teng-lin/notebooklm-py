@@ -11,7 +11,6 @@ import httpx
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc.decoder import RPCError
 from notebooklm.types import ArtifactDownloadError
@@ -29,12 +28,19 @@ def mock_artifacts_api():
     mock_core._pending_polls = mock_core.poll_registry.pending
     mock_core._begin_transport_task = AsyncMock(return_value=object())
     mock_core._finish_transport_post = AsyncMock()
+    # ``bound_loop`` must be ``None`` (silent-no-op for the affinity
+    # guard) so the artifact polling helper does not raise on a
+    # ``MagicMock``-shaped loop value.
+    mock_core.bound_loop = None
     mock_notes = MagicMock()
     mock_notes.list_mind_maps = AsyncMock(return_value=[])
     mock_note = MagicMock()
     mock_note.id = "created_note_123"
     mock_notes.create = AsyncMock(return_value=mock_note)
-    api = ArtifactsAPI(ClientCoreCapabilities(mock_core), notes_api=mock_notes)
+    # After D2 cutover, sub-clients consume ``ClientCore`` directly typed
+    # against their narrow Protocol — the ``MagicMock`` duck-types the
+    # required Protocol surface.
+    api = ArtifactsAPI(mock_core, notes_api=mock_notes)
     return api, mock_core
 
 

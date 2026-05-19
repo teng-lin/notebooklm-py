@@ -4,7 +4,7 @@ import logging
 from collections.abc import Sequence
 from typing import Any, Protocol
 
-from ._capabilities import ClientCoreCapabilities, CoreRPCProvider
+from ._capabilities import CoreRPCProvider
 from .rpc import RPCMethod
 from .types import AccountLimits, AccountTier
 
@@ -16,10 +16,7 @@ class _SettingsCore(CoreRPCProvider, Protocol):
 
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
     only the single capability the settings RPCs use: ``rpc_call`` (from
-    :class:`CoreRPCProvider`). The cutover to swap the settings sub-client's
-    ``__init__`` annotation from :class:`ClientCoreCapabilities` to
-    ``_SettingsCore`` lives in ``arch-d2-cutover`` (D2 PR-2); this class is
-    additive scaffolding.
+    :class:`CoreRPCProvider`).
     """
 
     pass
@@ -155,7 +152,7 @@ class SettingsAPI:
     _SET_LANGUAGE_PATH = (2, 4, 0)  # result[2][4][0]
     _GET_SETTINGS_PATH = (0, 2, 4, 0)  # result[0][2][4][0]
 
-    def __init__(self, core: ClientCoreCapabilities) -> None:
+    def __init__(self, core: _SettingsCore) -> None:
         """Initialize the settings API.
 
         Args:

@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._core_polling import PollRegistry
 from notebooklm.rpc.types import ArtifactStatus
 from notebooklm.types import GenerationStatus
@@ -37,10 +36,11 @@ def _make_api():
     core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
+    core.bound_loop = None
     notes = MagicMock()
     notes.list_mind_maps = AsyncMock(return_value=[])
     notes.create = AsyncMock(return_value=MagicMock(id="note_1"))
-    return ArtifactsAPI(ClientCoreCapabilities(core), notes_api=notes)
+    return ArtifactsAPI(core, notes_api=notes)
 
 
 def _art(artifact_id: str, status: int, artifact_type: int = 1, error_at_3: str | None = None):

@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._capabilities import ClientCoreCapabilities
 from notebooklm._chat import ChatAPI
 from notebooklm.rpc import RPCMethod
 
@@ -25,7 +24,7 @@ def mock_core() -> MagicMock:
 
 @pytest.fixture
 def api(mock_core: MagicMock) -> ChatAPI:
-    return ChatAPI(ClientCoreCapabilities(mock_core))
+    return ChatAPI(mock_core)
 
 
 class TestDeleteConversation:

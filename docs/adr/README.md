@@ -26,7 +26,7 @@ Pure bug fixes, additive RPC method IDs, and CLI ergonomics changes do not requi
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-layered-core-seams-and-property-bridge-policy.md) | Layered `_core` seams and the property-bridge policy | Accepted (retroactive) |
-| [0002](0002-capability-protocol-pattern.md) | Capability Protocol pattern (`ClientCoreCapabilities` fat union) | Accepted (Sunset = D2 cutover — to be marked Superseded when `arch-d2-cutover` PR lands) |
+| [0002](0002-capability-protocol-pattern.md) | Capability Protocol pattern (`ClientCoreCapabilities` fat union) | Superseded by `arch-d2-cutover` PR (D2 PR-2) |
 | [0003](0003-auth-facade-write-through.md) | `auth.py` write-through facade (`_AuthFacadeModule`) | Accepted (Sunset = D1 auth side — to be marked Superseded when `arch-d1-auth-side` PR lands) |
 | [0004](0004-loop-affinity-contract.md) | Loop-affinity contract for `NotebookLMClient` | Accepted (retroactive) |
 | [0005](0005-idempotency-taxonomy.md) | Mutating-RPC idempotency taxonomy | Accepted (retroactive) |

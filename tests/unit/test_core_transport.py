@@ -1,7 +1,7 @@
 """Parity tests for the shared transport pipeline.
 
-Pins down the behavior of :meth:`ClientCore._perform_authed_post` (and the
-chat-side :meth:`ClientCore.query_post`) extracted from ``_rpc_call_impl``:
+Pins down the behavior of :meth:`ClientCore._perform_authed_post`
+extracted from ``_rpc_call_impl``:
 
 - ``build_request`` factory is called once per HTTP attempt.
 - On a single auth-error retry, the factory is called TWICE, and the second
@@ -13,6 +13,11 @@ chat-side :meth:`ClientCore.query_post`) extracted from ``_rpc_call_impl``:
   raises ``_TransportRateLimited``.
 - The historical ``rpc_call`` happy path is unchanged byte-for-byte
   (URL + body identical to pre-extraction).
+
+The chat-side error mapping that used to live on
+``ClientCore.query_post`` moved to
+:func:`notebooklm._chat_transport.chat_aware_authed_post` in the D2
+cutover; equivalent coverage lives in ``tests/unit/test_chat_transport.py``.
 """
 
 from __future__ import annotations
@@ -531,136 +536,10 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
         await core.close()
 
 
-# ---------------------------------------------------------------------------
-# query_post (chat-side wrapper)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_query_post_wraps_rate_limit_as_chat_error(monkeypatch):
-    from notebooklm.exceptions import ChatError
-
-    core = _make_core(rate_limit_max_retries=0)
-    await core.open()
-    try:
-
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
-
-        async def fake_post(*args, **kwargs):
-            raise _status_error(429, retry_after="42")
-
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        with pytest.raises(ChatError) as exc_info:
-            await core.query_post(build_request=build, parse_label="chat.ask")
-
-        assert "Retry after 42 seconds" in str(exc_info.value)
-        assert isinstance(exc_info.value.__cause__, _TransportRateLimited)
-    finally:
-        await core.close()
-
-
-@pytest.mark.asyncio
-async def test_query_post_wraps_auth_expired_as_chat_error(monkeypatch):
-    from notebooklm.exceptions import ChatError
-
-    async def refresh() -> AuthTokens:
-        raise RuntimeError("login needed")
-
-    core = _make_core(refresh_callback=refresh)
-    await core.open()
-    try:
-
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
-
-        async def fake_post(*args, **kwargs):
-            raise _status_error(401)
-
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        with pytest.raises(ChatError) as exc_info:
-            await core.query_post(build_request=build, parse_label="chat.ask")
-
-        assert "authentication expired" in str(exc_info.value).lower()
-        assert isinstance(exc_info.value.__cause__, _TransportAuthExpired)
-    finally:
-        await core.close()
-
-
-@pytest.mark.asyncio
-async def test_query_post_wraps_timeout_as_network_error(monkeypatch):
-    """Timeout with budget=0: ``_TransportServerError`` path must still produce a
-    ``NetworkError`` whose message preserves the ``timed out`` signal (regression
-    against PR #464 follow-up — without the timeout-specific branch, the message
-    collapses to a generic ``network error after retries``)."""
-    from notebooklm.exceptions import NetworkError
-
-    core = _make_core()
-    await core.open()
-    try:
-
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
-
-        async def fake_post(*args, **kwargs):
-            raise httpx.ReadTimeout("read timeout")
-
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        with pytest.raises(NetworkError) as exc_info:
-            await core.query_post(build_request=build, parse_label="chat.ask")
-
-        assert isinstance(exc_info.value.original_error, httpx.ReadTimeout)
-        msg = str(exc_info.value)
-        assert "timed out" in msg
-        assert "network error after retries" not in msg
-        # Chain: NetworkError -> _TransportServerError -> ReadTimeout
-        assert isinstance(exc_info.value.__cause__, _TransportServerError)
-    finally:
-        await core.close()
-
-
-@pytest.mark.asyncio
-async def test_query_post_timeout_after_budget_keeps_timeout_message(monkeypatch):
-    """Timeout that exhausts the retry budget still surfaces ``timed out`` —
-    explicit regression for the dead-handler bug: prior to the fix, the only
-    code path that could produce a ``timed out`` message was the bare
-    ``except httpx.TimeoutException`` handler, which became unreachable once
-    ``_perform_authed_post`` started wrapping every ``httpx.RequestError``
-    into ``_TransportServerError`` (PR #464)."""
-    from notebooklm.exceptions import NetworkError
-
-    core = _make_core(server_error_max_retries=2)
-    await core.open()
-    try:
-
-        async def fake_sleep(seconds: float) -> None:
-            pass
-
-        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
-
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
-
-        async def fake_post(*args, **kwargs):
-            raise httpx.ReadTimeout("read timeout")
-
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        with pytest.raises(NetworkError) as exc_info:
-            await core.query_post(build_request=build, parse_label="chat.ask")
-
-        msg = str(exc_info.value)
-        assert "timed out" in msg
-        assert "network error after retries" not in msg
-        assert isinstance(exc_info.value.original_error, httpx.ReadTimeout)
-        # Chain: NetworkError -> _TransportServerError -> ReadTimeout (symmetry
-        # with the budget=0 test above).
-        assert isinstance(exc_info.value.__cause__, _TransportServerError)
-    finally:
-        await core.close()
+# NOTE: ``query_post`` (chat-side wrapper) tests were removed in
+# ``arch-d2-cutover`` — the chat-flavored error mapping moved to
+# :func:`notebooklm._chat_transport.chat_aware_authed_post`. Equivalent
+# coverage lives in ``tests/unit/test_chat_transport.py``.
 
 
 # ---------------------------------------------------------------------------
@@ -984,7 +863,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# rpc_call + query_post wrappers for _TransportServerError
+# rpc_call wrapper for _TransportServerError
 # ---------------------------------------------------------------------------
 
 
@@ -1036,67 +915,6 @@ async def test_rpc_call_maps_transport_server_error_network_to_network_error(mon
 
         with pytest.raises(NetworkError):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
-    finally:
-        await core.close()
-
-
-@pytest.mark.asyncio
-async def test_query_post_maps_transport_server_error_to_chat_error(monkeypatch):
-    """``query_post`` (chat surface): 5xx after retries → ChatError."""
-    from notebooklm.exceptions import ChatError
-
-    core = _make_core(server_error_max_retries=1)
-    await core.open()
-    try:
-
-        async def fake_sleep(seconds: float) -> None:
-            pass
-
-        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
-
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
-
-        async def fake_post(*args, **kwargs):
-            raise _status_error(500)
-
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        with pytest.raises(ChatError) as exc_info:
-            await core.query_post(build_request=build, parse_label="chat.ask")
-
-        assert "HTTP 500" in str(exc_info.value)
-        assert isinstance(exc_info.value.__cause__, _TransportServerError)
-    finally:
-        await core.close()
-
-
-@pytest.mark.asyncio
-async def test_query_post_maps_transport_server_error_network_to_network_error(monkeypatch):
-    """Network failure exhausting budget on query_post → NetworkError."""
-    from notebooklm.exceptions import NetworkError
-
-    core = _make_core(server_error_max_retries=1)
-    await core.open()
-    try:
-
-        async def fake_sleep(seconds: float) -> None:
-            pass
-
-        monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
-
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
-
-        async def fake_post(*args, **kwargs):
-            raise httpx.ConnectError("nope")
-
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        with pytest.raises(NetworkError) as exc_info:
-            await core.query_post(build_request=build, parse_label="chat.ask")
-
-        assert isinstance(exc_info.value.original_error, httpx.ConnectError)
     finally:
         await core.close()
 
