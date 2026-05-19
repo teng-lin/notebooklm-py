@@ -4,9 +4,9 @@ Pins down:
 
 - ``PollRegistry.active_tasks()`` returns the leader poll tasks currently
   parked in the registry, and excludes already-completed tasks.
-- ``ClientCore.close()`` cancels every active poll task and awaits each with
-  ``return_exceptions=True`` so a single misbehaving leader can't block
-  teardown.
+- ``ArtifactsAPI`` owns its poll registry and registers a close-time drain hook
+  so ``ClientCore.close()`` cancels active polls without reaching into feature
+  state.
 - ``NotebookLMClient.close()`` and ``__aexit__`` default to ``drain=True``
   (BREAKING). Old fire-and-forget callers must pass ``drain=False`` to opt out.
 """
@@ -18,8 +18,9 @@ from typing import Any
 
 import pytest
 
+from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._core import ClientCore
-from notebooklm._core_polling import PollRegistry
+from notebooklm._polling_registry import PollRegistry
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -82,14 +83,16 @@ async def test_active_tasks_returns_empty_for_fresh_registry() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ClientCore.close drains active poll tasks
+# ClientCore.close runs feature-owned drain hooks
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_core_close_drains_polls() -> None:
+async def test_core_close_drains_artifact_poll_hook() -> None:
     """``close()`` cancels in-flight poll tasks within 1s and tears down cleanly."""
     core = ClientCore(_auth())
+    artifacts = ArtifactsAPI(core)
+    assert core._drain_hooks["artifacts.polls"] == artifacts._polling.drain
     await core.open()
 
     loop = asyncio.get_running_loop()
@@ -108,7 +111,7 @@ async def test_core_close_drains_polls() -> None:
     # cancel arrives before the task body has run and our
     # ``except CancelledError`` handler never executes.
     await asyncio.sleep(0)
-    core.poll_registry.pending[("nb_1", "task_1")] = (future, task)
+    artifacts._poll_registry.pending[("nb_1", "task_1")] = (future, task)
 
     # Real-time deadline so a regression that fails to cancel surfaces as a
     # 1s timeout rather than hanging the suite.
@@ -119,27 +122,20 @@ async def test_core_close_drains_polls() -> None:
 
 
 @pytest.mark.asyncio
-async def test_core_close_handles_poll_task_raising_during_drain() -> None:
-    """A poll task raising during cancel-drain doesn't block close()."""
+async def test_core_close_absorbs_drain_hook_errors() -> None:
+    """A drain hook raising during close does not block transport teardown."""
     core = ClientCore(_auth())
     await core.open()
 
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[Any] = loop.create_future()
+    async def angry_hook() -> None:
+        raise RuntimeError("poll cleanup failed")
 
-    async def angry_poll() -> None:
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            raise RuntimeError("poll cleanup failed") from None
-
-    task = asyncio.create_task(angry_poll())
-    core.poll_registry.pending[("nb_x", "task_x")] = (future, task)
+    core.register_drain_hook("angry", angry_hook)
 
     # return_exceptions=True in close() means this should NOT propagate.
     await asyncio.wait_for(core.close(), timeout=1.0)
 
-    assert task.done()
+    assert core._http_client is None
 
 
 @pytest.mark.asyncio

@@ -80,7 +80,6 @@ from ._core_helpers import (
 )
 from ._core_lifecycle import ClientLifecycle
 from ._core_metrics import ClientMetrics
-from ._core_polling import PendingPolls, PollRegistry
 from ._core_reqid import DEFAULT_STEP as _REQID_DEFAULT_STEP
 from ._core_reqid import ReqidCounter
 from ._core_rpc import RpcExecutor
@@ -118,6 +117,7 @@ from ._middleware_error_injection import ErrorInjectionMiddleware
 from ._middleware_metrics import MetricsMiddleware
 from ._middleware_retry import RetryMiddleware
 from ._middleware_tracing import TracingMiddleware
+from ._polling_registry import PendingPolls, PollRegistry
 from ._sources import fetch_source_ids
 
 # ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
@@ -464,6 +464,7 @@ class ClientCore:
         # compatibility properties below keep the legacy private attribute
         # names observable for current tests and first-party callers.
         self.cookie_persistence = CookiePersistence(self.auth, _resolved_storage_path)
+        self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
@@ -862,15 +863,19 @@ class ClientCore:
     def _pending_polls(self) -> PendingPolls:
         """Deprecated compatibility view of ``poll_registry.pending``.
 
-        Feature APIs now access polling state through ``poll_registry`` or a
-        narrow capability adapter. This bridge remains for external callers and
-        tests that still read or assign ``ClientCore._pending_polls`` directly.
+        The active artifact polling registry is feature-owned. This bridge
+        remains only for external callers and tests that still read or assign
+        ``ClientCore._pending_polls`` directly.
         """
         return self.poll_registry.pending
 
     @_pending_polls.setter
     def _pending_polls(self, value: PendingPolls) -> None:
         self.poll_registry.pending = value
+
+    def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
+        """Register or replace a feature-owned close-time drain hook."""
+        self._drain_hooks[name] = hook
 
     async def next_reqid(self, step: int = _REQID_DEFAULT_STEP) -> int:
         """Atomically increment the request-id counter and return the new value.
@@ -1229,7 +1234,7 @@ class ClientCore:
 
         1. Cancels and joins the keepalive task (so the loop can't issue a
            poke against an already-closed transport).
-        2. Drains in-flight artifact poll tasks held by ``self.poll_registry``.
+        2. Runs registered feature drain hooks.
         3. Saves cookies one last time through ``save_cookies``.
         4. Calls ``aclose()`` under :func:`asyncio.shield` so cancellation
            arriving mid-close cannot leak the underlying httpx transport.

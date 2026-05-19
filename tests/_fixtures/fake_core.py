@@ -79,8 +79,10 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         # CoreReqIdProvider — both the public name and the underscore alias
         "next_reqid": AsyncMock(return_value=100000),
         "_next_reqid": AsyncMock(return_value=100000),
-        # PollRegistryProvider
+        # Legacy ClientCore compatibility bridge
         "poll_registry": MagicMock(),
+        # DrainHookRegistration
+        "register_drain_hook": MagicMock(return_value=None),
         # AuthRouteProvider — sync helpers, used during request build
         "authuser": 0,
         "account_email": None,

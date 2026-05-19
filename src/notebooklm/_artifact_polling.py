@@ -11,8 +11,9 @@ from typing import Any, Protocol
 
 from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
-from ._capabilities import LoopAffinityProvider, PollRegistryProvider, TransportOperationProvider
+from ._capabilities import LoopAffinityProvider, TransportOperationProvider
 from ._loop_affinity import assert_bound_loop
+from ._polling_registry import PollRegistry
 from .rpc import (
     ArtifactStatus,
     ArtifactTypeCode,
@@ -47,7 +48,6 @@ StatusChangeCallback = Callable[[GenerationStatus], object]
 
 
 class ArtifactPollingCapabilities(
-    PollRegistryProvider,
     TransportOperationProvider,
     LoopAffinityProvider,
     Protocol,
@@ -63,9 +63,28 @@ class ArtifactPollingService:
     as call-time callbacks instead of being captured during construction.
     """
 
-    def __init__(self, capabilities: ArtifactPollingCapabilities) -> None:
+    def __init__(
+        self,
+        capabilities: ArtifactPollingCapabilities,
+        poll_registry: PollRegistry | None = None,
+    ) -> None:
         self._capabilities = capabilities
+        self._poll_registry = poll_registry if poll_registry is not None else PollRegistry()
         self._completion_tasks: set[asyncio.Task[None]] = set()
+
+    @property
+    def poll_registry(self) -> PollRegistry:
+        """Return the feature-owned polling registry."""
+        return self._poll_registry
+
+    async def drain(self) -> None:
+        """Cancel and await currently active leader poll tasks."""
+        poll_tasks = self._poll_registry.active_tasks()
+        if not poll_tasks:
+            return
+        for task in poll_tasks:
+            task.cancel()
+        await asyncio.gather(*poll_tasks, return_exceptions=True)
 
     async def poll_status(
         self,
@@ -151,7 +170,7 @@ class ArtifactPollingService:
             )
             initial_interval = poll_interval
 
-        pending = self._capabilities.poll_registry.pending
+        pending = self._poll_registry.pending
         key = (notebook_id, task_id)
 
         existing = pending.get(key)

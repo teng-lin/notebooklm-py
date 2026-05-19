@@ -16,7 +16,6 @@ from typing import Any, Protocol
 import httpx
 
 from ._core_drain import _TransportOperationToken
-from ._core_polling import PollRegistry
 from .rpc.types import RPCMethod
 
 
@@ -52,15 +51,6 @@ class CoreReqIdProvider(Protocol):
     """Provider for the shared request-id counter."""
 
     async def next_reqid(self, step: int = 100000) -> int: ...
-
-
-class PollRegistryProvider(Protocol):
-    """Provider for the shared artifact polling registry."""
-
-    @property
-    def poll_registry(self) -> PollRegistry:
-        """Return the existing per-core poll registry."""
-        ...
 
 
 class AuthRouteProvider(Protocol):

@@ -68,8 +68,7 @@ class _StubHost:
       open() path so cross-loop misuse can be caught.
     * ``cookie_persistence`` — a ``MagicMock`` with an async ``save``
       coroutine; assertions check it was called with the right args.
-    * ``poll_registry`` — a ``MagicMock`` with ``active_tasks()`` returning
-      a list (defaults to empty so close() doesn't try to drain anything).
+    * ``_drain_hooks`` — close-time hooks registered by feature APIs.
     * ``_authed_transport`` / ``_rpc_executor`` — set to sentinel marker
       values so tests can assert :meth:`ClientLifecycle.close` nulls them.
     """
@@ -94,8 +93,7 @@ class _StubHost:
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
-        self.poll_registry = MagicMock()
-        self.poll_registry.active_tasks = MagicMock(return_value=[])
+        self._drain_hooks = {}
         # Sentinels — close() nulls these out.
         self._authed_transport: Any = "AUTHED_TRANSPORT_SENTINEL"
         self._rpc_executor: Any = "RPC_EXECUTOR_SENTINEL"
@@ -334,11 +332,8 @@ async def test_close_when_never_opened_is_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_drains_poll_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``close()`` snapshots and cancels in-flight poll tasks before tearing
-    down the HTTP client — without this, a leader poll waking mid-aclose
-    would issue a request against an already-closed transport.
-    """
+async def test_close_runs_drain_hooks_before_transport_teardown() -> None:
+    """``close()`` runs feature drain hooks before tearing down the HTTP client."""
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
@@ -350,14 +345,18 @@ async def test_close_drains_poll_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
             raise
 
     parked = asyncio.create_task(_park())
-    # ``active_tasks`` returns the list close() should cancel.
-    host.poll_registry.active_tasks = MagicMock(return_value=[parked])
+
+    async def drain_polls() -> None:
+        parked.cancel()
+        await asyncio.gather(parked, return_exceptions=True)
+
+    host._drain_hooks["artifacts.polls"] = drain_polls
 
     await lifecycle.open(host)
     await lifecycle.close(host)
 
     assert parked.cancelled() or parked.done(), (
-        "close() must cancel any active poll tasks before tearing down the client."
+        "close() must run drain hooks before tearing down the client."
     )
 
 

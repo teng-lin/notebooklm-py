@@ -5,7 +5,7 @@ import pytest
 
 from notebooklm._artifact_polling import ArtifactPollingService
 from notebooklm._artifacts import ArtifactsAPI, GenerationStatus
-from notebooklm._core_polling import PollRegistry
+from notebooklm._polling_registry import PollRegistry
 from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
 
@@ -71,8 +71,6 @@ class _FakeTransportProvider:
 def api():
     core = MagicMock()
     # Real registry backing so wait_for_completion can ``dict.get(key)``.
-    core.poll_registry = PollRegistry()
-    core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.bound_loop = None
@@ -135,7 +133,7 @@ async def test_wait_for_completion_no_retry_on_auth_error(api):
 async def test_polling_service_begin_transport_task_receives_spawned_poll_task() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)
-    service = ArtifactPollingService(provider)
+    service = ArtifactPollingService(provider, provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         assert (notebook_id, task_id) == ("nb1", "task1")
@@ -166,7 +164,7 @@ async def test_polling_service_begin_transport_task_receives_spawned_poll_task()
 async def test_polling_service_registers_pending_before_transport_begin_completes() -> None:
     begin_release = asyncio.Event()
     provider = _FakeTransportProvider(begin_release=begin_release)
-    service = ArtifactPollingService(provider)
+    service = ArtifactPollingService(provider, provider.poll_registry)
     poll_call_count = 0
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
@@ -226,7 +224,7 @@ async def test_polling_service_resolves_wait_before_slow_transport_finish() -> N
     token = object()
     finish_release = asyncio.Event()
     provider = _FakeTransportProvider(token=token, finish_release=finish_release)
-    service = ArtifactPollingService(provider)
+    service = ArtifactPollingService(provider, provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         return GenerationStatus(task_id=task_id, status="completed")
@@ -253,7 +251,7 @@ async def test_polling_service_resolves_wait_before_slow_transport_finish() -> N
 async def test_polling_service_finishes_transport_token_once_after_poll_failure() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)
-    service = ArtifactPollingService(provider)
+    service = ArtifactPollingService(provider, provider.poll_registry)
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         raise ValueError(f"poll failed: {notebook_id}/{task_id}")
@@ -281,7 +279,7 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
         begin_error=begin_error,
         yield_before_begin_error=True,
     )
-    service = ArtifactPollingService(provider)
+    service = ArtifactPollingService(provider, provider.poll_registry)
     poll_started = asyncio.Event()
     poll_cancelled = asyncio.Event()
     poll_finally = asyncio.Event()
@@ -321,8 +319,6 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
 @pytest.mark.asyncio
 async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_or_later_waiter():
     core = MagicMock()
-    core.poll_registry = PollRegistry()
-    core._pending_polls = core.poll_registry.pending
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.bound_loop = None
@@ -350,12 +346,11 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     try:
         await asyncio.wait_for(poll_started.wait(), timeout=test_timeout)
         for _ in range(10):
-            if key in core.poll_registry.pending:
+            if key in api._poll_registry.pending:
                 break
             await asyncio.sleep(0)
 
-        assert core._pending_polls is core.poll_registry.pending
-        assert key in core.poll_registry.pending
+        assert key in api._poll_registry.pending
 
         follower = asyncio.create_task(api.wait_for_completion("nb1", "task1", timeout=60.0))
         await asyncio.sleep(0)
@@ -364,7 +359,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
             await asyncio.wait_for(follower, timeout=test_timeout)
 
         assert not leader.done()
-        assert key in core.poll_registry.pending
+        assert key in api._poll_registry.pending
         assert poll_call_count == 1
 
         later_waiter = asyncio.create_task(api.wait_for_completion("nb1", "task1", timeout=60.0))
@@ -374,8 +369,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
         assert await asyncio.wait_for(leader, timeout=test_timeout) == status_ready
         assert await asyncio.wait_for(later_waiter, timeout=test_timeout) == status_ready
         assert poll_call_count == 1
-        assert core.poll_registry.pending == {}
-        assert core._pending_polls == {}
+        assert api._poll_registry.pending == {}
     finally:
         release_poll.set()
         cleanup_tasks = []

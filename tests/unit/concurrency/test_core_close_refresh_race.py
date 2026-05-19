@@ -67,8 +67,7 @@ class _StubHost:
         self.cookie_persistence = MagicMock()
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
-        self.poll_registry = MagicMock()
-        self.poll_registry.active_tasks = MagicMock(return_value=[])
+        self._drain_hooks = {}
         self._authed_transport = None
         self._rpc_executor = None
 

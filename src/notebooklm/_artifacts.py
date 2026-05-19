@@ -20,9 +20,10 @@ from ._capabilities import (
     AuthRouteProvider,
     CoreRPCProvider,
     LoopAffinityProvider,
-    PollRegistryProvider,
     TransportOperationProvider,
 )
+from ._polling_registry import PollRegistry
+from ._session_contracts import DrainHookRegistration
 from .auth import load_httpx_cookies
 from .rpc import (
     ArtifactTypeCode,
@@ -59,9 +60,9 @@ logger = logging.getLogger(__name__)
 class _ArtifactsCore(
     CoreRPCProvider,
     AuthRouteProvider,
-    PollRegistryProvider,
     TransportOperationProvider,
     LoopAffinityProvider,
+    DrainHookRegistration,
     Protocol,
 ):
     """Narrow per-sub-client view of the core required by :class:`ArtifactsAPI`.
@@ -69,11 +70,11 @@ class _ArtifactsCore(
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
     only the capabilities ArtifactsAPI actually uses: ``rpc_call`` (from
     :class:`CoreRPCProvider`), authuser routing (from
-    :class:`AuthRouteProvider`), the shared artifact poll registry (from
-    :class:`PollRegistryProvider`), transport-operation bookkeeping for
+    :class:`AuthRouteProvider`), transport-operation bookkeeping for
     long-running download streams (from :class:`TransportOperationProvider`),
-    and the open-time event loop forwarded into the artifact polling
-    boundary's loop-affinity guard (from :class:`LoopAffinityProvider`).
+    the open-time event loop forwarded into the artifact polling boundary's
+    loop-affinity guard (from :class:`LoopAffinityProvider`), and close-time
+    drain registration (from :class:`DrainHookRegistration`).
     """
 
     pass
@@ -198,10 +199,15 @@ class ArtifactsAPI:
         self._mind_map_service = (
             _mind_map.MindMapService(core) if mind_map_service is None else mind_map_service
         )
+        self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
         self._downloads = ArtifactDownloadService(self)
-        self._polling = _artifact_polling.ArtifactPollingService(self._capabilities)
+        self._polling = _artifact_polling.ArtifactPollingService(
+            self._capabilities,
+            self._poll_registry,
+        )
+        core.register_drain_hook("artifacts.polls", self._polling.drain)
 
     # =========================================================================
     # List/Get Operations
@@ -712,10 +718,10 @@ class ArtifactsAPI:
         Uses exponential backoff for polling to reduce API load.
 
         Concurrent callers for the same ``(notebook_id, task_id)`` share a
-        single underlying poll loop through the ``PollRegistry`` exposed by
-        this API's capabilities. The first caller is the *leader* and drives
-        the poll loop; subsequent *followers* attach to the leader's future
-        without issuing their own ``LIST_ARTIFACTS`` requests. Cancellation is
+        single underlying poll loop through this API's feature-owned
+        ``PollRegistry``. The first caller is the *leader* and drives the poll
+        loop; subsequent *followers* attach to the leader's future without
+        issuing their own ``LIST_ARTIFACTS`` requests. Cancellation is
         per-caller — only the cancelled caller's ``await`` raises
         ``CancelledError``; the underlying poll continues and remaining
         followers still receive the result.

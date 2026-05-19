@@ -9,7 +9,7 @@ import warnings
 from typing import Any, Protocol
 
 from . import research as _research_pub
-from ._capabilities import CoreRPCProvider, PollRegistryProvider
+from ._capabilities import CoreRPCProvider
 from .exceptions import ResearchTaskMismatchError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
@@ -19,13 +19,12 @@ __all__ = ["CitedSourceSelection", "ResearchAPI"]
 logger = logging.getLogger(__name__)
 
 
-class _ResearchCore(CoreRPCProvider, PollRegistryProvider, Protocol):
+class _ResearchCore(CoreRPCProvider, Protocol):
     """Narrow per-sub-client view of the core required by :class:`ResearchAPI`.
 
     Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    only the capabilities ResearchAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`) and the shared artifact poll registry (from
-    :class:`PollRegistryProvider`).
+    only the capability ResearchAPI actually uses: ``rpc_call`` (from
+    :class:`CoreRPCProvider`).
     """
 
     pass

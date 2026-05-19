@@ -10,7 +10,8 @@ from typing import Any
 import pytest
 
 from notebooklm._core import ClientCore
-from notebooklm._core_polling import PendingPolls, PollRegistry
+from notebooklm._core_polling import PollRegistry as ShimPollRegistry
+from notebooklm._polling_registry import PendingPolls, PollRegistry
 from notebooklm.auth import AuthTokens
 
 
@@ -44,6 +45,7 @@ def test_client_core_exposes_poll_registry_and_pending_polls_bridge() -> None:
 
     assert isinstance(core.poll_registry, PollRegistry)
     assert core._pending_polls is core.poll_registry.pending
+    assert ShimPollRegistry is PollRegistry
 
 
 def test_client_core_pending_polls_assignment_replaces_registry_backing_mapping() -> None:
@@ -87,10 +89,10 @@ async def test_client_core_pending_polls_bridge_preserves_entry_shape() -> None:
             pass
 
 
-def test_core_polling_does_not_import_client_core_at_runtime() -> None:
-    source = (Path(__file__).resolve().parents[2] / "src/notebooklm/_core_polling.py").read_text(
-        encoding="utf-8"
-    )
+def test_polling_registry_does_not_import_client_core_at_runtime() -> None:
+    source = (
+        Path(__file__).resolve().parents[2] / "src/notebooklm/_polling_registry.py"
+    ).read_text(encoding="utf-8")
     tree = ast.parse(source)
 
     forbidden_imports: list[str] = []

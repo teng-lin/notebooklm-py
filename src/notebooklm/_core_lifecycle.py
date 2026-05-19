@@ -32,8 +32,8 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 * :meth:`open` is idempotent — calling it twice with a live ``_http_client``
   is a no-op, preserving the legacy ``ClientCore.open()`` contract.
 
-* :meth:`close` cancellation ordering: stop keepalive → drain poll tasks →
-  save cookies → shielded Kernel ``aclose()``. Reversing any of these
+* :meth:`close` cancellation ordering: stop keepalive → run registered drain
+  hooks → save cookies → shielded Kernel ``aclose()``. Reversing any of these
   reintroduces the leak modes ``test_core_close.py`` pins down. The shielded
   ``aclose()`` is critical: without it, a ``CancelledError`` arriving
   mid-close leaks the underlying httpx transport.
@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -81,7 +82,6 @@ if TYPE_CHECKING:
     from ._core_cookie_persistence import CookiePersistence
     from ._core_drain import TransportDrainTracker
     from ._core_metrics import ClientMetrics
-    from ._core_polling import PollRegistry
     from ._core_reqid import ReqidCounter
     from ._core_rpc import RpcExecutor
     from ._core_transport import AuthedTransport
@@ -99,10 +99,10 @@ class _LifecycleHost(Protocol):
     The Protocol pins exactly which collaborators the lifecycle reaches into
     on the host, so future refactors that move state around ``ClientCore``
     surface as Protocol violations rather than silent ``AttributeError``s
-    at close-time. ``cookie_persistence`` and ``poll_registry`` mirror
-    today's public attribute names on ``ClientCore``; ``_metrics_obj``,
-    ``_drain_tracker``, and ``_auth_coord`` are the post-A1/A2/B1 helper
-    handles. ``_authed_transport`` and ``_rpc_executor`` are nulled out by
+    at close-time. ``cookie_persistence`` mirrors today's public attribute
+    name on ``ClientCore``; ``_drain_hooks``, ``_metrics_obj``,
+    ``_drain_tracker``, and ``_auth_coord`` are helper handles.
+    ``_authed_transport`` and ``_rpc_executor`` are nulled out by
     :meth:`ClientLifecycle.close` so a follow-up ``open()`` rebuilds them
     against the new ``httpx.AsyncClient`` (avoids stale closures over the
     previous client).
@@ -114,7 +114,7 @@ class _LifecycleHost(Protocol):
     _auth_coord: AuthRefreshCoordinator
     _reqid: ReqidCounter
     cookie_persistence: CookiePersistence
-    poll_registry: PollRegistry
+    _drain_hooks: dict[str, Callable[[], Awaitable[None]]]
     _authed_transport: AuthedTransport | None
     _rpc_executor: RpcExecutor | None
 
@@ -288,13 +288,12 @@ class ClientLifecycle:
         ``finally`` so the instance is consistently marked closed even if
         shielded teardown raises.
 
-        Poll-task drain: in-flight artifact poll tasks held by
-        ``host.poll_registry`` are cancelled and awaited before the HTTP
-        client is torn down. Without this, a leader poll waking mid-aclose
-        would issue a request against an already-closed transport and
-        surface as a confusing httpx error. The drain uses
-        ``return_exceptions=True`` so a single misbehaving task can't block
-        the rest of the close sequence.
+        Drain hooks: feature-owned close hooks are awaited before the HTTP
+        client is torn down. Without this, a feature task waking mid-aclose
+        could issue a request against an already-closed transport and surface
+        as a confusing httpx error. The drain uses ``return_exceptions=True``
+        so a single misbehaving hook can't block the rest of the close
+        sequence.
 
         Nulls out ``host._authed_transport`` and ``host._rpc_executor`` so a
         follow-up :meth:`open` rebuilds the transport collaborators against
@@ -324,14 +323,15 @@ class ClientLifecycle:
                 refresh_task.cancel()
                 await asyncio.gather(refresh_task, return_exceptions=True)
 
-            # Drain in-flight artifact poll tasks. Snapshot first so concurrent
-            # registry mutations (a finishing leader removing its entry) don't
-            # race with the cancel/gather pair.
-            poll_tasks = host.poll_registry.active_tasks()
-            if poll_tasks:
-                for task in poll_tasks:
-                    task.cancel()
-                await asyncio.gather(*poll_tasks, return_exceptions=True)
+            async def _run_drain_hook(hook: Callable[[], Awaitable[None]]) -> None:
+                await hook()
+
+            drain_hooks = list(host._drain_hooks.values())
+            if drain_hooks:
+                await asyncio.gather(
+                    *(_run_drain_hook(hook) for hook in drain_hooks),
+                    return_exceptions=True,
+                )
 
             if self._http_client:
                 try:
