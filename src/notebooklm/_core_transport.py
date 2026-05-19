@@ -10,11 +10,10 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import httpx
 
-from ._backoff import compute_backoff_delay
 from .exceptions import RPCResponseTooLargeError
 
 # Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
@@ -262,21 +261,49 @@ class AuthedTransport:
             )
 
         refreshed_this_call = False
-        rate_limit_retries = 0
-        server_error_retries = 0
         start = time.perf_counter()
 
         # ---------------------------------------------------------------
         # Semaphore placement contract — DO NOT MOVE.
         #
-        # The semaphore wraps the entire retry loop. Releasing during backoff
-        # would let new callers burst in just as the current cohort wakes up,
-        # undoing the smoothing the semaphore exists to provide.
+        # The semaphore wraps the entire auth-refresh-and-retry loop (and
+        # in turn sits INSIDE the chain's ``RetryMiddleware`` retry loop,
+        # because the chain entered before this leaf was called).
+        # Releasing during backoff would let new callers burst in just as
+        # the current cohort wakes up, undoing the smoothing the semaphore
+        # exists to provide.
+        #
+        # **Backpressure-scope regression (PR 12.7 → 12.8 follow-up).**
+        # Before PR 12.7, this semaphore wrapped the FULL retry budget
+        # (initial attempt + all 429 / 5xx retries). After PR 12.7, the
+        # 429 / 5xx retry loop lives in ``RetryMiddleware`` OUTSIDE this
+        # semaphore — each retry re-enters the chain, releases the slot
+        # during ``RetryMiddleware``'s backoff sleep, and re-acquires on
+        # the next attempt. Under bursty rate-limit fan-out this means the
+        # smoothing the semaphore previously provided across the full
+        # retry budget is now coarser (per-attempt, not per-call). The
+        # auth-refresh-once loop here still benefits from the old
+        # whole-loop scope.
+        #
+        # The plan acknowledges this as an interim consequence of the
+        # chain ordering ``[Drain, Metrics, Retry, AuthRefresh,
+        # ErrorInjection, Tracing]``. A chain-level semaphore primitive
+        # (or moving the gate above ``RetryMiddleware``) is a viable
+        # follow-up; PR 12.7 ships the regression so the load-bearing
+        # lift can land. ADR-009 §"Chain ordering rationale" should
+        # eventually reflect this trade-off.
         # ---------------------------------------------------------------
         semaphore = host._get_rpc_semaphore()
         queue_wait_start = time.perf_counter()
         async with semaphore:
             host._record_rpc_queue_wait(time.perf_counter() - queue_wait_start)
+            # PR 12.7: the only retry this loop now drives is the
+            # auth-refresh-once retry. 429 and 5xx/network failures raise
+            # ``_TransportRateLimited`` / ``_TransportServerError``
+            # immediately so :class:`RetryMiddleware` (chain-level, sitting
+            # OUTSIDE this leaf) can decide whether to retry. ``raise from
+            # exc`` preserves the chained transport exception for
+            # diagnostic display.
             while True:
                 snapshot = await host._snapshot()
                 url, body, headers = build_request(snapshot)
@@ -285,10 +312,10 @@ class AuthedTransport:
                     # Streaming POST with a running size cap. The size guard
                     # lives inside the stream-read loop in
                     # ``_stream_post_with_size_cap``; ``raise_for_status()`` is
-                    # invoked before any body chunk is read so the existing
-                    # auth-refresh / 429 / 5xx branches below still fire with
-                    # the same :class:`httpx.HTTPStatusError` they did when
-                    # this used ``client.post``.
+                    # invoked before any body chunk is read so the
+                    # auth-refresh branch below + the 429 / 5xx exception
+                    # raisers fire with the same :class:`httpx.HTTPStatusError`
+                    # they did when this used ``client.post``.
                     response = await _stream_post_with_size_cap(
                         client,
                         url,
@@ -296,7 +323,7 @@ class AuthedTransport:
                         headers=headers,
                     )
                 except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                    # --- Auth refresh path ---------------------------------
+                    # --- Auth refresh path (stays here until PR 12.8) -------
                     if (
                         not refreshed_this_call
                         and host._refresh_callback is not None
@@ -321,38 +348,9 @@ class AuthedTransport:
                         host._increment_metrics(rpc_auth_retries=1)
                         continue
 
-                    # --- 429 rate-limit path --------------------------------
+                    # --- 429: raise for the chain RetryMiddleware to catch --
                     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
                         retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
-                        if (
-                            not disable_internal_retries
-                            and rate_limit_retries < host._rate_limit_max_retries
-                        ):
-                            if retry_after is not None:
-                                sleep_seconds: float = retry_after
-                                sleep_source = f"Retry-After={retry_after}s"
-                            else:
-                                # rng=None → module random.uniform is honored
-                                # by tests that monkeypatch the shared module.
-                                backoff = compute_backoff_delay(
-                                    rate_limit_retries,
-                                    base=1.0,
-                                    cap=30.0,
-                                    jitter_ratio=0.2,
-                                )
-                                sleep_seconds = max(0.1, backoff)
-                                sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
-                            self._logger.warning(
-                                "%s rate-limited (HTTP 429); sleeping (%s) then retrying (%d/%d)",
-                                log_label,
-                                sleep_source,
-                                rate_limit_retries + 1,
-                                host._rate_limit_max_retries,
-                            )
-                            await self._sleep(sleep_seconds)
-                            rate_limit_retries += 1
-                            host._increment_metrics(rpc_rate_limit_retries=1)
-                            continue
                         raise _TransportRateLimited(
                             f"{log_label} rate-limited (HTTP 429)",
                             retry_after=retry_after,
@@ -360,57 +358,20 @@ class AuthedTransport:
                             original=exc,
                         ) from exc
 
-                    # --- 5xx / network retry path ---------------------------
-                    is_server_error = (
+                    # --- 5xx / network: raise for RetryMiddleware to catch --
+                    if (
                         isinstance(exc, httpx.HTTPStatusError)
                         and 500 <= exc.response.status_code < 600
-                    )
-                    is_network_error = isinstance(exc, httpx.RequestError)
-                    if is_server_error or is_network_error:
-                        if (
-                            not disable_internal_retries
-                            and server_error_retries < host._server_error_max_retries
-                        ):
-                            # rng=None → module random.uniform is honored
-                            # by tests that monkeypatch the shared module.
-                            backoff = max(
-                                0.1,
-                                compute_backoff_delay(
-                                    server_error_retries,
-                                    base=1.0,
-                                    cap=30.0,
-                                    jitter_ratio=0.2,
-                                ),
-                            )
-                            status_label = (
-                                f"HTTP {exc.response.status_code}"  # type: ignore[union-attr]
-                                if is_server_error
-                                else type(exc).__name__
-                            )
-                            self._logger.warning(
-                                "%s server/network error (%s); backing off %.1fs then retrying (%d/%d)",
-                                log_label,
-                                status_label,
-                                backoff,
-                                server_error_retries + 1,
-                                host._server_error_max_retries,
-                            )
-                            await self._sleep(backoff)
-                            server_error_retries += 1
-                            host._increment_metrics(rpc_server_error_retries=1)
-                            continue
-                        if is_server_error:
-                            status_error = cast(httpx.HTTPStatusError, exc)
-                            raise _TransportServerError(
-                                f"{log_label} server error "
-                                f"(HTTP {status_error.response.status_code}) after "
-                                f"{server_error_retries} retries",
-                                original=status_error,
-                                response=status_error.response,
-                                status_code=status_error.response.status_code,
-                            ) from exc
+                    ):
                         raise _TransportServerError(
-                            f"{log_label} network error after {server_error_retries} retries: {exc}",
+                            f"{log_label} server error (HTTP {exc.response.status_code})",
+                            original=exc,
+                            response=exc.response,
+                            status_code=exc.response.status_code,
+                        ) from exc
+                    if isinstance(exc, httpx.RequestError):
+                        raise _TransportServerError(
+                            f"{log_label} network error: {exc}",
                             original=exc,
                         ) from exc
 

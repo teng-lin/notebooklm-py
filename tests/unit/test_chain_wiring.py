@@ -232,34 +232,39 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chain_seeded_with_drain_metrics_error_injection_tracing() -> None:
-    """``ClientCore.__init__`` seeds the chain with ``[Drain, Metrics, ErrorInjection, Tracing]``.
+async def test_chain_seeded_with_drain_metrics_retry_error_injection_tracing() -> None:
+    """``ClientCore.__init__`` seeds the chain with ``[Drain, Metrics, Retry, ErrorInjection, Tracing]``.
 
     PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
     prepended ``MetricsMiddleware``; PR 12.5 prepended ``DrainMiddleware``
-    outermost; PR 12.6 inserts ``ErrorInjectionMiddleware`` between Metrics
-    and Tracing. Order matters — Drain admits/finalizes the operation outside
-    all observability, Metrics times the inner chain, ErrorInjection
-    short-circuits with synthetic responses when activated, and Tracing
-    remains the innermost wrapper around the transport leaf. PRs 12.7–12.8
-    insert ``RetryMiddleware`` and ``AuthRefreshMiddleware`` BETWEEN Metrics
-    and ErrorInjection so the final ordering reads
+    outermost; PR 12.6 inserted ``ErrorInjectionMiddleware`` between
+    Metrics and Tracing; PR 12.7 inserts ``RetryMiddleware`` between
+    Metrics and ErrorInjection. Order matters — Drain admits/finalizes
+    the operation outside all observability, Metrics times the
+    end-to-end chain, Retry handles 429/5xx retries (with synthetic
+    errors that ErrorInjection produces visible to Retry on each
+    attempt), ErrorInjection short-circuits with synthetic responses
+    when activated, and Tracing remains the innermost wrapper around the
+    transport leaf. PR 12.8 inserts ``AuthRefreshMiddleware`` BETWEEN
+    Retry and ErrorInjection so the final ordering reads
     ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` per
-    ADR-009. The list is exposed as ``self._middlewares`` so later PRs (and
-    the cleanup audit in 12.9) can assert ordering by inspecting the
-    production attribute directly.
+    ADR-009. The list is exposed as ``self._middlewares`` so later PRs
+    (and the cleanup audit in 12.9) can assert ordering by inspecting
+    the production attribute directly.
     """
     from notebooklm._middleware_drain import DrainMiddleware
     from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
     from notebooklm._middleware_metrics import MetricsMiddleware
+    from notebooklm._middleware_retry import RetryMiddleware
     from notebooklm._middleware_tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._middlewares) == 4
+    assert len(core._middlewares) == 5
     assert isinstance(core._middlewares[0], DrainMiddleware)
     assert isinstance(core._middlewares[1], MetricsMiddleware)
-    assert isinstance(core._middlewares[2], ErrorInjectionMiddleware)
-    assert isinstance(core._middlewares[3], TracingMiddleware)
+    assert isinstance(core._middlewares[2], RetryMiddleware)
+    assert isinstance(core._middlewares[3], ErrorInjectionMiddleware)
+    assert isinstance(core._middlewares[4], TracingMiddleware)
 
 
 @pytest.mark.asyncio

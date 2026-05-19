@@ -161,18 +161,33 @@ def test_core_transport_has_no_runtime_core_imports():
 
 
 @pytest.mark.asyncio
-async def test_authed_transport_reads_live_retry_budget(monkeypatch):
+async def test_chain_reads_live_retry_budget(monkeypatch):
+    """Tier-12 PR 12.7 lifted the 429 / 5xx retry loop into ``RetryMiddleware``.
+
+    The middleware reads ``self._rate_limit_max_retries`` on the host LIVE
+    (via the callable factory the chain seed installs) so a test that
+    mutates the budget AFTER ``open()`` still takes effect — preserving
+    the pre-PR-12.7 contract where ``AuthedTransport`` read the same
+    attr live inside its loop. Drives the chain via
+    ``core._perform_authed_post`` so the assertion exercises the
+    production seam ``RpcExecutor.execute`` uses.
+    """
     core = _make_core(rate_limit_max_retries=0)
     await core.open()
     try:
-        transport = core._get_authed_transport()
-        assert isinstance(transport, AuthedTransport)
+        # Confirm the leaf is still AuthedTransport (sanity).
+        assert isinstance(core._get_authed_transport(), AuthedTransport)
+        # Mutate AFTER open() — middleware reads via lambda closure so this
+        # bump from 0 → 1 grants a single retry on the next chain call.
         core._rate_limit_max_retries = 1
         sleeps: list[float] = []
 
         async def fake_sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
+        # ``RetryMiddleware`` defaults to ``asyncio.sleep`` resolved at call
+        # time, so patching the asyncio module's ``sleep`` reaches it
+        # through Python's module identity.
         monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
 
         def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
@@ -188,7 +203,7 @@ async def test_authed_transport_reads_live_retry_budget(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
-        response = await transport.perform_authed_post(build_request=build, log_label="test")
+        response = await core._perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert call_count["n"] == 2
@@ -246,11 +261,16 @@ async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_authed_transport_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch):
+async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch):
+    """``RetryMiddleware`` resolves ``asyncio.sleep`` at call time and uses
+    the shared ``random`` module for jitter, so tests can monkey-patch both
+    surfaces post-construction. Pre-PR-12.7 this contract sat on
+    ``AuthedTransport``; PR 12.7 lifted retry into the chain but the
+    same late-bound seam is preserved end-to-end.
+    """
     core = _make_core(server_error_max_retries=1)
     await core.open()
     try:
-        transport = core._get_authed_transport()
         sleeps: list[float] = []
 
         async def fake_sleep(seconds: float) -> None:
@@ -272,7 +292,7 @@ async def test_authed_transport_uses_late_bound_sleep_and_shared_random_uniform(
 
         install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
-        response = await transport.perform_authed_post(build_request=build, log_label="test")
+        response = await core._perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert call_count["n"] == 2

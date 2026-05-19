@@ -30,19 +30,33 @@ the class itself is untouched.
 Behavior contract:
 
 - Env var unset → ``await next_call(request)`` unchanged (pass-through).
-- Env var set → build the synthetic ``(status_code, body, headers)`` triple,
-  wrap as :class:`httpx.Response` anchored to ``request.url`` / ``request.body``
-  so callers that inspect ``response.request`` still see a sane request, and
-  return :class:`RpcResponse` carrying the synthetic response with
-  ``request.context`` propagated unchanged.
+- Env var set, mode ``"429"`` → raise :class:`_TransportRateLimited` so the
+  OUTER ``RetryMiddleware`` retries (restoring ADR-009 §"ErrorInjection
+  inside Retry — synthetic transient failures trigger retry"; codex iter-1
+  catch on PR 12.7). The raised exception carries the synthetic
+  ``Retry-After`` header so the retry honors the rate-limit timing.
+- Env var set, mode ``"5xx"`` → raise :class:`_TransportServerError` so
+  ``RetryMiddleware`` retries with exponential backoff.
+- Env var set, mode ``"expired_csrf"`` (HTTP 400) → return the synthetic
+  response unchanged. ``RetryMiddleware`` does not retry on 400; PR 12.8
+  ``AuthRefreshMiddleware`` will intercept and drive the refresh-then-retry
+  flow that the legacy leaf used to handle inline. Until 12.8 lands, the
+  400 propagates as a returned response and chat-domain mapping surfaces
+  it as a generic error (matches the PR-12.6 interim behavior).
 
-Note on retry semantics: the pre-PR-12.6 httpx-layer
-:class:`_SyntheticErrorTransport` fired on *every* batchexecute POST, including
-the ones that ``AuthedTransport.perform_authed_post`` re-issued from its
-internal retry-on-5xx/429 loop. After this PR the middleware short-circuits
-*before* the leaf, so that internal retry loop never sees synthetic errors.
-PR 12.7 (``RetryMiddleware``) inserts a retry loop OUTSIDE this middleware
-and restores the "every retry re-fires the synthetic error" behavior.
+All raised exceptions wrap a synthetic :class:`httpx.Response` anchored to
+``request.url`` / ``request.headers`` / ``request.body`` so callers
+inspecting ``response.request`` see what the leaf would have sent.
+
+Restored retry semantics: pre-PR-12.6 the httpx-layer
+:class:`_SyntheticErrorTransport` fired on *every* batchexecute POST,
+including the ones ``AuthedTransport.perform_authed_post`` re-issued from
+its internal retry loop. PR 12.6 lifted the middleware above the leaf,
+which broke that. PR 12.7 added ``RetryMiddleware`` OUTSIDE this
+middleware AND has this middleware raise the proper transport exceptions
+for 429/5xx so the outer retry actually fires. Each retry re-enters this
+middleware, which re-raises — matching the pre-PR-12.6 "every retry
+re-fires the synthetic error" behavior bit-for-bit.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
 ``src/notebooklm/_core_error_injection.py`` for the env-var / startup-guard
@@ -62,6 +76,11 @@ import httpx
 
 from . import _core_error_injection
 from ._core_error_injection import ERROR_INJECT_ENV_VAR
+from ._core_transport import (
+    _parse_retry_after,
+    _TransportRateLimited,
+    _TransportServerError,
+)
 from ._middleware import NextCall, RpcRequest, RpcResponse
 
 # Logger name pinned to ``notebooklm._core`` (not the literal module name) so
@@ -139,6 +158,44 @@ class ErrorInjectionMiddleware:
             content=body,
             request=synthetic_request,
         )
+        # PR 12.7: raise the proper transport exception for 429 / 5xx so the
+        # OUTER ``RetryMiddleware`` actually retries — restoring ADR-009
+        # §"ErrorInjection inside Retry — synthetic transient failures trigger
+        # retry". Pre-PR-12.6 this happened naturally because the legacy
+        # ``_SyntheticErrorTransport`` returned the synthetic response below
+        # httpx and ``AuthedTransport``'s ``raise_for_status()`` lifted it
+        # into an ``HTTPStatusError`` that the leaf's 429 / 5xx branches
+        # mapped to these same transport exceptions. Returning a plain
+        # ``RpcResponse`` here would skip retry entirely (codex iter-1 catch).
+        #
+        # For the ``expired_csrf`` (400) mode we still return the synthetic
+        # response — PR 12.8 (AuthRefreshMiddleware) will intercept it and
+        # drive the refresh-then-retry flow that the legacy leaf used to
+        # handle inline. Until 12.8 lands, the 400 propagates as a returned
+        # response and the chat-domain mapping surfaces it as a generic
+        # error (matches the PR-12.6 interim behavior for that mode).
+        log_label = request.context.get("log_label", "<unknown-chain-call>")
+        original = httpx.HTTPStatusError(
+            f"HTTP {status_code}",
+            request=synthetic_request,
+            response=response,
+        )
+        if status_code == 429:
+            retry_after = _parse_retry_after(response.headers.get("retry-after"))
+            raise _TransportRateLimited(
+                f"{log_label} rate-limited (HTTP 429)",
+                retry_after=retry_after,
+                response=response,
+                original=original,
+            ) from original
+        if 500 <= status_code < 600:
+            raise _TransportServerError(
+                f"{log_label} server error (HTTP {status_code})",
+                original=original,
+                response=response,
+                status_code=status_code,
+            ) from original
+        # 400 / expired_csrf / any other status: return as-is.
         return RpcResponse(response=response, context=request.context)
 
     def _load_builder(self) -> _SyntheticBuilder:

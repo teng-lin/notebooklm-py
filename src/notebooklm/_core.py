@@ -114,6 +114,7 @@ from ._middleware import (
 from ._middleware_drain import DrainMiddleware
 from ._middleware_error_injection import ErrorInjectionMiddleware
 from ._middleware_metrics import MetricsMiddleware
+from ._middleware_retry import RetryMiddleware
 from ._middleware_tracing import TracingMiddleware
 from ._sources import fetch_source_ids
 
@@ -469,33 +470,48 @@ class ClientCore:
         # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
         # PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
         # ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware``
-        # outermost, and PR 12.6 inserts ``ErrorInjectionMiddleware`` between
-        # ``MetricsMiddleware`` and ``TracingMiddleware`` so the list now
-        # reads ``[Drain, Metrics, ErrorInjection, Tracing]``. PRs 12.7–12.8
-        # insert ``RetryMiddleware`` and ``AuthRefreshMiddleware`` BETWEEN
-        # ``MetricsMiddleware`` and ``ErrorInjectionMiddleware`` so the
-        # final list reads
+        # outermost, PR 12.6 inserted ``ErrorInjectionMiddleware`` between
+        # ``MetricsMiddleware`` and ``TracingMiddleware``, and PR 12.7
+        # inserts ``RetryMiddleware`` between ``MetricsMiddleware`` and
+        # ``ErrorInjectionMiddleware`` so the list now reads
+        # ``[Drain, Metrics, Retry, ErrorInjection, Tracing]``. PR 12.8
+        # inserts ``AuthRefreshMiddleware`` BETWEEN ``RetryMiddleware`` and
+        # ``ErrorInjectionMiddleware`` so the final list reads
         # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
         # (outermost → innermost, per ADR-009 §"Chain ordering"). ``build_chain``
         # composes the leftmost entry as the outermost wrapper, so keeping
         # ``TracingMiddleware`` at the RIGHT end of the list preserves
-        # Tracing as the innermost wrapper as later PRs grow the list, and
-        # keeping ``ErrorInjectionMiddleware`` adjacent to ``TracingMiddleware``
-        # matches the rationale "synthetic transient failures trigger retry"
-        # (ADR-009 §"Chain ordering rationale"): once ``RetryMiddleware``
-        # lands, it sits outside ``ErrorInjection`` and sees the synthetic
-        # error on each attempt.
+        # Tracing as the innermost wrapper as later PRs grow the list.
+        #
+        # PR 12.7 also LIFTS the 429 / 5xx retry loops out of
+        # ``AuthedTransport.perform_authed_post`` (the chain leaf) and into
+        # ``RetryMiddleware``. The leaf now raises
+        # ``_TransportRateLimited`` / ``_TransportServerError`` immediately
+        # on the first 429 / 5xx, and ``RetryMiddleware`` catches those
+        # exceptions and re-invokes the chain. Auth-refresh stays in the
+        # leaf as a localized loop until PR 12.8 lifts it.
         #
         # The terminal adapter reads ``build_request`` / ``log_label`` /
         # ``disable_internal_retries`` from ``RpcRequest.context`` and
         # delegates to ``self._get_authed_transport().perform_authed_post``.
-        # ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
-        # stay unpopulated until PRs 12.7/12.8 start lifting behavior
-        # out of ``AuthedTransport``. See ADR-009 §"Per-request behavior"
-        # and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
+        # ``RetryMiddleware`` reads ``log_label`` /
+        # ``disable_internal_retries`` from the same ``context`` dict. See
+        # ADR-009 §"Per-request behavior" and
+        # ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
         self._middlewares: list[Middleware] = [
             DrainMiddleware(self._drain_tracker),
             MetricsMiddleware(self._metrics_obj),
+            # Pass callable budgets so post-construction mutation of
+            # ``self._rate_limit_max_retries`` / ``self._server_error_max_retries``
+            # (an integration-test idiom; production never mutates these)
+            # still takes effect — bit-for-bit preserving the pre-PR-12.7
+            # live-binding contract where ``AuthedTransport`` read these
+            # attrs LIVE inside its retry loop.
+            RetryMiddleware(
+                rate_limit_max_retries=lambda: self._rate_limit_max_retries,
+                server_error_max_retries=lambda: self._server_error_max_retries,
+                metrics=self._metrics_obj,
+            ),
             ErrorInjectionMiddleware(),
             TracingMiddleware(),
         ]
@@ -862,7 +878,7 @@ class ClientCore:
         ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
         on such a fixture would raise ``AttributeError``; this helper
         backfills both slots with the same shape ``__init__`` would have
-        constructed (``[DrainMiddleware, MetricsMiddleware,
+        constructed (``[DrainMiddleware, MetricsMiddleware, RetryMiddleware,
         ErrorInjectionMiddleware, TracingMiddleware]``-seeded chain around
         the terminal adapter, matching the seed in ``__init__``).
 
@@ -891,20 +907,39 @@ class ClientCore:
                 # Mirror ``__init__``'s seeded chain: PR 12.3 lands
                 # ``TracingMiddleware`` as the innermost entry, PR 12.4
                 # prepends ``MetricsMiddleware``, PR 12.5 prepends
-                # ``DrainMiddleware`` outermost, and PR 12.6 inserts
+                # ``DrainMiddleware`` outermost, PR 12.6 inserts
                 # ``ErrorInjectionMiddleware`` just outside
-                # ``TracingMiddleware``. A ``__new__``-built fixture must
-                # see the same chain shape so the three observability
+                # ``TracingMiddleware``, and PR 12.7 inserts
+                # ``RetryMiddleware`` between ``MetricsMiddleware`` and
+                # ``ErrorInjectionMiddleware``. A ``__new__``-built fixture
+                # must see the same chain shape so the three observability
                 # channels (drain admission, RPC counters/events,
-                # structured trace logs) AND the fault-injection
-                # short-circuit (active only when
-                # ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set) are exercised on
-                # fixture-driven invocations too; otherwise the fixture path
-                # and the live path diverge, which has previously hidden
-                # bugs in Tier-8 cassette-replay tests.
+                # structured trace logs), the retry-on-429/5xx loop, and
+                # the fault-injection short-circuit (active only when
+                # ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set) are all
+                # exercised on fixture-driven invocations too; otherwise
+                # the fixture path and the live path diverge, which has
+                # previously hidden bugs in Tier-8 cassette-replay tests.
+                #
+                # ``getattr`` defaults for the retry budgets match
+                # ``__init__``'s default values so a ``__new__``-built
+                # fixture that didn't set them still gets a sane
+                # ``RetryMiddleware``.
                 self._middlewares = [
                     DrainMiddleware(self._drain_tracker),
                     MetricsMiddleware(self._metrics_obj),
+                    # Callable budgets preserve live-binding (see ``__init__``
+                    # for the rationale). ``getattr`` defaults match
+                    # ``__init__``'s argument defaults so a ``__new__``-built
+                    # fixture that never set the attrs still gets a sane
+                    # ``RetryMiddleware``.
+                    RetryMiddleware(
+                        rate_limit_max_retries=lambda: getattr(self, "_rate_limit_max_retries", 3),
+                        server_error_max_retries=lambda: getattr(
+                            self, "_server_error_max_retries", 3
+                        ),
+                        metrics=self._metrics_obj,
+                    ),
                     ErrorInjectionMiddleware(),
                     TracingMiddleware(),
                 ]
