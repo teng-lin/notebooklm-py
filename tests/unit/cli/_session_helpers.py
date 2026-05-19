@@ -9,20 +9,19 @@ suite into seven focused files (``test_login.py``,
 ``test_session_edge_cases.py``), each file imports the helpers it needs
 from here rather than duplicating them.
 
-Two design choices worth noting:
+Fixtures (``runner``, ``mock_auth``, ``mock_context_file``) live in
+``tests/unit/cli/conftest.py``, not here — pytest gives conftest fixtures
+priority over plugin fixtures, so defining them in two places makes the
+plugin copies dead. The conftest definitions cover the session-CLI use
+cases (the ``__Secure-1PSIDTS`` cookie + the
+``notebooklm.cli.session.get_context_path`` patch site).
 
-* ``mock_auth`` and ``mock_context_file`` here are not autouse fixtures —
-  they are explicit fixtures the test files request by name, exactly as
-  the legacy ``test_session.py`` did. They override the broader-purpose
-  ``mock_auth`` / ``mock_context_file`` in
-  ``tests/unit/cli/conftest.py`` by adding the ``__Secure-1PSIDTS``
-  cookie key and the ``cli.session.get_context_path`` patch site that
-  session-flow tests rely on.
-* The chromium-fanout helpers (``_make_chromium_profile``,
-  ``_chromium_fanout_setup``, ``_install_chromium_fanout_patches``) live
-  here so both ``test_login_chromium_fanout.py`` and any tests in
-  ``test_auth_subcommands.py`` that hit the fan-out paths can pull them
-  from a single canonical location.
+This file holds the chromium-fanout helpers (``_make_chromium_profile``,
+``_chromium_fanout_setup``, ``_install_chromium_fanout_patches``) and the
+``_multiaccount_rookiepy_mock`` factory so both
+``test_login_chromium_fanout.py`` and any tests in
+``test_auth_subcommands.py`` that hit the fan-out paths can pull them
+from a single canonical location.
 """
 
 from __future__ import annotations
@@ -31,9 +30,6 @@ import contextlib
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
-from click.testing import CliRunner
 
 # ---------------------------------------------------------------------------
 # Account-metadata read helpers (D1 PR-3: session-CLI tests read account
@@ -65,50 +61,16 @@ def _account_exists(storage_path: Path) -> bool:
 # ---------------------------------------------------------------------------
 # Pytest fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def runner() -> CliRunner:
-    """A ``click.testing.CliRunner`` instance — fresh per test."""
-    return CliRunner()
-
-
-@pytest.fixture
-def mock_auth() -> Any:
-    """Patch ``cli.helpers.load_auth_from_storage`` to return a full mock cookie dict.
-
-    Distinct from the conftest fixture by including ``__Secure-1PSIDTS`` —
-    the cookie that session-flow tests rely on for the
-    ``MINIMUM_REQUIRED_COOKIES`` validator inside auth.cookie_policy.
-    """
-    with patch("notebooklm.cli.helpers.load_auth_from_storage") as mock:
-        mock.return_value = {
-            "SID": "test",
-            "__Secure-1PSIDTS": "test_1psidts",
-            "HSID": "test",
-            "SSID": "test",
-            "APISID": "test",
-            "SAPISID": "test",
-        }
-        yield mock
-
-
-@pytest.fixture
-def mock_context_file(tmp_path: Path) -> Any:
-    """Provide a temporary context file path; patch every context seam.
-
-    Adds the ``notebooklm.cli.session.get_context_path`` site that the
-    session-flow tests need on top of the conftest version (which only
-    patches helpers / context / resolve).
-    """
-    context_file = tmp_path / "context.json"
-    with (
-        patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.context.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.session.get_context_path", return_value=context_file),
-    ):
-        yield context_file
+#
+# Note: ``runner``, ``mock_auth``, and ``mock_context_file`` fixtures used to
+# live here, but pytest's fixture resolution gives conftest fixtures higher
+# priority than plugin fixtures (plugin < root conftest < directory conftest).
+# Since ``tests/unit/cli/conftest.py`` already defines those names, the
+# plugin copies were dead. The authoritative definitions now live in
+# ``tests/unit/cli/conftest.py`` — including the
+# ``notebooklm.cli.session.get_context_path`` patch (added per D1 PR-3
+# review) and the ``__Secure-1PSIDTS`` cookie in ``mock_auth`` (required
+# by ``_validate_required_cookies``).
 
 
 # ---------------------------------------------------------------------------

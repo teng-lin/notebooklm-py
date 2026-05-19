@@ -6,6 +6,7 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 ``patch_session_login_dual`` lives in ``tests/_fixtures``.
 """
 
+import asyncio
 import json
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1252,7 +1253,7 @@ class TestAuthRefreshCommand:
                 return_value=("csrf_ok", "session_ok"),
             ) as mock_fetch,
         ):
-            result = runner.invoke(cli, ["auth", "refresh", "--browser-cookie", "chrome"])
+            result = runner.invoke(cli, ["auth", "refresh", "--browser-cookies", "chrome"])
 
         assert result.exit_code == 0, result.output
         assert "bob@gmail.com" in result.output
@@ -1360,10 +1361,7 @@ class TestAuthInspect:
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch_session_login_dual(
-                "run_async",
-                side_effect=lambda c: c.send(None) if False else __import__("asyncio").run(c),
-            ),
+            patch_session_login_dual("run_async", side_effect=asyncio.run),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
         ):
             result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])

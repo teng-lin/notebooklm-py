@@ -108,11 +108,16 @@ class TestClearCommand:
         # Create context file
         context_data = {"notebook_id": "nb_to_clear", "title": "Clear Me"}
         mock_context_file.write_text(json.dumps(context_data))
+        assert mock_context_file.exists(), "Precondition: context file should exist"
 
         result = runner.invoke(cli, ["clear"])
 
         assert result.exit_code == 0
         assert "cleared" in result.output.lower() or "Context" in result.output
+        # Validate behaviour, not just exit/output: the context file must be
+        # gone (or empty) after the command runs. Without this, a regression
+        # that printed "cleared" but left the file in place would slip past.
+        assert not mock_context_file.exists() or not mock_context_file.read_text().strip()
 
     def test_clear_when_no_context(self, runner, mock_context_file):
         """Test clear command when no context exists."""

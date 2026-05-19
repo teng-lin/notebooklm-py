@@ -166,6 +166,11 @@ class TestLoginWindowsPermissions:
         with patch.dict("sys.modules", {"playwright": None, "playwright.sync_api": None}):
             runner.invoke(cli, ["login"])
 
+        # Guard against the assertion-block running vacuously: if no mkdir
+        # fired at all, the "no mode=" / "no chmod" checks below trivially
+        # pass even though we never exercised the Windows-skip code.
+        assert mkdir_calls, "Expected at least one mkdir call on the login path"
+
         # mkdir should NOT receive mode= on Windows
         for call in mkdir_calls:
             assert "mode" not in call["kwargs"], (
@@ -211,18 +216,25 @@ class TestLoginWindowsPermissions:
         chmod_700 = [c for c in chmod_calls if c["args"] == (0o700,)]
         assert len(chmod_700) >= 2, f"Expected ≥2 chmod(0o700) calls on Unix, got {len(chmod_700)}"
 
-    def test_windows_storage_chmod_skipped(self, monkeypatch, _patch_login_deps):
-        """On Windows, storage_state.json chmod(0o600) is also skipped."""
-        import notebooklm.cli.session as session_mod
+    def test_windows_storage_chmod_skipped(self, _patch_login_deps):
+        """On Windows, storage_state.json chmod(0o600) is also skipped.
 
-        monkeypatch.setattr(session_mod.sys, "platform", "win32")
-
-        # The code at line 280-282 checks sys.platform before chmod(0o600)
-        # Verify the guard exists by checking the source
+        The ``storage_state.json`` save path runs through
+        ``services.login._write_extracted_cookies`` (D1 PR-3 cutover moved the
+        body out of session.py). We verify the Windows guard exists by
+        grepping the source of that module — fragile compared to a behaviour
+        assertion, but the writer is wrapped in ``atomic_write_json`` which
+        intentionally hides the platform-dependent ``chmod`` from observers.
+        """
         import inspect
 
-        source = inspect.getsource(session_mod)
-        # The pattern: if sys.platform != "win32": ... storage_path.chmod(0o600)
+        import notebooklm.cli.services.login as login_service
+
+        source = inspect.getsource(login_service)
+        # The pattern: ``if sys.platform != "win32": storage_path.parent.chmod(0o700)``
+        # (see ``services/login.py`` around line 697). Either quote style is
+        # acceptable so the assertion survives style changes.
         assert 'sys.platform != "win32"' in source or "sys.platform != 'win32'" in source, (
-            "Missing Windows guard for storage_state.json chmod(0o600)"
+            "Missing Windows guard for storage_state.json chmod in "
+            "notebooklm.cli.services.login (moved from session.py in D1 PR-3)"
         )

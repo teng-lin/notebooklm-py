@@ -10,15 +10,6 @@ import pytest
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
-# Session-CLI test fixtures live in their own module so the seven
-# ``test_login*`` / ``test_use.py`` / ``test_session_edge_cases.py`` /
-# ``test_status_clear.py`` / ``test_auth_subcommands.py`` files split out
-# of the legacy ``test_session.py`` can share them by name without each
-# file re-importing fixtures (which trips Ruff F811 against the fixture-
-# parameter names). The plugin path is only valid at the top-level
-# ``tests/conftest.py`` per pytest's documented contract.
-pytest_plugins = ["unit.cli._session_helpers"]
-
 _PLAYWRIGHT_INSTALLED = importlib.util.find_spec("playwright") is not None
 
 

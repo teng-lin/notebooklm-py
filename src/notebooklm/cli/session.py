@@ -52,24 +52,9 @@ from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id
 from .runtime import run_async
 
-# D1 PR-3: direct re-imports from ``cli.services.login``.
-#
-# Pre-refactor, this module wrapped every helper in a per-call
-# ``_patched_login_service_dependencies`` context that copied test
-# monkeypatches forward into ``cli.services.login``. The wrapper machinery
-# (~350 LOC) existed solely to forward ``patch("notebooklm.cli.session.X")``
-# style monkeypatches into the underlying service module.
-#
-# After D1 PR-3, the re-imports below give the same patch surface — tests
-# that do ``patch("notebooklm.cli.session._foo", ...)`` rebind the module-
-# level name in ``session``'s namespace, and ``session``'s own code resolves
-# ``_foo`` through that namespace. Tests that need to override the
-# helpers' *internal* dependencies (e.g. ``services.login.NotebookLMClient``)
-# must now patch the service module directly — see ADR-008 + tests/_fixtures.
-# Many symbols below are not used in ``session.py`` directly — they exist as
-# patch-surface re-exports so ``patch("notebooklm.cli.session.<helper>")``
-# in existing tests continues to intercept calls that session.py's command
-# bodies make. Ruff F401 is suppressed on each unused-but-intentional import.
+# Direct re-imports replace the D1-PR-3-retired forwarding wrappers; see
+# ADR-008. Symbols not referenced in this module remain as patch-surface
+# re-exports for legacy ``patch("notebooklm.cli.session.X")`` test sites.
 from .services.login import (  # noqa: F401
     _INCLUDE_DOMAINS_ALL,
     _ROOKIEPY_BROWSER_ALIASES,
