@@ -326,30 +326,51 @@ class TestPokeConcurrencyThrottling:
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
-    async def test_concurrent_rotate_cookies_same_profile_share_single_post(
-        self, tmp_path, httpx_mock: HTTPXMock
-    ):
+    async def test_concurrent_rotate_cookies_same_profile_share_single_post(self, tmp_path):
         """Two layer-2-style direct ``_rotate_cookies`` calls on the same profile
         must share a single POST — verifies the atomic check-and-claim, not
         just the layer-1 async lock.
+
+        Uses a gate/entered handshake (same pattern as the sibling
+        ``test_l2_in_flight_claim_blocks_l1_short_circuit`` at L310) so the
+        first caller is parked mid-POST when the second arrives. The
+        previous version used ``asyncio.gather`` + ``httpx_mock`` and could
+        still pass if the first call refreshed the timestamp before the
+        second reached the claim path — non-deterministically weakening
+        the assertion (coderabbit finding on PR #834).
         """
         storage_path = tmp_path / "storage_state.json"
+        gate = asyncio.Event()
+        entered = asyncio.Event()
+        post_calls = 0
 
-        httpx_mock.add_response(url=_POKE_URL_RE, status_code=200, is_reusable=True)
-
-        async with httpx.AsyncClient() as client:
-            # Two L2-style direct callers. Neither holds the layer-1 async
-            # lock; the dedup must come from ``_try_claim_rotation``.
-            await asyncio.gather(
-                auth_module._rotate_cookies(client, storage_path),
-                auth_module._rotate_cookies(client, storage_path),
+        async def slow_post(*_args, **_kwargs):
+            nonlocal post_calls
+            post_calls += 1
+            entered.set()
+            await gate.wait()
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", auth_module.KEEPALIVE_ROTATE_URL),
             )
 
-        poke_requests = [r for r in httpx_mock.get_requests() if _POKE_URL_RE.match(str(r.url))]
-        assert len(poke_requests) == 1, (
-            f"two L2 callers on the same profile must coordinate via the atomic "
-            f"claim; got {len(poke_requests)} POSTs"
-        )
+        async with httpx.AsyncClient() as client:
+            client.post = slow_post  # type: ignore[method-assign]
+            task1 = asyncio.create_task(auth_module._rotate_cookies(client, storage_path))
+            # Wait for the first call to park inside slow_post (deterministic
+            # via the entered event — busy-waits flake on loaded CI runners).
+            await asyncio.wait_for(entered.wait(), timeout=2.0)
+            assert post_calls == 1, "first L2 task should be parked inside slow_post"
+            # Second L2 call now arrives while the first is mid-POST. The
+            # atomic check-and-claim in ``_try_claim_rotation`` must reject
+            # it without firing a second POST.
+            await auth_module._rotate_cookies(client, storage_path)
+            assert post_calls == 1, (
+                f"two L2 callers on the same profile must coordinate via the atomic "
+                f"claim; got {post_calls} POSTs"
+            )
+            gate.set()
+            await task1
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
