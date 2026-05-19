@@ -1,0 +1,95 @@
+"""Pin the ``__all__`` lists added in Tier 13 PR 13.9b.
+
+The Session/Kernel split (Tier 13) renamed several private modules out of the
+``_core_*`` namespace; PR 13.9b adds ``__all__`` to the collaborator modules
+that lacked one so the surface they expose to first-party callers (and test
+suites) is machine-checkable.
+
+These pins guard against silent surface drift (e.g. someone exports a new
+helper from ``_authed_transport`` without updating ``__all__`` or the
+migration doc). They are NOT public-API contracts — see
+``docs/stability.md`` for the public surface — but they pin the documented
+internal surface listed in ``docs/migration-tier-12-to-13.md``.
+"""
+
+from __future__ import annotations
+
+import notebooklm._authed_transport as authed_transport_module
+import notebooklm._conversation_cache as conversation_cache_module
+import notebooklm._cookie_persistence as cookie_persistence_module
+import notebooklm._rpc_executor as rpc_executor_module
+
+EXPECTED_AUTHED_TRANSPORT_ALL: list[str] = [
+    "MAX_RETRY_AFTER_SECONDS",
+    "MAX_RPC_RESPONSE_BYTES",
+    "AuthedTransport",
+    "_AuthedTransportHost",
+    "_AuthSnapshot",
+    "_BuildRequest",
+    "_PostBody",
+    "_TransportAuthExpired",
+    "_TransportRateLimited",
+    "_TransportServerError",
+    "_parse_retry_after",
+    "_stream_post_with_size_cap",
+]
+
+EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor", "RpcOwner"]
+
+EXPECTED_CONVERSATION_CACHE_ALL: list[str] = [
+    "MAX_CONVERSATION_CACHE_SIZE",
+    "ConversationCache",
+]
+
+EXPECTED_COOKIE_PERSISTENCE_ALL: list[str] = [
+    "CookiePersistence",
+    "SaveCookiesToStorage",
+]
+
+
+def _check_module_all(module: object, expected: list[str], label: str) -> None:
+    actual = list(module.__all__)
+    assert actual == expected, (
+        f"{label}.__all__ drifted from the audited list.\n"
+        f"missing: {sorted(set(expected) - set(actual))}\n"
+        f"extra:   {sorted(set(actual) - set(expected))}\n"
+        f"order:   actual={actual!r}\n"
+        f"          expected={expected!r}"
+    )
+    # Every name in __all__ must resolve on the module.
+    for name in expected:
+        assert hasattr(module, name), (
+            f"{label}.__all__ lists {name!r} but the module has no such attribute"
+        )
+
+
+def test_authed_transport_all_pinned() -> None:
+    _check_module_all(
+        authed_transport_module,
+        EXPECTED_AUTHED_TRANSPORT_ALL,
+        "notebooklm._authed_transport",
+    )
+
+
+def test_rpc_executor_all_pinned() -> None:
+    _check_module_all(
+        rpc_executor_module,
+        EXPECTED_RPC_EXECUTOR_ALL,
+        "notebooklm._rpc_executor",
+    )
+
+
+def test_conversation_cache_all_pinned() -> None:
+    _check_module_all(
+        conversation_cache_module,
+        EXPECTED_CONVERSATION_CACHE_ALL,
+        "notebooklm._conversation_cache",
+    )
+
+
+def test_cookie_persistence_all_pinned() -> None:
+    _check_module_all(
+        cookie_persistence_module,
+        EXPECTED_COOKIE_PERSISTENCE_ALL,
+        "notebooklm._cookie_persistence",
+    )

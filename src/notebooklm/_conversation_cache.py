@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["MAX_CONVERSATION_CACHE_SIZE", "ConversationCache"]
+
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Any

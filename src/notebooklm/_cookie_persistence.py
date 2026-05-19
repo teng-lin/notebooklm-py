@@ -1,6 +1,8 @@
-"""Cookie persistence collaborator for :mod:`notebooklm._core`."""
+"""Cookie persistence collaborator for :mod:`notebooklm._session`."""
 
 from __future__ import annotations
+
+__all__ = ["CookiePersistence", "SaveCookiesToStorage"]
 
 import threading
 from collections.abc import Awaitable, Callable

@@ -577,6 +577,11 @@ tracing where a particular ivar lives.
 Feature APIs depend on the shared `notebooklm._session_contracts.Session`
 Protocol rather than concrete session internals.
 
+If you previously imported from `notebooklm._core_*` modules, see
+[`docs/migration-tier-12-to-13.md`](migration-tier-12-to-13.md) for the
+Tier 12 → Tier 13 rename table. The legacy `notebooklm._core` import path
+still resolves via a compatibility shim.
+
 ---
 
 ## API Reference
