@@ -58,65 +58,66 @@ async def chat_aware_authed_post(
         parse_label: Caller-friendly label used in log lines and error
             messages (e.g. ``"chat.ask"``).
     """
-    operation_token = await core._begin_transport_post(parse_label)
+    # Drain admission lives in ``DrainMiddleware`` at the outermost chain
+    # position around ``_perform_authed_post`` — it reads ``log_label``
+    # from ``RpcRequest.context`` (passed below as ``parse_label``), so a
+    # drained client still surfaces ``RuntimeError`` with the chat-friendly
+    # label without explicit bracketing here.
     try:
-        try:
-            return await core._perform_authed_post(
-                build_request=build_request,
-                log_label=parse_label,
+        return await core._perform_authed_post(
+            build_request=build_request,
+            log_label=parse_label,
+        )
+    except _TransportAuthExpired as exc:
+        raise ChatError(
+            f"{parse_label} failed: authentication expired and refresh did not recover"
+        ) from exc
+    except _TransportRateLimited as exc:
+        raise ChatError(
+            f"{parse_label} rate-limited (HTTP 429)."
+            + (
+                f" Retry after {exc.retry_after} seconds."
+                if exc.retry_after is not None
+                else ""
             )
-        except _TransportAuthExpired as exc:
+        ) from exc
+    except _TransportServerError as exc:
+        if isinstance(exc.original, httpx.HTTPStatusError):
             raise ChatError(
-                f"{parse_label} failed: authentication expired and refresh did not recover"
+                f"{parse_label} failed with HTTP {exc.original.response.status_code} "
+                f"after retries: {exc.original}"
             ) from exc
-        except _TransportRateLimited as exc:
-            raise ChatError(
-                f"{parse_label} rate-limited (HTTP 429)."
-                + (
-                    f" Retry after {exc.retry_after} seconds."
-                    if exc.retry_after is not None
-                    else ""
-                )
+        # Network-layer failure (RequestError / Timeout).
+        # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
+        # ``_TransportServerError`` on the network path; this guard keeps
+        # the contract enforced under ``python -O`` (where ``assert``
+        # would be stripped) and gives a clear diagnostic if the
+        # invariant ever drifts.
+        if not isinstance(exc.original, httpx.RequestError):
+            raise TypeError(
+                f"Unexpected _TransportServerError.original type: {type(exc.original)}. "
+                "Expected httpx.HTTPStatusError or httpx.RequestError."
             ) from exc
-        except _TransportServerError as exc:
-            if isinstance(exc.original, httpx.HTTPStatusError):
-                raise ChatError(
-                    f"{parse_label} failed with HTTP {exc.original.response.status_code} "
-                    f"after retries: {exc.original}"
-                ) from exc
-            # Network-layer failure (RequestError / Timeout).
-            # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
-            # ``_TransportServerError`` on the network path; this guard keeps
-            # the contract enforced under ``python -O`` (where ``assert``
-            # would be stripped) and gives a clear diagnostic if the
-            # invariant ever drifts.
-            if not isinstance(exc.original, httpx.RequestError):
-                raise TypeError(
-                    f"Unexpected _TransportServerError.original type: {type(exc.original)}. "
-                    "Expected httpx.HTTPStatusError or httpx.RequestError."
-                ) from exc
-            # Preserve the timeout-specific message: TimeoutException is a
-            # subclass of RequestError, so without this branch read/connect
-            # timeouts would surface as a generic "network error after
-            # retries" line and lose the "timed out" signal callers rely on.
-            if isinstance(exc.original, httpx.TimeoutException):
-                raise NetworkError(
-                    f"{parse_label} timed out after retries: {exc.original}",
-                    original_error=exc.original,
-                ) from exc
+        # Preserve the timeout-specific message: TimeoutException is a
+        # subclass of RequestError, so without this branch read/connect
+        # timeouts would surface as a generic "network error after
+        # retries" line and lose the "timed out" signal callers rely on.
+        if isinstance(exc.original, httpx.TimeoutException):
             raise NetworkError(
-                f"{parse_label} network error after retries: {exc.original}",
+                f"{parse_label} timed out after retries: {exc.original}",
                 original_error=exc.original,
             ) from exc
-        except httpx.HTTPStatusError as exc:
-            # Non-5xx / non-401 / non-429 status errors fall through
-            # ``_perform_authed_post``'s "Anything else" branch (e.g. a 404
-            # or unhandled 4xx).
-            raise ChatError(
-                f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
-            ) from exc
-    finally:
-        await core._finish_transport_post(operation_token)
+        raise NetworkError(
+            f"{parse_label} network error after retries: {exc.original}",
+            original_error=exc.original,
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        # Non-5xx / non-401 / non-429 status errors fall through
+        # ``_perform_authed_post``'s "Anything else" branch (e.g. a 404
+        # or unhandled 4xx).
+        raise ChatError(
+            f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
+        ) from exc
     # NOTE: bare ``httpx.TimeoutException`` / ``httpx.RequestError``
     # handlers were removed here because ``_perform_authed_post`` always
     # either retries those errors or wraps them in

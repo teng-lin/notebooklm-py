@@ -111,6 +111,7 @@ from ._middleware import (
     RpcResponse,
     build_chain,
 )
+from ._middleware_drain import DrainMiddleware
 from ._middleware_metrics import MetricsMiddleware
 from ._middleware_tracing import TracingMiddleware
 from ._sources import fetch_source_ids
@@ -465,16 +466,17 @@ class ClientCore:
         # ``AuthedTransport.perform_authed_post`` (the shared seam covering
         # ``ClientCore._perform_authed_post`` here and ``RpcExecutor.execute``'s
         # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
-        # PR 12.3 added ``TracingMiddleware`` as the innermost entry; PR 12.4
-        # prepends ``MetricsMiddleware`` to its left, so the list now reads
-        # ``[Metrics, Tracing]``. Subsequent PRs 12.5–12.8 prepend each
-        # remaining middleware further left so the final list reads
+        # PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
+        # ``MetricsMiddleware``, and PR 12.5 prepends ``DrainMiddleware`` to
+        # the left of both, so the list now reads
+        # ``[Drain, Metrics, Tracing]``. Subsequent PRs 12.6–12.8 insert each
+        # remaining middleware BETWEEN ``Drain`` and ``Metrics`` so the
+        # final list reads
         # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
         # (outermost → innermost, per ADR-009 §"Chain ordering"). ``build_chain``
         # composes the leftmost entry as the outermost wrapper, so keeping
-        # ``TracingMiddleware`` at the RIGHT end of the list (and prepending
-        # new entries to the left) preserves Tracing as the innermost wrapper
-        # as later PRs grow the list.
+        # ``TracingMiddleware`` at the RIGHT end of the list preserves
+        # Tracing as the innermost wrapper as later PRs grow the list.
         #
         # The terminal adapter reads ``build_request`` / ``log_label`` /
         # ``disable_internal_retries`` from ``RpcRequest.context`` and
@@ -484,6 +486,7 @@ class ClientCore:
         # out of ``AuthedTransport``. See ADR-009 §"Per-request behavior"
         # and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
         self._middlewares: list[Middleware] = [
+            DrainMiddleware(self._drain_tracker),
             MetricsMiddleware(self._metrics_obj),
             TracingMiddleware(),
         ]
@@ -850,9 +853,9 @@ class ClientCore:
         ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
         on such a fixture would raise ``AttributeError``; this helper
         backfills both slots with the same shape ``__init__`` would have
-        constructed (``[MetricsMiddleware, TracingMiddleware]``-seeded
-        chain around the terminal adapter, matching the seed in
-        ``__init__``).
+        constructed (``[DrainMiddleware, MetricsMiddleware,
+        TracingMiddleware]``-seeded chain around the terminal adapter,
+        matching the seed in ``__init__``).
 
         Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
         :meth:`_ensure_observability_state` is — two threads observing
@@ -878,14 +881,16 @@ class ClientCore:
             if not hasattr(self, "_middlewares"):
                 # Mirror ``__init__``'s seeded chain: PR 12.3 lands
                 # ``TracingMiddleware`` as the innermost entry, PR 12.4
-                # prepends ``MetricsMiddleware`` to its left. A
-                # ``__new__``-built fixture must see the same chain shape so
-                # both telemetry channels (structured trace logs + RPC
+                # prepends ``MetricsMiddleware``, and PR 12.5 prepends
+                # ``DrainMiddleware`` outermost. A ``__new__``-built fixture
+                # must see the same chain shape so all three observability
+                # channels (drain admission, structured trace logs, RPC
                 # counters/events) are exercised on fixture-driven
                 # invocations too; otherwise the fixture path and the live
                 # path diverge in observability, which has previously
                 # hidden bugs in Tier-8 cassette-replay tests.
                 self._middlewares = [
+                    DrainMiddleware(self._drain_tracker),
                     MetricsMiddleware(self._metrics_obj),
                     TracingMiddleware(),
                 ]

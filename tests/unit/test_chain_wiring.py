@@ -8,8 +8,7 @@ PR 12.2 of the Tier-12/13 greenfield migration wires
 ``RpcRequest.context`` and delegates to
 :meth:`AuthedTransport.perform_authed_post` — the shared seam covering both
 :meth:`ClientCore._perform_authed_post` AND ``RpcExecutor.execute`` (which
-calls ``self._owner._perform_authed_post`` inside its retry loop in
-``_core_rpc.py``).
+calls ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
 
 These tests verify the wiring contract from
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160 and ADR-009
@@ -233,26 +232,29 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chain_seeded_with_metrics_then_tracing() -> None:
-    """``ClientCore.__init__`` seeds the chain with ``[Metrics, Tracing]``.
+async def test_chain_seeded_with_drain_metrics_tracing() -> None:
+    """``ClientCore.__init__`` seeds the chain with ``[Drain, Metrics, Tracing]``.
 
     PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
-    prepends ``MetricsMiddleware`` to its left. Order matters — Metrics is
-    outermore (it times the entire inner chain) and Tracing remains the
-    innermost wrapper around the transport leaf. Subsequent PRs 12.5–12.8
-    prepend their middleware further left so the final ordering reads
+    prepended ``MetricsMiddleware``; PR 12.5 prepends ``DrainMiddleware``
+    outermost. Order matters — Drain admits/finalizes the operation outside
+    all observability, Metrics times the inner chain, Tracing remains the
+    innermost wrapper around the transport leaf. PRs 12.6–12.8 insert their
+    middleware BETWEEN Drain and Metrics so the final ordering reads
     ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` per
     ADR-009. The list is exposed as ``self._middlewares`` so later PRs
     (and the cleanup audit in 12.9) can assert ordering by inspecting the
     production attribute directly.
     """
+    from notebooklm._middleware_drain import DrainMiddleware
     from notebooklm._middleware_metrics import MetricsMiddleware
     from notebooklm._middleware_tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._middlewares) == 2
-    assert isinstance(core._middlewares[0], MetricsMiddleware)
-    assert isinstance(core._middlewares[1], TracingMiddleware)
+    assert len(core._middlewares) == 3
+    assert isinstance(core._middlewares[0], DrainMiddleware)
+    assert isinstance(core._middlewares[1], MetricsMiddleware)
+    assert isinstance(core._middlewares[2], TracingMiddleware)
 
 
 @pytest.mark.asyncio

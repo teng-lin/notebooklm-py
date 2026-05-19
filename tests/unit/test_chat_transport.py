@@ -5,17 +5,21 @@ primitives. Each test injects a stub ``core`` whose ``_perform_authed_post``
 raises one of the transport-layer exceptions (or the raw ``httpx``
 status error) and asserts the function maps the failure to the expected
 ``ChatError`` / ``NetworkError`` shape, message, and exception chain.
-The drain-tracking bookkeeping (``_begin_transport_post`` /
-``_finish_transport_post``) is verified by checking the begin/finish
-call counts and the operation-token round-trip.
+
+As of Tier-12 PR 12.5 the drain-tracking bookkeeping
+(``_begin_transport_post`` / ``_finish_transport_post``) has moved into
+``DrainMiddleware`` at the outermost chain position around
+``_perform_authed_post``. ``chat_aware_authed_post`` no longer brackets
+its own ``_perform_authed_post`` call with explicit drain calls —
+admission and finalization are middleware concerns now. The tests
+correspondingly stub only ``_perform_authed_post`` on the core.
 
 The stub ``core`` is a lightweight ``SimpleNamespace`` rather than a
 ``MagicMock(spec=_ChatCore)`` so the tests stay independent of the
-protocol's exact member set — they only need the three transport
-primitives the function actually calls. After D2 cutover, the function
-will run against the real ``ClientCore``; this unit-test layer keeps
-the chat-side error mapping isolated from transport implementation
-details.
+protocol's exact member set — they only need the one transport
+primitive the function actually calls. The drain-fires-on-exception
+invariant is now covered by
+``tests/unit/test_drain_middleware.py::test_finish_fires_on_exception``.
 """
 
 from __future__ import annotations
@@ -40,9 +44,6 @@ from notebooklm.exceptions import ChatError, NetworkError
 # ---------------------------------------------------------------------------
 
 
-_SENTINEL_TOKEN = object()
-
-
 def _make_request() -> httpx.Request:
     return httpx.Request("POST", "https://example.test/x")
 
@@ -65,10 +66,12 @@ def _make_stub_core(
     (exception instance) or invoke a callable; pass ``perform_return_value``
     to make it return that response unchanged. Exactly one of the two
     should be supplied per test — they are mutually exclusive.
+
+    PR 12.5 lifted ``_begin_transport_post`` / ``_finish_transport_post``
+    into DrainMiddleware, so the stub no longer needs to mock them —
+    ``chat_aware_authed_post`` does not call them.
     """
     return SimpleNamespace(
-        _begin_transport_post=AsyncMock(return_value=_SENTINEL_TOKEN),
-        _finish_transport_post=AsyncMock(return_value=None),
         _perform_authed_post=AsyncMock(
             side_effect=perform_side_effect,
             return_value=perform_return_value,
@@ -99,8 +102,6 @@ async def test_chat_aware_authed_post_returns_response_and_balances_bookkeeping(
     )
 
     assert result is expected_response
-    core._begin_transport_post.assert_awaited_once_with("chat.ask")
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
     core._perform_authed_post.assert_awaited_once_with(
         build_request=_noop_build_request,
         log_label="chat.ask",
@@ -128,7 +129,6 @@ async def test_transport_auth_expired_maps_to_chat_error():
     assert "authentication expired" in str(excinfo.value).lower()
     assert "chat.ask" in str(excinfo.value)
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +160,6 @@ async def test_transport_rate_limited_with_retry_after_includes_retry_seconds():
     assert "HTTP 429" in message
     assert "Retry after 42 seconds" in message
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -187,7 +186,6 @@ async def test_transport_rate_limited_without_retry_after_omits_retry_clause():
     assert "HTTP 429" in message
     assert "Retry after" not in message  # No "Retry after N seconds" clause.
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +215,6 @@ async def test_transport_server_error_with_http_status_error_maps_to_chat_error(
     assert "HTTP 503" in message
     assert "after retries" in message
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -238,7 +235,6 @@ async def test_transport_server_error_with_request_error_maps_to_network_error()
     assert "timed out" not in message
     assert excinfo.value.original_error is original
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -262,7 +258,6 @@ async def test_transport_server_error_with_timeout_exception_keeps_timeout_messa
     assert "network error after retries" not in message
     assert excinfo.value.original_error is original
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 @pytest.mark.asyncio
@@ -293,7 +288,6 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
     # (per gemini-code-assist review on PR #832).
     assert "Expected httpx.HTTPStatusError or httpx.RequestError" in message
     assert excinfo.value.__cause__ is transport_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -321,29 +315,24 @@ async def test_raw_http_status_error_maps_to_chat_error():
     assert "HTTP 404" in message
     assert "chat.ask" in message
     assert excinfo.value.__cause__ is raw_exc
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)
 
 
 # ---------------------------------------------------------------------------
-# Finalization invariant
+# Finalization invariant (PR 12.5: moved into DrainMiddleware)
 # ---------------------------------------------------------------------------
+#
+# The pre-PR-12.5 contract that ``chat_aware_authed_post`` ran
+# ``_finish_transport_post`` in its own ``finally`` is no longer this
+# function's responsibility — drain admission/finalization moved into
+# ``DrainMiddleware`` at the outermost chain position. The exception-
+# path finalization invariant is now pinned by
+# ``tests/unit/test_drain_middleware.py::test_finish_fires_on_exception``,
+# which exercises a real ``TransportDrainTracker`` end-to-end rather
+# than mocking the bookkeeping.
+#
+# What remains here as a chat-specific invariant: the error-mapping
+# still raises ``ChatError`` even when the underlying transport raises.
+# The error-mapping tests above already cover that path
+# (`test_transport_auth_expired_maps_to_chat_error` exercises the same
+# transport exception used by the deleted finalization test).
 
-
-@pytest.mark.asyncio
-async def test_finish_transport_post_runs_even_when_perform_raises():
-    """The drain-tracking ``finish`` must always run in the ``finally``
-    clause; otherwise a chat-error path could leak in-flight counters."""
-    transport_exc = _TransportAuthExpired(
-        "auth expired",
-        original=_make_status_error(401),
-    )
-    core = _make_stub_core(perform_side_effect=transport_exc)
-
-    with pytest.raises(ChatError):
-        await chat_aware_authed_post(
-            core,  # type: ignore[arg-type]
-            build_request=_noop_build_request,
-            parse_label="chat.ask",
-        )
-
-    core._finish_transport_post.assert_awaited_once_with(_SENTINEL_TOKEN)

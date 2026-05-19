@@ -40,6 +40,7 @@ from .rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
+from .types import RpcTelemetryEvent
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +90,9 @@ class RpcOwner(Protocol):
         operation_variant: str | None = None,
     ) -> Any: ...
 
-    async def _begin_transport_post(self, log_label: str) -> Any: ...
-
-    async def _finish_transport_post(self, token: Any) -> None: ...
-
     def _increment_metrics(self, **increments: int | float) -> None: ...
+
+    async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None: ...
 
 
 class RpcExecutor:
@@ -165,19 +164,13 @@ class RpcExecutor:
                 operation_variant=operation_variant,
             )
 
-        method_name = getattr(method, "name", str(method))
-        operation_token = await self._owner._begin_transport_post(f"RPC {method_name}")
         self._owner._increment_metrics(rpc_calls_started=1)
-        # As of PR 12.4 the per-attempt latency counter, the
-        # ``rpc_calls_succeeded`` / ``rpc_calls_failed`` counters, and the
-        # ``emit_rpc_event`` fire live inside ``MetricsMiddleware`` (see
-        # ``_middleware_metrics.py`` + ADR-009 §"Chain ordering"). The chain
-        # is wrapped around ``_perform_authed_post``, so middleware
-        # observation covers the transport leg only — exactly what
-        # ``Session.rpc_call`` will own in Tier 13. The ``rpc_calls_started``
-        # increment + reqid + drain-token wiring stays here because those
-        # concerns live OUTSIDE the chain (they bracket the entire logical
-        # RPC including decode, not just the transport attempt).
+        # ``rpc_calls_started`` and reqid stay HERE (outside the chain)
+        # because they bracket the entire logical RPC including decode —
+        # the chain wraps only the transport leg. Per-attempt latency,
+        # ``rpc_calls_succeeded`` / ``rpc_calls_failed``, and
+        # ``emit_rpc_event`` live in ``MetricsMiddleware``; drain
+        # admission lives in ``DrainMiddleware``.
         _reqid_token = None if get_request_id() is not None else set_request_id()
         try:
             return await self._owner._rpc_call_impl(
@@ -192,7 +185,6 @@ class RpcExecutor:
         finally:
             if _reqid_token is not None:
                 reset_request_id(_reqid_token)
-            await self._owner._finish_transport_post(operation_token)
 
     async def execute(
         self,
