@@ -1,9 +1,11 @@
 """HTTP-client lifecycle helper for :class:`ClientCore`.
 
-Owns the HTTP-client lifecycle state and behavior that historically lived
-inline on ``ClientCore``:
+Owns the session-side open/close ordering that historically lived inline on
+``ClientCore`` while delegating the raw HTTP transport to
+:class:`notebooklm._kernel.Kernel`:
 
-* ``_http_client`` — the live ``httpx.AsyncClient`` (or ``None`` when closed).
+* ``_http_client`` — compatibility property backed by the concrete Kernel's
+  live ``httpx.AsyncClient`` (or ``None`` when closed).
 * ``_bound_loop`` — the event loop ``open()`` ran on; the cross-loop affinity
   guard in :meth:`ClientCore._perform_authed_post` (via
   :class:`AuthedTransport`) compares against this captured reference.
@@ -31,10 +33,10 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
   is a no-op, preserving the legacy ``ClientCore.open()`` contract.
 
 * :meth:`close` cancellation ordering: stop keepalive → drain poll tasks →
-  save cookies → shielded ``aclose()`` → null out ``_http_client``. Reversing
-  any of these reintroduces the leak modes ``test_core_close.py`` pins down.
-  The shielded ``aclose()`` is critical: without it, a ``CancelledError``
-  arriving mid-close leaks the underlying httpx transport.
+  save cookies → shielded Kernel ``aclose()``. Reversing any of these
+  reintroduces the leak modes ``test_core_close.py`` pins down. The shielded
+  ``aclose()`` is critical: without it, a ``CancelledError`` arriving
+  mid-close leaks the underlying httpx transport.
 
 * :meth:`open` no longer wraps the inner transport for synthetic-error
   injection — Tier-12 PR 12.6 lifted that path into the chain
@@ -58,8 +60,8 @@ Field names (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
 ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
 ``_connect_timeout``, ``_limits``) deliberately mirror the legacy
 ``ClientCore`` ivars so the compat ``@property`` bridges on ``ClientCore``
-can delegate via ``return self._lifecycle._<attr>`` and stay readable for
-reviewers grepping the codebase.
+can stay readable for reviewers grepping the codebase. ``_http_client`` is now
+a property bridge to the Kernel rather than lifecycle-owned storage.
 """
 
 from __future__ import annotations
@@ -71,7 +73,8 @@ from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
-from .auth import AuthTokens, build_cookie_jar
+from ._kernel import Kernel
+from .auth import AuthTokens
 
 if TYPE_CHECKING:
     from ._core_auth import AuthRefreshCoordinator
@@ -136,7 +139,9 @@ class ClientLifecycle:
         limits: ConnectionLimits,
         keepalive_interval: float | None,
         keepalive_storage_path: Path | None,
+        kernel: Kernel | None = None,
     ) -> None:
+        self._kernel = kernel if kernel is not None else Kernel()
         self._timeout: float = timeout
         self._connect_timeout: float = connect_timeout
         # ``ConnectionLimits`` is constructed by the caller (``ClientCore``
@@ -150,10 +155,19 @@ class ClientLifecycle:
         # stays in one place — the seam helper.
         self._keepalive_interval: float | None = keepalive_interval
         self._keepalive_storage_path: Path | None = keepalive_storage_path
-        # Lazily set inside :meth:`open` / nulled inside :meth:`close`.
-        self._http_client: httpx.AsyncClient | None = None
+        # The live HTTP client is owned by ``self._kernel``. The
+        # ``_http_client`` property below preserves the historical lifecycle
+        # attribute for tests and private callers that probe it directly.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
+
+    @property
+    def _http_client(self) -> httpx.AsyncClient | None:
+        return self._kernel.http_client
+
+    @_http_client.setter
+    def _http_client(self, value: httpx.AsyncClient | None) -> None:
+        self._kernel.http_client = value
 
     # ------------------------------------------------------------------
     # State accessors
@@ -218,40 +232,16 @@ class ClientLifecycle:
         # legacy ``self._draining = False`` line.
         host._drain_tracker._draining = False
 
-        # Use granular timeouts: shorter connect timeout helps detect network
-        # issues faster, while longer read/write timeouts accommodate slow
-        # responses.
-        timeout = httpx.Timeout(
-            connect=self._connect_timeout,
-            read=self._timeout,
-            write=self._timeout,
-            pool=self._timeout,
+        # Delegate HTTP-client construction and open-time cookie baseline
+        # capture to the concrete transport kernel. The lifecycle still owns
+        # loop binding and open/close ordering.
+        await self._kernel.open(
+            auth=host.auth,
+            timeout=self._timeout,
+            connect_timeout=self._connect_timeout,
+            limits=self._limits,
+            capture_cookie_snapshot=host.cookie_persistence.capture_open_snapshot,
         )
-
-        # Build cookies jar for cross-domain redirect support. Use the
-        # pre-built jar if available, otherwise build one from the persisted
-        # cookie list (or storage_path).
-        cookies = host.auth.cookie_jar or build_cookie_jar(
-            cookies=host.auth.cookies,
-            storage_path=host.auth.storage_path,
-        )
-
-        self._http_client = httpx.AsyncClient(
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            },
-            cookies=cookies,
-            timeout=timeout,
-            follow_redirects=True,
-            limits=self._limits.to_httpx_limits(),
-        )
-
-        # Capture the open-time snapshot AFTER the AsyncClient is built (httpx
-        # normalizes domains on ingest) but BEFORE any rotation could possibly
-        # fire. When AuthTokens carries a snapshot from a failed pre-client
-        # save, keep it so the unpersisted delta can be retried instead of
-        # treating the already-mutated jar as clean.
-        host.cookie_persistence.capture_open_snapshot(self._http_client.cookies)
 
         # Spawn the keepalive task once the client is ready.
         if self._keepalive_interval is not None:
@@ -346,7 +336,7 @@ class ClientLifecycle:
                     # naturally with any keepalive save still finishing in a
                     # worker thread — close() owns the freshest jar and must
                     # win, not the older snapshot.
-                    await self.save_cookies(host, self._http_client.cookies)
+                    await self.save_cookies(host, self._kernel.cookies)
                 except Exception as e:
                     logger.warning("Failed to sync refreshed cookies during close: %s", e)
         finally:
@@ -356,9 +346,8 @@ class ClientLifecycle:
                     # the transport. The shielded aclose runs to completion;
                     # ``self._http_client = None`` then makes ``is_open``
                     # return False correctly.
-                    await asyncio.shield(self._http_client.aclose())
+                    await asyncio.shield(self._kernel.aclose())
                 finally:
-                    self._http_client = None
                     # Null out the transport collaborators so a follow-up
                     # ``open()`` rebuilds them against the new
                     # ``httpx.AsyncClient`` (the old ones close over the

@@ -10,11 +10,14 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
 from .exceptions import RPCResponseTooLargeError
+
+if TYPE_CHECKING:
+    from ._kernel import Kernel
 
 # Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
 # so a malicious or buggy server can't force a multi-hour pause.
@@ -205,6 +208,7 @@ async def _stream_post_with_size_cap(
 
 
 class _AuthedTransportHost(Protocol):
+    _kernel: Kernel
     _http_client: httpx.AsyncClient | None
     _bound_loop: asyncio.AbstractEventLoop | None
     _refresh_callback: Callable[[], Awaitable[Any]] | None
@@ -258,7 +262,6 @@ class AuthedTransport:
         host = self._host
         if host._http_client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
-        client = host._http_client
 
         # Event-loop affinity guard. Placed before
         # semaphore acquisition so cross-loop misuse never reserves a slot.
@@ -319,11 +322,10 @@ class AuthedTransport:
                 # is invoked before any body chunk is read so the chain
                 # middlewares see the same :class:`httpx.HTTPStatusError`
                 # they did when this used ``client.post``.
-                response = await _stream_post_with_size_cap(
-                    client,
+                response = await host._kernel.post(
                     url,
-                    body=body,
                     headers=headers,
+                    body=body,
                 )
             except (httpx.HTTPStatusError, httpx.RequestError) as exc:
                 # --- 429: raise for ``RetryMiddleware`` to catch --------

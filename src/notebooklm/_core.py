@@ -104,6 +104,7 @@ from ._core_transport import (
 from ._core_transport import (
     _TransportServerError as _TransportServerError,
 )
+from ._kernel import Kernel
 from ._middleware import (
     Middleware,
     NextCall,
@@ -424,10 +425,9 @@ class ClientCore:
         # inter-helper contract for the upcoming B2/C1 extractions; do not
         # rename.
         self._auth_coord = AuthRefreshCoordinator(refresh_callback=refresh_callback)
-        # HTTP-client lifecycle — owns ``_http_client``, ``_bound_loop``,
-        # ``_keepalive_task``, ``_keepalive_interval``,
-        # ``_keepalive_storage_path``, ``_timeout``, ``_connect_timeout``,
-        # ``_limits``. Compat properties further down preserve the legacy
+        # HTTP-client lifecycle — owns loop binding, keepalive, and close
+        # ordering while delegating the live ``httpx.AsyncClient`` to
+        # ``self._kernel``. Compat properties further down preserve the legacy
         # ivar names. The ``_resolve_keepalive_interval`` clamp now lives in
         # :mod:`notebooklm._core_helpers` and is re-exported above so
         # ``from notebooklm._core import _resolve_keepalive_interval`` keeps
@@ -451,12 +451,14 @@ class ClientCore:
         _resolved_storage_path: Path | None = (
             keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
         )
+        self._kernel = Kernel(async_client_factory=httpx.AsyncClient)
         self._lifecycle = ClientLifecycle(
             timeout=timeout,
             connect_timeout=connect_timeout,
             limits=_resolved_limits,
             keepalive_interval=_resolve_keepalive_interval(keepalive, keepalive_min_interval),
             keepalive_storage_path=_resolved_storage_path,
+            kernel=self._kernel,
         )
         # Owns the in-process save lock and open-time cookie baseline while
         # compatibility properties below keep the legacy private attribute
@@ -741,12 +743,14 @@ class ClientCore:
                 # Lazy import to break the types.py -> _core.py cycle.
                 from .types import ConnectionLimits
 
+                self._kernel = Kernel(async_client_factory=httpx.AsyncClient)
                 self._lifecycle = ClientLifecycle(
                     timeout=DEFAULT_TIMEOUT,
                     connect_timeout=DEFAULT_CONNECT_TIMEOUT,
                     limits=ConnectionLimits(),
                     keepalive_interval=None,
                     keepalive_storage_path=None,
+                    kernel=self._kernel,
                 )
 
     @property
@@ -1449,6 +1453,20 @@ class ClientCore:
         result = await self._authed_post_chain(request)
         return result.response
 
+    async def transport_post(
+        self,
+        build_request: _BuildRequest,
+        parse_label: str,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> httpx.Response:
+        """Session transport facade required by the Tier-13 contract."""
+        return await self._perform_authed_post(
+            build_request=build_request,
+            log_label=parse_label,
+            disable_internal_retries=disable_internal_retries,
+        )
+
     async def _await_refresh(self) -> None:
         """Run / join the shared refresh task.
 
@@ -1570,9 +1588,8 @@ class ClientCore:
         Raises:
             RuntimeError: If client is not initialized.
         """
-        if not self._http_client:
-            raise RuntimeError("Client not initialized. Use 'async with' context.")
-        return self._http_client
+        self._ensure_lifecycle()
+        return self._kernel.get_http_client()
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Extract all source IDs from a notebook.
