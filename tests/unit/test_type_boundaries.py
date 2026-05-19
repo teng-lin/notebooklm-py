@@ -23,6 +23,7 @@ PUBLIC_DOC_ROOTS = (PROJECT_ROOT / "README.md", PROJECT_ROOT / "docs")
 INTERNAL_ARCHITECTURE_DOCS = {
     PROJECT_ROOT / "docs" / "development.md",
     PROJECT_ROOT / "docs" / "rpc-development.md",
+    PROJECT_ROOT / "docs" / "migration-tier-12-to-13.md",
 }
 
 # Add names here only for explicit facade wrappers that must keep a public
