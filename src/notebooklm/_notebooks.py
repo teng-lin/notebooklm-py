@@ -209,9 +209,14 @@ class NotebooksAPI:
             notebook_id: The notebook ID.
 
         Returns:
-            List of source IDs. Empty list if no sources or on error.
+            List of source IDs. Empty list when the notebook has no sources or
+            when get_source_ids encounters a schema/validation mismatch while
+            extracting IDs.
 
         Note:
+            RPC, auth, and network errors raised by ``get_raw()`` propagate to
+            the caller; only local source-shape validation failures are caught
+            below and converted to an empty list.
             Source IDs are triple-nested in RPC responses: ``source[0][0]``
             contains the ID.
         """
