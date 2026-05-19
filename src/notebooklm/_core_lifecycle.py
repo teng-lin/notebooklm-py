@@ -186,6 +186,10 @@ class ClientLifecycle:
         """
         return self._bound_loop
 
+    def get_http_client(self) -> httpx.AsyncClient:
+        """Return the live HTTP client via the concrete Kernel."""
+        return self._kernel.get_http_client()
+
     # ------------------------------------------------------------------
     # Open / close
     # ------------------------------------------------------------------

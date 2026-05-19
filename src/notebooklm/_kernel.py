@@ -38,7 +38,10 @@ class Kernel:
 
     @property
     def cookies(self) -> httpx.Cookies:
-        """Return the live HTTP client's cookie jar."""
+        """Return the live HTTP client's cookie jar.
+
+        Raises ``RuntimeError`` if called before :meth:`open`.
+        """
         return self.get_http_client().cookies
 
     def get_http_client(self) -> httpx.AsyncClient:
@@ -57,6 +60,8 @@ class Kernel:
         capture_cookie_snapshot: Callable[[httpx.Cookies], object],
     ) -> None:
         """Build the HTTP client and capture its normalized cookie baseline."""
+        # ClientLifecycle owns the primary idempotency guard. Keep this
+        # secondary guard so direct Kernel callers also preserve the live client.
         if self._http_client is not None:
             return
 

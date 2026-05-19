@@ -1461,6 +1461,8 @@ class ClientCore:
         disable_internal_retries: bool = False,
     ) -> httpx.Response:
         """Session transport facade required by the Tier-13 contract."""
+        # ``Session`` exposes ``parse_label`` for the later feature retype.
+        # The existing transport leaf still calls the same value ``log_label``.
         return await self._perform_authed_post(
             build_request=build_request,
             log_label=parse_label,
@@ -1589,7 +1591,7 @@ class ClientCore:
             RuntimeError: If client is not initialized.
         """
         self._ensure_lifecycle()
-        return self._kernel.get_http_client()
+        return self._lifecycle.get_http_client()
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Extract all source IDs from a notebook.

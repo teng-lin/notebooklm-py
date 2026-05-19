@@ -33,7 +33,35 @@ async def test_open_builds_http_client_and_captures_live_cookie_snapshot() -> No
     )
     try:
         assert kernel.http_client is not None
-        assert captured == [kernel.cookies]
+        assert len(captured) == 1
+        assert captured[0] is kernel.cookies
+    finally:
+        await kernel.aclose()
+
+
+@pytest.mark.asyncio
+async def test_open_is_idempotent() -> None:
+    kernel = Kernel()
+    captured: list[httpx.Cookies] = []
+
+    await kernel.open(
+        auth=_auth_tokens(),
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        capture_cookie_snapshot=captured.append,
+    )
+    first_client = kernel.http_client
+    await kernel.open(
+        auth=_auth_tokens(),
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        capture_cookie_snapshot=captured.append,
+    )
+    try:
+        assert kernel.http_client is first_client
+        assert len(captured) == 1
     finally:
         await kernel.aclose()
 
