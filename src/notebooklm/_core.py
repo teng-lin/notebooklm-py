@@ -22,4 +22,6 @@ is_auth_error = _session.is_auth_error
 save_cookies_to_storage = _session.save_cookies_to_storage
 _rotate_cookies = _session._rotate_cookies
 
-__all__ = sorted(name for name in globals() if not name.startswith("__"))
+# Named private imports are preserved as attributes on this compatibility
+# module, but star-imports should not advertise underscore-prefixed internals.
+__all__ = sorted(name for name in globals() if not name.startswith("_"))

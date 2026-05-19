@@ -382,7 +382,7 @@ def test_new_backfill_in_flight_setter_writethrough_succeeds() -> None:
 
 
 @pytest.mark.asyncio
-async def test_clientcore_drain_facade_delegates_to_tracker() -> None:
+async def test_session_drain_facade_delegates_to_tracker() -> None:
     """A real ``Session`` instance must route ``drain`` through the tracker.
 
     Construction via ``__new__`` keeps the test off the full ``__init__``

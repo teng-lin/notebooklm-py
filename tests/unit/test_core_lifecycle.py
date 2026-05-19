@@ -422,7 +422,7 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
         await lifecycle.close(host)
 
 
-def test_bound_loop_mismatch_via_clientcore_raises_runtime_error() -> None:
+def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
     """Cross-loop reuse of a single :class:`Session` raises a clean
     ``RuntimeError`` on the second loop's first authed POST.
 
