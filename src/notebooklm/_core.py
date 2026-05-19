@@ -466,12 +466,13 @@ class ClientCore:
         # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
         # PR 12.3 lands ``TracingMiddleware`` as the innermost (and currently
         # only) entry; subsequent PRs 12.4–12.8 prepend each remaining
-        # middleware in chain-order so the final list reads
+        # middleware to the LEFT of this list so the final list reads
         # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
         # (outermost → innermost, per ADR-009 §"Chain ordering"). ``build_chain``
-        # composes the leftmost entry as the outermost wrapper, so appending
-        # to the right of ``TracingMiddleware`` keeps Tracing innermost as
-        # later PRs grow the list.
+        # composes the leftmost entry as the outermost wrapper, so keeping
+        # ``TracingMiddleware`` at the RIGHT end of the list (and prepending
+        # new entries to the left) preserves Tracing as the innermost wrapper
+        # as later PRs grow the list.
         #
         # The terminal adapter reads ``build_request`` / ``log_label`` /
         # ``disable_internal_retries`` from ``RpcRequest.context`` and
