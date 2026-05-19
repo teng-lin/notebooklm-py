@@ -41,8 +41,8 @@ import threading
 import httpx
 import pytest
 
-from notebooklm import auth as auth_mod
 from _fixtures import patch_auth_seam
+from notebooklm import auth as auth_mod
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
 # integration-tree enforcement hook in ``tests/integration/conftest.py``.

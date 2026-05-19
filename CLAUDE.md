@@ -103,7 +103,7 @@ RPC Layer (rpc/)
 | `_artifacts.py` | `client.artifacts` API |
 | `_chat.py` | `client.chat` API |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — re-exports + `_AuthFacadeModule` shim that forwards monkeypatches to `_auth/*` seams |
+| `auth.py` | Authentication facade — flat re-exports from `_auth/*` seams (ADR-003 Superseded: `_AuthFacadeModule` retired in D1 PR-2; tests use `tests/_fixtures.patch_auth_seam` for seam-write-through) |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/headers.py` | HTTP header construction |
@@ -122,7 +122,7 @@ RPC Layer (rpc/)
 src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── client.py                    # NotebookLMClient
-├── auth.py                      # Authentication facade — re-exports + _AuthFacadeModule shim
+├── auth.py                      # Authentication facade — flat re-exports from _auth/* (no write-through; ADR-003 Superseded)
 ├── types.py                     # Dataclasses
 ├── _core.py                     # Core orchestration (NotebookLMClient internals)
 ├── _core_constants.py           # DEFAULT_* knobs + module-level constants

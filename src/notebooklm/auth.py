@@ -482,10 +482,11 @@ _REFRESH_ATTEMPTED_ENV = _auth_paths._REFRESH_ATTEMPTED_ENV
 # previously module-level on ``notebooklm.auth`` (constants, the per-loop /
 # per-profile lock registry, the public ``KEEPALIVE_ROTATE_URL`` listed in
 # ``__all__``, and white-box helpers like ``_poke_session`` /
-# ``_rotate_cookies``) keeps resolving against this module. The
-# ``_AuthFacadeModule`` write-through above mirrors monkeypatched values back
-# to the moved module so the bare-name lookups inside the moved bodies still
-# observe the patch.
+# ``_rotate_cookies``) keeps resolving against this module. Tests that
+# need to substitute a moved body should patch the seam directly via
+# ``tests/_fixtures/auth_seam.py::patch_auth_seam`` — production code no
+# longer mirrors writes (``_AuthFacadeModule`` retired in D1 PR-2,
+# ADR-003).
 KEEPALIVE_ROTATE_URL = _auth_keepalive.KEEPALIVE_ROTATE_URL
 _KEEPALIVE_ROTATE_HEADERS = _auth_keepalive._KEEPALIVE_ROTATE_HEADERS
 _KEEPALIVE_ROTATE_BODY = _auth_keepalive._KEEPALIVE_ROTATE_BODY
@@ -519,12 +520,11 @@ _rotation_lock_path = _auth_paths._rotation_lock_path
 # (``fetch_tokens`` + ``fetch_tokens_with_domains`` listed in ``__all__``) and
 # the white-box surface (lock registries, ContextVar, ``_run_refresh_cmd``
 # carrying the tier-9 E (P1-18) redaction logic, etc.) keep resolving against
-# ``notebooklm.auth``. The ``_AuthFacadeModule`` write-through above mirrors
-# monkeypatched values back to the moved module so existing test patterns
-# (``monkeypatch.setattr(auth_mod, "_run_refresh_cmd", fake)``,
-# ``..., "_fetch_tokens_with_jar"``, ``..., "_get_refresh_lock"``,
-# ``..., "snapshot_cookie_jar"``, ``..., "build_httpx_cookies_from_storage"``)
-# keep working.
+# ``notebooklm.auth``. Tests that need to substitute a moved body should
+# patch the seam directly via
+# ``tests/_fixtures/auth_seam.py::patch_auth_seam`` — production code no
+# longer mirrors writes (``_AuthFacadeModule`` retired in D1 PR-2,
+# ADR-003).
 _REFRESH_ATTEMPTED_CONTEXT = _auth_refresh._REFRESH_ATTEMPTED_CONTEXT
 _REFRESH_STATE_LOCK = _auth_refresh._REFRESH_STATE_LOCK
 _REFRESH_LOCKS_BY_LOOP = _auth_refresh._REFRESH_LOCKS_BY_LOOP
