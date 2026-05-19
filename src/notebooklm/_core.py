@@ -103,6 +103,7 @@ from ._core_transport import (
     _TransportServerError as _TransportServerError,
 )
 from ._kernel import Kernel
+from ._loop_affinity import assert_bound_loop
 from ._middleware import (
     Middleware,
     NextCall,
@@ -118,7 +119,6 @@ from ._middleware_retry import RetryMiddleware
 from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY, SemaphoreMiddleware
 from ._middleware_tracing import TracingMiddleware
 from ._polling_registry import PendingPolls, PollRegistry
-from ._sources import fetch_source_ids
 
 # ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
 # so existing ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
@@ -1063,6 +1063,10 @@ class ClientCore:
         loop = lifecycle.get_bound_loop()
         return loop if isinstance(loop, asyncio.AbstractEventLoop) else None
 
+    def assert_bound_loop(self) -> None:
+        """Raise if this core is used from a loop other than its open-time loop."""
+        assert_bound_loop(self.bound_loop)
+
     def _record_lock_wait(self, wait_seconds: float) -> None:
         self._ensure_observability_state()
         self._metrics_obj.record_lock_wait(wait_seconds)
@@ -1615,18 +1619,3 @@ class ClientCore:
         """
         self._ensure_lifecycle()
         return self._lifecycle.get_http_client()
-
-    async def get_source_ids(self, notebook_id: str) -> list[str]:
-        """Extract all source IDs from a notebook.
-
-        Thin facade over :func:`notebooklm._sources.fetch_source_ids` —
-        retained on :class:`ClientCore` because first-party callers and the
-        test suite continue to invoke ``core.get_source_ids(...)``.
-
-        Args:
-            notebook_id: The notebook ID.
-
-        Returns:
-            List of source IDs. Empty list if no sources or on error.
-        """
-        return await fetch_source_ids(self, notebook_id)

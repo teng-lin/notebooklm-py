@@ -273,9 +273,13 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
         )
         self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
-        self.artifacts = ArtifactsAPI(self._core, storage_path=storage_path)
+        self.artifacts = ArtifactsAPI(
+            self._core,
+            storage_path=storage_path,
+            notebooks=self.notebooks,
+        )
         self.notes = NotesAPI(self._core)
-        self.chat = ChatAPI(self._core)
+        self.chat = ChatAPI(self._core, notebooks=self.notebooks)
         self.research = ResearchAPI(self._core)
         self.settings = SettingsAPI(self._core)
         self.sharing = SharingAPI(self._core)

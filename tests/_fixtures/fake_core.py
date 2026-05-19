@@ -119,6 +119,7 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         "record_upload_queue_wait": MagicMock(return_value=None),
         # LoopAffinityProvider — None is the silent-no-op value
         "bound_loop": None,
+        "assert_bound_loop": MagicMock(return_value=None),
         # Auth-route helper alias
         "_route_url": MagicMock(return_value="https://notebooklm.google.com/_/.../batchexecute"),
     }

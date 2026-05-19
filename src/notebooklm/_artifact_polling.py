@@ -12,7 +12,6 @@ from typing import Any, Protocol
 from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
 from ._capabilities import LoopAffinityProvider, TransportOperationProvider
-from ._loop_affinity import assert_bound_loop
 from ._polling_registry import PollRegistry
 from .rpc import (
     ArtifactStatus,
@@ -159,7 +158,7 @@ class ArtifactPollingService:
         # P0-2: catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
         # loop) or spawning a poll task on a foreign loop.
-        assert_bound_loop(self._capabilities.bound_loop)
+        self._capabilities.assert_bound_loop()
         # Backward compatibility: poll_interval overrides initial_interval.
         if poll_interval is not None:
             import warnings

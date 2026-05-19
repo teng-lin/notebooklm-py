@@ -11,10 +11,13 @@ from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
 class _FakeTransportProvider:
     # ``ArtifactPollingService.wait_for_completion`` calls
-    # ``assert_bound_loop(self._capabilities.bound_loop)`` (P0-2). ``None``
+    # ``self._capabilities.assert_bound_loop()`` (P0-2). ``None``
     # is the documented silent-no-op value for the affinity helper, so
     # this stub stays correct without binding to a real loop.
     bound_loop = None
+
+    def assert_bound_loop(self) -> None:
+        return None
 
     def __init__(
         self,
@@ -74,6 +77,7 @@ def api():
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.bound_loop = None
+    core.assert_bound_loop = MagicMock(return_value=None)
     notes_api = MagicMock()
     return ArtifactsAPI(core, notes_api)
 
@@ -363,6 +367,7 @@ async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.bound_loop = None
+    core.assert_bound_loop = MagicMock(return_value=None)
     api = ArtifactsAPI(core, MagicMock())
 
     poll_started = asyncio.Event()

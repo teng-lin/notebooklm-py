@@ -2,7 +2,7 @@
 
 Tests that source_ids are correctly handled when:
 1. Explicitly passed (subset of sources)
-2. None (uses all sources via core.get_source_ids)
+2. None (uses all sources via NotebooksAPI.get_source_ids)
 
 Verifies correct encoding of source IDs in RPC parameters:
 - source_ids_triple = [[[sid]] for sid in source_ids]
@@ -52,7 +52,6 @@ def mock_core(monkeypatch):
         return core.rpc_call.return_value
 
     core.rpc_call.side_effect = _rpc_call_dispatch
-    core.get_source_ids = AsyncMock(return_value=[])
     core.auth = MagicMock()
     core.auth.csrf_token = "test_csrf"
     core.auth.session_id = "test_session"
@@ -63,6 +62,7 @@ def mock_core(monkeypatch):
     core._reqid_counter = 0
     core.next_reqid = AsyncMock(return_value=100000)
     core.bound_loop = None
+    core.assert_bound_loop = MagicMock(return_value=None)
     core.get_http_client = MagicMock()
 
     # Default ``chat_aware_authed_post`` stub: invokes the caller-supplied
@@ -103,6 +103,13 @@ def mock_core(monkeypatch):
     monkeypatch.setattr("notebooklm._chat.chat_aware_authed_post", chat_post_mock)
     core._chat_aware_authed_post_mock = chat_post_mock
     return core
+
+
+@pytest.fixture
+def mock_notebooks_api():
+    notebooks = MagicMock()
+    notebooks.get_source_ids = AsyncMock(return_value=[])
+    return notebooks
 
 
 @pytest.fixture
@@ -148,12 +155,12 @@ class TestChatSourceSelection:
         assert "src_002" in body
 
     @pytest.mark.asyncio
-    async def test_ask_with_none_fetches_all_sources(self, mock_core):
+    async def test_ask_with_none_fetches_all_sources(self, mock_core, mock_notebooks_api):
         """Test ask() with source_ids=None fetches all sources."""
-        api = ChatAPI(mock_core)
+        api = ChatAPI(mock_core, notebooks=mock_notebooks_api)
 
         # Mock get_source_ids to return source IDs
-        mock_core.get_source_ids.return_value = ["src_001", "src_002", "src_003"]
+        mock_notebooks_api.get_source_ids.return_value = ["src_001", "src_002", "src_003"]
 
         result = await api.ask(
             notebook_id="nb_123",
@@ -163,8 +170,8 @@ class TestChatSourceSelection:
 
         assert result.answer == "Default answer long enough to be valid."
 
-        # Verify get_source_ids was called on core
-        mock_core.get_source_ids.assert_called_once_with("nb_123")
+        # Verify get_source_ids was called on notebooks API
+        mock_notebooks_api.get_source_ids.assert_called_once_with("nb_123")
 
     @pytest.mark.asyncio
     async def test_ask_source_encoding_format(self, mock_core):
@@ -247,12 +254,14 @@ class TestArtifactsSourceSelection:
         assert source_ids_double == [["src_001"], ["src_002"]]
 
     @pytest.mark.asyncio
-    async def test_generate_audio_with_none_fetches_all_sources(self, mock_core, mock_notes_api):
+    async def test_generate_audio_with_none_fetches_all_sources(
+        self, mock_core, mock_notes_api, mock_notebooks_api
+    ):
         """Test generate_audio with source_ids=None fetches all sources."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api, notebooks=mock_notebooks_api)
 
         # Mock get_source_ids to return source IDs
-        mock_core.get_source_ids.return_value = ["src_001", "src_002"]
+        mock_notebooks_api.get_source_ids.return_value = ["src_001", "src_002"]
 
         # Mock the generation RPC call
         mock_core.rpc_call.return_value = [["artifact_123", "Audio", 1, None, 1]]
@@ -265,7 +274,7 @@ class TestArtifactsSourceSelection:
         assert result.task_id == "artifact_123"
 
         # Verify get_source_ids was called
-        mock_core.get_source_ids.assert_called_once_with("nb_123")
+        mock_notebooks_api.get_source_ids.assert_called_once_with("nb_123")
 
         # Verify CREATE_ARTIFACT RPC was called with fetched source IDs
         mock_core.rpc_call.assert_called_once()
@@ -588,12 +597,14 @@ class TestArtifactsSourceSelection:
         assert source_ids_triple == [[["src_table_1"]], [["src_table_2"]]]
 
     @pytest.mark.asyncio
-    async def test_generate_mind_map_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_mind_map_source_encoding(
+        self, mock_core, mock_notes_api, mock_notebooks_api
+    ):
         """Test generate_mind_map has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, mock_notes_api, notebooks=mock_notebooks_api)
 
         # Mock get_source_ids to return source IDs
-        mock_core.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
+        mock_notebooks_api.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
 
         # Mock the mind map generation RPC call
         mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
@@ -604,7 +615,7 @@ class TestArtifactsSourceSelection:
         )
 
         # Verify get_source_ids was called
-        mock_core.get_source_ids.assert_called_once_with("nb_123")
+        mock_notebooks_api.get_source_ids.assert_called_once_with("nb_123")
 
         # After the mind-map relocation, ``generate_mind_map`` also drives the CREATE_NOTE +
         # UPDATE_NOTE calls itself (previously delegated to NotesAPI), so
@@ -627,7 +638,6 @@ class TestArtifactsSourceSelection:
         """Test generate_mind_map passes language and instructions to RPC payload."""
         api = ArtifactsAPI(mock_core, mock_notes_api)
 
-        mock_core.get_source_ids.return_value = ["src_1"]
         mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
 
         await api.generate_mind_map(
@@ -730,15 +740,17 @@ class TestEmptySourceIds:
 
 
 class TestGetSourceIds:
-    """Tests for ClientCore.get_source_ids method."""
+    """Tests for NotebooksAPI.get_source_ids method."""
 
     @pytest.mark.asyncio
     async def test_get_source_ids_extracts_correctly(self, auth_tokens):
         """Test get_source_ids correctly extracts source IDs from notebook data."""
         from notebooklm._core import ClientCore
+        from notebooklm._notebooks import NotebooksAPI
 
         core = ClientCore(auth_tokens)
         core.rpc_call = AsyncMock()
+        api = NotebooksAPI(core)
 
         # Mock notebook data with multiple sources
         # Structure: notebook_data[0][1] = sources list
@@ -755,7 +767,7 @@ class TestGetSourceIds:
             ]
         ]
 
-        source_ids = await core.get_source_ids("nb_123")
+        source_ids = await api.get_source_ids("nb_123")
 
         assert source_ids == ["source_aaa", "source_bbb", "source_ccc"]
 
@@ -763,13 +775,15 @@ class TestGetSourceIds:
     async def test_get_source_ids_handles_empty_notebook(self, auth_tokens):
         """Test get_source_ids handles notebook with no sources."""
         from notebooklm._core import ClientCore
+        from notebooklm._notebooks import NotebooksAPI
 
         core = ClientCore(auth_tokens)
         core.rpc_call = AsyncMock()
+        api = NotebooksAPI(core)
 
         core.rpc_call.return_value = [["nb_123", []]]
 
-        source_ids = await core.get_source_ids("nb_123")
+        source_ids = await api.get_source_ids("nb_123")
 
         assert source_ids == []
 
@@ -777,13 +791,15 @@ class TestGetSourceIds:
     async def test_get_source_ids_handles_null_response(self, auth_tokens):
         """Test get_source_ids handles null API response."""
         from notebooklm._core import ClientCore
+        from notebooklm._notebooks import NotebooksAPI
 
         core = ClientCore(auth_tokens)
         core.rpc_call = AsyncMock()
+        api = NotebooksAPI(core)
 
         core.rpc_call.return_value = None
 
-        source_ids = await core.get_source_ids("nb_123")
+        source_ids = await api.get_source_ids("nb_123")
 
         assert source_ids == []
 
@@ -791,9 +807,11 @@ class TestGetSourceIds:
     async def test_get_source_ids_handles_malformed_data(self, auth_tokens):
         """Test get_source_ids handles malformed source data gracefully."""
         from notebooklm._core import ClientCore
+        from notebooklm._notebooks import NotebooksAPI
 
         core = ClientCore(auth_tokens)
         core.rpc_call = AsyncMock()
+        api = NotebooksAPI(core)
 
         # Malformed data - missing nested structure
         # Structure: source[0] must be a list, source[0][0] must be a string
@@ -808,7 +826,7 @@ class TestGetSourceIds:
             ]
         ]
 
-        source_ids = await core.get_source_ids("nb_123")
+        source_ids = await api.get_source_ids("nb_123")
 
         # Should only extract the valid source
         assert source_ids == ["valid_id"]

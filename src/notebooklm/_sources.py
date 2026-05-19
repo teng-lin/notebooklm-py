@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
-from typing import IO, TYPE_CHECKING, Any, Literal, Protocol
+from typing import IO, Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -31,9 +31,6 @@ from .types import (
     Source,
     SourceFulltext,
 )
-
-if TYPE_CHECKING:
-    from ._core import ClientCore
 
 logger = logging.getLogger(__name__)
 
@@ -64,79 +61,6 @@ class _SourcesCore(
 _SOURCE_ID_UUID_PATTERN = _source_upload._SOURCE_ID_UUID_PATTERN
 _extract_register_file_source_id = _source_upload._extract_register_file_source_id
 _looks_like_id_string = _source_upload._looks_like_id_string
-
-
-async def fetch_source_ids(core: "ClientCore", notebook_id: str) -> list[str]:
-    """Extract all source IDs from a notebook.
-
-    Fetches notebook data and extracts source IDs for use with
-    chat and artifact generation when targeting specific sources.
-
-    Args:
-        core: The :class:`ClientCore` instance providing the RPC entry point.
-        notebook_id: The notebook ID.
-
-    Returns:
-        List of source IDs. Empty list if no sources or on error.
-
-    Note:
-        Source IDs are triple-nested in RPC: source[0][0] contains the ID.
-    """
-    params = [notebook_id, None, [2], None, 0]
-    notebook_data = await core.rpc_call(
-        RPCMethod.GET_NOTEBOOK,
-        params,
-        source_path=f"/notebook/{notebook_id}",
-    )
-
-    source_ids: list[str] = []
-    if not notebook_data or not isinstance(notebook_data, list):
-        return source_ids
-
-    # Schema-drift detection points: log WARNING at each isinstance/len
-    # guard that fails on a non-empty response (real drift surfaces here,
-    # not at the safety-net except below).
-    try:
-        if not isinstance(notebook_data[0], list):
-            # notebook_data is already known to be a non-empty list here
-            # (guarded by `if not notebook_data` above).
-            logger.warning(
-                "get_source_ids: notebook_data[0] shape unexpected for %s "
-                "(schema drift?). top-type=%s",
-                notebook_id,
-                type(notebook_data[0]).__name__,
-            )
-            return source_ids
-
-        notebook_info = notebook_data[0]
-        if not (len(notebook_info) > 1 and isinstance(notebook_info[1], list)):
-            logger.warning(
-                "get_source_ids: notebook_info[1] not list for %s (schema drift?). len=%d",
-                notebook_id,
-                len(notebook_info),
-            )
-            return source_ids
-
-        sources = notebook_info[1]
-        for source in sources:
-            if not (isinstance(source, list) and source):
-                continue
-            first = source[0]
-            if not (isinstance(first, list) and first):
-                continue
-            sid = first[0]
-            if isinstance(sid, str):
-                source_ids.append(sid)
-    except (IndexError, TypeError) as e:
-        # Defense-in-depth: guards above should make this unreachable.
-        logger.warning(
-            "get_source_ids: unexpected exception despite guards for %s: %s",
-            notebook_id,
-            e,
-            exc_info=True,
-        )
-
-    return source_ids
 
 
 class SourcesAPI:

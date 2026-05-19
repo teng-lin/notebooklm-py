@@ -126,19 +126,24 @@ class UploadConcurrencyProvider(Protocol):
 
 
 class LoopAffinityProvider(Protocol):
-    """Provider for the open-time captured event-loop reference.
+    """Provider for event-loop affinity checks.
 
     Sub-clients that issue ``async`` calls touching loop-bound primitives
     (locks, semaphores, ``httpx.AsyncClient`` pools, condition variables)
-    consult this property and forward it to
-    :func:`notebooklm._loop_affinity.assert_bound_loop` so a cross-loop
-    call surfaces an actionable ``RuntimeError`` at the call site rather
-    than hanging on a lock bound to a dead loop.
+    call :meth:`assert_bound_loop` so a cross-loop call surfaces an
+    actionable ``RuntimeError`` at the call site rather than hanging on a
+    lock bound to a dead loop.
     """
 
     @property
     def bound_loop(self) -> asyncio.AbstractEventLoop | None:
-        """Return the loop ``ClientLifecycle.open`` captured, or ``None``
-        if the client has not yet been opened.
+        """Return the loop ``ClientLifecycle.open`` captured.
+
+        Transitional PR 13.5 surface: retained for one PR cycle while
+        remaining internal helpers migrate to :meth:`assert_bound_loop`.
         """
+        ...
+
+    def assert_bound_loop(self) -> None:
+        """Raise when the current running loop differs from the bound loop."""
         ...

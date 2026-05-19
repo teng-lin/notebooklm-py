@@ -317,12 +317,13 @@ class TestGetHttpClient:
 
 
 class TestGetSourceIds:
-    """Tests for get_source_ids() extracting source IDs from notebook data."""
+    """Tests for NotebooksAPI.get_source_ids() extracting source IDs from notebook data."""
 
     @pytest.mark.asyncio
     async def test_returns_source_ids_from_nested_data(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             core = client._core
+            notebooks = client.notebooks
 
             mock_notebook_data = [
                 [
@@ -337,7 +338,7 @@ class TestGetSourceIds:
             with patch.object(
                 core, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
             ):
-                ids = await core.get_source_ids("nb_123")
+                ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == ["src_id_1", "src_id_2"]
 
@@ -345,9 +346,10 @@ class TestGetSourceIds:
     async def test_returns_empty_list_when_data_is_none(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             core = client._core
+            notebooks = client.notebooks
 
             with patch.object(core, "rpc_call", new_callable=AsyncMock, return_value=None):
-                ids = await core.get_source_ids("nb_123")
+                ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
 
@@ -355,9 +357,10 @@ class TestGetSourceIds:
     async def test_returns_empty_list_when_data_is_empty_list(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             core = client._core
+            notebooks = client.notebooks
 
             with patch.object(core, "rpc_call", new_callable=AsyncMock, return_value=[]):
-                ids = await core.get_source_ids("nb_123")
+                ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
 
@@ -365,6 +368,7 @@ class TestGetSourceIds:
     async def test_returns_empty_list_when_sources_list_is_empty(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             core = client._core
+            notebooks = client.notebooks
 
             # Notebook with no sources
             mock_notebook_data = [["notebook_title", []]]
@@ -372,7 +376,7 @@ class TestGetSourceIds:
             with patch.object(
                 core, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
             ):
-                ids = await core.get_source_ids("nb_123")
+                ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
 
@@ -380,11 +384,12 @@ class TestGetSourceIds:
     async def test_returns_empty_list_when_data_is_not_list(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             core = client._core
+            notebooks = client.notebooks
 
             with patch.object(
                 core, "rpc_call", new_callable=AsyncMock, return_value="unexpected_string"
             ):
-                ids = await core.get_source_ids("nb_123")
+                ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
 
@@ -392,6 +397,7 @@ class TestGetSourceIds:
     async def test_returns_empty_list_when_notebook_info_missing_sources(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             core = client._core
+            notebooks = client.notebooks
 
             # notebook_data[0] exists but notebook_info[1] is missing
             mock_notebook_data = [["notebook_title_only"]]
@@ -399,7 +405,7 @@ class TestGetSourceIds:
             with patch.object(
                 core, "rpc_call", new_callable=AsyncMock, return_value=mock_notebook_data
             ):
-                ids = await core.get_source_ids("nb_123")
+                ids = await notebooks.get_source_ids("nb_123")
 
             assert ids == []
 

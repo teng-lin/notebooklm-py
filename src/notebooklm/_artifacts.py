@@ -81,6 +81,7 @@ class _ArtifactsCore(
 
 
 if TYPE_CHECKING:
+    from ._capabilities import SourceListProvider
     from ._notes import NotesAPI  # retained for backward-compatible type hints
 
 # Private compatibility exports. Tests and downstream code patch these names
@@ -172,6 +173,7 @@ class ArtifactsAPI:
         storage_path: Path | None = None,
         *,
         mind_map_service: _mind_map.MindMapService | None = None,
+        notebooks: "SourceListProvider | None" = None,
     ):
         """Initialize the artifacts API.
 
@@ -188,9 +190,17 @@ class ArtifactsAPI:
             mind_map_service: Optional private service for note-backed
                 mind-map operations. Keyword-only so the public positional
                 constructor contract stays unchanged.
+            notebooks: Optional source-id resolver. Defaults to a
+                ``NotebooksAPI`` wrapper around ``core`` for backward
+                compatibility with tests that construct ``ArtifactsAPI(core)``.
         """
         self._core = core
         self._capabilities = core
+        if notebooks is None:
+            from ._notebooks import NotebooksAPI
+
+            notebooks = NotebooksAPI(core)
+        self._notebooks = notebooks
         # ``notes_api`` is intentionally not stored — it is accepted only
         # so that existing call sites (tests, third-party code) keep
         # working through the deprecation cycle.

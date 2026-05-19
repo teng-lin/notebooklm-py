@@ -159,14 +159,15 @@ def test_await_refresh_guards_against_cross_loop_call() -> None:
 def test_wait_for_completion_guards_against_cross_loop_call() -> None:
     """``ArtifactPollingService.wait_for_completion`` must raise on cross-loop misuse.
 
-    The service routes the guard through its capability adapter
-    (``self._capabilities.bound_loop``). A capability fake bound to loop
-    A and a fresh loop B for the call site reproduces the mismatch.
+    The service routes the guard through its capability adapter's
+    ``assert_bound_loop`` method.
     """
     capabilities = MagicMock()
     other_loop = asyncio.new_event_loop()
     try:
-        capabilities.bound_loop = other_loop
+        capabilities.assert_bound_loop = MagicMock(
+            side_effect=RuntimeError("NotebookLM client used from a different event loop")
+        )
 
         service = ArtifactPollingService(capabilities)
 
@@ -189,7 +190,7 @@ def test_wait_for_completion_guards_against_cross_loop_call() -> None:
 def test_chat_ask_guards_against_cross_loop_call() -> None:
     """``ChatAPI.ask`` must raise on cross-loop misuse.
 
-    The chat entry consults its core capability's ``bound_loop`` *before*
+    The chat entry calls its core capability's ``assert_bound_loop`` *before*
     acquiring the per-conversation lock so a cross-loop follow-up doesn't
     hang on a lock bound to a dead loop.
     """
@@ -198,7 +199,9 @@ def test_chat_ask_guards_against_cross_loop_call() -> None:
     capabilities = MagicMock()
     other_loop = asyncio.new_event_loop()
     try:
-        capabilities.bound_loop = other_loop
+        capabilities.assert_bound_loop = MagicMock(
+            side_effect=RuntimeError("NotebookLM client used from a different event loop")
+        )
 
         chat = ChatAPI(capabilities)
 

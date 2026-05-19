@@ -64,7 +64,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         source_ids_double = nest_source_ids(source_ids, 1)
@@ -121,7 +121,7 @@ class ArtifactGenerationService:
             raise ValidationError("style_prompt requires video_style=VideoStyle.CUSTOM")
 
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         source_ids_double = nest_source_ids(source_ids, 1)
@@ -173,7 +173,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         source_ids_double = nest_source_ids(source_ids, 1)
@@ -219,7 +219,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         format_configs = {
             ReportFormat.BRIEFING_DOC: {
@@ -322,7 +322,7 @@ class ArtifactGenerationService:
         """Generate a quiz."""
         api = self._api
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         quantity_code = quantity.value if quantity else None
@@ -369,7 +369,7 @@ class ArtifactGenerationService:
         """Generate flashcards."""
         api = self._api
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         quantity_code = quantity.value if quantity else None
@@ -419,7 +419,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         orientation_code = orientation.value if orientation else None
@@ -463,7 +463,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
         format_code = slide_format.value if slide_format else None
@@ -545,7 +545,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_triple = nest_source_ids(source_ids, 2)
 
@@ -588,7 +588,7 @@ class ArtifactGenerationService:
         if language is None:
             language = get_default_language()
         if source_ids is None:
-            source_ids = await api._core.get_source_ids(notebook_id)
+            source_ids = await api._notebooks.get_source_ids(notebook_id)
 
         source_ids_nested = nest_source_ids(source_ids, 2)
 

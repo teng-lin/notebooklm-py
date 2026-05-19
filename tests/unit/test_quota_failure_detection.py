@@ -37,6 +37,7 @@ def _make_api():
     core._begin_transport_task = AsyncMock(return_value=object())
     core._finish_transport_post = AsyncMock()
     core.bound_loop = None
+    core.assert_bound_loop = MagicMock(return_value=None)
     notes = MagicMock()
     notes.list_mind_maps = AsyncMock(return_value=[])
     notes.create = AsyncMock(return_value=MagicMock(id="note_1"))

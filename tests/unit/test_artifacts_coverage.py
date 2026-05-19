@@ -32,15 +32,18 @@ def mock_artifacts_api():
     # guard) so the artifact polling helper does not raise on a
     # ``MagicMock``-shaped loop value.
     mock_core.bound_loop = None
+    mock_core.assert_bound_loop = MagicMock(return_value=None)
     mock_notes = MagicMock()
     mock_notes.list_mind_maps = AsyncMock(return_value=[])
     mock_note = MagicMock()
     mock_note.id = "created_note_123"
     mock_notes.create = AsyncMock(return_value=mock_note)
+    mock_notebooks = MagicMock()
+    mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     # After D2 cutover, sub-clients consume ``ClientCore`` directly typed
     # against their narrow Protocol — the ``MagicMock`` duck-types the
     # required Protocol surface.
-    api = ArtifactsAPI(mock_core, notes_api=mock_notes)
+    api = ArtifactsAPI(mock_core, notes_api=mock_notes, notebooks=mock_notebooks)
     return api, mock_core
 
 
