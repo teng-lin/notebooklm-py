@@ -29,11 +29,13 @@ def is_strict_decode_enabled() -> bool:
     :class:`~notebooklm.exceptions.UnknownRPCMethodError` on descent failure
     so callers learn about Google-side shape drift immediately.
 
-    Set ``NOTEBOOKLM_STRICT_DECODE=0`` (or any other non-truthy value such
-    as ``"false"``, ``"no"``, or ``""``) to opt back into the legacy
-    warn-and-return-``None`` fallback for one release window. See
-    ``docs/adr/0011-schema-validation-policy.md`` for the rationale and the
-    opt-out retirement timeline.
+    Set ``NOTEBOOKLM_STRICT_DECODE=0`` (or any other non-truthy value
+    such as ``"false"``, ``"False"``, ``"no"``, ``"off"``, or ``""``)
+    to opt back into the legacy warn-and-return-``None`` fallback for
+    one release window. Anything not in the truthy set ``{"1", "true",
+    "True"}`` is treated as non-truthy. See
+    ``docs/adr/0011-schema-validation-policy.md`` for the rationale and
+    the opt-out retirement timeline.
     """
     return os.environ.get(STRICT_DECODE_ENV, "1") in ("1", "true", "True")
 

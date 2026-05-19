@@ -82,8 +82,9 @@ Three details that shaped this ADR:
 
 `_env.is_strict_decode_enabled()` defaults to `True` when
 `NOTEBOOKLM_STRICT_DECODE` is unset. Soft mode is reachable only via
-explicit `NOTEBOOKLM_STRICT_DECODE=0` (or any other non-truthy value:
-`"false"`, `"no"`, `""`).
+explicit `NOTEBOOKLM_STRICT_DECODE=0` (or any other non-truthy value
+such as `"false"`, `"False"`, `"no"`, `"off"`, or `""`). Anything not
+in the truthy set `{"1", "true", "True"}` is treated as non-truthy.
 
 ### Behavioural contract
 

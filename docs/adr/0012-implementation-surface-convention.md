@@ -78,7 +78,7 @@ three categories, signalled by its filename:
 
 ### 1. Public surface (no underscore prefix)
 
-```
+```text
 src/notebooklm/
 ├── __init__.py                  # re-export hub; declares the stable surface
 ├── client.py                    # NotebookLMClient + lifecycle helpers
@@ -118,7 +118,7 @@ but internal contents) MUST be added to this list before merging.
 
 ### 2. Implementation seams (single underscore prefix)
 
-```
+```text
 src/notebooklm/
 ├── _core.py                     # ClientCore orchestrator
 ├── _core_*.py                   # per-concern core seams (transport, RPC, drain, etc.)
