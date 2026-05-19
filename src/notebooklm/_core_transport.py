@@ -246,7 +246,15 @@ class AuthedTransport:
         log_label: str,
         disable_internal_retries: bool = False,
     ) -> httpx.Response:
-        """Run an authed POST through the shared retry/refresh pipeline."""
+        """Run an authed POST through the auth-refresh-and-retry pipeline.
+
+        Since PR 12.7 this leaf only drives the auth-refresh-once retry;
+        429 / 5xx / network retries live in :class:`RetryMiddleware` above
+        this leaf in the chain. ``disable_internal_retries`` is accepted
+        for signature stability but no longer read here — the middleware
+        reads the flag from ``request.context`` directly. PR 12.9 removes
+        the parameter once the legacy non-chain code path is retired.
+        """
         host = self._host
         if host._http_client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
