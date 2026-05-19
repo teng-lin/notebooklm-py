@@ -80,7 +80,16 @@ UNMARKED_TEST = textwrap.dedent(
 ).strip()
 
 
+PYTEST_INI = textwrap.dedent(
+    """
+    [pytest]
+    asyncio_default_fixture_loop_scope = function
+    """
+).strip()
+
+
 def _scaffold(pytester: pytest.Pytester, *, test_body: str) -> None:
+    pytester.makeini(PYTEST_INI)
     # ``pytester.makepyfile`` appends ``.py`` internally via
     # ``Path.with_suffix(".py")``, so keys are passed *without* the
     # extension (idiomatic per the pytest docs).

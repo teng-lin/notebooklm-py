@@ -375,7 +375,8 @@ class TestNotebooksAPIAdditional:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.notebooks.share("nb_123", public=True)
+            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+                result = await client.notebooks.share("nb_123", public=True)
 
         assert result["public"] is True
         assert "nb_123" in result["url"]
@@ -737,7 +738,8 @@ class TestShareEdgeCases:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.notebooks.share("nb_123", public=True, artifact_id="art_456")
+            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+                result = await client.notebooks.share("nb_123", public=True, artifact_id="art_456")
 
         assert result["public"] is True
         assert result["url"] == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
@@ -755,7 +757,8 @@ class TestShareEdgeCases:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.notebooks.share("nb_123", public=False)
+            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+                result = await client.notebooks.share("nb_123", public=False)
 
         assert result["public"] is False
         assert result["url"] is None

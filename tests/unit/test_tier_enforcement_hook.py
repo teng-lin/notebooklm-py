@@ -90,6 +90,7 @@ HOOK_SOURCE = textwrap.dedent(
 MARKER_REGISTRATION = textwrap.dedent(
     """
     [pytest]
+    asyncio_default_fixture_loop_scope = function
     markers =
         vcr: vcr-tier
         allow_no_vcr: opt out

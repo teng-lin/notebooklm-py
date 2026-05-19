@@ -247,7 +247,8 @@ async def test_share_sends_exact_share_artifact_payload_and_returns_deep_link(
     monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
     api = _make_api()
 
-    result = await api.share("nb_123", public=True, artifact_id="art_456")
+    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+        result = await api.share("nb_123", public=True, artifact_id="art_456")
 
     assert result == {
         "public": True,
@@ -271,7 +272,8 @@ async def test_share_private_sends_disable_payload_and_returns_no_url(
     monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
     api = _make_api()
 
-    result = await api.share("nb_123", public=False)
+    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+        result = await api.share("nb_123", public=False)
 
     assert result == {"public": False, "url": None, "artifact_id": None}
     api._core.rpc_call.assert_awaited_once_with(

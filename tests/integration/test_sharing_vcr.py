@@ -67,7 +67,8 @@ class TestSharingVCR:
         """
         auth = await get_vcr_auth()
         async with NotebookLMClient(auth) as client:
-            result = await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=True)
+            with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+                result = await client.notebooks.share(MUTABLE_NOTEBOOK_ID, public=True)
 
         assert isinstance(result, dict)
         assert result["public"] is True

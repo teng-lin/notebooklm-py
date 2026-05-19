@@ -1007,14 +1007,20 @@ class TestResearchAPI:
         """Poll research status."""
         async with vcr_client() as client:
             # Start research first
-            await client.research.start(
+            start_result = await client.research.start(
                 MUTABLE_NOTEBOOK_ID,
                 query="Machine learning fundamentals",
                 source="web",
                 mode="fast",
             )
+            if not start_result or not start_result.get("task_id"):
+                pytest.skip("Could not start research")
+
             # Poll for results
-            result = await client.research.poll(MUTABLE_NOTEBOOK_ID)
+            result = await client.research.poll(
+                MUTABLE_NOTEBOOK_ID,
+                task_id=start_result["task_id"],
+            )
         assert result is not None
         assert "status" in result
 
@@ -1031,11 +1037,14 @@ class TestResearchAPI:
                 source="web",
                 mode="fast",
             )
-            if not start_result:
+            if not start_result or not start_result.get("task_id"):
                 pytest.skip("Could not start research")
 
             # Poll until we have sources (with timeout via cassette)
-            poll_result = await client.research.poll(MUTABLE_NOTEBOOK_ID)
+            poll_result = await client.research.poll(
+                MUTABLE_NOTEBOOK_ID,
+                task_id=start_result["task_id"],
+            )
             if not poll_result.get("sources"):
                 pytest.skip("No research sources found")
 

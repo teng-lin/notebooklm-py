@@ -111,7 +111,8 @@ class TestNotebookSharing:
     @pytest.mark.asyncio
     async def test_share_notebook(self, client, temp_notebook):
         """Test sharing a notebook."""
-        result = await client.notebooks.share(temp_notebook.id, public=True)
+        with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+            result = await client.notebooks.share(temp_notebook.id, public=True)
         # Share returns {"public": bool, "url": str|None, "artifact_id": str|None}
         assert isinstance(result, dict)
         assert result["public"] is True
@@ -121,7 +122,8 @@ class TestNotebookSharing:
     @pytest.mark.asyncio
     async def test_revoke_share_notebook(self, client, temp_notebook):
         """Test revoking notebook sharing."""
-        result = await client.notebooks.share(temp_notebook.id, public=False)
+        with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+            result = await client.notebooks.share(temp_notebook.id, public=False)
         assert isinstance(result, dict)
         assert result["public"] is False
         assert result["url"] is None

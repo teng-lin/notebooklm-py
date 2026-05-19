@@ -18,6 +18,38 @@ ListRawCallback = Callable[[str], Awaitable[list[Any]]]
 ListMindMapsCallback = Callable[[str], Awaitable[list[Any]]]
 ListArtifactsCallback = Callable[[str], Awaitable[list[Artifact]]]
 
+_ARTIFACT_TYPE_CODES_BY_KIND = {
+    ArtifactType.AUDIO: ArtifactTypeCode.AUDIO.value,
+    ArtifactType.REPORT: ArtifactTypeCode.REPORT.value,
+    ArtifactType.VIDEO: ArtifactTypeCode.VIDEO.value,
+    ArtifactType.MIND_MAP: ArtifactTypeCode.MIND_MAP.value,
+    ArtifactType.INFOGRAPHIC: ArtifactTypeCode.INFOGRAPHIC.value,
+    ArtifactType.SLIDE_DECK: ArtifactTypeCode.SLIDE_DECK.value,
+    ArtifactType.DATA_TABLE: ArtifactTypeCode.DATA_TABLE.value,
+}
+_KNOWN_ARTIFACT_TYPE_CODES = frozenset(_ARTIFACT_TYPE_CODES_BY_KIND.values())
+
+
+def _matches_artifact_type(artifact: Artifact, artifact_type: ArtifactType | None) -> bool:
+    """Return whether ``artifact`` matches ``artifact_type`` without noisy kind warnings."""
+    if artifact_type is None:
+        return True
+
+    if artifact_type == ArtifactType.QUIZ:
+        return artifact._artifact_type == ArtifactTypeCode.QUIZ.value and artifact._variant == 2
+    if artifact_type == ArtifactType.FLASHCARDS:
+        return artifact._artifact_type == ArtifactTypeCode.QUIZ.value and artifact._variant == 1
+    if artifact_type == ArtifactType.UNKNOWN:
+        if artifact._artifact_type == ArtifactTypeCode.QUIZ.value:
+            return artifact._variant not in (1, 2)
+        return artifact._artifact_type not in _KNOWN_ARTIFACT_TYPE_CODES
+
+    type_code = _ARTIFACT_TYPE_CODES_BY_KIND.get(artifact_type)
+    if type_code is not None:
+        return artifact._artifact_type == type_code
+
+    return False
+
 
 class ArtifactListingService:
     """List, filter, and select artifacts without depending on the facade."""
@@ -135,7 +167,7 @@ class ArtifactListingService:
         for art_data in artifacts_data:
             if isinstance(art_data, list) and len(art_data) > 0:
                 artifact = Artifact.from_api_response(art_data)
-                if artifact_type is None or artifact.kind == artifact_type:
+                if _matches_artifact_type(artifact, artifact_type):
                     artifacts.append(artifact)
         return artifacts
 
@@ -149,6 +181,6 @@ class ArtifactListingService:
             if isinstance(mm_data, list):
                 mind_map_artifact = Artifact.from_mind_map(mm_data)
                 if mind_map_artifact is not None:
-                    if artifact_type is None or mind_map_artifact.kind == artifact_type:
+                    if _matches_artifact_type(mind_map_artifact, artifact_type):
                         artifacts.append(mind_map_artifact)
         return artifacts

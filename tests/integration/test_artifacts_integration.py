@@ -11,6 +11,7 @@ Cassette-backed coverage for the same API surface lives in
 
 import csv
 import json
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,6 +33,7 @@ from notebooklm.types import (
     ArtifactNotReadyError,
     ArtifactParseError,
     ArtifactType,
+    UnknownTypeWarning,
 )
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -727,10 +729,40 @@ class TestArtifactsAPI:
         )
         httpx_mock.add_response(content=response.encode())
 
-        async with NotebookLMClient(auth_tokens) as client:
-            artifacts = await client.artifacts.list_audio("nb_123")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnknownTypeWarning)
+            async with NotebookLMClient(auth_tokens) as client:
+                artifacts = await client.artifacts.list_audio("nb_123")
 
-        assert isinstance(artifacts, list)
+        assert [artifact.id for artifact in artifacts] == ["art_001"]
+
+    @pytest.mark.asyncio
+    async def test_list_unknown_artifacts_suppresses_unknown_type_warnings(
+        self,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+    ):
+        """Filtering for UNKNOWN should not emit warnings while deciding matches."""
+        response = build_rpc_response(
+            RPCMethod.LIST_ARTIFACTS,
+            [
+                ["art_audio", "Audio Overview", 1, None, 3],
+                ["art_quiz_missing_variant", "Quiz", 4, None, 3],
+                ["art_future_type", "Future Artifact", 99, None, 3],
+            ],
+        )
+        httpx_mock.add_response(content=response.encode())
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UnknownTypeWarning)
+            async with NotebookLMClient(auth_tokens) as client:
+                artifacts = await client.artifacts.list("nb_123", ArtifactType.UNKNOWN)
+
+        assert [artifact.id for artifact in artifacts] == [
+            "art_quiz_missing_variant",
+            "art_future_type",
+        ]
 
     @pytest.mark.asyncio
     async def test_list_video_artifacts(

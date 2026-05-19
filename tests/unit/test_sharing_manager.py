@@ -133,7 +133,8 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
     replacement_rpc = AsyncMock(return_value=None)
     core.rpc_call = replacement_rpc
 
-    result = await api.share("nb_123", public=True, artifact_id="art_456")
+    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+        result = await api.share("nb_123", public=True, artifact_id="art_456")
 
     assert result["url"] == "https://notebooklm.google.com/notebook/nb_123?artifactId=art_456"
     replacement_rpc.assert_awaited_once_with(
@@ -153,7 +154,8 @@ async def test_notebooks_api_share_delegates_to_injected_share_manager() -> None
     share_manager.share = AsyncMock(return_value={"public": True, "url": "u", "artifact_id": None})
     api = NotebooksAPI(core, sources_api=MagicMock(), share_manager=share_manager)
 
-    result = await api.share("nb_123", public=True)
+    with pytest.warns(DeprecationWarning, match="NotebooksAPI.share"):
+        result = await api.share("nb_123", public=True)
 
     assert result == {"public": True, "url": "u", "artifact_id": None}
     share_manager.share.assert_awaited_once_with("nb_123", True, None)

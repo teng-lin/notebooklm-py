@@ -1327,9 +1327,13 @@ class TestAuthInspect:
         raw_cookies = _multiaccount_rookiepy_mock().chrome.return_value
         accounts = [Account(authuser=0, email="alice@example.com", is_default=True)]
 
+        def fake_run_async(awaitable):
+            awaitable.close()
+            return accounts
+
         with (
             patch("notebooklm.auth.enumerate_accounts", return_value=object()),
-            patch_session_login_dual("run_async", return_value=accounts) as mock_run_async,
+            patch_session_login_dual("run_async", side_effect=fake_run_async) as mock_run_async,
         ):
             result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
 
