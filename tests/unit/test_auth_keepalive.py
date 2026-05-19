@@ -437,6 +437,14 @@ class TestKeepalivePoke:
         assert len(poke_requests) == 1, (
             f"expected exactly one RotateCookies request, got: {all_urls}"
         )
+        # Order matters per the docstring: the RotateCookies poke must precede
+        # the notebooklm.google.com fetch so the rotation runs before the
+        # cookie jar is consumed for the homepage GET. Without this assertion
+        # a regression that flipped the order would still produce a single
+        # poke request and silently pass.
+        assert all_urls.index(KEEPALIVE_ROTATE_URL) < all_urls.index(
+            "https://notebooklm.google.com/"
+        ), f"poke must precede notebooklm homepage fetch; saw order {all_urls}"
         assert str(poke_requests[0].url) == KEEPALIVE_ROTATE_URL
         assert poke_requests[0].method == "POST"
 

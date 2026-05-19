@@ -174,10 +174,15 @@ class TestExtractCookies:
 
         assert cookies["OSID"] == "osid_dotted"
 
-        # Reverse list order — dotted variant should still win deterministically.
-        storage_state["cookies"][1], storage_state["cookies"][2] = (
+        # Reverse the duplicate pair (indices 2/3 — both OSID entries) so the
+        # no-dot variant precedes the dotted form in storage order. The dotted
+        # variant must still win deterministically. Earlier versions of this
+        # swap touched indices 1/2 which moved the ``__Secure-1PSIDTS``
+        # sentinel instead of flipping the OSID duplicates — that left the
+        # OSID order unchanged and silently weakened the regression.
+        storage_state["cookies"][2], storage_state["cookies"][3] = (
+            storage_state["cookies"][3],
             storage_state["cookies"][2],
-            storage_state["cookies"][1],
         )
         cookies = extract_cookies_from_storage(storage_state)
         assert cookies["OSID"] == "osid_dotted"
@@ -195,10 +200,13 @@ class TestExtractCookies:
         cookies = extract_cookies_from_storage(storage_state)
         assert cookies["X"] == "x_regional"
 
-        # Reverse order — regional should still win.
-        storage_state["cookies"][1], storage_state["cookies"][2] = (
+        # Reverse the duplicate pair (indices 2/3 — both ``X`` entries) so the
+        # googleusercontent entry precedes the regional one. The regional
+        # cookie must still win deterministically. (See sibling-test comment
+        # for why indices 1/2 was the wrong swap.)
+        storage_state["cookies"][2], storage_state["cookies"][3] = (
+            storage_state["cookies"][3],
             storage_state["cookies"][2],
-            storage_state["cookies"][1],
         )
         cookies = extract_cookies_from_storage(storage_state)
         assert cookies["X"] == "x_regional"
