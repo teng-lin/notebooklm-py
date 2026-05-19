@@ -60,7 +60,7 @@ def test_drift_inner_index_soft_mode_returns_none(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     data = [[["leaf"]]]
     # Outer ok, inner index out of range.
-    with pytest.warns(DeprecationWarning, match="test.inner"):
+    with pytest.warns(DeprecationWarning, match=r"test\.inner"):
         result = safe_index(data, 0, 0, 9, method_id="abc", source="test.inner")
     assert result is None
 
