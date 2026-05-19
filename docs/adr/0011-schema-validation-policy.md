@@ -107,6 +107,9 @@ is preserved; the dependency on the env-var default is now explicit.
   when the helper falls through it, naming the call site that
   triggered the warn-and-return-`None` so operators can locate and
   fix the consumer.
+  Fulfillment: shipped in v0.5.0; explicit soft-mode fallback via
+  `NOTEBOOKLM_STRICT_DECODE=0` now logs the drift warning and emits
+  `DeprecationWarning` before returning `None`.
 - **Two releases later:** soft-mode path removed; `NOTEBOOKLM_STRICT_DECODE`
   becomes a no-op (or its presence at `"0"` raises `ConfigurationError`
   at process startup so operators discover the opt-out was retired).

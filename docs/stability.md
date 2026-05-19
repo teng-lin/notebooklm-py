@@ -153,7 +153,8 @@ batchexecute response shape does not match what the decoder expects. Pre-flip
 the default was warn-and-return-``None``; the soft-mode opt-in lives at
 ``NOTEBOOKLM_STRICT_DECODE=0`` for one release window so downstream code that
 relies on the legacy sentinel can migrate at its own pace before the env
-var is retired.
+var is retired. Since v0.5.0, using that fallback emits ``DeprecationWarning``
+when drift occurs, in addition to the structured log warning.
 
 Stability implications:
 
@@ -166,7 +167,7 @@ Stability implications:
   valid sentinel must add an ``except UnknownRPCMethodError`` branch *or*
   opt out via ``NOTEBOOKLM_STRICT_DECODE=0`` for one release while migrating.
 - **Removal of opt-out.** The ``NOTEBOOKLM_STRICT_DECODE=0`` opt-out path is
-  scheduled for retirement once downstream call sites have migrated; see
+  scheduled for retirement in v0.6.0 once downstream call sites have migrated; see
   `docs/adr/0011-schema-validation-policy.md` for the policy and timeline.
 
 See [`docs/configuration.md#decoder-strictness`](configuration.md#decoder-strictness)

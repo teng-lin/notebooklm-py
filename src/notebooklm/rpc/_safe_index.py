@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import reprlib
+import warnings
 from typing import Any
 
 from .._env import is_strict_decode_enabled
@@ -106,6 +107,15 @@ def safe_index(
                 method_id,
                 source,
                 data_repr,
+            )
+            warnings.warn(
+                "safe_index soft-mode fallback via NOTEBOOKLM_STRICT_DECODE=0 "
+                f"was used at source {source!r}; this opt-out is deprecated "
+                "and scheduled for removal in v0.6.0. Handle "
+                "UnknownRPCMethodError or fix the decoder call site before "
+                "the soft-mode path is removed.",
+                DeprecationWarning,
+                stacklevel=2,
             )
             return None
     return current

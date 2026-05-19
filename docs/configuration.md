@@ -325,7 +325,7 @@ the value at a step isn't indexable), behavior depends on
 | Value | Behavior |
 |-------|----------|
 | unset / `1` / `true` / `True` (default since PR 13.9a) | Raise `UnknownRPCMethodError` (a subclass of `DecodingError` / `RPCError`) with structured `method_id`, `path`, `source`, and `data_at_failure` attributes. |
-| `0` / `false` / `False` / `no` / `off` / `""` (opt-out — or any other non-truthy value) | Log a warning with the failing path, `method_id`, `source` label, and a truncated repr of the data. Return `None` so legacy callers keep working. |
+| `0` / `false` / `False` / `no` / `off` / `""` (opt-out — or any other non-truthy value) | Log a warning with the failing path, `method_id`, `source` label, and a truncated repr of the data. Emit `DeprecationWarning` when fallback is used, then return `None` so legacy callers keep working during the final migration window. |
 
 The flipped default (PR 13.9a) closes the Tier-12/13 soft-rollout window the
 shared `safe_index` helper was introduced under: every call site that
@@ -336,9 +336,10 @@ small number of legacy positional decoders in `_artifact_downloads`,
 `_artifact_polling`, and `_chat_protocol` predate the helper and still have
 their own feature-local error-recovery paths; they will be migrated to
 `safe_index` in Tier 13.x follow-ups and are unaffected by this flip. Set
-`NOTEBOOKLM_STRICT_DECODE=0` to opt back into the legacy warn-and-fallback
-for one release if downstream code is not yet ready for the typed exception
-path; the opt-out is scheduled for removal in a future release alongside
+`NOTEBOOKLM_STRICT_DECODE=0` to opt back into the legacy warn-and-fallback for
+one release if downstream code is not yet ready for the typed exception path.
+As of v0.5.0, every fallback use also emits `DeprecationWarning` naming the
+decoder `source`; the opt-out is scheduled for removal in v0.6.0 alongside
 ADR-011's enforcement timeline.
 
 The same `UnknownRPCMethodError` is also raised by `decode_response()` when the
