@@ -844,7 +844,8 @@ class ClientCore:
         ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
         on such a fixture would raise ``AttributeError``; this helper
         backfills both slots with the same shape ``__init__`` would have
-        constructed (empty middleware list around the terminal adapter).
+        constructed (``TracingMiddleware``-seeded chain around the terminal
+        adapter, matching the seed in ``__init__``).
 
         Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
         :meth:`_ensure_observability_state` is — two threads observing

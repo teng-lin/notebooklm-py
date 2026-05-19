@@ -38,6 +38,7 @@ full client.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -316,3 +317,39 @@ async def test_failure_emits_failed_record_and_reraises(
     assert failed.exception_type == "RuntimeError"
     assert isinstance(failed.duration_ms, float)
     assert failed.duration_ms >= 0.0
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_bypasses_failed_record(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``asyncio.CancelledError`` propagates without emitting a "failed" record.
+
+    ``CancelledError`` is a :class:`BaseException` subclass (Python 3.8+), and
+    the ``except Exception`` clause in :class:`TracingMiddleware` is
+    deliberately narrow: cooperative-cancellation signals
+    (``CancelledError`` / ``KeyboardInterrupt`` / ``SystemExit``) are caller-
+    initiated unwinds, not RPC failures, so they bypass the failure-trace
+    path entirely. Only the "starting" record lands.
+
+    Pinning this in a test guards against a future maintainer widening the
+    ``except`` to ``BaseException`` (or adding a bare ``except``), which
+    would silently turn benign cancellations into noisy "failed" warnings
+    and inflate the duration_ms latency histogram.
+    """
+
+    async def terminal(_request: RpcRequest) -> RpcResponse:
+        raise asyncio.CancelledError()
+
+    chain = build_chain([TracingMiddleware()], terminal)
+
+    with (
+        caplog.at_level(logging.DEBUG, logger=_TRACE_LOGGER),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await chain(make_request(context={"log_label": "cancel-test"}))
+
+    records = [r for r in caplog.records if r.name == _TRACE_LOGGER]
+    assert len(records) == 1
+    assert "rpc starting" in records[0].getMessage()
+    assert records[0].log_label == "cancel-test"
