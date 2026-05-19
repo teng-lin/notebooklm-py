@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+import notebooklm._kernel as kernel_module
 from notebooklm._kernel import Kernel
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
@@ -71,7 +72,7 @@ async def test_open_preserves_explicit_empty_cookie_jar(monkeypatch: pytest.Monk
     def fail_build_cookie_jar(**_: object) -> httpx.Cookies:
         raise AssertionError("explicit cookie_jar should not be rebuilt")
 
-    monkeypatch.setattr("notebooklm._kernel.build_cookie_jar", fail_build_cookie_jar)
+    monkeypatch.setattr(kernel_module, "build_cookie_jar", fail_build_cookie_jar)
     kernel = Kernel()
     await kernel.open(
         auth=AuthTokens(
