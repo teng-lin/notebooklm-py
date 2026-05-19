@@ -35,6 +35,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import auth as auth_module
 from notebooklm.auth import AuthTokens
+from _fixtures import patch_auth_seam
 
 # Time budget for the "blocking sleep" injected into save_cookies_to_storage.
 # Half a second is comfortably above the asyncio scheduler resolution but
@@ -97,7 +98,7 @@ async def test_from_storage_save_does_not_block_event_loop(
         time.sleep(_SLEEP_SECONDS)
         return True
 
-    monkeypatch.setattr(auth_module, "save_cookies_to_storage", _blocking_save)
+    patch_auth_seam(monkeypatch, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0
     stop = asyncio.Event()
@@ -167,7 +168,7 @@ async def test_fetch_tokens_with_domains_save_does_not_block_event_loop(
         # return is fine; mirror the real function's None-by-default.
         time.sleep(_SLEEP_SECONDS)
 
-    monkeypatch.setattr(auth_module, "save_cookies_to_storage", _blocking_save)
+    patch_auth_seam(monkeypatch, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0
     stop = asyncio.Event()

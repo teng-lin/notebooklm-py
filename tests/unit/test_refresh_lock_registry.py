@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from notebooklm import auth as auth_mod
+from _fixtures import patch_auth_seam
 
 
 @pytest.fixture(autouse=True)
@@ -144,7 +145,7 @@ class TestResolvedPathEquivalence:
 
         # Force a refresh attempt and short-circuit downstream side effects.
         monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
-        monkeypatch.setattr(auth_mod, "_get_refresh_lock", spy_get_refresh_lock)
+        patch_auth_seam(monkeypatch, "_get_refresh_lock", spy_get_refresh_lock)
 
         call_phase = {"first": True}
 
@@ -165,10 +166,10 @@ class TestResolvedPathEquivalence:
         def fake_snapshot(_j):
             return None
 
-        monkeypatch.setattr(auth_mod, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-        monkeypatch.setattr(auth_mod, "_run_refresh_cmd", fake_run_refresh_cmd)
-        monkeypatch.setattr(auth_mod, "build_httpx_cookies_from_storage", fake_build)
-        monkeypatch.setattr(auth_mod, "snapshot_cookie_jar", fake_snapshot)
+        patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+        patch_auth_seam(monkeypatch, "_run_refresh_cmd", fake_run_refresh_cmd)
+        patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
+        patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
 
         async def drive(path: Path):
             jar = httpx.Cookies()
@@ -321,11 +322,11 @@ class TestCrossLoopGenerationGuard:
         def wrapped_get_refresh_lock(p):
             return _BarrierLock(original_get_refresh_lock(p))
 
-        monkeypatch.setattr(auth_mod, "_run_refresh_cmd", fake_run_refresh_cmd)
-        monkeypatch.setattr(auth_mod, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-        monkeypatch.setattr(auth_mod, "build_httpx_cookies_from_storage", fake_build_httpx_cookies)
-        monkeypatch.setattr(auth_mod, "snapshot_cookie_jar", fake_snapshot)
-        monkeypatch.setattr(auth_mod, "_get_refresh_lock", wrapped_get_refresh_lock)
+        patch_auth_seam(monkeypatch, "_run_refresh_cmd", fake_run_refresh_cmd)
+        patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+        patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build_httpx_cookies)
+        patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
+        patch_auth_seam(monkeypatch, "_get_refresh_lock", wrapped_get_refresh_lock)
 
         results: list[BaseException | tuple] = []
         results_lock = threading.Lock()

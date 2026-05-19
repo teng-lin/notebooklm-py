@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from notebooklm import auth as auth_module
+from _fixtures import patch_auth_seam
 
 # Cookie set that passes the Tier 1 required-cookies check but lacks any
 # secondary binding (no OSID, no APISID/SAPISID pair). This triggers the
@@ -74,7 +75,12 @@ def test_secondary_binding_warns_exactly_once_under_asyncio_gather(
         f"expected exactly one secondary-binding warning, "
         f"got {len(binding_warnings)}: {[r.getMessage() for r in binding_warnings]}"
     )
-    assert auth_module._SECONDARY_BINDING_WARNED is True
+    # Warning flag now lives on the cookie_policy seam (_AuthFacadeModule
+    # retired in D1 PR-2). Read from the owner directly rather than the
+    # auth-module re-export captured at import time.
+    from notebooklm._auth import cookie_policy as _cookie_policy
+
+    assert _cookie_policy._SECONDARY_BINDING_WARNED is True
 
 
 def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
@@ -93,7 +99,7 @@ def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
         # caller that emits the dedupe warning, and only on this state.
         yield "unavailable"
 
-    monkeypatch.setattr(auth_module, "_file_lock", fake_file_lock)
+    patch_auth_seam(monkeypatch, "_file_lock", fake_file_lock)
 
     lock_path = tmp_path / ".storage_state.json.lock"
 
@@ -117,4 +123,9 @@ def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
         f"expected exactly one flock-unavailable warning, "
         f"got {len(flock_warnings)}: {[r.getMessage() for r in flock_warnings]}"
     )
-    assert auth_module._FLOCK_UNAVAILABLE_WARNED is True
+    # Warning flag now lives on the storage seam (_AuthFacadeModule retired
+    # in D1 PR-2). Read from the owner directly rather than the auth-module
+    # re-export captured at import time.
+    from notebooklm._auth import storage as _auth_storage
+
+    assert _auth_storage._FLOCK_UNAVAILABLE_WARNED is True

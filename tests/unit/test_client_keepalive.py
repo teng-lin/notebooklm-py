@@ -177,7 +177,9 @@ class TestKeepalivePokes:
         """
         from notebooklm import auth as _auth
 
-        monkeypatch.setattr(_auth, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
+        from _fixtures import patch_auth_seam
+
+        patch_auth_seam(monkeypatch, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
         httpx_mock.add_response(
             url=ROTATE_URL_RE,
             is_optional=True,
@@ -210,7 +212,9 @@ class TestKeepalivePokes:
         """
         from notebooklm import auth as _auth
 
-        monkeypatch.setattr(_auth, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
+        from _fixtures import patch_auth_seam
+
+        patch_auth_seam(monkeypatch, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
         # First poke: connection error. Subsequent pokes: 204.
         httpx_mock.add_exception(
             url=ROTATE_URL_RE,

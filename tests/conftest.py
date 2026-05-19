@@ -33,14 +33,29 @@ def _reset_poke_state():
        warning. Reset so tests can independently observe the warning fire.
     """
     from notebooklm import auth as _auth
+    from notebooklm._auth import cookie_policy as _cookie_policy
+    from notebooklm._auth import storage as _auth_storage
 
+    # ``_LAST_POKE_ATTEMPT_MONOTONIC`` and ``_POKE_LOCKS_BY_LOOP`` are shared
+    # by identity across ``notebooklm.auth`` and ``notebooklm._auth.keepalive``
+    # (the auth-module re-export captures the same dict object). ``.clear()``
+    # mutates in place so reaching through either reference is equivalent.
+    #
+    # ``_SECONDARY_BINDING_WARNED`` lives on the cookie_policy seam since D1
+    # PR-2 retired the ``_AuthFacadeModule`` write-through. Reset on the
+    # owner directly; the auth-module re-export captured at import time was
+    # never the canonical store.
+    # ``_FLOCK_UNAVAILABLE_WARNED`` is reset for the same reason — the
+    # storage seam owns the flag.
     _auth._LAST_POKE_ATTEMPT_MONOTONIC.clear()
     _auth._POKE_LOCKS_BY_LOOP.clear()
-    _auth._SECONDARY_BINDING_WARNED = False
+    _cookie_policy._SECONDARY_BINDING_WARNED = False
+    _auth_storage._FLOCK_UNAVAILABLE_WARNED = False
     yield
     _auth._LAST_POKE_ATTEMPT_MONOTONIC.clear()
     _auth._POKE_LOCKS_BY_LOOP.clear()
-    _auth._SECONDARY_BINDING_WARNED = False
+    _cookie_policy._SECONDARY_BINDING_WARNED = False
+    _auth_storage._FLOCK_UNAVAILABLE_WARNED = False
 
 
 @pytest.fixture(autouse=True)
