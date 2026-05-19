@@ -137,7 +137,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/integration/test_side_effects_idempotency.py",
         "tests/integration/test_sources_idempotency.py",
         "tests/unit/cli/conftest.py",
-        "tests/unit/cli/test_session.py",
         "tests/unit/concurrency/test_close_cancellation_leak.py",
         "tests/unit/concurrency/test_download_collision.py",
         "tests/unit/test_api_coverage.py",

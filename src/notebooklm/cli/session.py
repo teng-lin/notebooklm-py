@@ -66,7 +66,11 @@ from .runtime import run_async
 # ``_foo`` through that namespace. Tests that need to override the
 # helpers' *internal* dependencies (e.g. ``services.login.NotebookLMClient``)
 # must now patch the service module directly — see ADR-008 + tests/_fixtures.
-from .services.login import (
+# Many symbols below are not used in ``session.py`` directly — they exist as
+# patch-surface re-exports so ``patch("notebooklm.cli.session.<helper>")``
+# in existing tests continues to intercept calls that session.py's command
+# bodies make. Ruff F401 is suppressed on each unused-but-intentional import.
+from .services.login import (  # noqa: F401
     _INCLUDE_DOMAINS_ALL,
     _ROOKIEPY_BROWSER_ALIASES,
     _build_google_cookie_domains,
@@ -174,6 +178,7 @@ _CHANNEL_BROWSERS: dict[str, tuple[str, str]] = {
     "msedge": ("Microsoft Edge", "https://www.microsoft.com/edge"),
     "chrome": ("Google Chrome", "https://www.google.com/chrome"),
 }
+
 
 def _filter_storage_state_cookies_by_domain_policy(
     state: dict[str, Any],

@@ -138,7 +138,7 @@ class TestLoginBrowserCookies:
         # Replace the real browser-cookie reader with our sanitized fixture so
         # the test never opens the user's actual browser cookie database.
         monkeypatch.setattr(
-            "notebooklm.cli.session._read_browser_cookies",
+            "notebooklm.cli.services.login._read_browser_cookies",
             lambda *a, **kw: SANITIZED_ROOKIEPY_COOKIES,
         )
 
@@ -179,7 +179,7 @@ class TestLoginBrowserCookies:
             called_with.append(name)
             return SANITIZED_ROOKIEPY_COOKIES
 
-        monkeypatch.setattr("notebooklm.cli.session._read_browser_cookies", _capture)
+        monkeypatch.setattr("notebooklm.cli.services.login._read_browser_cookies", _capture)
         monkeypatch.setattr(
             "notebooklm.cli.session._sync_server_language_to_config",
             lambda *a, **kw: None,

@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)
-def _disable_chromium_profile_fanout(monkeypatch):
+def _disable_chromium_profile_fanout():
     """Default: Chromium multi-user-profile discovery returns nothing in tests.
 
     The session multi-account paths (``auth inspect``, ``login --account``,
@@ -22,11 +22,18 @@ def _disable_chromium_profile_fanout(monkeypatch):
     patching ``discover_chromium_profiles`` explicitly with their own list of
     synthetic profiles — the autouse here just guarantees deterministic
     legacy-path behavior everywhere else.
+
+    D1 PR-3 migration: previously used
+    ``monkeypatch.setattr("notebooklm.cli._chromium_profiles...", ...)``
+    — the string-target form ADR-007 forbids because it silently no-ops
+    if the target relocates. Now uses ``patch(...)`` which raises
+    ``AttributeError`` on missing targets.
     """
-    monkeypatch.setattr(
+    with patch(
         "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
         lambda *a, **kw: [],
-    )
+    ):
+        yield
 
 
 @pytest.fixture
