@@ -232,29 +232,34 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chain_seeded_with_drain_metrics_tracing() -> None:
-    """``ClientCore.__init__`` seeds the chain with ``[Drain, Metrics, Tracing]``.
+async def test_chain_seeded_with_drain_metrics_error_injection_tracing() -> None:
+    """``ClientCore.__init__`` seeds the chain with ``[Drain, Metrics, ErrorInjection, Tracing]``.
 
     PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
-    prepended ``MetricsMiddleware``; PR 12.5 prepends ``DrainMiddleware``
-    outermost. Order matters — Drain admits/finalizes the operation outside
-    all observability, Metrics times the inner chain, Tracing remains the
-    innermost wrapper around the transport leaf. PRs 12.6–12.8 insert their
-    middleware BETWEEN Drain and Metrics so the final ordering reads
+    prepended ``MetricsMiddleware``; PR 12.5 prepended ``DrainMiddleware``
+    outermost; PR 12.6 inserts ``ErrorInjectionMiddleware`` between Metrics
+    and Tracing. Order matters — Drain admits/finalizes the operation outside
+    all observability, Metrics times the inner chain, ErrorInjection
+    short-circuits with synthetic responses when activated, and Tracing
+    remains the innermost wrapper around the transport leaf. PRs 12.7–12.8
+    insert ``RetryMiddleware`` and ``AuthRefreshMiddleware`` BETWEEN Metrics
+    and ErrorInjection so the final ordering reads
     ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` per
-    ADR-009. The list is exposed as ``self._middlewares`` so later PRs
-    (and the cleanup audit in 12.9) can assert ordering by inspecting the
+    ADR-009. The list is exposed as ``self._middlewares`` so later PRs (and
+    the cleanup audit in 12.9) can assert ordering by inspecting the
     production attribute directly.
     """
     from notebooklm._middleware_drain import DrainMiddleware
+    from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
     from notebooklm._middleware_metrics import MetricsMiddleware
     from notebooklm._middleware_tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._middlewares) == 3
+    assert len(core._middlewares) == 4
     assert isinstance(core._middlewares[0], DrainMiddleware)
     assert isinstance(core._middlewares[1], MetricsMiddleware)
-    assert isinstance(core._middlewares[2], TracingMiddleware)
+    assert isinstance(core._middlewares[2], ErrorInjectionMiddleware)
+    assert isinstance(core._middlewares[3], TracingMiddleware)
 
 
 @pytest.mark.asyncio

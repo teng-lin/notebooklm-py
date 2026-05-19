@@ -677,12 +677,16 @@ async def test_synthetic_transport_no_op_when_env_var_unset_in_clientcore(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["429", "5xx", "expired_csrf"])
-async def test_synthetic_transport_wired_when_env_var_set_in_clientcore(monkeypatch, mode):
-    """End-to-end: when the env var resolves to a valid mode,
-    ``ClientCore.open()`` builds the AsyncClient with the synthetic wrapper
-    in place. The transport's ``_mode`` attribute reflects the env var."""
+async def test_error_injection_middleware_present_when_env_var_set_in_clientcore(monkeypatch, mode):
+    """End-to-end: Tier-12 PR 12.6 lifted synthetic-error injection from the
+    httpx transport into the chain. With the env var set, ``ClientCore``'s
+    middleware list contains an :class:`ErrorInjectionMiddleware` AND the
+    httpx ``AsyncClient`` transport is unwrapped (no
+    ``_SyntheticErrorTransport``) — the substitution happens above the
+    transport now."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
     from notebooklm._core import ClientCore
+    from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
     from notebooklm.auth import AuthTokens
 
     auth = AuthTokens(cookies={"SID": "t"}, csrf_token="c", session_id="s")
@@ -690,9 +694,16 @@ async def test_synthetic_transport_wired_when_env_var_set_in_clientcore(monkeypa
     try:
         await core.open()
         assert core._http_client is not None
+        # PR 12.6: httpx transport is unwrapped regardless of env var.
         transport = core._http_client._transport
-        assert isinstance(transport, _SyntheticErrorTransport)
-        assert transport._mode == mode
+        assert not isinstance(transport, _SyntheticErrorTransport)
+        # PR 12.6: chain seed contains an ``ErrorInjectionMiddleware`` that
+        # short-circuits at chain-invocation time when the env var resolves
+        # to a valid mode. The middleware itself doesn't expose the
+        # active mode (it reads the env var per call); env-var-to-mode
+        # resolution is covered by the dedicated middleware tests in
+        # ``test_error_injection_middleware.py``.
+        assert any(isinstance(mw, ErrorInjectionMiddleware) for mw in core._middlewares)
     finally:
         if core._http_client is not None:
             await core._http_client.aclose()

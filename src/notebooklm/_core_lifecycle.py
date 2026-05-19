@@ -36,13 +36,13 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
   The shielded ``aclose()`` is critical: without it, a ``CancelledError``
   arriving mid-close leaks the underlying httpx transport.
 
-* :meth:`open` wraps the inner transport in
-  :class:`notebooklm._core._SyntheticErrorTransport` IFF
-  :func:`notebooklm._core._get_error_injection_mode` returns a non-``None``
-  value. Both symbols are resolved from ``notebooklm._core`` at call time
-  (not imported at module load) so the opt-in env-var path stays test-only
-  and ``test_vcr_config.py``'s ``from notebooklm._core import …`` imports
-  keep working unchanged.
+* :meth:`open` no longer wraps the inner transport for synthetic-error
+  injection — Tier-12 PR 12.6 lifted that path into the chain
+  (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`,
+  wired by :class:`ClientCore.__init__`). When
+  ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, the chain middleware
+  short-circuits before the chain leaf reaches httpx, so the httpx-layer
+  transport stays a real, unwrapped transport at all times.
 
 * :meth:`save_cookies` resolves ``save_cookies_to_storage`` from
   ``notebooklm._core`` at call time so the
@@ -187,22 +187,14 @@ class ClientLifecycle:
         intentionally replaces the binding — ``open()`` is the only binding
         moment.
 
-        Wraps the inner transport in
-        :class:`notebooklm._core._SyntheticErrorTransport` IFF
-        :func:`notebooklm._core._get_error_injection_mode` returns a
-        non-``None`` value. Both symbols are resolved from ``notebooklm._core``
-        at call time so the opt-in env-var path stays test-only and the
-        ``test_vcr_config.py`` import surface is unaffected.
+        Synthetic-error injection moved from this layer to the chain in
+        Tier-12 PR 12.6 — see
+        :class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`
+        for the new substitution point. The httpx transport built here is
+        always a real, unwrapped transport.
         """
         if self._http_client is not None:
             return
-
-        # Resolve through the parent module at call time so production paths
-        # never import the test-only synthetic-transport plumbing eagerly and
-        # so monkeypatches of ``_get_error_injection_mode`` (if any) keep
-        # working. ``_core`` import-cycles back into us only via TYPE_CHECKING
-        # so this runtime import is safe and cheap (cached after first call).
-        from . import _core as _core_module
 
         # Capture event-loop affinity before any awaitable resource is built
         # so the binding is consistent with the loop that owns every primitive
@@ -244,29 +236,6 @@ class ClientLifecycle:
             storage_path=host.auth.storage_path,
         )
 
-        # Opt-in synthetic-error transport wrapper. When the env var is unset
-        # (the default) this is a no-op and the AsyncClient is constructed
-        # exactly as before. See ``_SyntheticErrorTransport`` docstring in
-        # :mod:`notebooklm._core_error_injection` (re-exported on
-        # ``notebooklm._core`` for the legacy import surface).
-        error_mode = _core_module._get_error_injection_mode()
-        synthetic_transport: httpx.AsyncBaseTransport | None = None
-        if error_mode is not None:
-            # When we supply a custom ``transport=`` to ``AsyncClient``, httpx
-            # no longer constructs its own internal transport from the
-            # ``limits=`` kwarg below — those limits are consumed by the inner
-            # transport here instead, so connection-pool sizing remains
-            # identical to the no-injection path.
-            inner_transport = httpx.AsyncHTTPTransport(
-                limits=self._limits.to_httpx_limits(),
-            )
-            synthetic_transport = _core_module._SyntheticErrorTransport(error_mode, inner_transport)
-            logger.info(
-                "synthetic-error injection enabled (mode=%s) — "
-                "production paths will see substituted responses",
-                error_mode,
-            )
-
         self._http_client = httpx.AsyncClient(
             headers={
                 "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -274,14 +243,7 @@ class ClientLifecycle:
             cookies=cookies,
             timeout=timeout,
             follow_redirects=True,
-            # ``limits=`` is honored when ``transport=None`` (default) —
-            # httpx builds its own default transport with these limits.
-            # When ``transport=synthetic_transport`` (error-injection record
-            # mode) this kwarg is ignored by httpx and the inner_transport
-            # above carries the limits instead. The redundant pass is
-            # harmless and avoids a branch on the AsyncClient construction.
             limits=self._limits.to_httpx_limits(),
-            transport=synthetic_transport,
         )
 
         # Capture the open-time snapshot AFTER the AsyncClient is built (httpx
