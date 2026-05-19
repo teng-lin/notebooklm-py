@@ -102,18 +102,20 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     12.8 the leaf no longer has a ``while`` retry loop — it makes
     exactly one attempt per chain invocation. Each chain-level retry
     (driven by ``RetryMiddleware`` / ``AuthRefreshMiddleware``) re-enters
-    the leaf and re-runs ``_snapshot`` → ``build_request`` → POST.
-    The guard therefore walks the ``try`` block directly inside the
-    ``async with semaphore:`` body.
+    the leaf and re-runs ``_snapshot`` → ``build_request`` → POST. PR
+    12.9 moved the semaphore acquire OUT of the leaf entirely (it now
+    lives in ``SemaphoreMiddleware`` at chain position 2), so the leaf
+    is a pure POST-with-try block — the guard walks the ``try`` block
+    at the top of the function body.
     """
     src = textwrap.dedent(inspect.getsource(AuthedTransport.perform_authed_post))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
-    # Locate the ``try`` block guarding the POST. Post-PR-12.8 the leaf
-    # has no ``while`` retry loop; the try sits directly inside the
-    # ``async with self._get_rpc_semaphore():`` body (the semaphore
-    # acquire happens once per call, not per iteration).
+    # Locate the ``try`` block guarding the POST. Post-PR-12.9 the leaf
+    # has no ``while`` retry loop and no ``async with`` semaphore wrap;
+    # the try sits at the top of the function body (the semaphore is
+    # held by ``SemaphoreMiddleware`` higher up the chain).
     def _find_first_try(parent: ast.AST) -> ast.Try | None:
         for child in ast.iter_child_nodes(parent):
             if isinstance(child, ast.Try):

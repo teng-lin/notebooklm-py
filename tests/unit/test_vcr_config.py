@@ -374,9 +374,11 @@ def test_scrub_response_does_not_corrupt_non_chunked_html_body():
 # 2. The ``before_record_response`` hook in vcr_config.py performs a
 #    defense-in-depth substitution when the env var is set, and is a no-op
 #    when unset.
-# 3. The ``_core.py`` transport wrapper substitutes the FIRST batchexecute
-#    POST without touching non-batchexecute traffic, and is only constructed
-#    when the env var resolves to a valid mode.
+# 3. The chain-layer ``ErrorInjectionMiddleware`` substitutes the synthetic
+#    response on every chain invocation (short-circuiting batchexecute
+#    POSTs) and is only wired into the chain when the env var resolves to
+#    a valid mode. PR 12.6 lifted this from a transport-layer wrapper
+#    (``_SyntheticErrorTransport``, deleted in PR 12.9) into the chain.
 
 build_synthetic_error_response = _cassette_patterns.build_synthetic_error_response
 synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name

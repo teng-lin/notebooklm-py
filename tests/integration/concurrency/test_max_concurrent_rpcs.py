@@ -231,6 +231,76 @@ async def test_none_disables_cap_and_allows_full_fanout(
     assert peak <= 50
 
 
+async def test_slot_held_across_retry_middleware_retries(
+    mock_transport_concurrent: ConcurrentMockTransport,
+) -> None:
+    """PR-12.9 regression: a logical RPC that retries does NOT release its slot.
+
+    Pre-PR-12.9 the chain leaf held the semaphore around a single POST
+    attempt — when ``RetryMiddleware`` re-invoked the chain on a 429, the
+    leaf released the slot, the retrying call queued behind whatever was
+    already in flight, and (under sustained 429s) every slot could end
+    up held by a retrying call waiting for a slot to retry into.
+    Codex caught this in the PR-12.9 audit. The fix is
+    :class:`SemaphoreMiddleware` at chain position 2 (between Metrics
+    and Retry) so the entire retry cohort stays in ONE slot per logical
+    RPC.
+
+    Test shape:
+    - ``max_concurrent_rpcs=1`` (one slot total).
+    - Two parallel tasks. Each hits ONE 429 then OK on retry.
+    - Total transport hits = 4 (2 originals + 2 retries).
+    - Peak in-flight MUST stay at 1. A value > 1 would mean a retry
+      attempt re-acquired the slot, indicating the gate moved INSIDE
+      ``RetryMiddleware`` again.
+    """
+    import httpx as _httpx
+
+    from .conftest import _default_rpc_response_text
+
+    transport = mock_transport_concurrent
+    transport.set_delay(0.02)
+
+    # Queue: 429, OK, 429, OK. Each logical RPC takes the first 429 and
+    # then succeeds on retry. With cap=1 the second logical RPC cannot
+    # start its first attempt until the first logical RPC's retry is
+    # done — and the retry stays in the same slot, so peak == 1.
+    headers = {"retry-after": "0"}
+    ok_text = _default_rpc_response_text()
+    for status, text in [
+        (429, "rate limited"),
+        (200, ok_text),
+        (429, "rate limited"),
+        (200, ok_text),
+    ]:
+        transport.queue_response(_httpx.Response(status_code=status, text=text, headers=headers))
+
+    core = await _open_core_with_transport(transport, max_concurrent_rpcs=1)
+    # Force fast retry so the test finishes promptly even on a slow box.
+    core._rate_limit_max_retries = 3
+
+    try:
+        results = await asyncio.gather(
+            *[core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) for _ in range(2)]
+        )
+    finally:
+        await core.close()
+
+    assert len(results) == 2
+    # 4 transport hits = 2 logical RPCs × (1 initial + 1 retry).
+    assert transport.request_count() == 4, (
+        f"expected 4 transport hits (2 logical RPCs × 2 attempts each); "
+        f"got {transport.request_count()}"
+    )
+    peak = transport.get_peak_inflight()
+    assert peak == 1, (
+        f"peak in-flight was {peak} under max_concurrent_rpcs=1 with retries; "
+        f"expected exactly 1. A peak > 1 means RetryMiddleware retries "
+        f"re-acquired the slot, which would put SemaphoreMiddleware INSIDE "
+        f"RetryMiddleware — a chain-ordering regression."
+    )
+
+
 def test_cap_above_pool_max_connections_raises_at_construction(
     auth_tokens: AuthTokens,
 ) -> None:

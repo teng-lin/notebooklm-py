@@ -113,6 +113,7 @@ from ._middleware_drain import DrainMiddleware
 from ._middleware_error_injection import ErrorInjectionMiddleware
 from ._middleware_metrics import MetricsMiddleware
 from ._middleware_retry import RetryMiddleware
+from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY, SemaphoreMiddleware
 from ._middleware_tracing import TracingMiddleware
 from ._sources import fetch_source_ids
 
@@ -518,6 +519,17 @@ class ClientCore:
         self._middlewares: list[Middleware] = [
             DrainMiddleware(self._drain_tracker),
             MetricsMiddleware(self._metrics_obj),
+            # Acquire the ``max_concurrent_rpcs`` slot AFTER Drain admits
+            # the call (so queued tasks count toward shutdown drain) and
+            # AFTER Metrics starts timing (so latency includes queue
+            # wait), but BEFORE Retry can re-enter the inner chain — that
+            # way ``RetryMiddleware``'s retry attempts stay in the same
+            # slot rather than racing to claim another, preserving the
+            # pre-Tier-12 "one slot per logical RPC" contract.
+            # ``_get_rpc_semaphore`` returns ``contextlib.nullcontext``
+            # when ``max_concurrent_rpcs is None`` (unbounded), so the
+            # ``async with`` collapses to a no-op for opted-out clients.
+            SemaphoreMiddleware(self._get_rpc_semaphore),
             # Pass callable budgets so post-construction mutation of
             # ``self._rate_limit_max_retries`` / ``self._server_error_max_retries``
             # (an integration-test idiom; production never mutates these)
@@ -898,9 +910,14 @@ class ClientCore:
     def _ensure_observability_state(self) -> None:
         """Backfill observability fields for tests that construct via ``__new__``.
 
-        Gates on ``_metrics_obj`` AND ``_drain_tracker`` (both real instance
-        attributes) — the property-bridged ivars' ``hasattr`` probes are
-        always True because the descriptors live on the class.
+        Gates on ``_metrics_obj`` AND ``_drain_tracker`` AND
+        ``_max_concurrent_rpcs`` (all three are real instance attributes,
+        not property-bridged ivars whose ``hasattr`` probes would always
+        be True because the descriptors live on the class). The
+        ``_max_concurrent_rpcs`` slot was added by PR 12.9 audit-find #1
+        so a ``__new__``-built fixture can call ``_perform_authed_post``
+        without ``AttributeError`` when ``SemaphoreMiddleware`` reads the
+        accessor.
         """
         if (
             hasattr(self, "_metrics_obj")
@@ -959,16 +976,17 @@ class ClientCore:
             if hasattr(self, "_authed_post_chain"):
                 return
             if not hasattr(self, "_middlewares"):
-                # Mirror ``__init__``'s seeded chain. PR 12.8 lands the
-                # **final** ADR-009 ordering [Drain, Metrics, Retry,
-                # AuthRefresh, ErrorInjection, Tracing]. A ``__new__``-built
-                # fixture must see the same chain shape so all four chain
-                # behaviors (drain admission, retry on 429/5xx,
-                # refresh-and-retry on 4xx auth shapes, synthetic-error
-                # short-circuit) are exercised on fixture-driven
-                # invocations too — otherwise the fixture path and the
-                # live path diverge, which has previously hidden bugs in
-                # Tier-8 cassette-replay tests.
+                # Mirror ``__init__``'s seeded chain. PR 12.9 lands the
+                # **final** ADR-009 ordering [Drain, Metrics, Semaphore,
+                # Retry, AuthRefresh, ErrorInjection, Tracing]. A
+                # ``__new__``-built fixture must see the same chain shape
+                # so all five chain behaviors (drain admission, queue
+                # gating, retry on 429/5xx, refresh-and-retry on 4xx
+                # auth shapes, synthetic-error short-circuit) are
+                # exercised on fixture-driven invocations too —
+                # otherwise the fixture path and the live path diverge,
+                # which has previously hidden bugs in Tier-8
+                # cassette-replay tests.
                 #
                 # ``getattr`` defaults match ``__init__``'s argument
                 # defaults so a ``__new__``-built fixture that never set
@@ -979,6 +997,7 @@ class ClientCore:
                 self._middlewares = [
                     DrainMiddleware(self._drain_tracker),
                     MetricsMiddleware(self._metrics_obj),
+                    SemaphoreMiddleware(self._get_rpc_semaphore),
                     RetryMiddleware(
                         rate_limit_max_retries=lambda: getattr(self, "_rate_limit_max_retries", 3),
                         server_error_max_retries=lambda: getattr(
@@ -1200,13 +1219,15 @@ class ClientCore:
 
         Called automatically by NotebookLMClient.__aenter__. Delegates to
         :meth:`ClientLifecycle.open` — that helper builds the
-        ``httpx.AsyncClient`` (with the opt-in
-        :class:`_SyntheticErrorTransport` wrap when
-        ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set), captures the running
-        event loop into ``self._bound_loop``, and spawns the keepalive
-        task. Idempotent — calling ``open()`` while already open is a
-        no-op. Re-opening after a prior :meth:`close` intentionally
-        replaces the loop binding; :meth:`close` does not unbind so an
+        ``httpx.AsyncClient`` (always the default transport; the
+        ``NOTEBOOKLM_VCR_RECORD_ERRORS`` opt-in is enforced by
+        :class:`ErrorInjectionMiddleware` at chain layer, not by wrapping
+        the transport — see ADR-009 close-out notes), captures the
+        running event loop into ``self._bound_loop``, and spawns the
+        keepalive task. Idempotent — calling ``open()`` while already
+        open is a no-op. Re-opening after a prior :meth:`close`
+        intentionally replaces the loop binding; :meth:`close` does not
+        unbind so an
         accidental cross-loop call after close still raises actionably.
         """
         self._ensure_lifecycle()
@@ -1393,10 +1414,14 @@ class ClientCore:
         late-bound monkeypatches of ``_get_authed_transport`` (e.g. fixtures
         that swap the transport mid-test) still affect live behavior. The
         ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
-        dataclass fields stay unpopulated for the empty chain — PRs
-        12.5/12.7/12.8 begin populating them as middlewares strip behavior
-        out of :class:`AuthedTransport`. See ADR-009 §"RpcRequest.context
-        keys" for the metadata vocabulary.
+        dataclass fields stay unpopulated through Tier-12 — middlewares
+        in PRs 12.3–12.9 carried behavior out of :class:`AuthedTransport`
+        but the leaf still rebuilds the request from ``build_request`` +
+        ``AuthSnapshot`` rather than reading the dataclass fields.
+        Population is deferred to Tier-13 row 13.2 (``Kernel.post``
+        rewrite) — see ADR-009 close-out notes §"AuthRefreshMiddleware
+        shipped without rebuild closures". See ADR-009
+        §"RpcRequest.context keys" for the metadata vocabulary.
         """
         context = request.context
         build_request = context["build_request"]
@@ -1454,22 +1479,19 @@ class ClientCore:
             },
         )
 
-        # PR 12.9 audit fix: the RPC concurrency semaphore wraps the
-        # ENTIRE chain invocation (initial attempt + chain-level retries
-        # by RetryMiddleware / AuthRefreshMiddleware). This restores the
-        # pre-Tier-12 "one slot per logical RPC" backpressure contract.
-        # Releasing a slot during RetryMiddleware's backoff sleep would
-        # let new callers burst in just as the current cohort wakes up,
-        # undoing the smoothing the semaphore exists to provide.
-        # ``_get_rpc_semaphore`` returns ``contextlib.nullcontext`` when
-        # ``max_concurrent_rpcs`` is ``None`` (unbounded), so this wrap
-        # is a no-op for clients that opted out.
-        semaphore = self._get_rpc_semaphore()
-        queue_wait_start = time.perf_counter()
-        async with semaphore:
-            self._record_rpc_queue_wait(time.perf_counter() - queue_wait_start)
-            result = await self._authed_post_chain(request)
-            return result.response
+        # The ``max_concurrent_rpcs`` slot is acquired by
+        # :class:`SemaphoreMiddleware` (chain position 2, between Metrics
+        # and Retry) — that placement keeps Drain admitting queued tasks
+        # AND keeps Metrics timing the queue wait, while still bounding
+        # the retry-and-refresh cohort to one slot per logical RPC.
+        # The middleware writes the queue-wait duration to
+        # ``request.context[RPC_QUEUE_WAIT_CONTEXT_KEY]`` so the recorder
+        # below can forward it to ``ClientMetrics`` without giving the
+        # middleware an opinionated ``ClientMetrics`` dependency.
+        result = await self._authed_post_chain(request)
+        queue_wait = request.context.get(RPC_QUEUE_WAIT_CONTEXT_KEY, 0.0)
+        self._record_rpc_queue_wait(queue_wait)
+        return result.response
 
     async def transport_post(
         self,
