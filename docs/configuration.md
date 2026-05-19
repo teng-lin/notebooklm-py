@@ -164,7 +164,8 @@ be audited from one location.
 (case-insensitive) as truthy; everything else is falsy.
 `NOTEBOOKLM_STRICT_DECODE` treats `1` / `true` / `True` as truthy (the unset
 default also resolves to truthy post-PR 13.9a); everything else (`0`,
-`false`, `no`, `""`) is falsy and opts back into the soft-mode fallback.
+`false`, `False`, `no`, `off`, `""`, or any other non-truthy value) is
+falsy and opts back into the soft-mode fallback.
 `NOTEBOOKLM_QUIET_DEPRECATIONS` requires the literal string `1`.
 `NOTEBOOKLM_NOTEBOOK` is treated as unset when empty or whitespace-only so a
 bare `export NOTEBOOKLM_NOTEBOOK=` does not block `notebooklm use` /
