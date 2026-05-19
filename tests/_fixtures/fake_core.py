@@ -82,6 +82,7 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         # Legacy ClientCore compatibility bridge
         "poll_registry": MagicMock(),
         # DrainHookRegistration
+        "_drain_hooks": {},
         "register_drain_hook": MagicMock(return_value=None),
         # AuthRouteProvider — sync helpers, used during request build
         "authuser": 0,
@@ -114,6 +115,11 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         # Auth-route helper alias
         "_route_url": MagicMock(return_value="https://notebooklm.google.com/_/.../batchexecute"),
     }
+
+    def _register_drain_hook(name: str, hook: Any) -> None:
+        defaults["_drain_hooks"][name] = hook
+
+    defaults["register_drain_hook"] = MagicMock(side_effect=_register_drain_hook)
 
     # Validate overrides early so a typo like ``rpc_cal=`` fails loudly
     # rather than landing as an unread attribute.

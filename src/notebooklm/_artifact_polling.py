@@ -78,13 +78,14 @@ class ArtifactPollingService:
         return self._poll_registry
 
     async def drain(self) -> None:
-        """Cancel and await currently active leader poll tasks."""
+        """Cancel active leader poll tasks and await polling bookkeeping."""
         poll_tasks = self._poll_registry.active_tasks()
-        if not poll_tasks:
-            return
         for task in poll_tasks:
             task.cancel()
-        await asyncio.gather(*poll_tasks, return_exceptions=True)
+        if poll_tasks:
+            await asyncio.gather(*poll_tasks, return_exceptions=True)
+        if self._completion_tasks:
+            await asyncio.gather(*self._completion_tasks, return_exceptions=True)
 
     async def poll_status(
         self,

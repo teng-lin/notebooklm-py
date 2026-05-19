@@ -248,6 +248,47 @@ async def test_polling_service_resolves_wait_before_slow_transport_finish() -> N
 
 
 @pytest.mark.asyncio
+async def test_polling_service_drain_waits_for_bookkeeping_without_active_polls() -> None:
+    token = object()
+    finish_release = asyncio.Event()
+    provider = _FakeTransportProvider(token=token, finish_release=finish_release)
+    service = ArtifactPollingService(provider, provider.poll_registry)
+
+    async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    result = await service.wait_for_completion(
+        "nb1",
+        "task1",
+        initial_interval=0.0,
+        max_interval=0.0,
+        timeout=1.0,
+        poll_status=poll_status,
+    )
+
+    assert result.status == "completed"
+    assert provider.poll_registry.active_tasks() == []
+    assert provider.finish_started.is_set()
+    assert not provider.finish_finished.is_set()
+
+    drain_task = asyncio.create_task(service.drain())
+    try:
+        await asyncio.sleep(0)
+        assert not drain_task.done()
+
+        finish_release.set()
+        await asyncio.wait_for(drain_task, timeout=1.0)
+    finally:
+        finish_release.set()
+        if not drain_task.done():
+            drain_task.cancel()
+            await asyncio.gather(drain_task, return_exceptions=True)
+
+    assert provider.finish_finished.is_set()
+    assert provider.finish_tokens == [token]
+
+
+@pytest.mark.asyncio
 async def test_polling_service_finishes_transport_token_once_after_poll_failure() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)

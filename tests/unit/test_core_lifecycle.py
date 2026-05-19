@@ -347,6 +347,7 @@ async def test_close_runs_drain_hooks_before_transport_teardown() -> None:
     parked = asyncio.create_task(_park())
 
     async def drain_polls() -> None:
+        assert lifecycle._http_client is not None
         parked.cancel()
         await asyncio.gather(parked, return_exceptions=True)
 
@@ -358,6 +359,7 @@ async def test_close_runs_drain_hooks_before_transport_teardown() -> None:
     assert parked.cancelled() or parked.done(), (
         "close() must run drain hooks before tearing down the client."
     )
+    assert lifecycle._http_client is None
 
 
 # ---------------------------------------------------------------------------
