@@ -33,6 +33,7 @@ Pure bug fixes, additive RPC method IDs, and CLI ergonomics changes do not requi
 | [0006](0006-vcr-scrubber-strategy.md) | VCR cassette scrubber strategy | Accepted (retroactive) |
 | [0007](0007-test-monkeypatch-policy.md) | Test monkeypatch policy | Accepted |
 | [0008](0008-cli-services-extraction-pattern.md) | `cli/services/` extraction pattern | Accepted (retroactive) |
+| [0009](0009-middleware-chain.md) | Middleware chain for cross-cutting transport concerns | Accepted (Tier 12 PR 12.1) |
 
 ADR-007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_lint/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 
