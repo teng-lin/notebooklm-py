@@ -30,7 +30,6 @@ def _make_api():
     """Return an ArtifactsAPI with mocked core + notes."""
     core = MagicMock()
     core.rpc_call = AsyncMock()
-    core.get_source_ids = AsyncMock(return_value=[])
     # Real registry backing so wait_for_completion can ``dict.get(key)``.
     core.poll_registry = PollRegistry()
     core._pending_polls = core.poll_registry.pending
@@ -41,7 +40,9 @@ def _make_api():
     notes = MagicMock()
     notes.list_mind_maps = AsyncMock(return_value=[])
     notes.create = AsyncMock(return_value=MagicMock(id="note_1"))
-    return ArtifactsAPI(core, notes_api=notes)
+    notebooks = MagicMock()
+    notebooks.get_source_ids = AsyncMock(return_value=[])
+    return ArtifactsAPI(core, notes_api=notes, notebooks=notebooks)
 
 
 def _art(artifact_id: str, status: int, artifact_type: int = 1, error_at_3: str | None = None):

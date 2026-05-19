@@ -200,13 +200,22 @@ class NotebooksAPI:
         )
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
-        """Extract all source IDs from a notebook."""
-        params = [notebook_id, None, [2], None, 0]
-        notebook_data = await self._core.rpc_call(
-            RPCMethod.GET_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-        )
+        """Extract all source IDs from a notebook.
+
+        Fetches notebook data and extracts source IDs for use with chat and
+        artifact generation when targeting specific sources.
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            List of source IDs. Empty list if no sources or on error.
+
+        Note:
+            Source IDs are triple-nested in RPC responses: ``source[0][0]``
+            contains the ID.
+        """
+        notebook_data = await self.get_raw(notebook_id)
 
         source_ids: list[str] = []
         if not notebook_data or not isinstance(notebook_data, list):

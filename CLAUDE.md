@@ -98,8 +98,8 @@ RPC Layer (rpc/)
 | `_core_polling.py` | Pending-poll registry for long-running artifact generations |
 | `_core_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_capabilities.py` | Narrow capability Protocols + `ClientCoreCapabilities` adapter for sub-clients |
-| `_notebooks.py` | `client.notebooks` API |
-| `_sources.py` | `client.sources` API + `fetch_source_ids` module helper |
+| `_notebooks.py` | `client.notebooks` API + source-id resolver |
+| `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` API |
 | `_chat.py` | `client.chat` API |
 | `rpc/types.py` | RPC method IDs (source of truth) |

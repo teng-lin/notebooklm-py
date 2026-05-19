@@ -79,7 +79,9 @@ def api():
     core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)
     notes_api = MagicMock()
-    return ArtifactsAPI(core, notes_api)
+    mock_notebooks = MagicMock()
+    mock_notebooks.get_source_ids = AsyncMock(return_value=[])
+    return ArtifactsAPI(core, notes_api, notebooks=mock_notebooks)
 
 
 @pytest.mark.asyncio

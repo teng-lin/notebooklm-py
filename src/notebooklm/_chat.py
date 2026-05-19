@@ -8,14 +8,16 @@ import asyncio
 import contextlib
 import logging
 import weakref
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import httpx
 
 from ._capabilities import (
+    AuthRouteProvider,
     CoreReqIdProvider,
     CoreRPCProvider,
     LoopAffinityProvider,
+    SourceListProvider,
     TransportOperationProvider,
 )
 from ._chat_protocol import (
@@ -48,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 class _ChatCore(
     CoreRPCProvider,
+    AuthRouteProvider,
     TransportOperationProvider,
     CoreReqIdProvider,
     LoopAffinityProvider,
@@ -91,10 +94,6 @@ class _ChatCore(
         # never appeared in the RPC counters and continue not to.
         rpc_method: str | None = None,
     ) -> httpx.Response: ...
-
-
-class _SourceIdsResolver(Protocol):
-    async def get_source_ids(self, notebook_id: str) -> list[str]: ...
 
 
 def _extract_next_turn_content(next_turn: Any) -> str | None:
@@ -166,7 +165,7 @@ class ChatAPI:
         core: _ChatCore,
         *,
         conversation_cache: ConversationCache | None = None,
-        notebooks: _SourceIdsResolver | None = None,
+        notebooks: SourceListProvider | None = None,
     ):
         """Initialize the chat API.
 
@@ -183,7 +182,7 @@ class ChatAPI:
         if notebooks is None:
             from ._notebooks import NotebooksAPI
 
-            notebooks = NotebooksAPI(cast(Any, core))
+            notebooks = NotebooksAPI(core)
         self._notebooks = notebooks
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
         # Per-``conversation_id`` lock that serializes follow-up asks on the
