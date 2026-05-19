@@ -51,6 +51,7 @@ from ._notes import NotesAPI
 from ._research import ResearchAPI
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
+from ._source_upload import SourceUploadPipeline
 from ._sources import SourcesAPI
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
@@ -264,11 +265,17 @@ class NotebookLMClient:
             on_rpc_event=on_rpc_event,
         )
 
-        # After D2 cutover, sub-clients consume ``ClientCore`` directly,
-        # typed against their per-sub-client narrow Protocol (defined
-        # co-located in each sub-client file).
+        source_uploader = SourceUploadPipeline(
+            self._core,
+            self._core._kernel,
+            self._core.auth,
+            upload_timeout=upload_timeout,
+            max_concurrent_uploads=max_concurrent_uploads,
+            record_upload_queue_wait=self._core.record_upload_queue_wait,
+        )
         self.sources = SourcesAPI(
             self._core,
+            uploader=source_uploader,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
         )
@@ -277,6 +284,7 @@ class NotebookLMClient:
             self._core,
             storage_path=storage_path,
             notebooks=self.notebooks,
+            drain_hooks=self._core,
         )
         self.notes = NotesAPI(self._core)
         self.chat = ChatAPI(self._core, notebooks=self.notebooks)

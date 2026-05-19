@@ -34,13 +34,11 @@ def mock_core():
     live_cookie_jar = MagicMock(name="live_cookie_jar")
     core.auth.cookie_jar = auth_cookie_jar
     core.get_http_client.return_value.cookies = live_cookie_jar
-    # After D2 cutover, ``_source_upload`` reaches the live cookie jar via
-    # ``capabilities.live_cookies()`` (the ``CookieJarProvider`` Protocol).
-    # Wire the same ``live_cookie_jar`` to that method so the
-    # ``_assert_async_client_uses_live_cookies`` invariant still proves the
-    # upload pipeline reuses the live jar.
+    # The stateful upload pipeline reaches the live cookie jar through the
+    # injected kernel/session compatibility path. Keep this distinct from
+    # auth.cookie_jar so the invariant still proves uploads reuse the live jar.
     core.live_cookies = MagicMock(return_value=live_cookie_jar)
-    # Mirror ``ClientCore``'s ``AuthRouteProvider`` surface. The
+    # Mirror ``ClientCore``'s auth-route helper surface. The
     # ``authuser_query()`` and ``authuser_header()`` callables read
     # ``core.auth.authuser`` / ``core.auth.account_email`` at call time so
     # tests that mutate ``mock_core.auth.authuser`` mid-test still observe

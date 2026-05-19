@@ -12,6 +12,7 @@ Root causes:
 3. Failed artifacts had no error message surfaced to the caller.
 """
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -33,8 +34,7 @@ def _make_api():
     # Real registry backing so wait_for_completion can ``dict.get(key)``.
     core.poll_registry = PollRegistry()
     core._pending_polls = core.poll_registry.pending
-    core._begin_transport_task = AsyncMock(return_value=object())
-    core._finish_transport_post = AsyncMock()
+    core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
     core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)
     notes = MagicMock()
@@ -43,6 +43,11 @@ def _make_api():
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(core, notes_api=notes, notebooks=notebooks)
+
+
+@asynccontextmanager
+async def _noop_operation_scope():
+    yield None
 
 
 def _art(artifact_id: str, status: int, artifact_type: int = 1, error_at_3: str | None = None):

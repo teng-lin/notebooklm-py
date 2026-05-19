@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import builtins
-import contextlib
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any
 
 from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
-from ._capabilities import LoopAffinityProvider, TransportOperationProvider
 from ._polling_registry import PollRegistry
+from ._session_contracts import Session
 from .rpc import (
     ArtifactStatus,
     ArtifactTypeCode,
@@ -46,14 +45,6 @@ ArtifactErrorCallback = Callable[[builtins.list[Any]], str | None]
 StatusChangeCallback = Callable[[GenerationStatus], object]
 
 
-class ArtifactPollingCapabilities(
-    TransportOperationProvider,
-    LoopAffinityProvider,
-    Protocol,
-):
-    """Capabilities required by the artifact polling boundary."""
-
-
 class ArtifactPollingService:
     """Leader/follower artifact polling boundary.
 
@@ -64,12 +55,11 @@ class ArtifactPollingService:
 
     def __init__(
         self,
-        capabilities: ArtifactPollingCapabilities,
+        session: Session,
         poll_registry: PollRegistry | None = None,
     ) -> None:
-        self._capabilities = capabilities
+        self._session = session
         self._poll_registry = poll_registry if poll_registry is not None else PollRegistry()
-        self._completion_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def poll_registry(self) -> PollRegistry:
@@ -83,8 +73,6 @@ class ArtifactPollingService:
             task.cancel()
         if poll_tasks:
             await asyncio.gather(*poll_tasks, return_exceptions=True)
-        if self._completion_tasks:
-            await asyncio.gather(*self._completion_tasks, return_exceptions=True)
 
     async def poll_status(
         self,
@@ -158,7 +146,7 @@ class ArtifactPollingService:
         # P0-2: catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
         # loop) or spawning a poll task on a foreign loop.
-        self._capabilities.assert_bound_loop()
+        self._session.assert_bound_loop()
         # Backward compatibility: poll_interval overrides initial_interval.
         if poll_interval is not None:
             import warnings
@@ -202,7 +190,7 @@ class ArtifactPollingService:
         future.add_done_callback(_consume_orphan_exception)
 
         poll_task = asyncio.create_task(
-            self._run_poll_loop(
+            self._run_poll_loop_in_scope(
                 notebook_id,
                 task_id,
                 initial_interval=initial_interval,
@@ -216,28 +204,6 @@ class ArtifactPollingService:
             name=f"artifact-poll-{notebook_id}-{task_id}",
         )
         pending[key] = (future, poll_task)
-        try:
-            poll_operation_token = await self._capabilities._begin_transport_task(
-                poll_task,
-                f"artifact wait {task_id}",
-            )
-        except BaseException as begin_exc:
-            pending.pop(key, None)
-            poll_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await poll_task
-            if not future.done():
-                if isinstance(begin_exc, asyncio.CancelledError):
-                    future.cancel()
-                else:
-                    future.set_exception(begin_exc)
-            raise
-
-        async def _finish_poll_operation() -> None:
-            try:
-                await self._capabilities._finish_transport_post(poll_operation_token)
-            except Exception as cleanup_exc:  # noqa: BLE001 - cleanup should not mask poll result
-                logger.warning("Artifact poll drain bookkeeping failed: %s", cleanup_exc)
 
         def _resolve_poll(task: asyncio.Task[GenerationStatus]) -> None:
             # Pop the registry entry before resolving the future so a waiter
@@ -256,9 +222,6 @@ class ArtifactPollingService:
             future.set_result(task.result())
 
         def _on_poll_done(task: asyncio.Task[GenerationStatus]) -> None:
-            completion_task = asyncio.create_task(_finish_poll_operation())
-            self._completion_tasks.add(completion_task)
-            completion_task.add_done_callback(self._completion_tasks.discard)
             _resolve_poll(task)
 
         poll_task.add_done_callback(_on_poll_done)
@@ -267,6 +230,32 @@ class ArtifactPollingService:
         # cancellation unwinds locally without taking down the shared poll.
         # Remaining followers still receive the result.
         return await asyncio.shield(future)
+
+    async def _run_poll_loop_in_scope(
+        self,
+        notebook_id: str,
+        task_id: str,
+        *,
+        initial_interval: float,
+        max_interval: float,
+        timeout: float,
+        max_not_found: int,
+        min_not_found_window: float,
+        poll_status: PollStatusCallback,
+        on_status_change: StatusChangeCallback | None,
+    ) -> GenerationStatus:
+        async with self._session.operation_scope(f"artifact wait {task_id}"):
+            return await self._run_poll_loop(
+                notebook_id,
+                task_id,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                timeout=timeout,
+                max_not_found=max_not_found,
+                min_not_found_window=min_not_found_window,
+                poll_status=poll_status,
+                on_status_change=on_status_change,
+            )
 
     async def _run_poll_loop(
         self,

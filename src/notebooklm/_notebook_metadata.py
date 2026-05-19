@@ -23,6 +23,13 @@ class NotebookSourceLister(Protocol):
         """List sources for a notebook."""
 
 
+class NotebookSourceIdProvider(Protocol):
+    """Structural source-id dependency needed by chat and artifact generation."""
+
+    async def get_source_ids(self, notebook_id: str) -> builtins.list[str]:
+        """Return source IDs for a notebook."""
+
+
 NotebookGetter = Callable[[str], Awaitable[Notebook]]
 
 
@@ -71,6 +78,7 @@ class NotebookMetadataService:
 
 __all__ = [
     "NotebookMetadataService",
+    "NotebookSourceIdProvider",
     "NotebookSourceLister",
     "create_default_source_lister",
 ]

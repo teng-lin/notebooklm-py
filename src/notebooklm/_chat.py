@@ -8,18 +8,8 @@ import asyncio
 import contextlib
 import logging
 import weakref
-from typing import Any, Protocol
+from typing import Any
 
-import httpx
-
-from ._capabilities import (
-    AuthRouteProvider,
-    CoreReqIdProvider,
-    CoreRPCProvider,
-    LoopAffinityProvider,
-    SourceListProvider,
-    TransportOperationProvider,
-)
 from ._chat_protocol import (
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -34,8 +24,9 @@ from ._chat_protocol import (
 from ._chat_transport import chat_aware_authed_post
 from ._core import _AuthSnapshot
 from ._core_cache import ConversationCache
-from ._core_transport import _BuildRequest
 from ._logging import get_request_id, reset_request_id, set_request_id
+from ._notebook_metadata import NotebookSourceIdProvider
+from ._session_contracts import Session
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (
     ChatGoal,
@@ -46,54 +37,6 @@ from .rpc import (
 from .types import AskResult, ChatMode, ChatReference, ConversationTurn
 
 logger = logging.getLogger(__name__)
-
-
-class _ChatCore(
-    CoreRPCProvider,
-    AuthRouteProvider,
-    TransportOperationProvider,
-    CoreReqIdProvider,
-    LoopAffinityProvider,
-    Protocol,
-):
-    """Narrow per-sub-client view of the core required by :class:`ChatAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002). Chat
-    is unusual among sub-clients in that the streaming-chat path
-    (``ask``) issues an authed POST against ``batchexecute`` directly
-    through :func:`_chat_transport.chat_aware_authed_post`, while the
-    follow-up conversation and history RPCs (``get_conversation``,
-    ``delete_conversation``, ``get_conversation_id``,
-    ``list_conversations``) go through the standard ``rpc_call`` path.
-
-    Inherits the discrete capability surfaces chat exercises:
-    ``rpc_call`` (from :class:`CoreRPCProvider`), underscore-private
-    transport-operation bookkeeping (from
-    :class:`TransportOperationProvider`), the shared request-id counter
-    (from :class:`CoreReqIdProvider`), and the open-time event-loop guard
-    (from :class:`LoopAffinityProvider`). The single member
-    declared inline below — ``_perform_authed_post`` — is the underlying
-    streaming-chat transport entry point that
-    :func:`_chat_transport.chat_aware_authed_post` invokes; it does not
-    belong on any cross-sub-client base Protocol because chat is the
-    sole consumer.
-    """
-
-    async def _perform_authed_post(
-        self,
-        *,
-        build_request: _BuildRequest,
-        log_label: str,
-        # ``disable_internal_retries`` mirrors the concrete
-        # ``ClientCore._perform_authed_post`` signature so structural typing
-        # matches; ``chat_aware_authed_post`` never forwards it (chat always
-        # runs with internal retries enabled).
-        disable_internal_retries: bool = False,
-        # ``rpc_method`` (PR 12.4) is None for the chat path so
-        # ``MetricsMiddleware`` skips emission — chat-side requests have
-        # never appeared in the RPC counters and continue not to.
-        rpc_method: str | None = None,
-    ) -> httpx.Response: ...
 
 
 def _extract_next_turn_content(next_turn: Any) -> str | None:
@@ -162,15 +105,18 @@ class ChatAPI:
 
     def __init__(
         self,
-        core: _ChatCore,
+        session: Session | None = None,
         *,
+        core: Session | None = None,
         conversation_cache: ConversationCache | None = None,
-        notebooks: SourceListProvider | None = None,
+        notebooks: NotebookSourceIdProvider | None = None,
     ):
         """Initialize the chat API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
+            core: Deprecated alias for ``session`` kept for tests and older
+                direct construction sites.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache`` (chat-domain state, no
                 other consumer).
@@ -178,11 +124,18 @@ class ChatAPI:
                 ``NotebooksAPI`` wrapper around ``core`` for backward
                 compatibility with tests that construct ``ChatAPI(core)``.
         """
-        self._core = core
+        if session is None:
+            if core is None:
+                raise TypeError("ChatAPI requires a session")
+            session = core
+        elif core is not None:
+            raise TypeError("ChatAPI received both 'session' and 'core'")
+
+        self._core = session
         if notebooks is None:
             from ._notebooks import NotebooksAPI
 
-            notebooks = NotebooksAPI(core)
+            notebooks = NotebooksAPI(session)
         self._notebooks = notebooks
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
         # Per-``conversation_id`` lock that serializes follow-up asks on the

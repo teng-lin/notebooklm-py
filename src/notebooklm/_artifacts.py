@@ -10,20 +10,15 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, cast
 
 from . import _artifact_formatters, _artifact_polling, _mind_map
 from ._artifact_downloads import ArtifactDownloadService, DownloadResult
 from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
-from ._capabilities import (
-    AuthRouteProvider,
-    CoreRPCProvider,
-    LoopAffinityProvider,
-    TransportOperationProvider,
-)
+from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._session_contracts import DrainHookRegistration
+from ._session_contracts import DrainHookRegistration, Session
 from .auth import load_httpx_cookies
 from .rpc import (
     ArtifactTypeCode,
@@ -57,31 +52,7 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
-class _ArtifactsCore(
-    CoreRPCProvider,
-    AuthRouteProvider,
-    TransportOperationProvider,
-    LoopAffinityProvider,
-    DrainHookRegistration,
-    Protocol,
-):
-    """Narrow per-sub-client view of the core required by :class:`ArtifactsAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    only the capabilities ArtifactsAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`), authuser routing (from
-    :class:`AuthRouteProvider`), transport-operation bookkeeping for
-    long-running download streams (from :class:`TransportOperationProvider`),
-    the open-time event loop forwarded into the artifact polling boundary's
-    loop-affinity guard (from :class:`LoopAffinityProvider`), and close-time
-    drain registration (from :class:`DrainHookRegistration`).
-    """
-
-    pass
-
-
 if TYPE_CHECKING:
-    from ._capabilities import SourceListProvider
     from ._notes import NotesAPI  # retained for backward-compatible type hints
 
 # Private compatibility exports. Tests and downstream code patch these names
@@ -168,17 +139,18 @@ class ArtifactsAPI:
 
     def __init__(
         self,
-        core: _ArtifactsCore,
+        session: Session,
         notes_api: "NotesAPI | None" = None,
         storage_path: Path | None = None,
         *,
         mind_map_service: _mind_map.MindMapService | None = None,
-        notebooks: "SourceListProvider | None" = None,
+        notebooks: NotebookSourceIdProvider | None = None,
+        drain_hooks: DrainHookRegistration | None = None,
     ):
         """Initialize the artifacts API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
             notes_api: Deprecated. Retained as an optional, ignored
                 keyword for backward compatibility — ``ArtifactsAPI`` no
                 longer depends on :class:`NotesAPI`. Mind-map RPC
@@ -193,13 +165,13 @@ class ArtifactsAPI:
             notebooks: Optional source-id resolver. Defaults to a
                 ``NotebooksAPI`` wrapper around ``core`` for backward
                 compatibility with tests that construct ``ArtifactsAPI(core)``.
+            drain_hooks: Close-time hook registration surface.
         """
-        self._core = core
-        self._capabilities = core
+        self._core = session
         if notebooks is None:
             from ._notebooks import NotebooksAPI
 
-            notebooks = NotebooksAPI(core)
+            notebooks = NotebooksAPI(session)
         self._notebooks = notebooks
         # ``notes_api`` is intentionally not stored — it is accepted only
         # so that existing call sites (tests, third-party code) keep
@@ -207,17 +179,19 @@ class ArtifactsAPI:
         del notes_api
         self._storage_path = storage_path
         self._mind_map_service = (
-            _mind_map.MindMapService(core) if mind_map_service is None else mind_map_service
+            _mind_map.MindMapService(session) if mind_map_service is None else mind_map_service
         )
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
         self._downloads = ArtifactDownloadService(self)
         self._polling = _artifact_polling.ArtifactPollingService(
-            self._capabilities,
+            session,
             self._poll_registry,
         )
-        core.register_drain_hook("artifacts.polls", self._polling.drain)
+        if drain_hooks is None:
+            drain_hooks = cast(DrainHookRegistration, session)
+        drain_hooks.register_drain_hook("artifacts.polls", self._polling.drain)
 
     # =========================================================================
     # List/Get Operations

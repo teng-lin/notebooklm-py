@@ -6,26 +6,22 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
-from typing import IO, Any, Literal, Protocol
+from typing import IO, Any, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
 
 from . import _source_upload
-from ._capabilities import (
-    AuthRouteProvider,
-    CookieJarProvider,
-    CoreRPCProvider,
-    OperationScopeProvider,
-    UploadConcurrencyProvider,
-)
 from ._core_constants import DEFAULT_MAX_CONCURRENT_UPLOADS
+from ._kernel import Kernel
+from ._session_contracts import Session
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
 from ._source_polling import SourcePoller
 from ._source_upload import SourceUploadPipeline
 from ._url_utils import is_youtube_url
+from .auth import AuthTokens
 from .rpc import RPCMethod
 from .types import (
     Source,
@@ -33,29 +29,6 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class _SourcesCore(
-    CoreRPCProvider,
-    AuthRouteProvider,
-    UploadConcurrencyProvider,
-    OperationScopeProvider,
-    CookieJarProvider,
-    Protocol,
-):
-    """Narrow per-sub-client view of the core required by :class:`SourcesAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    the capabilities SourcesAPI uses through its upload pipeline:
-    ``rpc_call`` (from :class:`CoreRPCProvider`), authuser routing
-    (from :class:`AuthRouteProvider`), the upload-concurrency semaphore
-    owned by :class:`SourceUploadPipeline`, queue-wait recording (from
-    :class:`UploadConcurrencyProvider`), structured drain scopes (from
-    :class:`OperationScopeProvider`), and the live cookie jar consumed by
-    the Scotty upload HTTP path (from :class:`CookieJarProvider`).
-    """
-
-    pass
 
 
 _SOURCE_ID_UUID_PATTERN = _source_upload._SOURCE_ID_UUID_PATTERN
@@ -78,14 +51,16 @@ class SourcesAPI:
 
     def __init__(
         self,
-        core: _SourcesCore,
+        session: Session,
+        uploader: SourceUploadPipeline | None = None,
         upload_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
     ):
         """Initialize the sources API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
+            uploader: Stateful file-upload pipeline.
             upload_timeout: Optional override for the ``httpx.Timeout`` used
                 by the resumable-upload start handshake and the finalize
                 POST. ``None`` (default) preserves the original hardcoded
@@ -100,14 +75,27 @@ class SourcesAPI:
                 :meth:`add_file` uploads. The semaphore is owned by this
                 Sources upload pipeline, not by the shared core/session.
         """
-        self._core = core
-        self._capabilities = core
+        self._core = session
         self._adder = SourceAddService()
         self._content = SourceContentRenderer(self._rpc_call, logger=logger)
         self._lister = SourceLister(self._rpc_call)
         self._poller = SourcePoller()
-        self._uploader = SourceUploadPipeline(max_concurrent_uploads=max_concurrent_uploads)
         self._upload_timeout = upload_timeout
+        self._uploader = uploader or SourceUploadPipeline(
+            session,
+            self._compat_kernel(session),
+            cast(AuthTokens, getattr(session, "auth", None)),
+            upload_timeout=upload_timeout,
+            max_concurrent_uploads=max_concurrent_uploads,
+            record_upload_queue_wait=getattr(session, "record_upload_queue_wait", None),
+        )
+
+    @staticmethod
+    def _compat_kernel(session: Session) -> Kernel:
+        kernel = getattr(session, "__dict__", {}).get("_kernel")
+        if kernel is not None:
+            return cast(Kernel, kernel)
+        return cast(Kernel, session)
 
     async def _rpc_call(
         self,
@@ -130,10 +118,6 @@ class SourcesAPI:
             disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
         )
-
-    def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
-        """Return the configured upload timeout, or ``default`` if unset."""
-        return self._upload_timeout if self._upload_timeout is not None else default
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
         """List all sources in a notebook.
@@ -499,7 +483,6 @@ class SourcesAPI:
             title=title,
             on_progress=on_progress,
             deprecation_warning_stacklevel=3,
-            capabilities=self._capabilities,
             register_file_source=self._register_file_source,
             start_resumable_upload=self._start_resumable_upload,
             upload_file_streaming=self._upload_file_streaming,
@@ -816,7 +799,6 @@ class SourcesAPI:
         return await self._uploader.register_file_source(
             notebook_id,
             filename,
-            rpc_call=self._rpc_call,
             list_sources=self.list,
             logger=logger,
         )
@@ -834,9 +816,6 @@ class SourcesAPI:
             filename,
             file_size,
             source_id,
-            capabilities=self._capabilities,
-            resolve_upload_timeout=self._resolve_upload_timeout,
-            async_client_factory=httpx.AsyncClient,
         )
 
     async def _upload_file_streaming(
@@ -911,10 +890,6 @@ class SourcesAPI:
             filename=filename,
             on_progress=on_progress,
             total_bytes=total_bytes,
-            capabilities=self._capabilities,
-            resolve_upload_timeout=self._resolve_upload_timeout,
-            async_client_factory=httpx.AsyncClient,
-            cancel_upload_session=self._cancel_upload_session,
             logger=logger,
         )
 
@@ -936,7 +911,5 @@ class SourcesAPI:
             upload_url,
             base_url,
             auth_route,
-            capabilities=self._capabilities,
-            async_client_factory=httpx.AsyncClient,
             logger=logger,
         )

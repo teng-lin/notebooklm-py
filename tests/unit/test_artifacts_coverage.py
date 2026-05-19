@@ -5,6 +5,7 @@ These tests target specific uncovered lines identified by coverage analysis.
 
 import asyncio
 import warnings
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -26,8 +27,7 @@ def mock_artifacts_api():
     # and confuse the ``existing is not None`` branch.
     mock_core.poll_registry = PollRegistry()
     mock_core._pending_polls = mock_core.poll_registry.pending
-    mock_core._begin_transport_task = AsyncMock(return_value=object())
-    mock_core._finish_transport_post = AsyncMock()
+    mock_core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
     # ``bound_loop`` must be ``None`` (silent-no-op for the affinity
     # guard) so the artifact polling helper does not raise on a
     # ``MagicMock``-shaped loop value.
@@ -40,11 +40,13 @@ def mock_artifacts_api():
     mock_notes.create = AsyncMock(return_value=mock_note)
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
-    # After D2 cutover, sub-clients consume ``ClientCore`` directly typed
-    # against their narrow Protocol — the ``MagicMock`` duck-types the
-    # required Protocol surface.
     api = ArtifactsAPI(mock_core, notes_api=mock_notes, notebooks=mock_notebooks)
     return api, mock_core
+
+
+@asynccontextmanager
+async def _noop_operation_scope():
+    yield None
 
 
 # =============================================================================

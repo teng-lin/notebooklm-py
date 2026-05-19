@@ -6,10 +6,10 @@ and importing discovered sources into notebooks.
 
 import logging
 import warnings
-from typing import Any, Protocol
+from typing import Any
 
 from . import research as _research_pub
-from ._capabilities import CoreRPCProvider
+from ._session_contracts import Session
 from .exceptions import ResearchTaskMismatchError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
@@ -17,17 +17,6 @@ from .types import CitedSourceSelection
 __all__ = ["CitedSourceSelection", "ResearchAPI"]
 
 logger = logging.getLogger(__name__)
-
-
-class _ResearchCore(CoreRPCProvider, Protocol):
-    """Narrow per-sub-client view of the core required by :class:`ResearchAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    only the capability ResearchAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`).
-    """
-
-    pass
 
 
 _RESEARCH_RESULT_TYPE_ALIASES = {
@@ -212,13 +201,13 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, core: _ResearchCore):
+    def __init__(self, session: Session):
         """Initialize the research API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
         """
-        self._core = core
+        self._core = session
 
     @staticmethod
     def _parse_result_type(value: Any) -> int | str:

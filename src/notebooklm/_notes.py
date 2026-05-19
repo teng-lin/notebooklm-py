@@ -11,24 +11,13 @@ historical ``NotesAPI`` method surface for backward compatibility.
 
 import builtins
 import logging
-from typing import Any, Protocol
+from typing import Any
 
 from . import _mind_map
-from ._capabilities import CoreRPCProvider
+from ._session_contracts import Session
 from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
-
-
-class _NotesCore(CoreRPCProvider, Protocol):
-    """Narrow per-sub-client view of the core required by :class:`NotesAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    only the single capability NotesAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`).
-    """
-
-    pass
 
 
 class NotesAPI:
@@ -50,21 +39,21 @@ class NotesAPI:
 
     def __init__(
         self,
-        core: _NotesCore,
+        session: Session,
         *,
         mind_map_service: _mind_map.MindMapService | None = None,
     ):
         """Initialize the notes API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
             mind_map_service: Optional private service for note-backed
                 mind-map and note-row operations. Keyword-only so the public
                 positional constructor contract stays unchanged.
         """
-        self._core = core
+        self._core = session
         self._mind_map_service = (
-            _mind_map.MindMapService(core) if mind_map_service is None else mind_map_service
+            _mind_map.MindMapService(session) if mind_map_service is None else mind_map_service
         )
 
     async def list(self, notebook_id: str) -> list[Note]:

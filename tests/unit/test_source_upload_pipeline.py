@@ -37,10 +37,22 @@ class UploadRuntime:
 
         return scope()
 
+    async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("unexpected rpc_call")
+
+    async def transport_post(self, *args: Any, **kwargs: Any) -> httpx.Response:
+        raise AssertionError("unexpected transport_post")
+
+    async def next_reqid(self, step: int = 100000) -> int:
+        return step
+
+    def assert_bound_loop(self) -> None:
+        return None
+
 
 class HttpRuntime:
     def __init__(self) -> None:
-        self.cookies = httpx.Cookies()
+        self._cookies = httpx.Cookies()
 
     @property
     def authuser(self) -> int:
@@ -56,8 +68,9 @@ class HttpRuntime:
     def authuser_header(self) -> str:
         return "0"
 
-    def live_cookies(self) -> httpx.Cookies:
-        return self.cookies
+    @property
+    def cookies(self) -> httpx.Cookies:
+        return self._cookies
 
 
 class RecordingRpc:
@@ -91,7 +104,28 @@ class RecordingRpc:
 
 @pytest.fixture
 def service() -> SourceUploadPipeline:
-    return SourceUploadPipeline()
+    return make_pipeline()
+
+
+def make_pipeline(
+    session: UploadRuntime | None = None,
+    kernel: HttpRuntime | None = None,
+    auth: HttpRuntime | None = None,
+    *,
+    max_concurrent_uploads: int | None = None,
+    async_client_factory=None,
+) -> SourceUploadPipeline:
+    session = session or UploadRuntime()
+    kernel = kernel or HttpRuntime()
+    auth = auth or kernel
+    return SourceUploadPipeline(
+        session,
+        kernel,
+        auth,  # type: ignore[arg-type]
+        max_concurrent_uploads=max_concurrent_uploads,
+        record_upload_queue_wait=session.record_upload_queue_wait,
+        async_client_factory=async_client_factory,
+    )
 
 
 def test_extract_register_file_source_id_skips_large_string_candidates() -> None:
@@ -102,8 +136,8 @@ def test_extract_register_file_source_id_skips_large_string_candidates() -> None
 
 @pytest.mark.asyncio
 async def test_upload_semaphore_is_owned_per_pipeline() -> None:
-    first = SourceUploadPipeline(max_concurrent_uploads=1)
-    second = SourceUploadPipeline(max_concurrent_uploads=1)
+    first = make_pipeline(max_concurrent_uploads=1)
+    second = make_pipeline(max_concurrent_uploads=1)
 
     assert first.get_upload_semaphore() is first.get_upload_semaphore()
     assert first.get_upload_semaphore() is not second.get_upload_semaphore()
@@ -111,12 +145,12 @@ async def test_upload_semaphore_is_owned_per_pipeline() -> None:
 
 @pytest.mark.asyncio
 async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
-    service: SourceUploadPipeline,
     tmp_path,
 ) -> None:
     file_path = tmp_path / "report.pdf"
     file_path.write_bytes(b"hello")
     runtime = UploadRuntime()
+    service = make_pipeline(runtime)
 
     register_file_source = AsyncMock(return_value="src_123")
     start_resumable_upload = AsyncMock(return_value="https://upload.example.com/session")
@@ -131,7 +165,6 @@ async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
     source = await service.add_file(
         "nb_123",
         file_path,
-        capabilities=runtime,
         register_file_source=register_file_source,
         start_resumable_upload=start_resumable_upload,
         upload_file_streaming=upload_file_streaming,
@@ -158,7 +191,7 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -
     first_file.write_bytes(b"first")
     second_file.write_bytes(b"second")
     runtime = UploadRuntime()
-    service = SourceUploadPipeline(max_concurrent_uploads=1)
+    service = make_pipeline(runtime, max_concurrent_uploads=1)
     first_streaming_started = asyncio.Event()
     release_first_streaming = asyncio.Event()
 
@@ -172,7 +205,6 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -
         return await service.add_file(
             "nb_123",
             path,
-            capabilities=runtime,
             register_file_source=AsyncMock(return_value=f"src_{path.stem}"),
             start_resumable_upload=AsyncMock(return_value="https://upload.example.com/session"),
             upload_file_streaming=upload_file_streaming,
@@ -201,12 +233,12 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_add_file_custom_title_waits_for_registration_before_rename(
-    service: SourceUploadPipeline,
     tmp_path,
 ) -> None:
     file_path = tmp_path / "report.pdf"
     file_path.write_bytes(b"hello")
     runtime = UploadRuntime()
+    service = make_pipeline(runtime)
     registered = Source(id="src_123", title="report.pdf", _type_code=7, url="https://source")
     renamed = Source(id="src_123", title="Custom")
     wait_until_registered = AsyncMock(return_value=registered)
@@ -220,7 +252,6 @@ async def test_add_file_custom_title_waits_for_registration_before_rename(
         file_path,
         title="  Custom  ",
         wait_timeout=45.0,
-        capabilities=runtime,
         register_file_source=AsyncMock(return_value="src_123"),
         start_resumable_upload=AsyncMock(return_value="https://upload.example.com/session"),
         upload_file_streaming=upload_file_streaming,
@@ -294,9 +325,7 @@ async def test_register_file_source_truncates_large_string_response_preview(
 
 
 @pytest.mark.asyncio
-async def test_start_resumable_upload_uses_injected_http_client(
-    service: SourceUploadPipeline,
-) -> None:
+async def test_start_resumable_upload_uses_injected_http_client() -> None:
     response = MagicMock()
     response.headers = {"x-goog-upload-url": "https://upload.example.com/session"}
     response.raise_for_status = MagicMock()
@@ -306,15 +335,13 @@ async def test_start_resumable_upload_uses_injected_http_client(
     client_cm.__aenter__.return_value = client
     client_factory = MagicMock(return_value=client_cm)
     runtime = HttpRuntime()
+    service = make_pipeline(kernel=runtime, auth=runtime, async_client_factory=client_factory)
 
     upload_url = await service.start_resumable_upload(
         "nb_123",
         "report.pdf",
         12,
         "src_123",
-        capabilities=runtime,
-        resolve_upload_timeout=lambda default: default,
-        async_client_factory=client_factory,
     )
 
     assert upload_url == "https://upload.example.com/session"

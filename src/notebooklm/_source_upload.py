@@ -11,23 +11,19 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from time import monotonic
-from typing import IO, Any, Protocol
+from typing import IO, Any, Protocol, cast
 
 import httpx
 
 from ._callbacks import maybe_await_callback
-from ._capabilities import (
-    AuthRouteProvider,
-    CookieJarProvider,
-    OperationScopeProvider,
-    UploadConcurrencyProvider,
-)
 from ._core_constants import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
 from ._env import get_base_url
 from ._idempotency import idempotent_create
+from ._session_contracts import Kernel, Session
+from .auth import AuthTokens, authuser_query, format_authuser_value
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -42,22 +38,6 @@ from .types import Source, SourceAddError
 _SOURCE_ID_UUID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-
-
-class SourceUploadRuntime(
-    UploadConcurrencyProvider,
-    OperationScopeProvider,
-    Protocol,
-):
-    """Capabilities needed by public file-upload orchestration."""
-
-
-class SourceUploadHttpRuntime(
-    AuthRouteProvider,
-    CookieJarProvider,
-    Protocol,
-):
-    """Capabilities needed by Scotty upload HTTP calls."""
 
 
 class RpcCaller(Protocol):
@@ -125,12 +105,6 @@ class RenameSource(Protocol):
     async def __call__(self, notebook_id: str, source_id: str, new_title: str) -> Source: ...
 
 
-class ResolveUploadTimeout(Protocol):
-    """Upload timeout resolution callback shape."""
-
-    def __call__(self, default: httpx.Timeout) -> httpx.Timeout: ...
-
-
 class AsyncClientFactory(Protocol):
     """Factory for creating an ``httpx.AsyncClient``-compatible instance."""
 
@@ -142,13 +116,8 @@ class AsyncClientFactory(Protocol):
     ) -> httpx.AsyncClient: ...
 
 
-class CancelUploadSession(Protocol):
-    """Late-bound facade hook for best-effort upload cancellation."""
-
-    async def __call__(self, upload_url: str, base_url: str, auth_route: str) -> None: ...
-
-
 ListSources = Callable[[str], Awaitable[list[Source]]]
+QueueWaitRecorder = Callable[[float], None]
 
 
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
@@ -211,9 +180,49 @@ def _looks_like_id_string(candidate: str) -> bool:
 class SourceUploadPipeline:
     """Own file registration and resumable upload orchestration."""
 
-    def __init__(self, max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS):
+    def __init__(
+        self,
+        session: Session,
+        kernel: Kernel,
+        auth: AuthTokens,
+        upload_timeout: httpx.Timeout | None = None,
+        max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
+        *,
+        record_upload_queue_wait: QueueWaitRecorder | None = None,
+        async_client_factory: AsyncClientFactory | None = None,
+    ):
+        self._session = session
+        self._kernel = kernel
+        self._auth = auth
+        self._upload_timeout = upload_timeout
+        self._record_upload_queue_wait = record_upload_queue_wait
+        self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
+
+    def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
+        """Return the configured upload timeout, or ``default`` if unset."""
+        return self._upload_timeout if self._upload_timeout is not None else default
+
+    def _client_factory(self) -> AsyncClientFactory:
+        return self._async_client_factory or httpx.AsyncClient
+
+    def _authuser_query(self) -> str:
+        return authuser_query(self._auth.authuser, self._auth.account_email)
+
+    def _authuser_header(self) -> str:
+        return format_authuser_value(self._auth.authuser, self._auth.account_email)
+
+    def _live_cookies(self) -> httpx.Cookies:
+        cookies = getattr(self._kernel, "cookies", None)
+        if isinstance(cookies, httpx.Cookies):
+            return cookies
+        get_http_client = getattr(self._kernel, "get_http_client", None)
+        if get_http_client is not None:
+            return get_http_client().cookies
+        if cookies is None:
+            return httpx.Cookies()
+        return cast(httpx.Cookies, cookies)
 
     def get_upload_semaphore(self) -> asyncio.Semaphore:
         """Return the Sources-owned upload semaphore, creating it on first use.
@@ -240,7 +249,6 @@ class SourceUploadPipeline:
         on_progress: Callable[[int, int], object] | None = None,
         deprecation_warning_stacklevel: int = 2,
         upload_index: int = 0,
-        capabilities: SourceUploadRuntime,
         register_file_source: RegisterFileSource,
         start_resumable_upload: StartResumableUpload,
         upload_file_streaming: UploadFileStreaming,
@@ -270,11 +278,12 @@ class SourceUploadPipeline:
             raise ValidationError(f"Not a regular file: {file_path}")
 
         filename = file_path.name
-        async with capabilities.operation_scope(f"upload:{upload_index}"):
+        async with self._session.operation_scope(f"upload:{upload_index}"):
             upload_sem = self.get_upload_semaphore()
             upload_wait_start = monotonic()
             async with upload_sem:
-                capabilities.record_upload_queue_wait(monotonic() - upload_wait_start)
+                if self._record_upload_queue_wait is not None:
+                    self._record_upload_queue_wait(monotonic() - upload_wait_start)
                 file_obj = open(file_path, "rb")  # noqa: SIM115
                 handed_off = False
                 try:
@@ -331,9 +340,9 @@ class SourceUploadPipeline:
         notebook_id: str,
         filename: str,
         *,
-        rpc_call: RpcCaller,
         list_sources: ListSources,
         logger: Any,
+        rpc_call: RpcCaller | None = None,
     ) -> str:
         """Register a file source intent and get SOURCE_ID.
 
@@ -360,6 +369,7 @@ class SourceUploadPipeline:
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
+        rpc_call = rpc_call or self._session.rpc_call
 
         # Capture baseline source IDs before the first create attempt so the
         # probe can distinguish "this upload landed" from "a same-named source
@@ -495,15 +505,11 @@ class SourceUploadPipeline:
         filename: str,
         file_size: int,
         source_id: str,
-        *,
-        capabilities: SourceUploadHttpRuntime,
-        resolve_upload_timeout: ResolveUploadTimeout,
-        async_client_factory: AsyncClientFactory,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
-        auth_route = capabilities.authuser_header()
+        auth_route = self._authuser_header()
         base_url = get_base_url()
-        url = f"{get_upload_url()}?{capabilities.authuser_query()}"
+        url = f"{get_upload_url()}?{self._authuser_query()}"
 
         headers = {
             "Accept": "*/*",
@@ -524,9 +530,9 @@ class SourceUploadPipeline:
             }
         )
 
-        async with async_client_factory(
-            timeout=resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
-            cookies=capabilities.live_cookies(),
+        async with self._client_factory()(
+            timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
+            cookies=self._live_cookies(),
         ) as client:
             response = await client.post(url, headers=headers, content=body)
             response.raise_for_status()
@@ -547,10 +553,6 @@ class SourceUploadPipeline:
         filename: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
         total_bytes: int | None = None,
-        capabilities: SourceUploadHttpRuntime,
-        resolve_upload_timeout: ResolveUploadTimeout,
-        async_client_factory: AsyncClientFactory,
-        cancel_upload_session: CancelUploadSession,
         logger: Any,
     ) -> None:
         """Stream upload file content to the resumable upload URL."""
@@ -558,7 +560,7 @@ class SourceUploadPipeline:
         close_wired = False
         try:
             base_url = get_base_url()
-            auth_route = capabilities.authuser_header()
+            auth_route = self._authuser_header()
             headers = {
                 "Accept": "*/*",
                 "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
@@ -602,9 +604,9 @@ class SourceUploadPipeline:
 
             async def _do_finalize() -> None:
                 nonlocal finalize_started
-                async with async_client_factory(
-                    timeout=resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
-                    cookies=capabilities.live_cookies(),
+                async with self._client_factory()(
+                    timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
+                    cookies=self._live_cookies(),
                 ) as client:
                     finalize_started = True
                     response = await client.post(upload_url, headers=headers, content=file_stream())
@@ -628,7 +630,14 @@ class SourceUploadPipeline:
                 if not finalize_started:
                     finalize_task.cancel()
                     _retain_background_cancel_task(
-                        asyncio.create_task(cancel_upload_session(upload_url, base_url, auth_route))
+                        asyncio.create_task(
+                            self.cancel_upload_session(
+                                upload_url,
+                                base_url,
+                                auth_route,
+                                logger=logger,
+                            )
+                        )
                     )
                     raise
                 try:
@@ -653,8 +662,6 @@ class SourceUploadPipeline:
         base_url: str,
         auth_route: str,
         *,
-        capabilities: SourceUploadHttpRuntime,
-        async_client_factory: AsyncClientFactory,
         logger: Any,
     ) -> None:
         """Best-effort POST a Scotty resumable-upload cancel command."""
@@ -667,9 +674,9 @@ class SourceUploadPipeline:
             "x-goog-upload-command": "cancel",
         }
         try:
-            async with async_client_factory(
+            async with self._client_factory()(
                 timeout=httpx.Timeout(10.0, read=10.0),
-                cookies=capabilities.live_cookies(),
+                cookies=self._live_cookies(),
             ) as client:
                 await client.post(upload_url, headers=headers)
         except Exception as exc:  # noqa: BLE001

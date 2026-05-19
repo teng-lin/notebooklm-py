@@ -1,26 +1,13 @@
 """Sharing operations API."""
 
 import logging
-from typing import Protocol
 
-from ._capabilities import AuthRouteProvider, CoreRPCProvider
+from ._session_contracts import Session
 from .rpc import RPCMethod
 from .rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from .types import ShareStatus
 
 logger = logging.getLogger(__name__)
-
-
-class _SharingCore(CoreRPCProvider, AuthRouteProvider, Protocol):
-    """Narrow per-sub-client view of the core required by :class:`SharingAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002). Inherits
-    only the capabilities SharingAPI actually uses: ``rpc_call`` (from
-    :class:`CoreRPCProvider`) and authuser routing (from
-    :class:`AuthRouteProvider`).
-    """
-
-    pass
 
 
 class SharingAPI:
@@ -47,13 +34,13 @@ class SharingAPI:
             )
     """
 
-    def __init__(self, core: _SharingCore):
+    def __init__(self, session: Session):
         """Initialize the sharing API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
         """
-        self._core = core
+        self._core = session
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Get current sharing configuration.

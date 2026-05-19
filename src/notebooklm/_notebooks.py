@@ -2,15 +2,15 @@
 
 import logging
 import warnings
-from typing import Any, Protocol
+from typing import Any
 
-from ._capabilities import AuthRouteProvider, CoreRPCProvider
 from ._idempotency import idempotent_create
 from ._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
     create_default_source_lister,
 )
+from ._session_contracts import Session
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
 from .exceptions import (
@@ -26,18 +26,6 @@ from .rpc import RPCMethod, safe_index
 from .types import AccountLimits, Notebook, NotebookDescription, NotebookMetadata, SuggestedTopic
 
 logger = logging.getLogger(__name__)
-
-
-class _NotebooksCore(CoreRPCProvider, AuthRouteProvider, Protocol):
-    """Narrow per-sub-client view of the core required by :class:`NotebooksAPI`.
-
-    Co-located with the sub-client that consumes it (per ADR-002 §"narrow
-    Protocols, co-located"). Inherits only the capabilities NotebooksAPI
-    actually uses: ``rpc_call`` (from :class:`CoreRPCProvider`) and the
-    NotebookLM authuser routing surface (from :class:`AuthRouteProvider`).
-    """
-
-    pass
 
 
 CREATE_NOTEBOOK_QUOTA_RPC_CODE = 3
@@ -155,7 +143,7 @@ class NotebooksAPI:
 
     def __init__(
         self,
-        core: _NotebooksCore,
+        session: Session,
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,
@@ -164,12 +152,12 @@ class NotebooksAPI:
         """Initialize the notebooks API.
 
         Args:
-            core: The core client infrastructure.
+            session: The shared client session.
             sources_api: Optional source lister for cross-API metadata composition.
             metadata_service: Optional explicit metadata service for tests or advanced wiring.
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
         """
-        self._core = core
+        self._core = session
         self._sources = sources_api or create_default_source_lister(self._rpc_call)
         self._metadata_service = metadata_service or NotebookMetadataService(
             # Keep notebook lookup late-bound so tests and advanced callers that

@@ -28,17 +28,17 @@ from ._core_transport import (
 from .exceptions import ChatError, NetworkError
 
 if TYPE_CHECKING:
-    from ._chat import _ChatCore
-    from ._core_transport import _BuildRequest
+    from ._request_types import BuildRequest
+    from ._session_contracts import Session
 
 
 async def chat_aware_authed_post(
-    core: _ChatCore,
+    session: Session,
     *,
-    build_request: _BuildRequest,
+    build_request: BuildRequest,
     parse_label: str,
 ) -> httpx.Response:
-    """Chat-side semantic owner around :meth:`_perform_authed_post`.
+    """Chat-side semantic owner around :meth:`Session.transport_post`.
 
     Wraps the shared transport pipeline with chat-flavored exception
     mapping: transport-layer auth failures become
@@ -52,9 +52,8 @@ async def chat_aware_authed_post(
     executor).
 
     Args:
-        core: The chat-side narrow core view (declares the underscore-
-            private transport primitives + reqid counter).
-        build_request: See :meth:`_perform_authed_post`.
+        session: Shared client session.
+        build_request: Request builder forwarded to :meth:`Session.transport_post`.
         parse_label: Caller-friendly label used in log lines and error
             messages (e.g. ``"chat.ask"``).
     """
@@ -64,9 +63,9 @@ async def chat_aware_authed_post(
     # drained client still surfaces ``RuntimeError`` with the chat-friendly
     # label without explicit bracketing here.
     try:
-        return await core._perform_authed_post(
+        return await session.transport_post(
             build_request=build_request,
-            log_label=parse_label,
+            parse_label=parse_label,
         )
     except _TransportAuthExpired as exc:
         raise ChatError(

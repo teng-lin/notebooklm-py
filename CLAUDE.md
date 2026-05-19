@@ -68,7 +68,7 @@ RPC Layer (rpc/)
    - `_core_cache.py`, `_core_polling.py`: Conversation cache + artifact polling helpers
    - `_core_constants.py`, `_core_helpers.py`, `_core_error_injection.py`: Module-level constants, helper utilities, synthetic-error transport
    - `_core_lifecycle.py`: Open/close lifecycle (loop-affinity guard + keepalive task)
-   - `_capabilities.py`: Capability adapters for feature APIs
+   - `_session_contracts.py`: Shared session Protocols consumed by feature APIs
 
 3. **Client Layer** (`src/notebooklm/client.py`, `_*.py`):
    - `NotebookLMClient`: Main async client with namespaced APIs
@@ -97,7 +97,7 @@ RPC Layer (rpc/)
 | `_core_cache.py` | Per-instance LRU conversation cache for `ChatAPI` |
 | `_core_polling.py` | Pending-poll registry for long-running artifact generations |
 | `_core_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
-| `_capabilities.py` | Narrow capability Protocols + `ClientCoreCapabilities` adapter for sub-clients |
+| `_session_contracts.py` | Shared session Protocols consumed by sub-clients |
 | `_notebooks.py` | `client.notebooks` API + source-id resolver |
 | `_sources.py` | `client.sources` API |
 | `_artifacts.py` | `client.artifacts` API |
@@ -138,7 +138,7 @@ src/notebooklm/
 ├── _core_cache.py               # Conversation cache seam
 ├── _core_polling.py             # Artifact polling helpers
 ├── _core_lifecycle.py           # Open/close lifecycle seam (loop affinity + keepalive task)
-├── _capabilities.py             # Capability adapters for feature APIs
+├── _session_contracts.py        # Shared session Protocols consumed by feature APIs
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py
 │   ├── paths.py                 # Storage paths and filesystem helpers

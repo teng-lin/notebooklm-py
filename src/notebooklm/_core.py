@@ -1026,9 +1026,7 @@ class ClientCore:
         self._ensure_observability_state()
         self._metrics_obj.record_upload_queue_wait(wait_seconds)
 
-    # Sub-client capability surface — satisfies the narrow Protocols in
-    # :mod:`notebooklm._capabilities` directly so sub-clients consume
-    # ``ClientCore`` itself (see ADR-002).
+    # Session/support surface consumed by feature APIs and private helpers.
     @property
     def authuser(self) -> int:
         return self.auth.authuser
@@ -1048,7 +1046,7 @@ class ClientCore:
 
     @property
     def bound_loop(self) -> asyncio.AbstractEventLoop | None:
-        """Return the open-time captured event loop (``LoopAffinityProvider``).
+        """Return the open-time captured event loop for affinity checks.
 
         Defensive ``isinstance`` so a ``MagicMock``-shaped fixture whose
         ``_lifecycle`` auto-vivifies into a mock doesn't synthesize a fake

@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,9 +12,9 @@ from notebooklm.rpc import AuthError, NetworkError, RPCTimeoutError
 
 class _FakeTransportProvider:
     # ``ArtifactPollingService.wait_for_completion`` calls
-    # ``self._capabilities.assert_bound_loop()`` (P0-2). ``None``
-    # is the documented silent-no-op value for the affinity helper, so
-    # this stub stays correct without binding to a real loop.
+    # ``self._session.assert_bound_loop()`` (P0-2). ``None`` is the documented
+    # silent-no-op value for the affinity helper, so this stub stays correct
+    # without binding to a real loop.
     bound_loop = None
 
     def assert_bound_loop(self) -> None:
@@ -42,14 +43,32 @@ class _FakeTransportProvider:
         self.finish_started = asyncio.Event()
         self.finish_finished = asyncio.Event()
 
-    async def _begin_transport_post(self, log_label: str) -> object:
-        raise AssertionError(f"unexpected _begin_transport_post({log_label!r})")
+    async def rpc_call(self, *args, **kwargs):
+        raise AssertionError("unexpected rpc_call")
 
-    async def _begin_transport_task(
-        self,
-        task: asyncio.Task[object],
-        log_label: str,
-    ) -> object:
+    async def transport_post(self, *args, **kwargs):
+        raise AssertionError("unexpected transport_post")
+
+    async def next_reqid(self, step: int = 100000) -> int:
+        return step
+
+    def operation_scope(self, log_label: str):
+        provider = self
+
+        class _Scope:
+            async def __aenter__(self) -> None:
+                await provider._enter_scope(log_label)
+                return None
+
+            async def __aexit__(self, exc_type, exc, tb) -> None:
+                await provider._exit_scope()
+                return None
+
+        return _Scope()
+
+    async def _enter_scope(self, log_label: str) -> None:
+        task = asyncio.current_task()
+        assert task is not None
         self.begin_tasks.append(task)
         self.begin_labels.append(log_label)
         self.begin_task_done_states.append(task.done())
@@ -60,10 +79,9 @@ class _FakeTransportProvider:
             await asyncio.sleep(0)
         if self.begin_error is not None:
             raise self.begin_error
-        return self.token
 
-    async def _finish_transport_post(self, token: object) -> None:
-        self.finish_tokens.append(token)
+    async def _exit_scope(self) -> None:
+        self.finish_tokens.append(self.token)
         self.finish_started.set()
         if self.finish_release is not None:
             await self.finish_release.wait()
@@ -72,16 +90,25 @@ class _FakeTransportProvider:
 
 @pytest.fixture
 def api():
-    core = MagicMock()
-    # Real registry backing so wait_for_completion can ``dict.get(key)``.
-    core._begin_transport_task = AsyncMock(return_value=object())
-    core._finish_transport_post = AsyncMock()
-    core.bound_loop = None
-    core.assert_bound_loop = MagicMock(return_value=None)
+    core = _make_session_core()
     notes_api = MagicMock()
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(core, notes_api, notebooks=mock_notebooks)
+
+
+def _make_session_core() -> MagicMock:
+    core = MagicMock()
+    # Real registry backing so wait_for_completion can ``dict.get(key)``.
+    core.bound_loop = None
+    core.assert_bound_loop = MagicMock(return_value=None)
+    core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
+    return core
+
+
+@asynccontextmanager
+async def _noop_operation_scope():
+    yield None
 
 
 @pytest.mark.asyncio
@@ -136,7 +163,7 @@ async def test_wait_for_completion_no_retry_on_auth_error(api):
 
 
 @pytest.mark.asyncio
-async def test_polling_service_begin_transport_task_receives_spawned_poll_task() -> None:
+async def test_polling_service_operation_scope_wraps_spawned_poll_task() -> None:
     token = object()
     provider = _FakeTransportProvider(token=token)
     service = ArtifactPollingService(provider, provider.poll_registry)
@@ -235,22 +262,31 @@ async def test_polling_service_resolves_wait_before_slow_transport_finish() -> N
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         return GenerationStatus(task_id=task_id, status="completed")
 
-    result = await service.wait_for_completion(
-        "nb1",
-        "task1",
-        initial_interval=0.0,
-        max_interval=0.0,
-        timeout=1.0,
-        poll_status=poll_status,
+    waiter = asyncio.create_task(
+        service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
     )
+    try:
+        await asyncio.wait_for(provider.finish_started.wait(), timeout=1.0)
+        assert not waiter.done()
+        assert provider.finish_tokens == [token]
+
+        finish_release.set()
+        result = await asyncio.wait_for(waiter, timeout=1.0)
+    finally:
+        finish_release.set()
+        if not waiter.done():
+            waiter.cancel()
+            await asyncio.gather(waiter, return_exceptions=True)
 
     assert result.status == "completed"
-    assert provider.finish_started.is_set()
-    assert not provider.finish_finished.is_set()
-    assert provider.finish_tokens == [token]
-
-    finish_release.set()
-    await asyncio.wait_for(provider.finish_finished.wait(), timeout=1.0)
+    assert provider.finish_finished.is_set()
 
 
 @pytest.mark.asyncio
@@ -263,19 +299,19 @@ async def test_polling_service_drain_waits_for_bookkeeping_without_active_polls(
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
         return GenerationStatus(task_id=task_id, status="completed")
 
-    result = await service.wait_for_completion(
-        "nb1",
-        "task1",
-        initial_interval=0.0,
-        max_interval=0.0,
-        timeout=1.0,
-        poll_status=poll_status,
+    waiter = asyncio.create_task(
+        service.wait_for_completion(
+            "nb1",
+            "task1",
+            initial_interval=0.0,
+            max_interval=0.0,
+            timeout=1.0,
+            poll_status=poll_status,
+        )
     )
 
-    assert result.status == "completed"
-    assert provider.poll_registry.active_tasks() == []
-    assert provider.finish_started.is_set()
-    assert not provider.finish_finished.is_set()
+    await asyncio.wait_for(provider.finish_started.wait(), timeout=1.0)
+    assert not waiter.done()
 
     drain_task = asyncio.create_task(service.drain())
     try:
@@ -283,14 +319,18 @@ async def test_polling_service_drain_waits_for_bookkeeping_without_active_polls(
         assert not drain_task.done()
 
         finish_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(waiter, timeout=1.0)
         await asyncio.wait_for(drain_task, timeout=1.0)
     finally:
         finish_release.set()
+        if not waiter.done():
+            waiter.cancel()
+            await asyncio.gather(waiter, return_exceptions=True)
         if not drain_task.done():
             drain_task.cancel()
             await asyncio.gather(drain_task, return_exceptions=True)
 
-    assert provider.finish_finished.is_set()
     assert provider.finish_tokens == [token]
 
 
@@ -327,21 +367,9 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
         yield_before_begin_error=True,
     )
     service = ArtifactPollingService(provider, provider.poll_registry)
-    poll_started = asyncio.Event()
-    poll_cancelled = asyncio.Event()
-    poll_finally = asyncio.Event()
-    release_poll = asyncio.Event()
 
     async def poll_status(notebook_id: str, task_id: str) -> GenerationStatus:
-        poll_started.set()
-        try:
-            await release_poll.wait()
-        except asyncio.CancelledError:
-            poll_cancelled.set()
-            raise
-        finally:
-            poll_finally.set()
-        return GenerationStatus(task_id=task_id, status="completed")
+        raise AssertionError("poll should not start when operation admission fails")
 
     with pytest.raises(RuntimeError, match="draining"):
         await service.wait_for_completion(
@@ -353,11 +381,8 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
             poll_status=poll_status,
         )
 
-    assert poll_started.is_set()
-    assert poll_cancelled.is_set()
-    assert poll_finally.is_set()
     assert len(provider.begin_tasks) == 1
-    assert provider.begin_tasks[0].cancelled()
+    assert provider.begin_tasks[0].done()
     assert provider.poll_registry.pending == {}
     assert not provider.finish_started.is_set()
     assert provider.finish_tokens == []
@@ -365,11 +390,7 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
 
 @pytest.mark.asyncio
 async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_or_later_waiter():
-    core = MagicMock()
-    core._begin_transport_task = AsyncMock(return_value=object())
-    core._finish_transport_post = AsyncMock()
-    core.bound_loop = None
-    core.assert_bound_loop = MagicMock(return_value=None)
+    core = _make_session_core()
     api = ArtifactsAPI(core, MagicMock())
 
     poll_started = asyncio.Event()
