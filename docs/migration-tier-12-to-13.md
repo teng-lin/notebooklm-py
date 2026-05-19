@@ -109,12 +109,12 @@ import from.
 | `notebooklm._chat_transport` | Chat-domain consumer-side error mapping over `AuthedTransport`. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
 | `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction. Re-exports `_AuthSnapshot` and `_BuildRequest` from `_authed_transport` under the public-without-underscore names `AuthSnapshot` / `BuildRequest`, plus a new `BuildRequestResult` dataclass. |
 
-## Deleted symbols
+## Deleted symbols and changed defaults
 
-| Symbol | Replacement |
+| Symbol or default | Replacement / new behavior |
 |---|---|
-| `notebooklm._core._SyntheticErrorTransport` | `notebooklm._middleware_error_injection.ErrorInjectionMiddleware` (chain-resident; mode is still resolved from `NOTEBOOKLM_VCR_RECORD_ERRORS` via `_error_injection._get_error_injection_mode`). |
-| Strict-decode opt-in | `NOTEBOOKLM_STRICT_DECODE` now defaults to `1` (flipped in Tier 13 PR 13.9a). Set it to `0` to restore the legacy lenient decode. See [ADR-011](adr/0011-schema-validation-policy.md). |
+| `notebooklm._core._SyntheticErrorTransport` (deleted) | `notebooklm._middleware_error_injection.ErrorInjectionMiddleware` (chain-resident; mode is still resolved from `NOTEBOOKLM_VCR_RECORD_ERRORS` via `_error_injection._get_error_injection_mode`). |
+| Strict-decode opt-in (changed default) | `NOTEBOOKLM_STRICT_DECODE` now defaults to `1` (flipped in Tier 13 PR 13.9a). Set it to `0` to restore the legacy lenient decode. See [ADR-011](adr/0011-schema-validation-policy.md). |
 
 ## Public API guarantee
 
