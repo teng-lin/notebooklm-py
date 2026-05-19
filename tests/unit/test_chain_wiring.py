@@ -232,22 +232,26 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chain_seeded_with_tracing_middleware() -> None:
-    """``ClientCore.__init__`` seeds the chain with ``[TracingMiddleware()]``.
+async def test_chain_seeded_with_metrics_then_tracing() -> None:
+    """``ClientCore.__init__`` seeds the chain with ``[Metrics, Tracing]``.
 
-    PR 12.3 lands ``TracingMiddleware`` as the innermost entry (and the
-    only entry until 12.4+). Subsequent PRs 12.4–12.8 each prepend their
-    middleware so the final ordering reads ``[Drain, Metrics, Retry,
-    AuthRefresh, ErrorInjection, Tracing]`` per ADR-009. The list is
-    exposed as ``self._middlewares`` so later PRs (and the cleanup audit
-    in 12.9) can assert ordering by inspecting the production attribute
-    directly.
+    PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
+    prepends ``MetricsMiddleware`` to its left. Order matters — Metrics is
+    outermore (it times the entire inner chain) and Tracing remains the
+    innermost wrapper around the transport leaf. Subsequent PRs 12.5–12.8
+    prepend their middleware further left so the final ordering reads
+    ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` per
+    ADR-009. The list is exposed as ``self._middlewares`` so later PRs
+    (and the cleanup audit in 12.9) can assert ordering by inspecting the
+    production attribute directly.
     """
+    from notebooklm._middleware_metrics import MetricsMiddleware
     from notebooklm._middleware_tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._middlewares) == 1
-    assert isinstance(core._middlewares[0], TracingMiddleware)
+    assert len(core._middlewares) == 2
+    assert isinstance(core._middlewares[0], MetricsMiddleware)
+    assert isinstance(core._middlewares[1], TracingMiddleware)
 
 
 @pytest.mark.asyncio

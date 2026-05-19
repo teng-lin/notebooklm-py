@@ -516,9 +516,11 @@ def _build_rpc_executor() -> Any:
         build_request: Any,
         log_label: str,
         disable_internal_retries: bool = False,
+        rpc_method: str | None = None,
     ) -> httpx.Response:
         captured["disable_internal_retries"] = disable_internal_retries
         captured["log_label"] = log_label
+        captured["rpc_method"] = rpc_method
         return httpx.Response(200, text=")]}'\n[]")
 
     owner = MagicMock()

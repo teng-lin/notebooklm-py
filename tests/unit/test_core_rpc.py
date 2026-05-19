@@ -75,6 +75,7 @@ class _Owner:
         build_request,
         log_label: str,
         disable_internal_retries: bool = False,
+        rpc_method: str | None = None,
     ) -> httpx.Response:
         url, body, headers = build_request(self.snapshot)
         self.perform_calls.append(
@@ -262,6 +263,7 @@ async def test_core_decode_response_monkeypatch_after_executor_construction(monk
         build_request,
         log_label: str,
         disable_internal_retries: bool = False,
+        rpc_method: str | None = None,
     ) -> httpx.Response:
         return _ok_response("wire")
 

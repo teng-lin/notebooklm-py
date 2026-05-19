@@ -17,9 +17,12 @@ sees exactly what the leaf returned.
 Trace record fields (emitted via ``logger.<level>(..., extra={...})`` so
 structured-logging consumers see them as ``LogRecord`` attributes):
 
-- ``rpc_method`` — value of ``request.context.get("rpc_method")``. ``None``
-  until ``Session.rpc_call`` (Tier 13) starts populating the key; populated
-  for every RPC after that.
+- ``rpc_method`` — value of ``request.context.get("rpc_method")``. Populated
+  as of PR 12.4 (via ``ClientCore._perform_authed_post``'s ``rpc_method``
+  kwarg, passed by ``RpcExecutor.execute``). ``None`` only for the chat
+  streaming path (``_chat_transport.send_authed_post`` — chat-side
+  requests are not classified RPCs) and for ``__new__``-built fixtures
+  driving the chain directly.
 - ``log_label`` — value of ``request.context.get("log_label")``. The
   empty middleware chain wired in PR 12.2 always populates this key (it
   is one of the three transport-call kwargs). May be ``None`` only for a
@@ -83,8 +86,9 @@ class TracingMiddleware:
         so a string-matching grep is also possible. Keys absent from
         ``request.context`` surface as ``None`` rather than raising
         ``KeyError`` — the chain is wired by PR 12.2 to always carry
-        ``log_label``, but ``rpc_method`` is not populated until
-        ``Session.rpc_call`` lands in Tier 13.
+        ``log_label``; ``rpc_method`` is populated as of PR 12.4 by
+        ``ClientCore._perform_authed_post`` for the RPC path and left
+        ``None`` for the chat streaming path.
         """
         context = request.context
         rpc_method = context.get("rpc_method")

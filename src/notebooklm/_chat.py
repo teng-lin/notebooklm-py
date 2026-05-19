@@ -90,6 +90,10 @@ class _ChatCore(
         # matches; ``chat_aware_authed_post`` never forwards it (chat always
         # runs with internal retries enabled).
         disable_internal_retries: bool = False,
+        # ``rpc_method`` (PR 12.4) is None for the chat path so
+        # ``MetricsMiddleware`` skips emission — chat-side requests have
+        # never appeared in the RPC counters and continue not to.
+        rpc_method: str | None = None,
     ) -> httpx.Response: ...
 
 

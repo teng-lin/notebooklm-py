@@ -111,6 +111,7 @@ from ._middleware import (
     RpcResponse,
     build_chain,
 )
+from ._middleware_metrics import MetricsMiddleware
 from ._middleware_tracing import TracingMiddleware
 from ._sources import fetch_source_ids
 
@@ -464,9 +465,10 @@ class ClientCore:
         # ``AuthedTransport.perform_authed_post`` (the shared seam covering
         # ``ClientCore._perform_authed_post`` here and ``RpcExecutor.execute``'s
         # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
-        # PR 12.3 lands ``TracingMiddleware`` as the innermost (and currently
-        # only) entry; subsequent PRs 12.4–12.8 prepend each remaining
-        # middleware to the LEFT of this list so the final list reads
+        # PR 12.3 added ``TracingMiddleware`` as the innermost entry; PR 12.4
+        # prepends ``MetricsMiddleware`` to its left, so the list now reads
+        # ``[Metrics, Tracing]``. Subsequent PRs 12.5–12.8 prepend each
+        # remaining middleware further left so the final list reads
         # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
         # (outermost → innermost, per ADR-009 §"Chain ordering"). ``build_chain``
         # composes the leftmost entry as the outermost wrapper, so keeping
@@ -481,7 +483,10 @@ class ClientCore:
         # stay unpopulated until PRs 12.5/12.7/12.8 start lifting behavior
         # out of ``AuthedTransport``. See ADR-009 §"Per-request behavior"
         # and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
-        self._middlewares: list[Middleware] = [TracingMiddleware()]
+        self._middlewares: list[Middleware] = [
+            MetricsMiddleware(self._metrics_obj),
+            TracingMiddleware(),
+        ]
         self._authed_post_chain: NextCall = build_chain(
             self._middlewares,
             self._authed_post_chain_terminal,
@@ -845,8 +850,9 @@ class ClientCore:
         ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
         on such a fixture would raise ``AttributeError``; this helper
         backfills both slots with the same shape ``__init__`` would have
-        constructed (``TracingMiddleware``-seeded chain around the terminal
-        adapter, matching the seed in ``__init__``).
+        constructed (``[MetricsMiddleware, TracingMiddleware]``-seeded
+        chain around the terminal adapter, matching the seed in
+        ``__init__``).
 
         Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
         :meth:`_ensure_observability_state` is — two threads observing
@@ -858,18 +864,31 @@ class ClientCore:
         """
         if hasattr(self, "_authed_post_chain"):
             return
+        # ``MetricsMiddleware`` needs ``self._metrics_obj``, which a
+        # ``__new__``-built fixture hasn't constructed yet. Run the
+        # observability backfill BEFORE acquiring
+        # ``_OBSERVABILITY_INIT_LOCK`` (its own contract is "no-op when
+        # already initialized" and it takes the same lock internally —
+        # acquiring twice on this thread would deadlock since the lock
+        # is a plain :class:`threading.Lock`, not a reentrant lock).
+        self._ensure_observability_state()
         with _OBSERVABILITY_INIT_LOCK:
             if hasattr(self, "_authed_post_chain"):
                 return
             if not hasattr(self, "_middlewares"):
                 # Mirror ``__init__``'s seeded chain: PR 12.3 lands
-                # ``TracingMiddleware`` as the innermost entry. A
+                # ``TracingMiddleware`` as the innermost entry, PR 12.4
+                # prepends ``MetricsMiddleware`` to its left. A
                 # ``__new__``-built fixture must see the same chain shape so
-                # tracing records are emitted for fixture-driven invocations
-                # too; otherwise the fixture path and the live path diverge
-                # in observability, which has previously hidden bugs in
-                # Tier-8 cassette-replay tests.
-                self._middlewares = [TracingMiddleware()]
+                # both telemetry channels (structured trace logs + RPC
+                # counters/events) are exercised on fixture-driven
+                # invocations too; otherwise the fixture path and the live
+                # path diverge in observability, which has previously
+                # hidden bugs in Tier-8 cassette-replay tests.
+                self._middlewares = [
+                    MetricsMiddleware(self._metrics_obj),
+                    TracingMiddleware(),
+                ]
             self._authed_post_chain = build_chain(
                 self._middlewares,
                 self._authed_post_chain_terminal,
@@ -1292,6 +1311,7 @@ class ClientCore:
         build_request: _BuildRequest,
         log_label: str,
         disable_internal_retries: bool = False,
+        rpc_method: str | None = None,
     ) -> httpx.Response:
         """Authed POST entry point — routes through the middleware chain.
 
@@ -1300,9 +1320,18 @@ class ClientCore:
         and direct callers (``client._core._perform_authed_post(...)``) keep
         the same keyword-only signature. The body now builds an
         :class:`RpcRequest` with the three keyword-only args stashed into
-        ``context`` and dispatches into :attr:`_authed_post_chain` — the
-        empty middleware chain wired in :meth:`__init__`. Middlewares land
-        one per PR in 12.3–12.8; the wiring shape stays unchanged.
+        ``context`` and dispatches into :attr:`_authed_post_chain`.
+        Middlewares land one per PR in 12.3–12.8; the wiring shape stays
+        unchanged.
+
+        ``rpc_method`` (new in PR 12.4) is the resolved method name string
+        (``RPCMethod.name``) for RPC callers and ``None`` for the chat
+        streaming path. ``MetricsMiddleware`` reads it from
+        ``request.context["rpc_method"]`` to populate
+        :attr:`RpcTelemetryEvent.method` and to decide whether to fire the
+        emission at all — chat-side callers that pass ``None`` skip emission,
+        matching the pre-chain behavior (where ``_chat_transport`` never
+        called ``_emit_rpc_event``).
 
         ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
         intentionally stay empty until PRs 12.5/12.7/12.8 begin populating
@@ -1317,6 +1346,7 @@ class ClientCore:
                 "build_request": build_request,
                 "log_label": log_label,
                 "disable_internal_retries": disable_internal_retries,
+                "rpc_method": rpc_method,
             },
         )
         result = await self._authed_post_chain(request)

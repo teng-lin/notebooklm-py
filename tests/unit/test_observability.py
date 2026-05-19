@@ -23,18 +23,64 @@ from notebooklm.types import GenerationStatus
 
 @pytest.mark.asyncio
 async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) -> None:
+    """Public contract: ``rpc_call`` bumps counters + emits ``RpcTelemetryEvent``.
+
+    As of Tier-12 PR 12.4 the per-RPC success/failure counters and the
+    ``on_rpc_event`` fire live inside ``MetricsMiddleware`` (which sits
+    in the chain around ``_perform_authed_post``), not inside
+    ``RpcExecutor.execute_with_telemetry``. The seam the test mocks
+    therefore has to live below the chain — mocking ``_rpc_call_impl``
+    (the historical swap point) now bypasses the chain entirely and
+    would silence both the counter and the event. We mock
+    ``_perform_authed_post`` instead so the chain runs end-to-end, and
+    we return a wire-format payload that the real decoder accepts.
+
+    The test still asserts the same five public-contract invariants it
+    always has: result value, correlation-id propagation INTO the chain,
+    contextvar cleanup AFTER the chain, counter increments, and one
+    event with the expected fields.
+    """
     events: list[RpcTelemetryEvent] = []
     core = ClientCore(auth_tokens, on_rpc_event=events.append)
     core._http_client = AsyncMock(spec=httpx.AsyncClient)
     seen_request_ids: list[str | None] = []
 
-    async def fake_impl(*args: object, **kwargs: object) -> dict[str, bool]:
+    # Mock the chain LEAF (innermost wrapper around
+    # ``AuthedTransport.perform_authed_post``) so the real chain runs
+    # end-to-end and ``MetricsMiddleware`` sees the call. Mocking
+    # ``_perform_authed_post`` itself would bypass the chain entirely
+    # and silence the counters this test exists to assert. Mocking
+    # ``_rpc_call_impl`` (the historical swap point) would do the same.
+    from notebooklm._middleware import RpcResponse
+
+    async def fake_terminal(request: object) -> RpcResponse:
+        # Read the correlation id INSIDE the chain so the assertion
+        # below verifies the contextvar survived chain entry.
         seen_request_ids.append(get_request_id())
+        return RpcResponse(
+            response=httpx.Response(200, text=")]}'\n[]"),
+            context=request.context,  # type: ignore[attr-defined]
+        )
+
+    core._authed_post_chain_terminal = fake_terminal  # type: ignore[method-assign]
+    # Rebuild the chain so it wraps the new terminal (the original chain
+    # was built in ``__init__`` against the original bound method).
+    from notebooklm._middleware import build_chain
+
+    core._authed_post_chain = build_chain(core._middlewares, fake_terminal)
+
+    # Patch the decoder to a no-network stub. The real decoder requires a
+    # wire payload that matches the method's RPC ID; constructing one
+    # makes the test brittle to RPC-ID changes. Stubbing keeps the test
+    # focused on observability semantics (counters + events + correlation)
+    # rather than wire-format details.
+    def fake_decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> dict:
         return {"ok": True}
 
-    core._rpc_call_impl = fake_impl  # type: ignore[method-assign]
-
-    with correlation_id("batch-42"):
+    with (
+        patch("notebooklm._core.decode_response", fake_decode),
+        correlation_id("batch-42"),
+    ):
         result = await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
 
     assert result == {"ok": True}
