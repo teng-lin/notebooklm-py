@@ -275,7 +275,10 @@ class TestAuthCheckCommand:
 
         assert result.exit_code == 0
         output = json.loads(result.output)
-        assert ".google.com" in output["details"]["cookie_domains"]
+        # Use ``==`` membership rather than ``in`` to keep CodeQL's
+        # ``py/incomplete-url-substring-sanitization`` rule from flagging a
+        # false positive — ``cookie_domains`` is a list, not a URL string.
+        assert any(d == ".google.com" for d in output["details"]["cookie_domains"])
 
     def test_auth_check_shows_cookies_by_domain(self, runner, mock_storage_path):
         """Test auth check --json includes detailed cookies_by_domain."""
@@ -298,14 +301,17 @@ class TestAuthCheckCommand:
         output = json.loads(result.output)
         cookies_by_domain = output["details"]["cookies_by_domain"]
 
-        # Verify .google.com has expected cookies
-        assert ".google.com" in cookies_by_domain
+        # Verify .google.com has expected cookies. ``.get(...) is not None``
+        # silences CodeQL's ``py/incomplete-url-substring-sanitization`` —
+        # ``cookies_by_domain`` is a dict keyed by exact domain, not a URL
+        # being substring-validated.
+        assert cookies_by_domain.get(".google.com") is not None
         assert "SID" in cookies_by_domain[".google.com"]
         assert "HSID" in cookies_by_domain[".google.com"]
         assert "__Secure-1PSID" in cookies_by_domain[".google.com"]
 
         # Verify regional domain has its cookies
-        assert ".google.com.sg" in cookies_by_domain
+        assert cookies_by_domain.get(".google.com.sg") is not None
         assert "SID" in cookies_by_domain[".google.com.sg"]
 
     def test_auth_check_skipped_token_fetch_shown(self, runner, mock_storage_path):
