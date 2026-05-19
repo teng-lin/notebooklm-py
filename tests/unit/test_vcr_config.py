@@ -27,13 +27,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-import httpx
 import pytest
 
 from notebooklm._core import (
     ERROR_INJECT_ENV_VAR,
     _get_error_injection_mode,
-    _SyntheticErrorTransport,
 )
 
 # Load ``tests/vcr_config.py`` via ``importlib`` rather than mutating
@@ -535,155 +533,24 @@ def test_core_get_error_injection_mode_typo_returns_none(monkeypatch):
     assert _get_error_injection_mode() is None
 
 
-class _RecordingInnerTransport(httpx.AsyncBaseTransport):
-    """Inner transport that records calls so we can assert pass-through."""
-
-    def __init__(self):
-        self.calls: list[httpx.Request] = []
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        self.calls.append(request)
-        return httpx.Response(200, content=b"inner-response", request=request)
-
-    async def aclose(self) -> None:
-        return None
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mode,expected_status",
-    [("429", 429), ("5xx", 500), ("expired_csrf", 400)],
-)
-async def test_synthetic_transport_substitutes_batchexecute(mode, expected_status):
-    """The wrapped transport returns a synthetic response for batchexecute
-    POSTs without ever forwarding them to the inner transport."""
-    inner = _RecordingInnerTransport()
-    wrapper = _SyntheticErrorTransport(mode, inner)
-    async with httpx.AsyncClient(transport=wrapper) as client:
-        resp = await client.post(
-            "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
-            content=b"f.req=...",
-        )
-    assert resp.status_code == expected_status
-    assert resp.content  # synthetic body present
-    assert inner.calls == []  # batchexecute did NOT pass through
-
-
-@pytest.mark.asyncio
-async def test_synthetic_transport_passes_non_batchexecute_through():
-    """Non-batchexecute traffic (Scotty uploads, RotateCookies pokes, the
-    homepage GET) MUST pass through unchanged — error-shape cassettes only
-    target batchexecute RPCs."""
-    inner = _RecordingInnerTransport()
-    wrapper = _SyntheticErrorTransport("429", inner)
-    async with httpx.AsyncClient(transport=wrapper) as client:
-        resp = await client.get("https://notebooklm.google.com/")
-    assert resp.status_code == 200
-    assert resp.content == b"inner-response"
-    assert len(inner.calls) == 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "PUT", "DELETE"])
-async def test_synthetic_transport_only_substitutes_post_on_batchexecute(method):
-    """Even on the batchexecute path, only POST requests are substituted.
-
-    Non-POST methods on /batchexecute (a hypothetical GET probe, an OPTIONS
-    preflight, etc.) are out of scope for error-shape cassettes and must
-    pass through unchanged. Closes CodeRabbit feedback on PR #638.
-    """
-    inner = _RecordingInnerTransport()
-    wrapper = _SyntheticErrorTransport("429", inner)
-    async with httpx.AsyncClient(transport=wrapper) as client:
-        resp = await client.request(
-            method,
-            "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
-        )
-    assert resp.status_code == 200
-    assert resp.content == b"inner-response"
-    assert len(inner.calls) == 1
-    # ``_fired`` must NOT have been flipped by a non-POST request.
-    assert wrapper._fired is False
-
-
-@pytest.mark.asyncio
-async def test_synthetic_transport_substitutes_every_batchexecute_call():
-    """With ``always=True`` (the default), every batchexecute POST gets the
-    synthetic response — important because the client's auth-refresh path
-    retries the same RPC and both retries must see the synthetic shape."""
-    inner = _RecordingInnerTransport()
-    wrapper = _SyntheticErrorTransport("5xx", inner, always=True)
-    async with httpx.AsyncClient(transport=wrapper) as client:
-        for _ in range(3):
-            resp = await client.post(
-                "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
-                content=b"f.req=...",
-            )
-            assert resp.status_code == 500
-    assert inner.calls == []
-
-
-@pytest.mark.asyncio
-async def test_synthetic_transport_always_false_fires_once():
-    """``always=False`` substitutes only the FIRST batchexecute POST; later
-    POSTs fall through to the inner transport. Useful for tests that want
-    to assert the client recovers after a single transient failure."""
-    inner = _RecordingInnerTransport()
-    wrapper = _SyntheticErrorTransport("5xx", inner, always=False)
-    async with httpx.AsyncClient(transport=wrapper) as client:
-        first = await client.post(
-            "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
-            content=b"f.req=...",
-        )
-        second = await client.post(
-            "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
-            content=b"f.req=...",
-        )
-    assert first.status_code == 500
-    assert second.status_code == 200  # passed through
-    assert len(inner.calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_synthetic_transport_no_op_when_env_var_unset_in_clientcore(
-    monkeypatch,
-):
-    """End-to-end: when ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is unset, the
-    ``ClientCore.open()`` path constructs an ``httpx.AsyncClient`` WITHOUT
-    the synthetic transport wrapper — production behavior unchanged.
-
-    We don't actually call the network; we just inspect the underlying
-    transport stack after ``open()`` to confirm no synthetic wrapper is in
-    place. Uses a minimal ``AuthTokens`` instance to construct ``ClientCore``.
-    """
-    monkeypatch.delenv(ERROR_INJECT_ENV_VAR, raising=False)
-    from notebooklm._core import ClientCore
-    from notebooklm.auth import AuthTokens
-
-    auth = AuthTokens(cookies={"SID": "t"}, csrf_token="c", session_id="s")
-    core = ClientCore(auth)
-    try:
-        await core.open()
-        assert core._http_client is not None
-        # When unset, the AsyncClient is built without our wrapper. The
-        # default httpx transport is some private class; we just assert
-        # ours isn't in the chain.
-        transport = core._http_client._transport
-        assert not isinstance(transport, _SyntheticErrorTransport)
-    finally:
-        if core._http_client is not None:
-            await core._http_client.aclose()
+# --- ClientCore wiring after PR 12.6/12.9 -----------------------------------
+#
+# Pre-Tier-12 these tests exercised a ``_SyntheticErrorTransport`` that
+# wrapped the ``httpx.AsyncClient`` BELOW VCR. PR 12.6 lifted the
+# substitution into ``ErrorInjectionMiddleware`` (chain layer, ABOVE VCR)
+# and PR 12.9 deleted the legacy transport class entirely. The only
+# end-to-end assertion left at this layer is "the chain seed contains
+# ``ErrorInjectionMiddleware`` when the env var is set" — substitution
+# behavior is covered exhaustively by
+# ``tests/unit/test_error_injection_middleware.py``.
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["429", "5xx", "expired_csrf"])
 async def test_error_injection_middleware_present_when_env_var_set_in_clientcore(monkeypatch, mode):
-    """End-to-end: Tier-12 PR 12.6 lifted synthetic-error injection from the
-    httpx transport into the chain. With the env var set, ``ClientCore``'s
-    middleware list contains an :class:`ErrorInjectionMiddleware` AND the
-    httpx ``AsyncClient`` transport is unwrapped (no
-    ``_SyntheticErrorTransport``) — the substitution happens above the
-    transport now."""
+    """When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, ``ClientCore`` wires
+    ``ErrorInjectionMiddleware`` into the chain so each chain invocation
+    short-circuits with the synthetic shape."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
     from notebooklm._core import ClientCore
     from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
@@ -694,38 +561,13 @@ async def test_error_injection_middleware_present_when_env_var_set_in_clientcore
     try:
         await core.open()
         assert core._http_client is not None
-        # PR 12.6: httpx transport is unwrapped regardless of env var.
-        transport = core._http_client._transport
-        assert not isinstance(transport, _SyntheticErrorTransport)
-        # PR 12.6: chain seed contains an ``ErrorInjectionMiddleware`` that
-        # short-circuits at chain-invocation time when the env var resolves
-        # to a valid mode. The middleware itself doesn't expose the
-        # active mode (it reads the env var per call); env-var-to-mode
+        # The middleware reads the env var per call; env-var-to-mode
         # resolution is covered by the dedicated middleware tests in
         # ``test_error_injection_middleware.py``.
         assert any(isinstance(mw, ErrorInjectionMiddleware) for mw in core._middlewares)
     finally:
         if core._http_client is not None:
             await core._http_client.aclose()
-
-
-# --- (4) lazy-import resolution of the builder ------------------------------
-
-
-@pytest.mark.asyncio
-async def test_synthetic_transport_lazy_loads_builder():
-    """The transport defers importing tests/cassette_patterns.py until the
-    first batchexecute POST fires. This keeps the production module
-    free of test-tree dependencies at import time."""
-    inner = _RecordingInnerTransport()
-    wrapper = _SyntheticErrorTransport("429", inner)
-    assert wrapper._builder is None  # not yet resolved
-    async with httpx.AsyncClient(transport=wrapper) as client:
-        await client.post(
-            "https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute",
-            content=b"f.req=...",
-        )
-    assert wrapper._builder is not None  # resolved after first use
 
 
 # --- (5) marker plumbing in tests/conftest.py --------------------------------

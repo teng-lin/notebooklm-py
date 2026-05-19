@@ -597,6 +597,9 @@ async def test_caller_disable_true_propagates_through_executor(
     )
 
     assert captured["disable_internal_retries"] is True
+    # PR 12.9 audit fix: pin ``rpc_method`` threading too — coderabbit
+    # flagged that the fake captures it but no test asserts on it.
+    assert captured["rpc_method"] == RPCMethod.LIST_NOTEBOOKS.name
 
 
 @pytest.mark.asyncio
@@ -619,3 +622,5 @@ async def test_operation_variant_kwarg_threads_through_executor(
     )
 
     assert captured["disable_internal_retries"] is False
+    # PR 12.9 audit fix: pin ``rpc_method`` threading on this path too.
+    assert captured["rpc_method"] == RPCMethod.LIST_NOTEBOOKS.name

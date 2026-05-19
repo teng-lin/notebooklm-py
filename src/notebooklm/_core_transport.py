@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -85,8 +84,16 @@ class _AuthSnapshot:
 
 
 class _TransportAuthExpired(Exception):
-    """Raised by ``_perform_authed_post`` when the refresh callback itself
+    """Raised by ``AuthRefreshMiddleware`` when the refresh callback itself
     failed during an auth recovery attempt.
+
+    Pre-Tier-12 this was raised by the leaf's auth-refresh-once branch.
+    PR 12.8 lifted that branch into
+    :class:`notebooklm._middleware_auth_refresh.AuthRefreshMiddleware`;
+    the class definition stays here so the existing import path
+    (``from notebooklm._core_transport import _TransportAuthExpired``)
+    keeps working for ``_chat_transport.chat_aware_authed_post`` and its
+    tests.
 
     ``original`` is the transport-layer ``httpx.HTTPStatusError`` that
     triggered the refresh attempt. The refresh callback's error is attached via
@@ -208,39 +215,47 @@ async def _stream_post_with_size_cap(
 
 
 class _AuthedTransportHost(Protocol):
+    """Minimal host surface the post-Tier-12 leaf actually reads.
+
+    Pre-Tier-12 this Protocol declared retry budgets, refresh hooks,
+    metrics increments, the RPC semaphore, queue-wait recording — every
+    cross-cutting concern. Tier-12 PRs 12.4 / 12.5 / 12.7 / 12.8 lifted
+    those into chain middlewares, and PR 12.9 lifted the RPC
+    semaphore + queue-wait recording up to
+    :meth:`ClientCore._perform_authed_post` (so the slot wraps the
+    whole chain invocation, not just one HTTP attempt). The Protocol
+    now declares only the members the leaf still touches:
+
+    - ``_kernel`` (the streaming-POST transport, post-PR #850)
+    - ``_http_client`` (only checked for pre-open ``None``)
+    - ``_bound_loop`` (event-loop affinity guard)
+    - ``_snapshot`` (fresh ``_AuthSnapshot`` per attempt)
+    """
+
     _kernel: Kernel
     _http_client: httpx.AsyncClient | None
     _bound_loop: asyncio.AbstractEventLoop | None
-    _refresh_callback: Callable[[], Awaitable[Any]] | None
-    _refresh_retry_delay: float
-    _rate_limit_max_retries: int
-    _server_error_max_retries: int
-
-    def _get_rpc_semaphore(self) -> AbstractAsyncContextManager[Any]: ...
 
     async def _snapshot(self) -> _AuthSnapshot: ...
 
-    async def _await_refresh(self) -> None: ...
-
-    def _record_rpc_queue_wait(self, wait_seconds: float) -> None: ...
-
-    def _increment_metrics(self, **increments: int | float) -> None: ...
-
 
 class AuthedTransport:
-    """Shared authenticated POST retry/refresh pipeline."""
+    """Single-attempt authenticated POST.
+
+    Post-Tier-12 the leaf is a pure POST — every retry decision (429 / 5xx
+    via :class:`RetryMiddleware`, 401/403/400-CSRF via
+    :class:`AuthRefreshMiddleware`) lives in the middleware chain. The
+    constructor's pre-Tier-12 ``is_auth_error`` and ``sleep`` callbacks
+    are gone: the chain owns both.
+    """
 
     def __init__(
         self,
         host: _AuthedTransportHost,
         *,
-        is_auth_error: Callable[[Exception], bool],
-        sleep: Callable[[float], Awaitable[Any]],
         logger: logging.Logger,
     ):
         self._host = host
-        self._is_auth_error = is_auth_error
-        self._sleep = sleep
         self._logger = logger
 
     async def perform_authed_post(
@@ -250,22 +265,33 @@ class AuthedTransport:
         log_label: str,
         disable_internal_retries: bool = False,
     ) -> httpx.Response:
-        """Run an authed POST through the auth-refresh-and-retry pipeline.
+        """Single authed POST attempt.
 
-        Since PR 12.7 this leaf only drives the auth-refresh-once retry;
-        429 / 5xx / network retries live in :class:`RetryMiddleware` above
-        this leaf in the chain. ``disable_internal_retries`` is accepted
-        for signature stability but no longer read here — the middleware
-        reads the flag from ``request.context`` directly. PR 12.9 removes
-        the parameter once the legacy non-chain code path is retired.
+        Pre-Tier-12 this method drove the entire retry-and-refresh
+        pipeline. After PRs 12.5 (Drain) / 12.7 (Retry) / 12.8
+        (AuthRefresh) the leaf is a pure POST — every retry decision
+        happens in the chain.
+
+        ``disable_internal_retries`` is accepted for signature stability
+        but no longer read here — the middleware reads the flag from
+        ``request.context`` directly. PR 12.9 keeps the parameter so the
+        legacy ``_chat_transport`` call site still type-checks; a
+        follow-up post-13.x cleanup can drop it.
+
+        Semaphore wrapping moved UP to ``ClientCore._perform_authed_post``
+        in PR 12.9: the slot is held for the WHOLE chain invocation
+        (initial attempt + all chain-level retries by RetryMiddleware /
+        AuthRefreshMiddleware), restoring the pre-Tier-12 "one slot per
+        logical RPC" backpressure contract. Acquiring it here too would
+        deadlock — ``asyncio.Semaphore`` is not reentrant.
         """
         host = self._host
         # Fast-path: reject pre-open calls before loop checks and semaphore acquisition.
         if host._http_client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
-        # Event-loop affinity guard. Placed before
-        # semaphore acquisition so cross-loop misuse never reserves a slot.
+        # Event-loop affinity guard. Placed before any further awaits so
+        # cross-loop misuse never gets past the boundary.
         if host._bound_loop is not None and asyncio.get_running_loop() is not host._bound_loop:
             raise RuntimeError(
                 "NotebookLMClient is bound to a different event loop. "
@@ -274,97 +300,66 @@ class AuthedTransport:
 
         start = time.perf_counter()
 
-        # ---------------------------------------------------------------
-        # Semaphore placement contract — DO NOT MOVE.
-        #
-        # The semaphore wraps the single POST attempt this leaf makes.
-        # ``RetryMiddleware`` (outside this leaf) re-invokes the chain on
-        # 429 / 5xx and ``AuthRefreshMiddleware`` (also outside this leaf,
-        # PR 12.8) re-invokes the chain after a successful refresh. Each
-        # retry re-enters here and re-acquires the semaphore — so one slot
-        # is held per *HTTP attempt*, not per *logical RPC*.
-        #
-        # **Backpressure-scope regression (Tier-12 PRs 12.7 / 12.8 →
-        # follow-up).** Before PR 12.7, this semaphore wrapped the FULL
-        # retry budget (initial + all 429/5xx retries + the
-        # auth-refresh-once retry); PR 12.7 lifted 429/5xx retry into
-        # ``RetryMiddleware`` outside the semaphore; PR 12.8 lifts the
-        # auth-refresh retry too. So the smoothing the semaphore
-        # previously provided across the full retry budget is now
-        # coarser (per-attempt, not per-call). The plan acknowledges
-        # this as an interim consequence of the chain ordering
-        # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection,
-        # Tracing]``. A chain-level semaphore primitive (or moving the
-        # gate above ``RetryMiddleware``) is a viable follow-up;
-        # PR 12.8 ships the regression so the load-bearing lift can
-        # land. ADR-009 §"Chain ordering rationale" should eventually
-        # reflect this trade-off.
-        # ---------------------------------------------------------------
-        semaphore = host._get_rpc_semaphore()
-        queue_wait_start = time.perf_counter()
-        async with semaphore:
-            host._record_rpc_queue_wait(time.perf_counter() - queue_wait_start)
-            # PR 12.8: the leaf is now a pure POST. 429 and 5xx/network
-            # failures still raise ``_TransportRateLimited`` /
-            # ``_TransportServerError`` so :class:`RetryMiddleware`
-            # (outside this leaf) decides whether to retry; raw
-            # ``httpx.HTTPStatusError`` (e.g. 400 / 401 / 403)
-            # propagates so :class:`AuthRefreshMiddleware` (also outside
-            # this leaf) can catch it via ``is_auth_error`` and drive
-            # refresh-then-retry. ``raise from exc`` preserves the
-            # chained transport exception for diagnostic display.
-            snapshot = await host._snapshot()
-            url, body, headers = build_request(snapshot)
+        # The leaf is a pure POST: 429 and 5xx/network failures raise
+        # ``_TransportRateLimited`` / ``_TransportServerError`` so
+        # :class:`RetryMiddleware` (outside this leaf) decides whether to
+        # retry; raw ``httpx.HTTPStatusError`` (e.g. 400 / 401 / 403)
+        # propagates so :class:`AuthRefreshMiddleware` (also outside this
+        # leaf) can catch it via ``is_auth_error`` and drive
+        # refresh-then-retry. ``raise from exc`` preserves the chained
+        # transport exception for diagnostic display.
+        snapshot = await host._snapshot()
+        url, body, headers = build_request(snapshot)
 
-            try:
-                # Streaming POST with a running size cap. The size guard
-                # lives inside the stream-read loop in
-                # ``_stream_post_with_size_cap``; ``raise_for_status()``
-                # is invoked before any body chunk is read so the chain
-                # middlewares see the same :class:`httpx.HTTPStatusError`
-                # they did when this used ``client.post``.
-                response = await host._kernel.post(
-                    url,
-                    headers=headers,
-                    body=body,
-                )
-            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-                # --- 429: raise for ``RetryMiddleware`` to catch --------
-                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-                    retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
-                    raise _TransportRateLimited(
-                        f"{log_label} rate-limited (HTTP 429)",
-                        retry_after=retry_after,
-                        response=exc.response,
-                        original=exc,
-                    ) from exc
+        try:
+            # Streaming POST via :class:`Kernel` (PR #850). The size guard
+            # lives inside ``Kernel.post``'s stream-read loop;
+            # ``raise_for_status()`` is invoked before any body chunk is
+            # read so the chain middlewares see the same
+            # :class:`httpx.HTTPStatusError` they did when this used
+            # ``client.post``.
+            response = await host._kernel.post(
+                url,
+                headers=headers,
+                body=body,
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            # --- 429: raise for ``RetryMiddleware`` to catch ----------
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+                retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
+                raise _TransportRateLimited(
+                    f"{log_label} rate-limited (HTTP 429)",
+                    retry_after=retry_after,
+                    response=exc.response,
+                    original=exc,
+                ) from exc
 
-                # --- 5xx / network: raise for ``RetryMiddleware`` -------
-                if isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600:
-                    raise _TransportServerError(
-                        f"{log_label} server error (HTTP {exc.response.status_code})",
-                        original=exc,
-                        response=exc.response,
-                        status_code=exc.response.status_code,
-                    ) from exc
-                if isinstance(exc, httpx.RequestError):
-                    raise _TransportServerError(
-                        f"{log_label} network error: {exc}",
-                        original=exc,
-                    ) from exc
+            # --- 5xx / network: raise for ``RetryMiddleware`` ---------
+            if isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600:
+                raise _TransportServerError(
+                    f"{log_label} server error (HTTP {exc.response.status_code})",
+                    original=exc,
+                    response=exc.response,
+                    status_code=exc.response.status_code,
+                ) from exc
+            if isinstance(exc, httpx.RequestError):
+                raise _TransportServerError(
+                    f"{log_label} network error: {exc}",
+                    original=exc,
+                ) from exc
 
-                # --- 4xx auth shapes (400/401/403) and everything else:
-                # propagate the raw ``httpx.HTTPStatusError`` so
-                # ``AuthRefreshMiddleware`` outside this leaf decides
-                # whether to refresh-and-retry via ``is_auth_error``.
-                elapsed = time.perf_counter() - start
-                self._logger.debug(
-                    "%s transport error after %.3fs: %s",
-                    log_label,
-                    elapsed,
-                    exc,
-                )
-                raise
+            # --- 4xx auth shapes (400/401/403) and everything else:
+            # propagate the raw ``httpx.HTTPStatusError`` so
+            # ``AuthRefreshMiddleware`` outside this leaf decides whether
+            # to refresh-and-retry via ``is_auth_error``.
+            elapsed = time.perf_counter() - start
+            self._logger.debug(
+                "%s transport error after %.3fs: %s",
+                log_label,
+                elapsed,
+                exc,
+            )
+            raise
 
-            # Success
-            return response
+        # Success
+        return response

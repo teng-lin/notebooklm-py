@@ -70,6 +70,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from ._backoff import compute_backoff_delay
+from ._core_constants import CORE_LOGGER_NAME
 from ._core_transport import _parse_retry_after, _TransportRateLimited, _TransportServerError
 from ._middleware import NextCall, RpcRequest, RpcResponse
 
@@ -141,7 +142,7 @@ class RetryMiddleware:
         # whatever was imported when the middleware was instantiated,
         # silently bypassing later monkeypatches.
         self._sleep = sleep
-        self._logger = logger or logging.getLogger("notebooklm._core")
+        self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
         self._metrics = metrics
 
     def _resolve_sleep(self) -> Callable[[float], Awaitable[object]]:

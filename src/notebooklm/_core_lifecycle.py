@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
+from ._core_constants import CORE_LOGGER_NAME
 from ._kernel import Kernel
 from .auth import AuthTokens
 
@@ -87,10 +88,10 @@ if TYPE_CHECKING:
     from ._core_transport import AuthedTransport
     from .types import ConnectionLimits
 
-# Logger name pinned to ``notebooklm._core`` (not the literal module name)
-# so log filters in tests — e.g. ``caplog.at_level("DEBUG",
-# logger="notebooklm._core")`` — keep matching after the extraction.
-logger = logging.getLogger("notebooklm._core")
+# Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
+# tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
+# keep matching after the extraction.
+logger = logging.getLogger(CORE_LOGGER_NAME)
 
 
 class _LifecycleHost(Protocol):

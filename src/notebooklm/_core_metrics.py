@@ -32,13 +32,14 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from ._callbacks import maybe_await_callback
+from ._core_constants import CORE_LOGGER_NAME
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
-# Logger name is pinned to ``notebooklm._core`` (not the literal module name)
-# so users and tests that filter by logger name — e.g.
-# ``caplog.at_level("WARNING", logger="notebooklm._core")`` in
-# ``test_client_keepalive.py`` — keep matching after the extraction.
-logger = logging.getLogger("notebooklm._core")
+# Logger name pinned via :data:`CORE_LOGGER_NAME` so users and tests
+# that filter by logger name — e.g. ``caplog.at_level("WARNING",
+# logger=CORE_LOGGER_NAME)`` in ``test_client_keepalive.py`` — keep
+# matching after the extraction.
+logger = logging.getLogger(CORE_LOGGER_NAME)
 
 
 class ClientMetrics:

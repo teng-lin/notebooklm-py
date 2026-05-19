@@ -2,16 +2,31 @@
 
 ## Status
 
-Accepted (Tier 12 PR 12.1).
+Accepted (Tier 12 PR 12.1; closed by PR 12.9).
 
-This ADR ships in PR 12.1 of the Tier-12/13 greenfield migration as
-type-only scaffolding. The Protocol, dataclasses, and `build_chain` helper
-land; no production code wires the chain. PR 12.2 wires an empty chain into
-`ClientCore`. PRs 12.3 through 12.8 each extract one cross-cutting concern
-into a dedicated middleware. PR 12.9 closes the tier — removes the
-underscore-prefixed compatibility aliases, confirms the chain ordering, and
-re-statuses this ADR (it stays `Accepted`; the load-bearing contract here
-does not change).
+This ADR shipped in PR 12.1 of the Tier-12/13 greenfield migration as
+type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
+landed without production wiring. PR 12.2 wired an empty chain into
+`ClientCore`. PRs 12.3 through 12.8 each extracted one cross-cutting
+concern into a dedicated middleware. **PR 12.9 closes the tier** — the
+six-middleware chain `[Drain, Metrics, Retry, AuthRefresh, ErrorInjection,
+Tracing]` is fully wired, the leaf (`AuthedTransport.perform_authed_post`)
+is a pure POST, and the underscore-prefixed compatibility aliases were
+removed. The chain ordering, the `RpcRequest.context` key vocabulary, and
+the Protocol shape pinned below are the load-bearing contract going
+forward into Tier 13.
+
+Two implementation realities diverged from the original PR-12.1 pin and
+are documented in the "PR 12.9 close-out notes" section at the bottom of
+this ADR:
+1. The `AuthRefreshMiddleware` constructor shipped with a simpler shape
+   that defers request-rebuilding to the leaf (`rebuild_headers` /
+   `build_request_factory` closures are NOT yet wired at chain level).
+2. The RPC concurrency semaphore wraps the chain dispatch (not the leaf),
+   restoring pre-Tier-12 "one slot per logical RPC" semantics.
+
+Tier 13 (`Kernel.post` terminal) will revisit (1) — the closure callbacks
+remain pinned as the target shape for the chain-leaf rewrite.
 
 The signatures pinned in this ADR (especially the `AuthRefreshMiddleware`
 constructor, §"AuthRefreshMiddleware constructor signature") are
@@ -346,3 +361,82 @@ accepted for the response side. The request dataclass needs to carry
 extension point for that. The response side just carries
 `httpx.Response` (the field name `RpcResponse.response`) plus context, so
 the dataclass is a thin wrapper there.
+
+## PR 12.9 close-out notes
+
+Two implementation details landed differently than the PR-12.1 pin and
+are documented here so Tier-13 callers have an authoritative reference.
+
+### RPC concurrency semaphore wraps the chain dispatch, not the leaf
+
+The `max_concurrent_rpcs` semaphore (default 16; see
+`_core_constants.py:DEFAULT_MAX_CONCURRENT_RPCS`) is acquired in
+`ClientCore._perform_authed_post` *around* the chain dispatch, not inside
+`AuthedTransport.perform_authed_post`. The block looks like:
+
+```python
+async with self._get_rpc_semaphore():
+    self._record_rpc_queue_wait(time.perf_counter() - queue_wait_start)
+    result = await self._authed_post_chain(request)
+    return result.response
+```
+
+Pre-Tier-12, the semaphore wrapped the entire `AuthedTransport`
+invocation, which included the inline 429/5xx retry loops. After Tier 12
+those loops live in `RetryMiddleware` *inside* the chain. Two reasons the
+semaphore moved up to the chain dispatch:
+
+1. **Pre-Tier-12 contract preservation.** A logical RPC counted as
+   exactly one semaphore slot regardless of how many retry attempts it
+   made. Moving the semaphore to the leaf would let `RetryMiddleware`'s
+   re-invocations of `next_call` claim additional slots, which under
+   sustained 429s could deadlock the chain (every slot held by a retrying
+   call waiting to retry into a slot).
+2. **`asyncio.Semaphore` is not reentrant.** A `RetryMiddleware` retry is
+   a fresh `await chain(request)` call on the same coroutine, but
+   reacquiring the semaphore from the same task is fine only because the
+   acquire happens *outside* the chain. Wrapping the leaf would risk
+   self-deadlock if a future middleware ever held the slot across
+   `await next_call(...)`.
+
+The chain leaf no longer touches `host._rpc_semaphore`; only
+`ClientCore._perform_authed_post` does.
+
+### `AuthRefreshMiddleware` shipped without rebuild closures
+
+The original §"AuthRefreshMiddleware constructor signature" pinned a
+shape with two callbacks:
+
+```python
+rebuild_headers: Callable[[AuthSnapshot], Mapping[str, str]]
+build_request_factory: Callable[[AuthSnapshot], BuildRequestResult]
+```
+
+PR 12.8 shipped a simpler `AuthRefreshMiddleware` that catches
+`httpx.HTTPStatusError`, drives the coalesced refresh via
+`AuthRefreshCoordinator.await_refresh`, marks
+`request.context["auth_refreshed"] = True`, and re-invokes `next_call`
+**with the same `RpcRequest`** — the leaf
+(`AuthedTransport.perform_authed_post`) re-reads the now-refreshed
+`AuthSnapshot` from the coordinator and rebuilds headers/url/body inside
+the leaf, exactly as it did pre-Tier-12.
+
+Why deferred: lifting `rebuild_headers` and `build_request_factory` into
+chain-level closures requires the leaf to become a pure POST that accepts
+already-built bytes/headers (i.e. `Kernel.post` from Tier-13 row 13.2).
+Doing it before the `Kernel.post` rewrite would create a third
+request-construction path (chain-side closure + leaf-side rebuild +
+`_chat_transport.send_authed_post` direct path) that all have to stay in
+sync — strictly worse than leaving the leaf authoritative for one more
+tier.
+
+The `AuthSnapshot` and `BuildRequestResult` named dataclasses landed in
+PR 12.1 and live in `_request_types.py`. They are unused by
+`AuthRefreshMiddleware` today but are the target shape for Tier 13.
+
+Tier-13 follow-up (tracked in
+`.sisyphus/plans/tier-12-13-greenfield-migration.md` row 13.2): rewrite
+`AuthRefreshMiddleware` against the pinned closure-callback signature
+once `Kernel.post` is the chain leaf. The signature pinned in
+§"AuthRefreshMiddleware constructor signature" above is the target;
+update this ADR's Status to "Superseded by ADR-010" when that lands.

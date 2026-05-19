@@ -21,11 +21,11 @@ Specifically pinned here:
   ``path`` arguments AND with the ``save_cookies_to_storage`` value resolved
   from ``notebooklm._core`` at call time (so the monkeypatch surface keeps
   working).
-* The httpx ``AsyncClient`` **is never wrapped in
-  ``_SyntheticErrorTransport``** — Tier-12 PR 12.6 lifted synthetic-error
-  injection into the chain
-  (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`),
-  so the lifecycle constructs a plain transport regardless of
+* The httpx ``AsyncClient`` **always uses httpx's default transport** —
+  Tier-12 PR 12.6 lifted synthetic-error injection into the chain
+  (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`)
+  and PR 12.9 deleted the legacy ``_SyntheticErrorTransport`` class.
+  The lifecycle constructs a plain transport regardless of
   ``NOTEBOOKLM_VCR_RECORD_ERRORS``.
 * :meth:`ClientLifecycle._keepalive_loop` **respects the min-interval
   clamp** — ``_resolve_keepalive_interval`` floors the configured interval
@@ -215,11 +215,11 @@ async def test_open_captures_cookie_snapshot() -> None:
 
 
 @pytest.mark.asyncio
-async def test_open_does_not_wrap_synthetic_transport_by_default(
+async def test_open_uses_default_httpx_transport_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default path: ``_get_error_injection_mode`` returns ``None`` →
-    ``AsyncClient`` is built with no custom transport."""
+    """Default path: ``_get_error_injection_mode`` returns ``None`` → httpx's
+    default ``AsyncHTTPTransport`` is in place (no custom transport wrapping)."""
     monkeypatch.setattr(_core_module, "_get_error_injection_mode", lambda: None)
     lifecycle = _make_lifecycle()
     host = _StubHost()
@@ -228,9 +228,7 @@ async def test_open_does_not_wrap_synthetic_transport_by_default(
     try:
         client = lifecycle._http_client
         assert client is not None
-        # When no custom ``transport=`` is passed to ``AsyncClient``, httpx
-        # builds its own default transport — never a ``_SyntheticErrorTransport``.
-        assert not isinstance(client._transport, _core_module._SyntheticErrorTransport)
+        assert isinstance(client._transport, httpx.AsyncHTTPTransport)
     finally:
         await lifecycle.close(host)
 
@@ -239,16 +237,12 @@ async def test_open_does_not_wrap_synthetic_transport_by_default(
 async def test_open_uses_default_httpx_transport_when_env_var_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """PR 12.6: ``AsyncClient`` uses httpx's default transport even with env var set.
+    """``AsyncClient`` uses httpx's default transport even with env var set.
 
-    Pre-PR-12.6 the lifecycle wrapped the inner transport in
-    ``_SyntheticErrorTransport`` whenever ``_get_error_injection_mode`` was
-    non-``None``. After PR 12.6 that substitution lives in the chain
-    (``ErrorInjectionMiddleware``), and the lifecycle constructs a plain
-    transport regardless of the env var. Asserted positively (httpx's
-    default ``AsyncHTTPTransport``) rather than as a negative against
-    ``_SyntheticErrorTransport`` so the test stays load-bearing after PR
-    12.9 deletes that class.
+    Pre-Tier-12 the lifecycle wrapped the inner transport in a synthetic
+    httpx transport (deleted in PR 12.9). After Tier-12 the substitution
+    lives in the chain (``ErrorInjectionMiddleware``); the lifecycle
+    constructs a plain transport regardless of the env var.
     """
     monkeypatch.setattr(_core_module, "_get_error_injection_mode", lambda: "429")
     lifecycle = _make_lifecycle()

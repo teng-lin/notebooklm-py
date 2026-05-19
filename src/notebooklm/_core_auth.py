@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
+from ._core_constants import CORE_LOGGER_NAME
 from ._core_transport import _AuthSnapshot
 from ._loop_affinity import assert_bound_loop
 from .auth import AuthTokens
@@ -57,10 +58,10 @@ from .auth import AuthTokens
 if TYPE_CHECKING:
     from ._core_metrics import ClientMetrics
 
-# Logger name pinned to ``notebooklm._core`` (not the literal module name)
-# so log filters in tests — e.g. ``caplog.at_level("DEBUG",
-# logger="notebooklm._core")`` — keep matching after the extraction.
-logger = logging.getLogger("notebooklm._core")
+# Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
+# tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
+# keep matching after the extraction.
+logger = logging.getLogger(CORE_LOGGER_NAME)
 
 
 class _AuthRefreshHost(Protocol):
@@ -117,6 +118,20 @@ class AuthRefreshCoordinator:
         (which will rebind to a fresh loop).
         """
         self._bound_loop = loop
+
+    @property
+    def has_refresh_callback(self) -> bool:
+        """``True`` iff a refresh callback was wired at construction.
+
+        Used by :class:`notebooklm._middleware_auth_refresh.AuthRefreshMiddleware`
+        to gate the refresh-and-retry branch: a client constructed without
+        a ``refresh_callback`` should propagate auth errors directly,
+        matching the pre-Tier-12 leaf behavior. Exposing this as a
+        property avoids reaching into the private
+        ``_refresh_callback`` attribute from outside the coordinator
+        (PR 12.9 cleanup of the inline lambda the chain seed used pre-12.9).
+        """
+        return self._refresh_callback is not None
 
     # ------------------------------------------------------------------
     # Lazy lock accessors. Both follow the same race-free check-then-assign

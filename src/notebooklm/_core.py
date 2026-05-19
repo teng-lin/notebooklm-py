@@ -46,14 +46,13 @@ from ._core_drain import TransportDrainTracker
 # shape; the alias below is the backwards-compat anchor.
 from ._core_drain import _TransportOperationToken as _TransportOperationToken
 
-# Synthetic-error transport plumbing — re-exported so
-# ``tests/unit/test_vcr_config.py``, ``tests/conftest.py``, and
-# ``tests/unit/test_core_lifecycle.py`` (which monkeypatches
-# ``_get_error_injection_mode`` through the ``_core`` module attribute) keep
-# resolving these names as documented. ``_core_lifecycle.ClientLifecycle.open``
-# also reads ``_get_error_injection_mode`` / ``_SyntheticErrorTransport`` via
-# ``from . import _core as _core_module`` at call time so the monkeypatch
-# surface remains hot.
+# Synthetic-error helpers — re-exported so ``tests/conftest.py``,
+# ``tests/unit/test_vcr_config.py``, and any other test that imports
+# them through ``notebooklm._core`` keep resolving them as documented.
+# The pre-Tier-12 ``_SyntheticErrorTransport`` httpx transport was
+# deleted in PR 12.9 (substitution moved into
+# ``ErrorInjectionMiddleware`` in PR 12.6); only the env-var resolver
+# and the startup guard remain.
 from ._core_error_injection import (
     ERROR_INJECT_ENV_VAR as ERROR_INJECT_ENV_VAR,
 )
@@ -62,9 +61,6 @@ from ._core_error_injection import (
 )
 from ._core_error_injection import (
     _refuse_synthetic_error_outside_test_context as _refuse_synthetic_error_outside_test_context,
-)
-from ._core_error_injection import (
-    _SyntheticErrorTransport as _SyntheticErrorTransport,
 )
 
 # Cross-seam helpers — re-exported so ``from notebooklm._core import
@@ -184,6 +180,21 @@ def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = Fal
 
 def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
     return asyncio.sleep(seconds)
+
+
+def _live_is_auth_error(exc: Exception) -> bool:
+    """Resolve ``is_auth_error`` through this module's globals at call time.
+
+    Python function-body name lookup hits the module ``__dict__`` on each
+    call, so a ``monkeypatch.setattr("notebooklm._core.is_auth_error",
+    ...)`` swap is observed immediately. Used by every chain seed site
+    that wires ``AuthRefreshMiddleware`` and by ``RpcExecutor`` so the
+    project-wide test idiom of patching the symbol on this module stays
+    live without each seed site re-implementing the lambda. PR 12.9
+    cleanup of the prior inline lambdas / ``globals()["is_auth_error"]``
+    indirections.
+    """
+    return is_auth_error(exc)
 
 
 class ClientCore:
@@ -530,16 +541,12 @@ class ClientCore:
             # with retry budgets.
             AuthRefreshMiddleware(
                 refresh_callable=self._await_refresh,
-                # Resolve through the live module name at call time so
-                # ``monkeypatch.setattr("notebooklm._core.is_auth_error",
-                # ...)`` reaches the chain. Python function-body name
-                # lookup hits the module dict on each call, so this
-                # lambda is already late-bound — a value-import would
-                # freeze the binding at chain-construction time, but this
-                # idiom doesn't (codex iter-1 nit on PR 12.8: simpler
-                # than the prior ``globals()["is_auth_error"]`` indirection).
-                is_auth_error=lambda exc: is_auth_error(exc),
-                refresh_callback_enabled=lambda: self._auth_coord._refresh_callback is not None,
+                # ``_live_is_auth_error`` re-reads ``is_auth_error`` from
+                # this module's globals on every call so test monkeypatches
+                # of ``notebooklm._core.is_auth_error`` reach the chain;
+                # see that helper's docstring for the rationale.
+                is_auth_error=_live_is_auth_error,
+                refresh_callback_enabled=lambda: self._auth_coord.has_refresh_callback,
                 refresh_retry_delay=lambda: self._refresh_retry_delay,
                 metrics=self._metrics_obj,
             ),
@@ -895,13 +902,27 @@ class ClientCore:
         attributes) — the property-bridged ivars' ``hasattr`` probes are
         always True because the descriptors live on the class.
         """
-        if hasattr(self, "_metrics_obj") and hasattr(self, "_drain_tracker"):
+        if (
+            hasattr(self, "_metrics_obj")
+            and hasattr(self, "_drain_tracker")
+            and hasattr(self, "_max_concurrent_rpcs")
+        ):
             return
         with _OBSERVABILITY_INIT_LOCK:
             if not hasattr(self, "_metrics_obj"):
                 self._metrics_obj = ClientMetrics(on_rpc_event=None)
             if not hasattr(self, "_drain_tracker"):
                 self._drain_tracker = TransportDrainTracker()
+            if not hasattr(self, "_max_concurrent_rpcs"):
+                # Audit-find #1 (PR 12.9): the RPC semaphore wraps the
+                # chain dispatch in ``_perform_authed_post`` and reads
+                # this attr to decide whether to gate at all. A
+                # ``__new__``-built fixture must see ``None`` (no gate)
+                # so the first authed-POST call doesn't ``AttributeError``
+                # — the live ``ClientCore.__init__`` path sets it
+                # explicitly to either ``DEFAULT_MAX_CONCURRENT_RPCS`` or
+                # the operator's override.
+                self._max_concurrent_rpcs = None
 
     def _ensure_authed_post_chain(self) -> None:
         """Backfill the middleware chain for tests that construct via ``__new__``.
@@ -967,24 +988,11 @@ class ClientCore:
                     ),
                     AuthRefreshMiddleware(
                         refresh_callable=self._await_refresh,
-                        # Resolve through the live module name at call time so
-                        # ``monkeypatch.setattr("notebooklm._core.is_auth_error",
-                        # ...)`` reaches the chain. Python function-body name
-                        # lookup hits the module dict on each call, so this
-                        # lambda is already late-bound — a value-import would
-                        # freeze the binding at chain-construction time, but
-                        # this idiom doesn't. Kept identical to the ``__init__``
-                        # site (codex iter-1 nit on PR 12.8: simpler than the
-                        # prior ``globals()["is_auth_error"]`` indirection).
-                        is_auth_error=lambda exc: is_auth_error(exc),
-                        refresh_callback_enabled=lambda: (
-                            self._auth_coord._refresh_callback is not None
-                        ),
-                        # ``getattr`` default matches ``__init__``'s argument
-                        # default (``refresh_retry_delay: float = 0.2``) so a
-                        # ``__new__``-built fixture that never set this attr
-                        # sees the same post-refresh sleep as the normal path.
-                        refresh_retry_delay=lambda: getattr(self, "_refresh_retry_delay", 0.2),
+                        # See ``_live_is_auth_error`` for the late-binding
+                        # rationale (mirrors the ``__init__`` seed site).
+                        is_auth_error=_live_is_auth_error,
+                        refresh_callback_enabled=lambda: self._auth_coord.has_refresh_callback,
+                        refresh_retry_delay=lambda: getattr(self, "_refresh_retry_delay", 0.0),
                         metrics=self._metrics_obj,
                     ),
                     ErrorInjectionMiddleware(),
@@ -1163,12 +1171,7 @@ class ClientCore:
         """
         transport = getattr(self, "_authed_transport", None)
         if transport is None:
-            transport = AuthedTransport(
-                self,
-                is_auth_error=lambda exc: is_auth_error(exc),
-                sleep=lambda seconds: asyncio.sleep(seconds),
-                logger=logger,
-            )
+            transport = AuthedTransport(self, logger=logger)
             self._authed_transport = transport
         return transport
 
@@ -1186,7 +1189,7 @@ class ClientCore:
             executor = RpcExecutor(
                 self,
                 decode_response_late_bound=_decode_response_late_bound,
-                is_auth_error=lambda exc: is_auth_error(exc),
+                is_auth_error=_live_is_auth_error,
                 sleep=_sleep_late_bound,
             )
             self._rpc_executor = executor
@@ -1450,8 +1453,23 @@ class ClientCore:
                 "rpc_method": rpc_method,
             },
         )
-        result = await self._authed_post_chain(request)
-        return result.response
+
+        # PR 12.9 audit fix: the RPC concurrency semaphore wraps the
+        # ENTIRE chain invocation (initial attempt + chain-level retries
+        # by RetryMiddleware / AuthRefreshMiddleware). This restores the
+        # pre-Tier-12 "one slot per logical RPC" backpressure contract.
+        # Releasing a slot during RetryMiddleware's backoff sleep would
+        # let new callers burst in just as the current cohort wakes up,
+        # undoing the smoothing the semaphore exists to provide.
+        # ``_get_rpc_semaphore`` returns ``contextlib.nullcontext`` when
+        # ``max_concurrent_rpcs`` is ``None`` (unbounded), so this wrap
+        # is a no-op for clients that opted out.
+        semaphore = self._get_rpc_semaphore()
+        queue_wait_start = time.perf_counter()
+        async with semaphore:
+            self._record_rpc_queue_wait(time.perf_counter() - queue_wait_start)
+            result = await self._authed_post_chain(request)
+            return result.response
 
     async def transport_post(
         self,

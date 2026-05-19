@@ -123,7 +123,11 @@ class MetricsMiddleware:
                         status="error",
                         elapsed_seconds=elapsed,
                         request_id=get_request_id(),
-                        error_type=type(exc).__name__,
+                        # PR 12.9 audit fix: ``__qualname__`` matches the
+                        # idiom used by ``TracingMiddleware._middleware_tracing.py``
+                        # so nested exception classes are distinguishable
+                        # in metrics + traces alike.
+                        error_type=type(exc).__qualname__,
                     )
                 )
             raise

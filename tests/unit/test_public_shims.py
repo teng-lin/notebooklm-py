@@ -1228,18 +1228,22 @@ def test_error_injection_symbols_resolve_through_core():
 
     ``test_core_lifecycle.py`` monkeypatches ``_get_error_injection_mode``
     through ``notebooklm._core``, and ``tests/conftest.py`` /
-    ``tests/unit/test_vcr_config.py`` import ``ERROR_INJECT_ENV_VAR`` and
-    ``_SyntheticErrorTransport`` from ``notebooklm._core``. A future refactor
-    that accidentally shadows the re-export (e.g. by reassigning the alias
-    at module scope) would silently break those monkeypatches before any
-    behavior test catches it — these identity pins surface that drift here.
+    ``tests/unit/test_vcr_config.py`` import ``ERROR_INJECT_ENV_VAR`` from
+    ``notebooklm._core``. A future refactor that accidentally shadows the
+    re-export (e.g. by reassigning the alias at module scope) would silently
+    break those monkeypatches before any behavior test catches it — these
+    identity pins surface that drift here.
+
+    PR 12.9 deleted ``_SyntheticErrorTransport`` (the legacy httpx
+    transport that wrapped the ``AsyncClient`` below VCR); the synthetic
+    substitution lives in ``_middleware_error_injection.ErrorInjectionMiddleware``
+    now, so that identity pin is gone.
     """
     import notebooklm._core as _core
     from notebooklm import _core_error_injection
 
     assert _core.ERROR_INJECT_ENV_VAR is _core_error_injection.ERROR_INJECT_ENV_VAR
     assert _core._get_error_injection_mode is _core_error_injection._get_error_injection_mode
-    assert _core._SyntheticErrorTransport is _core_error_injection._SyntheticErrorTransport
 
 
 # ---------------------------------------------------------------------------

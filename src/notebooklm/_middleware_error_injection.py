@@ -19,13 +19,11 @@ short-circuits with a synthetic :class:`httpx.Response` built by
 still fires at ``ClientCore`` construction so a leaked deploy env never reaches
 this code path in production.
 
-This PR lifts the substitution from the httpx transport
-(:class:`_core_error_injection._SyntheticErrorTransport`, which previously
-wrapped ``httpx.AsyncClient`` in ``ClientLifecycle``) into the middleware
-chain. After this PR the lifecycle no longer wraps the transport, so the
-class is unused production code; PR 12.9 cleanup deletes it. Direct
-instantiation tests in ``tests/unit/test_vcr_config.py`` still pass because
-the class itself is untouched.
+Tier-12 history: PR 12.6 lifted the substitution from the pre-Tier-12
+httpx transport (``_core_error_injection._SyntheticErrorTransport``,
+which wrapped ``httpx.AsyncClient`` in ``ClientLifecycle``) into this
+middleware. PR 12.9 deleted the legacy transport class outright; this
+middleware is now the only production substitution surface.
 
 Behavior contract:
 
@@ -78,6 +76,7 @@ from typing import cast
 import httpx
 
 from . import _core_error_injection
+from ._core_constants import CORE_LOGGER_NAME
 from ._core_error_injection import ERROR_INJECT_ENV_VAR
 from ._core_transport import (
     _parse_retry_after,
@@ -86,10 +85,10 @@ from ._core_transport import (
 )
 from ._middleware import NextCall, RpcRequest, RpcResponse
 
-# Logger name pinned to ``notebooklm._core`` (not the literal module name) so
-# log filters in tests — e.g. ``caplog.at_level(..., logger="notebooklm._core")``
-# — keep matching the synthetic-error log line the lifecycle previously emitted.
-logger = logging.getLogger("notebooklm._core")
+# Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
+# tests — e.g. ``caplog.at_level(..., logger=CORE_LOGGER_NAME)`` — keep
+# matching the synthetic-error log line the lifecycle previously emitted.
+logger = logging.getLogger(CORE_LOGGER_NAME)
 
 _SyntheticBuilder = Callable[[str], tuple[int, bytes, dict[str, str]]]
 
@@ -214,11 +213,10 @@ class ErrorInjectionMiddleware:
         in recording / unit-test contexts where ``tests/`` is on disk
         relative to ``src/notebooklm/``.
 
-        Mirrors the same lazy-load logic in
-        :class:`_core_error_injection._SyntheticErrorTransport._load_builder`
-        so the synthetic-response shape stays identical between the
-        legacy transport path and the chain path. PR 12.9 removes the
-        legacy path and this duplication along with it.
+        This was previously duplicated in the (now-deleted)
+        ``_core_error_injection._SyntheticErrorTransport._load_builder``;
+        PR 12.9 removed that class so the chain middleware is the single
+        source of truth for synthetic-response loading.
         """
         if self._builder is not None:
             return self._builder
