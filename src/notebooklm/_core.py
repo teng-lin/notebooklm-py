@@ -111,6 +111,7 @@ from ._middleware import (
     RpcResponse,
     build_chain,
 )
+from ._middleware_tracing import TracingMiddleware
 from ._sources import fetch_source_ids
 
 # ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
@@ -463,9 +464,14 @@ class ClientCore:
         # ``AuthedTransport.perform_authed_post`` (the shared seam covering
         # ``ClientCore._perform_authed_post`` here and ``RpcExecutor.execute``'s
         # call to ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
-        # Middlewares land one per PR in 12.3–12.8 (Tracing, Metrics, Drain,
-        # ErrorInjection, Retry, AuthRefresh) and are inserted into the empty
-        # list below; the wiring shape stays unchanged.
+        # PR 12.3 lands ``TracingMiddleware`` as the innermost (and currently
+        # only) entry; subsequent PRs 12.4–12.8 prepend each remaining
+        # middleware in chain-order so the final list reads
+        # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
+        # (outermost → innermost, per ADR-009 §"Chain ordering"). ``build_chain``
+        # composes the leftmost entry as the outermost wrapper, so appending
+        # to the right of ``TracingMiddleware`` keeps Tracing innermost as
+        # later PRs grow the list.
         #
         # The terminal adapter reads ``build_request`` / ``log_label`` /
         # ``disable_internal_retries`` from ``RpcRequest.context`` and
@@ -474,7 +480,7 @@ class ClientCore:
         # stay unpopulated until PRs 12.5/12.7/12.8 start lifting behavior
         # out of ``AuthedTransport``. See ADR-009 §"Per-request behavior"
         # and ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
-        self._middlewares: list[Middleware] = []
+        self._middlewares: list[Middleware] = [TracingMiddleware()]
         self._authed_post_chain: NextCall = build_chain(
             self._middlewares,
             self._authed_post_chain_terminal,
@@ -854,7 +860,14 @@ class ClientCore:
             if hasattr(self, "_authed_post_chain"):
                 return
             if not hasattr(self, "_middlewares"):
-                self._middlewares = []
+                # Mirror ``__init__``'s seeded chain: PR 12.3 lands
+                # ``TracingMiddleware`` as the innermost entry. A
+                # ``__new__``-built fixture must see the same chain shape so
+                # tracing records are emitted for fixture-driven invocations
+                # too; otherwise the fixture path and the live path diverge
+                # in observability, which has previously hidden bugs in
+                # Tier-8 cassette-replay tests.
+                self._middlewares = [TracingMiddleware()]
             self._authed_post_chain = build_chain(
                 self._middlewares,
                 self._authed_post_chain_terminal,

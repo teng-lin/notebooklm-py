@@ -232,22 +232,22 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chain_is_empty_by_default() -> None:
-    """``ClientCore.__init__`` constructs the chain with an empty middleware list.
+async def test_chain_seeded_with_tracing_middleware() -> None:
+    """``ClientCore.__init__`` seeds the chain with ``[TracingMiddleware()]``.
 
-    PRs 12.3–12.8 each prepend one middleware; PR 12.2 ships only the
-    wiring shape. The list must be exposed as ``self._middlewares`` so
-    later PRs (and the cleanup audit in 12.9) can assert ordering by
-    inspecting the production attribute directly.
+    PR 12.3 lands ``TracingMiddleware`` as the innermost entry (and the
+    only entry until 12.4+). Subsequent PRs 12.4–12.8 each prepend their
+    middleware so the final ordering reads ``[Drain, Metrics, Retry,
+    AuthRefresh, ErrorInjection, Tracing]`` per ADR-009. The list is
+    exposed as ``self._middlewares`` so later PRs (and the cleanup audit
+    in 12.9) can assert ordering by inspecting the production attribute
+    directly.
     """
+    from notebooklm._middleware_tracing import TracingMiddleware
+
     core = _make_core()
-    assert core._middlewares == []
-    # The chain itself is the terminal (``build_chain`` returns the
-    # terminal unchanged when given an empty middleware list — see
-    # ``_middleware.build_chain``'s "empty middlewares" branch). Bound
-    # methods are equal (by ``__func__`` + ``__self__``) but not
-    # identity-equal across attribute accesses, so compare with ``==``.
-    assert core._authed_post_chain == core._authed_post_chain_terminal
+    assert len(core._middlewares) == 1
+    assert isinstance(core._middlewares[0], TracingMiddleware)
 
 
 @pytest.mark.asyncio
