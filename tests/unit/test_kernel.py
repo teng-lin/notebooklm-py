@@ -67,6 +67,32 @@ async def test_open_is_idempotent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_open_preserves_explicit_empty_cookie_jar(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_build_cookie_jar(**_: object) -> httpx.Cookies:
+        raise AssertionError("explicit cookie_jar should not be rebuilt")
+
+    monkeypatch.setattr("notebooklm._kernel.build_cookie_jar", fail_build_cookie_jar)
+    kernel = Kernel()
+    await kernel.open(
+        auth=AuthTokens(
+            csrf_token="csrf",
+            session_id="sid",
+            cookies={},
+            cookie_jar=httpx.Cookies(),
+            storage_path=None,
+        ),
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        capture_cookie_snapshot=lambda _: None,
+    )
+    try:
+        assert kernel.http_client is not None
+    finally:
+        await kernel.aclose()
+
+
+@pytest.mark.asyncio
 async def test_post_uses_live_http_client_streaming_post() -> None:
     seen_requests: list[httpx.Request] = []
 

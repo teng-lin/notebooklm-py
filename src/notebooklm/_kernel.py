@@ -72,9 +72,13 @@ class Kernel:
             write=timeout,
             pool=timeout,
         )
-        cookies = auth.cookie_jar or build_cookie_jar(
-            cookies=auth.cookies,
-            storage_path=auth.storage_path,
+        cookies = (
+            auth.cookie_jar
+            if auth.cookie_jar is not None
+            else build_cookie_jar(
+                cookies=auth.cookies,
+                storage_path=auth.storage_path,
+            )
         )
 
         self._http_client = self._async_client_factory(
