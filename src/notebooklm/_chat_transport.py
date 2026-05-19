@@ -75,11 +75,7 @@ async def chat_aware_authed_post(
     except _TransportRateLimited as exc:
         raise ChatError(
             f"{parse_label} rate-limited (HTTP 429)."
-            + (
-                f" Retry after {exc.retry_after} seconds."
-                if exc.retry_after is not None
-                else ""
-            )
+            + (f" Retry after {exc.retry_after} seconds." if exc.retry_after is not None else "")
         ) from exc
     except _TransportServerError as exc:
         if isinstance(exc.original, httpx.HTTPStatusError):

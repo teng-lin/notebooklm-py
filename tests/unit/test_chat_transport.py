@@ -335,4 +335,3 @@ async def test_raw_http_status_error_maps_to_chat_error():
 # The error-mapping tests above already cover that path
 # (`test_transport_auth_expired_maps_to_chat_error` exercises the same
 # transport exception used by the deleted finalization test).
-
