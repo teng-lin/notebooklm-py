@@ -39,8 +39,14 @@ def _make_api(rpc_return):
 
 @pytest.mark.asyncio
 async def test_get_summary_happy_path_returns_string(monkeypatch):
-    """Well-formed response shape extracts the summary string."""
-    monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
+    """Well-formed response shape extracts the summary string.
+
+    Mode-agnostic: the happy path never triggers ``safe_index`` drift,
+    so the env var is intentionally left at the user's default rather
+    than pinned to either side. The sibling
+    ``test_get_summary_happy_path_also_holds_under_strict`` pins the
+    strict-mode no-regression contract.
+    """
     # Real shape: [[[summary_string, ...], topics, ...]]
     api = _make_api([[["the summary text"]]])
 

@@ -17,11 +17,11 @@ silently degrades to whatever the surrounding code happened to do with
 `None`.
 
 The Tier-12 remediation introduced
-:func:`notebooklm.rpc.safe_index` (`src/notebooklm/rpc/_safe_index.py`) as
+`notebooklm.rpc.safe_index` (`src/notebooklm/rpc/_safe_index.py`) as
 the single shared schema-drift point: callers descend through it by
 integer indices, and on descent failure the helper either logs a warning
 and returns `None` (soft mode) or raises
-:class:`~notebooklm.exceptions.UnknownRPCMethodError` (strict mode). The
+`notebooklm.exceptions.UnknownRPCMethodError` (strict mode). The
 toggle is `NOTEBOOKLM_STRICT_DECODE`. PR-12 era introduced the helper
 with a default of `"0"` (soft) so the migration of ~30 call sites from
 hand-rolled `try/except IndexError` blocks to `safe_index` could land
