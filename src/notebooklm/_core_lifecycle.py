@@ -323,13 +323,10 @@ class ClientLifecycle:
                 refresh_task.cancel()
                 await asyncio.gather(refresh_task, return_exceptions=True)
 
-            async def _run_drain_hook(hook: Callable[[], Awaitable[None]]) -> None:
-                await hook()
-
             drain_hooks = list(host._drain_hooks.values())
             if drain_hooks:
                 await asyncio.gather(
-                    *(_run_drain_hook(hook) for hook in drain_hooks),
+                    *(hook() for hook in drain_hooks),
                     return_exceptions=True,
                 )
 

@@ -465,6 +465,7 @@ class ClientCore:
         # names observable for current tests and first-party callers.
         self.cookie_persistence = CookiePersistence(self.auth, _resolved_storage_path)
         self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
+        # Compatibility-only: active artifact polling state is owned by ArtifactsAPI.
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
