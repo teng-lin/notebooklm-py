@@ -24,7 +24,7 @@ class _NoopOperationScope:
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool:
+    ) -> bool | None:
         return False
 
 
@@ -152,6 +152,7 @@ def test_kernel_and_drain_hook_signatures_are_pinned() -> None:
     assert post.parameters["body"].annotation == "bytes"
     assert post.return_annotation == "httpx.Response"
 
+    # Protocol properties expose the getter signature through ``fget``.
     cookies = inspect.signature(Kernel.cookies.fget)
     assert cookies.return_annotation == "httpx.Cookies"
 
@@ -166,10 +167,15 @@ def test_kernel_and_drain_hook_signatures_are_pinned() -> None:
 
 
 def test_structural_implementations_satisfy_protocols() -> None:
+    # These assignments are the contract check: mypy verifies that each
+    # implementation structurally satisfies its Protocol. Runtime
+    # ``isinstance`` checks would only prove the concrete class identity
+    # unless the Protocols became ``@runtime_checkable``, which is weaker than
+    # the signature-level static check and not needed for this type-only PR.
     session: Session = _SessionImpl()
     kernel: Kernel = _KernelImpl()
     drain_hooks: DrainHookRegistration = _DrainHookRegistrationImpl()
 
-    assert isinstance(session, _SessionImpl)
-    assert isinstance(kernel, _KernelImpl)
-    assert isinstance(drain_hooks, _DrainHookRegistrationImpl)
+    assert session is not None
+    assert kernel is not None
+    assert drain_hooks is not None

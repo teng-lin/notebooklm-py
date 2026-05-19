@@ -71,8 +71,8 @@ Unwanted:
 ## Alternatives considered
 
 Keep per-feature `_<X>Core` Protocols. Rejected because the endpoint would
-still duplicate the same core session operations across eight modules and
-keep `_capabilities.py` as a permanent coordination point.
+still duplicate the same core session operations across feature sub-client
+modules and keep `_capabilities.py` as a permanent coordination point.
 
 Add `register_drain_hook` to `Session`. Rejected because it would expand
 the general feature contract for an Artifacts-only lifecycle need and
