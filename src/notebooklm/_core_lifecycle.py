@@ -284,9 +284,9 @@ class ClientLifecycle:
         :func:`asyncio.shield` — without the shield, a ``CancelledError``
         arriving during keepalive teardown or the cookie save would skip
         ``aclose()`` and leak the underlying httpx transport.
-        ``self._http_client = None`` runs in an inner ``finally`` so the
-        instance is consistently marked closed even if the shielded
-        ``aclose()`` itself raises.
+        :meth:`Kernel.aclose` clears the live HTTP client in its own
+        ``finally`` so the instance is consistently marked closed even if
+        shielded teardown raises.
 
         Poll-task drain: in-flight artifact poll tasks held by
         ``host.poll_registry`` are cancelled and awaited before the HTTP

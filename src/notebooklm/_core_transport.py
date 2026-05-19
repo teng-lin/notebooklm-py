@@ -260,6 +260,7 @@ class AuthedTransport:
         the parameter once the legacy non-chain code path is retired.
         """
         host = self._host
+        # Fast-path: reject pre-open calls before loop checks and semaphore acquisition.
         if host._http_client is None:
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
