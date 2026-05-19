@@ -84,53 +84,56 @@ EVENT_TIMEOUT_S = 5.0
 
 
 def test_perform_authed_post_has_no_await_before_post_per_iteration():
-    """Within a single retry iteration of ``_perform_authed_post``, no
-    ``await`` may sit lexically inside the ``try:`` block before the
-    ``client.post(...)`` call.
+    """No ``await`` may sit lexically inside the ``try:`` block before the
+    ``client.post(...)`` call in ``_perform_authed_post``.
 
-    Each retry iteration begins with ``snapshot = await self._snapshot()``
-    + a synchronous ``build_request(snapshot)`` — both immediately
-    *before* the try block. The try body's first statement is the actual
-    POST. If anyone introduces an ``await`` between ``build_request`` and
-    the POST (or any new await inside the try body's prologue), a
-    concurrent ``refresh_auth`` could update the httpx cookie jar
-    between the snapshot read and the wire, producing a mismatched-
-    generation request on the cookie axis (the ``_auth_snapshot_lock``
-    covers csrf/sid coherence; cookies still rely on this no-await rule).
+    The leaf begins with ``snapshot = await self._snapshot()`` + a
+    synchronous ``build_request(snapshot)`` — both immediately *before*
+    the try block. The try body's first statement is the actual POST. If
+    anyone introduces an ``await`` between ``build_request`` and the POST
+    (or any new await inside the try body's prologue), a concurrent
+    ``refresh_auth`` could update the httpx cookie jar between the
+    snapshot read and the wire, producing a mismatched-generation
+    request on the cookie axis (the ``_auth_snapshot_lock`` covers
+    csrf/sid coherence; cookies still rely on this no-await rule).
 
-    The check is per-iteration: awaits *between* iterations (e.g.
-    ``await self._await_refresh()`` followed by ``continue``) are fine
-    because each iteration takes a fresh snapshot.
-
-    Note: the lock acquisition inside ``_snapshot`` is the only
-    pre-POST ``await``, and it lives *before* the try block — so this
-    guard (which only walks the try body) remains valid.
+    Tier-12 PRs 12.7 / 12.8 lifted retry / auth-refresh out of the leaf
+    into ``RetryMiddleware`` and ``AuthRefreshMiddleware``. After PR
+    12.8 the leaf no longer has a ``while`` retry loop — it makes
+    exactly one attempt per chain invocation. Each chain-level retry
+    (driven by ``RetryMiddleware`` / ``AuthRefreshMiddleware``) re-enters
+    the leaf and re-runs ``_snapshot`` → ``build_request`` → POST.
+    The guard therefore walks the ``try`` block directly inside the
+    ``async with semaphore:`` body.
     """
     src = textwrap.dedent(inspect.getsource(AuthedTransport.perform_authed_post))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
-    # Locate the retry loop (the outermost ``while`` in the body). The loop
-    # may sit directly under the function body OR one level deeper inside
-    # the RPC-semaphore ``async with self._get_rpc_semaphore():`` wrapper — both
-    # structures preserve the snapshot→POST invariant this guard checks
-    # (the semaphore acquire happens once per call, not per iteration).
-    def _find_first_while(parent: ast.AST) -> ast.While | None:
+    # Locate the ``try`` block guarding the POST. Post-PR-12.8 the leaf
+    # has no ``while`` retry loop; the try sits directly inside the
+    # ``async with self._get_rpc_semaphore():`` body (the semaphore
+    # acquire happens once per call, not per iteration).
+    def _find_first_try(parent: ast.AST) -> ast.Try | None:
         for child in ast.iter_child_nodes(parent):
-            if isinstance(child, ast.While):
+            if isinstance(child, ast.Try):
                 return child
             if isinstance(child, ast.AsyncWith | ast.With):
-                # Descend through context managers so the guard survives
-                # wrapping the loop in ``async with semaphore``.
-                found = _find_first_while(child)
+                found = _find_first_try(child)
+                if found is not None:
+                    return found
+            if isinstance(child, ast.While):
+                # Tolerate a re-introduced while (e.g. if a future PR
+                # adds a retry loop back to the leaf) — walk into it.
+                found = _find_first_try(child)
                 if found is not None:
                     return found
         return None
 
-    while_loop = _find_first_while(func)
-    assert while_loop is not None, (
-        "Could not locate the retry-loop ``while`` in AuthedTransport.perform_authed_post. "
-        "If the loop was restructured, update this guard to match."
+    found_try = _find_first_try(func)
+    assert found_try is not None, (
+        "Could not locate the ``try:`` block guarding the POST in "
+        "AuthedTransport.perform_authed_post. Update this guard to match."
     )
 
     def is_post_await(node):
@@ -169,20 +172,13 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
             yield child
             yield from _walk_outer(child)
 
-    # Walk only the ``try`` block at the top of the while body — that's the
-    # critical prologue → POST window. Awaits in ``except`` handlers are by
-    # definition AFTER the POST (post-error path) and don't violate the
-    # invariant. ``self._snapshot()`` and ``build_request(snapshot)`` are
-    # synchronous assignments inside the while body before the try, so
-    # they're irrelevant to this guard.
-    try_node = next(
-        (n for n in ast.iter_child_nodes(while_loop) if isinstance(n, ast.Try)),
-        None,
-    )
-    assert try_node is not None, (
-        "Could not locate the ``try:`` block guarding the POST in "
-        "AuthedTransport.perform_authed_post. Update this guard if the structure changed."
-    )
+    # Walk only the ``try`` body — that's the critical prologue → POST
+    # window. Awaits in ``except`` handlers are by definition AFTER the
+    # POST and don't violate the invariant. ``self._snapshot()`` and
+    # ``build_request(snapshot)`` are synchronous assignments inside the
+    # ``async with semaphore:`` body before the try, so they're
+    # irrelevant to this guard.
+    try_node = found_try
     # We only walk the try body, NOT its handlers.
     try_body_nodes: list[ast.AST] = []
     for stmt in try_node.body:

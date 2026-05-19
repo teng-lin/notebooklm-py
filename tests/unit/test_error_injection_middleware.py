@@ -201,44 +201,55 @@ async def test_5xx_mode_raises_transport_server_error(
 
 
 # ---------------------------------------------------------------------------
-# expired_csrf → return RpcResponse (PR 12.8 will intercept in AuthRefresh)
+# expired_csrf → raise httpx.HTTPStatusError (AuthRefreshMiddleware catches)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_expired_csrf_mode_returns_400_response_for_now(
+async def test_expired_csrf_mode_raises_http_status_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``expired_csrf`` mode returns the 400 response as-is — pending PR 12.8.
+    """``expired_csrf`` mode raises the raw ``httpx.HTTPStatusError``.
 
-    PR 12.8's AuthRefreshMiddleware will intercept 400 responses and drive
-    the refresh-then-retry flow. Until then, the response propagates.
+    PR 12.8 wired AuthRefreshMiddleware outside this middleware in the
+    final chain ordering. AuthRefresh catches via ``is_auth_error``
+    (which recognizes 400/401/403 from Google's auth-shape responses)
+    and drives the refresh-then-retry flow. Pre-PR-12.6 this happened
+    naturally because the legacy ``_SyntheticErrorTransport`` returned
+    the synthetic 400 below httpx and the leaf's auth-refresh branch
+    handled it.
     """
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     terminal, calls = _recording_terminal()
     middleware = ErrorInjectionMiddleware()
     chain = build_chain([middleware], terminal)
 
-    response = await chain(make_request())
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        await chain(make_request())
 
     assert calls == []  # leaf NOT reached
-    assert response.response.status_code == 400
+    assert excinfo.value.response.status_code == 400
+    assert "HTTP 400" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
-async def test_expired_csrf_response_propagates_request_context(
+async def test_expired_csrf_response_carries_synthetic_request_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """For the returned-response path (400), context is propagated."""
+    """The raised HTTPStatusError wraps a synthetic ``httpx.Response`` whose
+    ``.request`` mirrors the chain envelope."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     middleware = ErrorInjectionMiddleware()
     chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
 
-    request_context = {"log_label": "RPC LIST_NOTEBOOKS", "rpc_method": "LIST_NOTEBOOKS"}
-    request = make_request(context=request_context)
-    response = await chain(request)
+    custom_url = "https://example.test/_/LabsTailwindUi/data/batchexecute?authuser=0"
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        await chain(make_request(url=custom_url))
 
-    assert response.context is request.context
+    response = excinfo.value.response
+    assert response.status_code == 400
+    assert response.request is not None
+    assert str(response.request.url) == custom_url
 
 
 # ---------------------------------------------------------------------------

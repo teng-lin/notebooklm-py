@@ -111,6 +111,7 @@ from ._middleware import (
     RpcResponse,
     build_chain,
 )
+from ._middleware_auth_refresh import AuthRefreshMiddleware
 from ._middleware_drain import DrainMiddleware
 from ._middleware_error_injection import ErrorInjectionMiddleware
 from ._middleware_metrics import MetricsMiddleware
@@ -471,32 +472,35 @@ class ClientCore:
         # PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
         # ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware``
         # outermost, PR 12.6 inserted ``ErrorInjectionMiddleware`` between
-        # ``MetricsMiddleware`` and ``TracingMiddleware``, and PR 12.7
-        # inserts ``RetryMiddleware`` between ``MetricsMiddleware`` and
-        # ``ErrorInjectionMiddleware`` so the list now reads
-        # ``[Drain, Metrics, Retry, ErrorInjection, Tracing]``. PR 12.8
-        # inserts ``AuthRefreshMiddleware`` BETWEEN ``RetryMiddleware`` and
-        # ``ErrorInjectionMiddleware`` so the final list reads
+        # ``MetricsMiddleware`` and ``TracingMiddleware``, PR 12.7
+        # inserted ``RetryMiddleware`` between ``MetricsMiddleware`` and
+        # ``ErrorInjectionMiddleware``, and PR 12.8 inserts
+        # ``AuthRefreshMiddleware`` BETWEEN ``RetryMiddleware`` and
+        # ``ErrorInjectionMiddleware`` so the list now reads the
+        # **final** ADR-009 ordering
         # ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
-        # (outermost → innermost, per ADR-009 §"Chain ordering"). ``build_chain``
-        # composes the leftmost entry as the outermost wrapper, so keeping
-        # ``TracingMiddleware`` at the RIGHT end of the list preserves
-        # Tracing as the innermost wrapper as later PRs grow the list.
+        # (outermost → innermost). ``build_chain`` composes the leftmost
+        # entry as the outermost wrapper, so keeping ``TracingMiddleware``
+        # at the RIGHT end of the list preserves Tracing as the innermost
+        # wrapper.
         #
-        # PR 12.7 also LIFTS the 429 / 5xx retry loops out of
-        # ``AuthedTransport.perform_authed_post`` (the chain leaf) and into
-        # ``RetryMiddleware``. The leaf now raises
-        # ``_TransportRateLimited`` / ``_TransportServerError`` immediately
-        # on the first 429 / 5xx, and ``RetryMiddleware`` catches those
-        # exceptions and re-invokes the chain. Auth-refresh stays in the
-        # leaf as a localized loop until PR 12.8 lifts it.
+        # PR 12.7 lifted the 429 / 5xx retry loops out of the leaf into
+        # ``RetryMiddleware``; PR 12.8 lifts the auth-refresh-once retry
+        # too. After PR 12.8 the leaf is a *pure* POST — every retry
+        # decision happens in the chain. The leaf still raises
+        # ``_TransportRateLimited`` / ``_TransportServerError`` for
+        # 429 / 5xx so ``RetryMiddleware`` can catch; raw
+        # ``httpx.HTTPStatusError`` (400/401/403) propagates so
+        # ``AuthRefreshMiddleware`` can catch via ``is_auth_error`` and
+        # drive refresh-then-retry.
         #
         # The terminal adapter reads ``build_request`` / ``log_label`` /
         # ``disable_internal_retries`` from ``RpcRequest.context`` and
         # delegates to ``self._get_authed_transport().perform_authed_post``.
         # ``RetryMiddleware`` reads ``log_label`` /
-        # ``disable_internal_retries`` from the same ``context`` dict. See
-        # ADR-009 §"Per-request behavior" and
+        # ``disable_internal_retries`` from the same ``context`` dict.
+        # ``AuthRefreshMiddleware`` reads ``log_label``. See ADR-009
+        # §"Per-request behavior" and
         # ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
         self._middlewares: list[Middleware] = [
             DrainMiddleware(self._drain_tracker),
@@ -510,6 +514,31 @@ class ClientCore:
             RetryMiddleware(
                 rate_limit_max_retries=lambda: self._rate_limit_max_retries,
                 server_error_max_retries=lambda: self._server_error_max_retries,
+                metrics=self._metrics_obj,
+            ),
+            # AuthRefresh callbacks: refresh_callable invokes the same
+            # ``_await_refresh`` path the leaf used pre-PR-12.8, so the
+            # coalesced single-flight refresh contract from
+            # ``AuthRefreshCoordinator`` is preserved end-to-end.
+            # ``refresh_callback_enabled`` reads the coordinator's
+            # internal callback slot to skip refresh when no callback was
+            # configured (matches the legacy
+            # ``host._refresh_callback is not None`` gate in the leaf).
+            # ``refresh_retry_delay`` is callable for live-binding parity
+            # with retry budgets.
+            AuthRefreshMiddleware(
+                refresh_callable=self._await_refresh,
+                # Resolve through the live module name at call time so
+                # ``monkeypatch.setattr("notebooklm._core.is_auth_error",
+                # ...)`` reaches the chain. Python function-body name
+                # lookup hits the module dict on each call, so this
+                # lambda is already late-bound — a value-import would
+                # freeze the binding at chain-construction time, but this
+                # idiom doesn't (codex iter-1 nit on PR 12.8: simpler
+                # than the prior ``globals()["is_auth_error"]`` indirection).
+                is_auth_error=lambda exc: is_auth_error(exc),
+                refresh_callback_enabled=lambda: self._auth_coord._refresh_callback is not None,
+                refresh_retry_delay=lambda: self._refresh_retry_delay,
                 metrics=self._metrics_obj,
             ),
             ErrorInjectionMiddleware(),
@@ -879,8 +908,9 @@ class ClientCore:
         on such a fixture would raise ``AttributeError``; this helper
         backfills both slots with the same shape ``__init__`` would have
         constructed (``[DrainMiddleware, MetricsMiddleware, RetryMiddleware,
-        ErrorInjectionMiddleware, TracingMiddleware]``-seeded chain around
-        the terminal adapter, matching the seed in ``__init__``).
+        AuthRefreshMiddleware, ErrorInjectionMiddleware, TracingMiddleware]``-seeded
+        chain around the terminal adapter, matching the seed in
+        ``__init__``).
 
         Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
         :meth:`_ensure_observability_state` is — two threads observing
@@ -904,40 +934,46 @@ class ClientCore:
             if hasattr(self, "_authed_post_chain"):
                 return
             if not hasattr(self, "_middlewares"):
-                # Mirror ``__init__``'s seeded chain: PR 12.3 lands
-                # ``TracingMiddleware`` as the innermost entry, PR 12.4
-                # prepends ``MetricsMiddleware``, PR 12.5 prepends
-                # ``DrainMiddleware`` outermost, PR 12.6 inserts
-                # ``ErrorInjectionMiddleware`` just outside
-                # ``TracingMiddleware``, and PR 12.7 inserts
-                # ``RetryMiddleware`` between ``MetricsMiddleware`` and
-                # ``ErrorInjectionMiddleware``. A ``__new__``-built fixture
-                # must see the same chain shape so the three observability
-                # channels (drain admission, RPC counters/events,
-                # structured trace logs), the retry-on-429/5xx loop, and
-                # the fault-injection short-circuit (active only when
-                # ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set) are all
-                # exercised on fixture-driven invocations too; otherwise
-                # the fixture path and the live path diverge, which has
-                # previously hidden bugs in Tier-8 cassette-replay tests.
+                # Mirror ``__init__``'s seeded chain. PR 12.8 lands the
+                # **final** ADR-009 ordering [Drain, Metrics, Retry,
+                # AuthRefresh, ErrorInjection, Tracing]. A ``__new__``-built
+                # fixture must see the same chain shape so all four chain
+                # behaviors (drain admission, retry on 429/5xx,
+                # refresh-and-retry on 4xx auth shapes, synthetic-error
+                # short-circuit) are exercised on fixture-driven
+                # invocations too — otherwise the fixture path and the
+                # live path diverge, which has previously hidden bugs in
+                # Tier-8 cassette-replay tests.
                 #
-                # ``getattr`` defaults for the retry budgets match
-                # ``__init__``'s default values so a ``__new__``-built
-                # fixture that didn't set them still gets a sane
-                # ``RetryMiddleware``.
+                # ``getattr`` defaults match ``__init__``'s argument
+                # defaults so a ``__new__``-built fixture that never set
+                # the attrs still gets sane middleware instances.
+                # ``_ensure_auth_coord`` initializes ``_auth_coord`` so the
+                # ``refresh_callback_enabled`` lambda can read it.
+                self._ensure_auth_coord()
                 self._middlewares = [
                     DrainMiddleware(self._drain_tracker),
                     MetricsMiddleware(self._metrics_obj),
-                    # Callable budgets preserve live-binding (see ``__init__``
-                    # for the rationale). ``getattr`` defaults match
-                    # ``__init__``'s argument defaults so a ``__new__``-built
-                    # fixture that never set the attrs still gets a sane
-                    # ``RetryMiddleware``.
                     RetryMiddleware(
                         rate_limit_max_retries=lambda: getattr(self, "_rate_limit_max_retries", 3),
                         server_error_max_retries=lambda: getattr(
                             self, "_server_error_max_retries", 3
                         ),
+                        metrics=self._metrics_obj,
+                    ),
+                    AuthRefreshMiddleware(
+                        refresh_callable=self._await_refresh,
+                        # Resolve through the module's globals at call time so a
+                        # ``monkeypatch.setattr("notebooklm._core.is_auth_error",
+                        # ...)`` reaches the chain. A value-import would freeze
+                        # the binding at chain-construction time. ``globals()``
+                        # reads the live module dict, so the patched value is
+                        # observed on each call.
+                        is_auth_error=lambda exc: globals()["is_auth_error"](exc),
+                        refresh_callback_enabled=lambda: (
+                            self._auth_coord._refresh_callback is not None
+                        ),
+                        refresh_retry_delay=lambda: getattr(self, "_refresh_retry_delay", 0.0),
                         metrics=self._metrics_obj,
                     ),
                     ErrorInjectionMiddleware(),

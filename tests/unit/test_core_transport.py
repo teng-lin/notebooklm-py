@@ -225,7 +225,18 @@ async def test_authed_transport_requires_open_client():
 
 
 @pytest.mark.asyncio
-async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
+async def test_chain_uses_late_bound_is_auth_error(monkeypatch):
+    """Tier-12 PR 12.8 lifted auth-refresh into ``AuthRefreshMiddleware``.
+
+    The middleware reads ``is_auth_error`` LIVE through
+    ``notebooklm._core``'s module globals (via the lambda in the chain
+    seed) so a test that monkeypatches
+    ``notebooklm._core.is_auth_error`` still drives the refresh path —
+    preserving the pre-PR-12.8 contract where ``AuthedTransport`` read
+    the same module attr live. Drives the chain via
+    ``core._perform_authed_post`` since retry behavior moved out of the
+    leaf.
+    """
     refresh_calls: list[bool] = []
 
     async def refresh() -> AuthTokens:
@@ -235,7 +246,9 @@ async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
     core = _make_core(refresh_callback=refresh)
     await core.open()
     try:
-        transport = core._get_authed_transport()
+        # Force the middleware to treat ANY exception as an auth error.
+        # The chain reads ``is_auth_error`` through the module so this
+        # patch takes effect on the next call.
         monkeypatch.setattr("notebooklm._core.is_auth_error", lambda exc: True)
 
         def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
@@ -251,7 +264,7 @@ async def test_authed_transport_uses_late_bound_is_auth_error(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
-        response = await transport.perform_authed_post(build_request=build, log_label="test")
+        response = await core._perform_authed_post(build_request=build, log_label="test")
 
         assert response.status_code == 200
         assert refresh_calls == [True]

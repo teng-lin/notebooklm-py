@@ -37,12 +37,15 @@ Behavior contract:
   ``Retry-After`` header so the retry honors the rate-limit timing.
 - Env var set, mode ``"5xx"`` → raise :class:`_TransportServerError` so
   ``RetryMiddleware`` retries with exponential backoff.
-- Env var set, mode ``"expired_csrf"`` (HTTP 400) → return the synthetic
-  response unchanged. ``RetryMiddleware`` does not retry on 400; PR 12.8
-  ``AuthRefreshMiddleware`` will intercept and drive the refresh-then-retry
-  flow that the legacy leaf used to handle inline. Until 12.8 lands, the
-  400 propagates as a returned response and chat-domain mapping surfaces
-  it as a generic error (matches the PR-12.6 interim behavior).
+- Env var set, mode ``"expired_csrf"`` (HTTP 400) → raise the raw
+  :class:`httpx.HTTPStatusError` so ``AuthRefreshMiddleware`` (outside
+  this middleware in the final chain ordering) catches it via
+  ``is_auth_error`` and drives the refresh-then-retry flow. Pre-PR-12.6
+  this happened naturally because the legacy ``_SyntheticErrorTransport``
+  returned the synthetic 400 below httpx, the leaf's ``raise_for_status``
+  lifted it into an ``HTTPStatusError``, and the leaf's auth-refresh
+  branch handled it. PR 12.8 restores that end-to-end (codex iter-1
+  catch on PR 12.8).
 
 All raised exceptions wrap a synthetic :class:`httpx.Response` anchored to
 ``request.url`` / ``request.headers`` / ``request.body`` so callers
@@ -158,22 +161,23 @@ class ErrorInjectionMiddleware:
             content=body,
             request=synthetic_request,
         )
-        # PR 12.7: raise the proper transport exception for 429 / 5xx so the
-        # OUTER ``RetryMiddleware`` actually retries — restoring ADR-009
-        # §"ErrorInjection inside Retry — synthetic transient failures trigger
-        # retry". Pre-PR-12.6 this happened naturally because the legacy
-        # ``_SyntheticErrorTransport`` returned the synthetic response below
-        # httpx and ``AuthedTransport``'s ``raise_for_status()`` lifted it
-        # into an ``HTTPStatusError`` that the leaf's 429 / 5xx branches
-        # mapped to these same transport exceptions. Returning a plain
-        # ``RpcResponse`` here would skip retry entirely (codex iter-1 catch).
-        #
-        # For the ``expired_csrf`` (400) mode we still return the synthetic
-        # response — PR 12.8 (AuthRefreshMiddleware) will intercept it and
-        # drive the refresh-then-retry flow that the legacy leaf used to
-        # handle inline. Until 12.8 lands, the 400 propagates as a returned
-        # response and the chat-domain mapping surfaces it as a generic
-        # error (matches the PR-12.6 interim behavior for that mode).
+        # Raise the proper exception for each mode so the OUTER chain
+        # middlewares actually fire — restoring ADR-009 §"Chain ordering
+        # rationale" end-to-end:
+        # - 429 → ``_TransportRateLimited`` → ``RetryMiddleware`` retries
+        #   with Retry-After or exponential backoff
+        # - 5xx → ``_TransportServerError`` → ``RetryMiddleware`` retries
+        #   with exponential backoff
+        # - 400 / expired_csrf → raw ``httpx.HTTPStatusError`` →
+        #   ``AuthRefreshMiddleware`` catches via ``is_auth_error``,
+        #   refreshes, retries once (PR 12.8). Pre-PR-12.6 this happened
+        #   naturally because the legacy ``_SyntheticErrorTransport``
+        #   returned the synthetic response below httpx and
+        #   ``AuthedTransport``'s ``raise_for_status()`` lifted it into
+        #   an ``HTTPStatusError`` that the leaf's auth-refresh branch
+        #   then handled. Returning a plain ``RpcResponse`` here would
+        #   skip ``AuthRefreshMiddleware`` entirely (codex iter-1 catch
+        #   on PR 12.7 (429/5xx) + PR 12.8 (400)).
         log_label = request.context.get("log_label", "<unknown-chain-call>")
         original = httpx.HTTPStatusError(
             f"HTTP {status_code}",
@@ -195,8 +199,11 @@ class ErrorInjectionMiddleware:
                 response=response,
                 status_code=status_code,
             ) from original
-        # 400 / expired_csrf / any other status: return as-is.
-        return RpcResponse(response=response, context=request.context)
+        # Auth shapes (400 expired_csrf, and any other 4xx the synthetic
+        # builder grows in future) propagate as the raw
+        # ``HTTPStatusError`` so ``AuthRefreshMiddleware`` can drive the
+        # refresh-then-retry flow.
+        raise original
 
     def _load_builder(self) -> _SyntheticBuilder:
         """Lazy importlib-load of ``tests.cassette_patterns.build_synthetic_error_response``.

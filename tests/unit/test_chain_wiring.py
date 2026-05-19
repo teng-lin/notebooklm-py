@@ -232,26 +232,32 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chain_seeded_with_drain_metrics_retry_error_injection_tracing() -> None:
-    """``ClientCore.__init__`` seeds the chain with ``[Drain, Metrics, Retry, ErrorInjection, Tracing]``.
+async def test_chain_seeded_with_final_adr_009_ordering() -> None:
+    """``ClientCore.__init__`` seeds the chain with the FINAL ADR-009 ordering.
 
     PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
     prepended ``MetricsMiddleware``; PR 12.5 prepended ``DrainMiddleware``
     outermost; PR 12.6 inserted ``ErrorInjectionMiddleware`` between
-    Metrics and Tracing; PR 12.7 inserts ``RetryMiddleware`` between
-    Metrics and ErrorInjection. Order matters — Drain admits/finalizes
-    the operation outside all observability, Metrics times the
-    end-to-end chain, Retry handles 429/5xx retries (with synthetic
-    errors that ErrorInjection produces visible to Retry on each
-    attempt), ErrorInjection short-circuits with synthetic responses
-    when activated, and Tracing remains the innermost wrapper around the
-    transport leaf. PR 12.8 inserts ``AuthRefreshMiddleware`` BETWEEN
-    Retry and ErrorInjection so the final ordering reads
-    ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]`` per
-    ADR-009. The list is exposed as ``self._middlewares`` so later PRs
-    (and the cleanup audit in 12.9) can assert ordering by inspecting
-    the production attribute directly.
+    Metrics and Tracing; PR 12.7 inserted ``RetryMiddleware`` between
+    Metrics and ErrorInjection; PR 12.8 inserts ``AuthRefreshMiddleware``
+    between Retry and ErrorInjection. The list now reads the final
+    ADR-009 ordering
+    ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``
+    (outermost → innermost).
+
+    Order rationale (per ADR-009):
+    - Drain outermost — every in-flight call counts toward shutdown wait
+    - Metrics outside Retry — end-to-end timing, not per-attempt
+    - Retry outside AuthRefresh — orthogonal failure modes
+    - AuthRefresh outside ErrorInjection — test-injected 401s exercise refresh
+    - ErrorInjection inside Retry — synthetic transient failures trigger retry
+    - Tracing innermost — logs actual HTTP attempts including retries
+
+    The list is exposed as ``self._middlewares`` so PR 12.9 (cleanup
+    audit) can verify ordering by inspecting the production attribute
+    directly.
     """
+    from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
     from notebooklm._middleware_drain import DrainMiddleware
     from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
     from notebooklm._middleware_metrics import MetricsMiddleware
@@ -259,12 +265,13 @@ async def test_chain_seeded_with_drain_metrics_retry_error_injection_tracing() -
     from notebooklm._middleware_tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._middlewares) == 5
+    assert len(core._middlewares) == 6
     assert isinstance(core._middlewares[0], DrainMiddleware)
     assert isinstance(core._middlewares[1], MetricsMiddleware)
     assert isinstance(core._middlewares[2], RetryMiddleware)
-    assert isinstance(core._middlewares[3], ErrorInjectionMiddleware)
-    assert isinstance(core._middlewares[4], TracingMiddleware)
+    assert isinstance(core._middlewares[3], AuthRefreshMiddleware)
+    assert isinstance(core._middlewares[4], ErrorInjectionMiddleware)
+    assert isinstance(core._middlewares[5], TracingMiddleware)
 
 
 @pytest.mark.asyncio
