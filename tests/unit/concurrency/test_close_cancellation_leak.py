@@ -1,7 +1,7 @@
 """Regression test for the close-cancellation transport-leak shield.
 
 The audit covered whether the ``asyncio.shield`` wrapped around
-``self._http_client.aclose()`` inside :meth:`notebooklm._core.Session.close`
+``self._http_client.aclose()`` inside :meth:`notebooklm._session.Session.close`
 correctly survives a cancellation that lands while ``aclose`` itself is
 in flight, exercised through the user-facing ``__aexit__`` surface (not
 the bare ``close()`` task path already covered by the companion

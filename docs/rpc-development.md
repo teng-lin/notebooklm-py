@@ -328,7 +328,7 @@ def test_encode_new_method():
 @pytest.mark.asyncio
 async def test_new_method(mock_client):
     mock_response = ["result_id", "Result Title"]
-    with patch('notebooklm._core.Session.rpc_call', new_callable=AsyncMock) as mock:
+    with patch('notebooklm._session.Session.rpc_call', new_callable=AsyncMock) as mock:
         mock.return_value = mock_response
         result = await mock_client.some_api.new_method("nb_id", "param")
         assert result.id == "result_id"

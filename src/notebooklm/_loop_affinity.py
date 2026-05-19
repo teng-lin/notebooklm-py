@@ -5,7 +5,7 @@ against ``asyncio.get_running_loop()`` and raises an actionable
 :class:`RuntimeError` on mismatch. Lives in its own module so the helpers
 that need to call it (``_core_drain.py`` / ``_core_reqid.py`` /
 ``_core_auth.py`` / ``_artifact_polling.py`` / ``_chat.py``) can import it
-without dragging in :class:`notebooklm._core.Session` — none of those
+without dragging in :class:`notebooklm._session.Session` — none of those
 modules currently have a direct ``Session`` reference and adding one
 just to reach a bound-loop attribute would re-couple them.
 

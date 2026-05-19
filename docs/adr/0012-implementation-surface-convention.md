@@ -11,10 +11,10 @@ the time of this ADR, `src/notebooklm/` contains 13 public-named modules
 (`auth.py`, `client.py`, `config.py`, `exceptions.py`, `io.py`, `log.py`,
 `migration.py`, `notebooklm_cli.py`, `paths.py`, `research.py`,
 `types.py`, `urls.py`, `utils.py`) and roughly 50 underscore-prefixed
-seam modules (`_core.py`, `_core_*.py`, `_artifacts.py`,
-`_artifact_*.py`, `_capabilities.py`, `_chat.py`, `_chat_*.py`,
-`_session_contracts.py`, `_middleware_*.py`, the `_auth/` subpackage,
-etc.). The seam modules carry the bulk of the implementation; the
+seam modules (`_session.py`, `_session_contracts.py`, `_core.py`,
+`_core_*.py`, `_artifacts.py`, `_artifact_*.py`, `_chat.py`,
+`_chat_*.py`, `_middleware_*.py`, the `_auth/` subpackage, etc.).
+The seam modules carry the bulk of the implementation; the
 public-named modules are mostly thin re-export facades or lifecycle
 entry points.
 
@@ -34,7 +34,7 @@ Downstream code, however, sees no documented rule that distinguishes
 seam I should not import from." The `__init__.py` re-exports declare
 the *intended* public surface, but the seam modules are still
 directly importable — a `from`-import targeting an underscore-prefixed
-seam (e.g. importing `ClientCore` directly from the `_core` seam)
+seam (e.g. importing `Session` directly from the `_session` seam)
 succeeds at runtime, and nothing in the package layout signals which
 imports are safe across releases.
 
@@ -120,11 +120,10 @@ but internal contents) MUST be added to this list before merging.
 
 ```text
 src/notebooklm/
-├── _core.py                     # ClientCore orchestrator
+├── _session.py                  # Session concrete orchestrator
+├── _core.py                     # legacy compatibility shim
 ├── _core_*.py                   # per-concern core seams (transport, RPC, drain, etc.)
-├── _capabilities.py             # capability Protocol adapters
 ├── _session_contracts.py        # Session/Kernel Protocols (Tier-13)
-├── _session.py                  # Session concrete (Tier-13)
 ├── _kernel.py                   # Kernel concrete (Tier-13)
 ├── _middleware_*.py             # middleware-chain modules
 ├── _artifacts.py                # ArtifactsAPI implementation
@@ -146,7 +145,7 @@ src/notebooklm/
 Seam modules are **not** subject to stability guarantees. Their public
 surface, internal layout, and module location can all change between
 any two releases. Downstream code that imports from a seam module
-(for example pulling `ClientCore` out of the `_core` seam, or
+(for example pulling `Session` out of the `_session` seam, or
 `is_strict_decode_enabled` out of the `_env` seam) is using an internal
 API and accepts the cost of tracking those moves across releases. The
 library does not promise import-path stability for any name reachable
@@ -236,7 +235,7 @@ minor (0.x) or major (post-1.0) bump.
 **Drop the prefix convention and rely solely on `__all__`.** Rejected.
 `__all__` controls only `from foo import *` behaviour; named imports
 that reach directly into an underscore-prefixed seam (e.g. pulling
-`ClientCore` out of the `_core` module by name) bypass it entirely.
+`Session` out of the `_session` module by name) bypass it entirely.
 Using `__all__` as the sole stability fence would force consumers to
 consult the docs for every name to learn whether it is stable, and
 reviewers would have no filename-level signal during code review. The

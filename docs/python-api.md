@@ -568,7 +568,7 @@ particular ivar lives.
 | `_core_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
 | `_core_lifecycle` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Session lifecycle collaborator. |
 | `_core_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
-| `_core_polling` | Pending-poll registry shared by long-running artifact generations. | Tracked via `PollRegistryProvider` in `_capabilities.py`. |
+| `_core_polling` | Pending-poll registry shared by long-running artifact generations. | Concrete registry type retained for the `Session.poll_registry` compatibility bridge. |
 | `_core_reqid` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
 | `_core_rpc` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
 | `_core_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |

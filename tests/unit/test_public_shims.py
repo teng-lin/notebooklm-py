@@ -1207,7 +1207,7 @@ def test_public_shim_all_contract(shim_name: str, internal_name: str) -> None:
 #
 # When ``_core.py``'s preamble was split into ``_core_constants.py``,
 # ``_core_error_injection.py``, and ``_core_helpers.py``, the legacy import
-# surface (``from notebooklm._session import …``) was preserved via re-export
+# surface (``from notebooklm._core import …``) was preserved via re-export
 # aliases. These tests pin that the re-exported name on ``notebooklm._core``
 # is the **same object** as the canonical name on the seam module — so if a
 # future refactor accidentally rebinds the alias or shadows the symbol, the
