@@ -14,6 +14,7 @@ See ``docs/adr/0007-test-monkeypatch-policy.md`` for the policy and rationale.
 
 from __future__ import annotations
 
+from .auth_seam import patch_auth_seam
 from .fake_core import FakeClientCore, make_fake_core
 
-__all__ = ["FakeClientCore", "make_fake_core"]
+__all__ = ["FakeClientCore", "make_fake_core", "patch_auth_seam"]
