@@ -14,6 +14,26 @@ _PLAYWRIGHT_INSTALLED = importlib.util.find_spec("playwright") is not None
 
 
 @pytest.fixture(autouse=True)
+def _isolate_notebooklm_home(request, tmp_path, monkeypatch):
+    """Pin ``NOTEBOOKLM_HOME`` at a per-test tmp dir.
+
+    Without this, tests that route through the real CLI auth path read the
+    developer's actual ``~/.notebooklm/`` state. An empty or partial
+    ``storage_state.json`` there fails ``_validate_required_cookies`` inside
+    ``build_cookie_jar`` and produces hundreds of ``exit_code=2`` failures
+    locally while CI (with a clean ``HOME``) passes. Pinning
+    ``NOTEBOOKLM_HOME`` at a tmp dir gives every test the same empty-storage
+    view CI sees, so the suite is reproducible across machines.
+
+    E2E tests opt out: they need the real ``~/.notebooklm/`` profile to mint
+    live tokens, so the marker bypasses this fixture.
+    """
+    if request.node.get_closest_marker("e2e"):
+        return
+    monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path / "notebooklm-home"))
+
+
+@pytest.fixture(autouse=True)
 def _reset_poke_state():
     """Reset module-level rotation guards between tests.
 
