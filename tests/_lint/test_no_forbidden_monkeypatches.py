@@ -148,7 +148,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_auth_cookie_save_race.py",
         "tests/unit/test_auth_session.py",
         "tests/unit/test_backoff.py",
-        "tests/unit/test_capabilities.py",
         "tests/unit/test_chat_delete_conversation.py",
         "tests/unit/test_client_keepalive.py",
         "tests/unit/test_core_lifecycle.py",
