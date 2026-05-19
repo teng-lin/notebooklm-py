@@ -5,8 +5,8 @@ against ``asyncio.get_running_loop()`` and raises an actionable
 :class:`RuntimeError` on mismatch. Lives in its own module so the helpers
 that need to call it (``_core_drain.py`` / ``_core_reqid.py`` /
 ``_core_auth.py`` / ``_artifact_polling.py`` / ``_chat.py``) can import it
-without dragging in :class:`notebooklm._core.ClientCore` — none of those
-modules currently have a direct ``ClientCore`` reference and adding one
+without dragging in :class:`notebooklm._core.Session` — none of those
+modules currently have a direct ``Session`` reference and adding one
 just to reach a bound-loop attribute would re-couple them.
 
 Design constraints:
@@ -18,7 +18,7 @@ Design constraints:
 
 * ``bound_loop is None`` is a silent no-op so callers that haven't yet
   observed an ``open()`` (most notably standalone fixtures that construct
-  the helpers directly without a :class:`ClientCore`) keep working without
+  the helpers directly without a :class:`Session`) keep working without
   a special-case branch on every call site.
 
 * The error message is intentionally identical in spirit to the inline

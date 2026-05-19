@@ -18,7 +18,7 @@ Trace record fields (emitted via ``logger.<level>(..., extra={...})`` so
 structured-logging consumers see them as ``LogRecord`` attributes):
 
 - ``rpc_method`` — value of ``request.context.get("rpc_method")``. Populated
-  as of PR 12.4 (via ``ClientCore._perform_authed_post``'s ``rpc_method``
+  as of PR 12.4 (via ``Session._perform_authed_post``'s ``rpc_method``
   kwarg, passed by ``RpcExecutor.execute``). ``None`` only for the chat
   streaming path (``_chat_transport.send_authed_post`` — chat-side
   requests are not classified RPCs) and for ``__new__``-built fixtures
@@ -87,7 +87,7 @@ class TracingMiddleware:
         ``request.context`` surface as ``None`` rather than raising
         ``KeyError`` — the chain is wired by PR 12.2 to always carry
         ``log_label``; ``rpc_method`` is populated as of PR 12.4 by
-        ``ClientCore._perform_authed_post`` for the RPC path and left
+        ``Session._perform_authed_post`` for the RPC path and left
         ``None`` for the chat streaming path.
         """
         context = request.context

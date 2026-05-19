@@ -31,9 +31,9 @@ _core_helpers.py              is_auth_error / AUTH_ERROR_PATTERNS / keepalive he
 _core_error_injection.py      _SyntheticErrorTransport + env-var guard
 ```
 
-The extraction was constrained by an unusually high test-coupling load: tests reach into the live `ClientCore` instance with `core._save_lock`, `core._metrics_lock`, `core._on_rpc_event`, and many other private attributes — patterns that pre-date the seam extraction. When the storage for these attributes moved into the seams, the legacy attribute names had to keep resolving on the `ClientCore` instance or hundreds of tests would break in a single PR.
+The extraction was constrained by an unusually high test-coupling load: tests reach into the live `Session` instance with `core._save_lock`, `core._metrics_lock`, `core._on_rpc_event`, and many other private attributes — patterns that pre-date the seam extraction. When the storage for these attributes moved into the seams, the legacy attribute names had to keep resolving on the `Session` instance or hundreds of tests would break in a single PR.
 
-The chosen mechanism is a *property-bridge policy*. Each migrated attribute keeps its legacy name on `ClientCore`, but the property delegates reads and writes to the owning seam:
+The chosen mechanism is a *property-bridge policy*. Each migrated attribute keeps its legacy name on `Session`, but the property delegates reads and writes to the owning seam:
 
 ```python
 # src/notebooklm/_core.py:450-774 (representative excerpt)
@@ -53,7 +53,7 @@ Roughly 324 lines of `_core.py` (lines ~450-774) are property bridges of this fo
 
 ## Decision
 
-`ClientCore` is decomposed into thirteen seam modules, one per cross-cutting concern. `ClientCore` itself becomes an orchestrator that wires the seams together and owns the public RPC surface.
+`Session` is decomposed into thirteen seam modules, one per cross-cutting concern. `Session` itself becomes an orchestrator that wires the seams together and owns the public RPC surface.
 
 Property bridges in `_core.py` are *permitted but tracked*. Each bridge must:
 
@@ -61,14 +61,14 @@ Property bridges in `_core.py` are *permitted but tracked*. Each bridge must:
 - Read and write through to the owning seam — never store state of its own.
 - Be retired the moment its only readers are themselves retired (see ADR-002 for the sub-client-compat half; ADR-007 will cover the test-compat half).
 
-The seam extractions are behavior-preserving moves. Each one ships with a unit-test fixture that exercises the seam in isolation; nothing on the seam should require a full `ClientCore` to test.
+The seam extractions are behavior-preserving moves. Each one ships with a unit-test fixture that exercises the seam in isolation; nothing on the seam should require a full `Session` to test.
 
 ## Consequences
 
 **Wanted:**
 
 - Each seam can be reviewed, tested, and refactored without touching the others. The drain coordinator, the keepalive loop, and the metrics counters now have file-local invariants.
-- The orchestrator (`ClientCore`) makes the wiring graph readable in one place. The pattern is "instantiate seams in `__init__`, expose them as plain attributes, delegate public methods through them."
+- The orchestrator (`Session`) makes the wiring graph readable in one place. The pattern is "instantiate seams in `__init__`, expose them as plain attributes, delegate public methods through them."
 - The seam extraction is reversible. Because each seam owns one concept, mistakes can be undone without unrolling unrelated work.
 
 **Unwanted:**
@@ -80,5 +80,5 @@ The seam extractions are behavior-preserving moves. Each one ships with a unit-t
 ## Alternatives considered
 
 - **Keep `_core.py` monolithic.** Rejected. The module had crossed the maintainability threshold (90+ methods, mixed concerns, mixed locking strategies, mixed lifetimes). Reviewers were re-deriving the same invariants on every PR; the cost was paid on every change, not just on the rare refactor.
-- **Extract into a sibling package (`src/notebooklm/core/`).** Rejected at the time because the seams have a clear single owner (`ClientCore`) and a sibling package implies "multiple consumers" — which is not (yet) the situation. The seams may be promoted to a sub-package in a future tier if a second consumer appears; the current flat layout keeps the cognitive load low.
+- **Extract into a sibling package (`src/notebooklm/core/`).** Rejected at the time because the seams have a clear single owner (`Session`) and a sibling package implies "multiple consumers" — which is not (yet) the situation. The seams may be promoted to a sub-package in a future tier if a second consumer appears; the current flat layout keeps the cognitive load low.
 - **Skip property bridges, accept the test breakage.** Rejected. The audit (`.sisyphus/plans/arch-biggest-problem-audit.md`) measured ~273 test-coupling sites that would have broken simultaneously, blocking the extraction PRs and forcing a "big bang" rewrite of the test suite. The property-bridge policy let the extraction land incrementally; the eventual bridge cleanup is sequenced after the test-pattern cleanup (D1 arc), which is the correct order.

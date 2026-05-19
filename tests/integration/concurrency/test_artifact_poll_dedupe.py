@@ -6,7 +6,7 @@ task_id)``, each runs its own poll loop and issues N independent
 ``LIST_ARTIFACTS`` requests per polling tick — wasteful at best and a
 rate-limit / quota burner at worst.
 
-The fix wires a per-instance registry ``ClientCore._pending_polls`` keyed
+The fix wires a per-instance registry ``Session._pending_polls`` keyed
 by ``(notebook_id, task_id)``. The *leader* (first caller) spawns a
 shielded poll task; *followers* await the shared future via
 ``asyncio.shield(future)``. Cancellation is per-caller — only the

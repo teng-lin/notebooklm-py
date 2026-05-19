@@ -5,7 +5,7 @@ single authed POST attempt against the NotebookLM batchexecute
 endpoint. It is the chat-domain consumer-side seam: transport-layer
 exceptions (``_TransportAuthExpired``, ``_TransportRateLimited``,
 ``_TransportServerError``, raw ``httpx.HTTPStatusError``) raised by
-``ClientCore._perform_authed_post`` are translated into ``ChatError``
+``Session._perform_authed_post`` are translated into ``ChatError``
 or ``NetworkError`` so callers (currently only :class:`ChatAPI.ask`)
 stay free of HTTP-status branching.
 

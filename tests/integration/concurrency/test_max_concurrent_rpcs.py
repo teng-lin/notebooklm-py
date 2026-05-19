@@ -35,7 +35,7 @@ The semaphore is placed at ``_perform_authed_post`` **only**:
   refresh starve in-flight RPCs.
 
 The semaphore is also lazily constructed (``asyncio.Semaphore()`` binds
-to the running loop in older Python versions; ``ClientCore`` can be
+to the running loop in older Python versions; ``Session`` can be
 constructed outside one). Mirrors the lazy-init pattern of
 ``_reqid_lock`` / ``_auth_snapshot_lock``.
 
@@ -60,7 +60,7 @@ import httpx
 import pytest
 
 from notebooklm import NotebookLMClient
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ConnectionLimits
@@ -88,16 +88,16 @@ async def _open_core_with_transport(
     transport: ConcurrentMockTransport,
     *,
     max_concurrent_rpcs: int | None,
-) -> ClientCore:
-    """Open a ``ClientCore`` with the mock transport swapped in.
+) -> Session:
+    """Open a ``Session`` with the mock transport swapped in.
 
     Mirrors ``test_harness_smoke.py::_open_core_with_transport`` plus the
-    new ``max_concurrent_rpcs`` knob exercised here. ``ClientCore.open()``
+    new ``max_concurrent_rpcs`` knob exercised here. ``Session.open()``
     builds its own ``httpx.AsyncClient``; we close it and replace with
     one routing through the recording transport so the in-flight peak
     is observable.
     """
-    core = ClientCore(auth=_make_auth(), max_concurrent_rpcs=max_concurrent_rpcs)
+    core = Session(auth=_make_auth(), max_concurrent_rpcs=max_concurrent_rpcs)
     await core.open()
     assert core._http_client is not None
     prior_cookies = core._http_client.cookies
@@ -310,7 +310,7 @@ def test_cap_above_pool_max_connections_raises_at_construction(
     the underlying httpx pool can't fulfill, surfacing as opaque
     ``PoolTimeout``s. The constructor catches the misconfiguration
     eagerly. The check is at the ``NotebookLMClient`` boundary because
-    ``ClientCore`` synthesizes its own ``ConnectionLimits()`` when
+    ``Session`` synthesizes its own ``ConnectionLimits()`` when
     ``limits=None`` is passed — the client-layer enforcement keeps the
     invariant consistent regardless of how the limits are supplied.
     """

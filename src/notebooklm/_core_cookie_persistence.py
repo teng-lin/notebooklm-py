@@ -19,7 +19,7 @@ from .auth import (
 
 
 class SaveCookiesToStorage(Protocol):
-    """Callable shape for the storage writer resolved by ``ClientCore``."""
+    """Callable shape for the storage writer resolved by ``Session``."""
 
     def __call__(
         self,

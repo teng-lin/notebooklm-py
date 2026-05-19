@@ -219,7 +219,7 @@ async def test_missing_log_label_falls_back_to_sentinel(
 ) -> None:
     """A request with no ``log_label`` in context admits with a sentinel label.
 
-    ``ClientCore._perform_authed_post`` always populates ``log_label``,
+    ``Session._perform_authed_post`` always populates ``log_label``,
     so this case only arises for ``__new__``-built fixtures driving the
     chain raw. The middleware should still admit + count rather than
     raising ``KeyError`` — pinning this guards against a regression

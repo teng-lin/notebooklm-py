@@ -1,10 +1,10 @@
 """``make_fake_core`` factory — constructor-injection substrate for sub-clients.
 
 This module provides a single entry point — :func:`make_fake_core` — that
-returns a ``FakeClientCore`` instance shaped to satisfy the shared
+returns a ``FakeSession`` instance shaped to satisfy the shared
 ``Session`` Protocol and explicit feature collaborators. Tests pass the
 result to a sub-client constructor (``NotebooksAPI(core=fake)``) instead
-of constructing a real ``ClientCore`` and mutating its attributes after
+of constructing a real ``Session`` and mutating its attributes after
 the fact.
 
 See :doc:`docs/adr/0007-test-monkeypatch-policy.md` for the policy that
@@ -14,7 +14,7 @@ patterns.
 
 Design choices (documented in ADR-007 "Alternatives considered"):
 
-- ``FakeClientCore`` is a plain class with explicit attribute storage
+- ``FakeSession`` is a plain class with explicit attribute storage
   (``types.SimpleNamespace``-shaped). It is *not* a spec-based
   ``MagicMock`` because spec-based mocks silently auto-vivify
   attributes and would tie the factory to a single concrete class
@@ -38,8 +38,8 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 
 
-class FakeClientCore:
-    """A duck-typed stand-in for ``ClientCore`` collaborators in tests.
+class FakeSession:
+    """A duck-typed stand-in for ``Session`` collaborators in tests.
 
     Attribute storage is explicit (the constructor only sets what's
     passed in) so that accessing an attribute the production code does
@@ -58,8 +58,8 @@ class FakeClientCore:
             setattr(self, name, value)
 
 
-def make_fake_core(**overrides: Any) -> FakeClientCore:
-    """Return a :class:`FakeClientCore` with benign defaults overridden.
+def make_fake_core(**overrides: Any) -> FakeSession:
+    """Return a :class:`FakeSession` with benign defaults overridden.
 
     All overrides are keyword-only and replace the corresponding default.
     Passing an unknown keyword raises ``TypeError`` early so test typos
@@ -98,7 +98,7 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         "get_source_ids": AsyncMock(side_effect=lambda *a, **kw: []),
         "next_reqid": AsyncMock(return_value=100000),
         "_next_reqid": AsyncMock(return_value=100000),
-        # Legacy ClientCore compatibility bridge
+        # Legacy Session compatibility bridge
         "poll_registry": MagicMock(),
         # DrainHookRegistration
         "_drain_hooks": {},
@@ -112,11 +112,11 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         "live_cookies": MagicMock(return_value=live_cookies),
         # Legacy transport drain helpers — fresh token object per call so drain tracking
         # gets unique identities (return_value=object() would share one instance).
-        # The Protocol declares the underscore-private names that ClientCore
+        # The Protocol declares the underscore-private names that Session
         # exposes directly. The no-underscore aliases below are purely defensive
         # safety-net defaults — no test site currently calls them on a
-        # FakeClientCore instance (all no-underscore callers in the test tree
-        # invoke these on TransportDrainTracker, not FakeClientCore). Kept so a
+        # FakeSession instance (all no-underscore callers in the test tree
+        # invoke these on TransportDrainTracker, not FakeSession). Kept so a
         # stray legacy reference lands on a benign mock rather than AttributeError.
         "_begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
         "_begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
@@ -151,4 +151,4 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         )
 
     defaults.update(overrides)
-    return FakeClientCore(**defaults)
+    return FakeSession(**defaults)

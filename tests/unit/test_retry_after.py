@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from notebooklm._core import MAX_RETRY_AFTER_SECONDS, _parse_retry_after
+from notebooklm._session import MAX_RETRY_AFTER_SECONDS, _parse_retry_after
 
 
 def test_parse_retry_after_integer():

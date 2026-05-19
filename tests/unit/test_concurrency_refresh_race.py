@@ -63,9 +63,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
 from notebooklm._core_rpc import RpcExecutor
 from notebooklm._core_transport import AuthedTransport
+from notebooklm._session import Session
 from notebooklm.rpc import RPCMethod
 
 _UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
@@ -256,7 +256,7 @@ def test_build_url_does_not_read_self_auth():
 
 
 def test_snapshot_acquires_auth_snapshot_lock():
-    """``ClientCore._snapshot`` must acquire ``_auth_snapshot_lock``.
+    """``Session._snapshot`` must acquire ``_auth_snapshot_lock``.
 
     The lock is the only thing that serializes the four-scalar
     snapshot read with the matching two-scalar write in
@@ -272,7 +272,7 @@ def test_snapshot_acquires_auth_snapshot_lock():
     referencing ``_auth_snapshot_lock`` so a maintainer who inlines the
     lazy accessor doesn't trip the guard).
     """
-    src = textwrap.dedent(inspect.getsource(ClientCore._snapshot))
+    src = textwrap.dedent(inspect.getsource(Session._snapshot))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -301,7 +301,7 @@ def test_snapshot_acquires_auth_snapshot_lock():
 
 def test_update_auth_tokens_has_no_await_inside_mutation_block():
     """``update_auth_tokens`` may await lock acquisition, but not while mutating."""
-    src = textwrap.dedent(inspect.getsource(ClientCore.update_auth_tokens))
+    src = textwrap.dedent(inspect.getsource(Session.update_auth_tokens))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -323,13 +323,12 @@ def test_update_auth_tokens_has_no_await_inside_mutation_block():
         None,
     )
     assert mutation_try is not None, (
-        "Could not locate the guarded csrf/session_id mutation block in "
-        "ClientCore.update_auth_tokens."
+        "Could not locate the guarded csrf/session_id mutation block in Session.update_auth_tokens."
     )
 
     awaits = [node for node in ast.walk(mutation_try) if isinstance(node, ast.Await)]
     assert awaits == [], (
-        "ClientCore.update_auth_tokens must not await inside the critical "
+        "Session.update_auth_tokens must not await inside the critical "
         "mutation block; doing so would let snapshots observe torn auth tokens."
     )
 

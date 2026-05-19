@@ -1,7 +1,7 @@
 """Unit tests for :mod:`notebooklm._core_auth`.
 
 Covers the load-bearing behaviors of :class:`AuthRefreshCoordinator` directly,
-in addition to the existing ``ClientCore``-shaped tests in
+in addition to the existing ``Session``-shaped tests in
 ``test_refresh_state_machine.py`` / ``test_refresh_lock_lazy_init.py`` /
 ``test_concurrency_refresh_race.py`` which exercise the same helper through
 the compat facade.
@@ -22,7 +22,7 @@ Specifically pinned here:
 
 Tests are intentionally helper-shaped (instantiate ``AuthRefreshCoordinator``
 directly with a Protocol-conformant stub host) so they cover the coordinator
-without taking on a ``ClientCore`` dependency.
+without taking on a ``Session`` dependency.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ EVENT_TIMEOUT_S = 5.0
 class _StubHost:
     """Minimal :class:`_AuthRefreshHost`-conformant host for unit tests.
 
-    Mirrors the live ``ClientCore`` shape:
+    Mirrors the live ``Session`` shape:
     * ``auth`` is a real :class:`AuthTokens` — :meth:`update_auth_tokens`
       writes ``csrf_token`` / ``session_id`` directly on it.
     * ``_metrics_obj`` is a real :class:`ClientMetrics` — the coordinator's
@@ -96,7 +96,7 @@ def test_locks_unallocated_at_construction() -> None:
     """Both locks are ``None`` at construction.
 
     Lazy allocation is load-bearing: ``asyncio.Lock()`` binds to the running
-    loop in some Python versions, and a ``ClientCore`` (which constructs a
+    loop in some Python versions, and a ``Session`` (which constructs a
     coordinator) is routinely instantiated outside a running loop.
     """
     coord = AuthRefreshCoordinator()
@@ -266,7 +266,7 @@ async def test_await_refresh_is_single_flight(stub_host: _StubHost) -> None:
     """Concurrent ``await_refresh`` callers share one in-flight refresh task.
 
     Mirrors ``test_refresh_state_machine.py::test_concurrent_callers_share_single_refresh``
-    but exercises the coordinator directly (no ``ClientCore`` facade in the
+    but exercises the coordinator directly (no ``Session`` facade in the
     middle). The lock protects task creation; the await on the task happens
     outside the lock so siblings can join.
     """

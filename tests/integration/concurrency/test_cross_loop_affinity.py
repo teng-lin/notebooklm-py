@@ -1,7 +1,7 @@
 """Regression test for the event-loop affinity guard.
 
 Audit item §14 (`thread-safety-concurrency-audit.md` §14):
-Pre-fix, ``ClientCore`` carried asyncio primitives (``_reqid_lock``,
+Pre-fix, ``Session`` carried asyncio primitives (``_reqid_lock``,
 ``_refresh_lock``, the underlying ``httpx.AsyncClient``'s connection
 pool, and any spawned ``asyncio.Task``s) that are silently bound to
 whichever event loop was current when they were constructed or first
@@ -11,7 +11,7 @@ in one thread and then hands it to another thread's loop hits opaque
 httpx, or — worse — a hang on a never-acquired lock that belongs to
 a dead loop.
 
-Post-fix: ``ClientCore.open()`` captures
+Post-fix: ``Session.open()`` captures
 ``asyncio.get_running_loop()`` in ``self._bound_loop`` and
 ``_perform_authed_post`` asserts the running loop matches via a cheap
 ``is`` comparison. On mismatch we raise an actionable ``RuntimeError``
@@ -28,7 +28,7 @@ The test exercises the surgical contract:
 2. **Same-loop use is unaffected** — open + dispatch under one loop and
    confirm 100 fan-out calls succeed (no false positive on the
    ``is`` comparison).
-3. **No binding before open()** — a freshly-constructed ``ClientCore``
+3. **No binding before open()** — a freshly-constructed ``Session``
    that has never been ``open()``ed has ``_bound_loop is None``; we
    only check inside ``_perform_authed_post`` which already asserts
    ``self._http_client is not None``, so an "unopened client" caller
@@ -49,7 +49,7 @@ import asyncio
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -73,11 +73,11 @@ def _make_auth() -> AuthTokens:
     )
 
 
-async def _open_core_with_transport(transport: ConcurrentMockTransport) -> ClientCore:
-    """Open a ``ClientCore`` and swap in the mock transport.
+async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Session:
+    """Open a ``Session`` and swap in the mock transport.
 
     Mirrors the documented pattern from ``test_harness_smoke.py``:
-    ``ClientCore.open()`` builds its own ``httpx.AsyncClient`` and we
+    ``Session.open()`` builds its own ``httpx.AsyncClient`` and we
     can't override the transport via the constructor. So we open
     normally — which is the moment the loop affinity is captured —
     then close-and-replace the underlying client with one that routes
@@ -85,7 +85,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Clien
     ``self._bound_loop`` unchanged because we don't call ``open()``
     again.
     """
-    core = ClientCore(auth=_make_auth())
+    core = Session(auth=_make_auth())
     await core.open()
     assert core._http_client is not None
     prior_cookies = core._http_client.cookies
@@ -126,7 +126,7 @@ def test_cross_loop_use_raises_actionable_runtime_error(
     # ``close()`` is also async and would need yet another loop — we
     # rely on the test's terminal ``asyncio.run`` for the second-loop
     # close.
-    core: ClientCore = asyncio.run(_open_core_with_transport(transport))
+    core: Session = asyncio.run(_open_core_with_transport(transport))
 
     # Loop A is now closed; loop B is the fresh loop ``asyncio.run``
     # below will construct. Both ``open`` and ``call_under_loop_b`` must
@@ -204,9 +204,9 @@ async def test_bound_loop_captured_on_open(
     outside a running loop) would break the audit-§14 fix because the
     construction-time loop may not be the dispatch-time loop.
     """
-    core = ClientCore(auth=_make_auth())
+    core = Session(auth=_make_auth())
     assert core._bound_loop is None, (
-        "ClientCore must not bind to a loop at construction time — open() is the binding moment."
+        "Session must not bind to a loop at construction time — open() is the binding moment."
     )
 
     await core.open()

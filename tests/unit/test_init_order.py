@@ -25,7 +25,7 @@ from notebooklm.client import NotebookLMClient
 
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 
-# Feature APIs should not reach into ClientCore private state directly.
+# Feature APIs should not reach into Session private state directly.
 _ALLOWED_CORE_PRIVATE_ACCESS_COUNTS: dict[tuple[str, str], int] = {}
 
 _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
@@ -38,6 +38,7 @@ _CORE_PRIVATE_GUARD_EXCLUDED_MODULES = {
     "_idempotency.py",
     "_logging.py",
     "_mind_map.py",
+    "_session.py",
     "_url_utils.py",
     "_version_check.py",
 }
@@ -67,7 +68,6 @@ _NOTEBOOK_COMPOSITION_SERVICE_MODULES = [
 _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_NAMES = {
     "ArtifactsAPI",
     "ChatAPI",
-    "ClientCore",
     "NotebookLMClient",
     "NotebooksAPI",
     "NotesAPI",
@@ -84,6 +84,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "_notebooks",
     "_notes",
     "_research",
+    "_session",
     "_settings",
     "_sharing",
     "_sources",
@@ -95,6 +96,7 @@ _FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES = {
     "notebooklm._notebooks",
     "notebooklm._notes",
     "notebooklm._research",
+    "notebooklm._session",
     "notebooklm._settings",
     "notebooklm._sharing",
     "notebooklm._sources",
@@ -286,7 +288,7 @@ def _call_keyword_value(call: ast.Call, keyword_name: str) -> ast.AST:
 
 
 def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
-    """Pending guard: no new feature API reaches directly into ClientCore internals."""
+    """Pending guard: no new feature API reaches directly into Session internals."""
     observed_counts: Counter[tuple[str, str]] = Counter()
     for path in _feature_modules_for_core_private_guard():
         observed_counts.update(_collect_core_private_accesses(path))
@@ -298,7 +300,7 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
     }
     assert not unexpected, (
         "Feature APIs must not add new direct `self._core._private` accesses. "
-        "Add a public ClientCore capability first, or temporarily extend the "
+        "Add a public Session capability first, or temporarily extend the "
         f"TODO baseline with a migration note. New accesses: {unexpected}"
     )
 
@@ -495,7 +497,7 @@ def test_source_service_modules_do_not_runtime_import_facades_or_core() -> None:
 
 
 def test_notebook_composition_services_do_not_runtime_import_facades_or_core() -> None:
-    """Notebook composition services stay below facade APIs and ClientCore."""
+    """Notebook composition services stay below facade APIs and Session."""
     forbidden_by_module: dict[str, list[str]] = {}
     forbidden_construction_by_module: dict[str, dict[str, list[int]]] = {}
 

@@ -113,7 +113,7 @@ def _make_client_with_transport(
 ) -> NotebookLMClient:
     """Construct a ``NotebookLMClient`` wired to a mock transport.
 
-    Bypasses the real ``ClientCore.open()`` path (which would build a real
+    Bypasses the real ``Session.open()`` path (which would build a real
     ``httpx.AsyncClient`` + cookie jar) by stubbing in a pre-built
     ``AsyncClient`` whose transport is the test's mock. Mirrors the helper
     in ``tests/integration/concurrency/test_idempotency_create.py``.

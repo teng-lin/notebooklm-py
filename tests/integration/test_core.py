@@ -7,7 +7,7 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
-from notebooklm._core import ClientCore, is_auth_error
+from notebooklm._session import Session, is_auth_error
 from notebooklm.rpc import (
     AuthError,
     ClientError,
@@ -24,7 +24,7 @@ from notebooklm.rpc import (
 pytestmark = pytest.mark.allow_no_vcr
 
 
-def _install_error_post(core: ClientCore, error: Exception) -> AsyncMock:
+def _install_error_post(core: Session, error: Exception) -> AsyncMock:
     mock_post = AsyncMock(side_effect=error)
     install_post_as_stream(None, core._http_client, mock_post)
     return mock_post
@@ -46,7 +46,7 @@ class TestClientInitialization:
     @pytest.mark.asyncio
     async def test_close_does_not_sync_in_memory_auth_to_default_storage(self):
         auth = AuthTokens(cookies={"SID": "scratch"}, csrf_token="csrf", session_id="session")
-        core = ClientCore(auth)
+        core = Session(auth)
         await core.open()
 
         with patch("notebooklm._core.save_cookies_to_storage") as mock_save:
@@ -58,7 +58,7 @@ class TestClientInitialization:
     @pytest.mark.asyncio
     async def test_close_closes_http_client_when_cookie_sync_fails(self, auth_tokens, tmp_path):
         auth_tokens.storage_path = tmp_path / "storage_state.json"
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         await core.open()
 
         with patch("notebooklm._core.save_cookies_to_storage", side_effect=RuntimeError("boom")):
@@ -305,7 +305,7 @@ class TestGetHttpClient:
     """Tests for get_http_client() RuntimeError when not initialized."""
 
     def test_get_http_client_raises_when_not_initialized(self, auth_tokens):
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         with pytest.raises(RuntimeError, match="not initialized"):
             core.get_http_client()
 
@@ -504,7 +504,7 @@ class TestBuildUrlHL:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._core import _AuthSnapshot
+        from notebooklm._session import _AuthSnapshot
 
         return _AuthSnapshot(
             csrf_token=core.auth.csrf_token,
@@ -515,18 +515,18 @@ class TestBuildUrlHL:
 
     def test_build_url_defaults_hl_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_HL", raising=False)
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url
 
     def test_build_url_includes_hl_from_env(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=ja" in url
 
     def test_build_url_empty_env_falls_back_to_en(self, auth_tokens, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_HL", "")
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "hl=en" in url

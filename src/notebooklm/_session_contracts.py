@@ -2,7 +2,7 @@
 
 This module defines the narrow structural Protocols that later Tier-13 PRs
 will wire into concrete classes. It intentionally contains no runtime
-implementation and no import of the concrete ``ClientCore``.
+implementation and no import of the concrete ``Session``.
 
 ``Session.rpc_call`` deliberately mirrors the legacy feature RPC signature,
 including the transitional ``_is_retry`` parameter, so feature retyping can

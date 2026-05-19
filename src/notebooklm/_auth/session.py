@@ -64,7 +64,7 @@ async def refresh_auth_session(core: RefreshAuthCore) -> AuthTokens:
     # observe a torn token pair while refresh is in flight.
     await core.update_auth_tokens(csrf or "", sid or "")
     core.update_auth_headers()
-    # Persist through ClientCore.save_cookies so refresh serializes with
+    # Persist through Session.save_cookies so refresh serializes with
     # keepalive and close saves.
     await core.save_cookies(http_client.cookies)
 

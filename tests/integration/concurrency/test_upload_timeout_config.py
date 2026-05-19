@@ -168,7 +168,7 @@ async def test_from_storage_accepts_upload_timeout(monkeypatch, auth_tokens) -> 
 
     custom = httpx.Timeout(7.0, read=14.0)
     # Context not entered — only inspecting constructor-level wiring.
-    # ``__aenter__`` / ``ClientCore.open()`` never run, so there are no
+    # ``__aenter__`` / ``Session.open()`` never run, so there are no
     # background tasks or open sockets to clean up.
     client = await NotebookLMClient.from_storage(upload_timeout=custom)
 

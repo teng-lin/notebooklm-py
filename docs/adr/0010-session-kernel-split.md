@@ -6,7 +6,7 @@ Accepted (Tier 13 PR 13.1).
 
 ## Context
 
-`ClientCore` currently owns orchestration, RPC encoding/decoding, drain
+`Session` currently owns orchestration, RPC encoding/decoding, drain
 tracking, request-id allocation, cookie access, HTTP lifecycle, and the
 feature-facing capability surface. The Tier-12 middleware chain isolated
 cross-cutting transport concerns, but feature APIs still depend on
@@ -37,7 +37,7 @@ contracts must not expose `_BuildRequest` in signatures.
 
 This PR is type-only. It defines the contracts and documentation, but it
 does not create concrete `_session.py` or `_kernel.py` modules, rename
-`ClientCore`, move cookies, move `httpx` lifecycle, or wire new runtime
+`Session`, move cookies, move `httpx` lifecycle, or wire new runtime
 behavior.
 
 Later Tier-13 PRs delete `src/notebooklm/_capabilities.py` and all
@@ -64,7 +64,7 @@ Unwanted:
 
 - During the migration window both the old `_capabilities.py` Protocols
   and the new contracts coexist.
-- `ClientCore` does not structurally satisfy every new contract in this
+- `Session` does not structurally satisfy every new contract in this
   PR; concrete conformance lands with the later extraction and retyping
   PRs.
 

@@ -29,7 +29,7 @@ import pytest
 from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
 from notebooklm._chat import ChatAPI
-from notebooklm._core import ClientCore, _AuthSnapshot
+from notebooklm._session import Session, _AuthSnapshot
 from notebooklm.auth import AuthTokens
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ class TestChatRefreshRetry:
             auth.session_id = "NEW_SID"
             return auth
 
-        core = ClientCore(auth=auth, refresh_callback=refresh, refresh_retry_delay=0.0)
+        core = Session(auth=auth, refresh_callback=refresh, refresh_retry_delay=0.0)
         await core.open()
         try:
             observed_bodies: list[str] = []
@@ -412,7 +412,7 @@ class TestBuildChatRequestFactory:
     def _factory(self) -> ChatAPI:
         from unittest.mock import MagicMock
 
-        core = MagicMock(spec=ClientCore)
+        core = MagicMock(spec=Session)
         return ChatAPI(core)
 
     def test_build_request_omits_authuser_for_default_profile(self):

@@ -9,7 +9,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from conftest import install_post_as_stream
-from notebooklm._core import ClientCore, is_auth_error
+from notebooklm._session import Session, is_auth_error
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCError, RPCMethod
@@ -215,7 +215,7 @@ class TestRefreshAuth:
         httpx_mock: HTTPXMock,
         monkeypatch,
     ):
-        """refresh_auth delegates token mutation through ClientCore."""
+        """refresh_auth delegates token mutation through Session."""
         client = NotebookLMClient(mock_auth)
         html = '"SNlM0e":"new_csrf_token_123" "FdrFJe":"new_session_id_456"'
         httpx_mock.add_response(
@@ -459,9 +459,9 @@ class TestIsAuthError:
 # =============================================================================
 
 
-class TestClientCoreRefreshCallback:
+class TestSessionRefreshCallback:
     def test_refresh_callback_stored(self):
-        """ClientCore should store refresh callback."""
+        """Session should store refresh callback."""
 
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -472,11 +472,11 @@ class TestClientCoreRefreshCallback:
         async def mock_refresh():
             pass
 
-        core = ClientCore(auth, refresh_callback=mock_refresh)
+        core = Session(auth, refresh_callback=mock_refresh)
         assert core._refresh_callback is mock_refresh
 
     def test_refresh_callback_defaults_to_none(self):
-        """ClientCore should default refresh_callback to None."""
+        """Session should default refresh_callback to None."""
 
         auth = AuthTokens(
             cookies={"SID": "test", "__Secure-1PSIDTS": "test_1psidts"},
@@ -484,7 +484,7 @@ class TestClientCoreRefreshCallback:
             session_id="sid",
         )
 
-        core = ClientCore(auth)
+        core = Session(auth)
         assert core._refresh_callback is None
 
     def test_refresh_lock_lazy_at_construction(self):
@@ -506,12 +506,12 @@ class TestClientCoreRefreshCallback:
             pass
 
         # With callback: lazy — lock is None until first refresh attempt.
-        core_with_cb = ClientCore(auth, refresh_callback=mock_refresh)
+        core_with_cb = Session(auth, refresh_callback=mock_refresh)
         assert core_with_cb._refresh_lock is None
         assert core_with_cb._refresh_callback is mock_refresh
 
         # Without callback: also None (unchanged behavior on this axis).
-        core_without_cb = ClientCore(auth)
+        core_without_cb = Session(auth)
         assert core_without_cb._refresh_lock is None
         assert core_without_cb._refresh_callback is None
 
@@ -537,7 +537,7 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
 
         call_count = [0]
 
@@ -581,7 +581,7 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
 
         # Mock HTTP client - always succeeds
         async def mock_post(*args, **kwargs):
@@ -620,7 +620,7 @@ class TestRpcCallAutoRetry:
             session_id="sid",
         )
 
-        core = ClientCore(auth)  # No refresh_callback
+        core = Session(auth)  # No refresh_callback
 
         call_count = [0]
 
@@ -654,7 +654,7 @@ class TestRpcCallAutoRetry:
             refresh_count[0] += 1
             return auth
 
-        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
 
         call_count = [0]
 
@@ -696,7 +696,7 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = ClientCore(
+        core = Session(
             auth,
             refresh_callback=mock_refresh,
             refresh_retry_delay=0,
@@ -733,7 +733,7 @@ class TestRpcCallAutoRetry:
         async def failing_refresh():
             raise ValueError("Refresh failed - cookies expired")
 
-        core = ClientCore(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -767,7 +767,7 @@ class TestRpcCallAutoRetry:
             await asyncio.sleep(0.05)  # Simulate slow refresh
             return auth
 
-        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
 
         call_count = [0]
 
@@ -823,7 +823,7 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = ClientCore(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
 
         call_count = [0]
 
@@ -866,7 +866,7 @@ class TestRpcCallAutoRetry:
             session_id="sid",
         )
 
-        core = ClientCore(auth)  # No refresh_callback
+        core = Session(auth)  # No refresh_callback
 
         call_count = [0]
 
@@ -905,7 +905,7 @@ class TestRpcCallAutoRetry:
         async def failing_refresh():
             raise ValueError("Refresh failed - cookies expired")
 
-        core = ClientCore(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
+        core = Session(auth, refresh_callback=failing_refresh, refresh_retry_delay=0)
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -935,7 +935,7 @@ class TestBuildUrlAuthuser:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._core import _AuthSnapshot
+        from notebooklm._session import _AuthSnapshot
 
         return _AuthSnapshot(
             csrf_token=core.auth.csrf_token,
@@ -950,7 +950,7 @@ class TestBuildUrlAuthuser:
             csrf_token="csrf",
             session_id="sess",
         )
-        core = ClientCore(auth=auth)
+        core = Session(auth=auth)
         url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser" not in url
 
@@ -961,7 +961,7 @@ class TestBuildUrlAuthuser:
             session_id="sess",
             authuser=2,
         )
-        core = ClientCore(auth=auth)
+        core = Session(auth=auth)
         url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=2" in url
 
@@ -973,7 +973,7 @@ class TestBuildUrlAuthuser:
             authuser=2,
             account_email="bob@example.com",
         )
-        core = ClientCore(auth=auth)
+        core = Session(auth=auth)
         url = core._build_url(RPCMethod.LIST_NOTEBOOKS, self._snapshot_for(core))
         assert "authuser=bob%40example.com" in url
         assert "authuser=2" not in url

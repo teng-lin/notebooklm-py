@@ -11,7 +11,7 @@ Pure observer of the transport leg with bookkeeping side-effects: brackets
 ``next_call`` with calls to :meth:`TransportDrainTracker.begin_transport_post`
 and :meth:`TransportDrainTracker.finish_transport_post`, propagating the
 ``log_label`` from ``request.context`` as the tracker label. The chain
-caller (``ClientCore._perform_authed_post``) always populates ``log_label``,
+caller (``Session._perform_authed_post``) always populates ``log_label``,
 so the middleware reads it via ``context["log_label"]`` and falls back to
 a synthetic ``"<unknown-chain-call>"`` only for malformed requests.
 
@@ -68,7 +68,7 @@ class DrainMiddleware:
     as assignable into a ``Sequence[Middleware]``.
 
     Holds a reference to the shared :class:`TransportDrainTracker` owned
-    by :class:`ClientCore`. The middleware does not own drain state; it
+    by :class:`Session`. The middleware does not own drain state; it
     is a write-through into the host's counters. This keeps
     ``drain()``'s view of in-flight work authoritative even when tests
     swap a middleware out (the explicit ``_begin/_finish_transport_post``

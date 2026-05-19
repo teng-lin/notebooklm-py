@@ -47,24 +47,24 @@ from typing import Any
 import pytest
 
 from . import fake_core as _fake_core_module
-from .fake_core import FakeClientCore
+from .fake_core import FakeSession
 
 
 @pytest.fixture
-def fake_core() -> FakeClientCore:
-    """A default-shaped :class:`FakeClientCore` for tests that need a stand-in."""
+def fake_core() -> FakeSession:
+    """A default-shaped :class:`FakeSession` for tests that need a stand-in."""
     return _fake_core_module.make_fake_core()
 
 
 @pytest.fixture
-def make_fake_core() -> Callable[..., FakeClientCore]:
+def make_fake_core() -> Callable[..., FakeSession]:
     """Return the :func:`tests._fixtures.fake_core.make_fake_core` factory.
 
     Lets a test express its overrides inline at the call site rather than
     mutating a fixture-provided default after the fact.
     """
 
-    def _factory(**overrides: Any) -> FakeClientCore:
+    def _factory(**overrides: Any) -> FakeSession:
         return _fake_core_module.make_fake_core(**overrides)
 
     return _factory

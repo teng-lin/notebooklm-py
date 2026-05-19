@@ -1,9 +1,9 @@
 """Unit tests for the standalone :class:`ReqidCounter` helper.
 
-Exercises the class in isolation from :class:`ClientCore` so the
+Exercises the class in isolation from :class:`Session` so the
 counter's invariants (monotonicity, lazy lock allocation, type/value
 validation, mutator semantics, optional ``on_lock_wait`` hook) are pinned
-down without dragging in the full client surface. The ``ClientCore``-shaped
+down without dragging in the full client surface. The ``Session``-shaped
 ``DeprecationWarning`` contract continues to live in
 ``tests/unit/test_core_reqid.py``; the concurrent-contention pin continues
 to live in ``tests/unit/test_core_reqid_concurrent.py``.
@@ -45,17 +45,17 @@ def test_default_step_constant_matches_signature_default() -> None:
 
 
 def test_client_core_next_reqid_default_matches_default_step() -> None:
-    """``ClientCore.next_reqid``'s ``step`` default is sourced from
+    """``Session.next_reqid``'s ``step`` default is sourced from
     :data:`notebooklm._core_reqid.DEFAULT_STEP`.
 
     Pins the facade signature to the helper's constant so a silent change to
-    one cannot drift past the other. ``ClientCore`` imports
+    one cannot drift past the other. ``Session`` imports
     ``DEFAULT_STEP as _REQID_DEFAULT_STEP``; this test introspects the bound
     default to confirm the wiring stays in lockstep.
     """
-    from notebooklm._core import ClientCore
+    from notebooklm._session import Session
 
-    sig = inspect.signature(ClientCore.next_reqid)
+    sig = inspect.signature(Session.next_reqid)
     assert sig.parameters["step"].default == DEFAULT_STEP
 
 
@@ -88,7 +88,7 @@ async def test_set_value_resets_baseline_for_next_reqid() -> None:
 
     Pins the contract between the sync mutator and the async increment path:
     test fixtures that seed the counter to a deterministic value (via
-    ``ClientCore._reqid_counter_value = N``) expect subsequent reqids to
+    ``Session._reqid_counter_value = N``) expect subsequent reqids to
     walk forward from there, not from the original baseline.
     """
     counter = ReqidCounter()

@@ -396,7 +396,7 @@ class TestArtifactsAPI:
         # After ``arch-d2-cutover``, ArtifactsAPI calls ``core.rpc_call``
         # directly (no adapter pass-through), so default kwargs aren't
         # explicitly forwarded — they apply at the underlying
-        # ``ClientCore.rpc_call`` signature instead.
+        # ``Session.rpc_call`` signature instead.
         core.rpc_call.assert_awaited_once_with(
             RPCMethod.LIST_ARTIFACTS,
             [[2], "nb_123", 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],

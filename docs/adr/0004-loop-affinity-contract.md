@@ -21,7 +21,7 @@ The contract is enforced at two layers:
 - `src/notebooklm/_loop_affinity.py` exposes `assert_bound_loop(bound_loop)` which compares the current loop to the captured one and raises `RuntimeError` with an actionable diagnostic if they differ.
 - `src/notebooklm/_core_lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. Every authed POST path forwards the captured loop into `assert_bound_loop()` before touching any loop-bound primitive.
 
-`ClientCoreCapabilities.bound_loop` (`_capabilities.py:248-274`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call.
+`SessionCapabilities.bound_loop` (`_capabilities.py:248-274`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call.
 
 ## Decision
 

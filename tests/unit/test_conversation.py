@@ -73,7 +73,7 @@ class TestAsk:
         httpx_mock.add_response(content=response_body.encode(), method="POST")
 
         async with NotebookLMClient(auth_tokens) as client:
-            # Seed cache via the public helper (cache moved off ClientCore).
+            # Seed cache via the public helper (cache moved off Session).
             client.chat._cache.cache_conversation_turn(_TEST_CONV_ID, "Q1", "A1", 1)
 
             result = await client.chat.ask(

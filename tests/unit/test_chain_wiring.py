@@ -1,20 +1,20 @@
-"""Integration tests for the empty middleware chain wired into ``ClientCore``.
+"""Integration tests for the empty middleware chain wired into ``Session``.
 
 PR 12.2 of the Tier-12/13 greenfield migration wires
 :func:`notebooklm._middleware.build_chain` into
-:meth:`ClientCore.__init__` with an empty middleware list. The chain leaf
-(:meth:`ClientCore._authed_post_chain_terminal`) reads
+:meth:`Session.__init__` with an empty middleware list. The chain leaf
+(:meth:`Session._authed_post_chain_terminal`) reads
 ``build_request`` / ``log_label`` / ``disable_internal_retries`` from
 ``RpcRequest.context`` and delegates to
 :meth:`AuthedTransport.perform_authed_post` — the shared seam covering both
-:meth:`ClientCore._perform_authed_post` AND ``RpcExecutor.execute`` (which
+:meth:`Session._perform_authed_post` AND ``RpcExecutor.execute`` (which
 calls ``self._owner._perform_authed_post`` at ``_core_rpc.py:275``).
 
 These tests verify the wiring contract from
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160 and ADR-009
 §"RpcRequest.context keys":
 
-1. Both call paths (``ClientCore._perform_authed_post`` directly and
+1. Both call paths (``Session._perform_authed_post`` directly and
    ``RpcExecutor.execute`` indirectly) flow through the empty chain to the
    transport.
 2. ``RpcRequest.context`` carries ``build_request`` / ``log_label`` /
@@ -40,7 +40,6 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the
 # canonical import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import FakeAuthedPost
-from notebooklm._core import ClientCore
 from notebooklm._middleware import (
     Middleware,
     NextCall,
@@ -48,12 +47,13 @@ from notebooklm._middleware import (
     RpcResponse,
     build_chain,
 )
+from notebooklm._session import Session
 
 
-def _make_core() -> ClientCore:
-    """Build a ``ClientCore`` instance without opening an HTTP client.
+def _make_core() -> Session:
+    """Build a ``Session`` instance without opening an HTTP client.
 
-    ``ClientCore.__init__`` is event-loop-agnostic, so we can construct an
+    ``Session.__init__`` is event-loop-agnostic, so we can construct an
     instance in synchronous test setup. The transport is then swapped in
     each test for a :class:`FakeAuthedPost` so no real HTTP call fires.
     """
@@ -63,10 +63,10 @@ def _make_core() -> ClientCore:
     auth.account_email = None
     auth.csrf_token = "csrf-token"
     auth.session_id = "session-id"
-    return ClientCore(auth=auth)
+    return Session(auth=auth)
 
 
-def _swap_transport(core: ClientCore, fake: FakeAuthedPost) -> None:
+def _swap_transport(core: Session, fake: FakeAuthedPost) -> None:
     """Replace ``core._get_authed_transport`` with a callable returning ``fake``.
 
     The chain terminal calls ``self._get_authed_transport()`` per
@@ -80,10 +80,10 @@ def _swap_transport(core: ClientCore, fake: FakeAuthedPost) -> None:
 
 @pytest.mark.asyncio
 async def test_empty_chain_routes_perform_authed_post_to_transport() -> None:
-    """``ClientCore._perform_authed_post`` flows through the empty chain to transport.
+    """``Session._perform_authed_post`` flows through the empty chain to transport.
 
     Covers the first of the two call paths from master plan line 160:
-    direct callers of ``ClientCore._perform_authed_post`` (the chat path
+    direct callers of ``Session._perform_authed_post`` (the chat path
     in ``_chat_transport.py:64`` and any first-party caller via
     ``client._core._perform_authed_post``).
     """
@@ -116,7 +116,7 @@ async def test_empty_chain_routes_rpc_executor_path_to_transport() -> None:
     Covers the second of the two call paths from master plan line 160:
     ``RpcExecutor.execute`` (``_core_rpc.py:275``) calls
     ``self._owner._perform_authed_post(...)`` which is precisely
-    :meth:`ClientCore._perform_authed_post`. Routing both paths through
+    :meth:`Session._perform_authed_post`. Routing both paths through
     one seam is the whole point of wiring at ``_perform_authed_post``
     rather than at each call site.
 
@@ -160,7 +160,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
 
     Drives the terminal adapter directly with a hand-built ``RpcRequest``
     so we can assert the contract independently of
-    :meth:`ClientCore._perform_authed_post`'s context-construction code.
+    :meth:`Session._perform_authed_post`'s context-construction code.
     This is what every middleware PR 12.3–12.8 will rely on when it
     builds a chain over ``[*middlewares, ...]`` and lets the leaf adapt
     the request into a transport call.
@@ -233,7 +233,7 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
 @pytest.mark.asyncio
 async def test_chain_seeded_with_final_adr_009_ordering() -> None:
-    """``ClientCore.__init__`` seeds the chain with the FINAL ADR-009 ordering.
+    """``Session.__init__`` seeds the chain with the FINAL ADR-009 ordering.
 
     PR 12.3 landed ``TracingMiddleware`` at the innermost position; PR 12.4
     prepended ``MetricsMiddleware``; PR 12.5 prepended ``DrainMiddleware``
@@ -307,7 +307,7 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     # Build a chain with one observer middleware around the production
     # terminal. The production chain stays empty; this is a per-test
     # composition that validates the leaf's contract against
-    # ``build_chain`` rather than ``ClientCore.__init__``.
+    # ``build_chain`` rather than ``Session.__init__``.
     chain: NextCall = build_chain([observer], core._authed_post_chain_terminal)
 
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
@@ -339,15 +339,15 @@ async def test_perform_authed_post_works_on_new_built_fixture() -> None:
 
     Mirrors the ``_ensure_observability_state`` /
     ``_ensure_auth_coord`` / ``_ensure_lifecycle`` backfill pattern: a
-    test that constructs ``ClientCore.__new__(ClientCore)`` (skipping
+    test that constructs ``Session.__new__(Session)`` (skipping
     ``__init__``) must still be able to drive the authed-POST path.
-    The :meth:`ClientCore._ensure_authed_post_chain` helper backfills
+    The :meth:`Session._ensure_authed_post_chain` helper backfills
     ``_middlewares`` and ``_authed_post_chain`` lazily so the first call
     succeeds. This regression guard catches the path before any
     middleware PR (12.3+) inadvertently moves the chain build out of
     the backfill.
     """
-    core = ClientCore.__new__(ClientCore)
+    core = Session.__new__(Session)
     fake = FakeAuthedPost(response=httpx.Response(status_code=200, content=b"new"))
     _swap_transport(core, fake)
 
@@ -368,7 +368,7 @@ def test_build_chain_empty_returns_terminal_unchanged() -> None:
     """:func:`build_chain` returns the terminal unchanged when ``middlewares`` is empty.
 
     Pins the contract that ``_middleware.build_chain([], terminal) is terminal``
-    so :meth:`ClientCore.__init__`'s ``self._authed_post_chain is
+    so :meth:`Session.__init__`'s ``self._authed_post_chain is
     self._authed_post_chain_terminal`` invariant from
     :func:`test_chain_is_empty_by_default` does not silently flip if
     ``build_chain``'s identity behavior changes. Synchronous test —
@@ -396,7 +396,7 @@ def test_perform_authed_post_signature_unchanged() -> None:
     """
     import inspect
 
-    sig = inspect.signature(ClientCore._perform_authed_post)
+    sig = inspect.signature(Session._perform_authed_post)
     params = sig.parameters
     assert "build_request" in params
     assert "log_label" in params

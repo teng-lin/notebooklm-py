@@ -1,4 +1,4 @@
-"""Unit tests for ``ClientCore.next_reqid`` and the deprecation guard on
+"""Unit tests for ``Session.next_reqid`` and the deprecation guard on
 direct mutation of ``_reqid_counter``.
 
 Covers:
@@ -13,17 +13,17 @@ import warnings
 
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
-def _make_core() -> ClientCore:
+def _make_core() -> Session:
     auth = AuthTokens(
         cookies={"SID": "test"},
         csrf_token="test_csrf",
         session_id="test_session",
     )
-    return ClientCore(auth=auth)
+    return Session(auth=auth)
 
 
 @pytest.mark.asyncio

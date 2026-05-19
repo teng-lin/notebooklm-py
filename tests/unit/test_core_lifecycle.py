@@ -1,7 +1,7 @@
 """Unit tests for :mod:`notebooklm._core_lifecycle`.
 
 Covers the load-bearing behaviors of :class:`ClientLifecycle` directly, in
-addition to the existing ``ClientCore``-shaped tests in
+addition to the existing ``Session``-shaped tests in
 ``test_core_close.py`` / ``test_client_keepalive.py`` / ``test_vcr_config.py``
 which exercise the same helper through the compat facade.
 
@@ -33,7 +33,7 @@ Specifically pinned here:
 
 Tests are intentionally helper-shaped (instantiate :class:`ClientLifecycle`
 directly with a Protocol-conformant stub host) so they cover the lifecycle
-without taking on a ``ClientCore`` dependency.
+without taking on a ``Session`` dependency.
 """
 
 from __future__ import annotations
@@ -47,8 +47,8 @@ import httpx
 import pytest
 
 from notebooklm import _core as _core_module
-from notebooklm._core import _resolve_keepalive_interval
 from notebooklm._core_lifecycle import ClientLifecycle
+from notebooklm._session import _resolve_keepalive_interval
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 
@@ -56,7 +56,7 @@ from notebooklm.types import ConnectionLimits
 class _StubHost:
     """Minimal :class:`_LifecycleHost`-conformant host for unit tests.
 
-    Mirrors the live ``ClientCore`` shape with simple ``MagicMock`` /
+    Mirrors the live ``Session`` shape with simple ``MagicMock`` /
     ``AsyncMock`` stand-ins for the collaborators the lifecycle reaches into:
 
     * ``auth`` — a real :class:`AuthTokens` so :meth:`ClientLifecycle.open`
@@ -293,7 +293,7 @@ async def test_close_nulls_authed_transport_and_rpc_executor() -> None:
     """``close()`` nulls out the transport collaborator handles so a follow-up
     ``open()`` rebuilds them against the new ``httpx.AsyncClient``.
 
-    Pre-extraction this lived inline in ``ClientCore``; the contract is
+    Pre-extraction this lived inline in ``Session``; the contract is
     preserved by the lifecycle helper writing into ``host._authed_transport``
     and ``host._rpc_executor``.
     """
@@ -423,18 +423,18 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
 
 
 def test_bound_loop_mismatch_via_clientcore_raises_runtime_error() -> None:
-    """Cross-loop reuse of a single :class:`ClientCore` raises a clean
+    """Cross-loop reuse of a single :class:`Session` raises a clean
     ``RuntimeError`` on the second loop's first authed POST.
 
-    Reaches through the ``ClientCore`` facade (rather than ``ClientLifecycle``
+    Reaches through the ``Session`` facade (rather than ``ClientLifecycle``
     in isolation) because the guard lives in :class:`AuthedTransport` and
     only fires from inside an authed POST. The test runs two separate
     ``asyncio.run`` invocations to materialise two distinct loops.
     """
-    from notebooklm._core import ClientCore
+    from notebooklm._session import Session
 
     auth = AuthTokens(csrf_token="CSRF", session_id="SID", cookies={"SID": "v1"})
-    core = ClientCore(auth=auth)
+    core = Session(auth=auth)
 
     async def _open_on_loop_a() -> None:
         await core.open()

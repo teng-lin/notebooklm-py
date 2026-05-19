@@ -38,17 +38,17 @@ if TYPE_CHECKING:
 from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
-from ._core import (
-    DEFAULT_KEEPALIVE_MIN_INTERVAL,
-    DEFAULT_MAX_CONCURRENT_RPCS,
-    DEFAULT_MAX_CONCURRENT_UPLOADS,
-    DEFAULT_TIMEOUT,
-    ClientCore,
-)
 from ._env import get_base_url as get_base_url
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
+from ._session import (
+    DEFAULT_KEEPALIVE_MIN_INTERVAL,
+    DEFAULT_MAX_CONCURRENT_RPCS,
+    DEFAULT_MAX_CONCURRENT_UPLOADS,
+    DEFAULT_TIMEOUT,
+    Session,
+)
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._source_upload import SourceUploadPipeline
@@ -136,7 +136,7 @@ class NotebookLMClient:
                 Sleeps for ``Retry-After`` when the server provides a
                 parseable header; otherwise falls back to capped exponential
                 backoff ``min(2 ** attempt, 30)`` seconds with ±20% jitter.
-                See :class:`ClientCore` for full sleep semantics.
+                See :class:`Session` for full sleep semantics.
             server_error_max_retries: Max automatic retries for retryable
                 transient failures: HTTP 5xx and network-layer
                 ``httpx.RequestError`` (timeouts, connect errors). Defaults to
@@ -195,7 +195,7 @@ class NotebookLMClient:
                 another metrics backend without this package depending on one.
         """
         # Normalize the effective storage path onto the auth object so every
-        # downstream code path (refresh_auth, ClientCore.close on-close save,
+        # downstream code path (refresh_auth, Session.close on-close save,
         # the keepalive loop) writes to the same file. Without this, an
         # explicit ``storage_path=`` kwarg only reaches the keepalive loop
         # while ``auth.storage_path is None`` causes refresh and on-close
@@ -218,18 +218,18 @@ class NotebookLMClient:
         # and firing duplicate ``RotateCookies`` POSTs.
         # NOTE: the public ``storage_path`` argument and ``auth.storage_path``
         # are intentionally left as the caller provided them — only the
-        # internal-derived ``ClientCore._keepalive_storage_path`` is
+        # internal-derived ``Session._keepalive_storage_path`` is
         # canonicalized.
         keepalive_storage_path: Path | None = auth.storage_path
         if keepalive_storage_path is not None:
             keepalive_storage_path = Path(keepalive_storage_path).expanduser().resolve()
 
         # Cross-validate the RPC throttle against the underlying httpx pool
-        # before ``ClientCore`` swallows the ``limits=None`` sentinel into
+        # before ``Session`` swallows the ``limits=None`` sentinel into
         # its own ``ConnectionLimits()`` synthesis.
         # Performed here so the constraint is enforced uniformly regardless
         # of whether the caller passed an explicit ``ConnectionLimits``
-        # instance or relied on the default — ``ClientCore.__init__`` can't
+        # instance or relied on the default — ``Session.__init__`` can't
         # see the caller's intent once the default has been substituted.
         # Skip when either side opts out (``max_concurrent_rpcs is None``
         # means "no gate"; we deliberately don't second-guess the caller's
@@ -250,7 +250,7 @@ class NotebookLMClient:
 
         # Pass refresh_auth as callback for automatic retry on auth failures
         # Note: refresh_auth calls update_auth_headers internally
-        self._core = ClientCore(
+        self._session = Session(
             auth,
             timeout=timeout,
             refresh_callback=self.refresh_auth,
@@ -264,6 +264,9 @@ class NotebookLMClient:
             max_concurrent_rpcs=max_concurrent_rpcs,
             on_rpc_event=on_rpc_event,
         )
+        # Compatibility alias for tests and private callers that still inspect
+        # ``client._core`` directly.
+        self._core = self._session
 
         source_uploader = SourceUploadPipeline(
             self._core,
@@ -395,7 +398,7 @@ class NotebookLMClient:
         undocumented RPC before a typed API exists. Prefer the namespaced APIs
         (``client.notebooks``, ``client.sources``, etc.) when possible. Import
         ``RPCMethod`` from ``notebooklm.rpc``. The ``_is_retry`` parameter is
-        exposed only to mirror ``ClientCore.rpc_call`` exactly; callers should
+        exposed only to mirror ``Session.rpc_call`` exactly; callers should
         leave it at the default unless they are intentionally reproducing core
         retry behavior.
 

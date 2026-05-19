@@ -50,7 +50,7 @@ CLI Layer (cli/)
     ↓
 Client Layer (client.py, _*.py APIs)
     ↓
-Core Layer (_core.py + _core_*.py seam modules)
+Session Layer (_session.py + _core_*.py seam modules)
     ↓
 RPC Layer (rpc/)
 ```
@@ -60,8 +60,9 @@ RPC Layer (rpc/)
    - `encoder.py`: Request encoding
    - `decoder.py`: Response parsing
 
-2. **Core Layer** (`src/notebooklm/_core.py` + `_core_*.py` seam modules):
-   - `_core.py`: `NotebookLMClient` orchestration
+2. **Session Layer** (`src/notebooklm/_session.py` + `_core_*.py` seam modules):
+   - `_session.py`: concrete `Session` orchestration
+   - `_core.py`: compatibility shim for legacy private imports
    - `_core_transport.py`, `_core_rpc.py`: HTTP client + RPC call abstraction
    - `_core_auth.py`, `_core_cookie_persistence.py`: Auth refresh + cookie storage
    - `_core_metrics.py`, `_core_drain.py`, `_core_reqid.py`: Telemetry, drain coordination, request-counter handling
@@ -83,7 +84,8 @@ RPC Layer (rpc/)
 | File | Purpose |
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
-| `_core.py` | `ClientCore` orchestrator; HTTP client lifecycle; late-binding wrappers |
+| `_session.py` | Concrete `Session` orchestrator; HTTP client lifecycle; late-binding wrappers |
+| `_core.py` | Compatibility shim for legacy private imports |
 | `_core_constants.py` | `DEFAULT_*` knobs and module-level constants |
 | `_core_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_core_error_injection.py` | `_SyntheticErrorTransport` + env-var guard for fault injection |
@@ -124,7 +126,8 @@ src/notebooklm/
 ├── client.py                    # NotebookLMClient
 ├── auth.py                      # Authentication facade — flat re-exports from _auth/* (no write-through; ADR-003 Superseded)
 ├── types.py                     # Dataclasses
-├── _core.py                     # Core orchestration (NotebookLMClient internals)
+├── _session.py                  # Concrete Session orchestration (NotebookLMClient internals)
+├── _core.py                     # Compatibility shim for legacy private imports
 ├── _core_constants.py           # DEFAULT_* knobs + module-level constants
 ├── _core_helpers.py             # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
 ├── _core_error_injection.py     # _SyntheticErrorTransport + fault-injection env-var guard

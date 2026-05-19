@@ -32,7 +32,7 @@ These tests verify:
 The tests use stdlib :func:`caplog` to capture log records — no
 production logger reconfiguration leaks across tests. The chain is
 driven directly via :func:`build_chain` rather than going through
-``ClientCore`` so the unit boundary is the middleware itself, not the
+``Session`` so the unit boundary is the middleware itself, not the
 full client.
 """
 
@@ -176,7 +176,7 @@ async def test_rpc_method_absent_does_not_raise(
 
     ``Session.rpc_call`` (Tier 13) populates ``context["rpc_method"]``;
     PR 12.2's wiring does not, so the empty-chain path through
-    ``ClientCore._perform_authed_post`` only carries ``log_label`` /
+    ``Session._perform_authed_post`` only carries ``log_label`` /
     ``build_request`` / ``disable_internal_retries``. The middleware
     must handle this gracefully (``.get()`` returns ``None``, no
     ``KeyError``).

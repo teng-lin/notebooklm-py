@@ -21,7 +21,7 @@ def mock_artifacts_api():
 
     After the mind-map relocation, ``ArtifactsAPI`` no longer takes a ``notes_api`` parameter;
     mind-map persistence goes through the shared ``_mind_map`` module which
-    calls the same ``ClientCore.rpc_call``. Tests that exercise mind-map
+    calls the same ``Session.rpc_call``. Tests that exercise mind-map
     creation should drive responses through ``mock_core.rpc_call`` (via
     ``side_effect``) rather than mocking a separate notes object.
     """

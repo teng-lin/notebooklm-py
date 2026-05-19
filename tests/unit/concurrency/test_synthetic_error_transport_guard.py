@@ -7,7 +7,7 @@ error responses for real RPC calls. The transport's docstring warned
 about this but nothing actually gated against accidental production
 exposure (e.g. a leaked environment variable in a deployment).
 
-P1-12 closes that hole: ``ClientCore.__init__`` (the constructor
+P1-12 closes that hole: ``Session.__init__`` (the constructor
 consultation site) refuses instantiation when the env var is set without
 ``PYTEST_CURRENT_TEST`` in the environment, logging a WARNING and raising
 ``RuntimeError`` with remediation guidance. Tests legitimately set the
@@ -17,7 +17,7 @@ transparent in CI / unit test contexts.
 
 Acceptance:
 - Env var set + no ``PYTEST_CURRENT_TEST`` → ``RuntimeError`` from
-  ``ClientCore`` instantiation.
+  ``Session`` instantiation.
 - Env var set + ``PYTEST_CURRENT_TEST`` set → instantiation succeeds
   (the pytest path remains unchanged).
 - Env var unset → instantiation succeeds (baseline production path).
@@ -31,7 +31,7 @@ import logging
 
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
@@ -68,7 +68,7 @@ def test_synthetic_error_env_var_without_pytest_context_refuses(
         caplog.at_level(logging.WARNING, logger="notebooklm._core"),
         pytest.raises(RuntimeError, match="NOTEBOOKLM_VCR_RECORD_ERRORS"),
     ):
-        ClientCore(_make_auth())
+        Session(_make_auth())
 
     # WARNING must mention the env var so an operator can find the source.
     assert any(
@@ -95,7 +95,7 @@ def test_synthetic_error_env_var_with_pytest_context_succeeds(
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "fake_test")
 
     # Must NOT raise.
-    core = ClientCore(_make_auth())
+    core = Session(_make_auth())
     assert core is not None
 
 
@@ -110,7 +110,7 @@ def test_synthetic_error_env_var_unset_succeeds(
     monkeypatch.delenv("NOTEBOOKLM_VCR_RECORD_ERRORS", raising=False)
     # Even when pytest IS running (PYTEST_CURRENT_TEST set), no env var
     # means no gate check at all.
-    core = ClientCore(_make_auth())
+    core = Session(_make_auth())
     assert core is not None
 
 
@@ -127,5 +127,5 @@ def test_synthetic_error_env_var_empty_string_succeeds(
     monkeypatch.setenv("NOTEBOOKLM_VCR_RECORD_ERRORS", "")
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
-    core = ClientCore(_make_auth())
+    core = Session(_make_auth())
     assert core is not None

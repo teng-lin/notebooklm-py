@@ -17,7 +17,7 @@ defines:
   *outermost* wrapper (matches the ordering documented in ADR-009).
 
 No middleware is implemented in this PR. No production code wires the
-chain in this PR. PR 12.2 wires an empty chain into ``ClientCore``; PRs
+chain in this PR. PR 12.2 wires an empty chain into ``Session``; PRs
 12.3–12.8 extract one middleware at a time. See
 ``docs/adr/0009-middleware-chain.md`` for the load-bearing decisions and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` section 2 for the

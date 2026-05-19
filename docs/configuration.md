@@ -309,7 +309,7 @@ longer read timeout accommodates slow server responses. Both are exposed as
 constructor arguments on `NotebookLMClient` (`timeout=` and `connect_timeout=`)
 for callers that need to tune them per-workload — see the
 `DEFAULT_TIMEOUT` / `DEFAULT_CONNECT_TIMEOUT` constants in
-`src/notebooklm/_core.py`. The chat streaming endpoint
+`src/notebooklm/_session.py`. The chat streaming endpoint
 (`ChatAPI.ask`) keeps its own longer per-stream deadlines because individual
 chat responses can exceed 30 seconds; refer to the Python API reference for
 its `timeout=` argument.

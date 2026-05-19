@@ -13,7 +13,7 @@ from notebooklm.types import Note
 
 @pytest.fixture
 def mock_core():
-    """Create a mocked ClientCore for NotesAPI."""
+    """Create a mocked Session for NotesAPI."""
     core = MagicMock()
     core.rpc_call = AsyncMock()
     return core

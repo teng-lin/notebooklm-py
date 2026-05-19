@@ -1,16 +1,16 @@
-"""Request-id counter helper for :class:`ClientCore`.
+"""Request-id counter helper for :class:`Session`.
 
 Owns the monotonic ``_reqid`` value that Google's chat backend requires per
 request, plus the lazily-allocated ``asyncio.Lock`` that serialises the
 read-modify-write under concurrent ``ChatAPI.ask`` callers. Lifted out of
 ``_core.py`` so the reqid surface has one home (this file) instead of being
-woven into ``ClientCore.__init__`` alongside metrics, drain, and auth state.
+woven into ``Session.__init__`` alongside metrics, drain, and auth state.
 
 Design constraints (load-bearing — see ``tests/unit/test_core_reqid.py`` and
 ``tests/unit/test_core_reqid_concurrent.py``):
 
 * ``__init__`` MUST be event-loop-agnostic — it must NOT instantiate
-  ``asyncio.Lock()`` eagerly. ``ClientCore`` is routinely built outside a
+  ``asyncio.Lock()`` eagerly. ``Session`` is routinely built outside a
   running loop (sync-mode ``NotebookLMClient(...)`` before the caller's
   ``asyncio.run``), and ``asyncio.Lock()`` binds to the running loop on
   construction in some Python versions. The lock is therefore allocated
@@ -29,7 +29,7 @@ Design constraints (load-bearing — see ``tests/unit/test_core_reqid.py`` and
 * Optional ``on_lock_wait`` callback receives the seconds spent blocked on
   :attr:`_lock`. Decouples the counter from
   :class:`notebooklm._core_metrics.ClientMetrics` so this class is unit-
-  testable in isolation; ``ClientCore`` wires it up to
+  testable in isolation; ``Session`` wires it up to
   ``self._record_lock_wait`` at construction.
 """
 
@@ -63,11 +63,11 @@ class ReqidCounter:
     """Monotonic request-id counter with lazy ``asyncio.Lock`` serialisation.
 
     The canonical accessor surface is ``self._reqid._value`` and
-    ``self._reqid._lock`` on ``ClientCore``. The ``_reqid_counter_value`` /
-    ``_reqid_lock`` compat ``@property`` bridges on ``ClientCore`` that
+    ``self._reqid._lock`` on ``Session``. The ``_reqid_counter_value`` /
+    ``_reqid_lock`` compat ``@property`` bridges on ``Session`` that
     previously delegated here were dropped in D1-audit-full once their
     callers migrated; the field names persist for direct access from
-    ``ClientCore`` and from unit-test fixtures.
+    ``Session`` and from unit-test fixtures.
     """
 
     def __init__(
@@ -79,14 +79,14 @@ class ReqidCounter:
         # Plain int; mutated only inside :meth:`next_reqid` under ``_lock`` or
         # via direct ``self._reqid._value = …`` writethrough from test fixtures
         # that want to seed the counter without paying the deprecation-warning
-        # tax on the public ``_reqid_counter`` setter on ``ClientCore``.
+        # tax on the public ``_reqid_counter`` setter on ``Session``.
         self._value: int = baseline
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object is constructed inside
-        # ``ClientCore.__init__`` which may run outside a loop.
+        # ``Session.__init__`` which may run outside a loop.
         self._lock: asyncio.Lock | None = None
         # No-op default keeps standalone construction (unit tests) free of a
-        # ``ClientCore``-shaped dependency. ``ClientCore`` injects its own
+        # ``Session``-shaped dependency. ``Session`` injects its own
         # metrics-aware recorder so lock-wait latency continues to be tracked
         # in the cumulative ``ClientMetricsSnapshot``.
         self._on_lock_wait: Callable[[float], None] = (
@@ -120,7 +120,7 @@ class ReqidCounter:
         :meth:`next_reqid` mutation. Callers that need an atomic post-
         increment value MUST use :meth:`next_reqid`, which serialises the
         read-modify-write under :attr:`_lock`. This accessor exists so
-        ``ClientCore._reqid_counter`` (read path) and test assertions
+        ``Session._reqid_counter`` (read path) and test assertions
         (``assert core._reqid_counter == ...`` after a known sequence) stay
         lock-free.
         """
@@ -129,7 +129,7 @@ class ReqidCounter:
     def set_value(self, new_value: int) -> None:
         """Replace the counter value.
 
-        Used by the ``ClientCore._reqid_counter`` setter (which emits a
+        Used by the ``Session._reqid_counter`` setter (which emits a
         ``DeprecationWarning`` before delegating here) and by test fixtures
         that need to seed the counter to a deterministic baseline.
         """
@@ -188,7 +188,7 @@ class ReqidCounter:
             self._lock.release()
         # Lock is released; safe to invoke arbitrary user-supplied
         # telemetry. Exceptions from the callback propagate to the caller
-        # (the existing contract — ``ClientCore._record_lock_wait`` can't
+        # (the existing contract — ``Session._record_lock_wait`` can't
         # raise, but the API surface keeps this defensive).
         self._on_lock_wait(time.perf_counter() - wait_start)
         return new_value

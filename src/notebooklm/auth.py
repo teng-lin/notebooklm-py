@@ -220,7 +220,7 @@ class AuthTokens:
             accounts sign out.
         cookie_snapshot: Internal save baseline used when a pre-client token
             fetch mutates cookies but persistence fails or CAS-rejects. This
-            lets the eventual ClientCore retry the unpersisted delta instead
+            lets the eventual Session retry the unpersisted delta instead
             of snapshotting the already-mutated jar as clean state.
     """
 
@@ -357,7 +357,7 @@ class AuthTokens:
 
         # Persist any refreshed cookies from the token fetch. If the save
         # fails, carry the old baseline into the returned AuthTokens so a
-        # later ClientCore can retry the delta instead of treating the mutated
+        # later Session can retry the delta instead of treating the mutated
         # jar as clean state.
         # ``save_cookies_to_storage`` performs atomic-replace + fsync + flock
         # under a synchronous file lock; offload to a worker thread so a

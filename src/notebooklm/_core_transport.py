@@ -222,7 +222,7 @@ class _AuthedTransportHost(Protocol):
     cross-cutting concern. Tier-12 PRs 12.4 / 12.5 / 12.7 / 12.8 lifted
     those into chain middlewares, and PR 12.9 lifted the RPC
     semaphore + queue-wait recording up to
-    :meth:`ClientCore._perform_authed_post` (so the slot wraps the
+    :meth:`Session._perform_authed_post` (so the slot wraps the
     whole chain invocation, not just one HTTP attempt). The Protocol
     now declares only the members the leaf still touches:
 
@@ -278,7 +278,7 @@ class AuthedTransport:
         legacy ``_chat_transport`` call site still type-checks; a
         follow-up post-13.x cleanup can drop it.
 
-        Semaphore wrapping moved UP to ``ClientCore._perform_authed_post``
+        Semaphore wrapping moved UP to ``Session._perform_authed_post``
         in PR 12.9: the slot is held for the WHOLE chain invocation
         (initial attempt + all chain-level retries by RetryMiddleware /
         AuthRefreshMiddleware), restoring the pre-Tier-12 "one slot per

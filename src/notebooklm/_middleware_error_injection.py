@@ -17,7 +17,7 @@ short-circuits with a synthetic :class:`httpx.Response` built by
 ``tests/cassette_patterns.build_synthetic_error_response`` — the chain leaf
 (``_perform_authed_post``) is NOT called. The same env-var startup guard
 (:func:`_core_error_injection._refuse_synthetic_error_outside_test_context`)
-still fires at ``ClientCore`` construction so a leaked deploy env never reaches
+still fires at ``Session`` construction so a leaked deploy env never reaches
 this code path in production.
 
 Tier-12 history: PR 12.6 lifted the substitution from the pre-Tier-12

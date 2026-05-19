@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
@@ -127,7 +127,7 @@ def auth_tokens():
 
 @asynccontextmanager
 async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0.0):
-    """Yield an opened ClientCore with optional mock transport; close cleanly.
+    """Yield an opened Session with optional mock transport; close cleanly.
 
     Args:
         refresh_callback: async callable returning ``AuthTokens`` (or raising)
@@ -142,7 +142,7 @@ async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    core = ClientCore(
+    core = Session(
         auth=auth,
         refresh_callback=refresh_callback,
         refresh_retry_delay=refresh_retry_delay,

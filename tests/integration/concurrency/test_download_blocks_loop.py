@@ -96,7 +96,7 @@ def _assert_offloaded_to_worker_thread(
 
 @pytest.fixture
 def mock_artifacts_api() -> tuple[ArtifactsAPI, MagicMock]:
-    """``ArtifactsAPI`` wired to a mock ``ClientCore``.
+    """``ArtifactsAPI`` wired to a mock ``Session``.
 
     Same shape as the unit-test fixture in ``tests/unit/test_artifact_downloads.py``
     so future readers can cross-reference the protocol shaping. We keep

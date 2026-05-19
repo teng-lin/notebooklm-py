@@ -2,7 +2,7 @@
 
 The race fixed here is a torn read of the auth-headers triple
 ``(csrf_token, session_id, cookies)`` while a refresh runs concurrently
-with in-flight RPCs. Today's ``ClientCore._snapshot()`` reads the four
+with in-flight RPCs. Today's ``Session._snapshot()`` reads the four
 scalar fields off ``self.auth`` without holding any lock, and
 ``_build_url()`` reads ``session_id``/``authuser``/``account_email``
 directly off ``self.auth`` (not the snapshot). A concurrent ``refresh_auth``
@@ -51,7 +51,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -191,7 +191,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
     # refresh side directly via ``bump_generation_under_lock`` below
     # because the test asserts the *lock semantics*, not the
     # full refresh state machine.
-    core = ClientCore(auth=auth, refresh_retry_delay=0.0)
+    core = Session(auth=auth, refresh_retry_delay=0.0)
 
     async def bump_generation_under_lock() -> None:
         """One-shot synthetic refresh: bump the generation and atomically

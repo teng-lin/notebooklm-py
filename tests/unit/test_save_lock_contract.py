@@ -1,4 +1,4 @@
-"""Regression guard for the ``ClientCore._save_lock`` contract.
+"""Regression guard for the ``Session._save_lock`` contract.
 
 Contract (documented at ``_core.py`` next to the lock definition):
 ``_save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``
@@ -26,13 +26,13 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
 from notebooklm._core_cookie_persistence import CookiePersistence
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
-def _make_core(tmp_path: Path) -> ClientCore:
-    """Build a minimal ``ClientCore`` whose ``save_cookies`` is safe to call.
+def _make_core(tmp_path: Path) -> Session:
+    """Build a minimal ``Session`` whose ``save_cookies`` is safe to call.
 
     Order matters: ``AuthTokens.__post_init__`` calls ``build_cookie_jar``,
     which loads from ``storage_path`` if it exists and enforces the cookie-set rule. We want it to take the in-memory ``cookies={...}``
@@ -48,7 +48,7 @@ def _make_core(tmp_path: Path) -> ClientCore:
         storage_path=storage_path,
     )
     storage_path.write_text('{"cookies": []}')
-    return ClientCore(auth)
+    return Session(auth)
 
 
 @pytest.mark.asyncio

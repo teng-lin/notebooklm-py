@@ -1,7 +1,7 @@
 """Regression test for the httpx connection-pool tuning via ConnectionLimits.
 
 Audit item #3 (`thread-safety-concurrency-audit.md` §3, also §19):
-Pre-fix, `ClientCore.open()` instantiated `httpx.AsyncClient(...)` with
+Pre-fix, `Session.open()` instantiated `httpx.AsyncClient(...)` with
 no `limits=` kwarg, defaulting to httpx's `~100 / 20-per-host` pool.
 Heavy fan-out workloads (FastAPI services sharing a client across many
 concurrent requests, large `wait_for_sources` batches) tripped
@@ -10,7 +10,7 @@ concurrent requests, large `wait_for_sources` batches) tripped
 Post-fix: a stable `ConnectionLimits` dataclass on
 `notebooklm.types` exposes pool tuning, defaults to
 `max_connections=100, max_keepalive_connections=50,
-keepalive_expiry=30.0`, and is plumbed through `ClientCore.__init__`
+keepalive_expiry=30.0`, and is plumbed through `Session.__init__`
 and `NotebookLMClient.__init__` / `from_storage`.
 
 The test asserts the limits passed to `httpx.AsyncClient` match the
@@ -58,7 +58,7 @@ def test_connection_limits_to_httpx_limits_round_trip() -> None:
 
 
 async def test_default_limits_passed_to_async_client(auth_tokens) -> None:
-    """No explicit `limits=` -> ClientCore uses ConnectionLimits() defaults."""
+    """No explicit `limits=` -> Session uses ConnectionLimits() defaults."""
     captured: dict[str, httpx.Limits | None] = {"limits": None}
     real_async_client = httpx.AsyncClient
 

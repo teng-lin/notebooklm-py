@@ -22,14 +22,14 @@ from notebooklm.rpc import InfographicStyle, VideoFormat, VideoStyle
 
 @pytest.fixture
 def mock_core():
-    """Create a mock ClientCore.
+    """Create a mock Session.
 
     After the D2 cutover, ``ChatAPI.ask`` reaches the network through
     ``Session.transport_post``. The fixture stubs that session method and
     invokes the caller-supplied ``build_request`` factory so URL/body
     assertions still exercise the production request builder.
     """
-    from notebooklm._core import _AuthSnapshot
+    from notebooklm._session import _AuthSnapshot
 
     core = MagicMock()
 
@@ -740,10 +740,10 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_extracts_correctly(self, auth_tokens):
         """Test get_source_ids correctly extracts source IDs from notebook data."""
-        from notebooklm._core import ClientCore
         from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._session import Session
 
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         core.rpc_call = AsyncMock()
         api = NotebooksAPI(core)
 
@@ -769,10 +769,10 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_empty_notebook(self, auth_tokens):
         """Test get_source_ids handles notebook with no sources."""
-        from notebooklm._core import ClientCore
         from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._session import Session
 
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         core.rpc_call = AsyncMock()
         api = NotebooksAPI(core)
 
@@ -785,10 +785,10 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_null_response(self, auth_tokens):
         """Test get_source_ids handles null API response."""
-        from notebooklm._core import ClientCore
         from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._session import Session
 
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         core.rpc_call = AsyncMock()
         api = NotebooksAPI(core)
 
@@ -801,10 +801,10 @@ class TestGetSourceIds:
     @pytest.mark.asyncio
     async def test_get_source_ids_handles_malformed_data(self, auth_tokens):
         """Test get_source_ids handles malformed source data gracefully."""
-        from notebooklm._core import ClientCore
         from notebooklm._notebooks import NotebooksAPI
+        from notebooklm._session import Session
 
-        core = ClientCore(auth_tokens)
+        core = Session(auth_tokens)
         core.rpc_call = AsyncMock()
         api = NotebooksAPI(core)
 

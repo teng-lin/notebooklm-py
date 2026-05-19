@@ -29,7 +29,7 @@ from urllib.parse import quote
 
 import pytest
 
-from notebooklm._core import (
+from notebooklm._session import (
     ERROR_INJECT_ENV_VAR,
     _get_error_injection_mode,
 )
@@ -535,7 +535,7 @@ def test_core_get_error_injection_mode_typo_returns_none(monkeypatch):
     assert _get_error_injection_mode() is None
 
 
-# --- ClientCore wiring after PR 12.6/12.9 -----------------------------------
+# --- Session wiring after PR 12.6/12.9 -----------------------------------
 #
 # Pre-Tier-12 these tests exercised a ``_SyntheticErrorTransport`` that
 # wrapped the ``httpx.AsyncClient`` BELOW VCR. PR 12.6 lifted the
@@ -550,16 +550,16 @@ def test_core_get_error_injection_mode_typo_returns_none(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["429", "5xx", "expired_csrf"])
 async def test_error_injection_middleware_present_when_env_var_set_in_clientcore(monkeypatch, mode):
-    """When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, ``ClientCore`` wires
+    """When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, ``Session`` wires
     ``ErrorInjectionMiddleware`` into the chain so each chain invocation
     short-circuits with the synthetic shape."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
-    from notebooklm._core import ClientCore
     from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
+    from notebooklm._session import Session
     from notebooklm.auth import AuthTokens
 
     auth = AuthTokens(cookies={"SID": "t"}, csrf_token="c", session_id="s")
-    core = ClientCore(auth)
+    core = Session(auth)
     try:
         await core.open()
         assert core._http_client is not None

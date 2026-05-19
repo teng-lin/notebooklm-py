@@ -85,7 +85,7 @@ class TestVCRWithNotebookLMPatterns:
         """
         import httpx
 
-        # Simulate the request format from notebooklm._core.ClientCore.rpc_call()
+        # Simulate the request format from notebooklm._core.Session.rpc_call()
         fake_rpc_body = (
             'f.req=[[["methodId",null,null,[[["notebook_id","data"]]]]]]&at=fake_csrf_token'
         )

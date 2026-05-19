@@ -8,7 +8,7 @@ Tracing]``.
 PR 12.1 originally pinned six middlewares; PR 12.9 added the seventh after
 codex caught a load-bearing regression in the first cut of the audit-find
 that moved the semaphore around the chain dispatch in
-``ClientCore._perform_authed_post``: queued tasks were no longer counted by
+``Session._perform_authed_post``: queued tasks were no longer counted by
 ``DrainMiddleware`` (Drain sat outside the semaphore wait), and Metrics
 latency no longer included RPC queue wait. The middleware insertion restores
 both contracts in one place:
@@ -28,7 +28,7 @@ both contracts in one place:
 
 The semaphore is supplied as a zero-arg async-context-manager factory rather
 than the raw ``asyncio.Semaphore`` so the middleware can be live-bound to
-``ClientCore._get_rpc_semaphore`` — which lazily constructs the semaphore on
+``Session._get_rpc_semaphore`` — which lazily constructs the semaphore on
 first use (loop affinity) and returns a ``contextlib.nullcontext`` when
 ``max_concurrent_rpcs is None`` (unbounded opt-out). A direct semaphore
 binding would have to be reset on loop reuse and would have a 2-call
@@ -49,7 +49,7 @@ from typing import Any
 from ._middleware import NextCall, RpcRequest, RpcResponse
 
 # ``RpcRequest.context`` key used to communicate the per-call queue-wait
-# duration from this middleware up to ``ClientCore._perform_authed_post``
+# duration from this middleware up to ``Session._perform_authed_post``
 # (which forwards it to ``ClientMetrics.record_rpc_queue_wait``). Kept as a
 # named constant so the chain's metadata vocabulary in ADR-009 §"RpcRequest
 # .context keys" can reference it precisely.

@@ -174,7 +174,7 @@ def _file_lock_exclusive(lock_path: Path) -> Iterator[None]:
     the storage file itself would interfere with the atomic temp-rename below.
 
     The lock is per-process: threads within one process aren't serialized —
-    that's the intra-process ``threading.Lock`` in ``ClientCore``. If the
+    that's the intra-process ``threading.Lock`` in ``Session``. If the
     lock can't be acquired (e.g. NFS where flock semantics vary, read-only
     parent dir, fd exhaustion), the save proceeds anyway; correctness in
     that mode is best-effort and relies on the snapshot/delta CAS guards in

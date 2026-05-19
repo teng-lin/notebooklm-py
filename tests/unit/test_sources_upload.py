@@ -21,7 +21,7 @@ from notebooklm.types import Source
 
 @pytest.fixture
 def mock_core():
-    """Create a mocked ClientCore for SourcesAPI."""
+    """Create a mocked Session for SourcesAPI."""
     core = MagicMock()
     core.rpc_call = AsyncMock()
     core.auth = MagicMock()
@@ -39,7 +39,7 @@ def mock_core():
     # injected kernel/session compatibility path. Keep this distinct from
     # auth.cookie_jar so the invariant still proves uploads reuse the live jar.
     core.live_cookies = MagicMock(return_value=live_cookie_jar)
-    # Mirror ``ClientCore``'s auth-route helper surface. The
+    # Mirror ``Session``'s auth-route helper surface. The
     # ``authuser_query()`` and ``authuser_header()`` callables read
     # ``core.auth.authuser`` / ``core.auth.account_email`` at call time so
     # tests that mutate ``mock_core.auth.authuser`` mid-test still observe

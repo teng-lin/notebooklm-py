@@ -1,6 +1,6 @@
 """Refresh state-machine regression tests.
 
-Pins three behaviors of ``ClientCore._try_refresh_and_retry``:
+Pins three behaviors of ``Session._try_refresh_and_retry``:
 
 1. Concurrent callers share the same in-flight refresh task (single-flight).
 2. Refresh failures propagate to all waiters with chained ``__cause__``.

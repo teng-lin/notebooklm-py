@@ -3,7 +3,7 @@
 Regression test for keepalive-path canonicalization: the rotation throttle keys the
 in-process dedupe (``_LAST_POKE_ATTEMPT_MONOTONIC`` /
 ``_POKE_LOCKS_BY_LOOP``) by the raw ``Path`` object stored on
-``ClientCore._keepalive_storage_path``. Without canonicalization, two
+``Session._keepalive_storage_path``. Without canonicalization, two
 clients constructed with different syntactic representations of the SAME
 underlying file (e.g. a relative path and the absolute path; a
 ``~``-prefixed path and the expanded one; with or without a symlink
@@ -17,7 +17,7 @@ path before it reaches ``_get_poke_lock`` / ``_try_claim_rotation`` /
 ``_rotation_lock_path``.
 
 The public ``storage_path`` argument type (``str | Path | None``) is
-preserved; only the internal-derived ``ClientCore._keepalive_storage_path``
+preserved; only the internal-derived ``Session._keepalive_storage_path``
 is canonicalized.
 """
 

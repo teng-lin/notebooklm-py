@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from notebooklm._core import ClientCore
 from notebooklm._core_polling import PollRegistry as ShimPollRegistry
 from notebooklm._polling_registry import PendingPolls, PollRegistry
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
@@ -41,7 +41,7 @@ def test_poll_registry_preserves_seeded_pending_mapping_identity() -> None:
 
 
 def test_client_core_exposes_poll_registry_and_pending_polls_bridge() -> None:
-    core = ClientCore(_auth_tokens())
+    core = Session(_auth_tokens())
 
     assert isinstance(core.poll_registry, PollRegistry)
     assert core._pending_polls is core.poll_registry.pending
@@ -49,7 +49,7 @@ def test_client_core_exposes_poll_registry_and_pending_polls_bridge() -> None:
 
 
 def test_client_core_pending_polls_assignment_replaces_registry_backing_mapping() -> None:
-    core = ClientCore(_auth_tokens())
+    core = Session(_auth_tokens())
     registry = core.poll_registry
     pending: PendingPolls = {}
 
@@ -61,7 +61,7 @@ def test_client_core_pending_polls_assignment_replaces_registry_backing_mapping(
 
 
 def test_client_core_pending_polls_bridge_reflects_poll_registry_mutations() -> None:
-    core = ClientCore(_auth_tokens())
+    core = Session(_auth_tokens())
     pending: PendingPolls = {}
 
     core.poll_registry.pending = pending
@@ -71,7 +71,7 @@ def test_client_core_pending_polls_bridge_reflects_poll_registry_mutations() -> 
 
 @pytest.mark.asyncio
 async def test_client_core_pending_polls_bridge_preserves_entry_shape() -> None:
-    core = ClientCore(_auth_tokens())
+    core = Session(_auth_tokens())
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
     task = asyncio.create_task(_never())

@@ -91,11 +91,11 @@ class AuthRefreshMiddleware:
     matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 
-    Constructor inputs (all wired by ``ClientCore.__init__``):
+    Constructor inputs (all wired by ``Session.__init__``):
 
     - ``refresh_callable``: a zero-arg async callable that drives one
       coalesced auth refresh. Production wires
-      ``lambda: ClientCore._await_refresh(self)`` which delegates to
+      ``lambda: Session._await_refresh(self)`` which delegates to
       :meth:`AuthRefreshCoordinator.await_refresh`. The middleware never
       reaches into the coordinator directly; this keeps the seam thin
       and testable.

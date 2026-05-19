@@ -1,4 +1,4 @@
-"""Concurrency test for ``ClientCore.next_reqid``.
+"""Concurrency test for ``Session.next_reqid``.
 
 Covers 100 concurrent ``next_reqid()`` callers (via
 ``asyncio.gather``) must each see a unique, monotonic counter value. Without
@@ -11,17 +11,17 @@ import asyncio
 
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
-def _make_core() -> ClientCore:
+def _make_core() -> Session:
     auth = AuthTokens(
         cookies={"SID": "test"},
         csrf_token="test_csrf",
         session_id="test_session",
     )
-    return ClientCore(auth=auth)
+    return Session(auth=auth)
 
 
 @pytest.mark.asyncio

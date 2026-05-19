@@ -6,7 +6,7 @@ programmatic users had to discover and opt in. Diverges from "smart
 retry" SDK norms.
 
 Post-fix:
-- ``ClientCore.__init__`` defaults ``rate_limit_max_retries`` to ``3``.
+- ``Session.__init__`` defaults ``rate_limit_max_retries`` to ``3``.
 - ``NotebookLMClient.__init__`` and ``NotebookLMClient.from_storage``
   match the new default.
 - ``_perform_authed_post`` falls back to capped exponential backoff
@@ -85,7 +85,7 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
     client = NotebookLMClient(auth_tokens)
     assert client._core._rate_limit_max_retries == 3, (
         "rate_limit_max_retries default must be 3; check that NotebookLMClient.__init__ "
-        "forwards the ClientCore default."
+        "forwards the Session default."
     )
 
     mock_http = AsyncMock(spec=httpx.AsyncClient)
@@ -200,7 +200,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     raises ``_TransportRateLimited`` (which the API layer translates
     into ``RateLimitError``) without sleeping.
     """
-    from notebooklm._core import _TransportRateLimited
+    from notebooklm._session import _TransportRateLimited
 
     mock_post = AsyncMock(return_value=_build_429("1"))
 

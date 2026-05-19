@@ -1,9 +1,9 @@
-"""Observability metrics helper for :class:`ClientCore`.
+"""Observability metrics helper for :class:`Session`.
 
 Owns the cumulative ``ClientMetricsSnapshot`` counters, the threading lock that
 guards them, and the optional ``on_rpc_event`` telemetry callback. Lifted out of
 ``_core.py`` so the metrics surface has one home (this file) instead of being
-woven into ``ClientCore.__init__`` alongside drain, reqid, and auth state.
+woven into ``Session.__init__`` alongside drain, reqid, and auth state.
 
 Design constraints (load-bearing — see ``tests/unit/test_swallow_observability.py``
 and ``tests/unit/test_observability.py``):
@@ -11,7 +11,7 @@ and ``tests/unit/test_observability.py``):
 * ``__init__`` MUST be event-loop-agnostic — it constructs only a
   ``threading.Lock`` and a plain dataclass. Never call
   ``asyncio.get_running_loop()`` or instantiate any ``asyncio.*`` primitive
-  here. ``ClientCore`` is routinely built outside a running loop.
+  here. ``Session`` is routinely built outside a running loop.
 
 * :meth:`emit_rpc_event` MUST stay ``async def`` and ``await
   maybe_await_callback(...)``. The await is the back-pressure mechanism: a
@@ -57,9 +57,9 @@ class ClientMetrics:
     * ``_on_rpc_event`` — the user-supplied telemetry callback, or ``None``.
       Read at emit time so test fixtures can swap it after construction.
 
-    Field names are deliberately the same as the legacy ``ClientCore`` ivars
+    Field names are deliberately the same as the legacy ``Session`` ivars
     (``_metrics_lock``, ``_metrics``, ``_on_rpc_event``) so the compat
-    ``@property`` bridges on ``ClientCore`` can delegate with
+    ``@property`` bridges on ``Session`` can delegate with
     ``return self._metrics_obj._<attr>`` and stay readable.
     """
 

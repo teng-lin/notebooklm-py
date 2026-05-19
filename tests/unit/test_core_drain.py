@@ -1,6 +1,6 @@
 """Unit tests for :class:`notebooklm._core_drain.TransportDrainTracker`.
 
-Covers the drain helper in isolation — the ``ClientCore`` facade contract
+Covers the drain helper in isolation — the ``Session`` facade contract
 (``drain``, ``_begin_transport_post``, ``_begin_transport_task``,
 ``_finish_transport_post``, ``_current_operation_depth``,
 ``_get_drain_condition``) is exercised end-to-end in
@@ -21,7 +21,7 @@ pins the helper-class invariants the facade depends on:
   work).
 * ``current_operation_depth(None)`` returns zero (the documented
   "outside any task" branch).
-* The ``ClientCore.__new__(ClientCore)`` regression path: the drain
+* The ``Session.__new__(Session)`` regression path: the drain
   property setters on a ``__new__``-built core (no ``__init__`` ran)
   must succeed because the setters call
   ``_ensure_observability_state`` before writethrough.
@@ -33,8 +33,8 @@ import asyncio
 
 import pytest
 
-from notebooklm._core import ClientCore
 from notebooklm._core_drain import TransportDrainTracker, _TransportOperationToken
+from notebooklm._session import Session
 
 # ---------------------------------------------------------------------------
 # Construction
@@ -44,7 +44,7 @@ from notebooklm._core_drain import TransportDrainTracker, _TransportOperationTok
 def test_init_uses_no_asyncio_primitives() -> None:
     """``TransportDrainTracker`` must be constructible outside a running event loop.
 
-    Regression guard: ``ClientCore`` is routinely instantiated synchronously
+    Regression guard: ``Session`` is routinely instantiated synchronously
     (e.g. ``NotebookLMClient(auth)`` before ``asyncio.run``). If
     ``TransportDrainTracker.__init__`` ever introduces an
     ``asyncio.Lock``/``Event``/``Condition``, the synchronous construction
@@ -234,7 +234,7 @@ async def test_drain_rejects_child_task_spawned_from_admitted_operation() -> Non
 async def test_drain_timeout_raises_and_keeps_draining_flag() -> None:
     """Drain timeout must raise ``TimeoutError`` and leave the flag set.
 
-    Shutdown callers (``ClientCore.close``) must not accidentally admit new
+    Shutdown callers (``Session.close``) must not accidentally admit new
     work after a missed deadline. The contract is "drain mode is sticky";
     pin it.
     """
@@ -304,30 +304,30 @@ def test_token_is_frozen_dataclass() -> None:
 
 
 def test_token_reexported_from_core_module() -> None:
-    """``from notebooklm._core import _TransportOperationToken`` must still work.
+    """``from notebooklm._session import _TransportOperationToken`` must still work.
 
     Master plan mandate: the legacy import path stays available after the
     dataclass moves into ``_core_drain``.
     """
-    from notebooklm._core import _TransportOperationToken as Aliased
+    from notebooklm._session import _TransportOperationToken as Aliased
 
     assert Aliased is _TransportOperationToken
 
 
 # ---------------------------------------------------------------------------
-# ``ClientCore.__new__`` backfill regression
+# ``Session.__new__`` backfill regression
 # ---------------------------------------------------------------------------
 
 
 def test_new_backfill_drain_tracker_constructed_on_first_access() -> None:
     """A ``__new__``-built core must lazy-construct the tracker on first probe.
 
-    Regression guard: ``ClientCore.__new__(ClientCore)`` skips ``__init__``,
+    Regression guard: ``Session.__new__(Session)`` skips ``__init__``,
     so neither ``_metrics_obj`` nor ``_drain_tracker`` is set. The first
     facade-method call must run ``_ensure_observability_state`` and
     backfill both.
     """
-    core = ClientCore.__new__(ClientCore)
+    core = Session.__new__(Session)
     assert not hasattr(core, "_drain_tracker")
 
     core._ensure_observability_state()
@@ -345,7 +345,7 @@ def test_new_backfill_drain_setter_writethrough_succeeds() -> None:
     the writethrough; otherwise the writethrough hits an ``AttributeError``
     because ``_drain_tracker`` doesn't exist yet.
     """
-    core = ClientCore.__new__(ClientCore)
+    core = Session.__new__(Session)
     core._draining = True
     assert core._draining is True
     assert core._drain_tracker._draining is True
@@ -359,7 +359,7 @@ def test_new_backfill_drain_condition_setter_writethrough_succeeds() -> None:
     """
 
     async def _scope() -> None:
-        core = ClientCore.__new__(ClientCore)
+        core = Session.__new__(Session)
         injected = asyncio.Condition()
         core._drain_condition = injected
         assert core._drain_condition is injected
@@ -370,27 +370,27 @@ def test_new_backfill_drain_condition_setter_writethrough_succeeds() -> None:
 
 def test_new_backfill_in_flight_setter_writethrough_succeeds() -> None:
     """``core._in_flight_posts = 5`` on a ``__new__``-built core writes through."""
-    core = ClientCore.__new__(ClientCore)
+    core = Session.__new__(Session)
     core._in_flight_posts = 5
     assert core._in_flight_posts == 5
     assert core._drain_tracker._in_flight_posts == 5
 
 
 # ---------------------------------------------------------------------------
-# Facade integration — exercise ClientCore delegation through the tracker
+# Facade integration — exercise Session delegation through the tracker
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_clientcore_drain_facade_delegates_to_tracker() -> None:
-    """A real ``ClientCore`` instance must route ``drain`` through the tracker.
+    """A real ``Session`` instance must route ``drain`` through the tracker.
 
     Construction via ``__new__`` keeps the test off the full ``__init__``
     surface (no auth, no httpx). The facade methods still rely on
     ``_ensure_observability_state`` to backfill, which is exactly the path
     we want to exercise here.
     """
-    core = ClientCore.__new__(ClientCore)
+    core = Session.__new__(Session)
     # Begin/finish through the facade should bump and clear in-flight.
     token = await core._begin_transport_post("facade-test")
     assert core._in_flight_posts == 1

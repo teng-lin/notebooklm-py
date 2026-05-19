@@ -1,11 +1,11 @@
-"""Tests for the lifecycle drain on ``ClientCore.close``.
+"""Tests for the lifecycle drain on ``Session.close``.
 
 Pins down:
 
 - ``PollRegistry.active_tasks()`` returns the leader poll tasks currently
   parked in the registry, and excludes already-completed tasks.
 - ``ArtifactsAPI`` owns its poll registry and registers a close-time drain hook
-  so ``ClientCore.close()`` cancels active polls without reaching into feature
+  so ``Session.close()`` cancels active polls without reaching into feature
   state.
 - ``NotebookLMClient.close()`` and ``__aexit__`` default to ``drain=True``
   (BREAKING). Old fire-and-forget callers must pass ``drain=False`` to opt out.
@@ -19,8 +19,8 @@ from typing import Any
 import pytest
 
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._core import ClientCore
 from notebooklm._polling_registry import PollRegistry
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -83,14 +83,14 @@ async def test_active_tasks_returns_empty_for_fresh_registry() -> None:
 
 
 # ---------------------------------------------------------------------------
-# ClientCore.close runs feature-owned drain hooks
+# Session.close runs feature-owned drain hooks
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_core_close_drains_artifact_poll_hook() -> None:
     """``close()`` cancels in-flight poll tasks within 1s and tears down cleanly."""
-    core = ClientCore(_auth())
+    core = Session(_auth())
     artifacts = ArtifactsAPI(core)
     assert core._drain_hooks["artifacts.polls"] == artifacts._polling.drain
     await core.open()
@@ -124,7 +124,7 @@ async def test_core_close_drains_artifact_poll_hook() -> None:
 @pytest.mark.asyncio
 async def test_core_close_absorbs_drain_hook_errors() -> None:
     """A drain hook raising during close does not block transport teardown."""
-    core = ClientCore(_auth())
+    core = Session(_auth())
     await core.open()
 
     async def angry_hook() -> None:
@@ -141,7 +141,7 @@ async def test_core_close_absorbs_drain_hook_errors() -> None:
 @pytest.mark.asyncio
 async def test_core_close_with_no_polls_is_noop_on_drain_step() -> None:
     """``close()`` works unchanged when no polls are registered."""
-    core = ClientCore(_auth())
+    core = Session(_auth())
     await core.open()
     await core.close()
     assert core._http_client is None

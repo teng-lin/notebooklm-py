@@ -1,16 +1,16 @@
-"""Transport drain bookkeeping helper for :class:`ClientCore`.
+"""Transport drain bookkeeping helper for :class:`Session`.
 
 Owns the in-flight transport-operation counters, the lazy
 ``asyncio.Condition`` that ``drain()`` parks on, the per-``asyncio.Task``
 operation-depth map, and the ``_draining`` flag. Lifted out of ``_core.py``
 so the drain surface has one home (this file) instead of being woven into
-``ClientCore.__init__`` alongside metrics, reqid, and auth state.
+``Session.__init__`` alongside metrics, reqid, and auth state.
 
 Design constraints (load-bearing — see
 ``tests/unit/concurrency/test_close_cancellation_leak.py``,
 ``tests/unit/test_core_close.py``, and ``tests/unit/test_observability.py``):
 
-* ``__init__`` MUST be event-loop-agnostic. ``ClientCore`` is routinely
+* ``__init__`` MUST be event-loop-agnostic. ``Session`` is routinely
   constructed outside a running loop (sync-mode
   ``NotebookLMClient(auth)`` before ``asyncio.run``), so this helper may
   not call ``asyncio.get_running_loop()`` or instantiate any ``asyncio.*``
@@ -33,11 +33,11 @@ Design constraints (load-bearing — see
   counter and stall ``drain`` forever — keep the body trivial and
   fully inside the ``async with condition`` block.
 
-Field names are deliberately the same as the legacy ``ClientCore`` ivars
+Field names are deliberately the same as the legacy ``Session`` ivars
 (``_in_flight_posts``, ``_draining``, ``_drain_condition``) so the
-surviving compat ``@property`` bridges on ``ClientCore`` can delegate via
+surviving compat ``@property`` bridges on ``Session`` can delegate via
 ``return self._drain_tracker._<attr>`` and stay readable. The
-``_operation_depths`` compat bridge on ``ClientCore`` was dropped in
+``_operation_depths`` compat bridge on ``Session`` was dropped in
 D1-audit-full once its callers migrated; the field itself remains on
 ``TransportDrainTracker`` because the drain bookkeeping needs it.
 """
@@ -121,7 +121,7 @@ class TransportDrainTracker:
         """Return the per-instance drain ``asyncio.Condition``, creating it lazily.
 
         Lazy construction is required because ``asyncio.Condition()`` binds
-        to the running event loop in some Python versions, and ``ClientCore``
+        to the running event loop in some Python versions, and ``Session``
         is routinely instantiated outside one. The check-then-assign is
         race-free without an outer lock because asyncio is single-threaded:
         no other coroutine can execute between the ``is None`` check and

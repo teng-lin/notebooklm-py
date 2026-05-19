@@ -29,7 +29,7 @@ def encode_rpc_request(
             Callers must pass the SAME string to the URL builder so the
             ``rpcids=`` query param and the ``f.req`` body stay in sync —
             mismatched IDs reach the wire as malformed requests. Used by
-            ``ClientCore`` to thread ``NOTEBOOKLM_RPC_OVERRIDES`` through.
+            ``Session`` to thread ``NOTEBOOKLM_RPC_OVERRIDES`` through.
 
     Returns:
         Triple-nested array structure for batchexecute

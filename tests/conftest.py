@@ -90,7 +90,7 @@ def _synthetic_error_mode(request, monkeypatch):
 
     Set BEFORE the client constructs its HTTP transport (markers are read at
     setup time): the transport wrapper in ``_core.py:_get_error_injection_mode``
-    reads the env var only during ``ClientCore.open()``, so the var must be
+    reads the env var only during ``Session.open()``, so the var must be
     in place before the fixture under test enters its ``async with`` block.
 
     Production behavior is unchanged when the marker is absent.
@@ -113,7 +113,7 @@ def _synthetic_error_mode(request, monkeypatch):
     # in ``_core.py`` cascades automatically; the constant is also exposed
     # from ``tests/vcr_config.py`` but going through ``_core`` is the
     # production-faithful path.
-    from notebooklm._core import ERROR_INJECT_ENV_VAR
+    from notebooklm._session import ERROR_INJECT_ENV_VAR
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
 

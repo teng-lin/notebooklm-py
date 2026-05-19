@@ -348,7 +348,7 @@ class TestKeepaliveExplicitStoragePath:
 
     def test_explicit_storage_path_normalizes_onto_auth_without_mutating_caller(self, tmp_path):
         """The constructor exposes ``storage_path`` on ``client.auth`` so
-        ``refresh_auth()`` and ``ClientCore.close()`` (which read
+        ``refresh_auth()`` and ``Session.close()`` (which read
         ``self._core.auth.storage_path`` directly, not the keepalive-specific
         path) persist to the same file. Crucially, the caller's original
         ``AuthTokens`` is *not* mutated, so reusing one ``AuthTokens`` across
@@ -369,7 +369,7 @@ class TestKeepaliveExplicitStoragePath:
 
         assert client.auth.storage_path == storage_path, (
             "Explicit storage_path must be reflected on client.auth so non-keepalive "
-            "code paths (refresh_auth, ClientCore.close) see the same file"
+            "code paths (refresh_auth, Session.close) see the same file"
         )
         assert auth.storage_path is None, (
             "Caller's AuthTokens must not be mutated — sharing one AuthTokens "
@@ -381,7 +381,7 @@ class TestKeepaliveExplicitStoragePath:
     async def test_close_persists_to_explicit_storage_path(
         self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
     ):
-        """``ClientCore.close()`` calls ``save_cookies_to_storage`` with the
+        """``Session.close()`` calls ``save_cookies_to_storage`` with the
         explicit constructor ``storage_path`` even when keepalive never ran
         and ``auth.storage_path`` was ``None`` originally — proving the
         normalization actually wires the on-close save, not just the
@@ -456,15 +456,15 @@ class TestKeepalivePersistence:
 
 
 class TestSaveCookiesUnification:
-    """Tests for ClientCore.save_cookies — the single chokepoint that close,
+    """Tests for Session.save_cookies — the single chokepoint that close,
     keepalive, and refresh_auth all route through."""
 
     @pytest.mark.asyncio
     async def test_save_cookies_takes_in_process_lock_before_writing(self, tmp_path, monkeypatch):
-        """``ClientCore.save_cookies`` holds ``_save_lock`` for the duration of
+        """``Session.save_cookies`` holds ``_save_lock`` for the duration of
         the worker-thread write, so an older snapshot can't clobber a newer one
         within the same process."""
-        from notebooklm._core import ClientCore
+        from notebooklm._session import Session
 
         auth = AuthTokens(
             cookies={"SID": "x", "__Secure-1PSIDTS": "test_1psidts"},
@@ -473,7 +473,7 @@ class TestSaveCookiesUnification:
             storage_path=tmp_path / "storage_state.json",
         )
         (tmp_path / "storage_state.json").write_text('{"cookies": []}')
-        core = ClientCore(auth)
+        core = Session(auth)
 
         lock_held_during_save: list[bool] = []
         call_kwargs: list[dict] = []
@@ -482,7 +482,7 @@ class TestSaveCookiesUnification:
             """Record lock state and the kwargs.
 
             Capturing ``kwargs`` here is the regression guard for the §3.4.1
-            fix: if ``ClientCore.save_cookies`` ever stops threading
+            fix: if ``Session.save_cookies`` ever stops threading
             ``original_snapshot=`` through, the assertion below catches it
             before production silently reverts to legacy merge.
             """
@@ -508,7 +508,7 @@ class TestSaveCookiesUnification:
         self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
     ):
         """``refresh_auth`` no longer calls ``save_cookies_to_storage`` directly;
-        it routes through ``ClientCore.save_cookies`` so the in-process lock is
+        it routes through ``Session.save_cookies`` so the in-process lock is
         held — preventing an older keepalive snapshot from clobbering the
         freshly-refreshed tokens."""
         storage_path = tmp_path / "storage_state.json"

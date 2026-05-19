@@ -12,8 +12,8 @@ import pytest
 
 import notebooklm._core as core_module
 import notebooklm._core_cookie_persistence as persistence_module
-from notebooklm._core import ClientCore
 from notebooklm._core_cookie_persistence import CookiePersistence
+from notebooklm._session import Session
 from notebooklm.auth import (
     AuthTokens,
     CookieSaveResult,
@@ -40,7 +40,7 @@ def _jar(sid: str = "sid", psidts: str = "psidts") -> httpx.Cookies:
 
 
 def test_client_core_exposes_cookie_persistence_and_private_bridges(tmp_path: Path) -> None:
-    core = ClientCore(_auth_tokens(tmp_path / "storage_state.json"))
+    core = Session(_auth_tokens(tmp_path / "storage_state.json"))
     baseline = snapshot_cookie_jar(_jar())
 
     core._loaded_cookie_snapshot = baseline
@@ -55,7 +55,7 @@ def test_client_core_exposes_cookie_persistence_and_private_bridges(tmp_path: Pa
 async def test_client_core_save_cookies_uses_core_module_monkeypatches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    core = ClientCore(_auth_tokens(tmp_path / "storage_state.json"))
+    core = Session(_auth_tokens(tmp_path / "storage_state.json"))
     calls: list[str] = []
 
     def fake_save(cookie_jar: httpx.Cookies, path: Path | None = None, **kwargs: Any) -> bool:

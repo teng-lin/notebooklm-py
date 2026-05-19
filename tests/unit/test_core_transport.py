@@ -1,6 +1,6 @@
 """Parity tests for the shared transport pipeline.
 
-Pins down the behavior of :meth:`ClientCore._perform_authed_post`
+Pins down the behavior of :meth:`Session._perform_authed_post`
 extracted from ``_rpc_call_impl``:
 
 - ``build_request`` factory is called once per HTTP attempt.
@@ -15,7 +15,7 @@ extracted from ``_rpc_call_impl``:
   (URL + body identical to pre-extraction).
 
 The chat-side error mapping that used to live on
-``ClientCore.query_post`` moved to
+``Session.query_post`` moved to
 :func:`notebooklm._chat_transport.chat_aware_authed_post` in the D2
 cutover; equivalent coverage lives in ``tests/unit/test_chat_transport.py``.
 """
@@ -33,15 +33,15 @@ import httpx
 import pytest
 
 from conftest import install_post_as_stream
-from notebooklm._core import (
-    ClientCore,
+from notebooklm._core_transport import AuthedTransport
+from notebooklm._logging import get_request_id
+from notebooklm._session import (
+    Session,
     _AuthSnapshot,
     _TransportAuthExpired,
     _TransportRateLimited,
     _TransportServerError,
 )
-from notebooklm._core_transport import AuthedTransport
-from notebooklm._logging import get_request_id
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -65,13 +65,13 @@ def _make_core(
     refresh_callback: Callable[[], Any] | None = None,
     rate_limit_max_retries: int = 0,
     server_error_max_retries: int = 0,
-) -> ClientCore:
+) -> Session:
     auth = AuthTokens(
         csrf_token="CSRF_OLD",
         session_id="SID_OLD",
         cookies={"SID": "sid_cookie"},
     )
-    return ClientCore(
+    return Session(
         auth=auth,
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.0,
@@ -862,7 +862,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
     """A 503 must not be misclassified as auth error → refresh path. Refresh
     callback must never be called even when configured."""
     refresh_calls: list[bool] = []
-    captured_core: dict[str, ClientCore] = {}
+    captured_core: dict[str, Session] = {}
 
     async def refresh() -> AuthTokens:
         refresh_calls.append(True)
@@ -965,7 +965,7 @@ def test_server_error_max_retries_negative_raises():
         cookies={"SID": "x"},
     )
     with pytest.raises(ValueError, match="server_error_max_retries must be >= 0"):
-        ClientCore(auth=auth, server_error_max_retries=-1)
+        Session(auth=auth, server_error_max_retries=-1)
 
 
 # ---------------------------------------------------------------------------

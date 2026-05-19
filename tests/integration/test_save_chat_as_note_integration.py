@@ -1,7 +1,7 @@
 """Integration-via-httpx-mock tests for saved-from-chat notes (issue #660).
 
 These exercise the full ``NotebookLMClient.notes.create_from_chat()``
-path: the encoder builds the 7-element params, ``ClientCore.rpc_call``
+path: the encoder builds the 7-element params, ``Session.rpc_call``
 wraps them in the batchexecute envelope and POSTs to the server, and we
 assert (a) the wire body matches our captured request byte-for-byte and
 (b) the returned ``Note`` is parsed correctly from the captured response.

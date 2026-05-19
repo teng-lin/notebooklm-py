@@ -1,11 +1,11 @@
-"""Auth refresh coordinator helper for :class:`ClientCore`.
+"""Auth refresh coordinator helper for :class:`Session`.
 
 Owns the auth refresh state machine and snapshot serialization that historically
-lived inline on ``ClientCore``:
+lived inline on ``Session``:
 
 * ``_refresh_lock`` — single-flight lock guarding refresh-task creation. Lazy
   because ``asyncio.Lock()`` needs a running loop in some Python versions and
-  ``ClientCore`` can be constructed outside one.
+  ``Session`` can be constructed outside one.
 * ``_refresh_task`` — the shared in-flight refresh task. Slot is intentionally
   preserved across waiter cancellation so siblings can still join, and is
   replaced only on the next refresh wave once the existing task hits
@@ -85,8 +85,8 @@ class AuthRefreshCoordinator:
     """Owns refresh single-flight, snapshot serialization, and auth-header sync.
 
     Field names (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``,
-    ``_auth_snapshot_lock``) deliberately mirror the legacy ``ClientCore``
-    ivars so the compat ``@property`` bridges on ``ClientCore`` can delegate
+    ``_auth_snapshot_lock``) deliberately mirror the legacy ``Session``
+    ivars so the compat ``@property`` bridges on ``Session`` can delegate
     with ``return self._auth_coord._<attr>`` and stay readable for reviewers
     grepping the codebase.
     """
@@ -166,7 +166,7 @@ class AuthRefreshCoordinator:
     # Auth snapshot + token write — the load-bearing AST-guarded pair.
     # The "no await inside the mutation block" invariant is enforced by
     # tests/unit/test_concurrency_refresh_race.py against
-    # ``ClientCore.update_auth_tokens``; ``ClientCore`` keeps that method's
+    # ``Session.update_auth_tokens``; ``Session`` keeps that method's
     # body as real code (not a delegate) so the AST guard stays valid. The
     # coordinator method here is the canonical implementation new callers
     # should reach for, and the two stay in sync by construction (identical
@@ -270,7 +270,7 @@ class AuthRefreshCoordinator:
                 "AuthRefreshCoordinator.await_refresh called without a "
                 "refresh_callback configured — wire one via "
                 "AuthRefreshCoordinator(refresh_callback=...) (or by "
-                "constructing ClientCore with refresh_callback=...) before "
+                "constructing Session with refresh_callback=...) before "
                 "triggering an auth refresh."
             )
 

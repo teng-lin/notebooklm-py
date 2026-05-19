@@ -1,7 +1,7 @@
 """Regression test for the close-cancellation transport-leak shield.
 
 The audit covered whether the ``asyncio.shield`` wrapped around
-``self._http_client.aclose()`` inside :meth:`notebooklm._core.ClientCore.close`
+``self._http_client.aclose()`` inside :meth:`notebooklm._core.Session.close`
 correctly survives a cancellation that lands while ``aclose`` itself is
 in flight, exercised through the user-facing ``__aexit__`` surface (not
 the bare ``close()`` task path already covered by the companion
@@ -90,7 +90,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
     - ``__aexit__`` wrapped in ``wait_for(timeout=0.1)`` so the cancel
       fires during ``aclose``.
 
-    The shield in :meth:`ClientCore.close` wraps
+    The shield in :meth:`Session.close` wraps
     ``self._http_client.aclose()`` in ``asyncio.shield`` inside an
     outer ``finally``. Without that shield, a cancel arriving inside
     ``aclose`` aborts the close and leaks the httpx transport. With
@@ -223,7 +223,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
 
         assert http_client_ref.is_closed, (
             "transport leaked: cancel during _slow_aclose left the httpx "
-            "client open — the asyncio.shield in ClientCore.close was "
+            "client open — the asyncio.shield in Session.close was "
             "either removed, repositioned, or no longer wraps aclose()"
         )
     finally:

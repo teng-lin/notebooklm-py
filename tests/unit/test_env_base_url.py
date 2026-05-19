@@ -2,8 +2,8 @@
 
 import pytest
 
-from notebooklm._core import ClientCore
 from notebooklm._env import get_base_host, get_base_url
+from notebooklm._session import Session
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -69,11 +69,11 @@ def test_rpc_endpoint_helpers_are_lazy(monkeypatch):
 
 def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
-    core = ClientCore(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
+    core = Session(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
     # ``_build_url`` consumes an ``_AuthSnapshot`` so callers
     # outside ``_perform_authed_post`` must build one inline.
-    from notebooklm._core import _AuthSnapshot
+    from notebooklm._session import _AuthSnapshot
 
     snapshot = _AuthSnapshot(
         csrf_token=core.auth.csrf_token,
@@ -97,7 +97,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
         headers={"x-goog-upload-url": upload_url},
     )
 
-    core = ClientCore(auth)
+    core = Session(auth)
     await core.open()
     try:
         result = await SourcesAPI(core)._start_resumable_upload(

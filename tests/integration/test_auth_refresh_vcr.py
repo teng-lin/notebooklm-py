@@ -129,7 +129,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
         refresh_calls.append(None)
         return await original_refresh()
 
-    # The refresh callback is captured by ClientCore at construction;
+    # The refresh callback is captured by Session at construction;
     # patch it on the core so the wrapper is what the retry loop sees.
     client._core._refresh_callback = tracking_refresh
 

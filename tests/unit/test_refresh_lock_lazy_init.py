@@ -1,8 +1,8 @@
-"""regression tests for ``ClientCore._refresh_lock`` lazy-init.
+"""regression tests for ``Session._refresh_lock`` lazy-init.
 
 Pins two behaviors:
 
-1. ``ClientCore`` can be constructed outside a running event loop even when
+1. ``Session`` can be constructed outside a running event loop even when
    a ``refresh_callback`` is wired. Before the fix, the constructor created
    ``asyncio.Lock()`` eagerly, which fails under some Python versions when
    no loop is running.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import AuthError, RPCMethod
 
@@ -55,7 +55,7 @@ async def _noop_refresh() -> AuthTokens:
 
 
 def test_construct_outside_event_loop_with_callback() -> None:
-    """``ClientCore(refresh_callback=...)`` must succeed with no running loop.
+    """``Session(refresh_callback=...)`` must succeed with no running loop.
 
     Previously, the eager ``asyncio.Lock()`` in ``__init__`` could raise
     ``RuntimeError: no running event loop`` on some interpreters / asyncio
@@ -71,14 +71,14 @@ def test_construct_outside_event_loop_with_callback() -> None:
         asyncio.get_running_loop()
 
     # Eager construction would have blown up under the prior code path.
-    core_with_cb = ClientCore(auth=_auth_tokens(), refresh_callback=_noop_refresh)
+    core_with_cb = Session(auth=_auth_tokens(), refresh_callback=_noop_refresh)
     assert core_with_cb._refresh_lock is None, (
         "Lazy-init contract: lock must remain None until first refresh."
     )
     assert core_with_cb._refresh_callback is _noop_refresh
 
     # And the no-callback path stays the same (also lazy / also None).
-    core_without_cb = ClientCore(auth=_auth_tokens())
+    core_without_cb = Session(auth=_auth_tokens())
     assert core_without_cb._refresh_lock is None
     assert core_without_cb._refresh_callback is None
 
@@ -88,7 +88,7 @@ def test_construct_outside_event_loop_with_callback() -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def _trigger_refresh(core: ClientCore) -> object:
+async def _trigger_refresh(core: Session) -> object:
     """Drive ``_try_refresh_and_retry`` with throwaway args (matches the
     helper in ``test_refresh_state_machine.py`` so this test pins the same
     code path)."""
@@ -112,7 +112,7 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
     dedupe pinning).
     """
     call_count = 0
-    core_box: list[ClientCore] = []
+    core_box: list[Session] = []
 
     async def cb() -> AuthTokens:
         nonlocal call_count

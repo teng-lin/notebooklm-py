@@ -124,10 +124,10 @@ class RpcExecutor:
     ) -> Any:
         """Run an RPC wrapped with telemetry, reqid, and drain bookkeeping.
 
-        This is the outer entry point that ``ClientCore.rpc_call`` routes
+        This is the outer entry point that ``Session.rpc_call`` routes
         through. The body owns the operation-token + metrics + request-id
         wiring that surrounds the raw RPC dispatch. Pure relocation from
-        ``ClientCore.rpc_call``: no behavior changes.
+        ``Session.rpc_call``: no behavior changes.
 
         Dispatches through ``self._owner._rpc_call_impl(...)`` (rather than
         the executor's own :meth:`execute` directly) so the long-standing

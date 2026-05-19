@@ -1324,7 +1324,7 @@ class TestBuildConversationHistory:
     def test_build_conversation_history_returns_list_when_turns_cached(self, auth_tokens):
         """Test _build_conversation_history returns history list when turns exist."""
         client = NotebookLMClient(auth_tokens)
-        # Manually cache a turn on the chat sub-client (cache moved off ClientCore).
+        # Manually cache a turn on the chat sub-client (cache moved off Session).
         client.chat._cache.cache_conversation_turn(
             "test-conv", "What is AI?", "AI is artificial intelligence.", 1
         )

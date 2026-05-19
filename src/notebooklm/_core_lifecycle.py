@@ -1,13 +1,13 @@
-"""HTTP-client lifecycle helper for :class:`ClientCore`.
+"""HTTP-client lifecycle helper for :class:`Session`.
 
 Owns the session-side open/close ordering that historically lived inline on
-``ClientCore`` while delegating the raw HTTP transport to
+``Session`` while delegating the raw HTTP transport to
 :class:`notebooklm._kernel.Kernel`:
 
 * ``_http_client`` — compatibility property backed by the concrete Kernel's
   live ``httpx.AsyncClient`` (or ``None`` when closed).
 * ``_bound_loop`` — the event loop ``open()`` ran on; the cross-loop affinity
-  guard in :meth:`ClientCore._perform_authed_post` (via
+  guard in :meth:`Session._perform_authed_post` (via
   :class:`AuthedTransport`) compares against this captured reference.
 * ``_keepalive_task`` — the optional background task that pokes
   ``accounts.google.com/RotateCookies`` while the client is open.
@@ -22,7 +22,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 ``tests/unit/test_core_close.py``, ``tests/unit/test_vcr_config.py``, and
 ``tests/unit/test_auth_cookie_save_race.py``):
 
-* ``__init__`` MUST be event-loop-agnostic. ``ClientCore`` is routinely
+* ``__init__`` MUST be event-loop-agnostic. ``Session`` is routinely
   constructed outside a running loop (sync-mode ``NotebookLMClient(auth)``
   before ``asyncio.run``), so this helper may not call
   ``asyncio.get_running_loop()`` or instantiate any ``asyncio.*`` primitive
@@ -30,7 +30,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
   which runs from a coroutine.
 
 * :meth:`open` is idempotent — calling it twice with a live ``_http_client``
-  is a no-op, preserving the legacy ``ClientCore.open()`` contract.
+  is a no-op, preserving the legacy ``Session.open()`` contract.
 
 * :meth:`close` cancellation ordering: stop keepalive → run registered drain
   hooks → save cookies → shielded Kernel ``aclose()``. Reversing any of these
@@ -41,7 +41,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 * :meth:`open` no longer wraps the inner transport for synthetic-error
   injection — Tier-12 PR 12.6 lifted that path into the chain
   (:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`,
-  wired by :class:`ClientCore.__init__`). When
+  wired by :class:`Session.__init__`). When
   ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set, the chain middleware
   short-circuits before the chain leaf reaches httpx, so the httpx-layer
   transport stays a real, unwrapped transport at all times.
@@ -59,7 +59,7 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
 Field names (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
 ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``,
 ``_connect_timeout``, ``_limits``) deliberately mirror the legacy
-``ClientCore`` ivars so the compat ``@property`` bridges on ``ClientCore``
+``Session`` ivars so the compat ``@property`` bridges on ``Session``
 can stay readable for reviewers grepping the codebase. ``_http_client`` is now
 a property bridge to the Kernel rather than lifecycle-owned storage.
 """
@@ -98,10 +98,10 @@ class _LifecycleHost(Protocol):
     """Structural host boundary required by :class:`ClientLifecycle`.
 
     The Protocol pins exactly which collaborators the lifecycle reaches into
-    on the host, so future refactors that move state around ``ClientCore``
+    on the host, so future refactors that move state around ``Session``
     surface as Protocol violations rather than silent ``AttributeError``s
     at close-time. ``cookie_persistence`` mirrors today's public attribute
-    name on ``ClientCore``; ``_drain_hooks``, ``_metrics_obj``,
+    name on ``Session``; ``_drain_hooks``, ``_metrics_obj``,
     ``_drain_tracker``, and ``_auth_coord`` are helper handles.
     ``_authed_transport`` and ``_rpc_executor`` are nulled out by
     :meth:`ClientLifecycle.close` so a follow-up ``open()`` rebuilds them
@@ -123,8 +123,8 @@ class _LifecycleHost(Protocol):
 class ClientLifecycle:
     """Owns HTTP-client open/close, keepalive, cookie persistence on close.
 
-    Field names mirror the legacy ``ClientCore`` ivars so the compat
-    ``@property`` bridges on ``ClientCore`` can delegate with
+    Field names mirror the legacy ``Session`` ivars so the compat
+    ``@property`` bridges on ``Session`` can delegate with
     ``return self._lifecycle._<attr>`` and stay readable.
 
     Construction is event-loop-agnostic — only plain values and ``None``
@@ -145,14 +145,14 @@ class ClientLifecycle:
         self._kernel = kernel if kernel is not None else Kernel()
         self._timeout: float = timeout
         self._connect_timeout: float = connect_timeout
-        # ``ConnectionLimits`` is constructed by the caller (``ClientCore``
+        # ``ConnectionLimits`` is constructed by the caller (``Session``
         # applies the ``None → ConnectionLimits()`` default before passing
         # here). Keeping the default-resolution out of this helper avoids a
         # types.py import cycle.
         self._limits: ConnectionLimits = limits
         # Pre-clamped by :func:`notebooklm._core_helpers._resolve_keepalive_interval`
         # (re-exported as ``notebooklm._core._resolve_keepalive_interval``) at
-        # the ``ClientCore`` boundary so the floor-vs-user-value branching
+        # the ``Session`` boundary so the floor-vs-user-value branching
         # stays in one place — the seam helper.
         self._keepalive_interval: float | None = keepalive_interval
         self._keepalive_storage_path: Path | None = keepalive_storage_path
@@ -200,7 +200,7 @@ class ClientLifecycle:
 
         Idempotent: if ``_http_client`` is already non-``None`` this is a
         no-op. Captures the running event loop in ``_bound_loop`` so the
-        cross-loop affinity guard in :meth:`ClientCore._perform_authed_post`
+        cross-loop affinity guard in :meth:`Session._perform_authed_post`
         fails fast if the same client is later driven from a different loop.
         Re-opening on a different loop (after a prior :meth:`close`)
         intentionally replaces the binding — ``open()`` is the only binding
@@ -226,7 +226,7 @@ class ClientLifecycle:
         # cross-loop call surfaces an actionable ``RuntimeError`` at the
         # call site rather than hanging on a primitive bound to a dead
         # loop. ``ChatAPI`` / ``ArtifactPollingService`` reach the bound
-        # loop through ``ClientCore.bound_loop`` (which reads
+        # loop through ``Session.bound_loop`` (which reads
         # ``ClientLifecycle.get_bound_loop()``) so no further propagation
         # is needed there.
         host._drain_tracker.set_bound_loop(self._bound_loop)

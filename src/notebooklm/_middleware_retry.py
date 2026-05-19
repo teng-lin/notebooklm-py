@@ -21,7 +21,7 @@ Auth-refresh-and-retry stays in the leaf as a localized loop until PR
 Behavior preservation (vs. pre-PR-12.7):
 
 - **Same retry counts** — ``rate_limit_max_retries`` /
-  ``server_error_max_retries`` are propagated from ``ClientCore`` so the
+  ``server_error_max_retries`` are propagated from ``Session`` so the
   budget matches the legacy ``AuthedTransport`` loop.
 - **Same backoff timing** — :func:`_backoff.compute_backoff_delay` is
   invoked with the same ``base=1.0`` / ``cap=30.0`` / ``jitter_ratio=0.2``
@@ -96,10 +96,10 @@ class RetryMiddleware:
     ``__call__`` matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 
-    Constructor inputs (all wired by ``ClientCore.__init__``):
+    Constructor inputs (all wired by ``Session.__init__``):
 
     - ``rate_limit_max_retries`` / ``server_error_max_retries``: the same
-      budgets ``ClientCore`` previously passed to ``AuthedTransport`` via
+      budgets ``Session`` previously passed to ``AuthedTransport`` via
       the host attributes ``_rate_limit_max_retries`` /
       ``_server_error_max_retries``.
     - ``sleep``: the awaitable sleep function. Defaults to
@@ -129,7 +129,7 @@ class RetryMiddleware:
         # ``AuthedTransport`` read ``host._rate_limit_max_retries`` /
         # ``host._server_error_max_retries`` LIVE inside the retry loop, so
         # tests (and any production tweaks) that mutate those attrs on the
-        # core after ``open()`` still take effect. ``ClientCore.__init__``
+        # core after ``open()`` still take effect. ``Session.__init__``
         # wires the callable form via a ``lambda: self._rate_limit_max_retries``
         # closure; tests that build a middleware in isolation typically pass
         # the int form.

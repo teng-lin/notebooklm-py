@@ -27,7 +27,7 @@ Public surface kept:
 
 - :func:`_get_error_injection_mode` — env-var → mode normalization.
 - :func:`_refuse_synthetic_error_outside_test_context` —
-  ``ClientCore.__init__`` calls this so a leaked deploy env raises
+  ``Session.__init__`` calls this so a leaked deploy env raises
   ``RuntimeError`` instead of silently activating the chain
   middleware. The guard fires only when ``PYTEST_CURRENT_TEST`` is
   unset (pytest sets it for every test).
@@ -86,7 +86,7 @@ def _get_error_injection_mode() -> str | None:
 
 
 def _refuse_synthetic_error_outside_test_context() -> None:
-    """Refuse :class:`ClientCore` instantiation when the test-only env var leaks.
+    """Refuse :class:`Session` instantiation when the test-only env var leaks.
 
     P1-12: ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is documented as test-only.
     Pre-Tier-12, leaving it set in a deploy env would silently wrap the

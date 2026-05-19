@@ -129,7 +129,7 @@ def _make_client_with_transport(
     """Construct a ``NotebookLMClient`` whose underlying httpx client
     uses the supplied mock transport.
 
-    Bypasses the full ``ClientCore.open()`` path (which would try to
+    Bypasses the full ``Session.open()`` path (which would try to
     construct a real ``httpx.AsyncClient`` with cookies + connection
     pool) by stubbing in a pre-built ``AsyncClient`` wired to the
     ``transport`` argument.

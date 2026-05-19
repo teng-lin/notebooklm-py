@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from notebooklm._auth.session import refresh_auth_session
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -183,7 +183,7 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
 ) -> None:
     storage_path = tmp_path / "storage_state.json"
     auth = _auth(storage_path=storage_path)
-    core = ClientCore(auth)
+    core = Session(auth)
     calls: list[tuple[Path, bool, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -299,7 +299,7 @@ def test_auth_session_has_no_runtime_client_or_core_imports() -> None:
                 )
             if node.level > 0 and module in {"client", "_core"}:
                 violations.append((node.lineno, f"from {'.' * node.level}{module} import ..."))
-            forbidden_type_names = {"NotebookLMClient", "ClientCore"}
+            forbidden_type_names = {"NotebookLMClient", "Session"}
             for name in sorted(imported_names & forbidden_type_names):
                 violations.append((node.lineno, name))
 

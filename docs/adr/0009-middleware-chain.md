@@ -7,7 +7,7 @@ Accepted (Tier 12 PR 12.1; closed by PR 12.9).
 This ADR shipped in PR 12.1 of the Tier-12/13 greenfield migration as
 type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
 landed without production wiring. PR 12.2 wired an empty chain into
-`ClientCore`. PRs 12.3 through 12.8 each extracted one cross-cutting
+`Session`. PRs 12.3 through 12.8 each extracted one cross-cutting
 concern into a dedicated middleware. **PR 12.9 closes the tier** — the
 seven-middleware chain `[Drain, Metrics, Semaphore, Retry, AuthRefresh,
 ErrorInjection, Tracing]` is fully wired, the leaf
@@ -35,13 +35,13 @@ shape. PRs 12.2–12.7 also depend on the chain ordering and the
 `RpcRequest.context` keys defined below.
 
 Forward reference: ADR-002 ("Capability Protocol pattern,
-`ClientCoreCapabilities` fat union") will be superseded by ADR-010 in
+`SessionCapabilities` fat union") will be superseded by ADR-010 in
 Tier 13. That supersession is *not* performed by this ADR; ADR-002 remains
 `Accepted (Sunset = D2 cutover)` until ADR-010 lands.
 
 ## Context
 
-The post-remediation `ClientCore` orchestrates six cross-cutting concerns
+The post-remediation `Session` orchestrates six cross-cutting concerns
 across every authenticated POST. The "Today" column below describes the
 pre-Tier-12 state (when ADR-009 was written, before any chain extraction
 landed); the "Post-Tier-12" column describes where each concern lives
@@ -146,7 +146,7 @@ middleware is wrapped first around `terminal`).
 
 `SemaphoreMiddleware` was inserted at chain position 2 in PR 12.9 (see
 "PR 12.9 close-out notes" below) after the first cut of the audit-find
-moved the `max_concurrent_rpcs` slot to `ClientCore._perform_authed_post`
+moved the `max_concurrent_rpcs` slot to `Session._perform_authed_post`
 (outside the chain) and codex caught the resulting Drain-admission
 regression. PR 12.1 originally pinned six middlewares; the chain is seven
 post-PR-12.9.
@@ -205,7 +205,7 @@ Per-position rationale:
 | `build_request` | `BuildRequest` | `Session.rpc_call` / `Session.transport_post` | chain leaf (adapter into `AuthedTransport.perform_authed_post`) |
 | `log_label` | `str` | `Session.rpc_call` / `Session.transport_post` | chain leaf, `DrainMiddleware`, `TracingMiddleware` |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry doesn't drive a second refresh on a fresh 401) |
-| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire) | `ClientCore._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait`) |
+| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait`) |
 
 Middlewares are forbidden from inventing new keys without an ADR update.
 The dict is mutable by reference (deliberately, per master plan
@@ -405,7 +405,7 @@ The `max_concurrent_rpcs` slot is acquired by `SemaphoreMiddleware`,
 which sits between `MetricsMiddleware` and `RetryMiddleware` in the
 chain. The middleware writes the per-call queue-wait duration to
 `request.context["rpc_queue_wait_seconds"]` and
-`ClientCore._perform_authed_post` forwards that value to
+`Session._perform_authed_post` forwards that value to
 `ClientMetrics.record_rpc_queue_wait` after the chain returns.
 
 The placement is constrained by three simultaneous invariants the
@@ -441,7 +441,7 @@ a `contextlib.nullcontext` when `max_concurrent_rpcs is None` (unbounded
 opt-out) — the `async with` collapses to a no-op for that case.
 
 History: the first cut of PR 12.9 audit-find #1 wrapped the semaphore
-around `ClientCore._perform_authed_post` directly (outside the chain).
+around `Session._perform_authed_post` directly (outside the chain).
 Codex caught the Drain-admission regression with a reproducible
 `max_concurrent_rpcs=1` test case — queued tasks raised `RuntimeError`
 during shutdown instead of being awaited. `SemaphoreMiddleware`

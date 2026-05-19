@@ -4,7 +4,7 @@ Demonstrates that:
 
 1. ``ConcurrentMockTransport`` correctly records peak concurrent
    in-flight requests under a 100-way ``asyncio.gather`` fan-out.
-2. ``ClientCore`` can be wired with the mock transport via the same
+2. ``Session`` can be wired with the mock transport via the same
    "replace ``_http_client`` after ``open()``" pattern used in
    ``tests/unit/conftest.py::make_core``.
 3. All 100 fan-out RPC calls complete successfully (each returns the
@@ -20,7 +20,7 @@ the core is constructed with ``max_concurrent_rpcs=None`` here —
 gather width rather than the production cap. The dedicated
 ``test_max_concurrent_rpcs.py`` suite covers the semaphore semantics
 themselves; this smoke test exists purely to prove the
-``ConcurrentMockTransport`` + ``ClientCore`` plumbing fans out the way
+``ConcurrentMockTransport`` + ``Session`` plumbing fans out the way
 fan-out integration tests expect when the cap is intentionally off.
 
 Performance budget
@@ -39,7 +39,7 @@ import time
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 
@@ -63,11 +63,11 @@ def _make_auth() -> AuthTokens:
     )
 
 
-async def _open_core_with_transport(transport: ConcurrentMockTransport) -> ClientCore:
-    """Open a ``ClientCore`` and swap in the mock transport.
+async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Session:
+    """Open a ``Session`` and swap in the mock transport.
 
     Mirrors the documented pattern from ``tests/unit/conftest.py``:
-    ``ClientCore.open()`` builds its own ``httpx.AsyncClient`` and we
+    ``Session.open()`` builds its own ``httpx.AsyncClient`` and we
     can't override the transport via the constructor. So we open
     normally, then close-and-replace the underlying client with one
     that routes through our recording transport.
@@ -77,7 +77,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Clien
     prove the harness fans out at the *transport* boundary (the
     cap-on semantics are covered by ``test_max_concurrent_rpcs.py``).
     """
-    core = ClientCore(auth=_make_auth(), max_concurrent_rpcs=None)
+    core = Session(auth=_make_auth(), max_concurrent_rpcs=None)
     await core.open()
     assert core._http_client is not None
     prior_cookies = core._http_client.cookies

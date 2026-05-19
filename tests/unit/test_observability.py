@@ -14,7 +14,7 @@ from notebooklm import (
     get_request_id,
 )
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -41,7 +41,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     event with the expected fields.
     """
     events: list[RpcTelemetryEvent] = []
-    core = ClientCore(auth_tokens, on_rpc_event=events.append)
+    core = Session(auth_tokens, on_rpc_event=events.append)
     core._http_client = AsyncMock(spec=httpx.AsyncClient)
     seen_request_ids: list[str | None] = []
 
@@ -102,7 +102,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
 
 @pytest.mark.asyncio
 async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthTokens) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -133,7 +133,7 @@ async def test_drain_rejects_new_work_and_waits_for_in_flight(auth_tokens: AuthT
 async def test_drain_allows_nested_work_inside_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
     outer_token = await core._begin_transport_post("source upload")
     try:
         drain_task = asyncio.create_task(core.drain(timeout=1.0))
@@ -153,7 +153,7 @@ async def test_drain_allows_nested_work_inside_accepted_operation(
 async def test_operation_scope_tracks_drain_without_upload_semaphore(
     auth_tokens: AuthTokens,
 ) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
 
     async with core.operation_scope("plain-operation"):
         assert core._in_flight_posts == 1
@@ -167,7 +167,7 @@ async def test_operation_scope_tracks_drain_without_upload_semaphore(
 async def test_drain_rejects_child_task_spawned_from_accepted_operation(
     auth_tokens: AuthTokens,
 ) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
     outer_token = await core._begin_transport_post("source upload")
     try:
         drain_task = asyncio.create_task(core.drain(timeout=1.0))
@@ -187,7 +187,7 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 
 @pytest.mark.asyncio
 async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
     api = ArtifactsAPI(core)
     first_poll_started = asyncio.Event()
     release_first_poll = asyncio.Event()
@@ -278,7 +278,7 @@ async def test_upload_progress_callback_receives_byte_counts(
     auth_tokens: AuthTokens,
     tmp_path,
 ) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
     await core.open()
     try:
         api = SourcesAPI(core)
@@ -317,7 +317,7 @@ async def test_upload_progress_callback_receives_byte_counts(
 
 @pytest.mark.asyncio
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
-    core = ClientCore(auth_tokens)
+    core = Session(auth_tokens)
     api = ArtifactsAPI(core)
     statuses = [
         GenerationStatus(task_id="task_1", status="in_progress"),

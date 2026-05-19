@@ -235,7 +235,7 @@ async def test_correlation_threads_through_child_loggers():
 async def test_retry_inherits_parent_request_id():
     """Recursive rpc_call(_is_retry=True) must NOT mint a fresh id — the
     failure→refresh→retry sequence should appear under one prefix."""
-    from notebooklm._core import ClientCore
+    from notebooklm._session import Session
 
     captured_ids: list[str | None] = []
 
@@ -254,12 +254,12 @@ async def test_retry_inherits_parent_request_id():
         # First call: raise to trigger retry path; second call: succeed.
         if not is_retry:
             # Mimic recursive retry: outer rpc_call would call _try_refresh
-            # which calls rpc_call(_is_retry=True). Use our own ClientCore
+            # which calls rpc_call(_is_retry=True). Use our own Session
             # instance's rpc_call directly.
             return await core.rpc_call(method, params, source_path, allow_null, _is_retry=True)
         return "ok"
 
-    core = ClientCore.__new__(ClientCore)
+    core = Session.__new__(Session)
     core._http_client = object()  # not-None; rpc_call doesn't dereference here
     core._rpc_call_impl = fake_impl  # type: ignore[method-assign]
 

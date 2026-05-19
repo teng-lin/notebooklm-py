@@ -8,9 +8,9 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._core import ClientCore
 from notebooklm._core_rpc import RpcExecutor
 from notebooklm._core_transport import _AuthSnapshot
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import (
     ClientError,
@@ -171,7 +171,7 @@ def test_core_rpc_has_no_runtime_core_imports() -> None:
 
 @pytest.mark.asyncio
 async def test_client_core_rpc_wrappers_delegate_to_rpc_executor(monkeypatch) -> None:
-    core = ClientCore(_auth_tokens())
+    core = Session(_auth_tokens())
     snapshot = _AuthSnapshot(
         csrf_token="csrf",
         session_id="session",
@@ -255,7 +255,7 @@ async def test_client_core_rpc_wrappers_delegate_to_rpc_executor(monkeypatch) ->
 
 @pytest.mark.asyncio
 async def test_core_decode_response_monkeypatch_after_executor_construction(monkeypatch) -> None:
-    core = ClientCore(_auth_tokens())
+    core = Session(_auth_tokens())
     executor = core._get_rpc_executor()
 
     async def fake_perform_authed_post(
@@ -412,7 +412,7 @@ async def test_core_sleep_monkeypatch_after_executor_construction(monkeypatch) -
     async def refresh_callback() -> AuthTokens:
         return _auth_tokens()
 
-    core = ClientCore(
+    core = Session(
         _auth_tokens(),
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.5,

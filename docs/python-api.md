@@ -452,7 +452,7 @@ producing opaque `httpx.PoolTimeout` errors instead of clean
 back-pressure. The `NotebookLMClient.__init__` / `from_storage()`
 constructor raises `ValueError` if this constraint is violated. The
 semaphore floor (`max_concurrent_rpcs ≥ 1` when not `None`) is enforced
-inside `ClientCore`.
+inside `Session`.
 
 **`max_concurrent_uploads` knob**. Default `4`. Gates
 file-upload streaming independently from the RPC throttle because
@@ -531,7 +531,7 @@ keepalive code path handles this automatically.
 ### Constraints enforced at construction
 
 These validations run in `NotebookLMClient.__init__` /
-`NotebookLMClient.from_storage()` (and `ClientCore.__init__` for the
+`NotebookLMClient.from_storage()` (and `Session.__init__` for the
 floor checks). All raise `ValueError`:
 
 - `max_concurrent_rpcs ≤ ConnectionLimits.max_connections` when both are
@@ -547,39 +547,34 @@ floor checks). All raise `ValueError`:
 
 ## Internal module map
 
-`ClientCore` (in `src/notebooklm/_core.py`) is the orchestrator that owns
+`Session` (in `src/notebooklm/_session.py`) is the orchestrator that owns
 the `httpx.AsyncClient`, glues the authed transport to RPC dispatch, and
 holds the `AuthTokens` for the running session. The supporting state
 (metrics, drain bookkeeping, request-id counter, transport plumbing,
 conversation cache, etc.) is split across single-responsibility seam
 modules under `notebooklm._core_*`. The split is internal — first-party
-callers continue to import `ClientCore` and the documented constants
+legacy private callers can still import the documented constants
 from `notebooklm._core` — but it matters when reading the source, when
 writing unit tests against a stub host, or when tracing where a
 particular ivar lives.
 
 | Module | Owns | Notes |
 |---|---|---|
-| `_core` | `ClientCore` orchestrator; HTTP client lifecycle; module-level constants (`MAX_CONVERSATION_CACHE_SIZE`, `MAX_RETRY_AFTER_SECONDS`, `DEFAULT_TIMEOUT`, etc.); `is_auth_error`, `save_cookies_to_storage`; error-injection seam `_SyntheticErrorTransport` + `_get_error_injection_mode` consumed by `_core_transport`'s retry loops. | Public/internal contract — names imported from `notebooklm._core` stay stable. |
+| `_session` | Concrete `Session` orchestrator; HTTP client lifecycle; module-level constants (`MAX_RETRY_AFTER_SECONDS`, `DEFAULT_TIMEOUT`, etc.); `is_auth_error`, `save_cookies_to_storage`; error-injection seam `_get_error_injection_mode`. | Concrete implementation. |
+| `_core` | Compatibility shim that re-exports legacy private import names. | Legacy private imports continue to resolve while first-party code uses `_session`. |
 | `_core_auth` (Phase 2 in progress) | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
-| `_core_cache` | Per-instance LRU `_conversation_cache` for `ChatAPI` continuity. | Pure in-process state; not shared across `ClientCore` instances. |
+| `_core_cache` | Per-instance LRU `_conversation_cache` for `ChatAPI` continuity. | Pure in-process state; not shared across `Session` instances. |
 | `_core_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
 | `_core_drain` | `TransportDrainTracker`: in-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. | Construction is event-loop-agnostic; the `Condition` is allocated on first use. |
-| `_core_lifecycle` (Phase 2 in progress) | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Currently inlined in `_core.py`; extraction tracked in the core-decomposition mini-phase. |
+| `_core_lifecycle` | `ClientLifecycle`: loop-affinity guard, `aclose` plumbing, keepalive task wiring. | Session lifecycle collaborator. |
 | `_core_metrics` | `ClientMetrics`: `ClientMetricsSnapshot` counters, `_metrics_lock`, `on_rpc_event` callback, queue-wait recorders. | `__init__` is event-loop-agnostic; `emit_rpc_event` is `async` and intentionally awaits the user callback (back-pressure). |
 | `_core_polling` | Pending-poll registry shared by long-running artifact generations. | Tracked via `PollRegistryProvider` in `_capabilities.py`. |
 | `_core_reqid` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
-| `_core_rpc` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | Phase 3 (in progress) collapses the `_core.py`-side `rpc_call` body into this module. |
+| `_core_rpc` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
 | `_core_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |
 
-The capability surface that sub-clients depend on is pinned in
-`notebooklm._capabilities` via 9 narrow Protocols (`CoreRPCProvider`,
-`SourceListProvider`, `CoreReqIdProvider`, `ChatStreamingProvider`,
-`PollRegistryProvider`, `AuthRouteProvider`, `CookieJarProvider`,
-`TransportOperationProvider`, `UploadConcurrencyProvider`), composed into
-the concrete `ClientCoreCapabilities` adapter. Adding or removing a
-method on `ClientCore` is a Protocol change — review `_capabilities.py`
-alongside any change to the orchestrator's public method surface.
+Feature APIs depend on the shared `notebooklm._session_contracts.Session`
+Protocol rather than concrete session internals.
 
 ---
 

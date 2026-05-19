@@ -18,7 +18,7 @@ import httpx
 import pytest
 
 from conftest import install_post_as_stream
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc import overrides as rpc_overrides
@@ -321,13 +321,13 @@ def test_encode_rpc_request_none_override_uses_canonical():
 # ---------------------------------------------------------------------------
 
 
-def _make_core() -> ClientCore:
+def _make_core() -> Session:
     auth = AuthTokens(
         csrf_token="CSRF_OLD",
         session_id="SID_OLD",
         cookies={"SID": "sid_cookie"},
     )
-    return ClientCore(
+    return Session(
         auth=auth,
         refresh_callback=None,
         refresh_retry_delay=0.0,

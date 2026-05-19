@@ -21,7 +21,8 @@ src/notebooklm/
 ├── client.py            # NotebookLMClient main class
 ├── auth.py              # Authentication handling
 ├── types.py             # Dataclasses and type definitions
-├── _core.py             # Core HTTP/RPC infrastructure
+├── _session.py          # Concrete Session HTTP/RPC infrastructure
+├── _core.py             # Legacy compatibility shim
 ├── _notebooks.py        # NotebooksAPI implementation
 ├── _notebook_metadata.py # Private notebook metadata composition service
 ├── _sources.py          # SourcesAPI implementation
@@ -68,8 +69,8 @@ src/notebooklm/
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
-│                       Core Layer                            │
-│              ClientCore → _rpc_call(), HTTP client          │
+│                      Session Layer                          │
+│              Session → _rpc_call(), HTTP client          │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -84,18 +85,20 @@ src/notebooklm/
 |-------|-------|----------------|
 | **CLI** | `cli/*.py` | User commands, input validation, Rich output |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Core** | `_core.py`, `_core_*.py` | `ClientCore` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
+| **Session** | `_session.py`, `_core.py`, `_core_*.py` | `Session` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
 
-#### Core-layer seam modules
+#### Session-layer seam modules
 
-The `Core` layer is split across `_core.py` (orchestrator) and a family of
-single-responsibility `_core_*.py` helper modules. Each helper exposes a
-Protocol-shim host interface so it can be unit-tested against a stub `ClientCore`:
+The `Session` layer is split across `_session.py` (orchestrator), `_core.py`
+(legacy compatibility shim), and a family of single-responsibility `_core_*.py`
+helper modules. Each helper exposes a
+Protocol-shim host interface so it can be unit-tested against a stub `Session`:
 
 | Module | Class | Responsibility |
 |---|---|---|
-| `_core.py` | `ClientCore` | Orchestrator owning the `httpx.AsyncClient` + `AuthTokens`; module-level constants and re-exports; error-injection seam (`_SyntheticErrorTransport`, `_get_error_injection_mode`) used by `_core_transport`'s retry loops via `httpx.AsyncBaseTransport` wrapping. |
+| `_session.py` | `Session` | Orchestrator owning the `httpx.AsyncClient` + `AuthTokens`; module-level constants and re-exports; error-injection seam (`_get_error_injection_mode`) used by middleware-level error injection. |
+| `_core.py` | shim | Compatibility re-export surface for legacy private imports. |
 | `_core_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_core_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
 | `_core_reqid.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
@@ -107,14 +110,9 @@ Protocol-shim host interface so it can be unit-tested against a stub `ClientCore
 | `_core_polling.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
 | `_core_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
 
-The capability surface that sub-clients depend on is pinned in
-`notebooklm._capabilities` via 9 narrow Protocols (`CoreRPCProvider`,
-`SourceListProvider`, `CoreReqIdProvider`, `ChatStreamingProvider`,
-`PollRegistryProvider`, `AuthRouteProvider`, `CookieJarProvider`,
-`TransportOperationProvider`, `UploadConcurrencyProvider`), composed into
-the concrete `ClientCoreCapabilities` adapter. Adding or removing a
-method on `ClientCore` is a Protocol change — review `_capabilities.py`
-alongside any change to the orchestrator's public method surface.
+The feature-facing session surface is pinned in
+`notebooklm._session_contracts.Session`. Adding or removing a method on that
+Protocol is a contract change for every feature API.
 
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
@@ -142,15 +140,15 @@ The architecture tests encode the current layer contract:
   current first-party surface for that move; it is not a broader public API
   decision, and removing a listed name needs a separate deprecation plan.
 - `tests/unit/test_init_order.py` records the temporary baseline of feature
-  APIs that still access `ClientCore` private state directly. Future capability
+  APIs that still access `Session` private state directly. Future capability
   migration PRs should reduce that baseline as private state moves behind
-  explicit `ClientCore` methods; do not add new entries unless the PR also
+  explicit `Session` methods; do not add new entries unless the PR also
   explains the follow-up migration path.
 - `tests/unit/test_init_order.py` also guards the notebook-composition
   boundaries: `NotebookLMClient` constructs `SourcesAPI` before `NotebooksAPI`
   and passes it through the legacy `sources_api=` slot; notebook metadata
   services must not import or construct `SourcesAPI`; artifact/source/notebook
-  composition services must not runtime-import facade APIs or `ClientCore`.
+  composition services must not runtime-import facade APIs or `Session`.
   Add new private services to those guard lists when they take ownership of
   cross-facade behavior.
 
@@ -311,7 +309,7 @@ tests/
 │   ├── test_auto_refresh.py         # Keepalive/refresh integration
 │   ├── test_chat.py                 # ChatAPI integration
 │   ├── test_cli_source_delete.py    # CLI source-delete path
-│   ├── test_core.py                 # ClientCore + RPC plumbing
+│   ├── test_core.py                 # Session + RPC plumbing
 │   ├── test_download_multi_artifact.py
 │   ├── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
 │   ├── test_notebooks.py            # NotebooksAPI integration
@@ -431,7 +429,7 @@ response. Three modes are supported:
 The plumbing has three opt-in layers:
 
 1. **Env var**: `NOTEBOOKLM_VCR_RECORD_ERRORS=<mode>` activates the transport
-   wrapper inside `ClientCore.open()`.
+   wrapper inside `Session.open()`.
 2. **Pytest marker**: `@pytest.mark.synthetic_error("<mode>")` sets the env
    var for the duration of a single test (auto-reverted on teardown).
 3. **Filename prefix**: cassettes recorded under this mode MUST be named

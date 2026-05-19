@@ -28,7 +28,7 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from notebooklm._core import ClientCore
+from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 # async-cancellation propagation tests with no HTTP, no cassette.
@@ -43,7 +43,7 @@ EVENT_TIMEOUT_S = 5.0
 
 @asynccontextmanager
 async def _opened_core(refresh_callback):
-    """Open a ``ClientCore`` with the given refresh callback; close cleanly.
+    """Open a ``Session`` with the given refresh callback; close cleanly.
 
     Mirrors ``tests/unit/conftest.make_core`` but lives here because the
     ``tests/unit/`` conftest is not importable from
@@ -55,7 +55,7 @@ async def _opened_core(refresh_callback):
         session_id="SID_OLD",
         cookies={"SID": "old_sid_cookie"},
     )
-    core = ClientCore(
+    core = Session(
         auth=auth,
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.0,
@@ -89,7 +89,7 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
     callback_entered = asyncio.Event()
     release_refresh = asyncio.Event()
     call_count = 0
-    core_ref: list[ClientCore] = []
+    core_ref: list[Session] = []
 
     async def cb():
         nonlocal call_count

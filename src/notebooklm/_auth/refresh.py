@@ -159,7 +159,7 @@ async def _coalesced_run_refresh_cmd(
       survives cancellation of any individual awaiter.
     - Each awaiter wraps the future in ``asyncio.shield`` so local
       cancellation of the awaiter does NOT cancel the shared subprocess —
-      mirrors the ``ClientCore._await_refresh`` pattern used for the RPC
+      mirrors the ``Session._await_refresh`` pattern used for the RPC
       refresh path.
     - The caller in ``_fetch_tokens_with_refresh`` keeps re-awaiting the
       shielded future under the per-loop asyncio lock so the lock is not
