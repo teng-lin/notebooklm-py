@@ -30,7 +30,7 @@ PR sequence.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import httpx
@@ -41,7 +41,7 @@ from notebooklm._middleware import (
     RpcResponse,
     build_chain,
 )
-from notebooklm._request_types import BuildRequest
+from notebooklm._request_types import AuthSnapshot, BuildRequest
 
 
 class FakeAuthedPost:
@@ -112,6 +112,10 @@ class FakeAuthedPost:
             }
         )
 
+        # Resolution priority: ``raises`` (highest — exception preempts everything
+        # else, but the call is *already recorded above* so tests can still
+        # assert ``call_count == 1``) → ``response_factory`` (per-call dynamic)
+        # → ``response`` (single canned value) → built-in 200/empty default.
         if self.raises is not None:
             raise self.raises
 
@@ -164,7 +168,7 @@ def make_request(**overrides: Any) -> RpcRequest:
 
 def chain_calls_through_to_authed_post(
     transport: FakeAuthedPost,
-    middlewares: list[Middleware],
+    middlewares: Sequence[Middleware],
 ) -> bool:
     """Return ``True`` iff invoking the chain reaches the transport leaf.
 
@@ -197,7 +201,7 @@ def chain_calls_through_to_authed_post(
     # ``request.context["build_request"]``; this fallback keeps the helper
     # usable with a bare ``make_request()``.
     def _default_build_request(
-        snapshot: object,
+        snapshot: AuthSnapshot,
     ) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/build-request-fallback", b"", None)
 

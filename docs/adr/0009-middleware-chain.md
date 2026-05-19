@@ -112,7 +112,7 @@ chain operates on already-encoded HTTP requests; encoding/decoding lives
 
 The chain is composed in this exact order (outermost → innermost):
 
-```
+```text
 Drain → Metrics → Retry → AuthRefresh → ErrorInjection → Tracing → terminal
 ```
 

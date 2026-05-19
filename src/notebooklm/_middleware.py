@@ -26,7 +26,7 @@ PR sequence.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -62,8 +62,18 @@ class RpcRequest:
     url: str
     """Fully-built ``batchexecute`` URL with ``authuser`` and ``_reqid`` set."""
 
-    headers: dict[str, str]
-    """HTTP headers for this attempt (auth headers, ``X-Goog-AuthUser``, …)."""
+    headers: Mapping[str, str]
+    """HTTP headers for this attempt (auth headers, ``X-Goog-AuthUser``, …).
+
+    Typed as :class:`~collections.abc.Mapping` (read-only protocol) rather
+    than :class:`dict` so the frozen-dataclass contract extends to the
+    header values: middlewares that want to add or alter headers build a
+    new :class:`RpcRequest` via :func:`dataclasses.replace` with a freshly
+    constructed dict (e.g.
+    ``dataclasses.replace(request, headers={**request.headers, "X-Foo": "1"})``).
+    Concrete :class:`dict` instances satisfy this annotation, so callers
+    that pass a literal ``{...}`` need no special treatment.
+    """
 
     body: bytes
     """Encoded ``batchexecute`` body bytes for this attempt."""
