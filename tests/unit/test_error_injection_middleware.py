@@ -326,6 +326,110 @@ async def test_retry_outside_error_injection_retries_synthetic_5xx(
 
 
 # ---------------------------------------------------------------------------
+# End-to-end: AuthRefresh + ErrorInjection drives refresh on synthetic 400
+# (codex iter-1 finding on PR 12.8 — locks in the regression fix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_csrf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end: chain ``[AuthRefresh, ErrorInjection]`` refreshes on synthetic 400.
+
+    Codex iter-1 catch on PR 12.8: PR 12.6 broke the refresh-on-synthetic-400
+    path by returning an ``RpcResponse`` from :class:`ErrorInjectionMiddleware`
+    for ``expired_csrf`` mode. PR 12.8 fixes by raising raw
+    ``httpx.HTTPStatusError`` so :class:`AuthRefreshMiddleware` outside it
+    catches via ``is_auth_error`` and drives refresh-then-retry.
+
+    This is the missing E2E counterpart to the ``[Retry, ErrorInjection]``
+    pair above — without it the integration is only validated by two
+    independent unit tests (the leaf raises 400; AuthRefresh catches 400)
+    but never end-to-end on a real two-middleware chain.
+
+    Test shape: env var stays on across the retry leg, so the retry leg
+    also raises ``HTTPStatusError(400)``. The exactly-once contract from
+    ADR-009 §"Retry semantics" means refresh runs exactly once and the
+    second 400 propagates without recursion.
+    """
+    from notebooklm._core_helpers import is_auth_error as auth_error_predicate
+    from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+
+    monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
+    refresh_calls: list[None] = []
+
+    async def refresh() -> None:
+        refresh_calls.append(None)
+
+    auth_refresh = AuthRefreshMiddleware(
+        refresh_callable=refresh,
+        is_auth_error=auth_error_predicate,
+        refresh_callback_enabled=lambda: True,
+        refresh_retry_delay=lambda: 0.0,
+    )
+    error_injection = ErrorInjectionMiddleware()
+    chain = build_chain(
+        [auth_refresh, error_injection],
+        _static_terminal(httpx.Response(200, content=b"unreached-because-env-is-on")),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+
+    # AuthRefresh caught the synthetic 400 from ErrorInjection and drove
+    # ONE refresh — the retry leg's 400 propagates unchanged (exactly-once
+    # contract). Without PR 12.8's fix, ErrorInjection would have RETURNED
+    # a 400 RpcResponse, AuthRefresh would have seen no exception, refresh
+    # would never have fired, and ``refresh_calls`` would be empty.
+    assert len(refresh_calls) == 1
+    assert excinfo.value.response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end happy path: ``[AuthRefresh, ErrorInjection]`` retries successfully.
+
+    Companion to the test above: when the env var is flipped off during
+    refresh (production analogue: a real ``__Secure-1PSIDTS`` rotation
+    succeeded and the retry no longer hits the synthetic 400 path), the
+    chain returns 200 cleanly. This pins the full refresh-then-retry
+    success path, not just the propagation path.
+    """
+    from notebooklm._core_helpers import is_auth_error as auth_error_predicate
+    from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+
+    monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
+    refresh_calls: list[None] = []
+
+    async def refresh() -> None:
+        # Simulate a successful token rotation that disarms the injector
+        # before the retry leg runs.
+        refresh_calls.append(None)
+        monkeypatch.delenv(ERROR_INJECT_ENV_VAR, raising=False)
+
+    auth_refresh = AuthRefreshMiddleware(
+        refresh_callable=refresh,
+        is_auth_error=auth_error_predicate,
+        refresh_callback_enabled=lambda: True,
+        refresh_retry_delay=lambda: 0.0,
+    )
+    error_injection = ErrorInjectionMiddleware()
+    chain = build_chain(
+        [auth_refresh, error_injection],
+        _static_terminal(httpx.Response(200, content=b"after-refresh-success")),
+    )
+
+    response = await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+
+    assert len(refresh_calls) == 1
+    assert response.response.status_code == 200
+    assert response.response.content == b"after-refresh-success"
+
+
+# ---------------------------------------------------------------------------
 # Builder caching
 # ---------------------------------------------------------------------------
 

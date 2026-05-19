@@ -963,17 +963,24 @@ class ClientCore:
                     ),
                     AuthRefreshMiddleware(
                         refresh_callable=self._await_refresh,
-                        # Resolve through the module's globals at call time so a
+                        # Resolve through the live module name at call time so
                         # ``monkeypatch.setattr("notebooklm._core.is_auth_error",
-                        # ...)`` reaches the chain. A value-import would freeze
-                        # the binding at chain-construction time. ``globals()``
-                        # reads the live module dict, so the patched value is
-                        # observed on each call.
-                        is_auth_error=lambda exc: globals()["is_auth_error"](exc),
+                        # ...)`` reaches the chain. Python function-body name
+                        # lookup hits the module dict on each call, so this
+                        # lambda is already late-bound — a value-import would
+                        # freeze the binding at chain-construction time, but
+                        # this idiom doesn't. Kept identical to the ``__init__``
+                        # site (codex iter-1 nit on PR 12.8: simpler than the
+                        # prior ``globals()["is_auth_error"]`` indirection).
+                        is_auth_error=lambda exc: is_auth_error(exc),
                         refresh_callback_enabled=lambda: (
                             self._auth_coord._refresh_callback is not None
                         ),
-                        refresh_retry_delay=lambda: getattr(self, "_refresh_retry_delay", 0.0),
+                        # ``getattr`` default matches ``__init__``'s argument
+                        # default (``refresh_retry_delay: float = 0.2``) so a
+                        # ``__new__``-built fixture that never set this attr
+                        # sees the same post-refresh sleep as the normal path.
+                        refresh_retry_delay=lambda: getattr(self, "_refresh_retry_delay", 0.2),
                         metrics=self._metrics_obj,
                     ),
                     ErrorInjectionMiddleware(),
