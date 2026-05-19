@@ -91,9 +91,11 @@ def make_fake_core(**overrides: Any) -> FakeClientCore:
         # TransportOperationProvider — fresh token object per call so drain tracking
         # gets unique identities (return_value=object() would share one instance).
         # The Protocol declares the underscore-private names that ClientCore
-        # exposes directly; the no-underscore aliases below are preserved as
-        # forward-compat shims so any legacy callers that still reach for the
-        # adapter-era names land on benign mocks rather than AttributeError.
+        # exposes directly. The no-underscore aliases below are purely defensive
+        # safety-net defaults — no test site currently calls them on a
+        # FakeClientCore instance (all no-underscore callers in the test tree
+        # invoke these on TransportDrainTracker, not FakeClientCore). Kept so a
+        # stray legacy reference lands on a benign mock rather than AttributeError.
         "_begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
         "_begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
         "_finish_transport_post": AsyncMock(return_value=None),

@@ -107,7 +107,7 @@ _PATTERN_OBJECT_ATTR = re.compile(r"monkeypatch\.setattr\(\s*notebooklm\.")
 # start position.
 _PATTERN_ASYNCMOCK_ASSIGN = re.compile(
     r"(?<![\w.])[\w.]+\."
-    r"(rpc_call|_perform_authed_post|_begin_transport_post|_finish_transport_post|query_post)"
+    r"(rpc_call|_perform_authed_post|_begin_transport_post|_finish_transport_post)"
     r"\s*=\s*(?:[\w]+\.)*AsyncMock"
 )
 

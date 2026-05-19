@@ -85,6 +85,10 @@ class _ChatCore(
         *,
         build_request: _BuildRequest,
         log_label: str,
+        # ``disable_internal_retries`` mirrors the concrete
+        # ``ClientCore._perform_authed_post`` signature so structural typing
+        # matches; ``chat_aware_authed_post`` never forwards it (chat always
+        # runs with internal retries enabled).
         disable_internal_retries: bool = False,
     ) -> httpx.Response: ...
 
