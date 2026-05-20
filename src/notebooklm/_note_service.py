@@ -31,7 +31,7 @@ from .rpc.types import RPCMethod
 from .types import Note
 
 if TYPE_CHECKING:
-    from ._session_contracts import Session
+    from ._session_contracts import RpcCaller
 
 __all__ = ["NoteService"]  # NoteRowKind is intentionally NOT exported
 
@@ -74,20 +74,16 @@ class NoteService:
 
     Owns the ``GET_NOTES_AND_MIND_MAPS`` / ``CREATE_NOTE`` /
     ``UPDATE_NOTE`` / ``DELETE_NOTE`` RPC family. Shared by
-    ``NotesAPI`` (in Phase 6) and by ``NoteBackedMindMapService``
-    (the adapter that powers ``ArtifactsAPI`` mind-map paths).
+    ``NotesAPI`` and by ``NoteBackedMindMapService`` (the adapter
+    that powers ``ArtifactsAPI`` mind-map paths).
 
-    The constructor takes the broad ``Session`` orchestrator for now;
-    Phase 7 will narrow it down to a capability slice (likely
-    :class:`RpcCaller`) once the broad ``Session`` Protocol is retired.
+    Takes the narrow :class:`RpcCaller` capability — note CRUD only
+    needs ``rpc_call(...)``; everything else (drain hooks, transport,
+    loop-affinity guards) is irrelevant to this service.
     """
 
-    def __init__(self, session: Session) -> None:
-        # Phase 7 will narrow this to the minimum capability surface
-        # (RpcCaller is the only one currently exercised). Until then,
-        # accept the broad orchestrator the rest of the codebase passes
-        # around so this module doesn't pin the migration order.
-        self._session = session
+    def __init__(self, rpc: RpcCaller) -> None:
+        self._rpc = rpc
 
     # ------------------------------------------------------------------
     # Row fetch + classification
@@ -101,7 +97,7 @@ class NoteService:
         decide whether to filter via :meth:`classify_row`.
         """
         params = [notebook_id]
-        result = await self._session.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_NOTES_AND_MIND_MAPS,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -204,7 +200,7 @@ class NoteService:
         claude[bot] and gemini-code-assist[bot] on PR #873).
         """
         params = [notebook_id, "", [1], None, title]
-        result = await self._session.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.CREATE_NOTE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -278,7 +274,7 @@ class NoteService:
             note_id,
             [[[content, title, [], 0]]],
         ]
-        await self._session.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.UPDATE_NOTE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -295,7 +291,7 @@ class NoteService:
         without callers seeing a behavioral change.
         """
         params = [notebook_id, None, [note_id]]
-        await self._session.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.DELETE_NOTE,
             params,
             source_path=f"/notebook/{notebook_id}",

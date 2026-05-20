@@ -2,15 +2,18 @@
 
 ## Status
 
-Accepted (Sunset = capability refactor cutover). This ADR ratifies the
-capability-composition model proposed in `docs/refactor.md` (revision 5,
-dated 2026-05-20) and lands BEFORE the 11-step migration begins, so the
-architectural intent is recorded ahead of any code change. It supersedes
-[ADR-010](0010-session-kernel-split.md) (Session/Kernel split), which is
-re-statused to `Superseded by ADR-013 (#866)` in the same PR.
-The sunset clause clears in Phase 7 of the migration arc, at which point
-the broad `Session` protocol is deleted and this ADR transitions to a
-plain `Accepted` record.
+Accepted.
+
+This ADR ratifies the capability-composition model originally proposed
+in `docs/refactor.md` (revision 5, dated 2026-05-20). It supersedes
+[ADR-010](0010-session-kernel-split.md) (Session/Kernel split), which
+was re-statused to `Superseded by ADR-013 (#866)` when this ADR landed.
+
+The 11-step migration described in `docs/refactor.md` §Migration Plan
+landed in full across Phases 1–7 of the capability refactor arc; the
+broad `Session` protocol was deleted in Phase 7 (refactor.md step 10),
+so this ADR is now a plain `Accepted` record with no outstanding
+sunset clause.
 
 ## Context
 

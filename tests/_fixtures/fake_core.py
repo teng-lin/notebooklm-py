@@ -1,11 +1,21 @@
 """``make_fake_core`` factory — constructor-injection substrate for sub-clients.
 
 This module provides a single entry point — :func:`make_fake_core` — that
-returns a ``FakeSession`` instance shaped to satisfy the shared
-``Session`` Protocol and explicit feature collaborators. Tests pass the
-result to a sub-client constructor (``NotebooksAPI(fake)``) instead
-of constructing a real ``Session`` and mutating its attributes after
-the fact.
+returns a ``FakeSession`` instance shaped to satisfy the **shared
+capability Protocols** in :mod:`notebooklm._session_contracts`
+(``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
+``AsyncWorkRuntime``, ``AuthMetadata``, ``Kernel``) plus the
+feature-local runtime Protocols (``ChatRuntime``, ``ArtifactsRuntime``,
+``UploadRuntime``) that compose them. Tests pass the result to a
+sub-client constructor (``NotebooksAPI(fake)``) instead of constructing
+a real ``Session`` and mutating its attributes after the fact.
+
+Phase 7 (refactor.md §Migration Plan step 10) deleted the broad
+``Session`` Protocol that this factory's defaults dict previously
+mirrored member-for-member. The dict now lists only the attribute slots
+features actually exercise — promoting an attribute requires a real
+test-site consumer, mirroring the ADR-013 promotion criterion for
+shared Protocols.
 
 See :doc:`docs/adr/0007-test-monkeypatch-policy.md` for the policy that
 makes this factory the only sanctioned substitute for the forbidden
@@ -39,7 +49,11 @@ import httpx
 
 
 class FakeSession:
-    """A duck-typed stand-in for ``Session`` collaborators in tests.
+    """A duck-typed stand-in for capability-Protocol collaborators in tests.
+
+    Named ``FakeSession`` for backward compatibility with the broad-
+    ``Session``-era test sites; the class itself is just an explicit
+    attribute bag and is not pinned to any single Protocol shape.
 
     Attribute storage is explicit (the constructor only sets what's
     passed in) so that accessing an attribute the production code does
@@ -88,58 +102,48 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         get_http_client=MagicMock(return_value=fake_http_client),
     )
 
+    # Phase 7 (refactor.md §Migration Plan step 10) shrunk this dict from
+    # the broad-Session-era 25+ entries to the minimum set that satisfies
+    # the post-refactor capability and feature-local runtime Protocols.
+    # New entries should only be added when a real test site exercises
+    # the attribute — mirroring the ADR-013 promotion criterion for
+    # shared Protocols (≥2 consumers).
     defaults: dict[str, Any] = {
+        # AuthMetadata + Kernel — consumed by SourceUploadPipeline test sites.
         "auth": auth,
         "kernel": kernel,
-        # Session — fresh list per call so tests can mutate without bleeding
+        # RpcCaller — every feature API uses this. Fresh list per call so
+        # tests can mutate the response without bleeding into siblings.
         "rpc_call": AsyncMock(side_effect=lambda *a, **kw: []),
+        # ChatRuntime — chat-only transport + reqid helpers consumed via
+        # the chat composite runtime; kept here so the same FakeSession
+        # can satisfy ChatRuntime, ArtifactsRuntime, and UploadRuntime
+        # for tests that wire the bag through several sub-clients.
         "transport_post": AsyncMock(),
-        # NotebookSourceLister
-        "get_source_ids": AsyncMock(side_effect=lambda *a, **kw: []),
         "next_reqid": AsyncMock(return_value=100000),
-        "_next_reqid": AsyncMock(return_value=100000),
-        # Legacy Session compatibility bridge
-        "poll_registry": MagicMock(),
-        # DrainHookRegistration
+        # AsyncWorkRuntime (LoopGuard + OperationScopeProvider) — used by
+        # ArtifactsAPI polling and SourceUploadPipeline.
+        "assert_bound_loop": MagicMock(return_value=None),
+        "operation_scope": MagicMock(side_effect=_operation_scope),
+        # DrainHookRegistration (local in ``_artifacts.py``) — close-time
+        # hook the artifacts runtime registers against in
+        # ``ArtifactsAPI.__init__``.
         "_drain_hooks": {},
         "register_drain_hook": MagicMock(return_value=None),
-        # Auth routing — used by SourceUploadPipeline tests and compatibility paths
-        "authuser": 0,
-        "account_email": None,
-        "authuser_query": MagicMock(return_value="authuser=0"),
-        "authuser_header": MagicMock(return_value="0"),
-        "get_http_client": MagicMock(return_value=fake_http_client),
-        "live_cookies": MagicMock(return_value=live_cookies),
-        # Legacy transport drain helpers — fresh token object per call so drain tracking
-        # gets unique identities (return_value=object() would share one instance).
-        # The Protocol declares the underscore-private names that Session
-        # exposes directly. The no-underscore aliases below are purely defensive
-        # safety-net defaults — no test site currently calls them on a
-        # FakeSession instance (all no-underscore callers in the test tree
-        # invoke these on TransportDrainTracker, not FakeSession). Kept so a
-        # stray legacy reference lands on a benign mock rather than AttributeError.
-        "_begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
-        "_begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
-        "_finish_transport_post": AsyncMock(return_value=None),
-        "_perform_authed_post": AsyncMock(),
-        "begin_transport_post": AsyncMock(side_effect=lambda *a, **kw: object()),
-        "begin_transport_task": AsyncMock(side_effect=lambda *a, **kw: object()),
-        "finish_transport_post": AsyncMock(return_value=None),
-        # Session.operation_scope / upload metrics compatibility
-        "operation_scope": MagicMock(side_effect=_operation_scope),
+        # Upload-pipeline glue: queue-wait recorder consumed by the
+        # ``SourceUploadPipeline`` upload metrics path. Kept on the bag
+        # so test sites that wire a SourcesAPI + uploader pair against a
+        # single FakeSession can rely on it.
         "record_upload_queue_wait": MagicMock(return_value=None),
-        # Session loop affinity
-        "bound_loop": None,
-        "assert_bound_loop": MagicMock(return_value=None),
-        # Auth-route helper alias
-        "_route_url": MagicMock(return_value="https://notebooklm.google.com/_/.../batchexecute"),
+        # NotebookSourceLister stub — exercised by ``test_notebooks.py``
+        # paths that resolve source IDs through the lister collaborator.
+        "get_source_ids": AsyncMock(side_effect=lambda *a, **kw: []),
     }
 
     def _register_drain_hook(name: str, hook: Any) -> None:
         defaults["_drain_hooks"][name] = hook
 
     defaults["register_drain_hook"] = MagicMock(side_effect=_register_drain_hook)
-    defaults["get_http_client"].return_value.cookies = live_cookies
 
     # Validate overrides early so a typo like ``rpc_cal=`` fails loudly
     # rather than landing as an unread attribute.

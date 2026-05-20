@@ -1597,7 +1597,7 @@ class TestAddTextErrorPaths:
         """Test add_text() wraps RPCError in SourceAddError (lines 374-375)."""
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.sources._core,
+                client.sources._rpc,
                 "rpc_call",
                 side_effect=RPCError("Text RPC failed"),
             ):
@@ -1612,7 +1612,7 @@ class TestAddTextErrorPaths:
         """Test add_text() raises SourceAddError when API returns None (line 382)."""
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.sources._core,
+                client.sources._rpc,
                 "rpc_call",
                 new_callable=AsyncMock,
                 return_value=None,
@@ -1631,7 +1631,7 @@ class TestAddTextErrorPaths:
 
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.sources._core,
+                client.sources._rpc,
                 "rpc_call",
                 new_callable=AsyncMock,
                 return_value=source_data,

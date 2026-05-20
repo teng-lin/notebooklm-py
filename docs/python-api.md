@@ -1074,6 +1074,7 @@ else:
 | `get_history(notebook_id, limit=100, conversation_id=None)` | `str, int, str` | `list[tuple[str, str]]` | Get Q&A pairs from most recent conversation |
 | `get_conversation_id(notebook_id)` | `str` | `str \| None` | Get most recent conversation ID from server |
 | `delete_conversation(notebook_id, conversation_id)` | `str, str` | `bool` | **DESTRUCTIVE.** Permanently delete a server-side conversation (web UI's "Delete history" action). The next `ask()` with no `conversation_id` then starts a brand-new conversation. |
+| `save_answer_as_note(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Owns the saved-from-chat workflow on `ChatAPI` (the data owner); `client.notes.create_from_chat` is the deprecated forwarder for the same primitive. Raises `ValueError` if `ask_result.references` is empty. When `title is None`, derives `f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"`. |
 
 **ask() Parameters:**
 ```python
@@ -1147,6 +1148,18 @@ await client.chat.configure(
     response_length=ChatResponseLength.LONGER,
     custom_prompt="Focus on practical applications"
 )
+
+# Save a chat answer as a citation-rich note (preserves [N] hover links).
+# This is the canonical owner of the saved-from-chat workflow — the data
+# owner (`ChatAPI`) persists, so the answer text and references stay
+# adjacent to the call that produced them.
+result = await client.chat.ask(nb_id, "What fruits are mentioned?")
+if result.references:
+    note = await client.chat.save_answer_as_note(
+        nb_id, result, title="Fruit Citations"
+    )
+    # The NotebookLM server may auto-generate a "smart" title for
+    # citation-rich notes; note.title reflects what the server stored.
 ```
 
 ---
@@ -1258,7 +1271,7 @@ print(f"Imported {len(imported)} sources")
 |--------|------------|---------|-------------|
 | `list(notebook_id)` | `str` | `list[Note]` | List text notes (excludes mind maps) |
 | `create(notebook_id, title="New Note", content="")` | `str, str, str` | `Note` | Create plain-text note (no citation anchors) |
-| `create_from_chat(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Raises `ValueError` if `ask_result.references` is empty. |
+| `create_from_chat(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | **Deprecated** (emits `DeprecationWarning`) — forwards to `client.chat.save_answer_as_note(...)`, which is now the canonical owner of the saved-from-chat workflow (data ownership, ADR-013). Signature and behavior are preserved bit-for-bit; switch to the chat-owned method at your convenience. |
 | `get(notebook_id, note_id)` | `str, str` | `Optional[Note]` | Get note by ID |
 | `update(notebook_id, note_id, content, title)` | `str, str, str, str` | `None` | Update note content and title |
 | `delete(notebook_id, note_id)` | `str, str` | `bool` | Delete note |
@@ -1277,10 +1290,13 @@ await client.notes.update(nb_id, note.id, "Updated content", "New Title")
 # Delete a note
 await client.notes.delete(nb_id, note.id)
 
-# Save a chat answer as a citation-rich note (preserves [N] hover links)
+# Save a chat answer as a citation-rich note (preserves [N] hover links).
+# Prefer ``client.chat.save_answer_as_note(...)`` (the chat-owned
+# canonical method); ``client.notes.create_from_chat(...)`` is a
+# deprecated forwarder kept for back-compatibility.
 result = await client.chat.ask(nb_id, "What fruits are mentioned?")
 if result.references:
-    note = await client.notes.create_from_chat(nb_id, result, title="Fruit Citations")
+    note = await client.chat.save_answer_as_note(nb_id, result, title="Fruit Citations")
     # Note: the NotebookLM server may auto-generate a "smart" title for
     # citation-rich notes; note.title reflects what the server stored.
 ```

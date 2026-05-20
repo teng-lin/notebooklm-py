@@ -13,7 +13,7 @@ import httpx
 
 from . import _source_upload
 from ._session_config import DEFAULT_MAX_CONCURRENT_UPLOADS
-from ._session_contracts import Session
+from ._session_contracts import RpcCaller
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
@@ -49,7 +49,7 @@ class SourcesAPI:
 
     def __init__(
         self,
-        session: Session,
+        rpc: RpcCaller,
         *,
         uploader: SourceUploadPipeline,
         upload_timeout: httpx.Timeout | None = None,
@@ -58,7 +58,11 @@ class SourcesAPI:
         """Initialize the sources API.
 
         Args:
-            session: The shared client session.
+            rpc: The narrow :class:`RpcCaller` capability — sources
+                only needs ``rpc_call(...)`` for its own RPC paths
+                (delete, rename, refresh, freshness, drive add, text add).
+                Upload-flow capabilities (``kernel``, ``auth``,
+                ``operation_scope``) are owned by ``uploader``.
             uploader: Stateful file-upload pipeline. REQUIRED — wired explicitly
                 by :class:`NotebookLMClient` (the only composition root that
                 knows the concrete ``Kernel`` + ``AuthMetadata`` +
@@ -84,7 +88,7 @@ class SourcesAPI:
         # constructed by the :class:`NotebookLMClient` composition root and
         # injected via ``uploader=``. They are stored here only as historical
         # attributes for callers that introspect the instance.
-        self._core = session
+        self._rpc = rpc
         self._adder = SourceAddService()
         self._content = SourceContentRenderer(self._rpc_call, logger=logger)
         self._lister = SourceLister(self._rpc_call)
@@ -105,7 +109,7 @@ class SourcesAPI:
         operation_variant: str | None = None,
     ) -> Any:
         """Delegate through the current core RPC method for late-bound test overrides."""
-        return await self._core.rpc_call(
+        return await self._rpc.rpc_call(
             method,
             params,
             source_path=source_path,
@@ -550,7 +554,7 @@ class SourcesAPI:
         """
         logger.debug("Deleting source %s from notebook %s", source_id, notebook_id)
         params = [[[source_id]]]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.DELETE_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -571,7 +575,7 @@ class SourcesAPI:
         """
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = [None, [source_id], [[[new_title]]]]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.UPDATE_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -590,7 +594,7 @@ class SourcesAPI:
             True if refresh was initiated.
         """
         params = [None, [source_id], [2]]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.REFRESH_SOURCE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -609,7 +613,7 @@ class SourcesAPI:
             True if source is fresh, False if it needs refresh.
         """
         params = [None, [source_id], [2]]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.CHECK_SOURCE_FRESHNESS,
             params,
             source_path=f"/notebook/{notebook_id}",

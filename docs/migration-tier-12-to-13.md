@@ -30,8 +30,14 @@ anything.
   re-exported from the top-level package.
 - **Feature APIs** (`NotebooksAPI`, `SourcesAPI`, `ArtifactsAPI`, `ChatAPI`,
   `ResearchAPI`, `NotesAPI`, `SharingAPI`, `SettingsAPI`) now depend on the
-  `notebooklm._session_contracts.Session` Protocol rather than the concrete
-  `ClientCore`/`Session` class. They continue to be created by
+  **narrow capability Protocols** in `notebooklm._session_contracts`
+  (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`)
+  or on feature-local runtime Protocols (`ChatRuntime`, `ArtifactsRuntime`,
+  `UploadRuntime`) defined in their owning modules — not on the concrete
+  `ClientCore`/`Session` class and not on a broad `Session` Protocol. The
+  broad `Session` Protocol that existed transiently between Tier 13 and
+  the capability refactor was deleted in Phase 7 of the refactor arc
+  (see ADR-013 and `docs/refactor.md`). They continue to be created by
   `NotebookLMClient`; only the type they're written against has narrowed.
 
 ## Renamed modules
@@ -73,7 +79,7 @@ change, only their home module did.
 
 | Tier 12 symbol | Tier 13 home | Notes |
 |---|---|---|
-| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` still resolves via the `_core` shim. New code should use `notebooklm._session.Session`. Feature APIs accept the `notebooklm._session_contracts.Session` Protocol. |
+| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` still resolves via the `_core` shim. New code should use `notebooklm._session.Session`. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-013. |
 | `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._authed_transport.MAX_RETRY_AFTER_SECONDS` | Re-exported via `_session` and the `_core` shim. |
 | `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._session_config.DEFAULT_*` | Re-exported via `_session` and the `_core` shim. |
 | `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._session_helpers` | Re-exported via `_session` and the `_core` shim. |
@@ -96,7 +102,7 @@ import from.
 
 | Module | Purpose |
 |---|---|
-| `notebooklm._session_contracts` | `Session`, `Kernel`, `DrainHookRegistration`, `AuthMetadata` Protocols. Feature APIs are typed against `Session` here, not the concrete `Session` class in `_session`. |
+| `notebooklm._session_contracts` | `AuthMetadata`, `Kernel`, and the four shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-013). The originally-shipped broad `Session` Protocol and the standalone `DrainHookRegistration` Protocol were deleted in Phase 7 of the refactor arc; feature-local runtimes (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) now live in their owning feature modules, and the canonical `DrainHookRegistration` is local to `_artifacts.py`. |
 | `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Wrapped by `Session` and consumed by middleware. |
 | `notebooklm._middleware` | Middleware chain primitives (`AuthedHttpClient` Protocol, `Middleware` Protocol, `RequestContext`, chain composition). |
 | `notebooklm._middleware_tracing` | Tier 12 PR 12.3 — request tracing middleware. |

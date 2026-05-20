@@ -110,9 +110,18 @@ Protocol-shim host interface so it can be unit-tested against a stub `Session`:
 | `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
 | `_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |
 
-The feature-facing session surface is pinned in
-`notebooklm._session_contracts.Session`. Adding or removing a method on that
-Protocol is a contract change for every feature API.
+The feature-facing surface is the set of **capability Protocols** in
+`notebooklm._session_contracts` — `RpcCaller`, `LoopGuard`,
+`OperationScopeProvider`, `AsyncWorkRuntime`, plus the standalone
+`AuthMetadata` and `Kernel` consumed by the upload pipeline. The
+broad `Session` Protocol that previously bundled these together was
+deleted in Phase 7 of the capability refactor (`docs/refactor.md`
+§Migration Plan step 10); each feature now depends on the narrowest
+slice it needs, either by composing the shared Protocols here or by
+defining a feature-local runtime in its own module (`ChatRuntime` in
+`_chat.py`, `ArtifactsRuntime` in `_artifacts.py`, `UploadRuntime` in
+`_source_upload.py`). See ADR-013 for the rationale and the
+promotion criterion (≥2 consumers).
 
 Private service modules sit inside the client layer but below the public
 facades. They own cross-facade composition without importing sibling facades:
@@ -170,9 +179,19 @@ The architecture tests encode the current layer contract:
 5. Add CLI command if user-facing
 
 **New API Class:**
-1. Create `_newfeature.py` with `NewFeatureAPI` class
-2. Add to `client.py`: `self.newfeature = NewFeatureAPI(self._core)`
-3. Export types from `__init__.py`
+1. Create `_newfeature.py` with `NewFeatureAPI` class.
+2. Type the constructor's runtime parameter against the **narrowest
+   shared capability Protocol** it actually uses (`RpcCaller`,
+   `AsyncWorkRuntime`, etc.), or define a feature-local runtime
+   Protocol in your feature module if the slice you need is not
+   shared with any other feature (e.g. `ChatRuntime`, `ArtifactsRuntime`,
+   `UploadRuntime`). Do not type against a broad `Session` — that
+   Protocol was deleted in Phase 7 of the capability refactor; see
+   ADR-013 for the rationale.
+3. Add to `client.py`: `self.newfeature = NewFeatureAPI(self._core)` —
+   the concrete `Session` structurally satisfies every capability
+   Protocol, so the wiring stays straightforward.
+4. Export types from `__init__.py`.
 
 ---
 

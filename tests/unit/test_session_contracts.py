@@ -1,17 +1,34 @@
-"""Typing checks for the Tier-13 Session/Kernel protocol contracts."""
+"""Typing checks for the capability-Protocol contracts in
+``notebooklm._session_contracts``.
+
+Phase 7 (refactor.md §Migration Plan step 10) replaced the broad
+``Session`` Protocol with four shared capability Protocols
+(``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
+``AsyncWorkRuntime``). ``AuthMetadata`` and ``Kernel`` are preserved
+as standalone Protocols for the upload pipeline. The standalone
+``DrainHookRegistration`` Protocol previously kept here was deleted in
+the same step — the canonical ``DrainHookRegistration`` is now local
+to ``_artifacts.py`` since artifact polling is its only consumer.
+"""
 
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any
 
 import httpx
 
-from notebooklm._request_types import BuildRequest
-from notebooklm._session_contracts import AuthMetadata, DrainHookRegistration, Kernel, Session
+from notebooklm._session_contracts import (
+    AsyncWorkRuntime,
+    AuthMetadata,
+    Kernel,
+    LoopGuard,
+    OperationScopeProvider,
+    RpcCaller,
+)
 from notebooklm.rpc.types import RPCMethod
 
 
@@ -28,15 +45,7 @@ class _NoopOperationScope:
         return False
 
 
-class _SessionImpl:
-    @property
-    def auth(self) -> AuthMetadata:
-        return _AuthMetadataImpl()
-
-    @property
-    def kernel(self) -> Kernel:
-        return _KernelImpl()
-
+class _RpcCallerImpl:
     async def rpc_call(
         self,
         method: RPCMethod,
@@ -50,30 +59,23 @@ class _SessionImpl:
     ) -> Any:
         return None
 
-    async def transport_post(
-        self,
-        build_request: BuildRequest,
-        parse_label: str,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> httpx.Response:
-        return httpx.Response(200, content=b"")
 
-    async def next_reqid(self, step: int = 100000) -> int:
-        return step
+class _LoopGuardImpl:
+    def assert_bound_loop(self) -> None:
+        return None
 
+
+class _OperationScopeProviderImpl:
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
+        return _NoopOperationScope()
+
+
+class _AsyncWorkRuntimeImpl:
     def assert_bound_loop(self) -> None:
         return None
 
     def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
         return _NoopOperationScope()
-
-    def register_drain_hook(
-        self,
-        name: str,
-        hook: Callable[[], Awaitable[None]],
-    ) -> None:
-        return None
 
 
 class _AuthMetadataImpl:
@@ -103,53 +105,56 @@ class _KernelImpl:
         return None
 
 
-class _DrainHookRegistrationImpl:
-    def register_drain_hook(
-        self,
-        name: str,
-        hook: Callable[[], Awaitable[None]],
-    ) -> None:
-        return None
-
-
 def _public_contract_members(protocol: type[Any]) -> set[str]:
     return {name for name in protocol.__dict__ if not name.startswith("_")}
+
+
+# ----------------------------------------------------------------------
+# Membership pins — one test per Protocol
+# ----------------------------------------------------------------------
 
 
 def test_auth_metadata_protocol_has_exactly_two_members() -> None:
     assert _public_contract_members(AuthMetadata) == {"authuser", "account_email"}
 
 
-def test_session_protocol_has_exactly_eight_members() -> None:
-    assert _public_contract_members(Session) == {
-        "auth",
-        "kernel",
-        "rpc_call",
-        "transport_post",
-        "next_reqid",
-        "assert_bound_loop",
-        "operation_scope",
-        "register_drain_hook",
-    }
-
-
 def test_kernel_protocol_has_exactly_three_members() -> None:
     assert _public_contract_members(Kernel) == {"post", "cookies", "aclose"}
 
 
-def test_drain_hook_registration_protocol_has_exactly_one_member() -> None:
-    assert _public_contract_members(DrainHookRegistration) == {"register_drain_hook"}
+def test_rpc_caller_protocol_has_exactly_one_member() -> None:
+    assert _public_contract_members(RpcCaller) == {"rpc_call"}
 
 
-def test_session_protocol_signatures_are_pinned() -> None:
-    auth = inspect.signature(Session.auth.fget)
-    assert auth.return_annotation == "AuthMetadata"
+def test_loop_guard_protocol_has_exactly_one_member() -> None:
+    assert _public_contract_members(LoopGuard) == {"assert_bound_loop"}
 
-    kernel = inspect.signature(Session.kernel.fget)
-    assert kernel.return_annotation == "Kernel"
 
-    rpc_call = inspect.signature(Session.rpc_call)
-    assert list(rpc_call.parameters) == [
+def test_operation_scope_provider_protocol_has_exactly_one_member() -> None:
+    assert _public_contract_members(OperationScopeProvider) == {"operation_scope"}
+
+
+def test_async_work_runtime_protocol_extends_loop_guard_and_operation_scope_provider() -> None:
+    # ``AsyncWorkRuntime`` inherits both members through Protocol composition.
+    # The union of inherited public members across its MRO must match.
+    mro_members: set[str] = set()
+    for parent in AsyncWorkRuntime.__mro__:
+        mro_members.update(name for name in parent.__dict__ if not name.startswith("_"))
+    assert {"assert_bound_loop", "operation_scope"} <= mro_members
+    assert AsyncWorkRuntime.__mro__[1:3] in (
+        (LoopGuard, OperationScopeProvider),
+        (OperationScopeProvider, LoopGuard),
+    )
+
+
+# ----------------------------------------------------------------------
+# Signature pins — load-bearing for feature retypes
+# ----------------------------------------------------------------------
+
+
+def test_rpc_caller_signature_matches_legacy_session_rpc_call() -> None:
+    sig = inspect.signature(RpcCaller.rpc_call)
+    assert list(sig.parameters) == [
         "self",
         "method",
         "params",
@@ -159,33 +164,13 @@ def test_session_protocol_signatures_are_pinned() -> None:
         "disable_internal_retries",
         "operation_variant",
     ]
-    assert rpc_call.parameters["source_path"].default == "/"
-    assert rpc_call.parameters["allow_null"].default is False
-    assert rpc_call.parameters["_is_retry"].default is False
-    assert rpc_call.parameters["disable_internal_retries"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert rpc_call.parameters["disable_internal_retries"].default is False
-    assert rpc_call.parameters["operation_variant"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert rpc_call.parameters["operation_variant"].default is None
-
-    transport_post = inspect.signature(Session.transport_post)
-    assert transport_post.parameters["build_request"].annotation == "BuildRequest"
-    assert transport_post.parameters["parse_label"].annotation == "str"
-    assert transport_post.parameters["disable_internal_retries"].kind is (
-        inspect.Parameter.KEYWORD_ONLY
-    )
-    assert "_BuildRequest" not in str(transport_post)
-
-    next_reqid = inspect.signature(Session.next_reqid)
-    assert next_reqid.parameters["step"].default == 100000
-    assert next_reqid.return_annotation == "int"
-
-    operation_scope = inspect.signature(Session.operation_scope)
-    assert operation_scope.return_annotation == "AbstractAsyncContextManager[None]"
-
-    register_drain_hook = inspect.signature(Session.register_drain_hook)
-    assert list(register_drain_hook.parameters) == ["self", "name", "hook"]
-    assert register_drain_hook.parameters["hook"].annotation == "Callable[[], Awaitable[None]]"
-    assert register_drain_hook.return_annotation == "None"
+    assert sig.parameters["source_path"].default == "/"
+    assert sig.parameters["allow_null"].default is False
+    assert sig.parameters["_is_retry"].default is False
+    assert sig.parameters["disable_internal_retries"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert sig.parameters["disable_internal_retries"].default is False
+    assert sig.parameters["operation_variant"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert sig.parameters["operation_variant"].default is None
 
 
 def test_auth_metadata_protocol_signatures_are_pinned() -> None:
@@ -196,14 +181,13 @@ def test_auth_metadata_protocol_signatures_are_pinned() -> None:
     assert account_email.return_annotation == "str | None"
 
 
-def test_kernel_and_drain_hook_signatures_are_pinned() -> None:
+def test_kernel_protocol_signatures_are_pinned() -> None:
     post = inspect.signature(Kernel.post)
     assert list(post.parameters) == ["self", "url", "headers", "body"]
     assert post.parameters["headers"].annotation == "Mapping[str, str]"
     assert post.parameters["body"].annotation == "bytes"
     assert post.return_annotation == "httpx.Response"
 
-    # Protocol properties expose the getter signature through ``fget``.
     cookies = inspect.signature(Kernel.cookies.fget)
     assert cookies.return_annotation == "httpx.Cookies"
 
@@ -211,22 +195,36 @@ def test_kernel_and_drain_hook_signatures_are_pinned() -> None:
     assert list(aclose.parameters) == ["self"]
     assert aclose.return_annotation == "None"
 
-    register_drain_hook = inspect.signature(DrainHookRegistration.register_drain_hook)
-    assert list(register_drain_hook.parameters) == ["self", "name", "hook"]
-    assert register_drain_hook.parameters["hook"].annotation == "Callable[[], Awaitable[None]]"
-    assert register_drain_hook.return_annotation == "None"
+
+def test_loop_guard_signature_is_pinned() -> None:
+    sig = inspect.signature(LoopGuard.assert_bound_loop)
+    assert list(sig.parameters) == ["self"]
+    assert sig.return_annotation == "None"
+
+
+def test_operation_scope_provider_signature_is_pinned() -> None:
+    sig = inspect.signature(OperationScopeProvider.operation_scope)
+    assert list(sig.parameters) == ["self", "label"]
+    assert sig.parameters["label"].annotation == "str"
+    assert sig.return_annotation == "AbstractAsyncContextManager[None]"
+
+
+# ----------------------------------------------------------------------
+# Structural conformance — mypy verifies these assignments
+# ----------------------------------------------------------------------
 
 
 def test_structural_implementations_satisfy_protocols() -> None:
-    # These assignments are the contract check: mypy verifies that each
-    # implementation structurally satisfies its Protocol. Runtime
-    # ``isinstance`` checks would only prove the concrete class identity
-    # unless the Protocols became ``@runtime_checkable``, which is weaker than
-    # the signature-level static check and not needed for this type-only PR.
-    session: Session = _SessionImpl()
+    auth: AuthMetadata = _AuthMetadataImpl()
     kernel: Kernel = _KernelImpl()
-    drain_hooks: DrainHookRegistration = _DrainHookRegistrationImpl()
+    rpc: RpcCaller = _RpcCallerImpl()
+    loop_guard: LoopGuard = _LoopGuardImpl()
+    op_scope: OperationScopeProvider = _OperationScopeProviderImpl()
+    async_work: AsyncWorkRuntime = _AsyncWorkRuntimeImpl()
 
-    assert session is not None
+    assert auth is not None
     assert kernel is not None
-    assert drain_hooks is not None
+    assert rpc is not None
+    assert loop_guard is not None
+    assert op_scope is not None
+    assert async_work is not None

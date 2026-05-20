@@ -1,23 +1,38 @@
-"""Type-only contracts for the Tier-13 Session/Kernel split.
+"""Type-only contracts shared across feature APIs.
 
-This module defines the narrow structural Protocols that later Tier-13 PRs
-will wire into concrete classes. It intentionally contains no runtime
-implementation and no import of the concrete ``Session``.
+This module defines the narrow structural Protocols feature APIs depend
+on. Per ADR-013, a Protocol lives here only when **shared by ≥2
+features**; single-consumer capabilities (e.g. chat's ``transport_post``
++ ``next_reqid``, artifact polling's ``register_drain_hook``) stay
+local to their owning feature module.
 
-``Session.rpc_call`` deliberately mirrors the legacy feature RPC signature,
-including the transitional ``_is_retry`` parameter, so feature retyping can
-happen without changing call semantics.
+Contents:
+
+* :class:`AuthMetadata` and :class:`Kernel` — selected-account routing
+  metadata + pure transport surface consumed by the upload pipeline.
+* :class:`RpcCaller`, :class:`LoopGuard`, :class:`OperationScopeProvider`,
+  :class:`AsyncWorkRuntime` — the four shared capability Protocols
+  promoted in Phase 1 of the capability refactor.
+
+The broad ``Session`` Protocol that previously bundled all of these
+together was deleted in Phase 7 (refactor.md §Migration Plan step 10).
+Feature APIs that need more than one capability either compose the
+shared Protocols here or define a feature-local runtime in their own
+module (``ChatRuntime`` in ``_chat.py``, ``ArtifactsRuntime`` in
+``_artifacts.py``, ``UploadRuntime`` in ``_source_upload.py``). The
+standalone ``DrainHookRegistration`` Protocol that lived here in the
+broad-``Session`` era was deleted in the same step; the canonical
+``DrainHookRegistration`` is now the local one in ``_artifacts.py``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any, Protocol
 
 import httpx
 
-from ._request_types import BuildRequest
 from .rpc.types import RPCMethod
 
 
@@ -47,69 +62,19 @@ class Kernel(Protocol):
     async def aclose(self) -> None: ...
 
 
-class Session(Protocol):
-    """Orchestration surface consumed by feature APIs after Tier 13."""
-
-    @property
-    def auth(self) -> AuthMetadata: ...
-
-    @property
-    def kernel(self) -> Kernel: ...
-
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        source_path: str = "/",
-        allow_null: bool = False,
-        _is_retry: bool = False,
-        *,
-        disable_internal_retries: bool = False,
-        operation_variant: str | None = None,
-    ) -> Any: ...
-
-    async def transport_post(
-        self,
-        build_request: BuildRequest,
-        parse_label: str,
-        *,
-        disable_internal_retries: bool = False,
-    ) -> httpx.Response: ...
-
-    async def next_reqid(self, step: int = 100000) -> int: ...
-
-    def assert_bound_loop(self) -> None: ...
-
-    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]: ...
-
-    def register_drain_hook(
-        self,
-        name: str,
-        hook: Callable[[], Awaitable[None]],
-    ) -> None: ...
-
-
-class DrainHookRegistration(Protocol):
-    """Narrow close-time hook registration surface for Artifacts."""
-
-    def register_drain_hook(
-        self,
-        name: str,
-        hook: Callable[[], Awaitable[None]],
-    ) -> None: ...
-
-
 class RpcCaller(Protocol):
     """Narrow RPC dispatch surface consumed by pure-RPC feature APIs.
 
-    Mirrors the legacy :meth:`Session.rpc_call` signature exactly so
-    Phase 1 feature retypes do not change call semantics. The transitional
-    ``_is_retry`` parameter and the keyword-only ``disable_internal_retries``
-    / ``operation_variant`` parameters are preserved as-is.
+    Mirrors the legacy ``Session.rpc_call`` signature exactly so feature
+    retypes do not change call semantics. The transitional
+    ``_is_retry`` parameter and the keyword-only
+    ``disable_internal_retries`` / ``operation_variant`` parameters are
+    preserved as-is.
 
-    A concrete :class:`Session` structurally satisfies this Protocol;
-    features that only need to issue RPC calls can depend on this narrower
-    surface to avoid coupling to the rest of the broad ``Session`` Protocol.
+    A concrete :class:`notebooklm._session.Session` structurally
+    satisfies this Protocol; features that only need to issue RPC
+    calls depend on this narrow surface so they are not coupled to
+    transport, loop affinity, or close-time-hook concerns.
     """
 
     async def rpc_call(
@@ -144,10 +109,8 @@ class AsyncWorkRuntime(LoopGuard, OperationScopeProvider, Protocol):
 __all__ = [
     "AsyncWorkRuntime",
     "AuthMetadata",
-    "DrainHookRegistration",
     "Kernel",
     "LoopGuard",
     "OperationScopeProvider",
     "RpcCaller",
-    "Session",
 ]
