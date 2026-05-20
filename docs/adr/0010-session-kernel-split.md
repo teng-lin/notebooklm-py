@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (Tier 13 PR 13.1).
+Superseded by ADR-013 (#<this PR number>).
+
+Tier-13 stabilised the 5-member Session/3-member Kernel/1-member DrainHookRegistration triad. ADR-013 documents the post-drift capability-composition model that replaces it.
 
 ## Context
 

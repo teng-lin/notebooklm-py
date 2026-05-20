@@ -280,8 +280,7 @@ the right place to revisit which seam-level names have real downstream
 demand and merit promotion.
 
 **Tie this ADR to ADR-010 (Session/Kernel split).** Rejected. ADR-010
-pins a specific contract shape (the five-member Session Protocol, the
-three-member Kernel Protocol). This ADR pins a *naming* convention
+pins a specific contract shape (the Session/Kernel contract triad pinned by ADR-010 (now superseded by ADR-013)). This ADR pins a *naming* convention
 that applies across the entire `src/notebooklm/` tree. The two are
 complementary: ADR-010 says *what* the load-bearing contracts are;
 this ADR says *where* their implementation lives and how downstream
