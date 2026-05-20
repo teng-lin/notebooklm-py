@@ -716,9 +716,12 @@ class ChatAPI:
             title: Note title. When ``None`` (default), a title is
                 derived from the first 50 characters of the answer
                 (``AskResult`` does not currently carry the original
-                question, so the answer is used). The NotebookLM server
-                may apply smart-title generation; the returned
-                ``Note.title`` reflects what the server actually stored.
+                question, so the answer is used). An empty string
+                (``""``) is passed through verbatim — i.e. treated as
+                "use this exact (empty) title", NOT as "use default".
+                The NotebookLM server may apply smart-title generation
+                regardless; the returned ``Note.title`` reflects what
+                the server actually stored.
 
         Returns:
             The created ``Note``. ``Note.content`` holds the answer text

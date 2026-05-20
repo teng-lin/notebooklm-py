@@ -218,7 +218,13 @@ def build_save_chat_as_note_params(
             "save_chat_answer_as_note requires references with chunk_id set; "
             "got references without any usable chunk_id."
         )
-    source_passages = [_build_source_passage_descriptor(chunk_to_ref[c]) for c in seen_chunks]
+    # Build the source-passage descriptor for each unique chunk ONCE and
+    # reuse it in both ``source_passages`` (slot [3]) and
+    # ``source_passages_keyed`` (slot [5][3] of rich_content). The two
+    # consumers want the same descriptor wrapped differently; building
+    # twice is purely wasted allocation work for large citation sets.
+    descriptors = {c: _build_source_passage_descriptor(chunk_to_ref[c]) for c in seen_chunks}
+    source_passages = [descriptors[c] for c in seen_chunks]
 
     # Cleaned-answer passage group.
     answer_segments = _build_passage_group(clean_answer, len(clean_answer))
@@ -242,9 +248,9 @@ def build_save_chat_as_note_params(
 
     # source_passages_keyed: same descriptors as slot [3], each wrapped
     # with its chunk_id as a leading key (slot [5][3] of rich_content).
-    source_passages_keyed = [
-        [[c], _build_source_passage_descriptor(chunk_to_ref[c])] for c in seen_chunks
-    ]
+    # Reuse the cached descriptors built above so we don't pay the build
+    # cost twice per chunk.
+    source_passages_keyed = [[[c], descriptors[c]] for c in seen_chunks]
 
     rich_content = [
         [answer_segments, chunk_refs],

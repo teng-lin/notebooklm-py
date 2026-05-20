@@ -38,12 +38,18 @@ __all__ = ["NoteService"]  # NoteRowKind is intentionally NOT exported
 logger = logging.getLogger(__name__)
 
 
-# Strong references for fire-and-forget cleanup tasks. ``asyncio.create_task``
-# returns a Task that the event loop only holds via a weak reference, so an
-# unrooted Task can be garbage-collected mid-execution — losing the orphan-row
-# cleanup the cancel-safety shield is supposed to guarantee. Each created task
-# adds itself here and removes itself in a done-callback so the set stays
-# bounded.
+# Module-level strong-ref anchor for fire-and-forget cleanup tasks (RUF006).
+# ``asyncio.create_task`` returns a Task that the event loop only holds via a
+# weak reference, so an unrooted Task can be garbage-collected mid-execution —
+# losing the orphan-row cleanup the cancel-safety shield is supposed to
+# guarantee. Each created task adds itself here and removes itself in a
+# done-callback so the set stays bounded.
+#
+# Intentionally module-level (not per-instance): the cleanup tasks are
+# detached fire-and-forget work whose only purpose is to keep the loop's
+# Task storage from GC-ing them mid-flight. Sharing one set across all
+# ``NoteService`` instances is correct and simpler than per-instance
+# bookkeeping — there is no per-instance state on the tasks themselves.
 _cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 
