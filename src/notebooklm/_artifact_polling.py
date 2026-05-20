@@ -11,7 +11,7 @@ from typing import Any
 from ._backoff import compute_backoff_delay
 from ._callbacks import maybe_await_callback
 from ._polling_registry import PollRegistry
-from ._session_contracts import Session
+from ._session_contracts import AsyncWorkRuntime
 from .rpc import (
     ArtifactStatus,
     ArtifactTypeCode,
@@ -55,10 +55,10 @@ class ArtifactPollingService:
 
     def __init__(
         self,
-        session: Session,
+        runtime: AsyncWorkRuntime,
         poll_registry: PollRegistry | None = None,
     ) -> None:
-        self._session = session
+        self._runtime = runtime
         self._poll_registry = poll_registry if poll_registry is not None else PollRegistry()
 
     @property
@@ -146,7 +146,7 @@ class ArtifactPollingService:
         # P0-2: catch cross-loop wait_for_completion before touching the
         # poll registry (which holds futures bound to the registering
         # loop) or spawning a poll task on a foreign loop.
-        self._session.assert_bound_loop()
+        self._runtime.assert_bound_loop()
         # Backward compatibility: poll_interval overrides initial_interval.
         if poll_interval is not None:
             import warnings
@@ -245,7 +245,7 @@ class ArtifactPollingService:
         poll_status: PollStatusCallback,
         on_status_change: StatusChangeCallback | None,
     ) -> GenerationStatus:
-        async with self._session.operation_scope(f"artifact wait {task_id}"):
+        async with self._runtime.operation_scope(f"artifact wait {task_id}"):
             return await self._run_poll_loop(
                 notebook_id,
                 task_id,

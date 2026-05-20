@@ -33,14 +33,17 @@ def mock_artifacts_api():
     # ``MagicMock``-shaped loop value.
     mock_core.bound_loop = None
     mock_core.assert_bound_loop = MagicMock(return_value=None)
-    mock_notes = MagicMock()
-    mock_notes.list_mind_maps = AsyncMock(return_value=[])
-    mock_note = MagicMock()
-    mock_note.id = "created_note_123"
-    mock_notes.create = AsyncMock(return_value=mock_note)
+    from notebooklm._mind_map import MindMapService
+
+    mind_map_service = MagicMock(spec=MindMapService)
+    mind_map_service.list_mind_maps = AsyncMock(return_value=[])
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
-    api = ArtifactsAPI(mock_core, notes_api=mock_notes, notebooks=mock_notebooks)
+    api = ArtifactsAPI(
+        mock_core,
+        notebooks=mock_notebooks,
+        mind_map_service=mind_map_service,
+    )
     return api, mock_core
 
 

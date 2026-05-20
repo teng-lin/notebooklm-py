@@ -90,8 +90,16 @@ async def test_active_tasks_returns_empty_for_fresh_registry() -> None:
 @pytest.mark.asyncio
 async def test_session_close_drains_artifact_poll_hook() -> None:
     """``close()`` cancels in-flight poll tasks within 1s and tears down cleanly."""
+    from unittest.mock import MagicMock
+
+    from notebooklm._mind_map import MindMapService
+
     core = Session(_auth())
-    artifacts = ArtifactsAPI(core)
+    artifacts = ArtifactsAPI(
+        core,
+        notebooks=MagicMock(),
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
     assert core._drain_hooks["artifacts.polls"] == artifacts._polling.drain
     await core.open()
 

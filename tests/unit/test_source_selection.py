@@ -108,19 +108,16 @@ def mock_notebooks_api():
 
 
 @pytest.fixture
-def mock_notes_api():
-    """Placeholder for the legacy ``ArtifactsAPI(core, notes_api)`` signature.
+def mock_mind_map_service():
+    """Bare MagicMock standing in for ``MindMapService``.
 
-    After the mind-map relocation, ``ArtifactsAPI`` no longer reads ``notes_api`` (it consumes
-    the shared ``_mind_map`` module directly). The arg is still accepted for
-    backward compatibility and immediately discarded inside ``__init__``, so
-    this fixture intentionally returns a bare mock — no method stubs, since
-    none of the downstream code paths under test invoke any methods on it.
-    Future readers: if you find yourself adding ``AsyncMock`` setup here,
-    you probably want to drop the second positional arg from the call sites
-    instead.
+    These tests exercise generation/encoding paths that never call the
+    mind-map service; the parameter is required by ``ArtifactsAPI.__init__``
+    (per docs/refactor.md Step 4) so we pass a no-op mock.
     """
-    return MagicMock()
+    from notebooklm._mind_map import MindMapService
+
+    return MagicMock(spec=MindMapService)
 
 
 class TestChatSourceSelection:
@@ -208,9 +205,9 @@ class TestArtifactsSourceSelection:
     """Tests for source selection in ArtifactsAPI generation methods."""
 
     @pytest.mark.asyncio
-    async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_notes_api):
+    async def test_generate_audio_with_explicit_source_ids(self, mock_core, mock_mind_map_service):
         """Test generate_audio with explicitly provided source_ids."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         # Mock successful generation response
         mock_core.rpc_call.return_value = [
@@ -250,10 +247,12 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_audio_with_none_fetches_all_sources(
-        self, mock_core, mock_notes_api, mock_notebooks_api
+        self, mock_core, mock_mind_map_service, mock_notebooks_api
     ):
         """Test generate_audio with source_ids=None fetches all sources."""
-        api = ArtifactsAPI(mock_core, mock_notes_api, notebooks=mock_notebooks_api)
+        api = ArtifactsAPI(
+            mock_core, notebooks=mock_notebooks_api, mind_map_service=mock_mind_map_service
+        )
 
         # Mock get_source_ids to return source IDs
         mock_notebooks_api.get_source_ids.return_value = ["src_001", "src_002"]
@@ -281,9 +280,9 @@ class TestArtifactsSourceSelection:
         assert source_ids_triple == [[["src_001"]], [["src_002"]]]
 
     @pytest.mark.asyncio
-    async def test_generate_video_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_video_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_video has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
@@ -310,9 +309,11 @@ class TestArtifactsSourceSelection:
         assert source_ids_double == [["src_a"], ["src_b"]]
 
     @pytest.mark.asyncio
-    async def test_generate_video_custom_style_prompt_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_video_custom_style_prompt_encoding(
+        self, mock_core, mock_mind_map_service
+    ):
         """Test custom video style prompt is encoded after the style code."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
         mock_core.rpc_call.return_value = [["artifact_456", "Video", 3, None, 1]]
 
         await api.generate_video(
@@ -328,8 +329,10 @@ class TestArtifactsSourceSelection:
         assert video_config[6] == "Use hand-drawn diagrams"
 
     @pytest.mark.asyncio
-    async def test_generate_video_custom_style_requires_prompt(self, mock_core, mock_notes_api):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+    async def test_generate_video_custom_style_requires_prompt(
+        self, mock_core, mock_mind_map_service
+    ):
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -340,9 +343,9 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_rejects_empty_prompt(
-        self, mock_core, mock_notes_api
+        self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -354,9 +357,9 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_custom_style_rejects_blank_prompt(
-        self, mock_core, mock_notes_api
+        self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         with pytest.raises(ValidationError, match="style_prompt is required"):
             await api.generate_video(
@@ -368,9 +371,9 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_video_style_prompt_requires_custom_style(
-        self, mock_core, mock_notes_api
+        self, mock_core, mock_mind_map_service
     ):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         with pytest.raises(ValidationError, match="style_prompt requires"):
             await api.generate_video(
@@ -381,8 +384,10 @@ class TestArtifactsSourceSelection:
             )
 
     @pytest.mark.asyncio
-    async def test_generate_video_cinematic_rejects_style_prompt(self, mock_core, mock_notes_api):
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+    async def test_generate_video_cinematic_rejects_style_prompt(
+        self, mock_core, mock_mind_map_service
+    ):
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         with pytest.raises(ValidationError, match="cinematic"):
             await api.generate_video(
@@ -393,9 +398,9 @@ class TestArtifactsSourceSelection:
             )
 
     @pytest.mark.asyncio
-    async def test_generate_report_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_report_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_report has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
@@ -422,9 +427,11 @@ class TestArtifactsSourceSelection:
         assert source_ids_double == [["src_x"], ["src_y"], ["src_z"]]
 
     @pytest.mark.asyncio
-    async def test_generate_report_extra_instructions_appended(self, mock_core, mock_notes_api):
+    async def test_generate_report_extra_instructions_appended(
+        self, mock_core, mock_mind_map_service
+    ):
         """extra_instructions is appended to the built-in prompt with \\n\\n separator."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -442,12 +449,12 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_report_extra_instructions_ignored_for_custom(
-        self, mock_core, mock_notes_api
+        self, mock_core, mock_mind_map_service
     ):
         """extra_instructions has no effect when report_format is CUSTOM."""
         from notebooklm.rpc.types import ReportFormat
 
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
         mock_core.rpc_call.return_value = [["artifact_789", "Report", 2, None, 1]]
 
         await api.generate_report(
@@ -466,9 +473,9 @@ class TestArtifactsSourceSelection:
         assert prompt == "My custom prompt"
 
     @pytest.mark.asyncio
-    async def test_generate_quiz_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_quiz_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_quiz has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_quiz", "Quiz", 4, None, 1]]
 
@@ -491,9 +498,9 @@ class TestArtifactsSourceSelection:
         assert source_ids_triple == [[["src_1"]], [["src_2"]]]
 
     @pytest.mark.asyncio
-    async def test_generate_flashcards_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_flashcards_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_flashcards has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_fc", "Flashcards", 4, None, 1]]
 
@@ -511,9 +518,9 @@ class TestArtifactsSourceSelection:
         assert source_ids_triple == [[["src_flash"]]]
 
     @pytest.mark.asyncio
-    async def test_generate_infographic_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_infographic_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_infographic has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -531,9 +538,9 @@ class TestArtifactsSourceSelection:
         assert source_ids_triple == [[["src_info_1"]], [["src_info_2"]]]
 
     @pytest.mark.asyncio
-    async def test_generate_infographic_style_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_infographic_style_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_infographic encodes style in config slot 5."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_info", "Infographic", 7, None, 1]]
 
@@ -552,9 +559,9 @@ class TestArtifactsSourceSelection:
         assert infographic_config[5] == InfographicStyle.PROFESSIONAL.value
 
     @pytest.mark.asyncio
-    async def test_generate_slide_deck_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_slide_deck_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_slide_deck has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_slide", "Slides", 8, None, 1]]
 
@@ -572,9 +579,9 @@ class TestArtifactsSourceSelection:
         assert source_ids_triple == [[["src_slide"]]]
 
     @pytest.mark.asyncio
-    async def test_generate_data_table_source_encoding(self, mock_core, mock_notes_api):
+    async def test_generate_data_table_source_encoding(self, mock_core, mock_mind_map_service):
         """Test generate_data_table has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_table", "Table", 9, None, 1]]
 
@@ -593,10 +600,12 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_source_encoding(
-        self, mock_core, mock_notes_api, mock_notebooks_api
+        self, mock_core, mock_mind_map_service, mock_notebooks_api
     ):
         """Test generate_mind_map has correct source encoding format."""
-        api = ArtifactsAPI(mock_core, mock_notes_api, notebooks=mock_notebooks_api)
+        api = ArtifactsAPI(
+            mock_core, notebooks=mock_notebooks_api, mind_map_service=mock_mind_map_service
+        )
 
         # Mock get_source_ids to return source IDs
         mock_notebooks_api.get_source_ids.return_value = ["src_mm_1", "src_mm_2"]
@@ -628,10 +637,10 @@ class TestArtifactsSourceSelection:
 
     @pytest.mark.asyncio
     async def test_generate_mind_map_passes_language_and_instructions(
-        self, mock_core, mock_notes_api
+        self, mock_core, mock_mind_map_service
     ):
         """Test generate_mind_map passes language and instructions to RPC payload."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [['{"name": "Mind Map", "children": []}']]
 
@@ -655,11 +664,13 @@ class TestArtifactsSourceSelection:
         assert mind_map_config[2] == "ja"
 
     @pytest.mark.asyncio
-    async def test_suggest_reports_uses_get_suggested_reports(self, mock_core, mock_notes_api):
+    async def test_suggest_reports_uses_get_suggested_reports(
+        self, mock_core, mock_mind_map_service
+    ):
         """Test suggest_reports uses GET_SUGGESTED_REPORTS RPC."""
         from notebooklm.rpc.types import RPCMethod
 
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         # Mock the GET_SUGGESTED_REPORTS RPC call
         # Response format: [[[title, description, null, null, prompt, audience_level], ...]]
@@ -684,9 +695,9 @@ class TestEmptySourceIds:
     """Tests for edge cases with empty source lists."""
 
     @pytest.mark.asyncio
-    async def test_generate_with_empty_source_list(self, mock_core, mock_notes_api):
+    async def test_generate_with_empty_source_list(self, mock_core, mock_mind_map_service):
         """Test generation with empty source_ids list produces empty arrays."""
-        api = ArtifactsAPI(mock_core, mock_notes_api)
+        api = ArtifactsAPI(mock_core, notebooks=MagicMock(), mind_map_service=mock_mind_map_service)
 
         mock_core.rpc_call.return_value = [["artifact_empty", "Audio", 1, None, 1]]
 

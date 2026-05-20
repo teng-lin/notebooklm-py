@@ -19,6 +19,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._mind_map import MindMapService
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import (
     AudioFormat,
@@ -390,7 +391,11 @@ class TestArtifactsAPI:
         """_list_raw keeps the exact LIST_ARTIFACTS RPC contract."""
         core = MagicMock()
         core.rpc_call = AsyncMock(return_value=[[]])
-        api = ArtifactsAPI(core)
+        api = ArtifactsAPI(
+            core,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
 
         result = await api._list_raw("nb_123")
 
@@ -415,7 +420,11 @@ class TestArtifactsAPI:
         ]
         core = MagicMock()
         core.rpc_call = AsyncMock(return_value=artifact_rows)
-        api = ArtifactsAPI(core)
+        api = ArtifactsAPI(
+            core,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
 
         result = await api._list_raw("nb_123")
 
@@ -425,7 +434,11 @@ class TestArtifactsAPI:
     async def test_list_uses_facade_list_raw_callback_and_mind_map_service(self):
         """list() resolves facade _list_raw and the injected mind-map service."""
         core = MagicMock()
-        api = ArtifactsAPI(core)
+        api = ArtifactsAPI(
+            core,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
         studio_artifact = ["art_001", "My Report", 2, None, 3]
         mind_map = [
             "mind_map_001",
@@ -452,7 +465,11 @@ class TestArtifactsAPI:
     async def test_list_skips_mind_map_callback_for_non_mind_map_filter(self):
         """Filtering to studio-only kinds must not fetch mind maps."""
         core = MagicMock()
-        api = ArtifactsAPI(core)
+        api = ArtifactsAPI(
+            core,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
         studio_artifact = ["art_001", "My Report", 2, None, 3]
 
         with (
@@ -472,7 +489,11 @@ class TestArtifactsAPI:
     async def test_get_uses_public_list_callback(self):
         """get() delegates through the public list callback."""
         core = MagicMock()
-        api = ArtifactsAPI(core)
+        api = ArtifactsAPI(
+            core,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
         other = MagicMock()
         other.id = "art_other"
         found = MagicMock()
@@ -1536,7 +1557,7 @@ class TestReviseSlide:
             err = RPCError("Rate limit exceeded")
             err.rpc_code = "USER_DISPLAYABLE_ERROR"
             with patch.object(
-                client.artifacts._core,
+                client.artifacts._runtime,
                 "rpc_call",
                 AsyncMock(side_effect=err),
             ):
@@ -1564,7 +1585,7 @@ class TestReviseSlide:
             err.rpc_code = "INTERNAL_ERROR"
             with (
                 patch.object(
-                    client.artifacts._core,
+                    client.artifacts._runtime,
                     "rpc_call",
                     AsyncMock(side_effect=err),
                 ),
@@ -2068,7 +2089,7 @@ class TestCallGenerateErrorHandling:
             # Pass source_ids explicitly so get_source_ids (GET_NOTEBOOK) is NOT called.
             # Then patch _core.rpc_call so the CREATE_ARTIFACT call raises the error.
             with patch.object(
-                client.artifacts._core,
+                client.artifacts._runtime,
                 "rpc_call",
                 AsyncMock(side_effect=err),
             ):
@@ -2092,7 +2113,7 @@ class TestCallGenerateErrorHandling:
             # Then patch _core.rpc_call so the CREATE_ARTIFACT call raises the error.
             with (
                 patch.object(
-                    client.artifacts._core,
+                    client.artifacts._runtime,
                     "rpc_call",
                     AsyncMock(side_effect=err),
                 ),

@@ -721,35 +721,58 @@ def test_client_exposes_artifacts_and_notes(mock_auth: AuthTokens) -> None:
 
 
 def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> None:
-    """``ArtifactsAPI`` must be constructible without ``notes_api`` — that is
-    the whole point of the mind-map decoupling."""
+    """``ArtifactsAPI`` no longer takes ``notes_api`` at all (per
+    docs/refactor.md Step 4) — the parameter was removed in favor of an
+    explicit ``mind_map_service``. The mind-map decoupling is now
+    structural."""
+    from notebooklm._mind_map import MindMapService
+
     core = MagicMock()
-    api = ArtifactsAPI(core)
+    api = ArtifactsAPI(
+        core,
+        notebooks=MagicMock(),
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
     assert api is not None
     # The legacy private attribute must not leak back: code that depends on
     # ``self._notes`` would re-introduce the coupling.
     assert not hasattr(api, "_notes")
 
 
-def test_artifacts_accepts_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
-    """Existing callers passing ``notes_api=`` must keep working as a no-op
-    for the deprecation cycle."""
+def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
+    """The legacy ``notes_api=`` kwarg was removed in Phase 3
+    (docs/refactor.md Step 4). Passing it must raise ``TypeError``."""
+    from notebooklm._mind_map import MindMapService
+
     core = MagicMock()
     notes = NotesAPI(core)
-    api = ArtifactsAPI(core, notes_api=notes)
-    assert api is not None
-    # Even when supplied, the legacy attribute is intentionally not stored.
-    assert not hasattr(api, "_notes")
+    with pytest.raises(TypeError):
+        ArtifactsAPI(  # type: ignore[call-arg]
+            core,
+            notes_api=notes,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
 
 
 def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> None:
     """Both construction orders must succeed and produce working APIs."""
+    from notebooklm._mind_map import MindMapService
+
     core = MagicMock()
-    artifacts_first = ArtifactsAPI(core)
+
+    def _make_artifacts() -> ArtifactsAPI:
+        return ArtifactsAPI(
+            core,
+            notebooks=MagicMock(),
+            mind_map_service=MagicMock(spec=MindMapService),
+        )
+
+    artifacts_first = _make_artifacts()
     notes_first = NotesAPI(core)
     # Build in the opposite order too, just to make the symmetry explicit.
     notes_then = NotesAPI(core)
-    artifacts_then = ArtifactsAPI(core)
+    artifacts_then = _make_artifacts()
     assert artifacts_first is not None
     assert notes_first is not None
     assert artifacts_then is not None
@@ -805,12 +828,26 @@ def _make_core_for_mind_map_flow() -> tuple[MagicMock, list[tuple[Any, Any]]]:
     return core, calls
 
 
+def _build_artifacts_with_real_mind_map_service(core: MagicMock) -> ArtifactsAPI:
+    """Build an ``ArtifactsAPI`` whose ``mind_map_service`` is a real
+    ``MindMapService(core)`` so the mind-map flow exercises the live RPC
+    callbacks against the canned ``core.rpc_call``.
+    """
+    from notebooklm._mind_map import MindMapService
+
+    return ArtifactsAPI(
+        core,
+        notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),
+        mind_map_service=MindMapService(core),
+    )
+
+
 @pytest.mark.asyncio
 async def test_generate_mind_map_works_without_notes_injection() -> None:
     """``generate_mind_map`` must persist the mind map via ``_mind_map``
     primitives, not via an injected ``NotesAPI``."""
     core, calls = _make_core_for_mind_map_flow()
-    api = ArtifactsAPI(core)
+    api = _build_artifacts_with_real_mind_map_service(core)
 
     result = await api.generate_mind_map("nb_123", source_ids=["src_1"])
 
@@ -832,7 +869,7 @@ async def test_artifacts_list_pulls_mind_maps_without_notes_injection(
     """``ArtifactsAPI.list`` must read mind maps through ``_mind_map`` —
     no ``NotesAPI`` reference required."""
     core, _ = _make_core_for_mind_map_flow()
-    api = ArtifactsAPI(core)
+    api = _build_artifacts_with_real_mind_map_service(core)
 
     artifacts = await api.list("nb_123")
     # One mind map should surface from GET_NOTES_AND_MIND_MAPS.
@@ -846,7 +883,7 @@ async def test_download_mind_map_works_without_notes_injection(
     """``download_mind_map`` reaches into mind-map storage via ``_mind_map``
     rather than ``self._notes``."""
     core, _ = _make_core_for_mind_map_flow()
-    api = ArtifactsAPI(core)
+    api = _build_artifacts_with_real_mind_map_service(core)
 
     output = tmp_path / "mm.json"
     returned = await api.download_mind_map("nb_123", str(output))

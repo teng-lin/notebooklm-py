@@ -14,6 +14,7 @@ from notebooklm import (
     get_request_id,
 )
 from notebooklm._artifacts import ArtifactsAPI
+from notebooklm._mind_map import MindMapService
 from notebooklm._session import Session
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
@@ -188,7 +189,11 @@ async def test_drain_rejects_child_task_spawned_from_accepted_operation(
 @pytest.mark.asyncio
 async def test_drain_waits_for_artifact_poll_task(auth_tokens: AuthTokens) -> None:
     core = Session(auth_tokens)
-    api = ArtifactsAPI(core)
+    api = ArtifactsAPI(
+        core,
+        notebooks=MagicMock(),
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
     first_poll_started = asyncio.Event()
     release_first_poll = asyncio.Event()
     poll_count = 0
@@ -318,7 +323,11 @@ async def test_upload_progress_callback_receives_byte_counts(
 @pytest.mark.asyncio
 async def test_wait_for_completion_status_change_callback(auth_tokens: AuthTokens) -> None:
     core = Session(auth_tokens)
-    api = ArtifactsAPI(core)
+    api = ArtifactsAPI(
+        core,
+        notebooks=MagicMock(),
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
     statuses = [
         GenerationStatus(task_id="task_1", status="in_progress"),
         GenerationStatus(task_id="task_1", status="completed", url="https://example.test/out"),

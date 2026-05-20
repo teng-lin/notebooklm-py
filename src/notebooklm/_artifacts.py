@@ -8,9 +8,9 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 import builtins
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 from . import _artifact_formatters, _artifact_polling, _mind_map
 from ._artifact_downloads import ArtifactDownloadService, DownloadResult
@@ -18,7 +18,7 @@ from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
-from ._session_contracts import DrainHookRegistration, Session
+from ._session_contracts import AsyncWorkRuntime, RpcCaller
 from .auth import load_httpx_cookies
 from .rpc import (
     ArtifactTypeCode,
@@ -51,9 +51,6 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
-
-if TYPE_CHECKING:
-    from ._notes import NotesAPI  # retained for backward-compatible type hints
 
 # Private compatibility exports. Tests and downstream code patch these names
 # through ``notebooklm._artifacts`` even though download implementation now
@@ -117,6 +114,35 @@ def _format_interactive_content(
     )
 
 
+class DrainHookRegistration(Protocol):
+    """Narrow close-time hook registration surface, local to artifacts.
+
+    Artifact polling is the only current feature that registers
+    close-time cleanup hooks, so the Protocol stays local to
+    ``_artifacts.py`` rather than being promoted to
+    ``_session_contracts``. If a second consumer (e.g. Deep Research)
+    later adds artifact-style leader/follower polling with shared
+    background tasks, revisit whether ``register_drain_hook`` should
+    become shared.
+    """
+
+    def register_drain_hook(
+        self,
+        name: str,
+        hook: Callable[[], Awaitable[None]],
+    ) -> None: ...
+
+
+class ArtifactsRuntime(RpcCaller, AsyncWorkRuntime, DrainHookRegistration, Protocol):
+    """Runtime capabilities required by the artifacts feature.
+
+    Combines :class:`RpcCaller` (for RPC dispatch),
+    :class:`AsyncWorkRuntime` (for ``assert_bound_loop`` and
+    ``operation_scope``), and :class:`DrainHookRegistration` (for
+    close-time poll-task cleanup).
+    """
+
+
 class ArtifactsAPI:
     """Operations on NotebookLM artifacts (studio content).
 
@@ -139,59 +165,53 @@ class ArtifactsAPI:
 
     def __init__(
         self,
-        session: Session,
-        notes_api: "NotesAPI | None" = None,
-        storage_path: Path | None = None,
+        runtime: ArtifactsRuntime,
         *,
-        mind_map_service: _mind_map.MindMapService | None = None,
-        notebooks: NotebookSourceIdProvider | None = None,
-        drain_hooks: DrainHookRegistration | None = None,
-    ):
+        notebooks: NotebookSourceIdProvider,
+        mind_map_service: _mind_map.MindMapService,
+        storage_path: Path | None = None,
+    ) -> None:
         """Initialize the artifacts API.
 
         Args:
-            session: The shared client session.
-            notes_api: Deprecated. Retained as an optional, ignored
-                keyword for backward compatibility — ``ArtifactsAPI`` no
-                longer depends on :class:`NotesAPI`. Mind-map RPC
-                primitives are accessed through the injected
-                :class:`_mind_map.MindMapService`, so the construction
-                order of ``client.artifacts`` and ``client.notes`` is no
-                longer significant.
+            runtime: Feature-local runtime that provides RPC dispatch,
+                loop-affinity assertion, operation scopes, and
+                close-time drain-hook registration.
+            notebooks: Source-id resolver. Required — wire from
+                ``NotebookLMClient`` (no implicit fallback).
+            mind_map_service: Service for note-backed mind-map operations.
+                Required; the previous ``None`` fallback that constructed
+                ``MindMapService(session)`` has been removed. Phase 5 will
+                rename this parameter to ``mind_maps`` and swap the
+                concrete type to :class:`NoteBackedMindMapService`.
             storage_path: Path to storage state file for loading download cookies.
-            mind_map_service: Optional private service for note-backed
-                mind-map operations. Keyword-only so the public positional
-                constructor contract stays unchanged.
-            notebooks: Optional source-id resolver. Defaults to a
-                ``NotebooksAPI`` wrapper around ``core`` for backward
-                compatibility with tests that construct ``ArtifactsAPI(core)``.
-            drain_hooks: Close-time hook registration surface.
         """
-        self._core = session
-        if notebooks is None:
-            from ._notebooks import NotebooksAPI
-
-            notebooks = NotebooksAPI(session)
+        self._runtime = runtime
         self._notebooks = notebooks
-        # ``notes_api`` is intentionally not stored — it is accepted only
-        # so that existing call sites (tests, third-party code) keep
-        # working through the deprecation cycle.
-        del notes_api
         self._storage_path = storage_path
-        self._mind_map_service = (
-            _mind_map.MindMapService(session) if mind_map_service is None else mind_map_service
-        )
+        self._mind_map_service = mind_map_service
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
         self._downloads = ArtifactDownloadService(self)
         self._polling = _artifact_polling.ArtifactPollingService(
-            session,
+            runtime,
             self._poll_registry,
         )
-        if drain_hooks is None:
-            drain_hooks = session
-        drain_hooks.register_drain_hook("artifacts.polls", self._polling.drain)
+        self._runtime.register_drain_hook("artifacts.polls", self._polling.drain)
+
+    @property
+    def _core(self) -> ArtifactsRuntime:
+        """Backward-compatible alias for ``self._runtime``.
+
+        ``_artifact_generation.py`` and ``_artifact_downloads.py``
+        currently access ``api._core.rpc_call(...)`` and
+        ``_mind_map.list_mind_maps(api._core, ...)``. Those modules are
+        retyped in a later phase; until then, this property forwards
+        attribute access to the runtime so the cross-module calls keep
+        working.
+        """
+        return self._runtime
 
     # =========================================================================
     # List/Get Operations
@@ -518,7 +538,7 @@ class ArtifactsAPI:
 
     async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
         """Fetch artifact HTML content for quiz/flashcard types."""
-        result = await self._core.rpc_call(
+        result = await self._runtime.rpc_call(
             RPCMethod.GET_INTERACTIVE_HTML,
             [artifact_id],
             source_path=f"/notebook/{notebook_id}",
@@ -633,7 +653,7 @@ class ArtifactsAPI:
         """
         logger.debug("Deleting artifact %s from notebook %s", artifact_id, notebook_id)
         params = [[2], artifact_id]
-        await self._core.rpc_call(
+        await self._runtime.rpc_call(
             RPCMethod.DELETE_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -650,7 +670,7 @@ class ArtifactsAPI:
             new_title: The new title.
         """
         params = [[artifact_id, new_title], [["title"]]]
-        await self._core.rpc_call(
+        await self._runtime.rpc_call(
             RPCMethod.RENAME_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -788,7 +808,7 @@ class ArtifactsAPI:
             Export result with document URL.
         """
         params = [None, artifact_id, None, title, int(export_type)]
-        return await self._core.rpc_call(
+        return await self._runtime.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -812,7 +832,7 @@ class ArtifactsAPI:
             Export result with spreadsheet URL.
         """
         params = [None, artifact_id, None, title, int(ExportType.SHEETS)]
-        return await self._core.rpc_call(
+        return await self._runtime.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -842,7 +862,7 @@ class ArtifactsAPI:
             Export result with document URL.
         """
         params = [None, artifact_id, content, title, int(export_type)]
-        return await self._core.rpc_call(
+        return await self._runtime.rpc_call(
             RPCMethod.EXPORT_ARTIFACT,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -878,7 +898,7 @@ class ArtifactsAPI:
         """Get raw artifact list data."""
         # Keep this facade hop so callers/tests that patch ``api._list_raw``
         # still affect public listing paths that delegate into the service.
-        return await self._listing.list_raw(notebook_id, rpc_call=self._core.rpc_call)
+        return await self._listing.list_raw(notebook_id, rpc_call=self._runtime.rpc_call)
 
     def _select_artifact(
         self,

@@ -25,10 +25,18 @@ def mock_artifacts_api():
     creation should drive responses through ``mock_core.rpc_call`` (via
     ``side_effect``) rather than mocking a separate notes object.
     """
+    from notebooklm._mind_map import MindMapService
+
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
     mock_core.get_source_ids = AsyncMock(return_value=[])
-    api = ArtifactsAPI(mock_core)
+    mock_notebooks = MagicMock()
+    mock_notebooks.get_source_ids = AsyncMock(return_value=[])
+    api = ArtifactsAPI(
+        mock_core,
+        notebooks=mock_notebooks,
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
     return api, mock_core
 
 

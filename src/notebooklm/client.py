@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
+from . import _mind_map
 from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
@@ -283,11 +284,15 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
         )
         self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
+        # Transitional wiring per docs/refactor.md Step 4 / Review Checklist:
+        # ``mind_map_service`` is required and explicitly constructed here.
+        # Phase 5 replaces this with ``NoteBackedMindMapService`` and renames
+        # the parameter to ``mind_maps``.
         self.artifacts = ArtifactsAPI(
-            self._core,
-            storage_path=storage_path,
+            self._session,
             notebooks=self.notebooks,
-            drain_hooks=self._core,
+            mind_map_service=_mind_map.MindMapService(self._session),
+            storage_path=storage_path,
         )
         self.notes = NotesAPI(self._core)
         self.chat = ChatAPI(self._core, notebooks=self.notebooks)

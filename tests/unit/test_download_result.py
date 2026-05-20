@@ -76,10 +76,14 @@ def test_artifacts_module_preserves_download_patch_targets():
 def mock_artifacts_api(tmp_path):
     """Minimal ArtifactsAPI with a mocked core for download tests."""
     from notebooklm._artifacts import ArtifactsAPI
+    from notebooklm._mind_map import MindMapService
 
     mock_core = MagicMock()
-    mock_notes = MagicMock()
-    api = ArtifactsAPI(mock_core, notes_api=mock_notes)
+    api = ArtifactsAPI(
+        mock_core,
+        notebooks=MagicMock(),
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
     api._storage_path = str(tmp_path / "storage.json")
     return api, mock_core
 

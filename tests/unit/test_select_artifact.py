@@ -45,11 +45,16 @@ def _artifact(
 
 @pytest.fixture
 def api() -> ArtifactsAPI:
-    """Build an ArtifactsAPI with no-op core / notes — only the helper is exercised."""
+    """Build an ArtifactsAPI with no-op runtime / mind-map — only the helper is exercised."""
+    from notebooklm._mind_map import MindMapService
+
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
-    mock_notes = MagicMock()
-    return ArtifactsAPI(mock_core, notes_api=mock_notes)
+    return ArtifactsAPI(
+        mock_core,
+        notebooks=MagicMock(),
+        mind_map_service=MagicMock(spec=MindMapService),
+    )
 
 
 class TestSelectArtifactFiltering:
