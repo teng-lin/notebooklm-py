@@ -629,7 +629,14 @@ class ArtifactGenerationService:
                     title=title,
                     content=mind_map_json,
                 )
-                note_id = note.id if note else None
+                # ``NoteService.create_note`` always returns a ``Note``
+                # instance — even when the server omits the row id it
+                # returns ``Note(id="", ...)``. The dataclass is always
+                # truthy, so guarding on ``if note`` was dead code. Map
+                # the empty-string ID to ``None`` so the public dict
+                # contract ("note_id is None means persistence failed")
+                # is honored. Surfaced by claude[bot] review on PR #873.
+                note_id = note.id or None
 
                 return {
                     "mind_map": mind_map_data,

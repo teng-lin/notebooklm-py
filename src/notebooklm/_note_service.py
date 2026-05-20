@@ -172,12 +172,23 @@ class NoteService:
         up with ``UPDATE_NOTE`` to set both content and title. Returns a
         :class:`Note` dataclass for consistency with ``NotesAPI``.
 
-        Cancellation behavior is handled by the legacy
-        :class:`_mind_map.MindMapService` path, which Phase 6 will rewire
-        through this service. For now the artifact-generation rewire (the
-        only caller introduced in Phase 5) uses this method without the
-        cancel-shielded UPDATE because the GENERATE_MIND_MAP -> persist
-        flow is a single user-facing operation per request.
+        TODO(phase-6): port the ``asyncio.shield`` + best-effort
+        ``DELETE_NOTE`` cleanup that lives on
+        :meth:`_mind_map.MindMapService.create_note` over to this method
+        before retyping ``NotesAPI`` to depend on ``NoteService``.
+        Without the shield, a cancel arriving between ``CREATE_NOTE``
+        and ``UPDATE_NOTE`` leaves an orphan empty row server-side.
+
+        Phase 5's only caller is
+        :meth:`_artifact_generation.ArtifactGenerationService.generate_mind_map`,
+        which runs as a single user-facing operation per request — the
+        cancellation window is narrow and the legacy
+        ``MindMapService.create_note`` path that ``NotesAPI`` still uses
+        retains the full shield + cleanup logic. Phase 6 collapses the
+        two implementations.
+
+        Surfaced by claude[bot] and gemini-code-assist[bot] reviews on
+        PR #873.
         """
         params = [notebook_id, "", [1], None, title]
         result = await self._session.rpc_call(
