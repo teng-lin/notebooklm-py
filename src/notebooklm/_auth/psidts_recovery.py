@@ -31,6 +31,7 @@ for this fix.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -113,19 +114,10 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
         )
         return False
 
-    try:
-        storage_state = _auth_cookies._load_storage_state(storage_path)
-    except (OSError, ValueError) as exc:
-        logger.debug("PSIDTS recovery skipped: cannot read %s: %s", storage_path, exc)
+    state = _read_storage_for_recovery(storage_path)
+    if state is None:
         return False
-
-    raw_entries = storage_state.get("cookies", [])
-    if not isinstance(raw_entries, list):
-        return False
-    cookie_entries: list[dict] = [entry for entry in raw_entries if isinstance(entry, dict)]
-    cookie_names: set[str] = {
-        name for entry in cookie_entries if isinstance(name := entry.get("name"), str) and name
-    }
+    cookie_entries, cookie_names = state
 
     if "SID" not in cookie_names:
         logger.debug("PSIDTS recovery skipped: SID missing — session is truly broken")
@@ -142,8 +134,7 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
     # would each pass the in-process throttle (which is keyed on a per-process
     # dict) and both fire ``RotateCookies``. The flock matches the outer guard
     # ``_poke_session`` uses; a held lock means the other process is rotating
-    # right now — skip and let the caller's preflight retry see whatever they
-    # land on disk.
+    # right now.
     rotate_lock_path = _keepalive._rotation_lock_path(storage_path)
     if rotate_lock_path is None:
         # Defense-in-depth: ``_rotation_lock_path`` only returns None when its
@@ -154,12 +145,70 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
 
     with _keepalive._file_lock_try_exclusive(rotate_lock_path) as acquired:
         if not acquired:
+            # Holder may already have healed the file by the time they
+            # released the lock. Re-read once before declining so the caller's
+            # retry sees the heal instead of a stale ``ValueError``.
+            healed = _is_psidts_persisted(storage_path)
             logger.debug(
-                "PSIDTS recovery skipped: %s held by another process",
+                "PSIDTS recovery skipped: %s held by another process (healed=%s)",
                 rotate_lock_path,
+                healed,
             )
+            return healed
+        # Re-read inside the lock: another process may have completed its
+        # rotation + save between our top-of-function precondition check and
+        # acquiring this flock. Mirrors ``_poke_session``'s "one last disk
+        # recheck" pattern at ``_auth/keepalive.py:283-290``.
+        fresh = _read_storage_for_recovery(storage_path)
+        if fresh is None:
             return False
-        return _attempt_rotation(storage_path, cookie_entries)
+        fresh_entries, fresh_names = fresh
+        if _PSIDTS_COOKIE in fresh_names:
+            logger.debug(
+                "PSIDTS recovery skipped: file healed by another process while waiting for flock"
+            )
+            return True
+        return _attempt_rotation(storage_path, fresh_entries)
+
+
+def _read_storage_for_recovery(
+    storage_path: Path,
+) -> tuple[list[dict], set[str]] | None:
+    """Load + filter + name-index storage_state for the recovery preconditions.
+
+    Returns ``(cookie_entries, cookie_names)`` on success, or ``None`` on any
+    load/parse failure (caller treats this as "decline recovery"). The narrow
+    exception scope catches the documented raise sites of ``_load_storage_state``
+    (``OSError`` for missing file, ``json.JSONDecodeError`` for malformed JSON)
+    and lets unexpected ``ValueError`` propagate as an implementation bug.
+    """
+    try:
+        storage_state = _auth_cookies._load_storage_state(storage_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("PSIDTS recovery skipped: cannot read %s: %s", storage_path, exc)
+        return None
+    raw_entries = storage_state.get("cookies", [])
+    if not isinstance(raw_entries, list):
+        return None
+    cookie_entries: list[dict] = [entry for entry in raw_entries if isinstance(entry, dict)]
+    cookie_names: set[str] = {
+        name for entry in cookie_entries if isinstance(name := entry.get("name"), str) and name
+    }
+    return cookie_entries, cookie_names
+
+
+def _is_psidts_persisted(storage_path: Path) -> bool:
+    """Quick re-read: is ``__Secure-1PSIDTS`` currently in the on-disk file?
+
+    Used after a held-flock skip to detect when another process has just healed
+    the file. Treats any load/parse failure as "not persisted" rather than
+    raising — the caller will retry.
+    """
+    state = _read_storage_for_recovery(storage_path)
+    if state is None:
+        return False
+    _, names = state
+    return _PSIDTS_COOKIE in names
 
 
 def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:

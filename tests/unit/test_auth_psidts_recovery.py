@@ -449,3 +449,89 @@ class TestEdgeCases:
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_flock_held_returns_true_when_file_already_healed(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """Flock held + on-disk file ALREADY has PSIDTS → return True without POST.
+
+        Closes the TOCTOU window flagged by claude bot (Minor Design Gap): when
+        we lose the flock race, the holder may have already finished writing.
+        The cheap re-read avoids the caller's preflight re-raising stale.
+        """
+        import contextlib
+
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+
+        @contextlib.contextmanager
+        def held_lock(_lock_path):
+            yield False
+
+        # Two-phase view: precondition sees missing-PSIDTS state, post-flock
+        # re-read (via _is_psidts_persisted) sees healed state.
+        pre_heal_state = {"cookies": _RECOVERABLE_COOKIES}
+        post_heal_state = {
+            "cookies": _RECOVERABLE_COOKIES
+            + [
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "healed_by_sibling_process",
+                    "domain": ".google.com",
+                    "path": "/",
+                }
+            ]
+        }
+        call_counter = {"n": 0}
+
+        def staged_load(_p):
+            call_counter["n"] += 1
+            return pre_heal_state if call_counter["n"] == 1 else post_heal_state
+
+        monkeypatch.setattr("notebooklm._auth.cookies._load_storage_state", staged_load)
+        monkeypatch.setattr(
+            "notebooklm._auth.psidts_recovery._keepalive._file_lock_try_exclusive",
+            held_lock,
+        )
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+        # No POST — the holder already did the work.
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_post_flock_recheck_skips_post_when_file_healed_meanwhile(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """Acquired the flock BUT another process healed between initial check
+        and flock-acquired → don't fire POST, return True (TOCTOU close).
+
+        Mirrors ``_poke_session``'s "one last disk recheck" at
+        ``_auth/keepalive.py:283-290``. Pinned by CodeRabbit Major: issue #865.
+        """
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+
+        pre_heal_state = {"cookies": _RECOVERABLE_COOKIES}
+        post_heal_state = {
+            "cookies": _RECOVERABLE_COOKIES
+            + [
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "healed_meanwhile",
+                    "domain": ".google.com",
+                    "path": "/",
+                }
+            ]
+        }
+        call_counter = {"n": 0}
+
+        def staged_load(_p):
+            call_counter["n"] += 1
+            return pre_heal_state if call_counter["n"] == 1 else post_heal_state
+
+        monkeypatch.setattr("notebooklm._auth.cookies._load_storage_state", staged_load)
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is True
+        # Crucial: no POST — recheck saw the heal before we fired.
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
