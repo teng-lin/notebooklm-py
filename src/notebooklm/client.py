@@ -290,7 +290,7 @@ class NotebookLMClient:
             drain_hooks=self._core,
         )
         self.notes = NotesAPI(self._core)
-        self.chat = ChatAPI(self._core, notebooks=self.notebooks)
+        self.chat = ChatAPI(self._session, notebooks=self.notebooks)
         # Pure-RPC features (Phase 1 retypes: typed as `rpc: RpcCaller`).
         self.research = ResearchAPI(self._core)
         self.settings = SettingsAPI(self._core)

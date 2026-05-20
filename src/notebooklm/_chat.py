@@ -8,7 +8,9 @@ import asyncio
 import contextlib
 import logging
 import weakref
-from typing import Any
+from typing import Any, Protocol
+
+import httpx
 
 from ._authed_transport import _AuthSnapshot
 from ._chat_protocol import (
@@ -26,7 +28,8 @@ from ._chat_transport import chat_aware_authed_post
 from ._conversation_cache import ConversationCache
 from ._logging import get_request_id, reset_request_id, set_request_id
 from ._notebook_metadata import NotebookSourceIdProvider
-from ._session_contracts import Session
+from ._request_types import BuildRequest
+from ._session_contracts import LoopGuard, RpcCaller
 from .exceptions import ChatError, NetworkError, ValidationError
 from .rpc import (
     ChatGoal,
@@ -83,6 +86,27 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
     return content
 
 
+class ChatRuntime(RpcCaller, LoopGuard, Protocol):
+    """Runtime capabilities required by the chat feature.
+
+    Local to ``_chat.py`` because ``transport_post`` and ``next_reqid`` are
+    chat-specific surfaces today and not shared with any other feature. If
+    another feature later needs the same capability, promote these members
+    to ``_session_contracts.py``; until then keeping them local minimises
+    the chat dependency surface (refactor.md §Local Chat Runtime, ADR-013).
+    """
+
+    async def transport_post(
+        self,
+        build_request: BuildRequest,
+        parse_label: str,
+        *,
+        disable_internal_retries: bool = False,
+    ) -> httpx.Response: ...
+
+    async def next_reqid(self, step: int = 100000) -> int: ...
+
+
 class ChatAPI:
     """Operations for notebook chat/conversations.
 
@@ -105,37 +129,30 @@ class ChatAPI:
 
     def __init__(
         self,
-        session: Session | None = None,
+        runtime: ChatRuntime,
         *,
-        core: Session | None = None,
         conversation_cache: ConversationCache | None = None,
         notebooks: NotebookSourceIdProvider | None = None,
     ):
         """Initialize the chat API.
 
         Args:
-            session: The shared client session.
-            core: Deprecated alias for ``session`` kept for tests and older
-                direct construction sites.
+            runtime: Local :class:`ChatRuntime` providing RPC dispatch,
+                chat-aware transport, request-id minting, and loop-affinity
+                assertion. The concrete :class:`Session` structurally
+                satisfies this protocol.
             conversation_cache: Optional injected cache; defaults to a fresh
                 per-instance ``ConversationCache`` (chat-domain state, no
                 other consumer).
             notebooks: Optional source-id resolver. Defaults to a
-                ``NotebooksAPI`` wrapper around ``core`` for backward
-                compatibility with tests that construct ``ChatAPI(core)``.
+                ``NotebooksAPI`` wrapper around ``runtime`` for backward
+                compatibility with tests that construct ``ChatAPI(fake)``.
         """
-        if session is None:
-            if core is None:
-                raise TypeError("ChatAPI requires a session")
-            session = core
-        elif core is not None:
-            raise TypeError("ChatAPI received both 'session' and 'core'")
-
-        self._core = session
+        self._runtime = runtime
         if notebooks is None:
             from ._notebooks import NotebooksAPI
 
-            notebooks = NotebooksAPI(session)
+            notebooks = NotebooksAPI(runtime)
         self._notebooks = notebooks
         self._cache = conversation_cache if conversation_cache is not None else ConversationCache()
         # Per-``conversation_id`` lock that serializes follow-up asks on the
@@ -234,7 +251,7 @@ class ChatAPI:
         # guard at ``_authed_transport.py:258-262`` only catches misuse on
         # the POST itself, which is *after* the conversation lock is
         # already held — too late.
-        self._core.assert_bound_loop()
+        self._runtime.assert_bound_loop()
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
             notebook_id,
@@ -278,10 +295,10 @@ class ChatAPI:
 
             # Mint the request-id under the asyncio-safe counter helper so two
             # concurrent ``ask`` calls on the same client never collide. The
-            # previous direct mutation ``self._core._reqid_counter += 100000``
+            # previous direct mutation ``self._runtime._reqid_counter += 100000``
             # raced under ``asyncio.gather`` and produced duplicate ``_reqid``
             # URL params.
-            reqid = await self._core.next_reqid()
+            reqid = await self._runtime.next_reqid()
 
             def build_request(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
                 return self._build_chat_request(
@@ -303,7 +320,7 @@ class ChatAPI:
             reqid_token = None if get_request_id() is not None else set_request_id()
             try:
                 response = await chat_aware_authed_post(
-                    self._core,
+                    self._runtime,
                     build_request=build_request,
                     parse_label="chat.ask",
                 )
@@ -418,7 +435,7 @@ class ChatAPI:
             limit,
         )
         params: list[Any] = [[], None, None, conversation_id, limit]
-        return await self._core.rpc_call(
+        return await self._runtime.rpc_call(
             RPCMethod.GET_CONVERSATION_TURNS,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -437,7 +454,7 @@ class ChatAPI:
         """
         logger.debug("Getting conversation ID for notebook %s", notebook_id)
         params: list[Any] = [[], None, notebook_id, 1]
-        raw = await self._core.rpc_call(
+        raw = await self._runtime.rpc_call(
             RPCMethod.GET_LAST_CONVERSATION_ID,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -593,7 +610,7 @@ class ChatAPI:
             # Param shape captured from web-UI traffic. The trailing 1 is
             # always observed; its meaning is uncharted — treated as a fixed flag.
             params: list[Any] = [[], conversation_id, None, 1]
-            await self._core.rpc_call(
+            await self._runtime.rpc_call(
                 RPCMethod.DELETE_CONVERSATION,
                 params,
                 source_path=f"/notebook/{notebook_id}",
@@ -650,7 +667,7 @@ class ChatAPI:
             [[None, None, None, None, None, None, None, chat_settings]],
         ]
 
-        await self._core.rpc_call(
+        await self._runtime.rpc_call(
             RPCMethod.RENAME_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",

@@ -205,9 +205,9 @@ class TestChatReqid:
     ):
         """``asyncio.gather(ask*3)`` → three distinct ``_reqid`` URL values.
 
-        Previously, the body did ``self._core._reqid_counter += 100000`` under
+        Previously, the body did ``self._runtime._reqid_counter += 100000`` under
         a read-modify-write race; under concurrent gather() this collapsed
-        to a single reqid value. ``core.next_reqid()`` serializes the
+        to a single reqid value. ``runtime.next_reqid()`` serializes the
         increment under an asyncio.Lock, restoring monotonic distinct ids.
         """
         auth = AuthTokens(
