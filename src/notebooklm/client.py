@@ -301,8 +301,9 @@ class NotebookLMClient:
         # ``Session`` directly satisfies ``ArtifactsRuntime`` (RpcCaller +
         # AsyncWorkRuntime + DrainHookRegistration) and the ``_core`` alias
         # exists only for legacy callers that pre-date the runtime split. The
-        # other sub-APIs still pass ``self._core`` while their own
-        # capability-protocol migrations land; Phase 7 retires the alias.
+        # ``_core`` alias is preserved indefinitely for back-compat (per
+        # refactor.md Non-Goals — see ADR-013); retiring it is a future
+        # arc and is out of scope here.
         note_service = NoteService(self._session)
         mind_maps = NoteBackedMindMapService(note_service)
         self.artifacts = ArtifactsAPI(

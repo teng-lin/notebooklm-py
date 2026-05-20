@@ -137,12 +137,11 @@ class DrainHookRegistration(Protocol):
     background tasks, revisit whether ``register_drain_hook`` should
     become shared.
 
-    Note: an identically-shaped ``DrainHookRegistration`` Protocol also
-    exists at ``_session_contracts.py`` for the broad-``Session`` era.
-    Both Protocols are structurally compatible (a real ``Session``
-    satisfies both) and they coexist intentionally during the
-    migration. Phase 7 deletes the ``_session_contracts`` twin; until
-    then, this local copy is the one consumed by ``ArtifactsRuntime``.
+    This is the **canonical and only** ``DrainHookRegistration``
+    Protocol after Phase 7 of the capability refactor — the broad-
+    ``Session``-era twin previously at ``_session_contracts.py`` was
+    deleted in the same refactor arc once artifact polling was
+    confirmed as its only consumer.
     """
 
     def register_drain_hook(
