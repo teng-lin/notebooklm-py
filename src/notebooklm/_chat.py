@@ -295,9 +295,10 @@ class ChatAPI:
 
             # Mint the request-id under the asyncio-safe counter helper so two
             # concurrent ``ask`` calls on the same client never collide. The
-            # previous direct mutation ``self._runtime._reqid_counter += 100000``
-            # raced under ``asyncio.gather`` and produced duplicate ``_reqid``
-            # URL params.
+            # previous direct mutation ``self._core._reqid_counter += 100000``
+            # (``self._core`` was the pre-Phase-2 attribute name, now
+            # ``self._runtime``) raced under ``asyncio.gather`` and produced
+            # duplicate ``_reqid`` URL params.
             reqid = await self._runtime.next_reqid()
 
             def build_request(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
