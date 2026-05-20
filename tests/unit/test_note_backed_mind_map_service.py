@@ -94,18 +94,20 @@ class TestEndToEndWithRealNoteService:
 
     @pytest.mark.asyncio
     async def test_real_note_service_round_trip(self) -> None:
+        from _fixtures.fake_core import make_fake_core
         from notebooklm._note_service import NoteService as RealNoteService
 
         mind_map_payload = json.dumps({"children": [{"name": "c"}]})
-        session = MagicMock()
-        session.rpc_call = AsyncMock(
-            return_value=[
-                [
-                    ["note_1", "plain"],
-                    ["mm_1", mind_map_payload],
-                    ["del_1", None, 2],
+        session = make_fake_core(
+            rpc_call=AsyncMock(
+                return_value=[
+                    [
+                        ["note_1", "plain"],
+                        ["mm_1", mind_map_payload],
+                        ["del_1", None, 2],
+                    ]
                 ]
-            ]
+            )
         )
 
         notes = RealNoteService(session)

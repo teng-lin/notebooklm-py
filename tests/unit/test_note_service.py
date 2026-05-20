@@ -14,24 +14,26 @@ in ``test_mind_map_service.py``).
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, call
 
 import pytest
 
+from _fixtures.fake_core import FakeSession, make_fake_core
 from notebooklm._note_service import NoteRowKind, NoteService
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
 
 
 @pytest.fixture
-def mock_session() -> MagicMock:
-    session = MagicMock()
-    session.rpc_call = AsyncMock()
-    return session
+def mock_session() -> FakeSession:
+    # ``make_fake_core`` is the ADR-007 sanctioned substrate. We inject a
+    # fresh ``AsyncMock`` for ``rpc_call`` at construction time so per-test
+    # ``.return_value`` / ``.side_effect`` assignment still works.
+    return make_fake_core(rpc_call=AsyncMock(return_value=None))
 
 
 @pytest.fixture
-def service(mock_session: MagicMock) -> NoteService:
+def service(mock_session: FakeSession) -> NoteService:
     return NoteService(mock_session)
 
 
@@ -40,7 +42,7 @@ class TestFetchNoteRows:
 
     @pytest.mark.asyncio
     async def test_fetch_note_rows_filters_invalid_rows(
-        self, service: NoteService, mock_session: MagicMock
+        self, service: NoteService, mock_session: FakeSession
     ) -> None:
         mock_session.rpc_call.return_value = [
             [
@@ -65,7 +67,7 @@ class TestFetchNoteRows:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("payload", [None, [], ["not-a-list"], [[]]])
     async def test_fetch_note_rows_returns_empty_for_malformed_payload(
-        self, service: NoteService, mock_session: MagicMock, payload: object
+        self, service: NoteService, mock_session: FakeSession, payload: object
     ) -> None:
         mock_session.rpc_call.return_value = payload
         assert await service.fetch_note_rows("nb_123") == []
@@ -137,7 +139,7 @@ class TestCrud:
 
     @pytest.mark.asyncio
     async def test_create_note_does_create_then_update(
-        self, service: NoteService, mock_session: MagicMock
+        self, service: NoteService, mock_session: FakeSession
     ) -> None:
         mock_session.rpc_call.side_effect = [[["note_123"]], None]
 
@@ -169,7 +171,7 @@ class TestCrud:
 
     @pytest.mark.asyncio
     async def test_create_note_returns_empty_id_when_server_omits_id(
-        self, service: NoteService, mock_session: MagicMock
+        self, service: NoteService, mock_session: FakeSession
     ) -> None:
         mock_session.rpc_call.return_value = None
 
@@ -182,7 +184,7 @@ class TestCrud:
 
     @pytest.mark.asyncio
     async def test_update_note_sends_existing_payload(
-        self, service: NoteService, mock_session: MagicMock
+        self, service: NoteService, mock_session: FakeSession
     ) -> None:
         await service.update_note("nb_123", "note_123", "Body", "Title")
 
@@ -195,7 +197,7 @@ class TestCrud:
 
     @pytest.mark.asyncio
     async def test_delete_note_returns_true_and_sends_soft_delete(
-        self, service: NoteService, mock_session: MagicMock
+        self, service: NoteService, mock_session: FakeSession
     ) -> None:
         assert await service.delete_note("nb_123", "note_123") is True
 
