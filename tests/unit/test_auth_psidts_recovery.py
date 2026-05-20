@@ -535,3 +535,30 @@ class TestEdgeCases:
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
         # Crucial: no POST — recheck saw the heal before we fired.
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_post_flock_recheck_re_validates_full_preconditions(
+        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        """If a concurrent write LOSES SID or secondary binding between the initial
+        precondition read and acquiring the flock, the post-flock recheck must
+        decline rather than fire a doomed POST (CodeRabbit follow-up: issue #865).
+        """
+        storage_path = tmp_path / "storage_state.json"
+        _write_storage(storage_path, _RECOVERABLE_COOKIES)
+
+        # Pre-heal: precondition gate passes. Post-heal: SID got dropped by a
+        # concurrent process (e.g. logout, profile switch).
+        pre_heal_state = {"cookies": _RECOVERABLE_COOKIES}
+        post_heal_state = {"cookies": [c for c in _RECOVERABLE_COOKIES if c["name"] != "SID"]}
+        call_counter = {"n": 0}
+
+        def staged_load(_p):
+            call_counter["n"] += 1
+            return pre_heal_state if call_counter["n"] == 1 else post_heal_state
+
+        monkeypatch.setattr("notebooklm._auth.cookies._load_storage_state", staged_load)
+
+        assert psidts_recovery._recover_psidts_inline(storage_path) is False
+        # No POST — recheck saw the broken state and aborted before firing.
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []

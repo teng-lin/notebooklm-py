@@ -158,7 +158,10 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
         # Re-read inside the lock: another process may have completed its
         # rotation + save between our top-of-function precondition check and
         # acquiring this flock. Mirrors ``_poke_session``'s "one last disk
-        # recheck" pattern at ``_auth/keepalive.py:283-290``.
+        # recheck" pattern at ``_auth/keepalive.py:283-290``. Re-validate the
+        # FULL precondition set against the fresh state (not just PSIDTS-present)
+        # so a concurrent write that dropped SID or the secondary binding
+        # can't slip a doomed POST through.
         fresh = _read_storage_for_recovery(storage_path)
         if fresh is None:
             return False
@@ -168,6 +171,14 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
                 "PSIDTS recovery skipped: file healed by another process while waiting for flock"
             )
             return True
+        if "SID" not in fresh_names:
+            logger.debug("PSIDTS recovery skipped: SID missing after flock acquisition")
+            return False
+        if not _cookie_policy._has_valid_secondary_binding(fresh_names):
+            logger.debug(
+                "PSIDTS recovery skipped: secondary binding incomplete after flock acquisition"
+            )
+            return False
         return _attempt_rotation(storage_path, fresh_entries)
 
 
