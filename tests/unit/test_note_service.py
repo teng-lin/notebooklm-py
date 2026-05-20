@@ -271,16 +271,75 @@ class TestCreateNoteCancellation:
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=1)
 
-        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
-        # Cleanup is scheduled but not awaited before the outer cancellation propagates.
-        assert not cleanup_finished.is_set()
-        # ``asyncio.shield`` keeps UPDATE_NOTE running after the outer task is cancelled.
+        # Ordered cleanup (coderabbit feedback on PR #875): the cleanup
+        # wrapper task is scheduled at cancel time but DELETE_NOTE only
+        # fires AFTER the shielded UPDATE_NOTE finishes. Before
+        # releasing UPDATE_NOTE, neither should have run — update is
+        # still suspended on its event and delete is gated on the
+        # update completing.
         assert not update_finished.is_set()
+        assert not cleanup_started.is_set()
+        assert not cleanup_finished.is_set()
 
+        # Release the shielded UPDATE_NOTE; the cleanup task then
+        # observes update_task completion and proceeds to DELETE_NOTE.
         update_can_finish.set()
         await asyncio.wait_for(update_finished.wait(), timeout=1)
+        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
+        assert not cleanup_finished.is_set()
+
         cleanup_can_finish.set()
         await asyncio.wait_for(cleanup_finished.wait(), timeout=1)
+
+    @pytest.mark.asyncio
+    async def test_cancellation_cleanup_runs_even_when_update_raises(
+        self,
+        mock_session: FakeSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If the shielded UPDATE_NOTE raises after cancellation, the
+        best-effort DELETE_NOTE cleanup still fires.
+
+        Coderabbit feedback on PR #875 (the ordered-cleanup change)
+        added this guard: the cleanup wrapper logs and swallows any
+        UPDATE_NOTE exception so the DELETE_NOTE half always runs.
+        Without it, an update-side error would leave the orphan row
+        the shield was supposed to protect against.
+        """
+        service = NoteService(mock_session)
+        mock_session.rpc_call.return_value = [["note_456"]]
+        update_started = asyncio.Event()
+        update_can_finish = asyncio.Event()
+        cleanup_started = asyncio.Event()
+
+        async def failing_update_note(
+            notebook_id: str,
+            note_id: str,
+            content: str,
+            title: str,
+        ) -> None:
+            update_started.set()
+            await update_can_finish.wait()
+            raise RuntimeError("simulated UPDATE_NOTE failure after shield")
+
+        async def fake_delete_note_best_effort(notebook_id: str, note_id: str) -> None:
+            assert (notebook_id, note_id) == ("nb_456", "note_456")
+            cleanup_started.set()
+
+        monkeypatch.setattr(service, "update_note", failing_update_note)
+        monkeypatch.setattr(service, "_delete_note_best_effort", fake_delete_note_best_effort)
+
+        task = asyncio.create_task(service.create_note("nb_456", title="T", content="b"))
+        await asyncio.wait_for(update_started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=1)
+
+        # Release the shielded UPDATE_NOTE; it will raise — the
+        # cleanup wrapper must catch+log and still issue the
+        # DELETE_NOTE side.
+        update_can_finish.set()
+        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
 
 
 class TestPrivacy:
