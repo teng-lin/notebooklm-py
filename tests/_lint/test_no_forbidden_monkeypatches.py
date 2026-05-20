@@ -165,7 +165,6 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_idempotency_registry.py",
         "tests/unit/test_init_order.py",
         "tests/unit/test_migration_lock.py",
-        "tests/unit/test_mind_map_service.py",
         "tests/unit/test_notebook_api.py",
         "tests/unit/test_notes_unit.py",
         "tests/unit/test_public_shims.py",

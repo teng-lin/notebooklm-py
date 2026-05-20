@@ -208,9 +208,8 @@ class ArtifactsAPI:
                 ``create_note`` call site that
                 ``_artifact_generation.generate_mind_map`` uses to
                 persist generated mind maps. Added in Phase 5 so the
-                generation path no longer reaches into
-                ``_mind_map.create_note(api._core, ...)`` through the
-                ``_artifact_seams`` shim.
+                generation path no longer reaches into a module-level
+                ``_mind_map.create_note`` shim (retired in Phase 6).
             storage_path: Path to storage state file for loading download cookies.
         """
         self._runtime = runtime

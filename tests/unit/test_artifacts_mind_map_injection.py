@@ -13,7 +13,7 @@ These tests pin three contracts:
 
 1. ``_list_mind_maps()`` delegates to the injected ``mind_maps``
    facade and does not re-enter the legacy module-level
-   ``_mind_map.list_mind_maps`` wrapper.
+   ``_mind_map.NoteBackedMindMapService.list_mind_maps`` adapter.
 2. Both ``mind_maps`` and ``note_service`` are required and
    keyword-only — the legacy ``mind_map_service`` kwarg is gone.
 3. Constructing without the new kwargs (or with the old name) raises
@@ -25,24 +25,25 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from _fixtures.fake_core import make_fake_core
-from notebooklm import _mind_map
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_map import NoteBackedMindMapService
 from notebooklm._note_service import NoteService
 
 
 @pytest.mark.asyncio
-async def test_list_mind_maps_delegates_to_injected_facade(monkeypatch):
-    """``_list_mind_maps`` calls the injected ``mind_maps`` facade and
-    does not re-enter the module-level ``_mind_map.list_mind_maps``
-    wrapper."""
+async def test_list_mind_maps_delegates_to_injected_facade():
+    """``_list_mind_maps`` calls the injected ``mind_maps`` facade.
+
+    Phase 6 (refactor.md Step 9, ADR-013) removed the module-level
+    ``_mind_map.list_mind_maps`` wrapper that previously needed to be
+    monkeypatched as a guard; the only path now is through the
+    injected adapter. Confirming the adapter sees the call still pins
+    the contract.
+    """
     core = make_fake_core()
     fake_mind_maps = MagicMock(spec=NoteBackedMindMapService)
     fake_mind_maps.list_mind_maps = AsyncMock(return_value=["sentinel-row"])
     fake_note_service = MagicMock(spec=NoteService)
-
-    module_seam = AsyncMock(return_value=["should-not-see-this"])
-    monkeypatch.setattr(_mind_map, "list_mind_maps", module_seam)
 
     api = ArtifactsAPI(
         core,
@@ -54,7 +55,6 @@ async def test_list_mind_maps_delegates_to_injected_facade(monkeypatch):
 
     assert result == ["sentinel-row"]
     fake_mind_maps.list_mind_maps.assert_awaited_once_with("nb_abc")
-    module_seam.assert_not_awaited()
 
 
 def test_mind_maps_and_note_service_are_required():

@@ -481,13 +481,14 @@ IDEMPOTENCY_REGISTRY.register(
 )
 
 # CREATE_NOTE has two operation variants on the wire:
-#   * ``"plain"`` — 5-element params from ``MindMapService.create_note``
+#   * ``"plain"`` — 5-element params from ``NoteService.create_note``
 #     (default for ``notes.create()`` and mind-map row creation). The
 #     ``(CREATE_NOTE, None)`` default mirrors the same policy so callers
 #     that omit ``operation_variant`` still get NON_IDEMPOTENT_NO_RETRY.
 #   * ``"saved_from_chat"`` — 7-element params from
-#     ``save_chat_answer_as_note`` (issue #660). Used by
-#     ``notes.create_from_chat``.
+#     ``_chat_notes.save_chat_answer_as_note`` (issue #660). Used by
+#     ``ChatAPI.save_answer_as_note`` (and the deprecated
+#     ``NotesAPI.create_from_chat`` forwarder).
 # Both variants share the policy; explicit registration documents the
 # two distinct param shapes for future-classification work.
 IDEMPOTENCY_REGISTRY.register(
@@ -558,10 +559,11 @@ IDEMPOTENCY_REGISTRY.register(
 # Note: ``GENERATE_MIND_MAP`` itself does NOT persist the note server-side
 # (see ``tests/integration/test_mind_map_chain_vcr.py`` header). The actual
 # persistence is the subsequent ``CREATE_NOTE`` + ``UPDATE_NOTE`` chain in
-# ``_mind_map.create_note()``. PROBE_THEN_CREATE here suppresses the inner
-# retry loop on the *generation* RPC for two reasons: (a) a blind re-POST
-# wastes the expensive LLM inference, and (b) LLM nondeterminism means a
-# retried generation may return a *different* mind-map JSON, which would
+# ``NoteService.create_note`` (formerly ``_mind_map.create_note``, removed
+# in Phase 6). PROBE_THEN_CREATE here suppresses the inner retry loop on
+# the *generation* RPC for two reasons: (a) a blind re-POST wastes the
+# expensive LLM inference, and (b) LLM nondeterminism means a retried
+# generation may return a *different* mind-map JSON, which would
 # silently mismatch what the client saw on the first commit before the
 # response was lost. Classifying CREATE_NOTE for the persisted-write side
 # of the chain is a separate follow-up (out of scope per the b-generation
@@ -577,7 +579,7 @@ IDEMPOTENCY_REGISTRY.register(
         "generation does not trigger a fresh LLM inference whose result "
         "may diverge from the first (lost) response. The persisted-note "
         "side of the mind-map chain (CREATE_NOTE / UPDATE_NOTE in "
-        "_mind_map.create_note) remains UNCLASSIFIED and is the subject "
+        "NoteService.create_note) remains UNCLASSIFIED and is the subject "
         "of a follow-up classification task."
     ),
 )

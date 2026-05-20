@@ -1,7 +1,7 @@
 """Unit tests for the saved-from-chat CREATE_NOTE encoder (issue #660).
 
-These tests exercise ``_mind_map.build_save_chat_as_note_params`` and pin
-its output against the wire-captured payload at
+These tests exercise ``_chat_notes.build_save_chat_as_note_params`` and
+pin its output against the wire-captured payload at
 ``tests/unit/fixtures/save_chat_as_note_create_note_request.json``.
 
 The golden test is the most important one: a byte-exact match (via
@@ -9,6 +9,10 @@ deep-equal of the decoded JSON structure) guarantees that the encoder
 produces the same payload Google's web UI sends when its "Save to note"
 button is clicked. Drift from that payload risks the server silently
 dropping citation anchors and reverting the note to plain text.
+
+The encoder moved from ``_mind_map.py`` to ``_chat_notes.py`` in
+Phase 6 (refactor.md Step 8, ADR-013); the test imports were updated
+accordingly.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from notebooklm._mind_map import (
+from notebooklm._chat_notes import (
     _CITATION_MARKER_RE,
     _strip_citation_markers,
     build_save_chat_as_note_params,

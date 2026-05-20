@@ -5,14 +5,16 @@ primitives shared by ``NotesAPI`` (Phase 6 retypes it) and
 ``NoteBackedMindMapService`` (the mind-map adapter the artifact
 download path uses).
 
-The classifier behavior is exercised here because it is the only
-new logic introduced in Phase 5 (the CRUD methods mirror the existing
-``MindMapService`` wire payloads, which already have dedicated tests
-in ``test_mind_map_service.py``).
+The classifier behaviour, CRUD wire payloads, and the audit §28
+cancel-shielded ``create_note`` are all exercised here; Phase 6
+(refactor.md Step 9, ADR-013) retired the legacy
+``test_mind_map_service.py`` tests because the underlying
+``MindMapService`` class is gone.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, call
 
@@ -207,6 +209,78 @@ class TestCrud:
             source_path="/notebook/nb_123",
             allow_null=True,
         )
+
+
+class TestCreateNoteCancellation:
+    """Audit item §28: cancel mid-UPDATE_NOTE must not leave an orphan row.
+
+    Moved to ``NoteService`` in Phase 6 (refactor.md Step 9, ADR-013).
+    The legacy ``_mind_map.MindMapService.create_note`` path that
+    previously owned the shield + best-effort cleanup contract was
+    retired in the same phase; the contract itself lives here now.
+    """
+
+    @pytest.mark.asyncio
+    async def test_cancellation_schedules_best_effort_cleanup(
+        self,
+        mock_session: FakeSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        service = NoteService(mock_session)
+        mock_session.rpc_call.return_value = [["note_123"]]
+        update_started = asyncio.Event()
+        update_can_finish = asyncio.Event()
+        update_finished = asyncio.Event()
+        cleanup_started = asyncio.Event()
+        cleanup_can_finish = asyncio.Event()
+        cleanup_finished = asyncio.Event()
+
+        async def fake_update_note(
+            notebook_id: str,
+            note_id: str,
+            content: str,
+            title: str,
+        ) -> None:
+            assert (notebook_id, note_id, content, title) == (
+                "nb_123",
+                "note_123",
+                "body",
+                "Title",
+            )
+            update_started.set()
+            try:
+                await update_can_finish.wait()
+            finally:
+                update_finished.set()
+
+        async def fake_delete_note_best_effort(notebook_id: str, note_id: str) -> None:
+            assert (notebook_id, note_id) == ("nb_123", "note_123")
+            cleanup_started.set()
+            try:
+                await cleanup_can_finish.wait()
+            finally:
+                cleanup_finished.set()
+
+        monkeypatch.setattr(service, "update_note", fake_update_note)
+        monkeypatch.setattr(service, "_delete_note_best_effort", fake_delete_note_best_effort)
+
+        task = asyncio.create_task(service.create_note("nb_123", title="Title", content="body"))
+        await asyncio.wait_for(update_started.wait(), timeout=1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=1)
+
+        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
+        # Cleanup is scheduled but not awaited before the outer cancellation propagates.
+        assert not cleanup_finished.is_set()
+        # ``asyncio.shield`` keeps UPDATE_NOTE running after the outer task is cancelled.
+        assert not update_finished.is_set()
+
+        update_can_finish.set()
+        await asyncio.wait_for(update_finished.wait(), timeout=1)
+        cleanup_can_finish.set()
+        await asyncio.wait_for(cleanup_finished.wait(), timeout=1)
 
 
 class TestPrivacy:

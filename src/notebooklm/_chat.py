@@ -13,6 +13,7 @@ from typing import Any, Protocol
 import httpx
 
 from ._authed_transport import _AuthSnapshot
+from ._chat_notes import save_chat_answer_as_note
 from ._chat_protocol import (
     build_streaming_chat_request,
     collect_texts_from_nested,
@@ -37,7 +38,7 @@ from .rpc import (
     RPCMethod,
     safe_index,
 )
-from .types import AskResult, ChatMode, ChatReference, ConversationTurn
+from .types import AskResult, ChatMode, ChatReference, ConversationTurn, Note
 
 logger = logging.getLogger(__name__)
 
@@ -692,6 +693,62 @@ class ChatAPI:
 
         goal, length, prompt = mode_configs[mode]
         await self.configure(notebook_id, goal, length, prompt)
+
+    async def save_answer_as_note(
+        self,
+        notebook_id: str,
+        ask_result: AskResult,
+        *,
+        title: str | None = None,
+    ) -> Note:
+        """Save a chat answer as a citation-rich note (issue #660).
+
+        Unlike :meth:`NotesAPI.create`, this preserves the ``[N]``
+        citation markers in the answer as interactive hover-anchored
+        references in the NotebookLM web UI. It mirrors the wire format
+        the web UI's "Save to note" button uses.
+
+        Args:
+            notebook_id: The notebook ID.
+            ask_result: Result from a prior ``client.chat.ask()`` call.
+                Must have non-empty ``references`` — otherwise this
+                method raises :class:`ValueError`.
+            title: Note title. When ``None`` (default), a title is
+                derived from the first 50 characters of the answer
+                (``AskResult`` does not currently carry the original
+                question, so the answer is used). The NotebookLM server
+                may apply smart-title generation; the returned
+                ``Note.title`` reflects what the server actually stored.
+
+        Returns:
+            The created ``Note``. ``Note.content`` holds the answer text
+            WITH ``[N]`` markers; the rich citation anchors live
+            server-side and surface via the NotebookLM web UI.
+
+        Raises:
+            ValueError: If ``ask_result.references`` is empty. Callers
+                without citations should fall back to
+                :meth:`NotesAPI.create` for plain-text notes — this
+                method raises rather than silently degrading so the
+                caller can decide.
+        """
+        if not ask_result.references:
+            raise ValueError(
+                "save_answer_as_note requires AskResult.references to be "
+                "non-empty; use notes.create() for plain-text notes."
+            )
+        resolved_title = (
+            title
+            if title is not None
+            else f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"
+        )
+        return await save_chat_answer_as_note(
+            self._runtime,
+            notebook_id,
+            ask_result.answer,
+            ask_result.references,
+            resolved_title,
+        )
 
     # =========================================================================
     # Private Helpers

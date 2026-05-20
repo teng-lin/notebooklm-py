@@ -3,7 +3,7 @@
 Tier 9 Wave 2 task ``b-research-notes`` (P0-3-notes). ``CREATE_NOTE`` is
 classified as ``NON_IDEMPOTENT_NO_RETRY`` for both operation variants:
 
-* ``"plain"`` — the default ``MindMapService.create_note`` path. Params
+* ``"plain"`` — the default ``NoteService.create_note`` path. Params
   ``[notebook_id, "", [1], None, title]``. The server ignores the title
   slot; ``UPDATE_NOTE`` follows up to set it. A 5xx mid-CREATE_NOTE
   leaves no client-visible ``note_id``, so even a probe against
@@ -93,7 +93,7 @@ def _rpc_id_in_request(request: httpx.Request) -> str | None:
 def test_create_note_default_variant_classified_non_idempotent() -> None:
     """The default ``(CREATE_NOTE, None)`` entry is NON_IDEMPOTENT_NO_RETRY.
 
-    The plain ``MindMapService.create_note`` path uses the 5-element
+    The plain ``NoteService.create_note`` path uses the 5-element
     params and is the default variant when callers don't pass an explicit
     ``operation_variant``.
     """
@@ -121,7 +121,7 @@ def test_create_note_plain_variant_classified_non_idempotent() -> None:
 def test_create_note_saved_from_chat_variant_classified_non_idempotent() -> None:
     """The ``"saved_from_chat"`` variant is NON_IDEMPOTENT_NO_RETRY.
 
-    Used by ``MindMapRpc.save_chat_answer_as_note`` (issue #660). The
+    Used by ``_chat_notes.save_chat_answer_as_note`` (issue #660). The
     7-element params carry rich content; title-based probes break under
     server-side smart-title generation, and chat-answer fingerprints are
     not unique enough for safe dedupe.
@@ -142,7 +142,7 @@ def test_create_note_saved_from_chat_variant_classified_non_idempotent() -> None
 async def test_create_note_plain_no_inner_retry_on_5xx(auth_tokens) -> None:
     """A 502 on ``notes.create()`` fires exactly ONE CREATE_NOTE POST.
 
-    ``NotesAPI.create`` → ``MindMapService.create_note`` issues
+    ``NotesAPI.create`` → ``NoteService.create_note`` issues
     CREATE_NOTE (and on success, a follow-up UPDATE_NOTE). With the
     plain variant classified NON_IDEMPOTENT_NO_RETRY, the inner retry
     loop is disabled and the CREATE_NOTE 502 surfaces immediately. The
@@ -252,7 +252,7 @@ async def test_create_note_happy_path_one_post(auth_tokens) -> None:
         rpc_id = _rpc_id_in_request(request)
         if rpc_id == RPCMethod.CREATE_NOTE.value:
             create_count += 1
-            # Response shape: [[note_id, ...]] — see MindMapService.create_note parse.
+            # Response shape: [[note_id, ...]] — see NoteService.create_note parse.
             return httpx.Response(
                 200, text=_wrb_response(RPCMethod.CREATE_NOTE.value, [["note_xyz"]])
             )

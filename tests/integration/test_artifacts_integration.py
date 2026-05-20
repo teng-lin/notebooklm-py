@@ -1415,7 +1415,7 @@ class TestListMindMapErrorHandling:
 
         async with NotebookLMClient(auth_tokens) as client:
             # After issue #691, ArtifactsAPI reaches mind-map rows through the
-            # injected MindMapService. Patch the service's list_mind_maps so
+            # injected NoteBackedMindMapService. Patch the service's list_mind_maps so
             # the simulated error reaches ArtifactsAPI.list().
             with patch.object(
                 client.artifacts._mind_maps,

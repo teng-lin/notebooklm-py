@@ -312,8 +312,18 @@ class NotebookLMClient:
             note_service=note_service,
             storage_path=storage_path,
         )
-        self.notes = NotesAPI(self._core)
+        # ``chat`` MUST be constructed before ``notes`` so the
+        # ``save_chat_answer`` callback (= ``chat.save_answer_as_note``)
+        # exists at NotesAPI construction time. Phase 6 (refactor.md
+        # Step 8, ADR-013) moves saved-chat ownership to ChatAPI and
+        # has NotesAPI delegate via constructor injection.
         self.chat = ChatAPI(self._session, notebooks=self.notebooks)
+        self.notes = NotesAPI(
+            self._core,
+            notes=note_service,
+            mind_maps=mind_maps,
+            save_chat_answer=self.chat.save_answer_as_note,
+        )
         # Pure-RPC features (Phase 1 retypes: typed as `rpc: RpcCaller`).
         self.research = ResearchAPI(self._core)
         self.settings = SettingsAPI(self._core)

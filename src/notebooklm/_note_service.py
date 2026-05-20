@@ -22,6 +22,8 @@ the row — losing a chat-mode tag is preferable to dropping the note.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +34,17 @@ if TYPE_CHECKING:
     from ._session_contracts import Session
 
 __all__ = ["NoteService"]  # NoteRowKind is intentionally NOT exported
+
+logger = logging.getLogger(__name__)
+
+
+# Strong references for fire-and-forget cleanup tasks. ``asyncio.create_task``
+# returns a Task that the event loop only holds via a weak reference, so an
+# unrooted Task can be garbage-collected mid-execution — losing the orphan-row
+# cleanup the cancel-safety shield is supposed to guarantee. Each created task
+# adds itself here and removes itself in a done-callback so the set stays
+# bounded.
+_cleanup_tasks: set[asyncio.Task[Any]] = set()
 
 
 class NoteRowKind(Enum):
@@ -172,23 +185,17 @@ class NoteService:
         up with ``UPDATE_NOTE`` to set both content and title. Returns a
         :class:`Note` dataclass for consistency with ``NotesAPI``.
 
-        TODO(phase-6): port the ``asyncio.shield`` + best-effort
-        ``DELETE_NOTE`` cleanup that lives on
-        :meth:`_mind_map.MindMapService.create_note` over to this method
-        before retyping ``NotesAPI`` to depend on ``NoteService``.
-        Without the shield, a cancel arriving between ``CREATE_NOTE``
-        and ``UPDATE_NOTE`` leaves an orphan empty row server-side.
-
-        Phase 5's only caller is
-        :meth:`_artifact_generation.ArtifactGenerationService.generate_mind_map`,
-        which runs as a single user-facing operation per request — the
-        cancellation window is narrow and the legacy
-        ``MindMapService.create_note`` path that ``NotesAPI`` still uses
-        retains the full shield + cleanup logic. Phase 6 collapses the
-        two implementations.
-
-        Surfaced by claude[bot] and gemini-code-assist[bot] reviews on
-        PR #873.
+        Cancellation behaviour (audit item §28): the UPDATE_NOTE
+        finalize is wrapped in ``asyncio.shield`` so an outer cancel
+        cannot abort an in-flight finalize. If ``CancelledError``
+        propagates while the shielded UPDATE_NOTE is still running, a
+        best-effort DELETE_NOTE cleanup is scheduled (NOT awaited —
+        re-raise must not block on cleanup) to honour the caller's
+        cancel intent without leaving an orphan row behind. The legacy
+        ``_mind_map.MindMapService.create_note`` path that previously
+        owned this contract was retired in Phase 6; the contract
+        itself moves here (closes the Phase 5 TODO surfaced by
+        claude[bot] and gemini-code-assist[bot] on PR #873).
         """
         params = [notebook_id, "", [1], None, title]
         result = await self._session.rpc_call(
@@ -205,7 +212,26 @@ class NoteService:
                 note_id = result[0]
 
         if note_id:
-            await self.update_note(notebook_id, note_id, content, title)
+            # Shield the UPDATE_NOTE finalize from outer cancellation:
+            # CREATE_NOTE has already persisted a row server-side; without
+            # the shield, a cancel arriving between CREATE_NOTE and
+            # UPDATE_NOTE completion leaves an orphan row with no
+            # title/content.
+            try:
+                await asyncio.shield(self.update_note(notebook_id, note_id, content, title))
+            except asyncio.CancelledError:
+                # Fire-and-forget orphan-row cleanup; the re-raise
+                # MUST NOT await the cleanup task. Strong-ref via
+                # ``_cleanup_tasks`` so the loop's weak-ref Task
+                # storage cannot GC it mid-flight (RUF006); the
+                # done-callback discards on completion so the set
+                # stays bounded.
+                cleanup_task = asyncio.create_task(
+                    self._delete_note_best_effort(notebook_id, note_id)
+                )
+                _cleanup_tasks.add(cleanup_task)
+                cleanup_task.add_done_callback(_cleanup_tasks.discard)
+                raise
 
         return Note(
             id=note_id or "",
@@ -213,6 +239,25 @@ class NoteService:
             title=title,
             content=content,
         )
+
+    async def _delete_note_best_effort(self, notebook_id: str, note_id: str) -> None:
+        """Best-effort DELETE_NOTE cleanup for a partially-finalized create.
+
+        Used as a fire-and-forget ``asyncio.create_task`` target when an
+        outer cancel arrives mid-UPDATE_NOTE: we never block the
+        re-raise on this call, and any failure (network, auth refresh,
+        etc.) is logged and swallowed. The only desired side effect is
+        orphan-row removal.
+        """
+        try:
+            await self.delete_note(notebook_id, note_id)
+        except Exception:  # noqa: BLE001 — best-effort cleanup, must not surface
+            logger.warning(
+                "Best-effort DELETE_NOTE cleanup failed for note %s in notebook %s",
+                note_id,
+                notebook_id,
+                exc_info=True,
+            )
 
     async def update_note(
         self,

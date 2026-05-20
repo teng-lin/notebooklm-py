@@ -91,8 +91,8 @@ class TestEmptyResults:
         Covers both wings of the unified ``list`` implementation: the studio
         ``LIST_ARTIFACTS`` RPC (audio/video/reports/quizzes/...) AND the
         mind-map sidecar via the injected
-        :class:`notebooklm._mind_map.MindMapService`. A brand-new notebook
-        has neither, so the merged return must be ``[]``.
+        :class:`notebooklm._mind_map.NoteBackedMindMapService`. A brand-new
+        notebook has neither, so the merged return must be ``[]``.
         """
         notebook_id = _get_scratch_notebook_id()
         auth = await get_vcr_auth()

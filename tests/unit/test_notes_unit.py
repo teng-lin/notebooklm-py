@@ -1,129 +1,58 @@
 """Unit tests for NotesAPI private helpers and edge cases."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm import _mind_map
+from notebooklm._mind_map import NoteBackedMindMapService
+from notebooklm._note_service import NoteService
 from notebooklm._notes import NotesAPI
-from notebooklm.rpc import RPCMethod
 from notebooklm.types import Note
 
 
 @pytest.fixture
 def mock_core():
-    """Create a mocked Session for NotesAPI."""
+    """Create a mocked Session for NotesAPI.
+
+    ``NoteService`` and ``NoteBackedMindMapService`` are wired against
+    this same mock, so a ``mock_core.rpc_call`` stub drives both the
+    note-row primitives and the mind-map facade — the same surface
+    NotesAPI used to exercise via the legacy ``_mind_map`` module-level helpers.
+    """
     core = MagicMock()
     core.rpc_call = AsyncMock()
     return core
 
 
 @pytest.fixture
-def notes_api(mock_core):
-    """Create NotesAPI with mocked core."""
-    return NotesAPI(mock_core)
+def save_chat_answer():
+    """Stub callback for the saved-from-chat path.
+
+    The default returns an empty :class:`Note`; tests that exercise
+    ``create_from_chat`` override the return value via
+    ``save_chat_answer.return_value = ...``.
+    """
+    return AsyncMock(return_value=Note(id="", notebook_id="", title="", content=""))
 
 
-class TestMindMapCreateNotePrimitive:
-    """Characterize the shared mind-map note primitive before the planned move to notebooklm.notes."""
+@pytest.fixture
+def notes_api(mock_core, save_chat_answer):
+    """Create NotesAPI with mocked core + real note/mind-map services.
 
-    @pytest.mark.asyncio
-    async def test_create_note_uses_create_then_update_and_returns_note(self, mock_core):
-        mock_core.rpc_call.side_effect = [[["note_123"]], None]
-
-        note = await _mind_map.create_note(
-            mock_core,
-            "nb_123",
-            title="Mind Map",
-            content='{"children":[]}',
-        )
-
-        assert note == Note(
-            id="note_123",
-            notebook_id="nb_123",
-            title="Mind Map",
-            content='{"children":[]}',
-        )
-        assert mock_core.rpc_call.await_args_list == [
-            call(
-                RPCMethod.CREATE_NOTE,
-                ["nb_123", "", [1], None, "Mind Map"],
-                source_path="/notebook/nb_123",
-            ),
-            call(
-                RPCMethod.UPDATE_NOTE,
-                ["nb_123", "note_123", [[['{"children":[]}', "Mind Map", [], 0]]]],
-                source_path="/notebook/nb_123",
-                allow_null=True,
-            ),
-        ]
-
-    @pytest.mark.asyncio
-    async def test_create_note_cancellation_schedules_best_effort_cleanup(
-        self,
+    The services are real instances backed by ``mock_core`` so the
+    fixture exercises the production wiring rather than a fully-mocked
+    collaborator surface. ``save_chat_answer`` is an injected
+    :class:`AsyncMock` matching the
+    :class:`notebooklm._notes.SaveChatAnswerCallback` Protocol.
+    """
+    note_service = NoteService(mock_core)
+    mind_maps = NoteBackedMindMapService(note_service)
+    return NotesAPI(
         mock_core,
-        monkeypatch: pytest.MonkeyPatch,
-    ):
-        mock_core.rpc_call.return_value = [["note_123"]]
-        update_started = asyncio.Event()
-        update_can_finish = asyncio.Event()
-        update_finished = asyncio.Event()
-        cleanup_started = asyncio.Event()
-        cleanup_can_finish = asyncio.Event()
-        cleanup_finished = asyncio.Event()
-
-        async def fake_update_note(
-            core,
-            notebook_id: str,
-            note_id: str,
-            content: str,
-            title: str,
-        ) -> None:
-            assert core is mock_core
-            assert (notebook_id, note_id, content, title) == (
-                "nb_123",
-                "note_123",
-                "body",
-                "Title",
-            )
-            update_started.set()
-            try:
-                await update_can_finish.wait()
-            finally:
-                update_finished.set()
-
-        async def fake_delete_note_best_effort(core, notebook_id: str, note_id: str) -> None:
-            assert core is mock_core
-            assert (notebook_id, note_id) == ("nb_123", "note_123")
-            cleanup_started.set()
-            try:
-                await cleanup_can_finish.wait()
-            finally:
-                cleanup_finished.set()
-
-        monkeypatch.setattr(_mind_map, "update_note", fake_update_note)
-        monkeypatch.setattr(_mind_map, "_delete_note_best_effort", fake_delete_note_best_effort)
-
-        task = asyncio.create_task(
-            _mind_map.create_note(mock_core, "nb_123", title="Title", content="body")
-        )
-        await asyncio.wait_for(update_started.wait(), timeout=1)
-
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, timeout=1)
-
-        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
-        # Cleanup is scheduled but not awaited before the outer cancellation propagates.
-        assert not cleanup_finished.is_set()
-        # ``asyncio.shield`` keeps UPDATE_NOTE running after the outer task is cancelled.
-        assert not update_finished.is_set()
-
-        update_can_finish.set()
-        await asyncio.wait_for(update_finished.wait(), timeout=1)
-        cleanup_can_finish.set()
-        await asyncio.wait_for(cleanup_finished.wait(), timeout=1)
+        notes=note_service,
+        mind_maps=mind_maps,
+        save_chat_answer=save_chat_answer,
+    )
 
 
 # =============================================================================
@@ -743,117 +672,88 @@ class TestDeleteMindMap:
 
 
 # =============================================================================
-# create_from_chat() tests (issue #660)
+# create_from_chat() deprecation-forwarder tests (issue #660)
 # =============================================================================
+#
+# Per refactor.md Step 8 / ADR-013, ``NotesAPI.create_from_chat`` is now a
+# deprecated pure-delegate to the injected ``save_chat_answer`` callback —
+# the encoder semantics + empty-references handling live on
+# ``ChatAPI.save_answer_as_note`` and are covered by
+# ``tests/unit/test_chat_save_answer_as_note.py``. The tests below pin the
+# forwarder contract: signature preservation, deprecation warning,
+# argument pass-through.
 
 
-class TestCreateFromChat:
-    """Tests for the citation-rich create_from_chat() method."""
+def _make_ask_result(
+    answer: str = "One fruit mentioned is apples [1].",
+    n_refs: int = 1,
+):
+    from notebooklm.types import AskResult, ChatReference
 
-    def _make_ask_result(
-        self,
-        answer: str = "One fruit mentioned is apples [1].",
-        n_refs: int = 1,
-    ):
-        from notebooklm.types import AskResult, ChatReference
-
-        refs = [
-            ChatReference(
-                source_id=f"src-{i}",
-                citation_number=i + 1,
-                cited_text=f"passage {i}",
-                start_char=0,
-                end_char=9,
-                chunk_id=f"chunk-{i}",
-            )
-            for i in range(n_refs)
-        ]
-        return AskResult(
-            answer=answer,
-            conversation_id="conv-1",
-            turn_number=1,
-            is_follow_up=False,
-            references=refs,
-            raw_response="",
+    refs = [
+        ChatReference(
+            source_id=f"src-{i}",
+            citation_number=i + 1,
+            cited_text=f"passage {i}",
+            start_char=0,
+            end_char=9,
+            chunk_id=f"chunk-{i}",
         )
+        for i in range(n_refs)
+    ]
+    return AskResult(
+        answer=answer,
+        conversation_id="conv-1",
+        turn_number=1,
+        is_follow_up=False,
+        references=refs,
+        raw_response="",
+    )
+
+
+class TestCreateFromChatForwarder:
+    """Pin the deprecation + delegation contract of ``create_from_chat``."""
 
     @pytest.mark.asyncio
-    async def test_empty_references_raises_value_error(self, notes_api):
-        ask_result = self._make_ask_result(n_refs=0)
-        with pytest.raises(ValueError, match="non-empty"):
+    async def test_create_from_chat_emits_deprecation_warning(self, notes_api, save_chat_answer):
+        save_chat_answer.return_value = Note(
+            id="note_1", notebook_id="nb-1", title="Chat: foo", content="answer"
+        )
+        ask_result = _make_ask_result()
+        with pytest.warns(DeprecationWarning, match="save_answer_as_note"):
             await notes_api.create_from_chat("nb-1", ask_result)
 
     @pytest.mark.asyncio
-    async def test_default_title_derives_from_answer(self, notes_api, mock_core):
-        # Wrapped response shape — matches the captured server response
-        # (slot [0] is a list whose first element is the note_id). This
-        # is the primary path; flat-shape coverage lives in the other
-        # tests below.
-        mock_core.rpc_call.return_value = [
-            [
-                "note-new-id",
-                "One fruit mentioned is apples [1].",
-                [2, "user", [123, 456]],
-                [[]],
-                "ServerTitle",
-                [],
-            ]
-        ]
-        ask_result = self._make_ask_result()
-        note = await notes_api.create_from_chat("nb-1", ask_result)
-        # Server-returned title is what surfaces in the Note.
-        assert note.title == "ServerTitle"
-        # The RPC call received our derived default title.
-        call_args = mock_core.rpc_call.call_args
-        sent_title = call_args[0][1][4]
-        assert sent_title.startswith("Chat: ")
+    async def test_create_from_chat_delegates_with_default_title(self, notes_api, save_chat_answer):
+        save_chat_answer.return_value = Note(
+            id="note_1", notebook_id="nb-1", title="x", content="x"
+        )
+        ask_result = _make_ask_result()
+        with pytest.warns(DeprecationWarning):
+            await notes_api.create_from_chat("nb-1", ask_result)
+        # Default title is None — delegation passes it through unchanged
+        # so the callback (= ChatAPI.save_answer_as_note) owns derivation.
+        save_chat_answer.assert_awaited_once_with("nb-1", ask_result, title=None)
 
     @pytest.mark.asyncio
-    async def test_explicit_title_overrides_default(self, notes_api, mock_core):
-        mock_core.rpc_call.return_value = [
-            "note-new-id",
-            "answer",
-            [2, "u", [1, 2]],
-            [[]],
-            "My Title",  # server echoes the title back
-            [],
-        ]
-        ask_result = self._make_ask_result()
-        note = await notes_api.create_from_chat("nb-1", ask_result, title="My Title")
-        call_args = mock_core.rpc_call.call_args
-        assert call_args[0][1][4] == "My Title"
-        assert note.title == "My Title"
+    async def test_create_from_chat_delegates_with_explicit_title(
+        self, notes_api, save_chat_answer
+    ):
+        save_chat_answer.return_value = Note(
+            id="note_1", notebook_id="nb-1", title="Custom", content="x"
+        )
+        ask_result = _make_ask_result()
+        with pytest.warns(DeprecationWarning):
+            await notes_api.create_from_chat("nb-1", ask_result, title="Custom")
+        save_chat_answer.assert_awaited_once_with("nb-1", ask_result, title="Custom")
 
     @pytest.mark.asyncio
-    async def test_uses_create_note_rpc_with_mode_flag_2(self, notes_api, mock_core):
-        from notebooklm.rpc import RPCMethod
-
-        mock_core.rpc_call.return_value = [
-            "note-id",
-            "x",
-            [2, "u", [1, 2]],
-            [[]],
-            "T",
-            [],
-        ]
-        ask_result = self._make_ask_result()
-        await notes_api.create_from_chat("nb-1", ask_result, title="T")
-        call_args = mock_core.rpc_call.call_args
-        # Args: (RPCMethod, params, source_path=...)
-        assert call_args[0][0] == RPCMethod.CREATE_NOTE
-        params = call_args[0][1]
-        # 7-element params with [2] mode flag at slot 2 (vs [1] for blank-note variant)
-        assert len(params) == 7
-        assert params[2] == [2]
-        assert params[6] == [2]
-        # Only ONE RPC call — no follow-up UPDATE_NOTE.
-        assert mock_core.rpc_call.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_missing_note_id_in_response_raises(self, notes_api, mock_core):
-        # If the server response is malformed (note_id slot is None or not a str),
-        # surface a clear runtime error rather than returning a Note with id="".
-        mock_core.rpc_call.return_value = [None, "x", [], [], "T", []]
-        ask_result = self._make_ask_result()
-        with pytest.raises(RuntimeError, match="no note ID"):
-            await notes_api.create_from_chat("nb-1", ask_result, title="T")
+    async def test_create_from_chat_returns_callback_result_verbatim(
+        self, notes_api, save_chat_answer
+    ):
+        expected = Note(id="note_x", notebook_id="nb-1", title="ServerTitle", content="answer text")
+        save_chat_answer.return_value = expected
+        ask_result = _make_ask_result()
+        with pytest.warns(DeprecationWarning):
+            result = await notes_api.create_from_chat("nb-1", ask_result)
+        assert result is expected

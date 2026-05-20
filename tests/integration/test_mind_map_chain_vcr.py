@@ -102,7 +102,7 @@ class TestMindMapChain:
         assert isinstance(result["note_id"], str)
         # Mind-map JSON should be present and shaped like a tree
         # (either ``children`` or ``nodes`` key — both shapes are valid;
-        # mirror the heuristic used by ``_mind_map.list_mind_maps``).
+        # mirror the heuristic used by ``NoteBackedMindMapService.list_mind_maps``).
         assert result.get("mind_map") is not None
         mind_map = result["mind_map"]
         assert isinstance(mind_map, dict)

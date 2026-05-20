@@ -4,20 +4,48 @@ Provides operations for creating, updating, listing, and deleting
 user-created notes in notebooks. Notes are distinct from artifacts -
 they are user-created content, not AI-generated.
 
-Mind-map-related service behavior lives in :mod:`_mind_map` and is shared
-with :class:`ArtifactsAPI`. This module exposes it through the
-historical ``NotesAPI`` method surface for backward compatibility.
+Note-row primitives live in :mod:`_note_service` and the
+mind-map-only facade lives in :mod:`_mind_map` as
+:class:`NoteBackedMindMapService`. Saved-from-chat note creation lives
+in :mod:`_chat` (``ChatAPI.save_answer_as_note``); ``NotesAPI`` calls
+into it via a constructor-injected :class:`SaveChatAnswerCallback`
+callback so this module does not import ``_chat`` (refactor.md Step 8,
+ADR-013).
 """
+
+from __future__ import annotations
 
 import builtins
 import logging
-from typing import Any
+import warnings
+from typing import Any, Protocol
 
-from . import _mind_map
-from ._session_contracts import Session
+from ._mind_map import NoteBackedMindMapService
+from ._note_service import NoteRowKind, NoteService
+from ._session_contracts import RpcCaller
 from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
+
+
+class SaveChatAnswerCallback(Protocol):
+    """Async callback that persists a chat answer as a citation-rich note.
+
+    Defined as a ``Protocol`` (not a ``Callable`` alias) so mypy catches
+    keyword-only ``title=`` mismatches at the forwarder call site.
+    ``ChatAPI.save_answer_as_note`` structurally satisfies this
+    Protocol; ``NotesAPI`` receives the bound method via constructor
+    injection so it does not have to import ``ChatAPI``
+    (refactor.md §Saved Chat Answer As Note, ADR-013).
+    """
+
+    async def __call__(
+        self,
+        notebook_id: str,
+        ask_result: AskResult,
+        *,
+        title: str | None = None,
+    ) -> Note: ...
 
 
 class NotesAPI:
@@ -39,22 +67,38 @@ class NotesAPI:
 
     def __init__(
         self,
-        session: Session,
+        rpc: RpcCaller,
         *,
-        mind_map_service: _mind_map.MindMapService | None = None,
+        notes: NoteService,
+        mind_maps: NoteBackedMindMapService,
+        save_chat_answer: SaveChatAnswerCallback,
     ):
         """Initialize the notes API.
 
         Args:
-            session: The shared client session.
-            mind_map_service: Optional private service for note-backed
-                mind-map and note-row operations. Keyword-only so the public
-                positional constructor contract stays unchanged.
+            rpc: RPC dispatch surface. Kept on ``NotesAPI`` so the
+                legacy ``self._core`` attribute (still expected by
+                tests and the ``_core`` shim) continues to point at a
+                live capability. Phase 7 narrows this further.
+            notes: Backend note-row primitives. Owns
+                ``fetch_note_rows`` / ``classify_row`` / ``create_note``
+                / ``update_note`` / ``delete_note``.
+            mind_maps: Mind-map-only facade backed by ``notes``. Owns
+                the ``list_mind_maps`` / ``delete_mind_map`` paths the
+                public ``NotesAPI`` surface forwards through.
+            save_chat_answer: Required async callback that persists a
+                chat answer as a citation-rich note. Inject
+                ``ChatAPI.save_answer_as_note`` from the composition
+                root. No default — without it, ``create_from_chat``
+                cannot delegate.
         """
-        self._core = session
-        self._mind_map_service = (
-            _mind_map.MindMapService(session) if mind_map_service is None else mind_map_service
-        )
+        # Preserve the legacy ``self._core`` attribute name so the
+        # ``_core`` compatibility shim and tests that inspect
+        # ``client.notes._core`` keep working through Phase 7.
+        self._core = rpc
+        self._notes = notes
+        self._mind_maps = mind_maps
+        self._save_chat_answer = save_chat_answer
 
     async def list(self, notebook_id: str) -> list[Note]:
         """List all text notes in the notebook.
@@ -71,16 +115,13 @@ class NotesAPI:
         """
         logger.debug("Listing notes in notebook: %s", notebook_id)
         all_items = await self._get_all_notes_and_mind_maps(notebook_id)
-        notes = []
+        notes: list[Note] = []
 
         for item in all_items:
-            # Skip deleted items (status=2): ['id', None, 2]
-            if self._is_deleted(item):
+            kind = self._notes.classify_row(item)
+            if kind in (NoteRowKind.DELETED, NoteRowKind.MIND_MAP):
                 continue
-
-            content = self._extract_content(item)
-            if not self._mind_map_service.is_mind_map_content(content):
-                notes.append(self._parse_note(item, notebook_id))
+            notes.append(self._parse_note(item, notebook_id))
 
         return notes
 
@@ -116,7 +157,7 @@ class NotesAPI:
         Returns:
             The created Note object.
         """
-        return await self._mind_map_service.create_note(
+        return await self._notes.create_note(
             notebook_id,
             title=title,
             content=content,
@@ -129,55 +170,25 @@ class NotesAPI:
         *,
         title: str | None = None,
     ) -> Note:
-        """Save a chat answer as a citation-rich note (issue #660).
+        """Deprecated forwarder — use ``client.chat.save_answer_as_note``.
 
-        Unlike :meth:`create`, this preserves the ``[N]`` citation
-        markers as interactive hover-anchored references in the
-        NotebookLM web UI. It mirrors the wire format the web UI's
-        "Save to note" button uses.
+        Preserves the v0.4.1 signature exactly so existing callers do
+        not break, but emits a :class:`DeprecationWarning` and is a
+        pure delegate to the injected callback (which is
+        :meth:`ChatAPI.save_answer_as_note` when wired from the
+        composition root).
 
-        The notebook must already have a streaming-chat response in
-        ``ask_result`` with non-empty ``references``. Callers without
-        citations should fall back to :meth:`create` for plain-text
-        notes — this method raises :class:`ValueError` rather than
-        silently degrading to plain text, so the caller can decide.
-
-        Args:
-            notebook_id: The notebook ID.
-            ask_result: Result from a prior ``client.chat.ask()`` call.
-                Must have non-empty ``references`` — otherwise this
-                method raises ``ValueError``.
-            title: Note title. When ``None`` (default), a title is
-                derived from the first 50 characters of the answer.
-                The NotebookLM server may apply smart-title generation
-                for saved-from-chat notes; the returned ``Note.title``
-                reflects what the server actually stored.
-
-        Returns:
-            The created ``Note``. ``Note.content`` holds the answer
-            text WITH ``[N]`` markers; the rich citation anchors live
-            server-side and surface via the NotebookLM web UI.
-
-        Raises:
-            ValueError: If ``ask_result.references`` is empty.
+        Empty-references handling and default-title derivation live on
+        ``ChatAPI.save_answer_as_note``; this method does no
+        preprocessing of its own to keep the deprecation contract
+        as a thin shim.
         """
-        if not ask_result.references:
-            raise ValueError(
-                "create_from_chat requires AskResult.references to be "
-                "non-empty; use notes.create() for plain-text notes."
-            )
-        resolved_title = (
-            title
-            if title is not None
-            else f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"
+        warnings.warn(
+            "NotesAPI.create_from_chat is deprecated; use ChatAPI.save_answer_as_note.",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        return await _mind_map.save_chat_answer_as_note(
-            self._core,
-            notebook_id,
-            ask_result.answer,
-            ask_result.references,
-            resolved_title,
-        )
+        return await self._save_chat_answer(notebook_id, ask_result, title=title)
 
     async def update(
         self,
@@ -194,7 +205,7 @@ class NotesAPI:
             content: The new content.
             title: The new title.
         """
-        await self._mind_map_service.update_note(notebook_id, note_id, content, title)
+        await self._notes.update_note(notebook_id, note_id, content, title)
 
     async def delete(self, notebook_id: str, note_id: str) -> bool:
         """Delete a note from the notebook.
@@ -210,7 +221,7 @@ class NotesAPI:
             True if deletion succeeded.
         """
         logger.debug("Deleting note %s from notebook %s", note_id, notebook_id)
-        return await self._mind_map_service.delete_note(notebook_id, note_id)
+        return await self._notes.delete_note(notebook_id, note_id)
 
     async def list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """List all mind maps in the notebook.
@@ -229,7 +240,7 @@ class NotesAPI:
         Returns:
             List of raw mind map data.
         """
-        return await self._mind_map_service.list_mind_maps(notebook_id)
+        return await self._mind_maps.list_mind_maps(notebook_id)
 
     async def delete_mind_map(self, notebook_id: str, mind_map_id: str) -> bool:
         """Delete a mind map from the notebook.
@@ -241,7 +252,7 @@ class NotesAPI:
         Returns:
             True if deletion succeeded.
         """
-        return await self._mind_map_service.delete_note(notebook_id, mind_map_id)
+        return await self._mind_maps.delete_mind_map(notebook_id, mind_map_id)
 
     # =========================================================================
     # Private Helpers
@@ -249,7 +260,7 @@ class NotesAPI:
 
     async def _get_all_notes_and_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """Fetch all notes and mind maps from the API."""
-        return await self._mind_map_service.fetch_all_notes_and_mind_maps(notebook_id)
+        return await self._notes.fetch_note_rows(notebook_id)
 
     def _is_deleted(self, item: builtins.list[Any]) -> bool:
         """Check if a note/mind map item is deleted (status=2).
@@ -263,11 +274,11 @@ class NotesAPI:
         Returns:
             True if the item is deleted (soft-deleted with status=2).
         """
-        return self._mind_map_service.is_deleted(item)
+        return self._notes.classify_row(item) == NoteRowKind.DELETED
 
     def _extract_content(self, item: builtins.list[Any]) -> str | None:
         """Extract content string from note/mind map item."""
-        return self._mind_map_service.extract_content(item)
+        return self._notes.extract_content(item)
 
     def _parse_note(self, item: builtins.list[Any], notebook_id: str) -> Note:
         """Parse a raw note item into a Note object."""
