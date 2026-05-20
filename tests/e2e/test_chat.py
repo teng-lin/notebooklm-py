@@ -102,8 +102,14 @@ class TestChatE2E:
 
         Without an explicit delete, a null-``conversation_id`` ``ask()`` extends
         the most-recent server conversation (see ``ChatAPI.ask`` Note). After
-        deleting, the next null-conv ask must start a brand-new turn-1
-        conversation with a different ``conversation_id``.
+        deleting, the next null-conv ask starts a brand-new turn-1 conversation.
+
+        Note on conversation_id: ``hPTbtc`` (GET_LAST_CONVERSATION_ID) returns a
+        notebook-scoped "current conversation" slot that the server reuses for
+        the next turn-1 after a delete. So ``result2.conversation_id`` may equal
+        ``result1.conversation_id`` even though result2 is a genuinely fresh
+        conversation. The freshness signal is ``turn_number == 1`` /
+        ``is_follow_up is False``, plus the server-side turn count.
         """
         result1 = await client.chat.ask(
             multi_source_notebook_id,
@@ -118,9 +124,16 @@ class TestChatE2E:
             "Start fresh - what are the main themes?",
         )
 
-        assert result2.conversation_id != result1.conversation_id
         assert result2.is_follow_up is False
         assert result2.turn_number == 1
+
+        # Server-side confirmation that result2 really is a fresh conversation
+        # and not a follow-up to result1: the conversation should hold only the
+        # one Q&A pair we just posted.
+        history = await client.chat.get_history(
+            multi_source_notebook_id, conversation_id=result2.conversation_id
+        )
+        assert len(history) == 1
 
     @pytest.mark.asyncio
     async def test_ask_specific_sources(self, client, multi_source_notebook_id):
