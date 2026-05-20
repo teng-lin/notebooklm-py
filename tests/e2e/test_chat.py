@@ -129,7 +129,10 @@ class TestChatE2E:
 
         # Server-side confirmation that result2 really is a fresh conversation
         # and not a follow-up to result1: the conversation should hold only the
-        # one Q&A pair we just posted.
+        # one Q&A pair we just posted. Pin ``result2.conversation_id`` first so
+        # we don't silently fall through to the implicit "current conversation"
+        # that ``get_history`` would resolve on a ``None`` argument.
+        assert result2.conversation_id
         history = await client.chat.get_history(
             multi_source_notebook_id, conversation_id=result2.conversation_id
         )
