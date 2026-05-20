@@ -407,6 +407,23 @@ def build_httpx_cookies_from_storage(path: Path | None = None) -> httpx.Cookies:
         FileNotFoundError: If storage file doesn't exist.
         ValueError: If required cookies are missing or JSON is malformed.
     """
+    try:
+        return _build_httpx_cookies_from_storage_strict(path)
+    except ValueError:
+        # Inline ``__Secure-1PSIDTS`` recovery (issue #865) — same as the
+        # ``load_auth_from_storage`` hook in ``notebooklm.auth``. Without
+        # this, ``AuthTokens.from_storage`` and ``NotebookLMClient.from_storage``
+        # would still hit the closed loop because they use this loader
+        # directly, bypassing ``load_auth_from_storage``.
+        from . import psidts_recovery
+
+        if not psidts_recovery._recover_psidts_inline(path):
+            raise
+        return _build_httpx_cookies_from_storage_strict(path)
+
+
+def _build_httpx_cookies_from_storage_strict(path: Path | None) -> httpx.Cookies:
+    """Inner load-and-validate body. No recovery — raises ``ValueError`` directly."""
     storage_state = _load_storage_state(path)
 
     cookies = httpx.Cookies()

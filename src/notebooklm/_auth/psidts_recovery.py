@@ -1,0 +1,250 @@
+"""Inline ``__Secure-1PSIDTS`` recovery for the cookie-load preflight (issue #865).
+
+Background:
+
+``__Secure-1PSIDTS`` is the rotating freshness partner of ``__Secure-1PSID``.
+It is minted reliably only by the dedicated ``accounts.google.com/RotateCookies``
+POST that the keepalive loop in :mod:`notebooklm._auth.keepalive` uses. The
+Playwright login flow substitutes two passive ``goto()`` navigations, which
+Google does not always answer with ``Set-Cookie: __Secure-1PSIDTS``. When that
+happens, ``storage_state.json`` is saved without PSIDTS, the Tier-1 preflight
+in :mod:`notebooklm._auth.cookie_policy` rejects the next CLI invocation, and
+the keepalive recovery path (which would heal the state in one POST) is
+unreachable because it only runs inside an opened ``Session`` — a closed loop.
+
+The header comment on ``MINIMUM_REQUIRED_COOKIES`` has always described PSIDTS
+as ``directly accepted by Google's homepage check, OR recoverable via the
+RotateCookies POST when other auth cookies are intact``. This module wires the
+recoverable arm of that policy into the cold-start load path: when ``SID`` is
+present and a valid secondary binding (``OSID``, or ``APISID + SAPISID``) is
+intact but PSIDTS is missing, fire one ``RotateCookies`` POST, persist the
+rotated cookies to disk via the existing snapshot/delta save, and let the
+preflight retry.
+
+The hard-Tier-1 classification of PSIDTS in ``MINIMUM_REQUIRED_COOKIES`` is
+intentionally preserved so any caller that bypasses :func:`_recover_psidts_inline`
+still sees a strict reject. Future work (option B, tracked separately): demote
+PSIDTS to Tier 2 outright and rely on a session-open prime to mint it before
+the first RPC. That change touches the lifecycle ordering and is out of scope
+for this fix.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from pathlib import Path
+
+import httpx
+
+from . import cookie_policy as _cookie_policy
+from . import cookies as _auth_cookies
+from . import keepalive as _keepalive
+from . import storage as _auth_storage
+
+logger = logging.getLogger("notebooklm.auth")
+
+_PSIDTS_COOKIE = "__Secure-1PSIDTS"
+
+
+def _resolve_recovery_path(path: Path | str | None) -> Path | None:
+    """Resolve the effective file path for recovery, or ``None`` to decline.
+
+    Mirrors ``_load_storage_state`` (`_auth/cookies.py`) precedence:
+
+    - explicit ``path`` argument → use as-is (cast ``str`` to ``Path``)
+    - ``NOTEBOOKLM_AUTH_JSON`` env-var set → return ``None`` (no writeable
+      backing store; tracked as future-work in this module's docstring)
+    - otherwise → fall back to :func:`notebooklm.paths.get_storage_path`,
+      so ``load_auth_from_storage()`` with no args still triggers recovery
+      on the default profile file (issue #865 critical-path coverage).
+    """
+    if path:
+        return Path(path)
+    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+        return None
+    from ..paths import get_storage_path
+
+    return get_storage_path()
+
+
+def _recover_psidts_inline(path: Path | str | None) -> bool:
+    """Attempt a one-shot ``RotateCookies`` POST to mint ``__Secure-1PSIDTS``.
+
+    Pre-conditions (all must hold; otherwise return ``False`` without firing):
+
+    1. ``SID`` present in ``storage_path``.
+    2. ``__Secure-1PSIDTS`` absent in ``storage_path``.
+    3. Secondary binding intact (``OSID``, or ``APISID + SAPISID``). Google
+       rejects ``RotateCookies`` requests that lack these — see
+       :func:`notebooklm._auth.cookie_policy._has_valid_secondary_binding`.
+    4. Cross-process rotation flock available
+       (:func:`notebooklm._auth.keepalive._file_lock_try_exclusive` against
+       :func:`notebooklm._auth.keepalive._rotation_lock_path`). Mirrors
+       ``_poke_session``'s outer guard so concurrent cold-start CLI
+       processes don't each fire the POST.
+    5. In-process rotation throttle slot available
+       (:func:`notebooklm._auth.keepalive._try_claim_rotation`). Inner guard
+       against same-process duplicates (e.g. two callers on the same loop).
+
+    On success the rotated cookies are merged into the file at ``storage_path``
+    via :func:`notebooklm._auth.storage.save_cookies_to_storage` (snapshot/delta
+    semantics, atomic write, cross-process file lock). ``save_cookies_to_storage``
+    is contract-bound to return ``False`` (not raise) on a persistence failure;
+    we check the return value and surface the persist failure as ``False`` so
+    the caller's preflight retry sees the unhealed state and re-raises honestly.
+    On any failure the function returns ``False`` and the caller's original
+    ``ValueError`` stands.
+
+    Args:
+        path: Path to ``storage_state.json``, or ``None`` to resolve the
+            default profile file. When ``NOTEBOOKLM_AUTH_JSON`` is set the
+            function declines because there is no writeable backing store
+            to persist the rotated cookies to (tracked future-work).
+
+    Returns:
+        ``True`` if PSIDTS is now persisted on disk; ``False`` otherwise.
+    """
+    storage_path = _resolve_recovery_path(path)
+    if storage_path is None:
+        logger.debug(
+            "PSIDTS recovery skipped: env-var auth (NOTEBOOKLM_AUTH_JSON) "
+            "has no writeable backing store"
+        )
+        return False
+
+    try:
+        storage_state = _auth_cookies._load_storage_state(storage_path)
+    except (OSError, ValueError) as exc:
+        logger.debug("PSIDTS recovery skipped: cannot read %s: %s", storage_path, exc)
+        return False
+
+    raw_entries = storage_state.get("cookies", [])
+    if not isinstance(raw_entries, list):
+        return False
+    cookie_entries: list[dict] = [entry for entry in raw_entries if isinstance(entry, dict)]
+    cookie_names: set[str] = {
+        name for entry in cookie_entries if isinstance(name := entry.get("name"), str) and name
+    }
+
+    if "SID" not in cookie_names:
+        logger.debug("PSIDTS recovery skipped: SID missing — session is truly broken")
+        return False
+    if _PSIDTS_COOKIE in cookie_names:
+        return False
+    if not _cookie_policy._has_valid_secondary_binding(cookie_names):
+        logger.debug(
+            "PSIDTS recovery skipped: secondary binding incomplete "
+            "(need OSID, or both APISID and SAPISID)"
+        )
+        return False
+    # Cross-process flock first. Two simultaneous cold-start CLI invocations
+    # would each pass the in-process throttle (which is keyed on a per-process
+    # dict) and both fire ``RotateCookies``. The flock matches the outer guard
+    # ``_poke_session`` uses; a held lock means the other process is rotating
+    # right now — skip and let the caller's preflight retry see whatever they
+    # land on disk.
+    rotate_lock_path = _keepalive._rotation_lock_path(storage_path)
+    if rotate_lock_path is None:
+        # Defense-in-depth: ``_rotation_lock_path`` only returns None when its
+        # argument is None, and we've early-returned above when path is None.
+        # Fall through to the in-process guard alone, matching the keepalive's
+        # equivalent branch.
+        return _attempt_rotation(storage_path, cookie_entries)
+
+    with _keepalive._file_lock_try_exclusive(rotate_lock_path) as acquired:
+        if not acquired:
+            logger.debug(
+                "PSIDTS recovery skipped: %s held by another process",
+                rotate_lock_path,
+            )
+            return False
+        return _attempt_rotation(storage_path, cookie_entries)
+
+
+def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
+    """Fire one ``RotateCookies`` POST and persist the rotated cookies.
+
+    Inner half of :func:`_recover_psidts_inline` — the steps that run after
+    every guard (preconditions, cross-process flock) has passed. Split out so
+    the cross-process flock context manager has one clean exit point.
+    """
+    if not _keepalive._try_claim_rotation(storage_path):
+        logger.debug(
+            "PSIDTS recovery skipped: %s claimed by another in-process caller",
+            storage_path,
+        )
+        return False
+
+    # Build the cookie jar manually so the validator (which would raise) is
+    # bypassed. Mirrors ``build_httpx_cookies_from_storage`` without the
+    # ``_validate_required_cookies`` call.
+    jar = httpx.Cookies()
+    for entry in cookie_entries:
+        if not entry.get("name") or not entry.get("value"):
+            continue
+        if not _cookie_policy._is_allowed_auth_domain(entry.get("domain", "")):
+            continue
+        jar.jar.set_cookie(_auth_cookies._storage_entry_to_cookie(entry))
+
+    # ``httpx.Client(cookies=jar)`` copies the source jar into a private client
+    # jar; Set-Cookie responses land in ``client.cookies``, not in ``jar``. So
+    # we snapshot and check the *client's* jar, mirroring how the async
+    # keepalive in ``_session_lifecycle.save_cookies`` reads ``client.cookies``.
+    try:
+        with httpx.Client(
+            cookies=jar,
+            follow_redirects=True,
+            timeout=_keepalive._KEEPALIVE_POKE_TIMEOUT,
+        ) as client:
+            snapshot = _auth_storage.snapshot_cookie_jar(client.cookies)
+            response = client.post(
+                _keepalive.KEEPALIVE_ROTATE_URL,
+                headers=_keepalive._KEEPALIVE_ROTATE_HEADERS,
+                content=_keepalive._KEEPALIVE_ROTATE_BODY,
+            )
+            response.raise_for_status()
+            rotated_jar = client.cookies
+            psidts_present = any(c.name == _PSIDTS_COOKIE for c in rotated_jar.jar)
+    except httpx.HTTPError as exc:
+        logger.debug("Inline PSIDTS recovery POST failed (non-fatal): %s", exc)
+        return False
+
+    if not psidts_present:
+        logger.debug(
+            "Inline PSIDTS recovery: RotateCookies returned 2xx but did not "
+            "include %s — Google may be withholding the rotation",
+            _PSIDTS_COOKIE,
+        )
+        return False
+
+    # ``save_cookies_to_storage`` returns False (not raises) on every
+    # persist-failure path: missing file, invalid payload, CAS conflict,
+    # atomic-write failure (see ``_auth/storage.py:380-429``). The bare
+    # ``except`` below catches the *unexpected* raises only (future refactor
+    # could change the contract); the explicit return-value check is what
+    # surfaces the documented failure modes.
+    try:
+        persisted = _auth_storage.save_cookies_to_storage(
+            rotated_jar, storage_path, original_snapshot=snapshot
+        )
+    except Exception as exc:  # noqa: BLE001 - persistence failure is non-fatal here
+        logger.warning(
+            "Inline PSIDTS recovery: persist to %s raised %s", storage_path, exc
+        )
+        return False
+
+    if not persisted:
+        logger.warning(
+            "Inline PSIDTS recovery: save_cookies_to_storage returned False; "
+            "on-disk state still lacks %s",
+            _PSIDTS_COOKIE,
+        )
+        return False
+
+    logger.info(
+        "Recovered %s via inline RotateCookies POST and persisted to %s (issue #865)",
+        _PSIDTS_COOKIE,
+        storage_path,
+    )
+    return True

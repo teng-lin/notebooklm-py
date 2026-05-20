@@ -115,6 +115,7 @@ RPC Layer (rpc/)
 | `_auth/session.py` | Session-level dataclasses |
 | `_auth/storage.py` | Profile/state persistence on disk |
 | `_auth/keepalive.py` | Cookie keepalive + `__Secure-1PSIDTS` rotation loop |
+| `_auth/psidts_recovery.py` | Inline `__Secure-1PSIDTS` recovery for cold-start preflight (issue #865) |
 | `_auth/refresh.py` | Token refresh: external `notebooklm login` driver + coalesced runs + redaction |
 | `cli/` | CLI command modules |
 
@@ -153,6 +154,7 @@ src/notebooklm/
 │   ├── session.py               # Session-level dataclasses
 │   ├── storage.py               # Profile/state persistence on disk
 │   ├── keepalive.py             # Cookie keepalive + __Secure-1PSIDTS rotation
+│   ├── psidts_recovery.py       # Inline PSIDTS recovery for cold-start (issue #865)
 │   └── refresh.py               # Token refresh driver (external login cmd, coalesced runs, redaction)
 ├── _notebooks.py                # NotebooksAPI
 ├── _sources.py                  # SourcesAPI

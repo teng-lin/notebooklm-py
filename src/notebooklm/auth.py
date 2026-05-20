@@ -44,6 +44,7 @@ from ._auth import extraction as _auth_extraction
 from ._auth import headers as _auth_headers
 from ._auth import keepalive as _auth_keepalive
 from ._auth import paths as _auth_paths
+from ._auth import psidts_recovery as _auth_psidts_recovery
 from ._auth import refresh as _auth_refresh
 from ._auth import storage as _auth_storage
 from .paths import get_storage_path
@@ -473,7 +474,26 @@ def load_auth_from_storage(path: Path | None = None) -> dict[str, str]:
         cookies = load_auth_from_storage()
     """
     storage_state = _load_storage_state(path)
-    return extract_cookies_from_storage(storage_state)
+    try:
+        return extract_cookies_from_storage(storage_state)
+    except ValueError:
+        # Inline ``__Secure-1PSIDTS`` recovery (issue #865). Playwright login
+        # can land a ``storage_state.json`` that carries SID + secondary
+        # binding but lacks PSIDTS, because Google only mints PSIDTS
+        # deterministically in response to the dedicated ``RotateCookies``
+        # POST — not on the passive ``goto()`` navigations the login flow
+        # uses. The preflight then rejects before the keepalive's RotateCookies
+        # path can heal the state. When the recovery preconditions hold, fire
+        # one POST + persist before re-raising — see
+        # :mod:`notebooklm._auth.psidts_recovery` for the precondition list.
+        # ``_recover_psidts_inline`` resolves the effective storage path
+        # itself (default file when ``path is None`` and env-var unset), so
+        # we pass ``path`` through verbatim — including ``None`` for the
+        # default-profile case.
+        if not _auth_psidts_recovery._recover_psidts_inline(path):
+            raise
+        storage_state = _load_storage_state(path)
+        return extract_cookies_from_storage(storage_state)
 
 
 # Env-var name constants live in ``notebooklm._auth.paths``. Re-exported so
@@ -517,6 +537,14 @@ _file_lock_try_exclusive = _auth_keepalive._file_lock_try_exclusive
 _is_recently_rotated = _auth_keepalive._is_recently_rotated
 _poke_session = _auth_keepalive._poke_session
 _rotate_cookies = _auth_keepalive._rotate_cookies
+# Inline PSIDTS recovery (issue #865). Static facade alias for public-surface
+# symmetry; the load path in ``load_auth_from_storage`` and
+# ``_auth/cookies.build_httpx_cookies_from_storage`` calls
+# ``_auth_psidts_recovery._recover_psidts_inline`` directly, so monkeypatches
+# against ``notebooklm.auth._recover_psidts_inline`` do NOT affect runtime
+# behavior. Tests that need to substitute the recovery body should patch
+# ``notebooklm._auth.psidts_recovery._recover_psidts_inline``.
+_recover_psidts_inline = _auth_psidts_recovery._recover_psidts_inline
 # Rotation sentinel path lives in ``_auth.paths``; the keepalive module also
 # aliases it locally. Re-exported here for white-box callers that resolve it
 # against ``notebooklm.auth``.
