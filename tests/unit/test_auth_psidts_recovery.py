@@ -104,9 +104,7 @@ class TestRecoveryPreconditions:
         self, tmp_path, httpx_mock: HTTPXMock
     ):
         """No OSID, no APISID+SAPISID — Google will reject RotateCookies."""
-        cookies = [
-            c for c in _RECOVERABLE_COOKIES if c["name"] not in {"APISID", "SAPISID"}
-        ]
+        cookies = [c for c in _RECOVERABLE_COOKIES if c["name"] not in {"APISID", "SAPISID"}]
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, cookies)
 
@@ -139,9 +137,7 @@ class TestRecoveryPreconditions:
 
         # Force ``_try_claim_rotation`` to deny the claim, simulating a sibling
         # caller having just claimed the slot.
-        monkeypatch.setattr(
-            "notebooklm._auth.keepalive._try_claim_rotation", lambda _path: False
-        )
+        monkeypatch.setattr("notebooklm._auth.keepalive._try_claim_rotation", lambda _path: False)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
@@ -167,9 +163,7 @@ class TestRecoveryHappyPath:
         assert psidts["value"] == "fresh_psidts_value"
 
     @pytest.mark.no_default_keepalive_mock
-    def test_post_uses_existing_cookies_as_request_jar(
-        self, tmp_path, httpx_mock: HTTPXMock
-    ):
+    def test_post_uses_existing_cookies_as_request_jar(self, tmp_path, httpx_mock: HTTPXMock):
         """The recovery POST must carry the existing auth cookies so Google honours it."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
@@ -177,9 +171,7 @@ class TestRecoveryHappyPath:
 
         psidts_recovery._recover_psidts_inline(storage_path)
 
-        rotate_requests = [
-            r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))
-        ]
+        rotate_requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
         assert len(rotate_requests) == 1
         cookie_header = rotate_requests[0].headers.get("cookie", "")
         # Sanity-check the request carries SID + the secondary binding.
@@ -226,9 +218,7 @@ class TestRecoveryFailureModes:
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
 
     @pytest.mark.no_default_keepalive_mock
-    def test_200_without_psidts_in_response_returns_false(
-        self, tmp_path, httpx_mock: HTTPXMock
-    ):
+    def test_200_without_psidts_in_response_returns_false(self, tmp_path, httpx_mock: HTTPXMock):
         """Google may 200 without minting PSIDTS — must not claim success."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
@@ -255,9 +245,7 @@ class TestLoadAuthFromStorageIntegration:
     """The recovery must be wired into :func:`load_auth_from_storage`."""
 
     @pytest.mark.no_default_keepalive_mock
-    def test_recovers_psidts_before_returning_cookies(
-        self, tmp_path, httpx_mock: HTTPXMock
-    ):
+    def test_recovers_psidts_before_returning_cookies(self, tmp_path, httpx_mock: HTTPXMock):
         """The first call recovers + the function returns the validated dict."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
@@ -269,9 +257,7 @@ class TestLoadAuthFromStorageIntegration:
         assert cookies["SID"] == "test_sid"
 
     @pytest.mark.no_default_keepalive_mock
-    def test_propagates_value_error_when_recovery_declines(
-        self, tmp_path, httpx_mock: HTTPXMock
-    ):
+    def test_propagates_value_error_when_recovery_declines(self, tmp_path, httpx_mock: HTTPXMock):
         """Preconditions failing → original ValueError stands."""
         cookies_no_binding = [
             c for c in _RECOVERABLE_COOKIES if c["name"] not in {"APISID", "SAPISID"}
@@ -283,9 +269,7 @@ class TestLoadAuthFromStorageIntegration:
             auth_module.load_auth_from_storage(storage_path)
 
     @pytest.mark.no_default_keepalive_mock
-    def test_propagates_value_error_when_recovery_post_fails(
-        self, tmp_path, httpx_mock: HTTPXMock
-    ):
+    def test_propagates_value_error_when_recovery_post_fails(self, tmp_path, httpx_mock: HTTPXMock):
         """Recovery attempts but fails at the POST → original ValueError."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
@@ -422,9 +406,7 @@ class TestEdgeCases:
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
 
     @pytest.mark.no_default_keepalive_mock
-    def test_save_raising_propagates_as_failure(
-        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
-    ):
+    def test_save_raising_propagates_as_failure(self, tmp_path, monkeypatch, httpx_mock: HTTPXMock):
         """Unexpected exception from ``save_cookies_to_storage`` → False, not propagated."""
         storage_path = tmp_path / "storage_state.json"
         _write_storage(storage_path, _RECOVERABLE_COOKIES)

@@ -229,9 +229,7 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
             rotated_jar, storage_path, original_snapshot=snapshot
         )
     except Exception as exc:  # noqa: BLE001 - persistence failure is non-fatal here
-        logger.warning(
-            "Inline PSIDTS recovery: persist to %s raised %s", storage_path, exc
-        )
+        logger.warning("Inline PSIDTS recovery: persist to %s raised %s", storage_path, exc)
         return False
 
     if not persisted:
