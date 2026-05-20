@@ -143,6 +143,16 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_artifact_downloads.py",
         "tests/unit/test_artifacts_coverage.py",
         "tests/unit/test_auth_cookie_save_race.py",
+        # PSIDTS inline recovery (issue #865) — patches module-level
+        # seams (``_try_claim_rotation``, ``_file_lock_try_exclusive``,
+        # ``save_cookies_to_storage``, ``_load_storage_state``, and
+        # ``get_storage_path``) that are NOT part of the core-injection
+        # surface ``tests/_fixtures/make_fake_core(...)`` covers. Same
+        # rationale as the neighboring ``test_auth_cookie_save_race.py``
+        # and ``test_auth_session.py`` entries; revisit when ADR-007's
+        # seam-substitution pattern is extended to cover module-level
+        # rotation/lock helpers.
+        "tests/unit/test_auth_psidts_recovery.py",
         "tests/unit/test_auth_session.py",
         "tests/unit/test_backoff.py",
         "tests/unit/test_chat_delete_conversation.py",
