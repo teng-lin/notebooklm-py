@@ -269,7 +269,9 @@ async def make_rpc_request(
     except httpx.HTTPStatusError as e:
         return None, f"HTTP {e.response.status_code}"
     except httpx.RequestError as e:
-        return None, str(e)
+        # ``httpx.ReadTimeout`` can stringify to ``""``; fall back to the
+        # class name so callers don't mislabel it as an empty response (#864).
+        return None, str(e) or type(e).__name__
 
 
 async def make_rpc_call(
@@ -292,7 +294,7 @@ async def make_rpc_call(
         Tuple of (list of RPC IDs found in response, error message or None)
     """
     response_text, error = await make_rpc_request(client, auth, method, params, source_path)
-    if error:
+    if error is not None:
         return [], error
     if response_text is None:
         return [], "Empty response from server"
@@ -343,7 +345,7 @@ async def test_rpc_method(
         status=CheckStatus.ERROR,
         expected_id=expected_id,
         found_ids=found_ids,
-        error=error or "RPC ID not found in response",
+        error=error if error is not None else "RPC ID not found in response",
     )
 
 
@@ -371,7 +373,7 @@ async def test_rpc_method_with_data(
     expected_id = method.value
 
     response_text, error = await make_rpc_request(client, auth, method, params, source_path)
-    if error:
+    if error is not None:
         return CheckResult(
             method=method,
             status=CheckStatus.ERROR,
@@ -630,7 +632,7 @@ async def check_method(
     # Make the call
     found_ids, error = await make_rpc_call(client, auth, method, params)
 
-    if error:
+    if error is not None:
         # Check if error response still contains our expected ID
         if expected_id in found_ids:
             return CheckResult(

@@ -224,6 +224,99 @@ async def test_make_rpc_request_uses_flat_cookie_header_and_auth_route() -> None
     assert "authuser" not in default_query
 
 
+# Regression fixtures for issue #864: ``httpx.ReadTimeout`` raised from
+# anyio's bare ``TimeoutError()`` has ``str(e) == ""``. Without the
+# class-name fallback the empty error string is swallowed by ``if error:``
+# checks and mislabeled as "Empty response from server". Each call site
+# that consumes ``make_rpc_request`` gets its own regression test below.
+
+
+class _TimingOutClient:
+    async def post(self, url: str, *, content: str, headers: dict[str, str]) -> httpx.Response:
+        raise httpx.ReadTimeout("")
+
+
+@pytest.fixture
+def timing_out_auth() -> check_rpc_health.AuthTokens:
+    return check_rpc_health.AuthTokens(
+        cookies={"SID": "sid"},
+        csrf_token="csrf",
+        session_id="session",
+    )
+
+
+@pytest.mark.asyncio
+async def test_make_rpc_request_surfaces_class_name_for_empty_message_errors(
+    timing_out_auth: check_rpc_health.AuthTokens,
+) -> None:
+    response_text, error = await make_rpc_request(
+        _TimingOutClient(),
+        timing_out_auth,
+        check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
+        [[2], "nb"],
+    )
+    assert response_text is None
+    assert error == "ReadTimeout"
+
+
+@pytest.mark.asyncio
+async def test_make_rpc_call_propagates_empty_message_errors_without_relabeling(
+    timing_out_auth: check_rpc_health.AuthTokens,
+) -> None:
+    found_ids, error = await check_rpc_health.make_rpc_call(
+        _TimingOutClient(),
+        timing_out_auth,
+        check_rpc_health.RPCMethod.GET_SUGGESTED_REPORTS,
+        [[2], "nb"],
+    )
+    assert found_ids == []
+    assert error == "ReadTimeout"
+
+
+@pytest.mark.asyncio
+async def test_test_rpc_method_with_data_propagates_empty_message_errors(
+    timing_out_auth: check_rpc_health.AuthTokens,
+) -> None:
+    result, data = await check_rpc_health.test_rpc_method_with_data(
+        _TimingOutClient(),
+        timing_out_auth,
+        check_rpc_health.RPCMethod.CREATE_NOTEBOOK,
+        ["Title"],
+    )
+    assert data is None
+    assert result.status is CheckStatus.ERROR
+    assert result.error == "ReadTimeout"
+
+
+@pytest.mark.asyncio
+async def test_check_method_propagates_empty_message_errors(
+    timing_out_auth: check_rpc_health.AuthTokens,
+) -> None:
+    # ``check_method`` is the third call site that consumes the
+    # ``(found_ids, error)`` tuple. Pin its behavior so the
+    # class-name fallback can't silently regress only here.
+    result = await check_rpc_health.check_method(
+        _TimingOutClient(),
+        timing_out_auth,
+        check_rpc_health.RPCMethod.GET_SOURCE,
+        notebook_id="nb",
+    )
+    assert result.status is CheckStatus.ERROR
+    assert result.error == "ReadTimeout"
+
+
+def test_is_transient_error_pins_readtimeout_as_non_transient() -> None:
+    # Pinned policy (see scripts/check_rpc_health.py docstring + the
+    # comment on TRANSIENT_ERROR_MARKERS): transport timeouts are
+    # treated as real failures so the canary can flag silent breakage.
+    # If this policy ever changes, update this test deliberately —
+    # don't drop it. See #864 for the discussion.
+    assert is_transient_error("ReadTimeout") is False
+    assert is_transient_error("ConnectTimeout") is False
+    assert is_transient_error("WriteTimeout") is False
+    assert is_transient_error("PoolTimeout") is False
+
+
 @pytest.mark.asyncio
 async def test_setup_temp_resources_uses_canonical_create_notebook_payload(
     monkeypatch: pytest.MonkeyPatch,
