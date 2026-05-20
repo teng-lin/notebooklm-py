@@ -7,7 +7,7 @@ capability-composition model proposed in `docs/refactor.md` (revision 5,
 dated 2026-05-20) and lands BEFORE the 11-step migration begins, so the
 architectural intent is recorded ahead of any code change. It supersedes
 [ADR-010](0010-session-kernel-split.md) (Session/Kernel split), which is
-re-statused to `Superseded by ADR-013 (#<this PR number>)` in the same PR.
+re-statused to `Superseded by ADR-013 (#866)` in the same PR.
 The sunset clause clears in Phase 7 of the migration arc, at which point
 the broad `Session` protocol is deleted and this ADR transitions to a
 plain `Accepted` record.

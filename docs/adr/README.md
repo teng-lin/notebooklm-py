@@ -34,7 +34,7 @@ Pure bug fixes, additive RPC method IDs, and CLI ergonomics changes do not requi
 | [0007](0007-test-monkeypatch-policy.md) | Test monkeypatch policy | Accepted |
 | [0008](0008-cli-services-extraction-pattern.md) | `cli/services/` extraction pattern | Accepted (retroactive) |
 | [0009](0009-middleware-chain.md) | Middleware chain for cross-cutting transport concerns | Accepted (Tier 12 PR 12.1) |
-| [0010](0010-session-kernel-split.md) | Session/Kernel split | Superseded by ADR-013 (#<this PR number>) |
+| [0010](0010-session-kernel-split.md) | Session/Kernel split | Superseded by ADR-013 (#866) |
 | [0011](0011-schema-validation-policy.md) | Schema validation policy (strict-decode default) | Accepted (Tier 13 PR 13.9a) |
 | [0012](0012-implementation-surface-convention.md) | Implementation surface convention (underscore-prefix policy) | Accepted (Tier 13 PR 13.9a) |
 | [0013](0013-composable-session-capabilities.md) | Composable Session Capabilities and Feature-Local Runtimes | Accepted (Sunset = capability refactor cutover) |
