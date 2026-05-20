@@ -249,15 +249,17 @@ class NoteService:
                 # bounded.
                 async def _finalize_then_cleanup() -> None:
                     try:
-                        await update_task
-                    except Exception:  # noqa: BLE001 — log and proceed to delete
-                        logger.debug(
-                            "Shielded UPDATE_NOTE failed before cleanup for note %s in notebook %s",
-                            note_id,
-                            notebook_id,
-                            exc_info=True,
-                        )
-                    await self._delete_note_best_effort(notebook_id, note_id)
+                        try:
+                            await update_task
+                        except Exception:  # noqa: BLE001 — log and proceed to delete
+                            logger.debug(
+                                "Shielded UPDATE_NOTE failed before cleanup for note %s in notebook %s",
+                                note_id,
+                                notebook_id,
+                                exc_info=True,
+                            )
+                    finally:
+                        await self._delete_note_best_effort(notebook_id, note_id)
 
                 cleanup_task = asyncio.create_task(_finalize_then_cleanup())
                 _cleanup_tasks.add(cleanup_task)

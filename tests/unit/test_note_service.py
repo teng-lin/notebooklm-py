@@ -335,6 +335,14 @@ class TestCreateNoteCancellation:
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=1)
 
+        # Ordered-cleanup guarantee on the failing-update path: even
+        # though we're about to make UPDATE_NOTE raise, DELETE_NOTE
+        # must still wait for that update to complete before firing —
+        # cleanup must NOT have started while UPDATE_NOTE is still in
+        # flight. (Mirrors the pre-release assertion in the
+        # success-path test above.)
+        assert not cleanup_started.is_set()
+
         # Release the shielded UPDATE_NOTE; it will raise — the
         # cleanup wrapper must catch+log and still issue the
         # DELETE_NOTE side.
