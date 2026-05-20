@@ -4,6 +4,7 @@ import pytest
 
 from notebooklm._env import get_base_host, get_base_url
 from notebooklm._session import Session
+from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -100,7 +101,16 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
     core = Session(auth)
     await core.open()
     try:
-        result = await SourcesAPI(core)._start_resumable_upload(
+        api = SourcesAPI(
+            core,
+            uploader=SourceUploadPipeline(
+                core,
+                core.kernel,
+                core.auth,
+                record_upload_queue_wait=core.record_upload_queue_wait,
+            ),
+        )
+        result = await api._start_resumable_upload(
             "nb_123",
             "file.txt",
             12,

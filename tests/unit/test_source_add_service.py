@@ -347,7 +347,7 @@ async def test_raw_url_helpers_disable_internal_retries(service: SourceAddServic
 @pytest.mark.asyncio
 async def test_sources_api_add_url_uses_late_bound_facade_hooks() -> None:
     core = MagicMock()
-    api = SourcesAPI(core)
+    api = SourcesAPI(core, uploader=MagicMock())
     api._extract_youtube_video_id = MagicMock(return_value="video")  # type: ignore[method-assign]
     api._add_youtube_source = AsyncMock(return_value=source_response("yt", "Video"))  # type: ignore[method-assign]
     api._add_url_source = AsyncMock()  # type: ignore[method-assign]

@@ -66,6 +66,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 
 # mock-based loop-blocking detection tests; no HTTP, no cassette.
@@ -119,7 +120,13 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
 
     core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
-    return SourcesAPI(core), core
+    uploader = SourceUploadPipeline(
+        core,
+        core.kernel,
+        core.auth,
+        record_upload_queue_wait=core.record_upload_queue_wait,
+    )
+    return SourcesAPI(core, uploader=uploader), core
 
 
 class _SlowReadFile:

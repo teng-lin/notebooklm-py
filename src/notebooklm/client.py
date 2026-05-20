@@ -268,16 +268,20 @@ class NotebookLMClient:
         # ``client._core`` directly.
         self._core = self._session
 
+        # Wire the upload pipeline explicitly with the concrete capability
+        # surfaces (UploadRuntime via the Session, plus Kernel and AuthMetadata).
+        # NotebookLMClient is the only composition root that knows these
+        # internals — SourcesAPI no longer reads them back off the session.
         source_uploader = SourceUploadPipeline(
-            self._core,
-            self._core.kernel,
-            self._core.auth,
+            self._session,
+            self._session.kernel,
+            self._session.auth,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
-            record_upload_queue_wait=self._core.record_upload_queue_wait,
+            record_upload_queue_wait=self._session.record_upload_queue_wait,
         )
         self.sources = SourcesAPI(
-            self._core,
+            self._session,
             uploader=source_uploader,
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,

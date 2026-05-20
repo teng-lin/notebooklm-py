@@ -71,8 +71,20 @@ def mock_core():
 
 @pytest.fixture
 def sources_api(mock_core):
-    """Create SourcesAPI with mocked core."""
-    return SourcesAPI(mock_core)
+    """Create SourcesAPI with mocked core.
+
+    The uploader is constructed explicitly from the same mocked core so the
+    upload-path tests still exercise the real :class:`SourceUploadPipeline`
+    while honoring the now-required ``uploader=`` kwarg on
+    :class:`SourcesAPI`.
+    """
+    uploader = SourceUploadPipeline(
+        mock_core,
+        mock_core.kernel,
+        mock_core.auth,
+        record_upload_queue_wait=mock_core.record_upload_queue_wait,
+    )
+    return SourcesAPI(mock_core, uploader=uploader)
 
 
 def _self_session_auth_attr_read(node: ast.AST, attr: str) -> bool:

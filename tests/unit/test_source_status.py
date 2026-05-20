@@ -101,7 +101,7 @@ class TestWaitUntilReady:
     def sources_api(self):
         """Create a SourcesAPI with mocked core."""
         core = MagicMock()
-        return SourcesAPI(core)
+        return SourcesAPI(core, uploader=MagicMock())
 
     @pytest.mark.asyncio
     async def test_returns_immediately_if_ready(self, sources_api):
@@ -302,7 +302,7 @@ class TestWaitUntilRegistered:
     @pytest.fixture
     def sources_api(self):
         core = MagicMock()
-        return SourcesAPI(core)
+        return SourcesAPI(core, uploader=MagicMock())
 
     @pytest.mark.asyncio
     async def test_wait_until_registered_returns_on_processing(self, sources_api):
@@ -405,7 +405,7 @@ class TestWaitForSources:
     def sources_api(self):
         """Create a SourcesAPI with mocked core."""
         core = MagicMock()
-        return SourcesAPI(core)
+        return SourcesAPI(core, uploader=MagicMock())
 
     @pytest.mark.asyncio
     async def test_waits_for_multiple_sources(self, sources_api):

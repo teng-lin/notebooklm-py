@@ -50,7 +50,8 @@ class SourcesAPI:
     def __init__(
         self,
         session: Session,
-        uploader: SourceUploadPipeline | None = None,
+        *,
+        uploader: SourceUploadPipeline,
         upload_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
     ):
@@ -58,7 +59,12 @@ class SourcesAPI:
 
         Args:
             session: The shared client session.
-            uploader: Stateful file-upload pipeline.
+            uploader: Stateful file-upload pipeline. REQUIRED — wired explicitly
+                by :class:`NotebookLMClient` (the only composition root that
+                knows the concrete ``Kernel`` + ``AuthMetadata`` +
+                ``record_upload_queue_wait`` callback). Direct callers must
+                supply a :class:`SourceUploadPipeline` instance themselves;
+                there is no implicit fallback.
             upload_timeout: Optional override for the ``httpx.Timeout`` used
                 by the resumable-upload start handshake and the finalize
                 POST. ``None`` (default) preserves the original hardcoded
@@ -73,20 +79,19 @@ class SourcesAPI:
                 :meth:`add_file` uploads. The semaphore is owned by this
                 Sources upload pipeline, not by the shared core/session.
         """
+        # ``upload_timeout`` and ``max_concurrent_uploads`` are accepted for
+        # API stability — the actual upload pipeline that honors them is
+        # constructed by the :class:`NotebookLMClient` composition root and
+        # injected via ``uploader=``. They are stored here only as historical
+        # attributes for callers that introspect the instance.
         self._core = session
         self._adder = SourceAddService()
         self._content = SourceContentRenderer(self._rpc_call, logger=logger)
         self._lister = SourceLister(self._rpc_call)
         self._poller = SourcePoller()
         self._upload_timeout = upload_timeout
-        self._uploader = uploader or SourceUploadPipeline(
-            session,
-            session.kernel,
-            session.auth,
-            upload_timeout=upload_timeout,
-            max_concurrent_uploads=max_concurrent_uploads,
-            record_upload_queue_wait=getattr(session, "record_upload_queue_wait", None),
-        )
+        self._max_concurrent_uploads = max_concurrent_uploads
+        self._uploader = uploader
 
     async def _rpc_call(
         self,

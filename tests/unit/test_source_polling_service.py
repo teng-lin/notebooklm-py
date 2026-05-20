@@ -288,7 +288,7 @@ async def test_wait_for_sources_catches_base_exception_and_drains_siblings(
 
 @pytest.mark.asyncio
 async def test_sources_api_wait_until_ready_delegates_with_call_time_dependencies() -> None:
-    api = SourcesAPI(MagicMock())
+    api = SourcesAPI(MagicMock(), uploader=MagicMock())
     ready = Source(id="src_1", status=SourceStatus.READY)
 
     with patch.object(api._poller, "wait_until_ready", new_callable=AsyncMock) as delegate:
@@ -307,7 +307,7 @@ async def test_sources_api_wait_until_ready_delegates_with_call_time_dependencie
 
 @pytest.mark.asyncio
 async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic() -> None:
-    api = SourcesAPI(MagicMock())
+    api = SourcesAPI(MagicMock(), uploader=MagicMock())
     processing = Source(id="src_1", status=SourceStatus.PROCESSING)
     ready = Source(id="src_1", status=SourceStatus.READY)
 
@@ -325,7 +325,7 @@ async def test_sources_api_wait_until_ready_resolves_sources_sleep_and_monotonic
 
 @pytest.mark.asyncio
 async def test_sources_api_wait_for_sources_uses_late_bound_wait_until_ready() -> None:
-    api = SourcesAPI(MagicMock())
+    api = SourcesAPI(MagicMock(), uploader=MagicMock())
     api.wait_until_ready = AsyncMock(
         side_effect=[
             Source(id="src_1", status=SourceStatus.READY),

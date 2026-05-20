@@ -539,7 +539,7 @@ def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> N
     from notebooklm._sources import SourcesAPI
 
     core = MagicMock()
-    api = SourcesAPI(core)
+    api = SourcesAPI(core, uploader=MagicMock())
 
     assert isinstance(api._lister, SourceLister)
 

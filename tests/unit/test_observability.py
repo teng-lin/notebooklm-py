@@ -15,6 +15,7 @@ from notebooklm import (
 )
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._session import Session
+from notebooklm._source_upload import SourceUploadPipeline
 from notebooklm._sources import SourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -281,7 +282,15 @@ async def test_upload_progress_callback_receives_byte_counts(
     core = Session(auth_tokens)
     await core.open()
     try:
-        api = SourcesAPI(core)
+        api = SourcesAPI(
+            core,
+            uploader=SourceUploadPipeline(
+                core,
+                core.kernel,
+                core.auth,
+                record_upload_queue_wait=core.record_upload_queue_wait,
+            ),
+        )
         test_file = tmp_path / "upload.txt"
         content = b"hello progress"
         test_file.write_bytes(content)

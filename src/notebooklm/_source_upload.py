@@ -22,7 +22,12 @@ from ._session_config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
 )
-from ._session_contracts import AuthMetadata, Kernel, Session
+from ._session_contracts import (
+    AuthMetadata,
+    Kernel,
+    OperationScopeProvider,
+    RpcCaller,
+)
 from .auth import authuser_query, format_authuser_value
 from .exceptions import (
     AuthError,
@@ -40,8 +45,17 @@ _SOURCE_ID_UUID_PATTERN = re.compile(
 )
 
 
-class RpcCaller(Protocol):
-    """RPC callback shape used by upload registration."""
+class RpcCallback(Protocol):
+    """RPC callback shape used by upload registration.
+
+    Structurally distinct from :class:`notebooklm._session_contracts.RpcCaller`:
+    this is a **callable** Protocol (``async def __call__(...)``) passed as a
+    keyword argument into :meth:`SourceUploadPipeline.register_file_source`,
+    while the shared ``RpcCaller`` is an **object** Protocol with an
+    ``.rpc_call(...)`` method. They are NOT interchangeable — the local
+    callable form is kept as a structural Protocol (not a ``Callable[...]``
+    alias) so mypy can flag keyword-name typos at call sites.
+    """
 
     async def __call__(
         self,
@@ -54,6 +68,16 @@ class RpcCaller(Protocol):
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
     ) -> Any: ...
+
+
+class UploadRuntime(RpcCaller, OperationScopeProvider, Protocol):
+    """Runtime capabilities required by source upload.
+
+    Combines :class:`RpcCaller` (``rpc_call`` method) and
+    :class:`OperationScopeProvider` (``operation_scope`` async-context
+    manager) — the only ``Session`` surfaces the pipeline needs at runtime.
+    A concrete :class:`Session` structurally satisfies this Protocol.
+    """
 
 
 class RegisterFileSource(Protocol):
@@ -182,7 +206,7 @@ class SourceUploadPipeline:
 
     def __init__(
         self,
-        session: Session,
+        runtime: UploadRuntime,
         kernel: Kernel,
         auth: AuthMetadata,
         upload_timeout: httpx.Timeout | None = None,
@@ -191,7 +215,7 @@ class SourceUploadPipeline:
         record_upload_queue_wait: QueueWaitRecorder | None = None,
         async_client_factory: AsyncClientFactory | None = None,
     ):
-        self._session = session
+        self._runtime = runtime
         self._kernel = kernel
         self._auth = auth
         self._upload_timeout = upload_timeout
@@ -278,7 +302,7 @@ class SourceUploadPipeline:
             raise ValidationError(f"Not a regular file: {file_path}")
 
         filename = file_path.name
-        async with self._session.operation_scope(f"upload:{upload_index}"):
+        async with self._runtime.operation_scope(f"upload:{upload_index}"):
             upload_sem = self.get_upload_semaphore()
             upload_wait_start = monotonic()
             async with upload_sem:
@@ -342,7 +366,7 @@ class SourceUploadPipeline:
         *,
         list_sources: ListSources,
         logger: Any,
-        rpc_call: RpcCaller | None = None,
+        rpc_call: RpcCallback | None = None,
     ) -> str:
         """Register a file source intent and get SOURCE_ID.
 
@@ -369,7 +393,7 @@ class SourceUploadPipeline:
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
-        rpc_call = rpc_call or self._session.rpc_call
+        rpc_call = rpc_call or self._runtime.rpc_call
 
         # Capture baseline source IDs before the first create attempt so the
         # probe can distinguish "this upload landed" from "a same-named source
@@ -684,7 +708,9 @@ class SourceUploadPipeline:
 
 
 __all__ = [
+    "RpcCallback",
     "SourceUploadPipeline",
+    "UploadRuntime",
     "_SOURCE_ID_UUID_PATTERN",
     "_extract_register_file_source_id",
     "_looks_like_id_string",
