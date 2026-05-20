@@ -656,8 +656,8 @@ This refactor should update docs in the same change:
   capability-composition model; ADR-010 is re-statused as `Superseded by
   ADR-013` in the same PR. (Both land before the 11-step migration begins;
   see ADR-013 §Status.)
-- `docs/adr/0012-implementation-surface-convention.md`: amend the two stale
-  five-member-Session references — performed in the ADR-013 ratification PR.
+- `docs/adr/0012-implementation-surface-convention.md`: amend the stale
+  five-member-Session reference — performed in the ADR-013 ratification PR.
 - `docs/rpc-reference.md` and `docs/python-api.md`: update note/mind-map and
   saved-chat note wording if public behavior or names change.
 
@@ -832,7 +832,7 @@ this migration.
   `client.chat.save_answer_as_note` and the `DeprecationWarning` from
   `client.notes.create_from_chat`.)
 - Are constructor changes confined to underscore-prefixed (private) modules?
-- Is `NotesAPI.create_from_chat(notebook_id, ask_result, title: str | None =
+- Is `NotesAPI.create_from_chat(notebook_id, ask_result, *, title: str | None =
   None)` still callable with `title=None` (deprecated forwarder), and does
   it still produce the v0.4.1 derived default title (`f"Chat: ..."`)?
 - Does `NotesAPI.delete_mind_map(...) -> bool` continue to return a `bool`
