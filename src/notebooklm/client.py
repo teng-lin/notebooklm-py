@@ -288,6 +288,13 @@ class NotebookLMClient:
         # ``mind_map_service`` is required and explicitly constructed here.
         # Phase 5 replaces this with ``NoteBackedMindMapService`` and renames
         # the parameter to ``mind_maps``.
+        #
+        # We pass ``self._session`` rather than the ``self._core`` alias because
+        # ``Session`` directly satisfies ``ArtifactsRuntime`` (RpcCaller +
+        # AsyncWorkRuntime + DrainHookRegistration) and the ``_core`` alias
+        # exists only for legacy callers that pre-date the runtime split. The
+        # other sub-APIs still pass ``self._core`` while their own
+        # capability-protocol migrations land; Phase 7 retires the alias.
         self.artifacts = ArtifactsAPI(
             self._session,
             notebooks=self.notebooks,

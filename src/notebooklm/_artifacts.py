@@ -124,6 +124,13 @@ class DrainHookRegistration(Protocol):
     later adds artifact-style leader/follower polling with shared
     background tasks, revisit whether ``register_drain_hook`` should
     become shared.
+
+    Note: an identically-shaped ``DrainHookRegistration`` Protocol also
+    exists at ``_session_contracts.py`` for the broad-``Session`` era.
+    Both Protocols are structurally compatible (a real ``Session``
+    satisfies both) and they coexist intentionally during the
+    migration. Phase 7 deletes the ``_session_contracts`` twin; until
+    then, this local copy is the one consumed by ``ArtifactsRuntime``.
     """
 
     def register_drain_hook(
