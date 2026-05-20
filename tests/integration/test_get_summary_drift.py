@@ -33,7 +33,7 @@ def _make_api(rpc_return):
     api = NotebooksAPI.__new__(NotebooksAPI)
     core = MagicMock()
     core.rpc_call = AsyncMock(return_value=rpc_return)
-    api._core = core
+    api._rpc = core
     return api
 
 

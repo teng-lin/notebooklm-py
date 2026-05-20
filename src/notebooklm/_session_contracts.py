@@ -99,9 +99,55 @@ class DrainHookRegistration(Protocol):
     ) -> None: ...
 
 
+class RpcCaller(Protocol):
+    """Narrow RPC dispatch surface consumed by pure-RPC feature APIs.
+
+    Mirrors the legacy :meth:`Session.rpc_call` signature exactly so
+    Phase 1 feature retypes do not change call semantics. The transitional
+    ``_is_retry`` parameter and the keyword-only ``disable_internal_retries``
+    / ``operation_variant`` parameters are preserved as-is.
+
+    A concrete :class:`Session` structurally satisfies this Protocol;
+    features that only need to issue RPC calls can depend on this narrower
+    surface to avoid coupling to the rest of the broad ``Session`` Protocol.
+    """
+
+    async def rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+    ) -> Any: ...
+
+
+class LoopGuard(Protocol):
+    """Loop-affinity assertion surface for features that own async work."""
+
+    def assert_bound_loop(self) -> None: ...
+
+
+class OperationScopeProvider(Protocol):
+    """``operation_scope`` async-context-manager surface for feature APIs."""
+
+    def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]: ...
+
+
+class AsyncWorkRuntime(LoopGuard, OperationScopeProvider, Protocol):
+    """Runtime support for feature-owned async work."""
+
+
 __all__ = [
+    "AsyncWorkRuntime",
     "AuthMetadata",
     "DrainHookRegistration",
     "Kernel",
+    "LoopGuard",
+    "OperationScopeProvider",
+    "RpcCaller",
     "Session",
 ]

@@ -9,7 +9,7 @@ import warnings
 from typing import Any
 
 from . import research as _research_pub
-from ._session_contracts import Session
+from ._session_contracts import RpcCaller
 from .exceptions import ResearchTaskMismatchError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
@@ -201,13 +201,13 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, rpc: RpcCaller):
         """Initialize the research API.
 
         Args:
-            session: The shared client session.
+            rpc: RPC dispatch surface (typically the shared client session).
         """
-        self._core = session
+        self._rpc = rpc
 
     @staticmethod
     def _parse_result_type(value: Any) -> int | str:
@@ -320,7 +320,7 @@ class ResearchAPI:
             params = [None, [1], [query, source_type], 5, notebook_id]
             rpc_id = RPCMethod.START_DEEP_RESEARCH
 
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             rpc_id,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -389,7 +389,7 @@ class ResearchAPI:
         """
         logger.debug("Polling research status for notebook %s", notebook_id)
         params = [None, None, notebook_id]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.POLL_RESEARCH,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -615,7 +615,7 @@ class ResearchAPI:
 
         params = [None, [1], effective_task_id, notebook_id, source_array]
 
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.IMPORT_RESEARCH,
             params,
             source_path=f"/notebook/{notebook_id}",

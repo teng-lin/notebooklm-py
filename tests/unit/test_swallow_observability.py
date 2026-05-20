@@ -137,7 +137,7 @@ async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
     # We need a shape that raises IndexError. result[0] is an empty list →
     # result[0][0] raises IndexError.
     mock_core.rpc_call = AsyncMock(return_value=[[]])
-    api._core = mock_core
+    api._rpc = mock_core
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         summary = await api.get_summary("nb_summary")
@@ -171,7 +171,7 @@ async def test_description_partial_summary_logs_debug(caplog):
     mock_core = MagicMock()
     # outer[0][0] works but outer[1] raises (no topics shape)
     mock_core.rpc_call = AsyncMock(return_value=[[["the summary"]]])
-    api._core = mock_core
+    api._rpc = mock_core
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm"):
         desc = await api.get_description("nb_partial")

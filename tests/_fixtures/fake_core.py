@@ -3,7 +3,7 @@
 This module provides a single entry point — :func:`make_fake_core` — that
 returns a ``FakeSession`` instance shaped to satisfy the shared
 ``Session`` Protocol and explicit feature collaborators. Tests pass the
-result to a sub-client constructor (``NotebooksAPI(core=fake)``) instead
+result to a sub-client constructor (``NotebooksAPI(fake)``) instead
 of constructing a real ``Session`` and mutating its attributes after
 the fact.
 
@@ -68,7 +68,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     Example::
 
         fake = make_fake_core(rpc_call=AsyncMock(return_value=[payload]))
-        api = NotebooksAPI(core=fake)
+        api = NotebooksAPI(fake)
         result = await api.list()
         fake.rpc_call.assert_awaited_once()
     """

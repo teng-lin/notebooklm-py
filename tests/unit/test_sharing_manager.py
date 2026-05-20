@@ -144,6 +144,7 @@ async def test_notebooks_api_default_share_manager_uses_late_bound_rpc_executor_
         allow_null=True,
         _is_retry=False,
         disable_internal_retries=False,
+        operation_variant=None,
     )
 
 

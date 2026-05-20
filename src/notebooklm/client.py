@@ -291,6 +291,7 @@ class NotebookLMClient:
         )
         self.notes = NotesAPI(self._core)
         self.chat = ChatAPI(self._core, notebooks=self.notebooks)
+        # Pure-RPC features (Phase 1 retypes: typed as `rpc: RpcCaller`).
         self.research = ResearchAPI(self._core)
         self.settings = SettingsAPI(self._core)
         self.sharing = SharingAPI(self._core)

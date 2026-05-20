@@ -10,7 +10,7 @@ from ._notebook_metadata import (
     NotebookSourceLister,
     create_default_source_lister,
 )
-from ._session_contracts import Session
+from ._session_contracts import RpcCaller
 from ._settings import build_get_user_settings_params, extract_account_limits
 from ._sharing_manager import ShareManager
 from .exceptions import (
@@ -143,7 +143,7 @@ class NotebooksAPI:
 
     def __init__(
         self,
-        session: Session,
+        rpc: RpcCaller,
         sources_api: NotebookSourceLister | None = None,
         *,
         metadata_service: NotebookMetadataService | None = None,
@@ -152,12 +152,12 @@ class NotebooksAPI:
         """Initialize the notebooks API.
 
         Args:
-            session: The shared client session.
+            rpc: RPC dispatch surface (typically the shared client session).
             sources_api: Optional source lister for cross-API metadata composition.
             metadata_service: Optional explicit metadata service for tests or advanced wiring.
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
         """
-        self._core = session
+        self._rpc = rpc
         self._sources = sources_api or create_default_source_lister(self._rpc_call)
         self._metadata_service = metadata_service or NotebookMetadataService(
             # Keep notebook lookup late-bound so tests and advanced callers that
@@ -176,15 +176,17 @@ class NotebooksAPI:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any:
-        """Delegate through the current core RPC method for late-bound overrides."""
-        return await self._core.rpc_call(
+        """Delegate through the current RPC caller for late-bound overrides."""
+        return await self._rpc.rpc_call(
             method,
             params,
             source_path=source_path,
             allow_null=allow_null,
             _is_retry=_is_retry,
             disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
         )
 
     async def get_source_ids(self, notebook_id: str) -> list[str]:
@@ -267,7 +269,7 @@ class NotebooksAPI:
         """
         logger.debug("Listing notebooks")
         params = [None, 1, None, [2]]
-        result = await self._core.rpc_call(RPCMethod.LIST_NOTEBOOKS, params)
+        result = await self._rpc.rpc_call(RPCMethod.LIST_NOTEBOOKS, params)
 
         if result and isinstance(result, list) and len(result) > 0:
             raw_notebooks = result[0] if isinstance(result[0], list) else result
@@ -325,7 +327,7 @@ class NotebooksAPI:
 
         async def _create() -> Notebook:
             try:
-                result = await self._core.rpc_call(
+                result = await self._rpc.rpc_call(
                     RPCMethod.CREATE_NOTEBOOK,
                     params,
                     disable_internal_retries=True,
@@ -442,7 +444,7 @@ class NotebooksAPI:
 
     async def _get_account_limits(self) -> AccountLimits:
         """Fetch NotebookLM account limits from user settings."""
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_USER_SETTINGS,
             build_get_user_settings_params(),
             source_path="/",
@@ -465,7 +467,7 @@ class NotebooksAPI:
                 this method post-validates the parsed response.
         """
         params = [notebook_id, None, [2], None, 0]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -504,7 +506,7 @@ class NotebooksAPI:
         """
         logger.debug("Deleting notebook: %s", notebook_id)
         params = [[notebook_id], [2]]
-        await self._core.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
+        await self._rpc.rpc_call(RPCMethod.DELETE_NOTEBOOK, params)
         return True
 
     async def rename(self, notebook_id: str, new_title: str) -> Notebook:
@@ -521,7 +523,7 @@ class NotebooksAPI:
         # Payload format discovered via browser traffic capture:
         # [notebook_id, [[null, null, null, [null, new_title]]]]
         params = [notebook_id, [[None, None, None, [None, new_title]]]]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.RENAME_NOTEBOOK,
             params,
             source_path="/",  # Home page context, not notebook page
@@ -542,7 +544,7 @@ class NotebooksAPI:
             Raw summary text string.
         """
         params = [notebook_id, [2]]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.SUMMARIZE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -578,7 +580,7 @@ class NotebooksAPI:
         """
         # Get raw summary data
         params = [notebook_id, [2]]
-        result = await self._core.rpc_call(
+        result = await self._rpc.rpc_call(
             RPCMethod.SUMMARIZE,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -606,7 +608,7 @@ class NotebooksAPI:
             notebook_id: The notebook ID to remove from recent.
         """
         params = [notebook_id]
-        await self._core.rpc_call(
+        await self._rpc.rpc_call(
             RPCMethod.REMOVE_RECENTLY_VIEWED,
             params,
             allow_null=True,
@@ -625,7 +627,7 @@ class NotebooksAPI:
             Raw API response data.
         """
         params = [notebook_id, None, [2], None, 0]
-        return await self._core.rpc_call(
+        return await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
             params,
             source_path=f"/notebook/{notebook_id}",
