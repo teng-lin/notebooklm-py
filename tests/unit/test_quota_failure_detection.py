@@ -28,8 +28,9 @@ from notebooklm.types import GenerationStatus
 
 
 def _make_api():
-    """Return an ArtifactsAPI with mocked runtime + mind_map_service."""
-    from notebooklm._mind_map import MindMapService
+    """Return an ArtifactsAPI with mocked runtime + mind-map services."""
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     core = MagicMock()
     core.rpc_call = AsyncMock()
@@ -39,13 +40,15 @@ def _make_api():
     core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
     core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)
-    mind_map_service = MagicMock(spec=MindMapService)
+    mind_maps = MagicMock(spec=NoteBackedMindMapService)
+    note_service = MagicMock(spec=NoteService)
     notebooks = MagicMock()
     notebooks.get_source_ids = AsyncMock(return_value=[])
     return ArtifactsAPI(
         core,
         notebooks=notebooks,
-        mind_map_service=mind_map_service,
+        mind_maps=mind_maps,
+        note_service=note_service,
     )
 
 

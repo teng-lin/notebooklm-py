@@ -336,7 +336,8 @@ class ArtifactDownloadService:
     ) -> str:
         """Download a mind map as JSON."""
         api = self._api
-        mind_maps = await _artifact_seams()._mind_map.list_mind_maps(api._core, notebook_id)
+        mind_maps_service = api._mind_maps
+        mind_maps = await mind_maps_service.list_mind_maps(notebook_id)
         if not mind_maps:
             raise ArtifactNotReadyError("mind_map")
 
@@ -349,7 +350,7 @@ class ArtifactDownloadService:
 
         json_module = _artifact_seams().json
         try:
-            json_string = _artifact_seams()._mind_map.extract_content(mind_map)
+            json_string = mind_maps_service.extract_content(mind_map)
             if json_string is None:
                 raise ArtifactParseError("mind_map_content", details="Invalid structure")
 

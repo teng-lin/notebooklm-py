@@ -104,15 +104,19 @@ def mock_artifacts_api() -> tuple[ArtifactsAPI, MagicMock]:
     boundary in pytest is fragile when both define ``mock_artifacts_api``
     at module scope.
     """
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
     mock_core.get_source_ids = AsyncMock(return_value=[])
+    note_service = NoteService(mock_core)
+    mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
         mock_core,
         notebooks=MagicMock(),
-        mind_map_service=MagicMock(spec=MindMapService),
+        mind_maps=mind_maps,
+        note_service=note_service,
     )
     return api, mock_core
 
@@ -229,8 +233,9 @@ async def test_download_mind_map_runs_write_off_loop_thread(
         return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
 
     with (
-        patch(
-            "notebooklm._artifacts._mind_map.list_mind_maps",
+        patch.object(
+            api._mind_maps,
+            "list_mind_maps",
             new=AsyncMock(return_value=mind_map_rows),
         ),
         # Patch the `json` module as imported by `_artifacts` so the
@@ -316,8 +321,9 @@ async def test_concurrent_downloads_both_offload_writes(
 
     with (
         patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list,
-        patch(
-            "notebooklm._artifacts._mind_map.list_mind_maps",
+        patch.object(
+            api._mind_maps,
+            "list_mind_maps",
             new=AsyncMock(return_value=mind_map_rows),
         ),
         patch.object(Path, "write_text", recording_write_text),

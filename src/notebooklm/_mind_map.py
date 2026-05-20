@@ -19,6 +19,7 @@ import re
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Protocol
 
+from ._note_service import NoteRowKind, NoteService
 from .rpc import RPCMethod
 from .types import Note
 
@@ -252,6 +253,48 @@ class MindMapService:
             title=title,
             content=content,
         )
+
+
+class NoteBackedMindMapService:
+    """Mind-map-only facade over :class:`NoteService`.
+
+    Adapter that knows mind maps share storage with notes. Consumers
+    (``ArtifactsAPI`` download path, future Phase 6 ``NotesAPI`` retype)
+    talk to this class instead of reaching into ``NoteService`` directly,
+    so the "mind maps are notes under the hood" detail stays localized.
+
+    The download path doesn't need ``create_mind_map`` — mind-map
+    creation goes through :meth:`NoteService.create_note` directly
+    from ``_artifact_generation.generate_mind_map`` (a one-shot
+    GENERATE_MIND_MAP + persist pipeline). The methods exposed here
+    are exactly the ones the artifact download path and Phase 6's
+    NotesAPI ``list_mind_maps`` / ``delete_mind_map`` need.
+    """
+
+    def __init__(self, notes: NoteService) -> None:
+        self._notes = notes
+
+    async def list_mind_maps(self, notebook_id: str) -> list[Any]:
+        """Return mind-map rows for a notebook (deleted rows excluded)."""
+        rows = await self._notes.fetch_note_rows(notebook_id)
+        return [r for r in rows if self._notes.classify_row(r) == NoteRowKind.MIND_MAP]
+
+    def extract_content(self, row: list[Any]) -> str | None:
+        """Return the JSON content payload of a mind-map row.
+
+        Delegates to :meth:`NoteService.extract_content` so the download
+        path doesn't have to know mind maps share storage with notes.
+        """
+        return self._notes.extract_content(row)
+
+    async def delete_mind_map(self, notebook_id: str, note_id: str) -> bool:
+        """Soft-delete a mind-map row.
+
+        Delegates to :meth:`NoteService.delete_note`. Returns its bool
+        result so the v0.4.1 ``NotesAPI.delete_mind_map(...) -> bool``
+        public contract is preserved when Phase 6 retypes NotesAPI.
+        """
+        return await self._notes.delete_note(notebook_id, note_id)
 
 
 async def _delete_note_best_effort(core: MindMapRpc, notebook_id: str, note_id: str) -> None:

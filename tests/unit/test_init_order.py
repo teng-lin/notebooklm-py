@@ -545,14 +545,22 @@ def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> N
 
 
 def test_phase7_artifact_mind_map_patch_seams_are_current() -> None:
-    """Final artifact services must still resolve mind-map seams via ``_artifacts``."""
+    """Final artifact services must still resolve mind-map seams via ``_artifacts``.
+
+    Phase 5 (refactor.md Migration Plan steps 6-7) moves the mind-map
+    create/list/extract paths off the ``_mind_map`` module-level seams
+    and onto the injected ``NoteService`` + ``NoteBackedMindMapService``
+    instances. The ``_artifact_generation`` module no longer needs an
+    ``_artifact_seams()`` hop at all (only the JSON/cookie seams remain
+    in ``_artifact_downloads``), so we check the downloads-side seam
+    still resolves and the generation module exposes the ``NoteService``
+    attribute the new wiring depends on.
+    """
     import notebooklm._artifact_downloads as artifact_downloads
-    import notebooklm._artifact_generation as artifact_generation
     import notebooklm._artifacts as artifacts
     import notebooklm._mind_map as mind_map
 
     assert artifacts._mind_map is mind_map
-    assert artifact_generation._artifact_seams()._mind_map is mind_map
     assert artifact_downloads._artifact_seams()._mind_map is mind_map
 
 
@@ -722,16 +730,18 @@ def test_client_exposes_artifacts_and_notes(mock_auth: AuthTokens) -> None:
 
 def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> None:
     """``ArtifactsAPI`` no longer takes ``notes_api`` at all (per
-    docs/refactor.md Step 4) — the parameter was removed in favor of an
-    explicit ``mind_map_service``. The mind-map decoupling is now
-    structural."""
-    from notebooklm._mind_map import MindMapService
+    docs/refactor.md Step 4) — the parameter was removed in favor of
+    explicit ``mind_maps`` + ``note_service`` (Phase 5). The mind-map
+    decoupling is now structural."""
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     core = MagicMock()
     api = ArtifactsAPI(
         core,
         notebooks=MagicMock(),
-        mind_map_service=MagicMock(spec=MindMapService),
+        mind_maps=MagicMock(spec=NoteBackedMindMapService),
+        note_service=MagicMock(spec=NoteService),
     )
     assert api is not None
     # The legacy private attribute must not leak back: code that depends on
@@ -742,7 +752,8 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
 def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
     """The legacy ``notes_api=`` kwarg was removed in Phase 3
     (docs/refactor.md Step 4). Passing it must raise ``TypeError``."""
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     core = MagicMock()
     notes = NotesAPI(core)
@@ -751,13 +762,15 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
             core,
             notes_api=notes,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
 
 
 def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> None:
     """Both construction orders must succeed and produce working APIs."""
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     core = MagicMock()
 
@@ -765,7 +778,8 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
         return ArtifactsAPI(
             core,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
 
     artifacts_first = _make_artifacts()
@@ -829,16 +843,20 @@ def _make_core_for_mind_map_flow() -> tuple[MagicMock, list[tuple[Any, Any]]]:
 
 
 def _build_artifacts_with_real_mind_map_service(core: MagicMock) -> ArtifactsAPI:
-    """Build an ``ArtifactsAPI`` whose ``mind_map_service`` is a real
-    ``MindMapService(core)`` so the mind-map flow exercises the live RPC
-    callbacks against the canned ``core.rpc_call``.
+    """Build an ``ArtifactsAPI`` whose mind-map services are real
+    instances backed by ``core`` so the mind-map flow exercises the
+    live RPC callbacks against the canned ``core.rpc_call``.
     """
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
+    note_service = NoteService(core)
+    mind_maps = NoteBackedMindMapService(note_service)
     return ArtifactsAPI(
         core,
         notebooks=MagicMock(get_source_ids=AsyncMock(return_value=["src_1"])),
-        mind_map_service=MindMapService(core),
+        mind_maps=mind_maps,
+        note_service=note_service,
     )
 
 

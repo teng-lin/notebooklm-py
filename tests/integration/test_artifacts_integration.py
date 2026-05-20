@@ -19,7 +19,8 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm._artifacts import ArtifactsAPI
-from notebooklm._mind_map import MindMapService
+from notebooklm._mind_map import NoteBackedMindMapService
+from notebooklm._note_service import NoteService
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import (
     AudioFormat,
@@ -394,7 +395,8 @@ class TestArtifactsAPI:
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
 
         result = await api._list_raw("nb_123")
@@ -423,7 +425,8 @@ class TestArtifactsAPI:
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
 
         result = await api._list_raw("nb_123")
@@ -437,7 +440,8 @@ class TestArtifactsAPI:
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
         studio_artifact = ["art_001", "My Report", 2, None, 3]
         mind_map = [
@@ -450,7 +454,7 @@ class TestArtifactsAPI:
                 api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])
             ) as list_raw,
             patch.object(
-                api._mind_map_service,
+                api._mind_maps,
                 "list_mind_maps",
                 new=AsyncMock(return_value=[mind_map]),
             ) as list_mind_maps,
@@ -468,14 +472,15 @@ class TestArtifactsAPI:
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
         studio_artifact = ["art_001", "My Report", 2, None, 3]
 
         with (
             patch.object(api, "_list_raw", new=AsyncMock(return_value=[studio_artifact])),
             patch.object(
-                api._mind_map_service,
+                api._mind_maps,
                 "list_mind_maps",
                 new=AsyncMock(),
             ) as list_mind_maps,
@@ -492,7 +497,8 @@ class TestArtifactsAPI:
         api = ArtifactsAPI(
             core,
             notebooks=MagicMock(),
-            mind_map_service=MagicMock(spec=MindMapService),
+            mind_maps=MagicMock(spec=NoteBackedMindMapService),
+            note_service=MagicMock(spec=NoteService),
         )
         other = MagicMock()
         other.id = "art_other"
@@ -1412,7 +1418,7 @@ class TestListMindMapErrorHandling:
             # injected MindMapService. Patch the service's list_mind_maps so
             # the simulated error reaches ArtifactsAPI.list().
             with patch.object(
-                client.artifacts._mind_map_service,
+                client.artifacts._mind_maps,
                 "list_mind_maps",
                 new=AsyncMock(side_effect=RPCError("mind map fetch failed")),
             ):
@@ -1439,7 +1445,7 @@ class TestListMindMapErrorHandling:
 
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.artifacts._mind_map_service,
+                client.artifacts._mind_maps,
                 "list_mind_maps",
                 new=AsyncMock(side_effect=httpx.HTTPError("connection failed")),
             ):
@@ -1664,10 +1670,12 @@ class TestGenerateMindMapParsing:
         from notebooklm.types import Note
 
         async with NotebookLMClient(auth_tokens) as client:
-            # After the mind-map relocation, mind-map persistence is driven through
-            # ``_mind_map.create_note`` rather than ``NotesAPI.create``.
-            with patch(
-                "notebooklm._artifacts._mind_map.create_note",
+            # After Phase 5, mind-map persistence flows through
+            # ``ArtifactsAPI._note_service.create_note`` rather than the
+            # legacy ``_mind_map.create_note`` module-level seam.
+            with patch.object(
+                client.artifacts._note_service,
+                "create_note",
                 new=AsyncMock(
                     return_value=Note(
                         id="note_created_001",
@@ -1713,8 +1721,9 @@ class TestGenerateMindMapParsing:
         from notebooklm.types import Note
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch(
-                "notebooklm._artifacts._mind_map.create_note",
+            with patch.object(
+                client.artifacts._note_service,
+                "create_note",
                 new=AsyncMock(
                     return_value=Note(
                         id="note_dict_001",

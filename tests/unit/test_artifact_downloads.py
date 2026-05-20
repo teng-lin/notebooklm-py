@@ -19,23 +19,35 @@ from notebooklm.types import (
 def mock_artifacts_api():
     """Create an ArtifactsAPI with mocked core.
 
-    After the mind-map relocation, ``ArtifactsAPI`` no longer takes a ``notes_api`` parameter;
-    mind-map persistence goes through the shared ``_mind_map`` module which
-    calls the same ``Session.rpc_call``. Tests that exercise mind-map
-    creation should drive responses through ``mock_core.rpc_call`` (via
-    ``side_effect``) rather than mocking a separate notes object.
+    After Phase 5 (refactor.md Migration Plan steps 6-7), ``ArtifactsAPI``
+    takes ``mind_maps: NoteBackedMindMapService`` and
+    ``note_service: NoteService`` instead of the single
+    ``mind_map_service`` parameter. Mind-map persistence goes through
+    ``note_service.create_note``; the download path consumes
+    ``mind_maps.list_mind_maps`` / ``mind_maps.extract_content``. Tests
+    that exercise mind-map creation drive responses through
+    ``mock_core.rpc_call`` (via ``side_effect``) since both new
+    services delegate down to that single RPC seam.
     """
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
     mock_core.get_source_ids = AsyncMock(return_value=[])
     mock_notebooks = MagicMock()
     mock_notebooks.get_source_ids = AsyncMock(return_value=[])
+    # Use real NoteService + NoteBackedMindMapService so the wire RPC
+    # surface stays consistent with production behavior. Tests that
+    # need to override list_mind_maps continue to patch it via
+    # ``patch.object(api._mind_maps, "list_mind_maps", ...)``.
+    note_service = NoteService(mock_core)
+    mind_maps = NoteBackedMindMapService(note_service)
     api = ArtifactsAPI(
         mock_core,
         notebooks=mock_notebooks,
-        mind_map_service=MagicMock(spec=MindMapService),
+        mind_maps=mind_maps,
+        note_service=note_service,
     )
     return api, mock_core
 
@@ -603,13 +615,14 @@ class TestDownloadMindMap:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "mindmap.json")
 
-            # After the mind-map relocation, ``ArtifactsAPI.download_mind_map`` reads mind maps
-            # via the shared ``_mind_map.list_mind_maps`` primitive rather
-            # than through an injected ``NotesAPI``. Patch the primitive at
-            # its consumer-side import to drive the response.
+            # After Phase 5, ``ArtifactsAPI.download_mind_map`` reads mind
+            # maps via the injected ``NoteBackedMindMapService``. Patch
+            # the service instance directly so the simulated response
+            # reaches the download path.
             json_content = '{"name": "Root", "children": [{"name": "Child1"}]}'
-            with patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            with patch.object(
+                api._mind_maps,
+                "list_mind_maps",
                 new=AsyncMock(
                     return_value=[
                         [
@@ -639,8 +652,9 @@ class TestDownloadMindMap:
         api, mock_core = mock_artifacts_api
 
         with (
-            patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            patch.object(
+                api._mind_maps,
+                "list_mind_maps",
                 new=AsyncMock(return_value=[]),
             ),
             pytest.raises(ArtifactNotReadyError),
@@ -653,8 +667,9 @@ class TestDownloadMindMap:
         api, mock_core = mock_artifacts_api
 
         with (
-            patch(
-                "notebooklm._artifacts._mind_map.list_mind_maps",
+            patch.object(
+                api._mind_maps,
+                "list_mind_maps",
                 new=AsyncMock(return_value=[["other_id", [None, "{}"], None, None, "Other"]]),
             ),
             pytest.raises(ArtifactNotFoundError),

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json as json_module
 import logging
-import sys
 from typing import Any
 
 from ._env import get_default_language
@@ -32,16 +31,6 @@ from .rpc import (
 from .types import GenerationStatus, ReportSuggestion
 
 logger = logging.getLogger(__name__)
-
-
-def _artifact_seams() -> Any:
-    """Return the facade module that legacy tests patch."""
-    try:
-        return sys.modules["notebooklm._artifacts"]
-    except KeyError as e:
-        # Normal construction imports this service from _artifacts first; the
-        # lookup exists only so call sites can preserve _artifacts patch seams.
-        raise RuntimeError("notebooklm._artifacts must be imported before generation runs") from e
 
 
 class ArtifactGenerationService:
@@ -512,7 +501,7 @@ class ArtifactGenerationService:
             [[[slide_index, prompt]]],
         ]
         try:
-            result = await api._core.rpc_call(
+            result = await api._runtime.rpc_call(
                 RPCMethod.REVISE_SLIDE,
                 params,
                 source_path=f"/notebook/{notebook_id}",
@@ -608,7 +597,7 @@ class ArtifactGenerationService:
         # explicitly to document this call site as the no-variant default
         # (the registry resolves the same entry either way; the explicit
         # kwarg is a future-proofing marker for a possible variant table).
-        result = await api._core.rpc_call(
+        result = await api._runtime.rpc_call(
             RPCMethod.GENERATE_MIND_MAP,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -635,8 +624,7 @@ class ArtifactGenerationService:
                 if isinstance(mind_map_data, dict) and "name" in mind_map_data:
                     title = mind_map_data["name"]
 
-                note = await _artifact_seams()._mind_map.create_note(
-                    api._core,
+                note = await api._note_service.create_note(
                     notebook_id,
                     title=title,
                     content=mind_map_json,
@@ -658,7 +646,7 @@ class ArtifactGenerationService:
         api = self._api
         params = [[2], notebook_id]
 
-        result = await api._core.rpc_call(
+        result = await api._runtime.rpc_call(
             RPCMethod.GET_SUGGESTED_REPORTS,
             params,
             source_path=f"/notebook/{notebook_id}",
@@ -693,7 +681,7 @@ class ArtifactGenerationService:
             # no-variant default (the registry resolves the same entry
             # either way; the explicit kwarg is a future-proofing marker
             # for a possible variant table).
-            result = await api._core.rpc_call(
+            result = await api._runtime.rpc_call(
                 RPCMethod.CREATE_ARTIFACT,
                 params,
                 source_path=f"/notebook/{notebook_id}",

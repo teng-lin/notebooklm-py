@@ -345,11 +345,15 @@ async def test_generate_mind_map_happy_path_still_returns_mind_map(auth_tokens) 
     Symmetric guard to ``test_create_artifact_happy_path_still_returns_artifact``.
 
     The mind-map flow also persists a note after the RPC succeeds; we
-    stub the note-create seam on the ``_artifacts`` module facade so the
-    test stays focused on the RPC-layer behavior and doesn't pull in the
-    full notes-API path.
+    stub the ``note_service.create_note`` seam on the artifacts API so
+    the test stays focused on the RPC-layer behavior and doesn't pull
+    in the full notes-API path. (Phase 5 moved the persistence call off
+    the module-level ``_mind_map.create_note`` shim and onto the
+    injected ``NoteService`` instance.)
     """
-    import notebooklm._artifacts as _artifacts_facade
+    from unittest.mock import AsyncMock
+
+    from notebooklm.types import Note
 
     mind_map_dict = {"name": "Test Mind Map", "children": []}
     mind_map_json = json.dumps(mind_map_dict)
@@ -369,23 +373,13 @@ async def test_generate_mind_map_happy_path_still_returns_mind_map(auth_tokens) 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens)
 
-    # Stub the mind-map note seam so we don't need a full notes RPC chain.
-    class _StubNote:
-        id = "note_stub"
+    stub_note = Note(id="note_stub", notebook_id="nb_test", title="Test Mind Map", content="")
+    client.artifacts._note_service.create_note = AsyncMock(return_value=stub_note)  # type: ignore[method-assign]
 
-    class _StubMindMap:
-        async def create_note(self, _core, _notebook_id, *, title, content):
-            return _StubNote()
-
-    original_mind_map = _artifacts_facade._mind_map
-    _artifacts_facade._mind_map = _StubMindMap()
     try:
-        try:
-            result = await client.artifacts.generate_mind_map(notebook_id="nb_test")
-        finally:
-            await client._core._http_client.aclose()
+        result = await client.artifacts.generate_mind_map(notebook_id="nb_test")
     finally:
-        _artifacts_facade._mind_map = original_mind_map
+        await client._core._http_client.aclose()
 
     assert result["mind_map"] == mind_map_dict
     assert result["note_id"] == "note_stub"

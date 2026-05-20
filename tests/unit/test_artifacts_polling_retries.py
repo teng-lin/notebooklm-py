@@ -90,7 +90,8 @@ class _FakeTransportProvider:
 
 @pytest.fixture
 def api():
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     core = _make_session_core()
     mock_notebooks = MagicMock()
@@ -98,7 +99,8 @@ def api():
     return ArtifactsAPI(
         core,
         notebooks=mock_notebooks,
-        mind_map_service=MagicMock(spec=MindMapService),
+        mind_maps=MagicMock(spec=NoteBackedMindMapService),
+        note_service=MagicMock(spec=NoteService),
     )
 
 
@@ -395,13 +397,15 @@ async def test_polling_service_cancels_and_drains_spawned_poll_task_if_begin_fai
 
 @pytest.mark.asyncio
 async def test_wait_for_completion_follower_cancellation_does_not_cancel_leader_or_later_waiter():
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     core = _make_session_core()
     api = ArtifactsAPI(
         core,
         notebooks=MagicMock(),
-        mind_map_service=MagicMock(spec=MindMapService),
+        mind_maps=MagicMock(spec=NoteBackedMindMapService),
+        note_service=MagicMock(spec=NoteService),
     )
 
     poll_started = asyncio.Event()

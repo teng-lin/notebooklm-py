@@ -35,11 +35,12 @@ if TYPE_CHECKING:
     from .rpc import RPCMethod
     from .types import ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 
-from . import _mind_map
 from ._artifacts import ArtifactsAPI
 from ._auth.session import refresh_auth_session
 from ._chat import ChatAPI
 from ._env import get_base_url as get_base_url
+from ._mind_map import NoteBackedMindMapService
+from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
@@ -288,10 +289,13 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
         )
         self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
-        # Transitional wiring per docs/refactor.md Step 4 / Review Checklist:
-        # ``mind_map_service`` is required and explicitly constructed here.
-        # Phase 5 replaces this with ``NoteBackedMindMapService`` and renames
-        # the parameter to ``mind_maps``.
+        # Phase 5 wiring per docs/refactor.md Migration Plan steps 6-7:
+        # the legacy single-service handoff (``MindMapService(self._session)``
+        # passed as ``mind_map_service=``) is replaced with the explicit
+        # NoteService + NoteBackedMindMapService split. NoteService owns the
+        # raw row primitives; NoteBackedMindMapService is the mind-map-only
+        # adapter the download path uses; the artifact-generation path uses
+        # NoteService.create_note directly to persist a generated mind map.
         #
         # We pass ``self._session`` rather than the ``self._core`` alias because
         # ``Session`` directly satisfies ``ArtifactsRuntime`` (RpcCaller +
@@ -299,10 +303,13 @@ class NotebookLMClient:
         # exists only for legacy callers that pre-date the runtime split. The
         # other sub-APIs still pass ``self._core`` while their own
         # capability-protocol migrations land; Phase 7 retires the alias.
+        note_service = NoteService(self._session)
+        mind_maps = NoteBackedMindMapService(note_service)
         self.artifacts = ArtifactsAPI(
             self._session,
             notebooks=self.notebooks,
-            mind_map_service=_mind_map.MindMapService(self._session),
+            mind_maps=mind_maps,
+            note_service=note_service,
             storage_path=storage_path,
         )
         self.notes = NotesAPI(self._core)

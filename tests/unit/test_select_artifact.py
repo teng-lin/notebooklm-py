@@ -46,14 +46,16 @@ def _artifact(
 @pytest.fixture
 def api() -> ArtifactsAPI:
     """Build an ArtifactsAPI with no-op runtime / mind-map — only the helper is exercised."""
-    from notebooklm._mind_map import MindMapService
+    from notebooklm._mind_map import NoteBackedMindMapService
+    from notebooklm._note_service import NoteService
 
     mock_core = MagicMock()
     mock_core.rpc_call = AsyncMock()
     return ArtifactsAPI(
         mock_core,
         notebooks=MagicMock(),
-        mind_map_service=MagicMock(spec=MindMapService),
+        mind_maps=MagicMock(spec=NoteBackedMindMapService),
+        note_service=MagicMock(spec=NoteService),
     )
 
 

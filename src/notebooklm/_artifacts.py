@@ -12,10 +12,22 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from . import _artifact_formatters, _artifact_polling, _mind_map
+# ``_mind_map`` is re-exported as ``_artifacts._mind_map`` so legacy
+# patch seams (``test_init_order.test_phase7_artifact_mind_map_patch_seams_are_current``)
+# can still resolve the module via the artifacts facade. The runtime
+# code path in this module talks to the injected
+# ``NoteBackedMindMapService`` / ``NoteService`` instances; the bare
+# module re-export is for monkeypatch convenience only.
+from . import (
+    _artifact_formatters,
+    _artifact_polling,
+    _mind_map,  # noqa: F401 — re-exported as facade attribute
+)
 from ._artifact_downloads import ArtifactDownloadService, DownloadResult
 from ._artifact_generation import ArtifactGenerationService
 from ._artifact_listing import ArtifactListingService
+from ._mind_map import NoteBackedMindMapService
+from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._session_contracts import AsyncWorkRuntime, RpcCaller
@@ -175,7 +187,8 @@ class ArtifactsAPI:
         runtime: ArtifactsRuntime,
         *,
         notebooks: NotebookSourceIdProvider,
-        mind_map_service: _mind_map.MindMapService,
+        mind_maps: NoteBackedMindMapService,
+        note_service: NoteService,
         storage_path: Path | None = None,
     ) -> None:
         """Initialize the artifacts API.
@@ -186,17 +199,25 @@ class ArtifactsAPI:
                 close-time drain-hook registration.
             notebooks: Source-id resolver. Required — wire from
                 ``NotebookLMClient`` (no implicit fallback).
-            mind_map_service: Service for note-backed mind-map operations.
-                Required; the previous ``None`` fallback that constructed
-                ``MindMapService(session)`` has been removed. Phase 5 will
-                rename this parameter to ``mind_maps`` and swap the
-                concrete type to :class:`NoteBackedMindMapService`.
+            mind_maps: Note-backed mind-map facade. Owns the
+                ``list_mind_maps`` / ``extract_content`` paths consumed
+                by ``_artifact_downloads.download_mind_map``. Renamed
+                from ``mind_map_service`` in Phase 5 to reflect the
+                concrete adapter type (:class:`NoteBackedMindMapService`).
+            note_service: Backend note-row primitives. Owns the
+                ``create_note`` call site that
+                ``_artifact_generation.generate_mind_map`` uses to
+                persist generated mind maps. Added in Phase 5 so the
+                generation path no longer reaches into
+                ``_mind_map.create_note(api._core, ...)`` through the
+                ``_artifact_seams`` shim.
             storage_path: Path to storage state file for loading download cookies.
         """
         self._runtime = runtime
         self._notebooks = notebooks
         self._storage_path = storage_path
-        self._mind_map_service = mind_map_service
+        self._mind_maps = mind_maps
+        self._note_service = note_service
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
@@ -206,19 +227,6 @@ class ArtifactsAPI:
             self._poll_registry,
         )
         self._runtime.register_drain_hook("artifacts.polls", self._polling.drain)
-
-    @property
-    def _core(self) -> ArtifactsRuntime:
-        """Backward-compatible alias for ``self._runtime``.
-
-        ``_artifact_generation.py`` and ``_artifact_downloads.py``
-        currently access ``api._core.rpc_call(...)`` and
-        ``_mind_map.list_mind_maps(api._core, ...)``. Those modules are
-        retyped in a later phase; until then, this property forwards
-        attribute access to the runtime so the cross-module calls keep
-        working.
-        """
-        return self._runtime
 
     # =========================================================================
     # List/Get Operations
@@ -898,8 +906,8 @@ class ArtifactsAPI:
         return await self._generation._call_generate(notebook_id, params)
 
     async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
-        """Get raw mind-map rows via the injected mind-map service."""
-        return await self._mind_map_service.list_mind_maps(notebook_id)
+        """Get raw mind-map rows via the injected mind-map facade."""
+        return await self._mind_maps.list_mind_maps(notebook_id)
 
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw artifact list data."""
