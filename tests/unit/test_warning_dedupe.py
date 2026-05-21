@@ -30,7 +30,6 @@ from pathlib import Path
 
 import pytest
 
-from _fixtures import patch_auth_seam
 from notebooklm import auth as auth_module
 
 # Cookie set that passes the Tier 1 required-cookies check but lacks any
@@ -113,7 +112,7 @@ def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
         # caller that emits the dedupe warning, and only on this state.
         yield "unavailable"
 
-    patch_auth_seam(monkeypatch, "_file_lock", fake_file_lock)
+    monkeypatch.setattr("notebooklm._auth.storage._file_lock", fake_file_lock)
 
     lock_path = tmp_path / ".storage_state.json.lock"
 
