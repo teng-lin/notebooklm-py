@@ -27,9 +27,32 @@ from . import context as context_helpers
 from . import input as input_helpers
 from . import rendering as rendering_helpers
 from . import research_import as research_import_helpers
-from . import resolve as resolve_helpers
 from . import runtime as runtime_helpers
 from ._encoding import safe_echo
+from .resolve import (
+    _resolve_partial_id as _resolve_partial_id,
+)
+from .resolve import (
+    require_notebook as require_notebook,
+)
+from .resolve import (
+    resolve_artifact_id as resolve_artifact_id,
+)
+from .resolve import (
+    resolve_note_id as resolve_note_id,
+)
+from .resolve import (
+    resolve_notebook_id as resolve_notebook_id,
+)
+from .resolve import (
+    resolve_source_id as resolve_source_id,
+)
+from .resolve import (
+    resolve_source_ids as resolve_source_ids,
+)
+from .resolve import (
+    validate_id as validate_id,
+)
 
 if TYPE_CHECKING:
     from ..types import Artifact
@@ -221,111 +244,6 @@ def get_current_conversation() -> str | None:
 def set_current_conversation(conversation_id: str | None):
     """Set or clear the current conversation ID in context."""
     context_helpers.set_current_conversation(conversation_id, context_path_fn=get_context_path)
-
-
-def validate_id(entity_id: str, entity_name: str = "ID") -> str:
-    """Validate and normalize an entity ID."""
-    return resolve_helpers.validate_id(entity_id, entity_name)
-
-
-def require_notebook(notebook_id: str | None) -> str:
-    """Get notebook ID from argument, env var, or active context."""
-    return resolve_helpers.require_notebook(
-        notebook_id,
-        context_path_fn=get_context_path,
-        output_console=console,
-    )
-
-
-async def _resolve_partial_id(
-    partial_id: str,
-    list_fn,
-    entity_name: str,
-    list_command: str,
-    *,
-    json_output: bool = False,
-) -> str:
-    """Generic partial ID resolver."""
-    return await resolve_helpers._resolve_partial_id(
-        partial_id,
-        list_fn,
-        entity_name,
-        list_command,
-        json_output=json_output,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
-    )
-
-
-async def resolve_notebook_id(client, partial_id: str, *, json_output: bool = False) -> str:
-    """Resolve partial notebook ID to full ID."""
-    return await resolve_helpers.resolve_notebook_id(
-        client,
-        partial_id,
-        json_output=json_output,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
-    )
-
-
-async def resolve_source_id(
-    client, notebook_id: str, partial_id: str, *, json_output: bool = False
-) -> str:
-    """Resolve partial source ID to full ID."""
-    return await resolve_helpers.resolve_source_id(
-        client,
-        notebook_id,
-        partial_id,
-        json_output=json_output,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
-    )
-
-
-async def resolve_artifact_id(
-    client, notebook_id: str, partial_id: str, *, json_output: bool = False
-) -> str:
-    """Resolve partial artifact ID to full ID."""
-    return await resolve_helpers.resolve_artifact_id(
-        client,
-        notebook_id,
-        partial_id,
-        json_output=json_output,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
-    )
-
-
-async def resolve_note_id(
-    client, notebook_id: str, partial_id: str, *, json_output: bool = False
-) -> str:
-    """Resolve partial note ID to full ID."""
-    return await resolve_helpers.resolve_note_id(
-        client,
-        notebook_id,
-        partial_id,
-        json_output=json_output,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
-    )
-
-
-async def resolve_source_ids(
-    client,
-    notebook_id: str,
-    source_ids: tuple[str, ...],
-    *,
-    json_output: bool = False,
-) -> list[str] | None:
-    """Resolve multiple partial source IDs to full IDs."""
-    return await resolve_helpers.resolve_source_ids(
-        client,
-        notebook_id,
-        source_ids,
-        json_output=json_output,
-        stdout_console=console,
-        stderr_output_console=stderr_console,
-    )
 
 
 def read_stdin_text(*, source_label: str = "stdin") -> str:

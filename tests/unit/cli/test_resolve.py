@@ -120,7 +120,7 @@ class TestResolveNotebookId:
     @pytest.mark.asyncio
     async def test_uuid_shaped_id_returns_without_listing(self, mock_client):
         """36-char UUID-shaped IDs fast-path without hitting the backend."""
-        # Canonical 8-4-4-4-12 UUID layout — 36 chars, all hex + dashes.
+        # Canonical 8-4-4-4-12 UUID layout - 36 chars, all hex + dashes.
         uuid_id = "abc12345-6789-4abc-def0-1234567890ab"
         assert len(uuid_id) == 36
         mock_client.notebooks.list = AsyncMock()
@@ -147,7 +147,7 @@ class TestResolveNotebookId:
         """A 25-char prefix of a 36-char UUID resolves locally, not via the backend.
 
         Regression for P1.T9: the previous length-based fast-path (>= 20 chars)
-        bypassed local matching for any 20–35 char prefix of a UUID, sending the
+        bypassed local matching for any 20-35 char prefix of a UUID, sending the
         truncated string straight to the backend. Per the acceptance criteria,
         this path must also emit the ``Matched:`` diagnostic so users can see
         which full ID the prefix resolved to.
@@ -213,7 +213,7 @@ class TestResolveNotebookId:
         """Degenerate 36-char input (all dashes) does NOT fast-path.
 
         The 8-4-4-4-12 layout requires hex digits in each block, so a pathological
-        ``"-" * 36`` input cannot bypass local resolution — it gets routed through
+        ``"-" * 36`` input cannot bypass local resolution - it gets routed through
         the local prefix-match path and surfaces a clear "no match" error.
         """
         all_dashes = "-" * 36
@@ -685,3 +685,362 @@ class TestResolveSourceIds:
 
         assert "cannot be empty" in str(exc_info.value)
         mock_client_with_sources.sources.list.assert_not_called()
+
+
+# ----------------------------------------------------------------------------
+# Sync resolver core + entity-specific config (P2.T1 acceptance criteria)
+# ----------------------------------------------------------------------------
+
+
+class TestRequireNotebookEnvVarFallback:
+    """Pin the env-var rung of ``require_notebook``'s precedence ladder.
+
+    The full ladder is: ``-n`` flag > ``NOTEBOOKLM_NOTEBOOK`` env >
+    persisted-context > error. ``test_helpers.py`` covers the same paths
+    via the helpers facade; this class covers them via the canonical
+    ``cli.resolve.require_notebook`` directly so any drift between the two
+    surfaces is caught here.
+    """
+
+    def test_argument_wins_over_env_and_context(self, tmp_path, monkeypatch):
+        from notebooklm.cli.resolve import require_notebook
+
+        ctx_file = tmp_path / "context.json"
+        ctx_file.write_text('{"notebook_id": "nb_from_context"}')
+        monkeypatch.setenv("NOTEBOOKLM_NOTEBOOK", "nb_from_env")
+
+        assert (
+            require_notebook("nb_from_arg", context_path_fn=lambda **_: ctx_file) == "nb_from_arg"
+        )
+
+    def test_env_var_fills_in_when_no_arg(self, tmp_path, monkeypatch):
+        """When ``-n`` is None and there is no context file, env wins."""
+        from notebooklm.cli.resolve import require_notebook
+
+        monkeypatch.setenv("NOTEBOOKLM_NOTEBOOK", "nb_from_env")
+        assert (
+            require_notebook(
+                None,
+                context_path_fn=lambda **_: tmp_path / "nonexistent.json",
+            )
+            == "nb_from_env"
+        )
+
+    def test_env_var_wins_over_context_file(self, tmp_path, monkeypatch):
+        """Env-var takes precedence over the persisted active-notebook."""
+        from notebooklm.cli.resolve import require_notebook
+
+        ctx_file = tmp_path / "context.json"
+        ctx_file.write_text('{"notebook_id": "nb_from_context"}')
+        monkeypatch.setenv("NOTEBOOKLM_NOTEBOOK", "nb_from_env")
+        assert require_notebook(None, context_path_fn=lambda **_: ctx_file) == "nb_from_env"
+
+    def test_context_file_used_when_no_arg_and_no_env(self, tmp_path, monkeypatch):
+        """No arg + no env-var -> fall through to the active-context file."""
+        from notebooklm.cli.resolve import require_notebook
+
+        monkeypatch.delenv("NOTEBOOKLM_NOTEBOOK", raising=False)
+        ctx_file = tmp_path / "context.json"
+        ctx_file.write_text('{"notebook_id": "nb_from_context"}')
+        assert require_notebook(None, context_path_fn=lambda **_: ctx_file) == "nb_from_context"
+
+    def test_blank_env_var_falls_through_to_context(self, tmp_path, monkeypatch):
+        """Whitespace-only ``NOTEBOOKLM_NOTEBOOK`` is treated as unset."""
+        from notebooklm.cli.resolve import require_notebook
+
+        monkeypatch.setenv("NOTEBOOKLM_NOTEBOOK", "   ")
+        ctx_file = tmp_path / "context.json"
+        ctx_file.write_text('{"notebook_id": "nb_from_context"}')
+        assert require_notebook(None, context_path_fn=lambda **_: ctx_file) == "nb_from_context"
+
+    def test_env_var_is_stripped(self, tmp_path, monkeypatch):
+        """``NOTEBOOKLM_NOTEBOOK`` value is trimmed before being returned."""
+        from notebooklm.cli.resolve import require_notebook
+
+        monkeypatch.setenv("NOTEBOOKLM_NOTEBOOK", "  nb_padded  ")
+        assert (
+            require_notebook(
+                None,
+                context_path_fn=lambda **_: tmp_path / "nonexistent.json",
+            )
+            == "nb_padded"
+        )
+
+    def test_no_source_anywhere_raises_with_discoverability_hint(self, tmp_path, monkeypatch):
+        """All three resolution paths must be named in the error message."""
+        from notebooklm.cli.resolve import require_notebook
+
+        monkeypatch.delenv("NOTEBOOKLM_NOTEBOOK", raising=False)
+        mock_console = MagicMock()
+        with pytest.raises(SystemExit):
+            require_notebook(
+                None,
+                context_path_fn=lambda **_: tmp_path / "nonexistent.json",
+                output_console=mock_console,
+            )
+
+        mock_console.print.assert_called_once()
+        printed = mock_console.print.call_args[0][0]
+        assert "-n/--notebook" in printed
+        assert "NOTEBOOKLM_NOTEBOOK" in printed
+        assert "notebooklm use" in printed
+
+
+class TestResolvePartialIdInItems:
+    """Direct tests for the sync resolver core that powers both the async
+    ``_resolve_partial_id`` and the download-pre-fetched-list path.
+
+    These cover the consolidation contract: identical matching rules
+    regardless of accessor shape and error factory.
+    """
+
+    def test_full_uuid_fast_path(self):
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        full = "abc12345-6789-4abc-def0-1234567890ab"
+        # An empty items list MUST not be visited at all; the fast-path
+        # returns before any iteration.
+        result = resolve_partial_id_in_items(
+            full,
+            [],
+            entity_name="artifact",
+            list_command="artifact list",
+        )
+        assert result == full
+
+    def test_partial_unique_match_with_attr_accessor(self):
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        class Item:
+            def __init__(self, id_, title):
+                self.id = id_
+                self.title = title
+
+        items = [Item("aaa111", "A"), Item("bbb222", "B")]
+        assert (
+            resolve_partial_id_in_items(
+                "aaa",
+                items,
+                entity_name="thing",
+                list_command="thing list",
+                stdout_console=MagicMock(),
+            )
+            == "aaa111"
+        )
+
+    def test_partial_unique_match_with_dict_accessor(self):
+        """Entity-specific config: dict-shaped items via ``id_of``/``title_of``.
+
+        This is the canonical consolidation test - the download path uses
+        :class:`ArtifactDict` and reaches the same matching logic without
+        first reshaping its inputs.
+        """
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        items = [
+            {"id": "art_aaa", "title": "First"},
+            {"id": "art_bbb", "title": "Second"},
+        ]
+        result = resolve_partial_id_in_items(
+            "art_a",
+            items,
+            entity_name="artifact",
+            list_command="artifact list",
+            id_of=lambda a: a["id"],
+            title_of=lambda a: a["title"],
+            error_factory=ValueError,
+            stdout_console=MagicMock(),
+        )
+        assert result == "art_aaa"
+
+    def test_ambiguous_partial_match_raises_via_error_factory(self):
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        items = [
+            {"id": "art_aaa", "title": "First"},
+            {"id": "art_aab", "title": "Second"},
+        ]
+        # When error_factory=ValueError, the consolidated resolver raises
+        # ValueError (not click.ClickException) so the download path's
+        # ``except ValueError`` continues to work.
+        with pytest.raises(ValueError) as exc:
+            resolve_partial_id_in_items(
+                "art_a",
+                items,
+                entity_name="artifact",
+                list_command="artifact list",
+                id_of=lambda a: a["id"],
+                title_of=lambda a: a["title"],
+                error_factory=ValueError,
+            )
+
+        # The default canonical wording is "Ambiguous ID 'X' matches N artifacts:".
+        # The download_helpers wrapper translates this to historical wording -
+        # but at THIS layer the canonical message is what surfaces.
+        assert "Ambiguous" in str(exc.value)
+        assert "art_a" in str(exc.value)
+
+    def test_no_match_raises_via_error_factory(self):
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        items = [{"id": "art_xyz", "title": "Only"}]
+        with pytest.raises(ValueError) as exc:
+            resolve_partial_id_in_items(
+                "art_a",
+                items,
+                entity_name="artifact",
+                list_command="artifact list",
+                id_of=lambda a: a["id"],
+                title_of=lambda a: a["title"],
+                error_factory=ValueError,
+            )
+        # Canonical wording at this layer ("No artifact found starting with..."
+        # + the discoverability hint pointing at ``artifact list``).
+        assert "No artifact found starting with" in str(exc.value)
+        assert "artifact list" in str(exc.value)
+
+    def test_empty_partial_id_raises_via_error_factory(self):
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            resolve_partial_id_in_items(
+                "   ",
+                [{"id": "x", "title": "y"}],
+                entity_name="artifact",
+                list_command="artifact list",
+                id_of=lambda a: a["id"],
+                title_of=lambda a: a["title"],
+                error_factory=ValueError,
+            )
+
+    def test_default_error_factory_is_click_exception(self):
+        """Without an explicit ``error_factory``, the async-path default
+        ``click.ClickException`` is used. This is the contract that the
+        async ``_resolve_partial_id`` relies on so Click can render its
+        familiar exit-1 + stderr error."""
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        with pytest.raises(click.ClickException):
+            resolve_partial_id_in_items(
+                "missing",
+                [],
+                entity_name="notebook",
+                list_command="list",
+            )
+
+    def test_exact_match_wins_over_ambiguous_prefix(self):
+        """The exact-id-wins rule must hold for the consolidated core too."""
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        items = [
+            {"id": "abc", "title": "Exact"},
+            {"id": "abc12345-6789-4abc-def0-1234567890ab", "title": "Long"},
+        ]
+        # 'abc' is an exact match for the first item AND a prefix of the
+        # second. The exact match must win - no "Matched: ..." status, no
+        # ambiguity error.
+        mock_console = MagicMock()
+        result = resolve_partial_id_in_items(
+            "abc",
+            items,
+            entity_name="artifact",
+            list_command="artifact list",
+            id_of=lambda a: a["id"],
+            title_of=lambda a: a["title"],
+            error_factory=ValueError,
+            stdout_console=mock_console,
+        )
+        assert result == "abc"
+        mock_console.print.assert_not_called()
+
+    def test_matched_status_routes_to_stderr_in_json_mode(self):
+        """JSON-mode keeps stdout parseable by routing "Matched..." to stderr."""
+        from notebooklm.cli.resolve import resolve_partial_id_in_items
+
+        items = [{"id": "abc12345", "title": "First"}]
+        stdout_console = MagicMock()
+        stderr_console = MagicMock()
+
+        result = resolve_partial_id_in_items(
+            "abc",
+            items,
+            entity_name="artifact",
+            list_command="artifact list",
+            id_of=lambda a: a["id"],
+            title_of=lambda a: a["title"],
+            error_factory=ValueError,
+            json_output=True,
+            stdout_console=stdout_console,
+            stderr_output_console=stderr_console,
+        )
+
+        assert result == "abc12345"
+        stdout_console.print.assert_not_called()
+        stderr_console.print.assert_called_once()
+        printed = stderr_console.print.call_args[0][0]
+        assert "Matched" in printed
+
+
+class TestEntitySpecificPartialArtifactId:
+    """Cover the download-helpers entity-specific consolidated path.
+
+    Acceptance criterion: "entity-specific partial-ID resolution for
+    artifacts". The download path delegates to ``resolve_partial_id_in_items``
+    via :func:`notebooklm.cli.download_helpers.resolve_partial_artifact_id`
+    with the dict-shape accessors and ``ValueError`` factory.
+    """
+
+    def test_consolidated_path_handles_artifact_dict_shape(self):
+        from notebooklm.cli.download_helpers import resolve_partial_artifact_id
+
+        artifacts = [
+            {"id": "abc111-aaaa-4abc-def0-000000000001", "title": "First", "created_at": 1},
+            {"id": "xyz222-aaaa-4abc-def0-000000000002", "title": "Second", "created_at": 2},
+        ]
+        # Unique prefix resolves through the consolidated core.
+        assert resolve_partial_artifact_id(artifacts, "abc") == "abc111-aaaa-4abc-def0-000000000001"
+
+    def test_consolidated_path_preserves_historical_not_found_wording(self):
+        """The download user-visible error retains its historical
+        wording ("Artifact 'X' not found") even though the consolidated
+        core uses different wording at the resolve.py layer.
+
+        This is the exact contract from
+        ``tests/unit/test_download_helpers.py::test_no_match_raises`` and
+        downstream user-visible CLI error envelopes.
+        """
+        from notebooklm.cli.download_helpers import resolve_partial_artifact_id
+
+        artifacts = [{"id": "xyz222-aaaa-4abc-def0-000000000002", "title": "Only", "created_at": 1}]
+        with pytest.raises(ValueError) as exc:
+            resolve_partial_artifact_id(artifacts, "abc")
+
+        assert "Artifact 'abc' not found" in str(exc.value)
+
+    def test_consolidated_path_preserves_historical_ambiguous_wording(self):
+        """Ambiguous-match error retains the "Ambiguous partial ID 'X' matches: ..."
+        wording downstream callers rely on."""
+        from notebooklm.cli.download_helpers import resolve_partial_artifact_id
+
+        artifacts = [
+            {"id": "abc111", "title": "Meeting Notes", "created_at": 1},
+            {"id": "abc222", "title": "Debate Session", "created_at": 2},
+        ]
+        with pytest.raises(ValueError) as exc:
+            resolve_partial_artifact_id(artifacts, "abc")
+
+        msg = str(exc.value)
+        assert "Ambiguous partial ID 'abc'" in msg
+        assert "Meeting Notes" in msg
+        assert "Debate Session" in msg
+
+    def test_consolidated_path_uses_valueerror_not_clickexception(self):
+        """The download path's downstream ``except ValueError`` contract is
+        preserved by the ``error_factory=ValueError`` config."""
+        import click as _click
+
+        from notebooklm.cli.download_helpers import resolve_partial_artifact_id
+
+        with pytest.raises(ValueError) as exc:
+            resolve_partial_artifact_id([], "abc")
+        assert not isinstance(exc.value, _click.ClickException)
