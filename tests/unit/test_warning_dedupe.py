@@ -112,7 +112,9 @@ def test_flock_unavailable_warns_exactly_once_under_asyncio_gather(
         # caller that emits the dedupe warning, and only on this state.
         yield "unavailable"
 
-    monkeypatch.setattr("notebooklm._auth.storage._file_lock", fake_file_lock)
+    import notebooklm._auth.storage as _auth_storage
+
+    monkeypatch.setattr(_auth_storage, "_file_lock", fake_file_lock)
 
     lock_path = tmp_path / ".storage_state.json.lock"
 
