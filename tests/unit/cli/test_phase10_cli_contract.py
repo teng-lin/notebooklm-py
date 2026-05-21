@@ -28,11 +28,7 @@ def _find_repo_root() -> Path:
     raise RuntimeError("Could not locate repository root")
 
 
-BASELINE_PATH = (
-    _find_repo_root()
-    / ".sisyphus/phases/architecture-remediation/runs/"
-    / "phase-10-cli-contract-baseline.json"
-)
+BASELINE_PATH = _find_repo_root() / "tests/fixtures/phase10_cli_contract_baseline.json"
 
 TRACKED_GROUPS = (
     "download",
