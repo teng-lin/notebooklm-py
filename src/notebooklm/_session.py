@@ -899,22 +899,20 @@ class Session:
         """Backfill the middleware chain for tests that construct via ``__new__``.
 
         Mirrors :meth:`_ensure_observability_state` — a ``__new__``-built
-        fixture skips ``__init__`` and so misses both ``_middlewares`` and
-        ``_authed_post_chain``. The first call to :meth:`_perform_authed_post`
-        on such a fixture would raise ``AttributeError``; this helper
-        backfills both slots with the same shape ``__init__`` would have
-        constructed (``[DrainMiddleware, MetricsMiddleware, SemaphoreMiddleware,
-        RetryMiddleware, AuthRefreshMiddleware, ErrorInjectionMiddleware,
-        TracingMiddleware]``-seeded chain around the terminal adapter, matching
-        the seed in ``__init__``).
+        fixture skips ``__init__`` and so misses both ``_chain_builder``,
+        ``_middlewares``, and ``_authed_post_chain``. The first call to
+        :meth:`_perform_authed_post` on such a fixture would raise
+        ``AttributeError``; this helper backfills all three slots via
+        :class:`MiddlewareChainBuilder` with the same chain shape that
+        ``__init__`` would have produced (ADR-009 ordering pinned by
+        ``tests/unit/test_chain_wiring.py:235`` and at builder level by
+        ``tests/unit/test_middleware_chain_builder.py``).
 
         Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
         :meth:`_ensure_observability_state` is — two threads observing
         ``hasattr is False`` simultaneously must not both construct a
         chain (one would clobber the other and break the
-        ``self._middlewares`` ↔ ``self._authed_post_chain`` linkage that
-        later middleware PRs rely on). The lock is uncontested on the
-        happy ``__init__`` path because the chain is already populated.
+        ``self._middlewares`` ↔ ``self._authed_post_chain`` linkage).
         """
         if hasattr(self, "_authed_post_chain"):
             return
@@ -929,48 +927,37 @@ class Session:
         with _OBSERVABILITY_INIT_LOCK:
             if hasattr(self, "_authed_post_chain"):
                 return
+            self._ensure_auth_coord()
             if not hasattr(self, "_middlewares"):
-                # Mirror ``__init__``'s seeded chain. PR 12.9 lands the
-                # **final** ADR-009 ordering [Drain, Metrics, Semaphore,
-                # Retry, AuthRefresh, ErrorInjection, Tracing]. A
-                # ``__new__``-built fixture must see the same chain shape
-                # so all five chain behaviors (drain admission, queue
-                # gating, retry on 429/5xx, refresh-and-retry on 4xx
-                # auth shapes, synthetic-error short-circuit) are
-                # exercised on fixture-driven invocations too —
-                # otherwise the fixture path and the live path diverge,
-                # which has previously hidden bugs in Tier-8
-                # cassette-replay tests.
-                #
-                # ``getattr`` defaults match ``__init__``'s argument
-                # defaults so a ``__new__``-built fixture that never set
-                # the attrs still gets sane middleware instances.
-                # ``_ensure_auth_coord`` initializes ``_auth_coord`` so the
-                # ``refresh_callback_enabled`` lambda can read it.
-                self._ensure_auth_coord()
-                self._middlewares = [
-                    DrainMiddleware(self._drain_tracker),
-                    MetricsMiddleware(self._metrics_obj),
-                    SemaphoreMiddleware(self._get_rpc_semaphore),
-                    RetryMiddleware(
-                        rate_limit_max_retries=lambda: getattr(self, "_rate_limit_max_retries", 3),
-                        server_error_max_retries=lambda: getattr(
+                if not hasattr(self, "_chain_builder"):
+                    # __new__-fixture path: __init__ was bypassed. Build
+                    # the builder with safe getattr-defaults mirroring
+                    # __init__'s argument defaults so a fixture that
+                    # never set the attrs still gets sane middleware
+                    # instances. ``_drain_tracker`` and ``_metrics_obj``
+                    # are guaranteed populated by the
+                    # ``_ensure_observability_state()`` call above the
+                    # lock.
+                    self._chain_builder = MiddlewareChainBuilder(
+                        drain_tracker=self._drain_tracker,
+                        metrics=self._metrics_obj,
+                        rpc_semaphore_factory=self._get_rpc_semaphore,
+                        rate_limit_max_retries_provider=lambda: getattr(
+                            self, "_rate_limit_max_retries", 3
+                        ),
+                        server_error_max_retries_provider=lambda: getattr(
                             self, "_server_error_max_retries", 3
                         ),
-                        metrics=self._metrics_obj,
-                    ),
-                    AuthRefreshMiddleware(
+                        refresh_retry_delay_provider=lambda: getattr(
+                            self, "_refresh_retry_delay", 0.0
+                        ),
                         refresh_callable=self._await_refresh,
-                        # See ``_live_is_auth_error`` for the late-binding
-                        # rationale (mirrors the ``__init__`` seed site).
                         is_auth_error=_live_is_auth_error,
-                        refresh_callback_enabled=lambda: self._auth_coord.has_refresh_callback,
-                        refresh_retry_delay=lambda: getattr(self, "_refresh_retry_delay", 0.0),
-                        metrics=self._metrics_obj,
-                    ),
-                    ErrorInjectionMiddleware(),
-                    TracingMiddleware(),
-                ]
+                        refresh_callback_enabled_provider=(
+                            lambda: self._auth_coord.has_refresh_callback
+                        ),
+                    )
+                self._middlewares = self._chain_builder.build()
             self._authed_post_chain = build_chain(
                 self._middlewares,
                 self._authed_post_chain_terminal,
