@@ -2565,7 +2565,9 @@ class TestSourceCleanCommand:
         with self._patch_clean(sources) as mc:
             mc.sources.delete = AsyncMock(side_effect=fake_delete)
             result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
-            assert result.exit_code == 0
+            # P1.T2 bug 8: partial-failure must exit non-zero so shell
+            # automation (set -e, CI, etc.) can detect the failure.
+            assert result.exit_code != 0
             assert "1 deletion(s) failed" in result.output
             assert "src_b" in result.output
             assert "boom" in result.output
@@ -3019,3 +3021,399 @@ class TestSourceAddStdinDash:
             assert result.exit_code == 0, result.output
             call = mock_client.sources.add_text.call_args
             assert call.args[2] == "literal text"
+
+
+# =============================================================================
+# P1.T2 — source.py surgical bug bundle (CLI audit fixes)
+# =============================================================================
+#
+# Eight regression tests, one per bug in the audit's P1.T2 bundle. Each test
+# pins the *fixed* contract; on `main` (pre-fix) every test in this class
+# should be red.
+#
+# Bug index (matches .sisyphus/plans/cli-audit-fixes.md §P1.T2):
+#   1. source delete --json without --yes -> structured JSON error, no prompt.
+#   2. source delete-by-title --json without --yes -> same.
+#   3. source clean --json without --yes (with candidates) -> structured error.
+#   4. source fulltext --json -o FILE -> file written + metadata envelope on stdout.
+#   5. source add -> console.status spinner brackets the awaited upload, not the
+#      pre-await coroutine creation.
+#   6. source add-research -> client.research.poll is task-pinned via task_id.
+#   7. source add-research --no-wait --import-all -> UsageError (exit 2).
+#   8. source clean -> exit code != 0 when any deletion fails.
+
+
+class TestSourceBundleP1T2:
+    """Regression tests for the P1.T2 source.py bug bundle (CLI audit)."""
+
+    def _patch_fetch_tokens(self):
+        return patch(
+            "notebooklm.auth.fetch_tokens_with_domains",
+            new_callable=AsyncMock,
+            return_value=("csrf", "session"),
+        )
+
+    # ------------------------------------------------------------------
+    # Bug 1: source delete --json without --yes
+    # ------------------------------------------------------------------
+    def test_source_delete_json_without_yes_emits_structured_error_no_prompt(
+        self, runner, mock_auth
+    ):
+        """`source delete <id> --json` without `--yes` must NOT prompt; instead
+        emit a structured JSON error and exit non-zero."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[Source(id="src_123", title="My Source")]
+            )
+            mock_client.sources.delete = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens(), patch("click.confirm") as mock_confirm:
+                result = runner.invoke(
+                    cli, ["source", "delete", "src_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code != 0, result.output
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "CONFIRM_REQUIRED"
+            assert "--yes" in data["message"]
+            mock_confirm.assert_not_called()
+            mock_client.sources.delete.assert_not_called()
+
+    # ------------------------------------------------------------------
+    # Bug 2: source delete-by-title --json without --yes
+    # ------------------------------------------------------------------
+    def test_source_delete_by_title_json_without_yes_emits_structured_error_no_prompt(
+        self, runner, mock_auth
+    ):
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[Source(id="src_123", title="Test Source")]
+            )
+            mock_client.sources.delete = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens(), patch("click.confirm") as mock_confirm:
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "delete-by-title",
+                        "Test Source",
+                        "-n",
+                        "nb_123",
+                        "--json",
+                    ],
+                )
+
+            assert result.exit_code != 0, result.output
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "CONFIRM_REQUIRED"
+            assert "--yes" in data["message"]
+            mock_confirm.assert_not_called()
+            mock_client.sources.delete.assert_not_called()
+
+    # ------------------------------------------------------------------
+    # Bug 3: source clean --json without --yes with candidates
+    # ------------------------------------------------------------------
+    def test_source_clean_json_without_yes_with_candidates_emits_structured_error_no_prompt(
+        self, runner, mock_auth
+    ):
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[_src("src_err", title="oops", status=SourceStatus.ERROR)]
+            )
+            mock_client.sources.delete = AsyncMock(return_value=True)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens(), patch("click.confirm") as mock_confirm:
+                result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "--json"])
+
+            assert result.exit_code != 0, result.output
+            data = json.loads(result.output)
+            assert data["error"] is True
+            assert data["code"] == "CONFIRM_REQUIRED"
+            assert "--yes" in data["message"]
+            mock_confirm.assert_not_called()
+            mock_client.sources.delete.assert_not_called()
+
+    def test_source_clean_json_already_clean_without_yes_does_not_error(self, runner, mock_auth):
+        """`source clean --json` without --yes must NOT error when there are no
+        candidates — the confirmation is a no-op in that path."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[_src("src_1", title="Page", url="https://ex.com/a")]
+            )
+            mock_client.sources.delete = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens():
+                result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "--json"])
+
+            assert result.exit_code == 0, result.output
+            data = json.loads(result.output)
+            assert data["status"] == "already_clean"
+
+    # ------------------------------------------------------------------
+    # Bug 4: source fulltext --json -o FILE -> metadata envelope on stdout
+    # ------------------------------------------------------------------
+    def test_source_fulltext_json_with_output_file_writes_file_and_emits_metadata(
+        self, runner, mock_auth, tmp_path
+    ):
+        """`source fulltext --json -o FILE` writes the full content to FILE and
+        emits a metadata envelope on stdout (NOT the full content twice)."""
+        output_file = tmp_path / "fulltext.txt"
+        body = "A" * 1024  # large enough to make the duplication smell obvious
+
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(
+                return_value=[Source(id="src_123", title="Big Source")]
+            )
+            mock_client.sources.get_fulltext = AsyncMock(
+                return_value=SourceFulltext(
+                    source_id="src_123",
+                    title="Big Source",
+                    content=body,
+                    char_count=len(body),
+                    url=None,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens():
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "fulltext",
+                        "src_123",
+                        "-n",
+                        "nb_123",
+                        "--json",
+                        "-o",
+                        str(output_file),
+                    ],
+                )
+
+            assert result.exit_code == 0, result.output
+            # File written with full content (UTF-8).
+            assert output_file.read_text(encoding="utf-8") == body
+            # Stdout is a metadata envelope, NOT the full content.
+            data = json.loads(result.output)
+            assert data["path"] == str(output_file)
+            assert data["bytes"] == len(body.encode("utf-8"))
+            assert data["source_id"] == "src_123"
+            assert data["title"] == "Big Source"
+            # Full content must not be in the metadata envelope.
+            assert "content" not in data
+
+    def test_source_fulltext_json_without_output_file_keeps_full_payload(self, runner, mock_auth):
+        """Regression guard: when `-o` is OMITTED, `--json` mode still emits the
+        full asdict(SourceFulltext) payload on stdout — unchanged behavior."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Tiny")])
+            mock_client.sources.get_fulltext = AsyncMock(
+                return_value=SourceFulltext(
+                    source_id="src_123",
+                    title="Tiny",
+                    content="hello",
+                    char_count=5,
+                    url=None,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens():
+                result = runner.invoke(
+                    cli, ["source", "fulltext", "src_123", "-n", "nb_123", "--json"]
+                )
+
+            assert result.exit_code == 0, result.output
+            data = json.loads(result.output)
+            assert data["content"] == "hello"
+            assert data["char_count"] == 5
+
+    # ------------------------------------------------------------------
+    # Bug 5: source add spinner brackets the awaited upload
+    # ------------------------------------------------------------------
+    def test_source_add_spinner_brackets_upload(self, runner, mock_auth):
+        """`source add <url>` non-JSON mode wraps the awaited upload in
+        `console.status(...)`, NOT just the synchronous coroutine creation.
+
+        The pre-fix code did ``with console.status(...): return _run()`` — the
+        ``with`` block exits as soon as ``_run()`` returns the coroutine,
+        BEFORE the coroutine is awaited. We assert spinner enter happens before
+        the upload mock is awaited and spinner exit happens after.
+        """
+        timeline: list[str] = []
+
+        class _RecordingStatus:
+            def __init__(self, message):
+                self.message = message
+
+            def __enter__(self):
+                timeline.append("status.enter")
+                return MagicMock()
+
+            def __exit__(self, *exc):
+                timeline.append("status.exit")
+                return False
+
+        def _make_status(message, *args, **kwargs):
+            return _RecordingStatus(message)
+
+        async def _record_add_url(*args, **kwargs):
+            timeline.append("upload.start")
+            return Source(id="src_new", title="Added", url="https://ex.com")
+
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.add_url = AsyncMock(side_effect=_record_add_url)
+            mock_client_cls.return_value = mock_client
+
+            with (
+                self._patch_fetch_tokens(),
+                patch.object(source_module.console, "status", side_effect=_make_status),
+            ):
+                result = runner.invoke(cli, ["source", "add", "https://ex.com", "-n", "nb_123"])
+
+            assert result.exit_code == 0, result.output
+            # The spinner must enclose the upload: enter -> upload -> exit.
+            assert timeline == ["status.enter", "upload.start", "status.exit"], (
+                f"spinner must bracket the awaited upload; got timeline={timeline}"
+            )
+
+    # ------------------------------------------------------------------
+    # Bug 6: source add-research polling must pin to task_id
+    # ------------------------------------------------------------------
+    def test_source_add_research_poll_is_task_pinned(self, runner, mock_auth):
+        """`source add-research` must pass ``task_id`` to ``client.research.poll``
+        so a second research task starting mid-poll cannot cross-wire its
+        sources into this task's import branch."""
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.research.start = AsyncMock(return_value={"task_id": "task_pinned"})
+            # First poll returns in_progress (so the loop continues at least once
+            # and we can prove the discriminator is threaded); second returns
+            # completed.
+            poll_calls: list[dict] = []
+
+            async def _poll(notebook_id, task_id=None):
+                poll_calls.append({"notebook_id": notebook_id, "task_id": task_id})
+                if len(poll_calls) < 2:
+                    return {"status": "in_progress", "task_id": "task_pinned"}
+                return {
+                    "status": "completed",
+                    "task_id": "task_pinned",
+                    "sources": [],
+                    "report": "",
+                }
+
+            mock_client.research.poll = AsyncMock(side_effect=_poll)
+            mock_client_cls.return_value = mock_client
+
+            # Short-circuit asyncio.sleep so the test does not wait 5s between polls.
+            with (
+                self._patch_fetch_tokens(),
+                patch("notebooklm.cli.source.asyncio.sleep", new_callable=AsyncMock),
+            ):
+                result = runner.invoke(
+                    cli,
+                    ["source", "add-research", "topic", "-n", "nb_123"],
+                )
+
+            assert result.exit_code == 0, result.output
+            assert len(poll_calls) >= 2
+            # Every poll call after the first must carry the task_id
+            # discriminator. (The first call may be unpinned if implementation
+            # discovers the id from start(); the second MUST be pinned.)
+            assert poll_calls[1]["task_id"] == "task_pinned", (
+                f"second poll must pass task_id='task_pinned'; got {poll_calls[1]!r}"
+            )
+
+    # ------------------------------------------------------------------
+    # Bug 7: --no-wait + --import-all is a usage error
+    # ------------------------------------------------------------------
+    def test_source_add_research_no_wait_with_import_all_is_usage_error(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "source",
+                "add-research",
+                "topic",
+                "--no-wait",
+                "--import-all",
+                "-n",
+                "nb_123",
+            ],
+        )
+
+        # ``click.UsageError`` exits 2 — Click's standard convention.
+        assert result.exit_code == 2, result.output
+        assert "--import-all" in result.output
+        assert "--no-wait" in result.output or "--wait" in result.output
+
+    # ------------------------------------------------------------------
+    # Bug 8: source clean partial-failure exit code
+    # ------------------------------------------------------------------
+    def test_source_clean_partial_failure_exits_nonzero_text_mode(self, runner, mock_auth):
+        sources = [
+            _src("src_a", status=SourceStatus.ERROR),
+            _src("src_b", status=SourceStatus.ERROR),
+        ]
+
+        async def fake_delete(nb, sid):
+            if sid == "src_b":
+                raise RuntimeError("boom")
+
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(return_value=sources)
+            mock_client.sources.delete = AsyncMock(side_effect=fake_delete)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens():
+                result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y"])
+
+            assert result.exit_code != 0, result.output
+            assert "1 deletion(s) failed" in result.output
+            assert "src_b" in result.output
+            assert "boom" in result.output
+
+    def test_source_clean_partial_failure_exits_nonzero_json_mode(self, runner, mock_auth):
+        sources = [
+            _src("src_a", status=SourceStatus.ERROR),
+            _src("src_b", status=SourceStatus.ERROR),
+        ]
+
+        async def fake_delete(nb, sid):
+            if sid == "src_b":
+                raise RuntimeError("boom")
+
+        with patch_client_for_module("source") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.sources.list = AsyncMock(return_value=sources)
+            mock_client.sources.delete = AsyncMock(side_effect=fake_delete)
+            mock_client_cls.return_value = mock_client
+
+            with self._patch_fetch_tokens():
+                result = runner.invoke(cli, ["source", "clean", "-n", "nb_123", "-y", "--json"])
+
+            assert result.exit_code != 0, result.output
+            data = json.loads(result.output)
+            # Behavior parity with text mode: the JSON envelope still carries
+            # the full clean report so callers can introspect which IDs failed.
+            assert data["status"] == "completed"
+            assert data["deleted_count"] == 1
+            assert data["failure_count"] == 1
+            assert data["failures"] == [{"id": "src_b", "error": "boom"}]

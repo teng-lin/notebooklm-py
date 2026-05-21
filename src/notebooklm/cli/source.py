@@ -24,7 +24,7 @@ import re
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import click
 from rich.table import Table
@@ -144,6 +144,35 @@ def _print_clean_candidates(candidates: list[tuple[str, str, str, str]]) -> None
         display_title = title if title else "[dim](no title)[/dim]"
         table.add_row(sid[:8], display_title, status, reason)
     console.print(table)
+
+
+def _require_yes_in_json(*, action: str, extra: dict[str, Any] | None = None) -> None:
+    """Emit a structured ``CONFIRM_REQUIRED`` error and exit non-zero.
+
+    Centralises the JSON-mode confirmation gate used by destructive commands
+    (``source delete``, ``source delete-by-title``, ``source clean``). Calling
+    this helper always raises ``SystemExit(1)`` via :func:`_output_error` — it
+    never returns normally.
+
+    Args:
+        action: Short verb identifying the command (``"delete"``,
+            ``"delete-by-title"``, ``"clean"``) so callers can match the
+            envelope to the originating command.
+        extra: Additional command-specific fields (e.g. ``source_id``,
+            ``notebook_id``, ``candidates``) merged into the JSON envelope so
+            automation has full context about what was refused.
+    """
+    payload: dict[str, Any] = {"action": action}
+    if extra:
+        payload.update(extra)
+    _output_error(
+        "Pass --yes to confirm destructive operation in --json mode",
+        code="CONFIRM_REQUIRED",
+        json_output=True,
+        exit_code=1,
+        extra=payload,
+    )
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 @click.group()
@@ -451,11 +480,25 @@ def source_add(
     async def _run():
         async with NotebookLMClient(client_auth, **client_kwargs) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            src = await source_add_service.add_source(
-                client.sources,
-                notebook_id=nb_id_resolved,
-                plan=plan,
+            # P1.T2 bug 5: ``rich.console.Console.status`` is a SYNCHRONOUS
+            # context manager. The old shape ``with console.status(...): return
+            # _run()`` exited the spinner as soon as ``_run()`` returned the
+            # coroutine — BEFORE ``with_client`` awaited it — so the spinner
+            # was effectively invisible during the actual upload. Moving the
+            # ``with`` block inside the awaited coroutine makes the spinner
+            # span the real I/O. JSON mode still suppresses the spinner so
+            # stdout stays pure JSON.
+            spinner = (
+                contextlib.nullcontext()
+                if json_output
+                else console.status(f"Adding {plan.detected_type} source...")
             )
+            with spinner:
+                src = await source_add_service.add_source(
+                    client.sources,
+                    notebook_id=nb_id_resolved,
+                    plan=plan,
+                )
 
             if json_output:
                 data = {
@@ -471,9 +514,6 @@ def source_add(
 
             console.print(f"[green]Added source:[/green] {src.id}")
 
-    if not json_output:
-        with console.status(f"Adding {plan.detected_type} source..."):
-            return _run()
     return _run()
 
 
@@ -568,16 +608,20 @@ def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
                 client, nb_id_resolved, source_id, json_output=json_output
             )
 
+            # P1.T2 bug 1: In --json mode, never prompt — automation cannot
+            # answer an interactive confirmation and a hanging prompt is
+            # indistinguishable from a stuck command. Require --yes and emit a
+            # structured JSON error otherwise.
+            if json_output and not yes:
+                _require_yes_in_json(
+                    action="delete",
+                    extra={
+                        "source_id": resolved_id,
+                        "notebook_id": nb_id_resolved,
+                    },
+                )
+
             if not yes and not click.confirm(f"Delete source {resolved_id}?"):
-                if json_output:
-                    json_output_response(
-                        {
-                            "action": "delete",
-                            "source_id": resolved_id,
-                            "notebook_id": nb_id_resolved,
-                            "status": "cancelled",
-                        }
-                    )
                 return
 
             success = await client.sources.delete(nb_id_resolved, resolved_id)
@@ -617,17 +661,19 @@ def source_delete_by_title(ctx, title, notebook_id, yes, json_output, client_aut
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             source = await _resolve_source_by_exact_title(client, nb_id_resolved, title)
 
+            # P1.T2 bug 2: same JSON-mode confirmation contract as
+            # ``source delete``. Never prompt under --json; require --yes.
+            if json_output and not yes:
+                _require_yes_in_json(
+                    action="delete-by-title",
+                    extra={
+                        "source_id": source.id,
+                        "title": source.title,
+                        "notebook_id": nb_id_resolved,
+                    },
+                )
+
             if not yes and not click.confirm(f"Delete source '{source.title}' ({source.id})?"):
-                if json_output:
-                    json_output_response(
-                        {
-                            "action": "delete-by-title",
-                            "source_id": source.id,
-                            "title": source.title,
-                            "notebook_id": nb_id_resolved,
-                            "status": "cancelled",
-                        }
-                    )
                 return
 
             success = await client.sources.delete(nb_id_resolved, source.id)
@@ -885,6 +931,17 @@ def source_add_research(
     query = resolve_prompt(query, prompt_file, "query", required=True)
     if cited_only and not import_all:
         raise click.UsageError("--cited-only requires --import-all")
+    # P1.T2 bug 7: --no-wait returns immediately without polling, so
+    # --import-all would have no completed results to import. Silently
+    # ignoring --import-all is the worst failure mode (user assumes import
+    # happened); refuse the combination instead. Callers that want
+    # deferred imports must explicitly run ``research wait --import-all``
+    # after start (the message in --no-wait already hints at this).
+    if no_wait and import_all:
+        raise click.UsageError(
+            "--import-all requires --wait (the default) or a separate "
+            "'research wait --import-all' after --no-wait."
+        )
 
     nb_id = require_notebook(notebook_id)
 
@@ -916,10 +973,16 @@ def source_add_research(
             # divided by the 5 s interval. The legacy hardcoded 60-iteration
             # cap stranded deep research (#315) because the import branch
             # below is gated on `status == "completed"`.
+            #
+            # P1.T2 bug 6: pin every poll to the ``task_id`` we received from
+            # ``research.start`` so a second research task started mid-wait
+            # (e.g. by a concurrent caller, web UI, or retry) cannot
+            # cross-wire its sources / report into this task's import branch.
+            # Matches the pattern in ``cli/research.py:155-189``.
             _POLL_INTERVAL_S = 5
             status = None
             for _ in range(max(1, timeout // _POLL_INTERVAL_S)):
-                status = await client.research.poll(nb_id_resolved)
+                status = await client.research.poll(nb_id_resolved, task_id=task_id)
                 if status.get("status") == "completed":
                     break
                 elif status.get("status") == "no_research":
@@ -976,10 +1039,24 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_for
     SOURCE_ID can be a full UUID or a partial prefix (e.g., 'abc' matches 'abc123...').
 
     \b
+    Output shapes:
+      Text mode (default):
+        - No ``-o``: full content rendered to the terminal (truncated at 2000 chars).
+        - With ``-o``: full content written to FILE; stderr/stdout shows a brief saved-N-chars line.
+      JSON mode (``--json``):
+        - No ``-o``: full ``asdict(SourceFulltext)`` payload on stdout
+          (``{source_id, title, content, char_count, url, ...}``).
+        - With ``-o``: full content written to FILE; a *metadata envelope*
+          on stdout — ``{path, bytes, source_id, title}``. This avoids
+          duplicating multi-MB fulltext to both stdout and disk while still
+          giving automation a parseable stdout payload that names the file.
+
+    \b
     Examples:
       notebooklm source fulltext abc123                        # Show plaintext in terminal
       notebooklm source fulltext abc123 -f markdown -o out.md  # Save markdown to file
-      notebooklm source fulltext abc123 --json                 # Output as JSON
+      notebooklm source fulltext abc123 --json                 # Full JSON payload to stdout
+      notebooklm source fulltext abc123 --json -o out.json     # File + metadata envelope on stdout
     """
     nb_id = require_notebook(notebook_id)
 
@@ -1002,6 +1079,22 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_for
                     fulltext = await _fetch()
 
             if json_output:
+                # P1.T2 bug 4: when both --json and -o are given, write the
+                # (potentially multi-MB) content to disk and emit a small
+                # metadata envelope on stdout — not the full content twice.
+                if output:
+                    content_bytes = fulltext.content.encode("utf-8")
+                    Path(output).write_bytes(content_bytes)
+                    json_output_response(
+                        {
+                            "path": str(output),
+                            "bytes": len(content_bytes),
+                            "source_id": fulltext.source_id,
+                            "title": fulltext.title,
+                        }
+                    )
+                    return
+
                 from dataclasses import asdict
 
                 json_output_response(asdict(fulltext))
@@ -1304,13 +1397,25 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 with console.status("Fetching sources for cleanup..."):
                     return await client.sources.list(notebook_id)
 
+            # P1.T2 bug 3: in --json mode, never prompt — automation cannot
+            # answer the question. Pass a non-interactive ``confirm_delete``
+            # that always declines; once the service returns ``cancelled`` we
+            # synthesize a structured ``CONFIRM_REQUIRED`` error below
+            # (only when there were candidates — empty notebooks short-circuit
+            # to ``already_clean`` before ``confirm_delete`` is ever called).
+            confirm_delete = (
+                (lambda count: False)
+                if json_output
+                else (lambda count: click.confirm(f"Delete {count} source(s)?"))
+            )
+
             result = await source_clean_service.run_source_clean(
                 notebook_id=nb_id_resolved,
                 dry_run=dry_run,
                 yes=yes,
                 list_sources=_list_sources,
                 delete_source=client.sources.delete,
-                confirm_delete=lambda count: click.confirm(f"Delete {count} source(s)?"),
+                confirm_delete=confirm_delete,
                 on_candidates=None if json_output else _print_clean_candidates,
                 on_delete_start=None
                 if json_output
@@ -1323,6 +1428,19 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
             candidate_payload = source_clean_service.candidates_payload(result.candidates)
 
             if json_output:
+                # P1.T2 bug 3: synthesize structured error when --json + no
+                # --yes left candidates uncleaned (the silent
+                # ``status=cancelled`` form would be invisible to automation).
+                if result.status == "cancelled" and not yes:
+                    _require_yes_in_json(
+                        action="clean",
+                        extra={
+                            "notebook_id": result.notebook_id,
+                            "candidate_count": result.candidate_count,
+                            "candidates": candidate_payload,
+                        },
+                    )
+
                 payload = {
                     "action": "clean",
                     "notebook_id": result.notebook_id,
@@ -1338,6 +1456,12 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                         {"id": sid, "error": err} for sid, err in result.failures
                     ]
                 json_output_response(payload)
+                # P1.T2 bug 8: partial-failure must exit non-zero so shell
+                # automation (set -e, CI) sees the failure. The full report
+                # is still on stdout above so callers can introspect which
+                # IDs failed.
+                if result.failures:
+                    raise SystemExit(1)
                 return
 
             if result.status == "already_clean":
@@ -1362,9 +1486,9 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                     console.print(f"  [red]{sid}:[/red] {err}")
                 if len(result.failures) > 5:
                     console.print(f"  [dim]...and {len(result.failures) - 5} more[/dim]")
-            else:
-                console.print(
-                    f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]"
-                )
+                # P1.T2 bug 8: text-mode parity with JSON-mode exit code.
+                raise SystemExit(1)
+
+            console.print(f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]")
 
     return _run()
