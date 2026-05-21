@@ -73,8 +73,9 @@ Protocols live next to their single consumer.
 | `AuthMetadata` | Selected-account routing metadata — `authuser` + `account_email` properties. Single consumer today: `SourceUploadPipeline`. |
 | `Kernel` | Pure transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
 
-**Feature-module-local runtime Protocols** (not exported from
-`_session_contracts.py`; each lives next to its single consumer):
+**Feature-module-local Protocols** (composite runtime unions + the single-consumer
+capability slice `DrainHookRegistration`; each lives next to its consumer and is
+not exported from `_session_contracts.py`):
 
 | Protocol | Module | Responsibility |
 |----------|--------|----------------|
