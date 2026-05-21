@@ -630,17 +630,25 @@ class NotebookLMClient:
         self,
         method: RPCMethod,
         params: list[Any],
-        source_path: str = "/",
+        source_path: str | None = None,
         allow_null: bool = False,
-        _is_retry: bool = False,
+        _is_retry: bool | None = None,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
     ) -> Any
 ```
 
 `RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
-`typing.Any`. `_is_retry` is present only to preserve parity with the core
-delegator and should normally be left as `False`.
+`typing.Any`. The default-shape call (`client.rpc_call(method, params)`)
+forwards to the core delegator with today's literal defaults
+(`source_path="/"`, `_is_retry=False`, `operation_variant=None`).
+
+> **Deprecated kwargs (removal in v0.6.0).** `source_path` (when explicitly
+> set to anything other than `"/"`), `_is_retry` (any explicit value), and
+> `operation_variant` (any non-`None` value) emit `DeprecationWarning`.
+> See [`docs/deprecations.md`](deprecations.md) for the canonical removal
+> table and migration guidance. New callers should omit all three.
 
 **Long-lived clients:** pass `keepalive=<seconds>` to spawn a background task
 that periodically pokes `accounts.google.com` and persists any rotated
