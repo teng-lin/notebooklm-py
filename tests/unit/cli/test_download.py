@@ -683,8 +683,14 @@ class TestDownloadAll:
         # One file should be downloaded
         downloaded_files = list(output_dir.glob("*.mp3"))
         assert len(downloaded_files) == 1
-        # Output should mention failure
-        assert "failed" in result.output.lower() or "1" in result.output
+        # The text-mode renderer must show the structured "Failed" section
+        # listing the actual error, not just the boolean "Error: True" guard.
+        # ``"1" in result.output`` was an unreliable assertion because the
+        # progress indicator ``Downloading 1/2:`` always emits a "1".
+        output_lower = result.output.lower()
+        assert "failed" in output_lower
+        assert "network error" in output_lower
+        assert "error: true" not in output_lower
 
 
 class TestDownloadAllExitCodeContract:
@@ -785,6 +791,59 @@ class TestDownloadAllExitCodeContract:
         assert payload.get("failed_count") == 1
         assert payload.get("succeeded_count") == 1
         assert len(payload.get("artifacts", [])) == 2
+
+    def test_partial_failure_text_mode_shows_breakdown(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """The text-mode renderer must show the structured Downloaded/Failed
+        breakdown on partial failure — NOT short-circuit to ``Error: True``.
+
+        Regression guard for the reviewer-flagged renderer bug: setting
+        ``envelope["error"] = True`` to drive exit-code policy used to hit the
+        renderer's generic ``if "error" in result`` early-return guard and
+        swallow the per-item breakdown. The renderer now keys off the legacy
+        string-error shape only, so the typed-counts envelope falls through to
+        the ``download_all`` summary block.
+        """
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+            call_count = 0
+
+            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise Exception("Network error")
+                Path(output_path).write_bytes(b"audio content")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_1", "First Audio", 1),
+                    make_artifact("audio_2", "Second Audio", 1),
+                ]
+            )
+            mock_client.artifacts.download_audio = mock_download_audio
+            mock_client_cls.return_value = mock_client
+
+            # No --json: text-mode renderer must show the full breakdown.
+            result = runner.invoke(
+                cli, ["download", "audio", "--all", str(output_dir), "-n", "nb_123"]
+            )
+
+        assert result.exit_code != 0
+        output_lower = result.output.lower()
+        # The Rich breakdown sections must appear ("Downloaded:" and "Failed:")
+        # along with the actual error message — proving the renderer did not
+        # short-circuit on the boolean error flag.
+        assert "downloaded" in output_lower
+        assert "failed" in output_lower
+        assert "network error" in output_lower
+        assert "first audio" in output_lower
+        assert "second audio" in output_lower
+        # And explicitly NOT the boolean-leak text.
+        assert "error: true" not in output_lower
 
     def test_all_success_keeps_zero_exit_and_no_error_key(
         self, runner, mock_auth, mock_fetch_tokens, tmp_path

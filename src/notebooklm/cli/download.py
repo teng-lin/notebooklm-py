@@ -285,13 +285,13 @@ async def _download_artifacts_generic(
                 if name:
                     name_lower = name.lower()
                     filtered_artifacts = [
-                        a for a in type_artifacts if name_lower in str(a["title"]).lower()
+                        a for a in type_artifacts if name_lower in a["title"].lower()
                     ]
                     if not filtered_artifacts:
                         return {
                             "error": (
                                 f"No artifacts matching '{name}'. "
-                                f"Available: {', '.join(str(a['title']) for a in type_artifacts)}"
+                                f"Available: {', '.join(a['title'] for a in type_artifacts)}"
                             ),
                         }
                     type_artifacts = filtered_artifacts
@@ -306,7 +306,7 @@ async def _download_artifacts_generic(
                 existing_names: set[str] = set()
                 for artifact in type_artifacts:
                     item_name = artifact_title_to_filename(
-                        str(artifact["title"]),
+                        artifact["title"],
                         file_extension,
                         existing_names,
                     )
@@ -492,7 +492,16 @@ async def _download_artifacts_generic(
 
 def _display_download_result(result: dict, artifact_type: str) -> None:
     """Display download results in user-friendly format."""
-    if "error" in result:
+    # The legacy single-failure / name-not-found path emits
+    # ``{"error": "<msg>"}`` (free-form string) and exits via the short-circuit
+    # below. The P1.T4 bulk-failure envelope emits
+    # ``{"error": True, "failed_count": ..., "succeeded_count": ...,
+    # "artifacts": [...]}`` — the boolean flag is only there so
+    # ``_run_artifact_download`` can key its exit-code policy on the presence
+    # of the "error" key. For text mode we still want the full downloaded /
+    # skipped / failed breakdown to render, so only short-circuit on the
+    # legacy string-error shape.
+    if isinstance(result.get("error"), str):
         console.print(f"[red]Error:[/red] {result['error']}")
         if "suggestion" in result:
             console.print(f"[dim]{result['suggestion']}[/dim]")
