@@ -180,7 +180,10 @@ def wait_polling_options(
         f = click.option(
             "--interval",
             default=default_interval,
-            type=int,
+            # ``IntRange(min=1)`` rejects 0/negative at parse time — otherwise
+            # the poll loop would either busy-spin (interval=0) or sleep
+            # backwards (interval<0); both surface as opaque runtime errors.
+            type=click.IntRange(min=1),
             help=f"Seconds between status checks (default: {default_interval})",
         )(f)
         f = click.option(
@@ -290,7 +293,9 @@ def retry_option(f: FC) -> FC:
     return click.option(
         "--retry",
         "max_retries",
-        type=int,
+        # ``IntRange(min=0)`` rejects negatives at parse time; 0 stays valid
+        # so the default "no retries" behavior is unchanged.
+        type=click.IntRange(min=0),
         default=0,
         help="Retry N times with exponential backoff on rate limit",
     )(f)
@@ -332,9 +337,14 @@ def list_options(f: FC) -> FC:
     f = click.option(
         "--limit",
         "limit",
-        type=int,
+        # ``IntRange(min=0)`` rejects negatives. 0 is intentionally valid and
+        # means "show no rows" (consistent with the underlying ``rows[:0]``
+        # slice in notebook/source/artifact list commands). Users who want
+        # "no limit" omit the flag entirely — that's why the default is
+        # ``None``, not 0.
+        type=click.IntRange(min=0),
         default=None,
-        help="Show at most N rows (default: unlimited). Applies to both text and --json output.",
+        help="Show at most N rows. 0 = show no rows. Omit for unlimited.",
     )(f)
     return f
 

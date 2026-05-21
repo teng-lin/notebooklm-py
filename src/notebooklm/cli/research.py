@@ -118,7 +118,10 @@ def research_status(ctx, notebook_id, json_output, client_auth):
 @click.option(
     "--interval",
     default=5,
-    type=int,
+    # ``IntRange(min=1)`` rejects 0/negative at parse time; mirrors the
+    # ``wait_polling_options`` guard in ``cli/options.py`` so every poll
+    # loop in the CLI enforces a positive sleep interval.
+    type=click.IntRange(min=1),
     help="Seconds between status checks (default: 5)",
 )
 @click.option("--import-all", is_flag=True, help="Import all found sources when done")

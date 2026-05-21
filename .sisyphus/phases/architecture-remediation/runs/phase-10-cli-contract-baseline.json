@@ -440,7 +440,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Show at most N rows (default: unlimited). Applies to both text and --json output.",
+          "help": "Show at most N rows. 0 = show no rows. Omit for unlimited.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -451,7 +451,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -695,7 +698,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -3738,7 +3744,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -3756,7 +3765,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -3992,7 +4004,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -4010,7 +4025,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -4173,7 +4191,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -4191,7 +4212,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -4384,7 +4408,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -4402,7 +4429,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -4645,7 +4675,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -4663,7 +4696,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -4954,7 +4990,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -4972,7 +5011,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -5178,7 +5220,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -5196,7 +5241,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -5359,7 +5407,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -5377,7 +5428,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -5586,7 +5640,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -5604,7 +5661,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -5840,7 +5900,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -5858,7 +5921,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -6187,7 +6253,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Show at most N rows (default: unlimited). Applies to both text and --json output.",
+          "help": "Show at most N rows. 0 = show no rows. Omit for unlimited.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -6198,7 +6264,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -7266,7 +7335,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
@@ -8394,7 +8466,7 @@
           "default": 1800,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Per-phase seconds budget for (a) the research-completion poll loop and (b) the --import-all retry loop (default: 1800). Each phase gets the full budget independently, so worst-case total wall time is up to 2× this value. Matches 'research wait --timeout' semantics. Bumping this is required for deep research that runs longer than the legacy 5-minute cap — otherwise the CLI gives up before IMPORT_RESEARCH fires and the NotebookLM web UI is left showing an 'Add sources?' modal.",
+          "help": "Per-phase seconds budget for (a) the research-completion poll loop and (b) the --import-all retry loop (default: 1800). Each phase gets the full budget independently, so worst-case total wall time is up to 2\u00d7 this value. Matches 'research wait --timeout' semantics. Bumping this is required for deep research that runs longer than the legacy 5-minute cap \u2014 otherwise the CLI gives up before IMPORT_RESEARCH fires and the NotebookLM web UI is left showing an 'Add sources?' modal.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -8884,7 +8956,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Show at most N rows (default: unlimited). Applies to both text and --json output.",
+          "help": "Show at most N rows. 0 = show no rows. Omit for unlimited.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
@@ -8895,7 +8967,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 0,
+            "name": "integer range"
           }
         },
         {
@@ -9148,7 +9223,10 @@
           "required": false,
           "secondary_opts": [],
           "type": {
-            "name": "integer"
+            "clamp": false,
+            "max": null,
+            "min": 1,
+            "name": "integer range"
           }
         },
         {
