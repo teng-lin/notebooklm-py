@@ -165,7 +165,11 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # ``test_rpc_executor.py``, ``test_side_effects_idempotency.py``,
         # …) until ADR-007's pattern is extended to stdlib seams.
         "tests/unit/test_cookie_persistence.py",
-        "tests/unit/test_session_lifecycle.py",
+        # ``tests/unit/test_session_lifecycle.py`` removed from allowlist in
+        # Phase 4 (v0.5.0): the file's monkeypatch.setattr sites that targeted
+        # ``notebooklm._core.*`` were retargeted to the canonical seams
+        # (_auth.storage / _auth.keepalive / _error_injection) when the
+        # ``_core`` compatibility shim was deleted.
         "tests/unit/test_rpc_executor.py",
         "tests/unit/test_authed_transport.py",
         "tests/unit/test_download_url.py",
