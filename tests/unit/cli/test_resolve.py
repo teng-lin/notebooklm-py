@@ -118,15 +118,180 @@ class TestResolveNotebookId:
         assert "notebooklm list" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_long_id_returns_without_listing(self, mock_client):
-        """Long IDs are treated as concrete IDs and do not list notebooks."""
-        long_id = "a" * 20
+    async def test_uuid_shaped_id_returns_without_listing(self, mock_client):
+        """36-char UUID-shaped IDs fast-path without hitting the backend."""
+        # Canonical 8-4-4-4-12 UUID layout — 36 chars, all hex + dashes.
+        uuid_id = "abc12345-6789-4abc-def0-1234567890ab"
+        assert len(uuid_id) == 36
         mock_client.notebooks.list = AsyncMock()
 
-        result = await resolve_notebook_id(mock_client, long_id)
+        result = await resolve_notebook_id(mock_client, uuid_id)
 
-        assert result == long_id
+        assert result == uuid_id
         mock_client.notebooks.list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_uuid_shaped_id_mixed_case_returns_without_listing(self, mock_client):
+        """Mixed-case 36-char UUID-shaped IDs also fast-path."""
+        uuid_id = "ABC12345-6789-4ABC-Def0-1234567890aB"
+        assert len(uuid_id) == 36
+        mock_client.notebooks.list = AsyncMock()
+
+        result = await resolve_notebook_id(mock_client, uuid_id)
+
+        assert result == uuid_id
+        mock_client.notebooks.list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_25_char_prefix_of_uuid_resolves_via_local_matching(self, mock_client):
+        """A 25-char prefix of a 36-char UUID resolves locally, not via the backend.
+
+        Regression for P1.T9: the previous length-based fast-path (>= 20 chars)
+        bypassed local matching for any 20–35 char prefix of a UUID, sending the
+        truncated string straight to the backend. Per the acceptance criteria,
+        this path must also emit the ``Matched:`` diagnostic so users can see
+        which full ID the prefix resolved to.
+        """
+        full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
+        partial_25 = full_uuid[:25]  # "abc12345-6789-4abc-def0-1"
+        assert len(partial_25) == 25
+        assert len(full_uuid) == 36
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[
+                Notebook(
+                    id=full_uuid,
+                    title="UUID Notebook",
+                    created_at=datetime(2024, 1, 1),
+                    is_owner=True,
+                ),
+            ]
+        )
+        mock_console = MagicMock()
+
+        result = await resolve_notebook_id(mock_client, partial_25, stdout_console=mock_console)
+
+        assert result == full_uuid
+        # Local matching MUST have happened, i.e. the backend was listed.
+        mock_client.notebooks.list.assert_awaited_once()
+        # And the "Matched: ..." diagnostic from the acceptance criteria must fire.
+        mock_console.print.assert_called_once()
+        printed = mock_console.print.call_args.args[0]
+        assert "Matched" in printed
+
+    @pytest.mark.asyncio
+    async def test_36_char_non_hex_string_is_not_fast_pathed(self, mock_client):
+        """A 36-char string containing non-hex characters does NOT fast-path.
+
+        Only UUID-shaped strings (hex digits + dashes, 36 chars, 8-4-4-4-12 layout)
+        qualify; a 36-char string with letters outside ``[0-9a-fA-F]`` must go
+        through the local prefix-matching path so a typo cannot reach the backend
+        as a malformed ID.
+        """
+        # 36 chars, 8-4-4-4-12 dash layout, but includes 'z' (non-hex). The
+        # matching notebook in the list confirms local resolution succeeded.
+        non_hex_36 = "zzz12345-6789-4zzz-zzz0-1234567890ab"
+        assert len(non_hex_36) == 36
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[
+                Notebook(
+                    id=non_hex_36,
+                    title="Non-hex 36-char ID",
+                    created_at=datetime(2024, 1, 1),
+                    is_owner=True,
+                ),
+            ]
+        )
+
+        result = await resolve_notebook_id(mock_client, non_hex_36, stdout_console=MagicMock())
+
+        assert result == non_hex_36
+        # Backend listing MUST have happened (no fast-path).
+        mock_client.notebooks.list.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_36_char_all_dashes_is_not_fast_pathed(self, mock_client):
+        """Degenerate 36-char input (all dashes) does NOT fast-path.
+
+        The 8-4-4-4-12 layout requires hex digits in each block, so a pathological
+        ``"-" * 36`` input cannot bypass local resolution — it gets routed through
+        the local prefix-match path and surfaces a clear "no match" error.
+        """
+        all_dashes = "-" * 36
+        assert len(all_dashes) == 36
+        mock_client.notebooks.list = AsyncMock(return_value=[])
+
+        with pytest.raises(click.ClickException) as exc_info:
+            await resolve_notebook_id(mock_client, all_dashes)
+
+        assert "No notebook found" in str(exc_info.value)
+        # Backend listing MUST have happened (no fast-path).
+        mock_client.notebooks.list.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_35_char_uuid_shaped_is_not_fast_pathed(self, mock_client):
+        """A 35-char string (one short of a UUID) does NOT fast-path.
+
+        Boundary check: the regex requires exactly 36 chars in the 8-4-4-4-12
+        layout. A 35-char input must take the local list-and-match path.
+        """
+        # Drop the last char of a canonical UUID -> 35 chars, still hex+dash but
+        # with a 11-digit final block instead of 12.
+        short_uuid = "abc12345-6789-4abc-def0-1234567890a"
+        assert len(short_uuid) == 35
+        full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
+        mock_client.notebooks.list = AsyncMock(
+            return_value=[
+                Notebook(
+                    id=full_uuid,
+                    title="UUID Notebook",
+                    created_at=datetime(2024, 1, 1),
+                    is_owner=True,
+                ),
+            ]
+        )
+
+        result = await resolve_notebook_id(mock_client, short_uuid, stdout_console=MagicMock())
+
+        assert result == full_uuid
+        mock_client.notebooks.list.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_37_char_uuid_shaped_is_not_fast_pathed(self, mock_client):
+        """A 37-char string (one over a UUID) does NOT fast-path.
+
+        Boundary check on the other side: any extra character past the canonical
+        36 fails the regex and forces the local path. With no match in the list,
+        the resolver raises a clear "no match" error.
+        """
+        long_uuid = "abc12345-6789-4abc-def0-1234567890abc"
+        assert len(long_uuid) == 37
+        mock_client.notebooks.list = AsyncMock(return_value=[])
+
+        with pytest.raises(click.ClickException) as exc_info:
+            await resolve_notebook_id(mock_client, long_uuid)
+
+        assert "No notebook found" in str(exc_info.value)
+        mock_client.notebooks.list.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_36_char_wrong_dash_placement_is_not_fast_pathed(self, mock_client):
+        """36-char hex+dash with wrong dash placement does NOT fast-path.
+
+        The tightened regex enforces the exact 8-4-4-4-12 layout, so a 36-char
+        string with the right character classes but the wrong layout (e.g. dashes
+        slipped one position over) must go through local resolution.
+        """
+        # Same 32 hex chars as a canonical UUID, but dashes shifted one position
+        # (9-3-4-4-12 instead of 8-4-4-4-12). Total length still 36.
+        wrong_layout = "abc123456-789-4abc-def0-1234567890ab"
+        assert len(wrong_layout) == 36
+        mock_client.notebooks.list = AsyncMock(return_value=[])
+
+        with pytest.raises(click.ClickException) as exc_info:
+            await resolve_notebook_id(mock_client, wrong_layout)
+
+        assert "No notebook found" in str(exc_info.value)
+        mock_client.notebooks.list.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_empty_id_raises_exception(self, mock_client):
@@ -322,15 +487,38 @@ class TestResolveSourceId:
         assert "notebooklm source list" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_long_id_returns_without_listing(self, mock_client_with_sources):
-        """Long IDs are treated as concrete IDs and do not list sources."""
-        long_id = "a" * 20
+    async def test_uuid_shaped_id_returns_without_listing(self, mock_client_with_sources):
+        """36-char UUID-shaped IDs fast-path without hitting the backend."""
+        uuid_id = "abc12345-6789-4abc-def0-1234567890ab"
+        assert len(uuid_id) == 36
         mock_client_with_sources.sources.list = AsyncMock()
 
-        result = await resolve_source_id(mock_client_with_sources, "nb_123", long_id)
+        result = await resolve_source_id(mock_client_with_sources, "nb_123", uuid_id)
 
-        assert result == long_id
+        assert result == uuid_id
         mock_client_with_sources.sources.list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_25_char_prefix_of_uuid_resolves_via_local_matching(
+        self, mock_client_with_sources
+    ):
+        """A 25-char prefix of a 36-char UUID resolves locally for sources too."""
+        full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
+        partial_25 = full_uuid[:25]
+        assert len(partial_25) == 25
+        mock_client_with_sources.sources.list = AsyncMock(
+            return_value=[Source(id=full_uuid, title="UUID Source")]
+        )
+
+        result = await resolve_source_id(
+            mock_client_with_sources,
+            "nb_123",
+            partial_25,
+            stdout_console=MagicMock(),
+        )
+
+        assert result == full_uuid
+        mock_client_with_sources.sources.list.assert_awaited_once_with("nb_123")
 
     @pytest.mark.asyncio
     async def test_empty_id_raises_exception(self, mock_client_with_sources):
@@ -437,16 +625,18 @@ class TestResolveSourceIds:
 
     @pytest.mark.asyncio
     async def test_full_ids_skip_source_list(self, mock_client_with_sources):
-        """Full source IDs pass through without a source list call."""
+        """Full UUID-shaped source IDs pass through without a source list call."""
         mock_client_with_sources.sources.list = AsyncMock()
 
+        uuid_a = "abc12345-6789-4abc-def0-1234567890ab"
+        uuid_b = "fedcba98-7654-4321-0fed-cba987654321"
         result = await resolve_source_ids(
             mock_client_with_sources,
             "nb_123",
-            ("src123def456ghi78900", "xyz789uvw456rst12300"),
+            (uuid_a, uuid_b),
         )
 
-        assert result == ["src123def456ghi78900", "xyz789uvw456rst12300"]
+        assert result == [uuid_a, uuid_b]
         mock_client_with_sources.sources.list.assert_not_called()
 
     @pytest.mark.asyncio

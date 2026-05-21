@@ -3,6 +3,8 @@
 import re
 from typing import TypedDict
 
+from .resolve import FULL_ID_PATTERN
+
 # Reserve space for " (999)" suffix when handling duplicate filenames
 DUPLICATE_SUFFIX_RESERVE = 7
 
@@ -18,8 +20,11 @@ class ArtifactDict(TypedDict):
 def resolve_partial_artifact_id(artifacts: list[ArtifactDict], artifact_id: str) -> str:
     """Resolve a partial artifact ID to a full ID.
 
-    Full IDs (20+ chars) are returned as-is. Shorter IDs are matched as
-    case-insensitive prefixes against the artifact list.
+    Full UUID-shaped IDs (canonical 8-4-4-4-12 hex layout, case-insensitive —
+    see :data:`notebooklm.cli.resolve.FULL_ID_PATTERN`) are returned as-is.
+    Anything else — including a 25-char prefix of a 36-char UUID — is matched
+    as a case-insensitive prefix against the artifact list, so unique prefixes
+    resolve locally rather than reaching the backend as truncated IDs.
 
     Args:
         artifacts: Pre-fetched list of artifacts to search.
@@ -31,7 +36,7 @@ def resolve_partial_artifact_id(artifacts: list[ArtifactDict], artifact_id: str)
     Raises:
         ValueError: If no match found or prefix is ambiguous.
     """
-    if len(artifact_id) >= 20:
+    if FULL_ID_PATTERN.fullmatch(artifact_id):
         return artifact_id
 
     matches = [a for a in artifacts if a["id"].lower().startswith(artifact_id.lower())]

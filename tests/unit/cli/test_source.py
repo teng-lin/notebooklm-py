@@ -529,21 +529,25 @@ class TestSourceGet:
     # get-on-not-found now exits 1 (was 0). The tests below
     # cover BOTH code paths for the not-found branch:
     #
-    #   * Path A: input ID is ≥20 chars, so ``_resolve_partial_id`` skips the
-    #     list() round-trip (helpers.py:783-785) and returns the input as-is.
-    #     The backend ``client.sources.get`` then returns ``None``.
-    #   * Path B: input ID is <20 chars, ``_resolve_partial_id`` resolves it via
-    #     a list() match (so the partial-resolve "not found" ClickException
-    #     branch is intentionally NOT exercised here — that path is unchanged
-    #     and tested by ``test_source_get_not_found`` above), but the backend
-    #     get returns ``None`` (e.g. concurrent delete from another session).
+    #   * Path A: input ID matches ``FULL_ID_PATTERN`` (canonical 36-char UUID
+    #     in 8-4-4-4-12 layout), so ``_resolve_partial_id`` skips the list()
+    #     round-trip and returns the input as-is. The backend
+    #     ``client.sources.get`` then returns ``None``.
+    #   * Path B: input ID is NOT UUID-shaped, ``_resolve_partial_id`` resolves
+    #     it via a list() match (so the partial-resolve "not found"
+    #     ClickException branch is intentionally NOT exercised here — that
+    #     path is unchanged and tested by ``test_source_get_not_found``
+    #     above), but the backend get returns ``None`` (e.g. concurrent
+    #     delete from another session).
     #
     # Each path is exercised in text and ``--json`` mode.
     # -------------------------------------------------------------------------
 
     def test_source_get_not_found_pathA_long_id_text_exits_1(self, runner, mock_auth):
-        """Path A: ID ≥20 chars skips partial-resolve; backend None → exit 1."""
-        long_id = "a" * 24  # ≥20 chars triggers the skip in _resolve_partial_id
+        """Path A: UUID-shaped ID skips partial-resolve; backend None → exit 1."""
+        # Canonical 36-char UUID — matches the resolver's full-ID fast-path so
+        # sources.list is bypassed and the backend ``get`` is hit directly.
+        long_id = "abc12345-6789-4abc-def0-1234567890ab"
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             # list() must NOT be called on this path; assert below.
@@ -563,7 +567,7 @@ class TestSourceGet:
 
     def test_source_get_not_found_pathA_long_id_json_exits_1(self, runner, mock_auth):
         """Path A under ``--json``: typed JSON error doc + exit 1."""
-        long_id = "a" * 24
+        long_id = "abc12345-6789-4abc-def0-1234567890ab"
         with patch_client_for_module("source") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[])

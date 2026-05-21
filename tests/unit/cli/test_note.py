@@ -274,8 +274,10 @@ class TestNoteGet:
     # -------------------------------------------------------------------------
 
     def test_note_get_not_found_pathA_long_id_text_exits_1(self, runner, mock_auth):
-        """Path A: ID ≥20 chars skips partial-resolve; backend None → exit 1."""
-        long_id = "a" * 24
+        """Path A: UUID-shaped ID skips partial-resolve; backend None → exit 1."""
+        # Canonical 36-char UUID — matches the resolver's full-ID fast-path so
+        # notes.list is bypassed and the backend ``get`` is hit directly.
+        long_id = "abc12345-6789-4abc-def0-1234567890ab"
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
@@ -294,7 +296,7 @@ class TestNoteGet:
 
     def test_note_get_not_found_pathA_long_id_json_exits_1(self, runner, mock_auth):
         """Path A under ``--json``: typed JSON error doc + exit 1."""
-        long_id = "a" * 24
+        long_id = "abc12345-6789-4abc-def0-1234567890ab"
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])

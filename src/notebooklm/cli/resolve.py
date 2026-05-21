@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,23 @@ from . import rendering as rendering_helpers
 
 ContextPathFn = Callable[..., Path]
 ListFn = Callable[[], Awaitable[list[Any]]]
-_FULL_ID_MIN_LEN = 20
+
+# Backend entity IDs are canonical UUIDs in the RFC 4122 8-4-4-4-12 hex layout
+# (e.g. ``abc12345-6789-4abc-def0-1234567890ab``). Anything shorter — even a
+# unique 25-char prefix — must go through the local list-and-match path, or it
+# will reach the backend as a truncated ID and 404. The character classes are
+# both upper- and lower-case hex so mixed-case IDs returned by the backend keep
+# fast-pathing. Exposed publicly so `download_helpers.py` shares the same shape
+# rule; the two call sites stay in lockstep until P2.T1 consolidates them.
+#
+# Tightened past the plan's `^[0-9a-fA-F-]{36}$` to the exact 8-4-4-4-12 dash
+# layout so degenerate-but-length-36 inputs (`"-" * 36`, 36 unbroken hex chars,
+# wrong dash placement) cannot bypass local resolution — the looser pattern's
+# false-positives would still 404 against the backend, but rejecting them
+# locally gives the user a clearer error and keeps the contract honest.
+FULL_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 def validate_id(entity_id: str, entity_name: str = "ID") -> str:
@@ -40,8 +57,15 @@ def validate_id(entity_id: str, entity_name: str = "ID") -> str:
 
 
 def _is_full_id_candidate(entity_id: str) -> bool:
-    """Return whether an ID is long enough to be treated as concrete."""
-    return len(entity_id) >= _FULL_ID_MIN_LEN
+    """Return whether ``entity_id`` is shaped like a concrete backend UUID.
+
+    Only canonical 36-char hex-and-dash strings (case-insensitive) qualify for
+    the fast-path. A 25-char prefix of a 36-char UUID — which is unique enough
+    to be human-pasted — must still go through the local list-and-match path so
+    it can be expanded to the full ID before any backend call. See
+    :data:`FULL_ID_PATTERN`.
+    """
+    return FULL_ID_PATTERN.fullmatch(entity_id) is not None
 
 
 def require_notebook(
