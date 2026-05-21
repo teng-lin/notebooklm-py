@@ -1056,7 +1056,7 @@ def source_fulltext(ctx, source_id, notebook_id, json_output, output, output_for
       notebooklm source fulltext abc123                        # Show plaintext in terminal
       notebooklm source fulltext abc123 -f markdown -o out.md  # Save markdown to file
       notebooklm source fulltext abc123 --json                 # Full JSON payload to stdout
-      notebooklm source fulltext abc123 --json -o out.json     # File + metadata envelope on stdout
+      notebooklm source fulltext abc123 --json -o out.txt      # File + metadata envelope on stdout
     """
     nb_id = require_notebook(notebook_id)
 
