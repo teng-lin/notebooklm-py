@@ -45,22 +45,6 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 )
 
 
-def _enclosing_function_name(tree: ast.Module, target: ast.Call) -> str | None:
-    """Return the name of the FunctionDef / AsyncFunctionDef enclosing
-    ``target``, or None if the call is at module scope. Uses parent
-    links computed by walking the tree."""
-    parents: dict[int, ast.AST] = {}
-    for node in ast.walk(tree):
-        for child in ast.iter_child_nodes(node):
-            parents[id(child)] = node
-    cur: ast.AST | None = target
-    while cur is not None:
-        if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            return cur.name
-        cur = parents.get(id(cur))
-    return None
-
-
 def _is_public_client_rpc_call(node: ast.Call) -> bool:
     """Match `<receiver>.rpc_call(...)` where the receiver is named
     like a NotebookLMClient instance, NOT a Session/_core attribute.
@@ -89,6 +73,51 @@ def _deprecated_kwargs(node: ast.Call) -> set[str]:
     return {kw.arg for kw in node.keywords if kw.arg in _DEPRECATED_KW}
 
 
+class _OffenderCollector(ast.NodeVisitor):
+    """Single-pass AST visitor that tracks the enclosing FunctionDef /
+    AsyncFunctionDef while walking the tree, so each ``ast.Call`` match
+    already knows its enclosing function name without rebuilding a
+    parent map per call.
+
+    Replaces the previous ``_enclosing_function_name`` helper, which
+    walked the entire tree to rebuild parent links on every match
+    (O(N) per offender). The visitor visits each node exactly once
+    (O(N) per file) regardless of offender count.
+    """
+
+    def __init__(self, rel: str) -> None:
+        super().__init__()
+        self._rel = rel
+        self._func_stack: list[str] = []
+        self.offenders: list[tuple[str, int, str | None, set[str]]] = []
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        self._func_stack.append(node.name)
+        try:
+            self.generic_visit(node)
+        finally:
+            self._func_stack.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+        self._visit_function(node)
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        if _is_public_client_rpc_call(node):
+            kws = _deprecated_kwargs(node)
+            if kws:
+                # Innermost enclosing function (or None at module scope).
+                func_name = self._func_stack[-1] if self._func_stack else None
+                allowed_any = (self._rel, "*") in _ALLOWLIST
+                allowed_func = func_name is not None and (self._rel, func_name) in _ALLOWLIST
+                if not (allowed_any or allowed_func):
+                    self.offenders.append((self._rel, node.lineno, func_name, kws))
+        # Recurse into call args (e.g. nested calls) and keep walking.
+        self.generic_visit(node)
+
+
 def _iter_offenders() -> list[tuple[str, int, str | None, set[str]]]:
     offenders: list[tuple[str, int, str | None, set[str]]] = []
     for root in (_REPO_ROOT / "src", _REPO_ROOT / "tests"):
@@ -100,18 +129,9 @@ def _iter_offenders() -> list[tuple[str, int, str | None, set[str]]]:
                 tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
             except SyntaxError:
                 continue
-            for node in ast.walk(tree):
-                if not (isinstance(node, ast.Call) and _is_public_client_rpc_call(node)):
-                    continue
-                kws = _deprecated_kwargs(node)
-                if not kws:
-                    continue
-                func_name = _enclosing_function_name(tree, node)
-                if (rel, "*") in _ALLOWLIST:
-                    continue
-                if func_name is not None and (rel, func_name) in _ALLOWLIST:
-                    continue
-                offenders.append((rel, node.lineno, func_name, kws))
+            collector = _OffenderCollector(rel)
+            collector.visit(tree)
+            offenders.extend(collector.offenders)
     return offenders
 
 

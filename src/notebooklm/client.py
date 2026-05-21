@@ -472,9 +472,11 @@ class NotebookLMClient:
             )
         # Coerce sentinels back to today's literal defaults before
         # delegating, so the forwarded keyword-for-keyword shape stays
-        # identical to the pre-deprecation contract.
+        # identical to the pre-deprecation contract. ``bool(None) is
+        # False``, so a single ``bool(_is_retry)`` collapses the
+        # not-None / None branches into one expression.
         resolved_source_path = "/" if source_path is None else source_path
-        resolved_is_retry = bool(_is_retry) if _is_retry is not None else False
+        resolved_is_retry = bool(_is_retry)
         return await self._core.rpc_call(
             method=method,
             params=params,
