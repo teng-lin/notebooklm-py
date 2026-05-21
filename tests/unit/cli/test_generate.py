@@ -1538,13 +1538,15 @@ class TestOutputGenerationStatusDirect:
         1 across modes.
         """
         status = self._make_status(is_failed=True, error="Something went wrong")
-        with patch.object(self.generate_module, "output_error") as mock_err:
-            with pytest.raises(SystemExit):
-                # output_error raises SystemExit; in real use the patch
-                # suppresses it but the SystemExit path is part of the
-                # contract — patch a side_effect to mirror the real call.
-                mock_err.side_effect = SystemExit(1)
-                self.generate_module._output_generation_status(status, "audio", json_output=True)
+        with (
+            patch.object(self.generate_module, "output_error") as mock_err,
+            pytest.raises(SystemExit),
+        ):
+            # output_error raises SystemExit; in real use the patch
+            # suppresses it but the SystemExit path is part of the
+            # contract — patch a side_effect to mirror the real call.
+            mock_err.side_effect = SystemExit(1)
+            self.generate_module._output_generation_status(status, "audio", json_output=True)
         mock_err.assert_called_once_with("Something went wrong", "GENERATION_FAILED", True, 1)
 
     def test_json_failed_no_error_message(self):
@@ -1554,10 +1556,12 @@ class TestOutputGenerationStatusDirect:
         message differs (default fallback when ``status.error`` is None).
         """
         status = self._make_status(is_failed=True, error=None)
-        with patch.object(self.generate_module, "output_error") as mock_err:
-            with pytest.raises(SystemExit):
-                mock_err.side_effect = SystemExit(1)
-                self.generate_module._output_generation_status(status, "audio", json_output=True)
+        with (
+            patch.object(self.generate_module, "output_error") as mock_err,
+            pytest.raises(SystemExit),
+        ):
+            mock_err.side_effect = SystemExit(1)
+            self.generate_module._output_generation_status(status, "audio", json_output=True)
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", True, 1)
 
     def test_json_pending_with_task_id(self):
@@ -1599,10 +1603,12 @@ class TestOutputGenerationStatusDirect:
         non-zero, matching JSON mode.
         """
         status = self._make_status(is_failed=True, error="Transcription error")
-        with patch.object(self.generate_module, "output_error") as mock_err:
-            with pytest.raises(SystemExit):
-                mock_err.side_effect = SystemExit(1)
-                self.generate_module._output_generation_status(status, "audio", json_output=False)
+        with (
+            patch.object(self.generate_module, "output_error") as mock_err,
+            pytest.raises(SystemExit),
+        ):
+            mock_err.side_effect = SystemExit(1)
+            self.generate_module._output_generation_status(status, "audio", json_output=False)
         mock_err.assert_called_once_with("Transcription error", "GENERATION_FAILED", False, 1)
 
     def test_text_failed_no_error_message(self):
@@ -1614,10 +1620,12 @@ class TestOutputGenerationStatusDirect:
         ``"<Title> generation failed"`` fallback.
         """
         status = self._make_status(is_failed=True, error=None)
-        with patch.object(self.generate_module, "output_error") as mock_err:
-            with pytest.raises(SystemExit):
-                mock_err.side_effect = SystemExit(1)
-                self.generate_module._output_generation_status(status, "audio", json_output=False)
+        with (
+            patch.object(self.generate_module, "output_error") as mock_err,
+            pytest.raises(SystemExit),
+        ):
+            mock_err.side_effect = SystemExit(1)
+            self.generate_module._output_generation_status(status, "audio", json_output=False)
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", False, 1)
 
     def test_text_pending_with_task_id(self):
