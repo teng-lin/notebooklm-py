@@ -32,10 +32,9 @@ map.
 | Session Layer (Session + collaborators)                  |
 |   Session orchestrates a small set of focused            |
 |   collaborators (see "Collaborator graph" below).        |
-|   Session itself stays a wide facade because the         |
-|   ``Session.__new__(Session)`` test-fixture pattern      |
-|   needs the property bridges + ``_ensure_*()`` lazy-init |
-|   surface intact.                                        |
+|   The historical test-only property shims and lazy       |
+|   backfill methods were retired in the session-shrink    |
+|   arc; tests now use collaborators or ``make_fake_core``.|
 +----------------------------------------------------------+
                           ▼
 +----------------------------------------------------------+
@@ -89,23 +88,19 @@ Production satisfies the shared Protocols via `Session`; tests substitute
 (constructed via `make_fake_core(...)`) — the sanctioned ADR-007 / ADR-013
 fixture pattern.
 
-### Narrow ≠ all Protocols are narrow
+### Executor protocols are narrow too
 
-Not every `Protocol` in the codebase is a thin capability slice. The
-executor-facing `RpcOwner` Protocol at
-[`_rpc_executor.py:54`](../src/notebooklm/_rpc_executor.py) is
-deliberately **wide** — it declares ten members, including the public
-`rpc_call` method, four private attrs (`_timeout`, `_refresh_callback`,
-`_refresh_retry_delay`, `_http_client`), and five private methods
-(`_perform_authed_post`, `_await_refresh`, `_rpc_call_impl`,
-`_increment_metrics`, `_emit_rpc_event`) — because `RpcExecutor` was
-extracted from `Session` while preserving back-references to auth state,
-metrics emission, and the `_perform_authed_post` chain.
-Narrowing `RpcOwner` is gated on dismantling the property-bridge zoo
-(see [Known debt](#known-architectural-debt--session-is-a-wide-facade)).
-Feature APIs depend on capability Protocols that genuinely are narrow;
-the executor itself depends on a near-`Session`-shaped Protocol that
-hasn't been narrowed yet.
+The executor-facing Protocols are intentionally implementation-local,
+but they no longer depend on Session's historical private attribute
+surface. `RpcOwner` in
+[`_rpc_executor.py`](../src/notebooklm/_rpc_executor.py) declares only
+the kernel plus the methods the executor still calls; timeout,
+refresh-callback, and retry-delay values are supplied through constructor
+providers. `_AuthedTransportHost` in
+[`_authed_transport.py`](../src/notebooklm/_authed_transport.py) declares
+only the kernel and auth-snapshot method used by the leaf transport.
+This keeps feature APIs on narrow capability Protocols while avoiding a
+near-`Session` structural contract inside the RPC stack.
 
 ## Post-refactor `Session` collaborator graph
 
@@ -206,64 +201,31 @@ RPC dispatch leaf            (RpcExecutor → AuthedTransport → httpx)
 
 ## ADR cross-references
 
-- [ADR-001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy.
+- [ADR-001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy (superseded; shims retired).
 - [ADR-002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by [arch-d2-cutover](https://github.com/teng-lin/notebooklm-py/pull/835) (#835)).
 - [ADR-009](./adr/0009-middleware-chain.md) — Middleware chain ordering (Accepted; load-bearing).
 - [ADR-013](./adr/0013-composable-session-capabilities.md) — Composable Session Capabilities (the post-v0.5.0 capability model).
 
-## Known architectural debt — `Session` is a wide facade
+## Known architectural debt — `Session` facade size
 
-**`Session` remains a wide facade (~1454 lines) post-v0.5.0.** ADR-013's
-capability-protocol refactor decomposed Session's *implementation* into
+**Status: closed for the property-shim debt.** The staged 8-PR
+session-shrink arc retired the legacy `Session.__new__(Session)` fixture
+backfill, the private attribute property shims, and the broad executor
+Protocol attributes. [`_session.py`](../src/notebooklm/_session.py) is
+now about 1,043 lines and functions as a clean orchestrator around
 focused collaborators (`RpcExecutor`, `AuthRefreshCoordinator`,
 `ClientLifecycle`, `MiddlewareChainBuilder`, `TransportDrainTracker`,
 `ClientMetrics`, `ReqidCounter`, `CookiePersistence`, `AuthedTransport`,
-`Kernel`) but did not shrink
-the facade's *surface*. Two pieces of scaffolding in
-[`_session.py`](../src/notebooklm/_session.py) exist solely to keep the
-legacy `Session.__new__(Session)` test-fixture pattern working:
+and `Kernel`).
 
-- ~two dozen compatibility-bridge properties, starting at
-  [`_session.py:442`](../src/notebooklm/_session.py) and running through
-  the chat-conversation properties further down.
-- Four `_ensure_*()` lazy-init methods:
-  [`_ensure_auth_coord` (:514)](../src/notebooklm/_session.py),
-  [`_ensure_lifecycle` (:584)](../src/notebooklm/_session.py),
-  [`_ensure_observability_state` (:751)](../src/notebooklm/_session.py),
-  [`_ensure_authed_post_chain` (:785)](../src/notebooklm/_session.py).
-
-**The unblock is bounded.** 13 test sites across 6 files still construct
-fixtures via `Session.__new__(Session)`:
-
-- [`tests/unit/test_chain_wiring.py:350`](../tests/unit/test_chain_wiring.py)
-- [`tests/unit/test_client_metrics.py`](../tests/unit/test_client_metrics.py) (lines `328`, `346`, `361`, `370`, `391`)
-- [`tests/unit/test_logging_correlation.py:262`](../tests/unit/test_logging_correlation.py)
-- [`tests/unit/test_middleware_chain_builder.py:55`](../tests/unit/test_middleware_chain_builder.py)
-- [`tests/unit/test_swallow_observability.py`](../tests/unit/test_swallow_observability.py) (lines `26`, `49`, `67`)
-- [`tests/unit/test_transport_drain.py`](../tests/unit/test_transport_drain.py) (lines `319`, `355`)
-
-Once those 13 sites migrate to the ADR-007 / ADR-013-sanctioned
-`make_fake_core(...)` fixture, the `_ensure_*()` backfill and the
-compatibility-property bridges can be deleted, shrinking `_session.py`
-by an estimated 200–400 lines.
-
-**The bridge tax is not just ergonomic.** The `_ensure_*()` methods have
-ordering dependencies — `_ensure_auth_coord` primes
-`_ensure_observability_state` first because every coordinator method
-reaches into `host._metrics_obj`. Every new collaborator extraction grows
-the scaffold non-linearly: a fresh `_ensure_*()` plus a tranche of
-property bridges per seam, plus its position in the call chain. This is
-future-refactor friction, not first-read inconvenience.
-
-**Status: Active — being retired under the staged 8-PR session-shrink arc.**
-Effort estimate: Large (5–7 days wall-clock). The arc migrates the 13 executable
-`Session.__new__(Session)` fixture sites (9 DELETE, 3 MIGRATE to `make_fake_core(...)`,
-1 REAL-SESSION rewrite), then demolishes the bridges and `_ensure_*()` methods
-across 5 demolition PRs (Metrics+Drain, Auth, Lifecycle, plus the trivial-bridges
-bundle and Protocol-narrowing). An AST lint
-([`tests/_lint/test_no_session_compat_bridges.py`](../tests/_lint/test_no_session_compat_bridges.py))
-gates new bridge readers; its transitional allowlist drains to empty by the
-final demolition PR.
+The permanent regression guard is
+[`tests/_lint/test_no_session_compat_bridges.py`](../tests/_lint/test_no_session_compat_bridges.py):
+its allowlist is empty, and new test reach-ins to the retired Session
+private attributes fail in CI. Tests that need lightweight cores should
+use the ADR-007 / ADR-013-sanctioned
+[`make_fake_core(...)`](../tests/_fixtures/fake_core.py) fixture; tests
+that need collaborator internals should target the owning collaborator
+directly.
 
 ## See also
 

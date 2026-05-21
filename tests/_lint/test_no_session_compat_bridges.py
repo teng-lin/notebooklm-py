@@ -1,17 +1,11 @@
-"""Meta-lint: external code may not access ``Session`` compat-bridge attributes.
+"""Meta-lint: external code may not access retired ``Session`` private attrs.
 
-The bridges enumerated in :data:`FORBIDDEN_PROPERTIES` are properties on
-:class:`notebooklm._session.Session` that delegate to per-seam collaborators
-(``ClientLifecycle``, ``ClientMetrics``, ``AuthRefreshCoordinator``,
-``CookiePersistence``, etc.). They exist as a back-compat shim for tests
-that pre-date the seam extraction (see ADR-001 §Decision, ADR-007).
-
-Retirement is staged as the session-shrink multi-PR arc (8 PRs landing
-under the ``session-shrink/*`` branch prefix). This lint gates new
-readers while the existing :data:`ALLOWLIST` drains to empty — by the
-final demolition PR (ClientLifecycle), the allowlist should be empty
-and the lint becomes a permanent guard against re-introducing the
-pattern.
+The names enumerated in :data:`FORBIDDEN_PROPERTIES` were once private
+properties on :class:`notebooklm._session.Session` that delegated to
+per-seam collaborators. The session-shrink arc retired those properties
+and migrated tests to the owning collaborators or ``make_fake_core(...)``.
+This lint is now a strict regression guard; :data:`ALLOWLIST` must stay
+empty.
 
 Lint shape (modeled after :mod:`tests._lint.test_no_core_imports`):
 
@@ -33,11 +27,8 @@ Lint shape (modeled after :mod:`tests._lint.test_no_core_imports`):
 * Files in :data:`CARVE_OUT_MODULES` are skipped — they are the seam
   modules themselves and legitimately store the underscore-prefixed
   attributes on their own instances.
-* Files in :data:`ALLOWLIST` are exempted transitionally; the list MUST
-  be alphabetized (the self-test :func:`test_allowlist_is_sorted`
-  enforces that, and the list is declared as a literal — *not*
-  ``sorted([...])`` — so accidental drift causes the test to fail
-  rather than be silently re-sorted at import time).
+* :data:`ALLOWLIST` is intentionally empty. Adding a new exception means
+  re-opening the retired bridge policy and must fail this lint.
 
 The four AST contexts (Load / Store / Del / AugAssign) plus the three
 dynamic forms (``getattr`` / ``setattr`` / ``delattr``) each get a
@@ -55,13 +46,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-# Bridge attribute names — see :file:`src/notebooklm/_session.py`
-# bridge block (the ``@property`` declarations in the
-# ``AuthRefreshCoordinator`` / ``ClientMetrics`` / ``TransportDrainTracker`` /
-# ``ClientLifecycle`` / ``CookiePersistence`` / ``ReqidCounter`` /
-# ``PollingRegistry`` compat-bridge sections, between the constructor wiring
-# and the ``get_http_client`` tail). Update this set when a bridge is added
-# or retired.
+# Retired Session-private attribute names. Keep this set even after the
+# properties are gone so tests cannot quietly reintroduce those reach-ins.
 FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
     {
         # ClientLifecycle bridges retired in session-shrink PR 6 — readers now
@@ -130,16 +116,7 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
 )
 
 
-# Test files that currently access ``Session`` compat bridges. This is
-# the transitional allowlist; each session-shrink PR removes entries as
-# its readers migrate, and the allowlist must be empty by the final
-# demolition PR (see ``docs/architecture.md`` for the per-PR arc).
-#
-# DO NOT wrap in ``sorted([...])`` — the self-test
-# :func:`test_allowlist_is_sorted` compares the literal against its
-# sorted form, so any drift caused by an accidental out-of-order
-# insertion fails the test instead of being silently re-sorted at
-# import time.
+# No transitional exceptions remain.
 ALLOWLIST: list[str] = []
 
 
@@ -231,43 +208,9 @@ def _collect_test_files() -> list[Path]:
     )
 
 
-def test_allowlist_is_sorted() -> None:
-    """:data:`ALLOWLIST` must be alphabetized so additions land in stable positions.
-
-    The literal-list form (not ``sorted([...])``) is intentional: drift
-    must fail the test rather than be silently fixed at import time.
-    """
-    assert sorted(ALLOWLIST) == ALLOWLIST, (
-        "ALLOWLIST is not alphabetized. Re-sort the literal list in "
-        "tests/_lint/test_no_session_compat_bridges.py so the diff is "
-        "stable. Do NOT wrap in sorted([...])."
-    )
-
-
-def test_allowlist_entries_exist() -> None:
-    """Every allowlisted path must still exist; otherwise drain the entry."""
-    missing = [rel for rel in ALLOWLIST if not (REPO_ROOT / rel).is_file()]
-    assert not missing, (
-        "Allowlisted paths no longer exist; remove them from ALLOWLIST:\n"
-        + "\n".join(f"  - {rel}" for rel in missing)
-    )
-
-
-def test_allowlist_entries_currently_violate() -> None:
-    """Every allowlisted file must STILL access at least one bridge.
-
-    This is the drain mechanism. As session-shrink PRs migrate test files
-    off the bridges, the corresponding ALLOWLIST entry must be removed —
-    otherwise the gate silently weakens. If this test fails, drop the
-    listed file from ALLOWLIST; the lint will then enforce zero bridge
-    access on it going forward.
-    """
-    clean = [rel for rel in ALLOWLIST if not _scan_file(REPO_ROOT / rel)]
-    assert not clean, (
-        "Allowlisted files no longer access any bridge; remove them from "
-        "ALLOWLIST so the lint enforces zero bridge access going forward:\n"
-        + "\n".join(f"  - {rel}" for rel in clean)
-    )
+def test_allowlist_is_empty() -> None:
+    """The bridge-retirement arc is closed; no test-file exceptions remain."""
+    assert ALLOWLIST == []
 
 
 @pytest.mark.parametrize(
@@ -364,24 +307,21 @@ def test_is_carve_out_for_session_lifecycle() -> None:
 
 
 def test_no_session_compat_bridges() -> None:
-    """Every test file outside ALLOWLIST + CARVE_OUT_MODULES must be clean."""
+    """Every test file outside CARVE_OUT_MODULES must be clean."""
     failures: list[str] = []
     for path in _collect_test_files():
-        # Use as_posix() so the comparison against ALLOWLIST (forward-slash
-        # POSIX paths) is correct on Windows, where ``str(Path)`` produces
-        # backslashes that miss every allowlist entry.
+        # Use as_posix() so failure output is stable on Windows, where
+        # ``str(Path)`` produces backslashes.
         rel = path.relative_to(REPO_ROOT).as_posix()
-        if rel in ALLOWLIST or is_carve_out(rel):
+        if is_carve_out(rel):
             continue
         violations = _scan_file(path)
         for lineno, attr, ctx in violations:
             failures.append(f"{rel}:{lineno} {ctx} {attr}")
 
     assert not failures, (
-        "Test files outside ALLOWLIST may not access Session compat bridges. "
-        "If the file legitimately needs access during the migration, add it to "
-        "ALLOWLIST (alphabetized) in this file. If it can be migrated to "
-        "make_fake_core(...) (see ADR-007), do that instead. Each "
-        "session-shrink PR drains entries until the list is empty.\n\n"
+        "Test files may not access retired Session private attributes. Use "
+        "make_fake_core(...) for lightweight cores, or target the owning "
+        "collaborator directly when a collaborator invariant is under test.\n\n"
         "Violations:\n" + "\n".join(f"  - {f}" for f in failures)
     )

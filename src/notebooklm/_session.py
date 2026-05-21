@@ -334,28 +334,19 @@ class Session:
         # ``_max_concurrent_rpcs is None``, the accessor returns a
         # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
         self._rpc_semaphore: asyncio.Semaphore | None = None
-        # Observability counters + telemetry callback. The
-        # ``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event`` compat
-        # bridges were retired in session-shrink PR 4; readers now go
-        # straight to ``self._metrics_obj.<attr>`` (or call
-        # :meth:`metrics_snapshot` for a lock-safe copy).
+        # Observability counters + telemetry callback. ``metrics_snapshot``
+        # remains the lock-safe read path; helper-level tests that need
+        # implementation state read ``self._metrics_obj`` directly.
         self._metrics_obj = ClientMetrics(on_rpc_event=on_rpc_event)
         # Transport drain bookkeeping (in-flight posts, drain condition,
-        # per-task operation depth, draining flag). The
-        # ``_in_flight_posts`` / ``_drain_condition`` / ``_draining``
-        # compat bridges were retired in session-shrink PR 4; the
-        # ``_operation_depths`` bridge was dropped earlier in
-        # D1-audit-full. Readers now access ``self._drain_tracker.<attr>``
-        # directly. The helper's ``__init__`` is event-loop-agnostic; the
-        # ``asyncio.Condition`` is created lazily on first
-        # ``get_drain_condition`` call.
+        # per-task operation depth, draining flag). The helper's
+        # ``__init__`` is event-loop-agnostic; the ``asyncio.Condition`` is
+        # created lazily on first ``get_drain_condition`` call.
         self._drain_tracker = TransportDrainTracker()
         # Request ID counter for chat API (must be unique per request).
         # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
         # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
-        # Access ``self._reqid.value`` / ``self._reqid._lock`` directly;
-        # the ``_reqid_counter`` / ``_reqid_counter_value`` / ``_reqid_lock``
-        # compat bridges were all dropped in the session-shrink arc.
+        # Access ``self._reqid.value`` / ``self._reqid._lock`` directly.
         # The ``on_lock_wait`` hook keeps the
         # cumulative ``lock_wait_seconds_*`` metrics ticking inside
         # ``self._metrics_obj`` even though the counter is now extracted.
@@ -363,10 +354,9 @@ class Session:
         # Auth refresh coordination — single-flight refresh task, snapshot
         # serialization, and cookie-jar sync. The coordinator owns
         # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
-        # ``_auth_snapshot_lock``. The matching ``Session`` compat bridges
-        # are retired; tests and internal callers that need implementation
-        # state read the coordinator directly. The live auth snapshot lock is
-        # reachable via :meth:`_get_auth_snapshot_lock`.
+        # ``_auth_snapshot_lock``. Tests and internal callers that need
+        # implementation state read the coordinator directly. The live auth
+        # snapshot lock is reachable via :meth:`_get_auth_snapshot_lock`.
         # The auth snapshot lock is intentionally distinct from
         # ``_refresh_lock`` — mixing them would re-introduce the
         # reentrancy ambiguity that snapshot-side serialization was added
@@ -415,23 +405,20 @@ class Session:
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
         )
-        # Owns the in-process save lock and open-time cookie baseline. The
-        # ``_save_lock`` / ``_loaded_cookie_snapshot`` compat bridges were
-        # retired in the session-shrink arc; first-party callers reach
-        # through ``self.cookie_persistence.<name>`` directly.
+        # Owns the in-process save lock and open-time cookie baseline.
         self.cookie_persistence = CookiePersistence(self.auth, _resolved_storage_path)
         self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
         # Session-level :class:`PollRegistry` retained as a legacy attribute
-        # that the now-retired ``_pending_polls`` bridge exposed. Note that
-        # the *live* artifact-polling state is owned separately by
+        # for historical tests. The *live* artifact-polling state is owned
+        # separately by
         # :class:`ArtifactsAPI` (``src/notebooklm/_artifacts.py``), which
         # constructs its own :class:`PollRegistry` and threads it into
         # :class:`ArtifactPollingService` (``src/notebooklm/_artifact_polling.py``).
         # This ``self.poll_registry`` is currently unused by production code;
         # the tests in ``tests/integration/concurrency/test_artifact_poll_dedupe.py``
-        # observe it through the (vacuous) bridge-equivalent path. Migrating
-        # those tests to ``client.artifacts._polling.poll_registry.pending``
-        # — and dropping this attribute — is tracked as a follow-up audit.
+        # observe it directly. Migrating those tests to
+        # ``client.artifacts._polling.poll_registry.pending`` — and dropping
+        # this attribute — is tracked as a follow-up audit.
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
@@ -454,25 +441,6 @@ class Session:
             self._middlewares,
             self._authed_post_chain_terminal,
         )
-
-    # ``ClientMetrics`` compat bridges retired in session-shrink PR 4: tests
-    # now read ``self._metrics_obj.<attr>`` directly, or call
-    # :meth:`metrics_snapshot` for a lock-safe copy.
-
-    # ``TransportDrainTracker`` compat bridges retired in session-shrink PR 4:
-    # tests now read ``self._drain_tracker.<attr>`` directly. The
-    # ``_operation_depths`` bridge was dropped earlier in D1-audit-full.
-
-    # ``AuthRefreshCoordinator`` compat bridges retired in session-shrink PR 5:
-    # readers (and the two ``_refresh_callback`` writers in
-    # ``tests/integration/test_session_integration.py``) now go straight to
-    # ``self._auth_coord.<attr>``. The ``_auth_snapshot_lock`` bridge was
-    # dropped earlier in D1-audit-full; the live accessor remains
-    # ``_get_auth_snapshot_lock()`` / ``AuthRefreshCoordinator.get_auth_snapshot_lock()``.
-
-    # ``ClientLifecycle`` compat bridges retired in session-shrink PR 6:
-    # tests now read lifecycle state through ``self._lifecycle.<attr>`` and
-    # the live HTTP client through ``self._kernel``.
 
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook."""
