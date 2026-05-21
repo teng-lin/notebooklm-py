@@ -136,10 +136,10 @@ class TestRecoveryPreconditions:
         _write_storage(storage_path, _RECOVERABLE_COOKIES)
 
         # Force ``_try_claim_rotation`` to deny the claim, simulating a sibling
-        # caller having just claimed the slot.
-        monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._try_claim_rotation", lambda _path: False
-        )
+        # caller having just claimed the slot. Patch the local alias on
+        # ``psidts_recovery`` (ADR-007 object-target form) — the recovery path
+        # resolves the symbol via this module's globals at call time.
+        monkeypatch.setattr(psidts_recovery, "_try_claim_rotation", lambda _path: False)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
@@ -444,10 +444,10 @@ class TestEdgeCases:
             # Simulate another process holding the lock — acquire=False.
             yield False
 
-        monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._file_lock_try_exclusive",
-            held_lock,
-        )
+        # Patch the local alias on ``psidts_recovery`` (ADR-007 object-target
+        # form) — the recovery path resolves ``_file_lock_try_exclusive`` via
+        # this module's globals at call time.
+        monkeypatch.setattr(psidts_recovery, "_file_lock_try_exclusive", held_lock)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
@@ -491,11 +491,11 @@ class TestEdgeCases:
             call_counter["n"] += 1
             return pre_heal_state if call_counter["n"] == 1 else post_heal_state
 
-        monkeypatch.setattr("notebooklm._auth.psidts_recovery._load_storage_state", staged_load)
-        monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._file_lock_try_exclusive",
-            held_lock,
-        )
+        # Patch the local aliases on ``psidts_recovery`` (ADR-007 object-target
+        # form) — the recovery path resolves these symbols via this module's
+        # globals at call time.
+        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
+        monkeypatch.setattr(psidts_recovery, "_file_lock_try_exclusive", held_lock)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
         # No POST — the holder already did the work.
@@ -532,7 +532,10 @@ class TestEdgeCases:
             call_counter["n"] += 1
             return pre_heal_state if call_counter["n"] == 1 else post_heal_state
 
-        monkeypatch.setattr("notebooklm._auth.psidts_recovery._load_storage_state", staged_load)
+        # Patch the local alias on ``psidts_recovery`` (ADR-007 object-target
+        # form) — the recovery path resolves ``_load_storage_state`` via this
+        # module's globals at call time.
+        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
         # Crucial: no POST — recheck saw the heal before we fired.
@@ -559,7 +562,10 @@ class TestEdgeCases:
             call_counter["n"] += 1
             return pre_heal_state if call_counter["n"] == 1 else post_heal_state
 
-        monkeypatch.setattr("notebooklm._auth.psidts_recovery._load_storage_state", staged_load)
+        # Patch the local alias on ``psidts_recovery`` (ADR-007 object-target
+        # form) — the recovery path resolves ``_load_storage_state`` via this
+        # module's globals at call time.
+        monkeypatch.setattr(psidts_recovery, "_load_storage_state", staged_load)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         # No POST — recheck saw the broken state and aborted before firing.
