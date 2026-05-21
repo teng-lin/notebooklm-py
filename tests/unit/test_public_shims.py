@@ -592,8 +592,8 @@ def test_types_private_state_seams_are_live_objects(monkeypatch: pytest.MonkeyPa
     assert _SOURCE_TYPE_COMPAT_MAP is public_types._SOURCE_TYPE_COMPAT_MAP
     source_warnings: set[int] = set()
     artifact_warnings: set[tuple[int | None, int | None]] = set()
-    monkeypatch.setattr(public_types, "_warned_source_types", source_warnings)
-    monkeypatch.setattr(public_types, "_warned_artifact_types", artifact_warnings)
+    monkeypatch.setattr("notebooklm._types.sources._warned_source_types", source_warnings)
+    monkeypatch.setattr("notebooklm._types.artifacts._warned_artifact_types", artifact_warnings)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UnknownTypeWarning)

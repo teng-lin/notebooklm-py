@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -51,15 +50,6 @@ _ARTIFACT_TYPE_CODE_MAP: dict[int, ArtifactType] = {
 }
 
 
-def _artifact_warning_state() -> set[tuple[int, int | None]]:
-    public_types = sys.modules.get("notebooklm.types")
-    if public_types is not None:
-        public_state = getattr(public_types, "_warned_artifact_types", None)
-        if isinstance(public_state, set):
-            return public_state
-    return _warned_artifact_types
-
-
 def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     """Convert internal artifact type and variant to user-facing ArtifactType.
 
@@ -78,9 +68,8 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
             return ArtifactType.QUIZ
         else:
             key = (artifact_type, variant)
-            warned_artifact_types = _artifact_warning_state()
-            if key not in warned_artifact_types:
-                warned_artifact_types.add(key)
+            if key not in _warned_artifact_types:
+                _warned_artifact_types.add(key)
                 warnings.warn(
                     f"Unknown QUIZ variant {variant}. "
                     "Consider updating notebooklm-py to the latest version.",
@@ -92,9 +81,8 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
     result = _ARTIFACT_TYPE_CODE_MAP.get(artifact_type)
     if result is None:
         key = (artifact_type, variant)
-        warned_artifact_types = _artifact_warning_state()
-        if key not in warned_artifact_types:
-            warned_artifact_types.add(key)
+        if key not in _warned_artifact_types:
+            _warned_artifact_types.add(key)
             warnings.warn(
                 f"Unknown artifact type {artifact_type}. "
                 "Consider updating notebooklm-py to the latest version.",

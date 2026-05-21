@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -80,28 +79,6 @@ _SOURCE_TYPE_COMPAT_MAP: dict[SourceType, str] = {
 }
 
 
-def _source_warning_state() -> set[int]:
-    # Read through the public facade so monkeypatch.setattr(notebooklm.types, ...)
-    # rebinding is reflected in this private implementation.
-    public_types = sys.modules.get("notebooklm.types")
-    if public_types is not None:
-        public_state = getattr(public_types, "_warned_source_types", None)
-        if isinstance(public_state, set):
-            return public_state
-    return _warned_source_types
-
-
-def _source_compat_map() -> dict[SourceType, str]:
-    # Read through the public facade so monkeypatch.setattr(notebooklm.types, ...)
-    # rebinding is reflected in this private implementation.
-    public_types = sys.modules.get("notebooklm.types")
-    if public_types is not None:
-        public_map = getattr(public_types, "_SOURCE_TYPE_COMPAT_MAP", None)
-        if isinstance(public_map, dict):
-            return public_map
-    return _SOURCE_TYPE_COMPAT_MAP
-
-
 def _safe_source_type(type_code: int | None) -> SourceType:
     """Convert internal type code to user-facing SourceType enum."""
     if type_code is None:
@@ -109,9 +86,8 @@ def _safe_source_type(type_code: int | None) -> SourceType:
 
     result = _SOURCE_TYPE_CODE_MAP.get(type_code)
     if result is None:
-        warned_source_types = _source_warning_state()
-        if type_code not in warned_source_types:
-            warned_source_types.add(type_code)
+        if type_code not in _warned_source_types:
+            _warned_source_types.add(type_code)
             warnings.warn(
                 f"Unknown source type code {type_code}. "
                 "Consider updating notebooklm-py to the latest version.",
