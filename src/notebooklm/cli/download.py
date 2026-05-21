@@ -275,6 +275,44 @@ async def _download_artifacts_generic(
             if download_all:
                 output_dir = Path(output_path) if output_path else Path(default_output_dir)
 
+                # Apply --name filter before previewing/downloading. Match the
+                # case-insensitive substring semantics used by
+                # ``select_artifact`` for the single-artifact path so the two
+                # entry points stay consistent. If the filter excludes every
+                # artifact, return the same legacy error envelope as
+                # ``select_artifact`` does on a name miss (caller exits 1 via
+                # the top-level "error" key check in ``_run_artifact_download``).
+                if name:
+                    name_lower = name.lower()
+                    filtered_artifacts = [
+                        a for a in type_artifacts if name_lower in str(a["title"]).lower()
+                    ]
+                    if not filtered_artifacts:
+                        return {
+                            "error": (
+                                f"No artifacts matching '{name}'. "
+                                f"Available: {', '.join(str(a['title']) for a in type_artifacts)}"
+                            ),
+                        }
+                    type_artifacts = filtered_artifacts
+
+                # Pre-compute the final filename per artifact so dry-run and
+                # execution agree on duplicate-title disambiguation. The
+                # execution loop below mutates ``existing_names`` as it goes;
+                # dry-run iterates the same way so its preview reflects the
+                # ``Title (2).ext`` / ``Title (3).ext`` suffixes the execution
+                # path would write.
+                planned_filenames: list[str] = []
+                existing_names: set[str] = set()
+                for artifact in type_artifacts:
+                    item_name = artifact_title_to_filename(
+                        str(artifact["title"]),
+                        file_extension,
+                        existing_names,
+                    )
+                    existing_names.add(item_name)
+                    planned_filenames.append(item_name)
+
                 if dry_run:
                     return {
                         "dry_run": True,
@@ -285,40 +323,33 @@ async def _download_artifacts_generic(
                             {
                                 "id": a["id"],
                                 "title": a["title"],
-                                "filename": artifact_title_to_filename(
-                                    str(a["title"]),
-                                    file_extension,
-                                    set(),
-                                ),
+                                "filename": item_name,
                             }
-                            for a in type_artifacts
+                            for a, item_name in zip(type_artifacts, planned_filenames, strict=True)
                         ],
                     }
 
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-                results = []
-                existing_names: set[str] = set()
+                artifacts_results: list[dict[str, Any]] = []
                 total = len(type_artifacts)
+                succeeded_count = 0
+                failed_count = 0
+                skipped_count = 0
 
-                for i, artifact in enumerate(type_artifacts, 1):
+                for i, (artifact, item_name) in enumerate(
+                    zip(type_artifacts, planned_filenames, strict=True), 1
+                ):
                     # Progress indicator
                     if not json_output:
                         console.print(f"[dim]Downloading {i}/{total}:[/dim] {artifact['title']}")
 
-                    # Generate safe name
-                    item_name = artifact_title_to_filename(
-                        str(artifact["title"]),
-                        file_extension,
-                        existing_names,
-                    )
-                    existing_names.add(item_name)
                     item_path = output_dir / item_name
 
                     # Resolve conflicts
                     resolved_path, skip_info = _resolve_conflict(item_path)
                     if skip_info or resolved_path is None:
-                        results.append(
+                        artifacts_results.append(
                             {
                                 "id": artifact["id"],
                                 "title": artifact["title"],
@@ -329,6 +360,7 @@ async def _download_artifacts_generic(
                                 ),
                             }
                         )
+                        skipped_count += 1
                         continue
 
                     # Update if auto-renamed
@@ -342,7 +374,7 @@ async def _download_artifacts_generic(
                             nb_id_resolved, str(item_path), artifact_id=str(artifact["id"])
                         )
 
-                        results.append(
+                        artifacts_results.append(
                             {
                                 "id": artifact["id"],
                                 "title": artifact["title"],
@@ -351,8 +383,9 @@ async def _download_artifacts_generic(
                                 "status": "downloaded",
                             }
                         )
+                        succeeded_count += 1
                     except Exception as e:
-                        results.append(
+                        artifacts_results.append(
                             {
                                 "id": artifact["id"],
                                 "title": artifact["title"],
@@ -361,13 +394,26 @@ async def _download_artifacts_generic(
                                 "error": str(e),
                             }
                         )
+                        failed_count += 1
 
-                return {
+                # Per P1.T4: ANY per-item failure must surface to a non-zero
+                # exit code. ``_run_artifact_download`` keys exit-code policy
+                # on the presence of the top-level ``"error"`` field, so we
+                # only add it when there are failures — keeping the all-success
+                # envelope exit-0-clean while making partial / total failure
+                # automation-friendly via the documented counts.
+                envelope: dict[str, Any] = {
                     "operation": "download_all",
                     "output_dir": str(output_dir),
                     "total": total,
-                    "results": results,
+                    "succeeded_count": succeeded_count,
+                    "failed_count": failed_count,
+                    "skipped_count": skipped_count,
+                    "artifacts": artifacts_results,
                 }
+                if failed_count > 0:
+                    envelope["error"] = True
+                return envelope
 
             # Single artifact selection
             try:
@@ -470,9 +516,12 @@ def _display_download_result(result: dict, artifact_type: str) -> None:
 
     # Download all results
     if result.get("operation") == "download_all":
-        downloaded = [r for r in result["results"] if r.get("status") == "downloaded"]
-        skipped = [r for r in result["results"] if r.get("status") == "skipped"]
-        failed = [r for r in result["results"] if r.get("status") == "failed"]
+        # Per P1.T4 envelope: per-item entries live under ``artifacts``
+        # (alongside ``error: true`` / ``failed_count`` / ``succeeded_count``).
+        items = result.get("artifacts", [])
+        downloaded = [r for r in items if r.get("status") == "downloaded"]
+        skipped = [r for r in items if r.get("status") == "skipped"]
+        failed = [r for r in items if r.get("status") == "failed"]
 
         console.print(
             f"[bold]Downloaded {len(downloaded)}/{result['total']} {artifact_type} files to:[/bold] {result['output_dir']}"

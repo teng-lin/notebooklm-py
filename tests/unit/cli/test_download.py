@@ -644,7 +644,12 @@ class TestDownloadAll:
         assert not output_dir.exists()
 
     def test_download_all_with_failures(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
-        """Test --all continues on individual artifact failures."""
+        """Test --all continues on individual artifact failures.
+
+        Per P1.T4 contract: ANY per-item failure must propagate to a non-zero
+        exit code (the loop still attempts every artifact, but the command does
+        not silently report success when some artifacts failed).
+        """
         with patch_client_for_module("download") as mock_client_cls:
             mock_client = create_mock_client()
 
@@ -672,13 +677,397 @@ class TestDownloadAll:
                 cli, ["download", "audio", "--all", str(output_dir), "-n", "nb_123"]
             )
 
-        # Should still succeed overall (partial download)
-        assert result.exit_code == 0
+        # Loop still attempts every artifact (so the second succeeds), but exit
+        # is non-zero because at least one item failed.
+        assert result.exit_code != 0
         # One file should be downloaded
         downloaded_files = list(output_dir.glob("*.mp3"))
         assert len(downloaded_files) == 1
         # Output should mention failure
         assert "failed" in result.output.lower() or "1" in result.output
+
+
+class TestDownloadAllExitCodeContract:
+    """P1.T4 §1 — `--all` failure exit-code + JSON envelope.
+
+    Contract: ANY per-item failure inside the `--all` loop must produce a
+    non-zero exit code AND a top-level envelope of shape
+    ``{"error": true, "failed_count": N, "succeeded_count": M, "artifacts": [...]}``
+    so automation callers can distinguish partial from total failure without
+    walking every per-item entry.
+    """
+
+    def test_all_fail_exits_nonzero_with_envelope(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """When every artifact fails, exit non-zero with full failure envelope."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+
+            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+                raise Exception("Network error")
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_1", "First Audio", 1),
+                    make_artifact("audio_2", "Second Audio", 1),
+                ]
+            )
+            mock_client.artifacts.download_audio = mock_download_audio
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--json",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output)
+        assert payload.get("error") is True
+        assert payload.get("failed_count") == 2
+        assert payload.get("succeeded_count") == 0
+        # Per-item entries preserved under the new "artifacts" key.
+        assert len(payload.get("artifacts", [])) == 2
+        statuses = [a.get("status") for a in payload["artifacts"]]
+        assert statuses.count("failed") == 2
+
+    def test_partial_failure_exits_nonzero_with_envelope(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """When some succeed and some fail, exit non-zero and report both counts."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+            call_count = 0
+
+            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise Exception("Network error")
+                Path(output_path).write_bytes(b"audio content")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_1", "First Audio", 1),
+                    make_artifact("audio_2", "Second Audio", 1),
+                ]
+            )
+            mock_client.artifacts.download_audio = mock_download_audio
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--json",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output)
+        assert payload.get("error") is True
+        assert payload.get("failed_count") == 1
+        assert payload.get("succeeded_count") == 1
+        assert len(payload.get("artifacts", [])) == 2
+
+    def test_all_success_keeps_zero_exit_and_no_error_key(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """When every artifact succeeds, exit zero and omit the error key."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+
+            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+                Path(output_path).write_bytes(b"audio content")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_1", "First Audio", 1),
+                    make_artifact("audio_2", "Second Audio", 1),
+                ]
+            )
+            mock_client.artifacts.download_audio = mock_download_audio
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--json",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert "error" not in payload
+        assert payload.get("failed_count") == 0
+        assert payload.get("succeeded_count") == 2
+
+
+class TestDownloadAllNameFilter:
+    """P1.T4 §2 — `--all --name <name>` filter applied to the artifact list."""
+
+    def test_name_filter_restricts_downloads(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
+        """`--all --name "Beta"` must download only matching artifacts (substring,
+        case-insensitive), not every artifact in the notebook."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+            downloaded_ids: list[str | None] = []
+
+            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+                downloaded_ids.append(artifact_id)
+                Path(output_path).write_bytes(b"audio content")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_alpha", "Alpha Briefing", 1),
+                    make_artifact("audio_beta1", "Beta Chapter One", 1),
+                    make_artifact("audio_beta2", "Beta Chapter Two", 1),
+                    make_artifact("audio_gamma", "Gamma Recap", 1),
+                ]
+            )
+            mock_client.artifacts.download_audio = mock_download_audio
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--name",
+                    "beta",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert sorted(downloaded_ids) == ["audio_beta1", "audio_beta2"]
+        downloaded_files = list(output_dir.glob("*.mp3"))
+        assert len(downloaded_files) == 2
+
+    def test_name_filter_dry_run_previews_only_matches(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """`--all --name <name> --dry-run` previews only matching artifacts."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_alpha", "Alpha Briefing", 1),
+                    make_artifact("audio_beta1", "Beta Chapter One", 1),
+                    make_artifact("audio_gamma", "Gamma Recap", 1),
+                ]
+            )
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--name",
+                    "beta",
+                    "--dry-run",
+                    "--json",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload.get("dry_run") is True
+        assert payload.get("count") == 1
+        assert len(payload.get("artifacts", [])) == 1
+        assert payload["artifacts"][0]["id"] == "audio_beta1"
+
+    def test_name_filter_no_matches_returns_error(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """`--all --name <name>` with no matches: error envelope, non-zero exit."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_alpha", "Alpha Briefing", 1),
+                    make_artifact("audio_gamma", "Gamma Recap", 1),
+                ]
+            )
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--name",
+                    "nonexistent",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code != 0
+        # Output should mention the filter that produced no matches
+        assert "nonexistent" in result.output.lower() or "no" in result.output.lower()
+
+
+class TestDownloadAllDryRunFilenameParity:
+    """P1.T4 §3 — dry-run and execution must produce the same final filenames.
+
+    Previously, the dry-run preview passed an empty `existing_names` set to
+    ``artifact_title_to_filename`` for every artifact in the loop, so duplicate
+    titles all collapsed to the same base filename in preview output. The
+    execution path accumulates an ``existing_names`` set across iterations and
+    auto-renames duplicates to ``Title (2).ext``, ``Title (3).ext``, etc.
+    Dry-run must mirror the same disambiguation.
+    """
+
+    def test_dry_run_disambiguates_duplicate_titles(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """Three artifacts with the same title produce three distinct filenames
+        in dry-run output, matching what the execution path would emit."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir = tmp_path / "downloads"
+
+            mock_client.artifacts.list = AsyncMock(
+                return_value=[
+                    make_artifact("audio_1", "Duplicate Title", 1),
+                    make_artifact("audio_2", "Duplicate Title", 1),
+                    make_artifact("audio_3", "Duplicate Title", 1),
+                ]
+            )
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--dry-run",
+                    "--json",
+                    str(output_dir),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload.get("dry_run") is True
+        filenames = [a["filename"] for a in payload["artifacts"]]
+        # All three filenames must be distinct (the second and third get
+        # auto-renamed via (2)/(3) suffixes — same as the execution path).
+        assert len(set(filenames)) == 3
+        assert "Duplicate Title.mp3" in filenames
+        assert "Duplicate Title (2).mp3" in filenames
+        assert "Duplicate Title (3).mp3" in filenames
+
+    def test_dry_run_matches_execution_filenames(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        """The filenames listed in dry-run must be the actual filenames the
+        execution path writes to disk."""
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir_dry = tmp_path / "dry"
+
+            artifacts_payload = [
+                make_artifact("audio_1", "Duplicate Title", 1),
+                make_artifact("audio_2", "Duplicate Title", 1),
+            ]
+
+            mock_client.artifacts.list = AsyncMock(return_value=artifacts_payload)
+            mock_client_cls.return_value = mock_client
+
+            # First: dry-run pass.
+            result_dry = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--dry-run",
+                    "--json",
+                    str(output_dir_dry),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+            assert result_dry.exit_code == 0
+            payload_dry = json.loads(result_dry.output)
+            dry_filenames = sorted(a["filename"] for a in payload_dry["artifacts"])
+
+        # Second: real execution pass (separate patch context — runner resets
+        # the client mock between invocations).
+        with patch_client_for_module("download") as mock_client_cls:
+            mock_client = create_mock_client()
+            output_dir_exec = tmp_path / "exec"
+
+            async def mock_download_audio(notebook_id, output_path, artifact_id=None):
+                Path(output_path).write_bytes(b"audio content")
+                return output_path
+
+            mock_client.artifacts.list = AsyncMock(return_value=artifacts_payload)
+            mock_client.artifacts.download_audio = mock_download_audio
+            mock_client_cls.return_value = mock_client
+
+            result_exec = runner.invoke(
+                cli,
+                [
+                    "download",
+                    "audio",
+                    "--all",
+                    "--json",
+                    str(output_dir_exec),
+                    "-n",
+                    "nb_123",
+                ],
+            )
+
+        assert result_exec.exit_code == 0
+        payload_exec = json.loads(result_exec.output)
+        exec_filenames = sorted(a["filename"] for a in payload_exec["artifacts"])
+        assert dry_filenames == exec_filenames
 
     def test_download_all_with_no_clobber(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test --all --no-clobber skips existing files."""
