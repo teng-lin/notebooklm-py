@@ -214,7 +214,7 @@ class TestRPCCallHTTPErrors:
         # gate in rpc_call short-circuits and the status mapping runs.
         async with NotebookLMClient(auth_tokens) as client:
             core = client._session
-            core._refresh_callback = None
+            core._auth_coord._refresh_callback = None
 
             mock_response = MagicMock()
             mock_response.status_code = 400
@@ -289,12 +289,12 @@ class TestRPCCallAuthRetry:
             core = client._session
 
             refresh_callback = AsyncMock()
-            core._refresh_callback = refresh_callback
+            core._auth_coord._refresh_callback = refresh_callback
             import asyncio
 
-            # Phase 4: ``Session._refresh_lock`` setter was removed; write on
-            # the collaborator directly. ``Session.__init__`` already built
-            # ``_auth_coord`` so this direct write is safe.
+            # Pre-allocate the lock so the first refresh attempt doesn't
+            # try to construct one (the coordinator's lazy-init runs at
+            # the first ``await_refresh`` call site).
             core._auth_coord._refresh_lock = asyncio.Lock()
 
             success_response = MagicMock()

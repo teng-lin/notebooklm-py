@@ -72,15 +72,15 @@ def test_construct_outside_event_loop_with_callback() -> None:
 
     # Eager construction would have blown up under the prior code path.
     core_with_cb = Session(auth=_auth_tokens(), refresh_callback=_noop_refresh)
-    assert core_with_cb._refresh_lock is None, (
+    assert core_with_cb._auth_coord._refresh_lock is None, (
         "Lazy-init contract: lock must remain None until first refresh."
     )
-    assert core_with_cb._refresh_callback is _noop_refresh
+    assert core_with_cb._auth_coord._refresh_callback is _noop_refresh
 
     # And the no-callback path stays the same (also lazy / also None).
     core_without_cb = Session(auth=_auth_tokens())
-    assert core_without_cb._refresh_lock is None
-    assert core_without_cb._refresh_callback is None
+    assert core_without_cb._auth_coord._refresh_lock is None
+    assert core_without_cb._auth_coord._refresh_callback is None
 
 
 # --------------------------------------------------------------------------- #
@@ -141,7 +141,7 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
         core.rpc_call = fake_retry  # type: ignore[method-assign]
 
         # Pre-refresh invariant: lock is unallocated even after ``open()``.
-        assert core._refresh_lock is None, (
+        assert core._auth_coord._refresh_lock is None, (
             "Lock must remain unallocated until the first refresh attempt."
         )
 
@@ -150,14 +150,14 @@ async def test_refresh_lock_allocated_on_first_await() -> None:
         assert result == "ok"
         assert call_count == 1, f"Refresh callback must fire exactly once, got {call_count}"
         # Post-refresh invariant: lock is now allocated and is a real asyncio.Lock.
-        assert core._refresh_lock is not None, (
+        assert core._auth_coord._refresh_lock is not None, (
             "Lock must be allocated by the first ``_await_refresh`` call."
         )
-        assert isinstance(core._refresh_lock, asyncio.Lock)
+        assert isinstance(core._auth_coord._refresh_lock, asyncio.Lock)
         # And the refresh task ran to completion, matching the single-flight
         # state-machine pinning in ``test_refresh_state_machine.py``.
-        assert core._refresh_task is not None
-        assert core._refresh_task.done()
+        assert core._auth_coord._refresh_task is not None
+        assert core._auth_coord._refresh_task.done()
         assert core.auth.csrf_token == "CSRF_REFRESHED"
 
 
@@ -187,11 +187,11 @@ async def test_refresh_lock_instance_stable_across_calls() -> None:
         core.rpc_call = fake_retry  # type: ignore[method-assign]
 
         await _trigger_refresh(core)
-        first_lock = core._refresh_lock
+        first_lock = core._auth_coord._refresh_lock
         assert first_lock is not None
 
         await _trigger_refresh(core)
-        second_lock = core._refresh_lock
+        second_lock = core._auth_coord._refresh_lock
 
         assert second_lock is first_lock, (
             "Lazy-init must be idempotent — same lock instance across refreshes "
