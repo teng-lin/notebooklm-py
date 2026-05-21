@@ -870,13 +870,18 @@ class TestChatJsonStdoutContract:
     """
 
     def test_ask_json_save_as_note_emits_pure_json(self, runner, mock_auth):
-        """``ask --json --save-as-note`` must keep stdout valid JSON.
+        """``ask --json --save-as-note`` (plain-text save path) keeps stdout valid JSON.
 
         Pre-fix bug (`cli/chat.py:269`): the note-save branch ran
-        `console.print(...)` after `json_output_response(...)`, polluting
-        stdout with Rich-styled status lines. Acceptance is now that
-        ``json.loads(result.stdout)`` succeeds and the parsed envelope
-        carries a ``note`` field describing the saved note.
+        ``console.print(...)`` after ``json_output_response(...)``,
+        polluting stdout with Rich-styled status lines. Acceptance is
+        that ``json.loads(result.stdout)`` succeeds and the parsed
+        envelope carries a ``note`` field describing the saved note.
+
+        Note: ``make_ask_result()`` returns ``references=[]``, so this
+        exercises the plain-text ``notes.create()`` fallback. The
+        citation-rich ``chat.save_answer_as_note`` JSON path is covered
+        by ``test_ask_json_save_as_note_citation_rich_path_emits_pure_json``.
         """
         import json
 
@@ -905,6 +910,67 @@ class TestChatJsonStdoutContract:
             assert data["note"]["title"] == "Chat Note"
             # Save-as-note status must NOT leak onto stdout.
             assert "Saved as note" not in result.stdout
+
+    def test_ask_json_save_as_note_citation_rich_path_emits_pure_json(self, runner, mock_auth):
+        """JSON purity also holds on the citation-rich save path.
+
+        Addresses claude[bot] review observation on PR #920: the
+        non-empty-references branch (``chat.save_answer_as_note``) had
+        no ``--json`` coverage. This test pins JSON-mode behavior for
+        the citation-rich path so a future regression in either branch
+        is caught.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            ask_result = AskResult(
+                answer="Apples are mentioned [1].",
+                conversation_id="a1b2c3d4-0000-0000-0000-000000000001",
+                turn_number=1,
+                is_follow_up=False,
+                references=[
+                    ChatReference(
+                        source_id="src-1",
+                        citation_number=1,
+                        cited_text="...apples...",
+                        start_char=0,
+                        end_char=10,
+                        chunk_id="chunk-1",
+                    )
+                ],
+                raw_response="",
+            )
+            mock_client.chat.ask = AsyncMock(return_value=ask_result)
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.chat.save_answer_as_note = AsyncMock(
+                return_value=make_note(id="note_cit", title="Cited Note")
+            )
+            mock_client.notes.create = AsyncMock(return_value=make_note())
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["ask", "What fruit?", "--save-as-note", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 0, result.stderr or result.output
+            # Critical contract: stdout parses as a single JSON document.
+            data = json.loads(result.stdout)
+            assert data["answer"] == "Apples are mentioned [1]."
+            # Citation-rich save method was used.
+            mock_client.chat.save_answer_as_note.assert_awaited_once()
+            mock_client.notes.create.assert_not_awaited()
+            # Note-save outcome merged into the JSON envelope.
+            assert data["note"]["id"] == "note_cit"
+            assert data["note"]["title"] == "Cited Note"
+            # Status text must NOT leak onto stdout.
+            assert "Saved as note" not in result.stdout
+            assert "[dim]" not in result.stdout
 
     def test_ask_json_save_as_note_plain_text_path_emits_pure_json(self, runner, mock_auth):
         """No-citations plain-text fallback also keeps stdout valid JSON.
