@@ -5,7 +5,7 @@ Commands:
     wait        Wait for research to complete (blocking)
 """
 
-import asyncio
+from typing import Any
 
 import click
 
@@ -23,6 +23,7 @@ from .resolve import (
     require_notebook,
     resolve_notebook_id,
 )
+from .services.polling import poll_until, status_with_elapsed
 
 # UI-only cap for the research summary preview shown in `research status` /
 # `research wait`. Unlike RPC error previews (see
@@ -151,12 +152,10 @@ def research_wait(
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            max_iterations = max(1, timeout // interval)
-            status = None
-            task_id = None
+            task_id: str | None = None
 
-            async def _poll_loop() -> bool:
-                """Poll until completion or terminal state; returns True on success.
+            async def _fetch_status() -> dict[str, Any]:
+                """Fetch the next research status and pin a discovered task id.
 
                 Once the first poll identifies a task_id, subsequent polls pin
                 to that specific task via the ``task_id`` discriminator. This
@@ -165,32 +164,39 @@ def research_wait(
                 or a retry) could substitute its results into ``status`` /
                 ``sources`` and mis-attribute provenance on import.
                 """
-                nonlocal status, task_id
-                for _ in range(max_iterations):
-                    status = await client.research.poll(nb_id_resolved, task_id=task_id)
-                    status_val = status.get("status", "unknown")
+                nonlocal task_id
+                current_status = await client.research.poll(nb_id_resolved, task_id=task_id)
+                status_val = current_status.get("status", "unknown")
 
-                    if status_val == "completed":
-                        task_id = status.get("task_id")
-                        return True
-                    elif status_val == "no_research":
-                        if json_output:
-                            json_output_response(
-                                {"status": "no_research", "error": "No research running"}
-                            )
-                        else:
-                            console.print("[red]No research running[/red]")
-                        raise SystemExit(1)
+                if status_val == "no_research":
+                    if json_output:
+                        json_output_response(
+                            {"status": "no_research", "error": "No research running"}
+                        )
+                    else:
+                        console.print("[red]No research running[/red]")
+                    raise SystemExit(1)
 
-                    # Pin to the discovered task_id on subsequent iterations.
-                    # The first in-progress poll is unambiguous if only one
-                    # task is in flight; on the next iteration we have a
-                    # concrete discriminator from the wire.
-                    if task_id is None:
-                        task_id = status.get("task_id")
+                if task_id is None:
+                    task_id = current_status.get("task_id")
 
-                    await asyncio.sleep(interval)
+                return current_status
 
+            def _is_complete(current_status: dict[str, Any]) -> bool:
+                return current_status.get("status", "unknown") == "completed"
+
+            async with status_with_elapsed(
+                "Waiting for research to complete...",
+                json_output=json_output,
+            ):
+                poll_result = await poll_until(
+                    _fetch_status,
+                    _is_complete,
+                    timeout=float(timeout),
+                    interval=float(interval),
+                )
+
+            if poll_result.timed_out:
                 if json_output:
                     json_output_response(
                         {"status": "timeout", "error": f"Timed out after {timeout}s"}
@@ -199,15 +205,9 @@ def research_wait(
                     console.print(f"[yellow]Timed out after {timeout} seconds[/yellow]")
                 raise SystemExit(1)
 
-            if json_output:
-                await _poll_loop()
-            else:
-                with console.status("Waiting for research to complete..."):
-                    await _poll_loop()
-
-            # Research completed — _poll_loop either populated `status` or
-            # raised SystemExit, so a non-None status is guaranteed here.
-            assert status is not None
+            # Research completed — poll_until returned the terminal status,
+            # or raised SystemExit above for no-research / timeout cases.
+            status = poll_result.value
             sources = status.get("sources", [])
             query = status.get("query", "")
 

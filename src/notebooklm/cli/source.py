@@ -21,8 +21,6 @@ import asyncio
 import contextlib
 import os
 import re
-import time
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,7 +30,7 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from ..types import Source, source_status_to_str
 from .auth_runtime import with_client
-from .error_handler import _output_error, emit_cancelled_and_exit
+from .error_handler import _output_error
 from .input import read_stdin_text, resolve_prompt
 from .options import (
     json_option,
@@ -56,66 +54,7 @@ from .resolve import require_notebook, resolve_notebook_id, resolve_source_id, v
 from .runtime import is_quiet
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
-
-
-@contextlib.asynccontextmanager
-async def _status_with_elapsed(
-    message: str,
-    *,
-    json_output: bool = False,
-    resume_hint: str | None = None,
-) -> AsyncIterator[None]:
-    """Show a Rich spinner with a periodically updated elapsed timer.
-
-    Used by ``source wait`` so interactive callers see live feedback during
-    the blocking poll. No-op (for the spinner) when
-    ``json_output`` is True so stdout stays pure JSON for automation. The
-    spinner is transient — it disappears on exit, leaving only the final
-    ready / failure / timeout line.
-
-    The ticker task updates the status text once per second while the wrapped
-    coroutine awaits the long-running call. Cancellation is best-effort: if
-    the wrapped block raises, the ticker is cancelled in ``finally`` and the
-    exception propagates unchanged.
-
-    SIGINT handling: when ``resume_hint`` is provided, a
-    ``KeyboardInterrupt`` raised inside the wrapped block is caught and
-    converted into a friendly cancellation message via
-    :func:`emit_cancelled_and_exit`. ``source wait`` uses the parallel
-    ``notebooklm source wait <source_id>`` hint (no separate ``poll`` command
-    exists for sources — re-running the same wait IS the resume).
-    """
-
-    @contextlib.contextmanager
-    def _sigint_guard():
-        try:
-            yield
-        except KeyboardInterrupt:
-            if resume_hint is None:
-                raise
-            emit_cancelled_and_exit(resume_hint, json_output=json_output)
-
-    if json_output:
-        with _sigint_guard():
-            yield
-        return
-    start = time.monotonic()
-    with console.status(message) as status:
-
-        async def _ticker() -> None:
-            while True:
-                await asyncio.sleep(1.0)
-                elapsed = int(time.monotonic() - start)
-                status.update(f"{message} [{elapsed}s elapsed]")
-
-        ticker_task = asyncio.create_task(_ticker())
-        try:
-            with _sigint_guard():
-                yield
-        finally:
-            ticker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await ticker_task
+from .services.polling import status_with_elapsed
 
 
 def _looks_like_path(content: str) -> bool:
@@ -1305,7 +1244,7 @@ def source_wait(ctx, source_id, notebook_id, timeout, interval, json_output, cli
                 # elapsed-seconds counter, then disappears so the final
                 # ready / failure / timeout line stands alone. No-op under
                 # --json so stdout stays pure JSON.
-                async with _status_with_elapsed(
+                async with status_with_elapsed(
                     f"Waiting for source {resolved_id} to finish processing...",
                     json_output=json_output,
                     # Parallel hint for ``source wait``: there is

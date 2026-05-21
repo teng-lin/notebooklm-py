@@ -1,15 +1,14 @@
 """CLI-internal services for artifact generation commands."""
 
 import asyncio
-import contextlib
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ...client import NotebookLMClient
 from ...types import GenerationStatus
-from ..error_handler import emit_cancelled_and_exit, output_error
+from ..error_handler import output_error
 from ..rendering import console, json_output_response
+from .polling import status_with_elapsed
 
 # Retry constants
 RETRY_INITIAL_DELAY = 60.0  # seconds
@@ -50,64 +49,7 @@ def _format_status_message(artifact_type: str, elapsed: float | None = None) -> 
     return f"{base} [{int(elapsed)}s elapsed]"
 
 
-@contextlib.asynccontextmanager
-async def _status_with_elapsed(
-    artifact_type: str,
-    *,
-    json_output: bool = False,
-    resume_hint: str | None = None,
-) -> AsyncIterator[None]:
-    """Show a Rich spinner with a periodically updated elapsed timer.
-
-    No-op (for the spinner) when ``json_output`` is True so stdout stays pure
-    JSON for automation. The spinner is transient — it disappears on exit, so
-    the final ``[green]... ready[/green]`` line is the only persistent output.
-
-    The ticker task updates the status text once per second while the wrapped
-    coroutine awaits the long-running call. Cancellation is best-effort: if
-    the wrapped block raises, the ticker is cancelled in ``finally`` and the
-    exception propagates unchanged.
-
-    SIGINT handling: when ``resume_hint`` is provided, a
-    ``KeyboardInterrupt`` raised inside the wrapped block is caught and
-    converted into a friendly cancellation message via
-    :func:`emit_cancelled_and_exit`, which prints
-    ``Cancelled. Resume with: <resume_hint>`` to stderr (or a structured
-    ``CANCELLED`` envelope under ``--json``) and exits 130. When
-    ``resume_hint`` is ``None`` the interrupt propagates so the generic
-    handler in ``error_handler.handle_errors`` keeps owning non-wait paths.
-    """
-
-    @contextlib.contextmanager
-    def _sigint_guard() -> Any:
-        try:
-            yield
-        except KeyboardInterrupt:
-            if resume_hint is None:
-                raise
-            emit_cancelled_and_exit(resume_hint, json_output=json_output)
-
-    if json_output:
-        with _sigint_guard():
-            yield
-        return
-    start = time.monotonic()
-    initial = _format_status_message(artifact_type)
-    with console.status(initial) as status:
-
-        async def _ticker() -> None:
-            while True:
-                await asyncio.sleep(1.0)
-                status.update(_format_status_message(artifact_type, time.monotonic() - start))
-
-        ticker_task = asyncio.create_task(_ticker())
-        try:
-            with _sigint_guard():
-                yield
-        finally:
-            ticker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await ticker_task
+_status_with_elapsed = status_with_elapsed
 
 
 def calculate_backoff_delay(
@@ -255,8 +197,8 @@ async def handle_generation_result(
         # so Ctrl-C during the wait surfaces the resume command instead of
         # a Python KeyboardInterrupt traceback. See ``cli/error_handler.py``
         # ``emit_cancelled_and_exit``.
-        async with _status_with_elapsed(
-            artifact_type,
+        async with status_with_elapsed(
+            _format_status_message(artifact_type),
             json_output=json_output,
             resume_hint=f"notebooklm artifact poll {task_id}",
         ):

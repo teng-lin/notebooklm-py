@@ -11,10 +11,6 @@ Commands:
     suggestions Get AI-suggested report topics
 """
 
-import asyncio
-import contextlib
-import time
-from collections.abc import AsyncIterator
 from typing import Literal
 
 import click
@@ -23,7 +19,7 @@ from rich.table import Table
 from ..client import NotebookLMClient
 from ..types import ExportType
 from .auth_runtime import with_client
-from .error_handler import _output_error, emit_cancelled_and_exit
+from .error_handler import _output_error
 from .options import json_option, list_options, notebook_option, wait_polling_options
 from .rendering import (
     cli_name_to_artifact_type,
@@ -37,66 +33,7 @@ from .resolve import (
     resolve_artifact_id,
     resolve_notebook_id,
 )
-
-
-@contextlib.asynccontextmanager
-async def _status_with_elapsed(
-    message: str,
-    *,
-    json_output: bool = False,
-    resume_hint: str | None = None,
-) -> AsyncIterator[None]:
-    """Show a Rich spinner with a periodically updated elapsed timer.
-
-    Used by ``artifact wait`` so interactive callers see live feedback during
-    the blocking poll. No-op (for the spinner) when
-    ``json_output`` is True so stdout stays pure JSON for automation. The
-    spinner is transient — it disappears on exit, leaving only the final
-    completion / failure line.
-
-    The ticker task updates the status text once per second while the wrapped
-    coroutine awaits the long-running call. Cancellation is best-effort: if
-    the wrapped block raises, the ticker is cancelled in ``finally`` and the
-    exception propagates unchanged.
-
-    SIGINT handling: when ``resume_hint`` is provided, a
-    ``KeyboardInterrupt`` raised inside the wrapped block is caught and
-    converted into a friendly cancellation message via
-    :func:`emit_cancelled_and_exit`, which prints
-    ``Cancelled. Resume with: <resume_hint>`` to stderr (or a structured
-    ``CANCELLED`` envelope under ``--json``) and exits 130.
-    """
-
-    @contextlib.contextmanager
-    def _sigint_guard():
-        try:
-            yield
-        except KeyboardInterrupt:
-            if resume_hint is None:
-                raise
-            emit_cancelled_and_exit(resume_hint, json_output=json_output)
-
-    if json_output:
-        with _sigint_guard():
-            yield
-        return
-    start = time.monotonic()
-    with console.status(message) as status:
-
-        async def _ticker() -> None:
-            while True:
-                await asyncio.sleep(1.0)
-                elapsed = int(time.monotonic() - start)
-                status.update(f"{message} [{elapsed}s elapsed]")
-
-        ticker_task = asyncio.create_task(_ticker())
-        try:
-            with _sigint_guard():
-                yield
-        finally:
-            ticker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await ticker_task
+from .services.polling import status_with_elapsed
 
 
 @click.group()
@@ -535,7 +472,7 @@ def artifact_wait(ctx, artifact_id, notebook_id, timeout, interval, json_output,
                 # of a Python KeyboardInterrupt traceback. Same hint shape as
                 # ``generate <kind> --wait`` because both polling loops resume
                 # via ``artifact poll``.
-                async with _status_with_elapsed(
+                async with status_with_elapsed(
                     f"Waiting for artifact {resolved_id} to complete...",
                     json_output=json_output,
                     resume_hint=f"notebooklm artifact poll {resolved_id}",
