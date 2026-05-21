@@ -3321,9 +3321,12 @@ class TestSourceBundleP1T2:
             mock_client_cls.return_value = mock_client
 
             # Short-circuit asyncio.sleep so the test does not wait 5s between polls.
+            # Use patch.object on the already-imported module to avoid the dotted-string
+            # path "notebooklm.cli.source.asyncio.sleep" which fails on Python 3.10 because
+            # mock.patch tries to import "notebooklm.cli.source" as a package first.
             with (
                 self._patch_fetch_tokens(),
-                patch("notebooklm.cli.source.asyncio.sleep", new_callable=AsyncMock),
+                patch.object(source_module.asyncio, "sleep", AsyncMock()),
             ):
                 result = runner.invoke(
                     cli,
