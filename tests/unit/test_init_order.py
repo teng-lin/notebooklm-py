@@ -328,7 +328,16 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 # ----------------------------------------------------------------------------
 
 
-_REACH_IN_MIGRATED_MODULES: list[str] = []  # appended to by T2 and T3.
+# Modules already migrated to ``_ArtifactsServiceMethods`` constructor
+# injection — the guard below enforces no residual ``self._api`` reach-in.
+# Bookkeeping (mirrors the ``_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS`` pattern):
+#   * T2 (``.sisyphus/phases/encapsulation-reach-in-remediation/phase-1.md``)
+#     will append ``"_artifact_downloads.py"`` once that module is
+#     migrated.
+#   * T3 (same phase plan) will append ``"_artifact_generation.py"``.
+# Until both PRs land this list is empty and the guard test passes
+# vacuously.
+_REACH_IN_MIGRATED_MODULES: list[str] = []
 
 
 def _is_self_api(node: ast.AST) -> bool:
@@ -424,6 +433,8 @@ class _ApiReachInVisitor(ast.NodeVisitor):
             return "self._api"
         if isinstance(node, ast.Name):
             return node.id
+        if isinstance(node, ast.NamedExpr):
+            return "(walrus-expr)"
         return "<api>"
 
 
@@ -467,13 +478,39 @@ def test_api_reach_in_visitor_catches_alias() -> None:
     assert any(v[1] == "api.foo" for v in visitor.violations)
 
 
-def test_api_reach_in_visitor_catches_nested_scope_alias() -> None:
+def test_api_reach_in_visitor_catches_comprehension_alias() -> None:
+    """Comprehensions traverse within their enclosing function scope and
+    must see aliases bound in that function. (List/set/dict comprehensions
+    do not push a new scope onto ``_alias_stack`` because the visitor only
+    overrides ``visit_FunctionDef`` / ``visit_AsyncFunctionDef`` /
+    ``visit_Lambda``.)
+    """
     tree = ast.parse(
         "class C:\n"
         "    def __init__(self, api): self._api = api\n"
         "    async def f(self):\n"
         "        api = self._api\n"
         "        return [api.foo for x in items]\n"
+    )
+    visitor = _ApiReachInVisitor("test.py")
+    visitor.visit(tree)
+    assert any(v[1] == "api.foo" for v in visitor.violations)
+
+
+def test_api_reach_in_visitor_catches_nested_scope_alias() -> None:
+    """Aliases bound in an outer function must be visible to attribute
+    access in a nested function — exercises the ``reversed(_alias_stack)``
+    multi-entry walk (the inner ``def g`` pushes a second entry onto the
+    stack, and ``api`` is only bound in the outer scope).
+    """
+    tree = ast.parse(
+        "class C:\n"
+        "    def __init__(self, api): self._api = api\n"
+        "    async def f(self):\n"
+        "        api = self._api\n"
+        "        async def g():\n"
+        "            return api.foo\n"
+        "        return await g()\n"
     )
     visitor = _ApiReachInVisitor("test.py")
     visitor.visit(tree)
