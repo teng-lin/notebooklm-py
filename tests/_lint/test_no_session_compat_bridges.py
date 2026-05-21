@@ -419,7 +419,10 @@ def test_no_session_compat_bridges() -> None:
     """Every test file outside ALLOWLIST + CARVE_OUT_MODULES must be clean."""
     failures: list[str] = []
     for path in _collect_test_files():
-        rel = str(path.relative_to(REPO_ROOT))
+        # Use as_posix() so the comparison against ALLOWLIST (forward-slash
+        # POSIX paths) is correct on Windows, where ``str(Path)`` produces
+        # backslashes that miss every allowlist entry.
+        rel = path.relative_to(REPO_ROOT).as_posix()
         if rel in ALLOWLIST or is_carve_out(rel):
             continue
         violations = _scan_file(path)
