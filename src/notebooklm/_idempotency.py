@@ -525,8 +525,9 @@ IDEMPOTENCY_REGISTRY._seed_defaults()
 # video, report, quiz, etc.; see ``_artifact_generation.py`` lines 75-99,
 # 143-161, 266-291, ...). Every position is structural — there is no
 # caller-supplied client-token slot. The server allocates the artifact_id
-# in the response (``_parse_generation_result`` line 711 reads
-# ``result[0][0]``), so a CLIENT_TOKEN_DEDUPE classification is impossible.
+# in the response (``ArtifactGenerationService.parse_generation_result``
+# reads ``result[0][0]`` — see ``_artifact_generation.py``), so a
+# CLIENT_TOKEN_DEDUPE classification is impossible.
 #
 # PROBE_THEN_CREATE forces ``effective_disable_internal_retries=True``,
 # which suppresses ``_perform_authed_post``'s inner retry loop. Without

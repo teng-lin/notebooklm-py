@@ -5,8 +5,9 @@ token (see ``_artifact_generation.py``: CREATE_ARTIFACT shape at lines 75-99
 / 143-161 / 266-291 / etc., and GENERATE_MIND_MAP shape at lines 595-604).
 Every positional slot is structural — type code, source ids, language,
 config block — and the response is what surfaces a server-allocated
-``artifact_id`` (``_parse_generation_result`` line 711 reads
-``result[0][0]``). Without a token slot, the only safe retry policy is
+``artifact_id`` (``ArtifactGenerationService.parse_generation_result`` in
+``_artifact_generation.py`` reads ``result[0][0]``). Without a token slot,
+the only safe retry policy is
 :attr:`~notebooklm._idempotency.IdempotencyPolicy.PROBE_THEN_CREATE`, which
 forces the transport's inner retry loop OFF so a 5xx after server-side
 commit cannot trigger a duplicate write.
@@ -20,9 +21,10 @@ This file exercises that classification end-to-end:
 3. Happy-path calls still return the artifact / mind-map cleanly.
 
 Wave 2 follow-up: a caller-owned ``idempotent_create`` wrapper around
-``_call_generate`` can later layer probe-and-return semantics on top of
-this foundation (using ``client.artifacts.list()`` as the baseline-diff
-probe). That work is out of scope here per the b-generation task spec.
+``ArtifactGenerationService.call_generate`` can later layer
+probe-and-return semantics on top of this foundation (using
+``client.artifacts.list()`` as the baseline-diff probe). That work is
+out of scope here per the b-generation task spec.
 """
 
 from __future__ import annotations
