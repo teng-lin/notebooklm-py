@@ -2067,6 +2067,7 @@ class TestHandleGenerationResultPaths:
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
 
         # ``output_error`` raises ``SystemExit(1)``; Click reports exit_code 1.
+        assert result.exit_code != 0
         data = json.loads(result.output)
         assert data["error"] is True
         assert data["code"] == "GENERATION_FAILED"
