@@ -17,7 +17,15 @@ logger = logging.getLogger("notebooklm._notebooks")
 
 
 class NotebookSourceLister(Protocol):
-    """Structural source-listing dependency needed by notebook metadata."""
+    """Structural source-listing dependency shared across feature APIs.
+
+    Consumed by :class:`NotebookMetadataService` for metadata composition
+    and by :meth:`ResearchAPI.import_sources_with_verification` for
+    snapshot/probe around ``IMPORT_RESEARCH`` (issue #315). Implementations
+    are constructed via :func:`create_default_source_lister` from a bare
+    ``RpcCall`` callable, so feature APIs don't need to depend on
+    ``SourcesAPI`` itself.
+    """
 
     async def list(self, notebook_id: str, *, strict: bool = False) -> builtins.list[Source]:
         """List sources for a notebook."""

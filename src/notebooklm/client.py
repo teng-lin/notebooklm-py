@@ -327,11 +327,7 @@ class NotebookLMClient:
             save_chat_answer=self.chat.save_answer_as_note,
         )
         # Pure-RPC features (Phase 1 retypes: typed as `rpc: RpcCaller`).
-        # ResearchAPI takes an optional SourcesAPI handle so
-        # `import_sources_with_verification` can snapshot/probe the notebook's
-        # source list around IMPORT_RESEARCH (issue #315). Other ResearchAPI
-        # methods don't depend on it.
-        self.research = ResearchAPI(self._core, sources=self.sources)
+        self.research = ResearchAPI(self._core)
         self.settings = SettingsAPI(self._core)
         self.sharing = SharingAPI(self._core)
 

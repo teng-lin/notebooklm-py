@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
+from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
 from ._session_contracts import RpcCaller
 from .exceptions import (
     NetworkError,
@@ -26,7 +27,6 @@ from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
 
 if TYPE_CHECKING:
-    from ._sources import SourcesAPI
     from .types import Source
 
 __all__ = ["CitedSourceSelection", "ResearchAPI"]
@@ -287,20 +287,53 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, rpc: RpcCaller, *, sources: SourcesAPI | None = None):
+    def __init__(
+        self,
+        rpc: RpcCaller,
+        *,
+        source_lister: NotebookSourceLister | None = None,
+    ):
         """Initialize the research API.
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
-            sources: Optional :class:`SourcesAPI` used by
+            source_lister: Optional :class:`NotebookSourceLister` used by
                 :meth:`import_sources_with_verification` to snapshot baseline
-                source IDs before the import call and probe ``sources.list``
-                on timeout. ``NotebookLMClient`` wires this automatically; it
-                stays optional for tests that construct ``ResearchAPI``
-                directly with only an RPC stub.
+                source IDs before the import call and probe sources on
+                timeout. When omitted, a default lister is built from
+                ``rpc`` — mirrors the ``NotebooksAPI`` wiring pattern, so
+                ``ResearchAPI(rpc)`` works standalone with no cross-API
+                dependency.
         """
         self._rpc = rpc
-        self._sources = sources
+        self._source_lister = source_lister or create_default_source_lister(self._rpc_call)
+
+    async def _rpc_call(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+    ) -> Any:
+        """Delegate through the current RPC caller for late-bound overrides.
+
+        Mirrors :meth:`NotebooksAPI._rpc_call` so the default source-lister
+        built in ``__init__`` picks up post-construction ``rpc`` swaps
+        (advanced tests / instrumentation).
+        """
+        return await self._rpc.rpc_call(
+            method,
+            params,
+            source_path=source_path,
+            allow_null=allow_null,
+            _is_retry=_is_retry,
+            disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
+        )
 
     @staticmethod
     def _parse_result_type(value: Any) -> int | str:
@@ -776,18 +809,8 @@ class ResearchAPI:
         the #808 analysis said was unavailable to the executor.
 
         Raises:
-            RuntimeError: If the ResearchAPI was constructed without a
-                ``SourcesAPI`` handle (the snapshot would be unavailable).
             RPCTimeoutError: If retries exhaust the ``max_elapsed`` budget.
         """
-        if self._sources is None:
-            raise RuntimeError(
-                "import_sources_with_verification requires ResearchAPI to be "
-                "constructed with a SourcesAPI handle. Use this method via "
-                "NotebookLMClient.research; do not instantiate ResearchAPI "
-                "directly without `sources=`."
-            )
-
         if not sources:
             return []
 
@@ -808,7 +831,7 @@ class ResearchAPI:
         # session and pre-existing URLs cannot satisfy the check.
         baseline_ids: set[str] | None
         try:
-            baseline = await self._sources.list(notebook_id, strict=True)
+            baseline = await self._source_lister.list(notebook_id, strict=True)
             baseline_ids = {src.id for src in baseline}
         except (NetworkError, RPCError) as snapshot_exc:
             logger.warning(
@@ -829,7 +852,7 @@ class ResearchAPI:
 
                 if requested_urls_norm:
                     try:
-                        current = await self._sources.list(notebook_id, strict=True)
+                        current = await self._source_lister.list(notebook_id, strict=True)
                         new_sources = (
                             [src for src in current if src.id not in baseline_ids]
                             if baseline_ids is not None
