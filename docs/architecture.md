@@ -154,6 +154,8 @@ utor      Coordinator  Lifecycle ChainBuilder DrainTracker         Counter isten
 | `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `await core.next_reqid()`. |
 | `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Cookie-jar persistence + `__Secure-1PSIDTS` rotation. |
 | `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor.execute()` consults it to resolve `effective_disable_internal_retries` and to inject client tokens for `CLIENT_TOKEN_DEDUPE` methods (most entries are currently `UNCLASSIFIED`, a behaviour-neutral default). Not Session-owned, but part of the RPC dispatch path. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
+| `AuthedTransport` | [`_authed_transport.py`](../src/notebooklm/_authed_transport.py) | Single-attempt authed-POST seam (today's middleware-chain leaf); post-Tier-12 a pure POST, with all retry decisions (429 / 5xx via `RetryMiddleware`; 401 / 403 / 400-CSRF via `AuthRefreshMiddleware`) owned by the chain. Consumes the `_AuthedTransportHost` Protocol declared at module top. |
+| `Kernel` | [`_kernel.py`](../src/notebooklm/_kernel.py) | Pure transport core. Owns the `httpx.AsyncClient` and cookie jar; exposes `post()`, the `cookies` property, and `aclose()` (the close path wraps it in `asyncio.shield` from `ClientLifecycle.close()`). Concrete class behind the `Kernel` Protocol in `_session_contracts.py`; constructed by `Session.__init__()` at `_session.py:398`. The middleware-chain leaf is expected to migrate from `AuthedTransport.perform_authed_post` to `Kernel.post` per the Tier-13 migration plan (row 13.2; chain-leaf contract pinned in [ADR-009](./adr/0009-middleware-chain.md)). |
 
 ## Middleware chain (ADR-009)
 
@@ -201,7 +203,8 @@ RPC dispatch leaf            (RpcExecutor → AuthedTransport → httpx)
 capability-protocol refactor decomposed Session's *implementation* into
 focused collaborators (`RpcExecutor`, `AuthRefreshCoordinator`,
 `ClientLifecycle`, `MiddlewareChainBuilder`, `TransportDrainTracker`,
-`ClientMetrics`, `ReqidCounter`, `CookiePersistence`) but did not shrink
+`ClientMetrics`, `ReqidCounter`, `CookiePersistence`, `AuthedTransport`,
+`Kernel`) but did not shrink
 the facade's *surface*. Two pieces of scaffolding in
 [`_session.py`](../src/notebooklm/_session.py) exist solely to keep the
 legacy `Session.__new__(Session)` test-fixture pattern working:
