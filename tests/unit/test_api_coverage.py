@@ -53,7 +53,7 @@ class TestConfigureChat:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._http_client = MagicMock()
+        client._session._kernel.http_client = MagicMock()
         client._session.rpc_call = AsyncMock(return_value=None)
         return client
 
@@ -123,7 +123,7 @@ class TestGetSourceGuide:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._http_client = MagicMock()
+        client._session._kernel.http_client = MagicMock()
         return client
 
     @pytest.mark.asyncio
@@ -170,7 +170,7 @@ class TestGetSuggestedReportFormats:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._http_client = MagicMock()
+        client._session._kernel.http_client = MagicMock()
         return client
 
     @pytest.mark.asyncio
@@ -207,7 +207,7 @@ class TestAddSourceDrive:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._http_client = MagicMock()
+        client._session._kernel.http_client = MagicMock()
         client._session.rpc_call = AsyncMock(return_value=[["source_id_123"]])
         return client
 
@@ -247,7 +247,7 @@ class TestGetNotebookDescription:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._http_client = MagicMock()
+        client._session._kernel.http_client = MagicMock()
         return client
 
     @pytest.mark.asyncio
@@ -286,7 +286,7 @@ class TestPayloadFixes:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._http_client = MagicMock()
+        client._session._kernel.http_client = MagicMock()
         client._session.rpc_call = AsyncMock(return_value=True)
         return client
 

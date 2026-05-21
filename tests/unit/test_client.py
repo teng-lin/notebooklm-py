@@ -555,10 +555,10 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
-        core._http_client.headers = {"Cookie": "old"}
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
+        core._kernel.get_http_client().headers = {"Cookie": "old"}
 
         with patch("notebooklm.rpc.decode_response", return_value=["result"]):
             result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -591,10 +591,10 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
-        core._http_client.headers = {"Cookie": "old"}
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
+        core._kernel.get_http_client().headers = {"Cookie": "old"}
 
         decode_call_count = [0]
 
@@ -631,9 +631,9 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(RPCError, match="HTTP 401"):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -666,10 +666,10 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
-        core._http_client.headers = {"Cookie": "old"}
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
+        core._kernel.get_http_client().headers = {"Cookie": "old"}
 
         with pytest.raises(RPCError, match="HTTP 401"):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -712,9 +712,9 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(500, request=request)
             raise httpx.HTTPStatusError("Server Error", request=request, response=response)
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(RPCError, match="Server error 500"):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -741,9 +741,9 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -785,10 +785,10 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
-        core._http_client.headers = {"Cookie": "old"}
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
+        core._kernel.get_http_client().headers = {"Cookie": "old"}
 
         with patch("notebooklm.rpc.decode_response", return_value=["result"]):
             # Start two concurrent calls
@@ -841,10 +841,10 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
-        core._http_client.headers = {"Cookie": "old"}
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
+        core._kernel.get_http_client().headers = {"Cookie": "old"}
 
         with patch("notebooklm.rpc.decode_response", return_value=["result"]):
             result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -877,9 +877,9 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(400, request=request)
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         # ClientError is the 4xx (non-401/403) mapping in rpc_call
         from notebooklm.rpc import ClientError
@@ -913,9 +913,9 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(400, request=request)
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
-        core._http_client = MagicMock()
-        core._http_client.post = mock_post
-        install_post_as_stream(None, core._http_client, mock_post)
+        core._kernel.http_client = MagicMock()
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])

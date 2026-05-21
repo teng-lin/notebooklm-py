@@ -259,7 +259,7 @@ async def test_retry_inherits_parent_request_id():
             return await core.rpc_call(method, params, source_path, allow_null, _is_retry=True)
         return "ok"
 
-    # Real Session — the executor's ``if not self._owner._http_client`` guard
+    # Real Session — the executor's open-client guard
     # requires a truthy http_client, so we ``open()`` and let the lifecycle
     # construct one against the default httpx transport. ``fake_impl`` is
     # monkeypatched onto ``_rpc_call_impl`` so no actual HTTP call fires;

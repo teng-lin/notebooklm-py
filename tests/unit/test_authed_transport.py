@@ -142,7 +142,7 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
                 raise _status_error(429, retry_after="1")
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -276,7 +276,7 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
                 raise _status_error(401)
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -321,7 +321,7 @@ async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch
                 raise _status_error(503)
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -354,7 +354,7 @@ async def test_authed_transport_disable_internal_retries_short_circuits(monkeypa
             call_count["n"] += 1
             raise _status_error(503)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportServerError):
             await transport.perform_authed_post(
@@ -385,7 +385,7 @@ async def test_build_request_called_once_on_happy_path(monkeypatch):
             assert content == "payload"
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -428,7 +428,7 @@ async def test_build_request_called_twice_with_fresh_snapshot_on_401(monkeypatch
             assert content == "body-CSRF_NEW"
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -464,7 +464,7 @@ async def test_transport_auth_expired_when_refresh_fails(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise original
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportAuthExpired) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -497,7 +497,7 @@ async def test_429_retries_exhaust_to_transport_rate_limited(monkeypatch):
             call_count["n"] += 1
             raise _status_error(429, retry_after="1")
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -522,7 +522,7 @@ async def test_429_without_retry_budget_raises_immediately(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(429, retry_after="60")
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -559,7 +559,7 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
                 raise _status_error(401)
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         # Use _perform_authed_post directly inside set_request_id to verify
         # the helper itself doesn't reset the id. ``_perform_authed_post``
@@ -614,7 +614,7 @@ async def test_rpc_call_happy_path_url_and_body_unchanged(monkeypatch):
             text = f")]}}'\n{len(chunk)}\n{chunk}\n"
             return _ok_response(text)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
@@ -657,7 +657,7 @@ async def test_5xx_retries_then_succeeds(monkeypatch):
                 raise _status_error(503)
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -691,7 +691,7 @@ async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
             call_count["n"] += 1
             raise _status_error(502)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -730,7 +730,7 @@ async def test_network_error_retries_then_succeeds(monkeypatch):
                 raise httpx.ReadTimeout("connection blip")
             return _ok_response()
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         response = await core._perform_authed_post(build_request=build, log_label="test")
 
@@ -761,7 +761,7 @@ async def test_network_error_exhausts_budget_raises_transport_server_error(monke
         async def fake_post(*args, **kwargs):
             raise httpx.ConnectError("connection refused")
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -797,7 +797,7 @@ async def test_server_error_budget_zero_raises_immediately(monkeypatch):
             call_count["n"] += 1
             raise _status_error(500)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -829,7 +829,7 @@ async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(503)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportServerError):
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -860,7 +860,7 @@ async def test_5xx_path_does_not_touch_429_path(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(429, retry_after="5")
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -900,7 +900,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
         async def fake_post(*args, **kwargs):
             raise _status_error(503)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(_TransportServerError):
             await core._perform_authed_post(build_request=build, log_label="test")
@@ -932,7 +932,7 @@ async def test_rpc_call_maps_transport_server_error_to_server_error(monkeypatch)
         async def fake_post(*args, **kwargs):
             raise _status_error(503)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(ServerError) as exc_info:
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
@@ -959,7 +959,7 @@ async def test_rpc_call_maps_transport_server_error_network_to_network_error(mon
         async def fake_post(*args, **kwargs):
             raise httpx.ConnectError("nope")
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+        install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(NetworkError):
             await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])

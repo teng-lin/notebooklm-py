@@ -34,7 +34,7 @@ class Kernel:
 
     @http_client.setter
     def http_client(self, value: httpx.AsyncClient | None) -> None:
-        # Test-injection seam for tests that assign through Session._http_client.
+        # Test-injection seam for fixtures that swap the live transport.
         self._http_client = value
 
     @property

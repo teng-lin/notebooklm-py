@@ -64,13 +64,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # or retired.
 FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
     {
-        # ClientLifecycle bridges
-        "_http_client",
-        "_bound_loop",
-        "_timeout",
-        "_keepalive_task",
-        "_keepalive_interval",
-        "_keepalive_storage_path",
+        # ClientLifecycle bridges retired in session-shrink PR 6 — readers now
+        # go straight to ``session._kernel`` / ``session._lifecycle`` or use
+        # the public ``session.bound_loop`` property.
         # AuthRefreshCoordinator bridges retired in session-shrink PR 5 —
         # readers (and the two ``_refresh_callback`` writers in
         # ``tests/integration/test_session_integration.py``) now go straight
@@ -87,11 +83,10 @@ FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
         # legitimate direct-collaborator reads in tests like
         # ``test_client_metrics.py`` / ``test_transport_drain.py`` that
         # exercise the helpers in isolation.
-        # CookiePersistence + PollingRegistry + ReqidCounter bridges
-        "_save_lock",
         "_loaded_cookie_snapshot",
         "_pending_polls",
         "_reqid_counter",
+        "_save_lock",
     }
 )
 
@@ -145,44 +140,7 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
 # sorted form, so any drift caused by an accidental out-of-order
 # insertion fails the test instead of being silently re-sorted at
 # import time.
-ALLOWLIST: list[str] = [
-    "tests/integration/concurrency/test_aexit_exception_masking.py",
-    "tests/integration/concurrency/test_auth_snapshot_torn_read.py",
-    "tests/integration/concurrency/test_chat_history_race.py",
-    "tests/integration/concurrency/test_cross_loop_affinity.py",
-    "tests/integration/concurrency/test_harness_smoke.py",
-    "tests/integration/concurrency/test_idempotency_create.py",
-    "tests/integration/concurrency/test_keepalive_path_canonicalize.py",
-    "tests/integration/concurrency/test_max_concurrent_rpcs.py",
-    "tests/integration/concurrency/test_note_create_cancel.py",
-    "tests/integration/concurrency/test_rate_limit_default.py",
-    "tests/integration/test_artifact_generation_idempotency.py",
-    "tests/integration/test_auto_refresh.py",
-    "tests/integration/test_notes_idempotency.py",
-    "tests/integration/test_research_idempotency.py",
-    "tests/integration/test_session_integration.py",
-    "tests/integration/test_side_effects_idempotency.py",
-    "tests/integration/test_sources_idempotency.py",
-    "tests/unit/concurrency/test_close_cancellation_leak.py",
-    "tests/unit/concurrency/test_session_close_refresh_race.py",
-    "tests/unit/conftest.py",
-    "tests/unit/test_api_coverage.py",
-    "tests/unit/test_auth_cookie_save_race.py",
-    "tests/unit/test_auth_session.py",
-    "tests/unit/test_authed_transport.py",
-    "tests/unit/test_chat_ask_invariants.py",
-    "tests/unit/test_client.py",
-    "tests/unit/test_client_keepalive.py",
-    "tests/unit/test_idempotency_registry.py",
-    "tests/unit/test_observability.py",
-    "tests/unit/test_rate_limit_retry.py",
-    "tests/unit/test_rpc_executor.py",
-    "tests/unit/test_rpc_overrides.py",
-    "tests/unit/test_session_auth.py",
-    "tests/unit/test_session_close.py",
-    "tests/unit/test_session_lifecycle.py",
-    "tests/unit/test_vcr_config.py",
-]
+ALLOWLIST: list[str] = []
 
 
 def _augassign_target_attrs(tree: ast.AST) -> set[int]:
@@ -316,31 +274,31 @@ def test_allowlist_entries_currently_violate() -> None:
     ("source", "expected"),
     [
         # Direct attribute access — the four AST contexts.
-        ("def f(c):\n    return c._http_client\n", [(2, "_http_client", "Load")]),
-        ("def f(c):\n    c._http_client = None\n", [(2, "_http_client", "Store")]),
-        ("def f(c):\n    del c._http_client\n", [(2, "_http_client", "Del")]),
+        ("def f(c):\n    return c._save_lock\n", [(2, "_save_lock", "Load")]),
+        ("def f(c):\n    c._save_lock = None\n", [(2, "_save_lock", "Store")]),
+        ("def f(c):\n    del c._save_lock\n", [(2, "_save_lock", "Del")]),
         (
-            "def f(c):\n    c._keepalive_interval += 1\n",
-            [(2, "_keepalive_interval", "AugAssign")],
+            "def f(c):\n    c._reqid_counter += 1\n",
+            [(2, "_reqid_counter", "AugAssign")],
         ),
-        # Sample a non-ClientLifecycle bridge so the parametrized suite
-        # exercises a second forbidden name.
+        # Sample a second bridge name so the parametrized suite does not
+        # accidentally depend on one attribute.
         (
-            "def f(c):\n    return c._save_lock\n",
-            [(2, "_save_lock", "Load")],
+            "def f(c):\n    return c._pending_polls\n",
+            [(2, "_pending_polls", "Load")],
         ),
         # Dynamic-access builtins with constant-string second arg.
         (
-            'def f(c):\n    return getattr(c, "_http_client")\n',
-            [(2, "_http_client", "getattr")],
+            'def f(c):\n    return getattr(c, "_save_lock")\n',
+            [(2, "_save_lock", "getattr")],
         ),
         (
-            'def f(c):\n    setattr(c, "_http_client", None)\n',
-            [(2, "_http_client", "setattr")],
+            'def f(c):\n    setattr(c, "_save_lock", None)\n',
+            [(2, "_save_lock", "setattr")],
         ),
         (
-            'def f(c):\n    delattr(c, "_http_client")\n',
-            [(2, "_http_client", "delattr")],
+            'def f(c):\n    delattr(c, "_save_lock")\n',
+            [(2, "_save_lock", "delattr")],
         ),
     ],
     ids=[
@@ -375,7 +333,7 @@ def test_linter_does_not_flag_non_forbidden_attrs() -> None:
         # Single-arg getattr (hasattr-style) → not flagged.
         "def f(c):\n    return getattr(c)\n",
         # Method named getattr → not the builtin.
-        'def f(c):\n    return c.getattr("_http_client")\n',
+        'def f(c):\n    return c.getattr("_save_lock")\n',
     ],
     ids=[
         "non_forbidden_string",

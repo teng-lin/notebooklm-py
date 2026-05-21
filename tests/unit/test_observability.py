@@ -45,7 +45,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     """
     events: list[RpcTelemetryEvent] = []
     core = Session(auth_tokens, on_rpc_event=events.append)
-    core._http_client = AsyncMock(spec=httpx.AsyncClient)
+    core._kernel.http_client = AsyncMock(spec=httpx.AsyncClient)
     seen_request_ids: list[str | None] = []
 
     # Mock the chain LEAF (innermost wrapper around

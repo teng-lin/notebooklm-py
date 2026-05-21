@@ -12,7 +12,7 @@ httpx, or — worse — a hang on a never-acquired lock that belongs to
 a dead loop.
 
 Post-fix: ``Session.open()`` captures
-``asyncio.get_running_loop()`` in ``self._bound_loop`` and
+``asyncio.get_running_loop()`` in ``self.bound_loop`` and
 ``_perform_authed_post`` asserts the running loop matches via a cheap
 ``is`` comparison. On mismatch we raise an actionable ``RuntimeError``
 at the call site instead of letting the failure escalate into the
@@ -29,9 +29,9 @@ The test exercises the surgical contract:
    confirm 100 fan-out calls succeed (no false positive on the
    ``is`` comparison).
 3. **No binding before open()** — a freshly-constructed ``Session``
-   that has never been ``open()``ed has ``_bound_loop is None``; we
+   that has never been ``open()``ed has ``bound_loop is None``; we
    only check inside ``_perform_authed_post`` which already asserts
-   ``self._http_client is not None``, so an "unopened client" caller
+   ``self._kernel.http_client is not None``, so an "unopened client" caller
    sees the existing assertion error, not the loop guard.
 
 Why this lives under ``tests/integration/concurrency/`` and not
@@ -82,15 +82,15 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Sessi
     normally — which is the moment the loop affinity is captured —
     then close-and-replace the underlying client with one that routes
     through our recording transport. The replacement keeps
-    ``self._bound_loop`` unchanged because we don't call ``open()``
+    ``self.bound_loop`` unchanged because we don't call ``open()``
     again.
     """
     core = Session(auth=_make_auth())
     await core.open()
-    assert core._http_client is not None
-    prior_cookies = core._http_client.cookies
-    await core._http_client.aclose()
-    core._http_client = httpx.AsyncClient(
+    assert core._kernel.http_client is not None
+    prior_cookies = core._kernel.get_http_client().cookies
+    await core._kernel.get_http_client().aclose()
+    core._kernel.http_client = httpx.AsyncClient(
         cookies=prior_cookies,
         transport=transport,
         timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
@@ -161,9 +161,9 @@ def test_cross_loop_use_raises_actionable_runtime_error(
         # don't leak the transport. We deliberately go around
         # ``core.close()`` because that path also touches asyncio
         # primitives bound to loop A.
-        if core._http_client is not None:
-            await core._http_client.aclose()
-            core._http_client = None
+        if core._kernel.http_client is not None:
+            await core._kernel.get_http_client().aclose()
+            core._kernel.http_client = None
 
     asyncio.run(call_under_loop_b())
 
@@ -205,13 +205,13 @@ async def test_bound_loop_captured_on_open(
     construction-time loop may not be the dispatch-time loop.
     """
     core = Session(auth=_make_auth())
-    assert core._bound_loop is None, (
+    assert core.bound_loop is None, (
         "Session must not bind to a loop at construction time — open() is the binding moment."
     )
 
     await core.open()
     try:
-        assert core._bound_loop is asyncio.get_running_loop(), (
+        assert core.bound_loop is asyncio.get_running_loop(), (
             "open() must capture the *running* loop, not a stored or module-level reference."
         )
 
@@ -219,10 +219,10 @@ async def test_bound_loop_captured_on_open(
         # requests for cookie persistence (auth has no storage_path so
         # save_cookies is already a no-op, but route everything through
         # the recorder to keep the test deterministic).
-        assert core._http_client is not None
-        prior_cookies = core._http_client.cookies
-        await core._http_client.aclose()
-        core._http_client = httpx.AsyncClient(
+        assert core._kernel.http_client is not None
+        prior_cookies = core._kernel.get_http_client().cookies
+        await core._kernel.get_http_client().aclose()
+        core._kernel.http_client = httpx.AsyncClient(
             cookies=prior_cookies,
             transport=mock_transport_concurrent,
             timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),

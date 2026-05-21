@@ -145,7 +145,7 @@ async def test_session_close_absorbs_drain_hook_errors() -> None:
     # return_exceptions=True in close() means this should NOT propagate.
     await asyncio.wait_for(core.close(), timeout=1.0)
 
-    assert core._http_client is None
+    assert core._kernel.http_client is None
 
 
 @pytest.mark.asyncio
@@ -154,7 +154,7 @@ async def test_session_close_with_no_polls_is_noop_on_drain_step() -> None:
     core = Session(_auth())
     await core.open()
     await core.close()
-    assert core._http_client is None
+    assert core._kernel.http_client is None
 
 
 # ---------------------------------------------------------------------------

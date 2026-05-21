@@ -209,8 +209,8 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
             core.auth.session_id = f"SID_{new_gen}"
             # Update the live httpx cookie jar synchronously — this is
             # the same jar httpx merges into the outgoing Cookie header.
-            assert core._http_client is not None
-            core._http_client.cookies.set("SID", f"sid_cookie_{new_gen}", domain=".google.com")
+            assert core._kernel.http_client is not None
+            core._kernel.get_http_client().cookies.set("SID", f"sid_cookie_{new_gen}", domain=".google.com")
             core.auth.cookies = {("SID", ".google.com"): f"sid_cookie_{new_gen}"}
             current_gen = new_gen
 
@@ -218,9 +218,9 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
     try:
         # Replace the auto-built client with one using our MockTransport so
         # we can observe outgoing requests post-cookie-merge.
-        prior_cookies = core._http_client.cookies
-        await core._http_client.aclose()
-        core._http_client = httpx.AsyncClient(
+        prior_cookies = core._kernel.get_http_client().cookies
+        await core._kernel.get_http_client().aclose()
+        core._kernel.http_client = httpx.AsyncClient(
             cookies=prior_cookies,
             transport=transport,
             timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),

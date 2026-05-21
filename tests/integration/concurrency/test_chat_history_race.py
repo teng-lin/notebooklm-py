@@ -147,11 +147,11 @@ def _make_client(transport: httpx.AsyncBaseTransport, auth_tokens) -> NotebookLM
     """Build a ``NotebookLMClient`` wired to ``transport``.
 
     Mirrors ``test_idempotency_create._make_client_with_transport``: stub
-    ``_core._http_client`` with a pre-built ``AsyncClient`` so the chat
+    ``_core._kernel.http_client`` with a pre-built ``AsyncClient`` so the chat
     POSTs route through the mock instead of opening a real socket.
     """
     client = NotebookLMClient(auth_tokens)
-    client._session._http_client = httpx.AsyncClient(
+    client._session._kernel.http_client = httpx.AsyncClient(
         transport=transport,
         headers={
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -204,7 +204,7 @@ async def test_concurrent_follow_ups_serialize_on_conversation_id(auth_tokens) -
             return_exceptions=False,
         )
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     # Sanity: both calls returned their respective answers.
     answers = sorted(r.answer for r in results)
@@ -300,7 +300,7 @@ async def test_different_conversation_ids_run_in_parallel(auth_tokens) -> None:
             client.chat.ask(notebook_id, "qB", source_ids=["src_001"], conversation_id=cid_b),
         )
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert peak_inflight == 2, (
         f"different-conversation follow-ups must run in parallel, "
