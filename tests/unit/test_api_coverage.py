@@ -53,8 +53,8 @@ class TestConfigureChat:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=None)
+        client._session._http_client = MagicMock()
+        client._session.rpc_call = AsyncMock(return_value=None)
         return client
 
     @pytest.mark.asyncio
@@ -62,8 +62,8 @@ class TestConfigureChat:
         """Test configure_chat with default settings."""
         await mock_client.chat.configure("notebook_123")
 
-        mock_client._core.rpc_call.assert_called_once()
-        call_args = mock_client._core.rpc_call.call_args
+        mock_client._session.rpc_call.assert_called_once()
+        call_args = mock_client._session.rpc_call.call_args
         params = call_args[0][1]
 
         # Verify payload structure
@@ -79,7 +79,7 @@ class TestConfigureChat:
             custom_prompt="Be an expert analyst",
         )
 
-        call_args = mock_client._core.rpc_call.call_args
+        call_args = mock_client._session.rpc_call.call_args
         params = call_args[0][1]
 
         # Verify custom prompt is included
@@ -105,7 +105,7 @@ class TestConfigureChat:
             response_length=ChatResponseLength.LONGER,
         )
 
-        call_args = mock_client._core.rpc_call.call_args
+        call_args = mock_client._session.rpc_call.call_args
         params = call_args[0][1]
 
         assert params[1][0][7] == [[3], [4]]  # Learning guide, longer
@@ -123,7 +123,7 @@ class TestGetSourceGuide:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
+        client._session._http_client = MagicMock()
         return client
 
     @pytest.mark.asyncio
@@ -140,7 +140,7 @@ class TestGetSourceGuide:
                 ]
             ]
         ]
-        mock_client._core.rpc_call = AsyncMock(return_value=mock_response)
+        mock_client._session.rpc_call = AsyncMock(return_value=mock_response)
 
         result = await mock_client.sources.get_guide("notebook_123", "source_456")
 
@@ -150,7 +150,7 @@ class TestGetSourceGuide:
     @pytest.mark.asyncio
     async def test_get_source_guide_handles_empty(self, mock_client):
         """Test get_source_guide handles empty response."""
-        mock_client._core.rpc_call = AsyncMock(return_value=None)
+        mock_client._session.rpc_call = AsyncMock(return_value=None)
 
         result = await mock_client.sources.get_guide("notebook_123", "source_456")
 
@@ -170,7 +170,7 @@ class TestGetSuggestedReportFormats:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
+        client._session._http_client = MagicMock()
         return client
 
     @pytest.mark.asyncio
@@ -183,8 +183,8 @@ class TestGetSuggestedReportFormats:
                 ["Summary Brief", "Quick overview...", None, None, "Summarize the...", 1],
             ]
         ]
-        mock_client._core.rpc_call = AsyncMock(return_value=mock_response)
-        mock_client._core.get_notebook = AsyncMock(return_value=[[None, []]])
+        mock_client._session.rpc_call = AsyncMock(return_value=mock_response)
+        mock_client._session.get_notebook = AsyncMock(return_value=[[None, []]])
         mock_client.notebooks.get = AsyncMock(return_value=MagicMock(sources=[]))
 
         result = await mock_client.artifacts.suggest_reports("notebook_123")
@@ -207,8 +207,8 @@ class TestAddSourceDrive:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=[["source_id_123"]])
+        client._session._http_client = MagicMock()
+        client._session.rpc_call = AsyncMock(return_value=[["source_id_123"]])
         return client
 
     @pytest.mark.asyncio
@@ -221,7 +221,7 @@ class TestAddSourceDrive:
             mime_type=DriveMimeType.GOOGLE_DOC.value,
         )
 
-        call_args = mock_client._core.rpc_call.call_args
+        call_args = mock_client._session.rpc_call.call_args
         params = call_args[0][1]
 
         # Verify source data structure - params[0] is [source_data] (single wrap)
@@ -247,7 +247,7 @@ class TestGetNotebookDescription:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
+        client._session._http_client = MagicMock()
         return client
 
     @pytest.mark.asyncio
@@ -264,7 +264,7 @@ class TestGetNotebookDescription:
                 ],
             ]
         ]
-        mock_client._core.rpc_call = AsyncMock(return_value=mock_response)
+        mock_client._session.rpc_call = AsyncMock(return_value=mock_response)
 
         result = await mock_client.notebooks.get_description("notebook_123")
 
@@ -286,8 +286,8 @@ class TestPayloadFixes:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._core._http_client = MagicMock()
-        client._core.rpc_call = AsyncMock(return_value=True)
+        client._session._http_client = MagicMock()
+        client._session.rpc_call = AsyncMock(return_value=True)
         return client
 
     @pytest.mark.asyncio
@@ -295,7 +295,7 @@ class TestPayloadFixes:
         """Test check_source_freshness uses correct payload structure."""
         await mock_client.sources.check_freshness("notebook_123", "source_456")
 
-        call_args = mock_client._core.rpc_call.call_args
+        call_args = mock_client._session.rpc_call.call_args
         params = call_args[0][1]
 
         # Verify reference payload: [null, ["source_id"], [2]]
@@ -308,7 +308,7 @@ class TestPayloadFixes:
         """Test refresh_source uses correct payload structure."""
         await mock_client.sources.refresh("notebook_123", "source_456")
 
-        call_args = mock_client._core.rpc_call.call_args
+        call_args = mock_client._session.rpc_call.call_args
         params = call_args[0][1]
 
         # Verify reference payload: [null, ["source_id"], [2]]

@@ -83,8 +83,8 @@ def test_relative_and_absolute_paths_share_dedupe_key(
     # The dedupe key seen by ``_get_poke_lock`` / ``_try_claim_rotation``
     # / ``_rotation_lock_path`` is exactly this internal field. Both must
     # be canonical and equal.
-    rel_keepalive = client_rel._core._keepalive_storage_path
-    abs_keepalive = client_abs._core._keepalive_storage_path
+    rel_keepalive = client_rel._session._keepalive_storage_path
+    abs_keepalive = client_abs._session._keepalive_storage_path
     assert rel_keepalive is not None
     assert abs_keepalive is not None
     assert rel_keepalive == abs_keepalive, (
@@ -132,8 +132,8 @@ def test_tilde_path_is_expanded(
     client_tilde = NotebookLMClient(_auth_tokens, storage_path=tilde_path)
     client_expanded = NotebookLMClient(_auth_tokens, storage_path=expanded_path)
 
-    tilde_key = client_tilde._core._keepalive_storage_path
-    expanded_key = client_expanded._core._keepalive_storage_path
+    tilde_key = client_tilde._session._keepalive_storage_path
+    expanded_key = client_expanded._session._keepalive_storage_path
     assert tilde_key is not None
     assert expanded_key is not None
     assert tilde_key == expanded_key
@@ -175,7 +175,7 @@ def test_public_storage_path_argument_unchanged(
     assert client.auth.storage_path == raw_path
     assert client.auth.storage_path != target.resolve()
     # And the internal keepalive field IS canonicalized.
-    keepalive_key = client._core._keepalive_storage_path
+    keepalive_key = client._session._keepalive_storage_path
     assert keepalive_key is not None
     assert keepalive_key == target.resolve()
     assert keepalive_key.is_absolute()
@@ -202,8 +202,8 @@ def test_symlink_is_resolved(tmp_path: Path, _auth_tokens: AuthTokens) -> None:
     client_link = NotebookLMClient(_auth_tokens, storage_path=link)
     client_target = NotebookLMClient(_auth_tokens, storage_path=target)
 
-    link_key = client_link._core._keepalive_storage_path
-    target_key = client_target._core._keepalive_storage_path
+    link_key = client_link._session._keepalive_storage_path
+    target_key = client_target._session._keepalive_storage_path
     assert link_key is not None
     assert target_key is not None
     assert link_key == target_key
@@ -213,4 +213,4 @@ def test_symlink_is_resolved(tmp_path: Path, _auth_tokens: AuthTokens) -> None:
 def test_none_storage_path_stays_none(_auth_tokens: AuthTokens) -> None:
     """Canonicalization must be a no-op when there is no storage path."""
     client = NotebookLMClient(_auth_tokens)
-    assert client._core._keepalive_storage_path is None
+    assert client._session._keepalive_storage_path is None

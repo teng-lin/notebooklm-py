@@ -370,7 +370,7 @@ class Session:
         _resolved_limits = limits if limits is not None else ConnectionLimits()
         # ``_refresh_retry_delay`` stays here directly — it is read on the
         # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
-        # by integration tests against ``client._core``. The refresh
+        # by integration tests against ``client._session``. The refresh
         # callback + the four refresh/auth-snapshot ivars (``_refresh_lock``,
         # ``_refresh_task``, ``_refresh_callback``, ``_auth_snapshot_lock``)
         # live on ``self._auth_coord``, constructed below alongside the other
@@ -1457,7 +1457,7 @@ class Session:
 
         Compatibility surface preserved so ``RpcExecutor.execute``
         (``_rpc_executor.py:275``), ``_chat_transport`` (``_chat_transport.py:64``),
-        and direct callers (``client._core._perform_authed_post(...)``) keep
+        and direct callers (``client._session._perform_authed_post(...)``) keep
         the same keyword-only signature. The body now builds an
         :class:`RpcRequest` with the three keyword-only args stashed into
         ``context`` and dispatches into :attr:`_authed_post_chain`.

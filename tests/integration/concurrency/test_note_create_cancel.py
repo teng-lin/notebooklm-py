@@ -57,7 +57,7 @@ def _make_client_with_transport(
 ) -> NotebookLMClient:
     """Wire a ``NotebookLMClient`` to a mock transport, bypassing full open()."""
     client = NotebookLMClient(auth_tokens)
-    client._core._http_client = httpx.AsyncClient(
+    client._session._http_client = httpx.AsyncClient(
         transport=transport,
         headers={
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -201,9 +201,9 @@ async def test_cancel_during_update_note_shields_or_cleans_up(auth_tokens) -> No
     finally:
         # Defensive cleanup so a failing assertion doesn't leak the http
         # client and warn at gc time.
-        if client._core._http_client is not None:
-            await client._core._http_client.aclose()
-            client._core._http_client = None
+        if client._session._http_client is not None:
+            await client._session._http_client.aclose()
+            client._session._http_client = None
 
 
 @pytest.mark.asyncio
@@ -230,6 +230,6 @@ async def test_no_cancel_no_cleanup(auth_tokens) -> None:
             f"over-eager: rpc_ids={rpc_ids!r}"
         )
     finally:
-        if client._core._http_client is not None:
-            await client._core._http_client.aclose()
-            client._core._http_client = None
+        if client._session._http_client is not None:
+            await client._session._http_client.aclose()
+            client._session._http_client = None

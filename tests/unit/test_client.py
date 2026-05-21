@@ -226,10 +226,10 @@ class TestRefreshAuth:
 
         async def fake_update(csrf: str, session_id: str) -> None:
             calls.append((csrf, session_id))
-            client._core.auth.csrf_token = csrf
-            client._core.auth.session_id = session_id
+            client._session.auth.csrf_token = csrf
+            client._session.auth.session_id = session_id
 
-        monkeypatch.setattr(client._core, "update_auth_tokens", fake_update)
+        monkeypatch.setattr(client._session, "update_auth_tokens", fake_update)
 
         async with client:
             refreshed_auth = await client.refresh_auth()
@@ -237,9 +237,9 @@ class TestRefreshAuth:
         assert calls == [("new_csrf_token_123", "new_session_id_456")]
         assert refreshed_auth.csrf_token == "new_csrf_token_123"
         assert refreshed_auth.session_id == "new_session_id_456"
-        assert client._core.auth is refreshed_auth
-        assert client._core.auth.csrf_token == "new_csrf_token_123"
-        assert client._core.auth.session_id == "new_session_id_456"
+        assert client._session.auth is refreshed_auth
+        assert client._session.auth.csrf_token == "new_csrf_token_123"
+        assert client._session.auth.session_id == "new_session_id_456"
 
     @pytest.mark.asyncio
     async def test_refresh_auth_routes_to_account_email(self, httpx_mock: HTTPXMock):

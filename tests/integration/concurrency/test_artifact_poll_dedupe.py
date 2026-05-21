@@ -131,7 +131,7 @@ async def test_scenario_a_two_waiters_share_one_poll_loop(_auth_tokens):
         # ensure both have been scheduled before releasing the poll —
         # extra yields are safer than too few.
         for _ in range(50):
-            if len(client._core._pending_polls) >= 1 and (
+            if len(client._session._pending_polls) >= 1 and (
                 w1.done() is False and w2.done() is False
             ):
                 # Both have parked; allow the poll to fire.
@@ -240,8 +240,8 @@ async def test_scenario_c_pending_polls_empty_after_success(_auth_tokens):
         # synchronously when the task transitions, but yield once to be
         # safe across event loops.
         await asyncio.sleep(0)
-        assert client._core._pending_polls == {}, (
-            f"registry leaked entries on success path: {client._core._pending_polls!r}"
+        assert client._session._pending_polls == {}, (
+            f"registry leaked entries on success path: {client._session._pending_polls!r}"
         )
 
 
@@ -280,7 +280,7 @@ async def test_scenario_d_pending_polls_empty_after_exception(_auth_tokens):
 
         # Spin briefly for both to register on the shared future.
         for _ in range(50):
-            if len(client._core._pending_polls) >= 1 and not (w1.done() or w2.done()):
+            if len(client._session._pending_polls) >= 1 and not (w1.done() or w2.done()):
                 break
             await asyncio.sleep(0.01)
         both_attached.set()
@@ -293,8 +293,8 @@ async def test_scenario_d_pending_polls_empty_after_exception(_auth_tokens):
             await asyncio.wait_for(w2, timeout=TEST_TIMEOUT_S)
 
         await asyncio.sleep(0)
-        assert client._core._pending_polls == {}, (
-            f"registry leaked on exception path: {client._core._pending_polls!r}"
+        assert client._session._pending_polls == {}, (
+            f"registry leaked on exception path: {client._session._pending_polls!r}"
         )
         assert poll_call_count == 1, (
             f"expected 1 poll, got {poll_call_count} (dedupe must hold on exception path)"
@@ -363,7 +363,7 @@ async def test_scenario_e_orphan_exception_does_not_log_unraisable(_auth_tokens,
         # Yield until the poll task has actually run and resolved the
         # future. The registry is the readiness signal.
         for _ in range(50):
-            if not client._core._pending_polls:
+            if not client._session._pending_polls:
                 break
             await asyncio.sleep(0.01)
 
@@ -374,9 +374,9 @@ async def test_scenario_e_orphan_exception_does_not_log_unraisable(_auth_tokens,
         gc.collect()
         await asyncio.sleep(0)
 
-        assert client._core._pending_polls == {}, (
+        assert client._session._pending_polls == {}, (
             "registry leaked on leader-cancel-with-orphan-exception path: "
-            f"{client._core._pending_polls!r}"
+            f"{client._session._pending_polls!r}"
         )
 
         # The poll ran exactly once; the suppression callback consumed

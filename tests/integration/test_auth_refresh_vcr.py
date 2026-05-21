@@ -117,7 +117,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
 
     client = await _build_client_for_test()
     # Eliminate the post-refresh retry delay so the test runs fast.
-    client._core._refresh_retry_delay = 0
+    client._session._refresh_retry_delay = 0
 
     # Track whether refresh_auth ran. We wrap the bound method so the
     # mutation is observable from outside the test. Using ``list[object]``
@@ -131,7 +131,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
 
     # The refresh callback is captured by Session at construction;
     # patch it on the core so the wrapper is what the retry loop sees.
-    client._core._refresh_callback = tracking_refresh
+    client._session._refresh_callback = tracking_refresh
 
     with notebooklm_vcr.use_cassette(CASSETTE_NAME) as cassette:
         async with client:
@@ -141,8 +141,8 @@ async def test_stale_csrf_triggers_refresh_and_retry(
             # The ``update_auth_headers`` call is what actually plumbs the
             # new value into the live ``httpx.AsyncClient``'s default
             # header set.
-            client._core.auth.csrf_token = "INVALID_CSRF_FOR_TEST"
-            client._core.update_auth_headers()
+            client._session.auth.csrf_token = "INVALID_CSRF_FOR_TEST"
+            client._session.update_auth_headers()
 
             # This call's first attempt MUST 400; the rpc_call layer
             # then awaits refresh_auth (interaction 2 in the cassette)
@@ -154,7 +154,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
             # the corrupted value. Asserting the change makes this
             # test fail loudly if a future refactor accidentally
             # short-circuits the retry to "return the 400 unchanged".
-            assert client._core.auth.csrf_token != "INVALID_CSRF_FOR_TEST", (
+            assert client._session.auth.csrf_token != "INVALID_CSRF_FOR_TEST", (
                 "csrf_token should have been refreshed mid-call"
             )
 
