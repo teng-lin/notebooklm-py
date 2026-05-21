@@ -97,9 +97,9 @@ synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
 SYNTHETIC_ERROR_CASSETTE_PREFIX = _cassette_patterns.SYNTHETIC_ERROR_CASSETTE_PREFIX
 VALID_ERROR_MODES = _cassette_patterns.VALID_ERROR_MODES
 
-# env var name shared with ``src/notebooklm/_error_injection.py``. Kept in
+# env var name shared with :mod:`notebooklm._error_injection`. Kept in
 # sync as a local copy so the VCR-only replay path (which does not import
-# ``notebooklm._error_injection``) can still parse the env var without
+# :mod:`notebooklm._error_injection`) can still parse the env var without
 # dragging the production module in. Unit tests in
 # ``tests/unit/test_vcr_config.py`` import ``ERROR_INJECT_ENV_VAR`` directly
 # from the canonical home — this duplication covers ONLY the VCR-replay
@@ -178,7 +178,7 @@ def _substitute_synthetic_error(response: dict[str, Any]) -> dict[str, Any]:
     synthetic-error shape from :mod:`tests.cassette_patterns`.
 
     The error-injection middleware in
-    ``src/notebooklm/_middleware_error_injection.py`` already substitutes
+    :mod:`notebooklm._middleware_error_injection` already substitutes
     the live response BEFORE it reaches VCR, so in normal recording this hook
     sees the synthetic shape already. This pass exists so that:
 
