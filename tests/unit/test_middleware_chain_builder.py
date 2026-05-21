@@ -56,8 +56,7 @@ def test_new_built_session_lazy_builds_chain_via_builder():
     s._ensure_authed_post_chain()
 
     assert hasattr(s, "_chain_builder"), (
-        "post-backfill Session must have _chain_builder; "
-        "inline-construction fallback regressed"
+        "post-backfill Session must have _chain_builder; inline-construction fallback regressed"
     )
     assert hasattr(s, "_middlewares")
     assert len(s._middlewares) == 7
