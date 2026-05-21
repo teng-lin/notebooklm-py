@@ -327,7 +327,7 @@ class TestResolveNotebookId:
 
     @pytest.mark.asyncio
     async def test_exact_short_id_no_message(self, mock_client, sample_notebooks):
-        """Exact match with short ID (< 20 chars) doesn't print match message."""
+        """Exact match with a non-UUID ID returns without printing a match message."""
         mock_client.notebooks.list = AsyncMock(return_value=sample_notebooks)
 
         # Create a notebook with a short ID that we'll match exactly
