@@ -62,9 +62,7 @@ from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 if TYPE_CHECKING:
     from .types import ConnectionLimits
 
-from .rpc import (
-    RPCMethod,
-)
+from .rpc import RPCMethod
 
 logger = logging.getLogger(__name__)
 _OBSERVABILITY_INIT_LOCK = threading.Lock()
