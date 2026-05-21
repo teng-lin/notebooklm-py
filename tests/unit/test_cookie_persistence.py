@@ -219,5 +219,3 @@ async def test_cookie_persistence_advances_baseline_only_on_accepted_saves(
     assert persistence.loaded_cookie_snapshot is auth.cookie_snapshot
     assert persistence.loaded_cookie_snapshot[sid_key].value == "sid-final"
     assert persistence.loaded_cookie_snapshot[psidts_key].value == "psidts-final"
-
-

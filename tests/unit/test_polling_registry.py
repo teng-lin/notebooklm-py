@@ -85,5 +85,3 @@ async def test_client_core_pending_polls_bridge_preserves_entry_shape() -> None:
             await task
         except asyncio.CancelledError:
             pass
-
-
