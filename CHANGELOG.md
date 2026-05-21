@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - UNRELEASED
 
-The first release after the v0.4.x auth-keepalive series. Headline user-facing work: a top-to-bottom CLI UX overhaul (uniform `--json`, exit-code policy, shell completion, stdin pipes, SIGINT-resume), auth and cookie reliability hardening (inline PSIDTS cold-start recovery, fail-closed `notebooklm use`, concurrent-upload safety), and the v0.3-era deprecation removal cycle. **Read Breaking changes below before upgrading.**
+The first release after the v0.4.x auth cookie lifecycle series. Headline user-facing work: a top-to-bottom CLI UX overhaul (uniform `--json`, exit-code policy, shell completion, stdin pipes, SIGINT-resume), auth and cookie reliability hardening (inline PSIDTS cold-start recovery, fail-closed `notebooklm use`, concurrent-upload safety), and the v0.3-era deprecation removal cycle. **Read Breaking changes below before upgrading.**
 
 ### Breaking changes
 
@@ -119,7 +119,7 @@ Items that need attention when upgrading from 0.4.x. Full migration prose lives 
 
 ## [0.4.1] - 2026-05-11
 
-> **Compatibility note.** Despite a few additive items (`notebooklm auth refresh` CLI, `keepalive=` constructor argument on `NotebookLMClient`, `NOTEBOOKLM_REFRESH_CMD` env var, two new dataclass fields), 0.4.1 is shipped as a patch release because the dominant work — and the reason to ship now — is auth/cookie stability remediation. Bumping to v0.5.0 would force the long-deferred removal of v0.3-era deprecated APIs (see [Stability](docs/stability.md)) earlier than scheduled; we'd rather keep that change isolated from the auth-keepalive work. All additive items are backward compatible — existing code keeps working without changes.
+> **Compatibility note.** Despite a few additive items (`notebooklm auth refresh` CLI, `keepalive=` constructor argument on `NotebookLMClient`, `NOTEBOOKLM_REFRESH_CMD` env var, two new dataclass fields), 0.4.1 is shipped as a patch release because the dominant work — and the reason to ship now — is auth/cookie stability remediation. Bumping to v0.5.0 would force the long-deferred removal of v0.3-era deprecated APIs (see [Stability](docs/stability.md)) earlier than scheduled; we'd rather keep that change isolated from the auth cookie lifecycle work. All additive items are backward compatible — existing code keeps working without changes.
 
 ### Added
 - **`notebooklm auth refresh` CLI command** - One-shot keepalive that opens a session, triggers the layer-1 SIDTS rotation poke against `accounts.google.com`, persists the rotated cookies to `storage_state.json`, and exits. Designed to be scheduled by the OS (launchd / systemd / cron / Task Scheduler / k8s CronJob) to keep an idle profile from staling out between user-driven calls. Pairs naturally with `--quiet` for log-only-on-error cron output. Requires file/profile-backed authentication — explicitly refuses to run when `NOTEBOOKLM_AUTH_JSON` is set (no writable backing store). See `docs/troubleshooting.md` for per-OS scheduler recipes (#336).

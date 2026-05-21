@@ -325,7 +325,7 @@ def save_cookies_to_storage(
 
     - **Legacy (``original_snapshot=None``)**: every in-memory cookie whose
       value differs from disk wins. Vulnerable to the stale-overwrite-fresh
-      race documented in ``docs/auth-keepalive.md`` §3.4.1 and emits a
+      race documented in ``docs/auth-cookie-lifecycle.md`` §3.4.1 and emits a
       ``DeprecationWarning``. Kept only as a public-API back-compat shim
       for callers outside this repo; every first-party caller passes
       ``original_snapshot``.
@@ -371,7 +371,7 @@ def save_cookies_to_storage(
         warnings.warn(
             "save_cookies_to_storage called without original_snapshot; the "
             "legacy full-merge path is vulnerable to the stale-overwrite-fresh "
-            "race (docs/auth-keepalive.md §3.4.1). Pass an original_snapshot "
+            "race (docs/auth-cookie-lifecycle.md §3.4.1). Pass an original_snapshot "
             "captured via snapshot_cookie_jar() at jar-open time.",
             DeprecationWarning,
             stacklevel=2,

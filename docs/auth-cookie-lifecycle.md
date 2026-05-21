@@ -1,4 +1,4 @@
-# Auth keepalive — design notes and field findings
+# Auth cookie lifecycle — design notes and field findings
 
 **Last Updated:** 2026-05-14
 
@@ -1071,8 +1071,8 @@ captures the rotated `Set-Cookie` headers and persists them atomically to
 Field experiment configuration:
 
 - **Probe A** (control): main code, no L1 poke, Playwright-extracted cookies.
-- **Probe B**: `feat/auth-keepalive-bg-task` branch, L1 `CheckCookie` poke,
-  Playwright-extracted cookies.
+- **Probe B**: background-task branch, L1 `CheckCookie` poke, Playwright-extracted
+  cookies.
 - **Probe C**: re-extracts Firefox cookies every cycle, main code.
 - All probes run on a 5-minute cadence, instrumented to log redirect chains
   and `Set-Cookie` headers from each endpoint.
@@ -1657,7 +1657,7 @@ Things we don't know that would inform future iterations:
   [#336 — implementation merged](https://github.com/teng-lin/notebooklm-py/pull/336)
 - [#341 — L2 background keepalive task](https://github.com/teng-lin/notebooklm-py/pull/341)
 - [#342 / #343 / #344 — keepalive race fixes](https://github.com/teng-lin/notebooklm-py/pull/342)
-- [#345 — Auth keepalive umbrella issue](https://github.com/teng-lin/notebooklm-py/issues/345) /
+- [#345 — Auth cookie lifecycle umbrella issue](https://github.com/teng-lin/notebooklm-py/issues/345) /
   [#346 — L1 RotateCookies POST + 60 s mtime guard merged](https://github.com/teng-lin/notebooklm-py/pull/346)
 - [#347 / #348 — concurrent-poke throttle (three-guard model)](https://github.com/teng-lin/notebooklm-py/pull/348)
 

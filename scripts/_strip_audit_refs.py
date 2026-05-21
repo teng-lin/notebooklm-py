@@ -135,7 +135,7 @@ PHASE_1_FILES: list[str] = [
     # docs (user-facing).
     "docs/python-api.md",
     "docs/development.md",
-    "docs/auth-keepalive.md",
+    "docs/auth-cookie-lifecycle.md",
     "docs/cli-exit-codes.md",
     "docs/cli-reference.md",
     # root

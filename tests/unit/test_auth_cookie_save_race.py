@@ -1,7 +1,7 @@
 """Tests for the open-time snapshot + dirty-flag merge in
 ``save_cookies_to_storage`` — the fix for issue #361 (stale in-memory
 cookies clobbering fresh disk state) and the side-effect closure of
-``docs/auth-keepalive.md`` §3.4.2 (path collapse).
+``docs/auth-cookie-lifecycle.md`` §3.4.2 (path collapse).
 
 The canonical race that motivated this code (#361):
 
@@ -409,7 +409,7 @@ class TestLegacyCallerCompatibility:
 class TestRefreshAuthOnBoundSessionIsNoOp:
     """``NotebookLMClient.refresh_auth`` does only a homepage GET. For a
     bound (Playwright-minted) session, that GET does NOT rotate
-    ``*PSIDTS`` (per docs/auth-keepalive.md §5.4). With snapshot
+    ``*PSIDTS`` (per docs/auth-cookie-lifecycle.md §5.4). With snapshot
     semantics the resulting save must be a no-op — closing the
     "bound-session refresh broadcasts stale state" reachability path
     listed in #361.

@@ -805,7 +805,7 @@ async def fetch_tokens_with_domains(
     route_kwargs = _resolve_token_route_kwargs(path, authuser=authuser, account_email=account_email)
     # Capture the open-time snapshot before any rotation could fire. The
     # snapshot is the input to the dirty-flag/delta merge that closes the
-    # stale-overwrite-fresh race (docs/auth-keepalive.md §3.4.1).
+    # stale-overwrite-fresh race (docs/auth-cookie-lifecycle.md §3.4.1).
     snapshot = snapshot_cookie_jar(jar)
     csrf, session_id, refreshed, post_refresh_snapshot = await _fetch_tokens_with_refresh(
         jar, path, profile, **route_kwargs

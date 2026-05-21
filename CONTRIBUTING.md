@@ -211,7 +211,7 @@ Agents should ignore files marked `Deprecated`.
 docs/
 ├── adr/                   # Architectural Decision Records (ADRs)
 ├── architecture.md        # Monolithic Session to composable capabilities architecture map
-├── auth-keepalive.md      # Cookie expiration mitigation strategies and keepalive loops
+├── auth-cookie-lifecycle.md      # Cookie expiration mitigation strategies and keepalive loops
 ├── cli-exit-codes.md      # CLI exit-code convention (binding contract for scripts/CI)
 ├── cli-reference.md       # CLI command reference
 ├── configuration.md       # Storage, profiles, and settings

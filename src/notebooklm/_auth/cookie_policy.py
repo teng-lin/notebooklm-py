@@ -13,7 +13,7 @@ logger = logging.getLogger("notebooklm.auth")
 #   recoverable via the RotateCookies POST when other auth cookies are intact.
 #   When neither path is viable the homepage GET 302s to login.
 #
-# See ``docs/auth-keepalive.md`` §3.5 for the ablation methodology and the full
+# See ``docs/auth-cookie-lifecycle.md`` §3.5 for the ablation methodology and the full
 # 16-pair failure table backing this set.
 MINIMUM_REQUIRED_COOKIES = {"SID", "__Secure-1PSIDTS"}
 

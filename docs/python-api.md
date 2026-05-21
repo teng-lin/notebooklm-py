@@ -366,7 +366,7 @@ follow-up context.
 
 **Cookies in storage are eventually-consistent across processes.** When
 multiple processes share a storage path, an OS-level file lock plus a
-snapshot/delta merge (see `docs/auth-keepalive.md` §3.4) keep concurrent
+snapshot/delta merge (see `docs/auth-cookie-lifecycle.md` §3.4) keep concurrent
 writers from corrupting the file. They may, however, observe brief
 staleness — a write committed by process A may not be visible to a
 sibling read in process B until the next refresh cycle. Within a single
