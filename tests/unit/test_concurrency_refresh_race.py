@@ -65,7 +65,7 @@ import pytest
 
 from notebooklm._authed_transport import AuthedTransport
 from notebooklm._rpc_executor import RpcExecutor
-from notebooklm._session import Session
+from notebooklm._session_auth import AuthRefreshCoordinator
 from notebooklm.rpc import RPCMethod
 
 _UNIT_CONFTEST_SPEC = importlib.util.spec_from_file_location(
@@ -256,23 +256,28 @@ def test_build_url_does_not_read_self_auth():
 
 
 def test_snapshot_acquires_auth_snapshot_lock():
-    """``Session._snapshot`` must acquire ``_auth_snapshot_lock``.
+    """``AuthRefreshCoordinator.snapshot`` must acquire ``_auth_snapshot_lock``.
 
-    The lock is the only thing that serializes the four-scalar
-    snapshot read with the matching two-scalar write in
+    Post-PR-8, the canonical implementation lives on the coordinator;
+    ``Session._snapshot`` is a one-line delegate. The lock-acquisition
+    contract is invariant under that move — this guard inspects the
+    coordinator method directly.
+
+    The lock is the only thing that serializes the four-scalar snapshot
+    read with the matching two-scalar write in
     ``NotebookLMClient.refresh_auth``. Removing the ``async with`` block
     here would re-open the torn-read window between
-    ``self.auth.csrf_token`` and ``self.auth.session_id`` reads, even
+    ``host.auth.csrf_token`` and ``host.auth.session_id`` reads, even
     though those two attribute reads are individually atomic at the
     Python bytecode level.
 
-    This guard asserts that ``_snapshot``'s body contains an
+    This guard asserts that ``snapshot``'s body contains an
     ``async with`` whose context expression resolves to
-    ``self._get_auth_snapshot_lock()`` (or, defensively, anything
+    ``self.get_auth_snapshot_lock()`` (or, defensively, anything
     referencing ``_auth_snapshot_lock`` so a maintainer who inlines the
     lazy accessor doesn't trip the guard).
     """
-    src = textwrap.dedent(inspect.getsource(Session._snapshot))
+    src = textwrap.dedent(inspect.getsource(AuthRefreshCoordinator.snapshot))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -283,7 +288,7 @@ def test_snapshot_acquires_auth_snapshot_lock():
         # Each ``async with X`` may chain multiple items; check each.
         for item in node.items:
             ctx = item.context_expr
-            # Match both call form ``self._get_auth_snapshot_lock()`` and
+            # Match both call form ``self.get_auth_snapshot_lock()`` and
             # direct attribute ``self._auth_snapshot_lock``.
             if isinstance(ctx, ast.Call):
                 ctx = ctx.func
@@ -292,16 +297,25 @@ def test_snapshot_acquires_auth_snapshot_lock():
                 break
 
     assert has_lock_acquisition, (
-        "_snapshot() no longer acquires _auth_snapshot_lock. Atomicity "
-        "contract broken — the four-scalar snapshot read is no longer atomic with the "
-        "refresh-side write block in NotebookLMClient.refresh_auth, exposing "
-        "torn (csrf, sid) reads."
+        "AuthRefreshCoordinator.snapshot no longer acquires "
+        "_auth_snapshot_lock. Atomicity contract broken — the four-scalar "
+        "snapshot read is no longer atomic with the refresh-side write block "
+        "in NotebookLMClient.refresh_auth, exposing torn (csrf, sid) reads."
     )
 
 
 def test_update_auth_tokens_has_no_await_inside_mutation_block():
-    """``update_auth_tokens`` may await lock acquisition, but not while mutating."""
-    src = textwrap.dedent(inspect.getsource(Session.update_auth_tokens))
+    """``AuthRefreshCoordinator.update_auth_tokens`` must not await mid-mutation.
+
+    Post-PR-8, the canonical implementation lives on the coordinator;
+    ``Session.update_auth_tokens`` is a one-line delegate. The no-await
+    invariant inside the csrf/session_id mutation block is invariant
+    under that move — this guard inspects the coordinator method
+    directly. Lock acquisition may await; the mutation block itself may
+    not, because any yield inside it would let a snapshot observe a
+    torn (csrf, session_id) pair.
+    """
+    src = textwrap.dedent(inspect.getsource(AuthRefreshCoordinator.update_auth_tokens))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -323,13 +337,15 @@ def test_update_auth_tokens_has_no_await_inside_mutation_block():
         None,
     )
     assert mutation_try is not None, (
-        "Could not locate the guarded csrf/session_id mutation block in Session.update_auth_tokens."
+        "Could not locate the guarded csrf/session_id mutation block in "
+        "AuthRefreshCoordinator.update_auth_tokens."
     )
 
     awaits = [node for node in ast.walk(mutation_try) if isinstance(node, ast.Await)]
     assert awaits == [], (
-        "Session.update_auth_tokens must not await inside the critical "
-        "mutation block; doing so would let snapshots observe torn auth tokens."
+        "AuthRefreshCoordinator.update_auth_tokens must not await inside "
+        "the critical mutation block; doing so would let snapshots observe "
+        "torn auth tokens."
     )
 
 
