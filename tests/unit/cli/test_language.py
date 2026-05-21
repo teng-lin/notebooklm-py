@@ -173,12 +173,21 @@ class TestLanguageSetCommand:
         assert data["name"] == "Français"
 
     def test_language_set_invalid_json_output(self, runner, mock_config_file):
-        """Test 'language set --json' with invalid code outputs JSON error."""
+        """``language set --json`` with invalid code emits the shared JSON error schema.
+
+        The error payload must match ``json_error_response`` in ``cli/rendering.py``
+        so machine-readable error handling is uniform across CLI commands:
+        ``{"error": true, "code": "INVALID_LANGUAGE", "message": ..., "hint": ...}``.
+        """
         result = runner.invoke(cli, ["language", "set", "xyz", "--json"])
 
         assert result.exit_code == 1
         data = json.loads(result.output)
-        assert data["error"] == "INVALID_LANGUAGE"
+        assert data["error"] is True
+        assert data["code"] == "INVALID_LANGUAGE"
+        assert "xyz" in data["message"]
+        assert "hint" in data
+        assert "language list" in data["hint"].lower()
 
 
 # =============================================================================

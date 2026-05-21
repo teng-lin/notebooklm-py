@@ -17,7 +17,7 @@ from ..io import atomic_update_json
 from ..paths import get_config_path, get_home_dir
 from .auth_runtime import get_auth_tokens
 from .options import json_option
-from .rendering import console, json_output_response
+from .rendering import console, json_error_response, json_output_response
 from .runtime import run_async
 
 logger = logging.getLogger(__name__)
@@ -329,16 +329,16 @@ def language_set(ctx, code, local, json_output):
     # Validate the language code
     if code not in SUPPORTED_LANGUAGES:
         if json_output:
-            json_output_response(
-                {
-                    "error": "INVALID_LANGUAGE",
-                    "message": f"Unknown language code: {code}",
-                    "hint": "Run 'notebooklm language list' to see supported codes",
-                }
+            # Match the shared JSON error schema from ``cli/rendering.py``:
+            # ``{"error": True, "code": ..., "message": ..., **extra}``.
+            # ``json_error_response`` exits non-zero, so the call below does not return.
+            json_error_response(
+                "INVALID_LANGUAGE",
+                f"Unknown language code: {code}",
+                extra={"hint": "Run 'notebooklm language list' to see supported codes"},
             )
-        else:
-            console.print(f"[red]Unknown language code: {code}[/red]")
-            console.print("\nRun [cyan]notebooklm language list[/cyan] to see supported codes.")
+        console.print(f"[red]Unknown language code: {code}[/red]")
+        console.print("\nRun [cyan]notebooklm language list[/cyan] to see supported codes.")
         raise SystemExit(1)
 
     # Save locally first
