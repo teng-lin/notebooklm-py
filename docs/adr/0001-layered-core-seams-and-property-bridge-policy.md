@@ -2,9 +2,11 @@
 
 ## Status
 
-Accepted (retroactive).
+Accepted (retroactive). **Retirement in progress under the session-shrink multi-PR arc.**
 
 Documents a pattern shipped incrementally across tier-1 through tier-10 (PRs roughly mid-2025 through 2026-05). This ADR backfills the rationale; the code already reflects the decision.
+
+The bridge-retirement arc is the staged removal called out in the Decision section below ("Be retired the moment its only readers are themselves retired"). The arc lands as 8 PRs across 7 waves under the `session-shrink/*` branch prefix; an AST lint at [`tests/_lint/test_no_session_compat_bridges.py`](../../tests/_lint/test_no_session_compat_bridges.py) gates new readers while the existing allowlist drains to empty.
 
 ## Context
 

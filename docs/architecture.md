@@ -255,10 +255,15 @@ the scaffold non-linearly: a fresh `_ensure_*()` plus a tranche of
 property bridges per seam, plus its position in the call chain. This is
 future-refactor friction, not first-read inconvenience.
 
-**Status: deferred until those tests migrate**, not deferred indefinitely.
-Effort estimate: Medium (1–2 days) — migrate the 13 fixture sites to
-`make_fake_core(...)`, then delete the bridges and `_ensure_*()` methods.
-Open an issue when picking this up so the migration can be tracked.
+**Status: Active — being retired under the staged 8-PR session-shrink arc.**
+Effort estimate: Large (5–7 days wall-clock). The arc migrates the 13 executable
+`Session.__new__(Session)` fixture sites (9 DELETE, 3 MIGRATE to `make_fake_core(...)`,
+1 REAL-SESSION rewrite), then demolishes the bridges and `_ensure_*()` methods
+across 5 demolition PRs (Metrics+Drain, Auth, Lifecycle, plus the trivial-bridges
+bundle and Protocol-narrowing). An AST lint
+([`tests/_lint/test_no_session_compat_bridges.py`](../tests/_lint/test_no_session_compat_bridges.py))
+gates new bridge readers; its transitional allowlist drains to empty by the
+final demolition PR.
 
 ## See also
 
