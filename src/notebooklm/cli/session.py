@@ -52,33 +52,32 @@ from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id
 from .runtime import run_async
 
-# Direct imports replace the D1-PR-3-retired forwarding wrappers; see
-# ADR-008. Some of these bindings (notably ``_sync_server_language_to_config``)
-# double as session-level monkeypatch surfaces for tests pre-dating ADR-008's
-# services-side patching convention.
+# Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-008.
+# Several of these names also serve as ``notebooklm.cli.session.*`` monkeypatch
+# surfaces for tests that pre-date ADR-008's services-side patching convention
+# (e.g. ``_sync_server_language_to_config``, ``_login_browser_cookies_single``,
+# ``_refresh_from_browser_cookies``, ``_enumerate_browser_accounts``).
+#
+# The names tagged ``F401`` below are *only* patch surfaces — they are not
+# called from this module's body, but tests bind them on the
+# ``notebooklm.cli.session`` namespace either via direct import
+# (``test_cookie_domain_split.py``, ``test_auth_subcommands.py``) or via the
+# dual-patch fixture in ``tests/_fixtures/cli_session.py`` (whose
+# ``patch_session_login_dual`` requires the name to exist on both modules).
 from .services.login import (
     _build_google_cookie_domains,
     _enumerate_browser_accounts,
+    _enumerate_one_jar,  # noqa: F401 — patch surface only
     _login_all_accounts_from_browser,
     _login_browser_cookies_single,
+    _login_with_browser_cookies,  # noqa: F401 — patch surface only
     _parse_include_domains,
     _refresh_from_browser_cookies,
+    _resolve_optional_cookie_domains,  # noqa: F401 — patch surface only
+    _select_account,  # noqa: F401 — patch surface only
     _sync_server_language_to_config,
     _warn_missing_optional_domains,
-)
-
-# Re-exports kept solely for tests that bind these helpers on the
-# ``notebooklm.cli.session`` namespace — either via direct import
-# (``test_cookie_domain_split.py``, ``test_auth_subcommands.py``) or via
-# the dual-patch fixture in ``tests/_fixtures/cli_session.py`` (whose
-# ``patch_session_login_dual`` requires the name to exist on both modules).
-# These are not referenced in this module's body.
-from .services.login import (  # noqa: F401
-    _enumerate_one_jar,
-    _login_with_browser_cookies,
-    _resolve_optional_cookie_domains,
-    _select_account,
-    _write_extracted_cookies,
+    _write_extracted_cookies,  # noqa: F401 — patch surface only
 )
 
 logger = logging.getLogger(__name__)

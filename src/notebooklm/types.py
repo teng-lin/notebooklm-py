@@ -10,6 +10,7 @@ Usage:
 """
 
 from ._types import artifacts as _artifact_types
+from ._types import common as _common_types
 from ._types import sources as _source_types
 from ._types.artifacts import (
     Artifact,
@@ -32,7 +33,6 @@ from ._types.common import (
     RpcTelemetryEvent,
     UnknownTypeWarning,
 )
-from ._types.common import _datetime_from_timestamp
 from ._types.notebooks import (
     Notebook,
     NotebookDescription,
@@ -95,6 +95,7 @@ from .rpc.types import (
 # Keep private facade names that first-party tests and external callers have
 # historically imported while the implementation moves into _types modules.
 _SOURCE_TYPE_COMPAT_MAP = _source_types._SOURCE_TYPE_COMPAT_MAP
+_datetime_from_timestamp = _common_types._datetime_from_timestamp
 _extract_artifact_url = _artifact_types._extract_artifact_url
 _extract_audio_artifact_url = _artifact_types._extract_audio_artifact_url
 _extract_infographic_artifact_url = _artifact_types._extract_infographic_artifact_url
