@@ -29,7 +29,7 @@ from urllib.parse import quote
 
 import pytest
 
-from notebooklm._session import (
+from notebooklm._error_injection import (
     ERROR_INJECT_ENV_VAR,
     _get_error_injection_mode,
 )

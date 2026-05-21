@@ -46,8 +46,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm import _core as _core_module
-from notebooklm._session import _resolve_keepalive_interval
+from notebooklm._session_helpers import _resolve_keepalive_interval
 from notebooklm._session_lifecycle import (
     ClientLifecycle,
     _default_cookie_rotator,
@@ -220,9 +219,16 @@ async def test_open_captures_cookie_snapshot() -> None:
 async def test_open_uses_default_httpx_transport_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Default path: ``_get_error_injection_mode`` returns ``None`` → httpx's
-    default ``AsyncHTTPTransport`` is in place (no custom transport wrapping)."""
-    monkeypatch.setattr(_core_module, "_get_error_injection_mode", lambda: None)
+    """Default path: httpx's default ``AsyncHTTPTransport`` is in place
+    (no custom transport wrapping). Post-Tier-12 the synthetic-error
+    substitution lives in ``ErrorInjectionMiddleware``; the lifecycle
+    constructs a plain transport regardless of any env var, so the test
+    asserts the lifecycle's transport construction directly without
+    monkeypatching the now-middleware-only error-injection seam.
+    """
+    from notebooklm import _error_injection
+
+    monkeypatch.setattr(_error_injection, "_get_error_injection_mode", lambda: None)
     lifecycle = _make_lifecycle()
     host = _StubHost()
 
@@ -246,7 +252,9 @@ async def test_open_uses_default_httpx_transport_when_env_var_set(
     lives in the chain (``ErrorInjectionMiddleware``); the lifecycle
     constructs a plain transport regardless of the env var.
     """
-    monkeypatch.setattr(_core_module, "_get_error_injection_mode", lambda: "429")
+    from notebooklm import _error_injection
+
+    monkeypatch.setattr(_error_injection, "_get_error_injection_mode", lambda: "429")
     lifecycle = _make_lifecycle()
     host = _StubHost()
 

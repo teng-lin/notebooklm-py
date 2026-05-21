@@ -45,12 +45,12 @@ from ._note_service import NoteService
 from ._notebooks import NotebooksAPI
 from ._notes import NotesAPI
 from ._research import ResearchAPI
-from ._session import (
+from ._session import Session
+from ._session_config import (
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
-    Session,
 )
 from ._session_lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI

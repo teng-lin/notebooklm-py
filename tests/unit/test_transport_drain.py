@@ -303,17 +303,6 @@ def test_token_is_frozen_dataclass() -> None:
         token.task = None  # type: ignore[misc]
 
 
-def test_token_reexported_from_core_module() -> None:
-    """``from notebooklm._session import _TransportOperationToken`` must still work.
-
-    Master plan mandate: the legacy import path stays available after the
-    dataclass moves into ``_transport_drain``.
-    """
-    from notebooklm._session import _TransportOperationToken as Aliased
-
-    assert Aliased is _TransportOperationToken
-
-
 # ---------------------------------------------------------------------------
 # ``Session.__new__`` backfill regression
 # ---------------------------------------------------------------------------

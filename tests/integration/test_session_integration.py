@@ -7,7 +7,8 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import AuthTokens, NotebookLMClient
-from notebooklm._session import Session, is_auth_error
+from notebooklm._session import Session
+from notebooklm._session_helpers import is_auth_error
 from notebooklm.rpc import (
     AuthError,
     ClientError,
@@ -515,7 +516,7 @@ class TestBuildUrlHL:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._session import _AuthSnapshot
+        from notebooklm._authed_transport import _AuthSnapshot
 
         return _AuthSnapshot(
             csrf_token=core.auth.csrf_token,

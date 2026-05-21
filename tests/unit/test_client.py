@@ -9,7 +9,8 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from conftest import install_post_as_stream
-from notebooklm._session import Session, is_auth_error
+from notebooklm._session import Session
+from notebooklm._session_helpers import is_auth_error
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.rpc import AuthError, RPCError, RPCMethod
@@ -935,7 +936,7 @@ class TestBuildUrlAuthuser:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._session import _AuthSnapshot
+        from notebooklm._authed_transport import _AuthSnapshot
 
         return _AuthSnapshot(
             csrf_token=core.auth.csrf_token,

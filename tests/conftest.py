@@ -111,9 +111,9 @@ def _synthetic_error_mode(request, monkeypatch):
         )
     # Import the env-var name from the production module so a future rename
     # in ``_core.py`` cascades automatically; the constant is also exposed
-    # from ``tests/vcr_config.py`` but going through ``_core`` is the
-    # production-faithful path.
-    from notebooklm._session import ERROR_INJECT_ENV_VAR
+    # from ``tests/vcr_config.py`` but importing from the canonical seam
+    # is the production-faithful path.
+    from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
 
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, mode)
 

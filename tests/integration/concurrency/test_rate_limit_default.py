@@ -200,7 +200,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     raises ``_TransportRateLimited`` (which the API layer translates
     into ``RateLimitError``) without sleeping.
     """
-    from notebooklm._session import _TransportRateLimited
+    from notebooklm._authed_transport import _TransportRateLimited
 
     mock_post = AsyncMock(return_value=_build_429("1"))
 

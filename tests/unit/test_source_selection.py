@@ -29,7 +29,7 @@ def mock_core():
     invokes the caller-supplied ``build_request`` factory so URL/body
     assertions still exercise the production request builder.
     """
-    from notebooklm._session import _AuthSnapshot
+    from notebooklm._authed_transport import _AuthSnapshot
 
     core = MagicMock()
 
