@@ -303,7 +303,10 @@ def register_chat_commands(cli):
                             if result.references:
                                 # Citation-rich path: server stores [N] markers
                                 # as hover-anchored references (issue #660).
-                                note = await client.notes.create_from_chat(
+                                # ``client.chat.save_answer_as_note`` is the
+                                # current home for this; ``notes.create_from_chat``
+                                # is a deprecated forwarder.
+                                note = await client.chat.save_answer_as_note(
                                     nb_id_resolved, result, title=title
                                 )
                             else:

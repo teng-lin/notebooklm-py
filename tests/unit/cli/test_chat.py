@@ -125,8 +125,13 @@ class TestAskSaveAsNote:
 
     def test_ask_save_as_note_with_citations_uses_rich_path(self, runner, mock_auth):
         """When AskResult.references is non-empty, --save-as-note should
-        route through create_from_chat (the citation-rich path) rather
-        than the plain-text notes.create() path (issue #660)."""
+        route through ``chat.save_answer_as_note`` (the citation-rich
+        path, issue #660) rather than the plain-text ``notes.create()``
+        path.
+
+        Note: ``notes.create_from_chat`` is a deprecated forwarder; the
+        CLI calls the canonical ``chat.save_answer_as_note`` directly.
+        """
         with patch_client_for_module("chat") as mock_client_cls:
             mock_client = create_mock_client()
             ask_result = AskResult(
@@ -148,7 +153,7 @@ class TestAskSaveAsNote:
             )
             mock_client.chat.ask = AsyncMock(return_value=ask_result)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
-            mock_client.notes.create_from_chat = AsyncMock(return_value=make_note(title="Saved"))
+            mock_client.chat.save_answer_as_note = AsyncMock(return_value=make_note(title="Saved"))
             mock_client.notes.create = AsyncMock(return_value=make_note())
             mock_client_cls.return_value = mock_client
 
@@ -162,7 +167,7 @@ class TestAskSaveAsNote:
 
             assert result.exit_code == 0, result.output
             # Citation-rich path was used.
-            mock_client.notes.create_from_chat.assert_awaited_once()
+            mock_client.chat.save_answer_as_note.assert_awaited_once()
             # Plain-text path was NOT used.
             mock_client.notes.create.assert_not_awaited()
 
@@ -174,7 +179,7 @@ class TestAskSaveAsNote:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())  # empty refs
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
-            mock_client.notes.create_from_chat = AsyncMock()
+            mock_client.chat.save_answer_as_note = AsyncMock()
             mock_client.notes.create = AsyncMock(return_value=make_note())
             mock_client_cls.return_value = mock_client
 
@@ -189,7 +194,7 @@ class TestAskSaveAsNote:
             assert result.exit_code == 0, result.output
             assert "No citations in answer" in result.output
             mock_client.notes.create.assert_awaited_once()
-            mock_client.notes.create_from_chat.assert_not_awaited()
+            mock_client.chat.save_answer_as_note.assert_not_awaited()
 
 
 class TestHistoryCommand:
