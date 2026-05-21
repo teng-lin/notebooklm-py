@@ -357,10 +357,10 @@ class _ApiReachInVisitor(ast.NodeVisitor):
     via ``reversed(self._alias_stack)`` so aliases in outer scopes are
     visible to attribute access in nested closures and comprehensions.
 
-    The empty ``_REACH_IN_MIGRATED_MODULES`` list keeps the guard
-    vacuous until the follow-up PRs append ``_artifact_downloads.py`` /
-    ``_artifact_generation.py`` after migrating each helper to
-    constructor injection.
+    ``_REACH_IN_MIGRATED_MODULES`` enumerates helpers already migrated to
+    constructor injection; this guard is actively enforced for those
+    modules. Future migrations should append additional module names
+    (e.g. ``_artifact_generation.py``) to extend enforcement.
     """
 
     def __init__(self, module_name: str) -> None:
