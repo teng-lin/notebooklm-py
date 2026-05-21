@@ -608,11 +608,11 @@ Mitigations available today (still useful even with the fix in place):
 > **Resolved in #361 + #369.** The persistence-merge hot path that
 > originally fired this hazard is now fully path-aware. ``CookieKey`` /
 > ``DomainCookieMap`` are ``(name, domain, path)`` tuples
-> (`auth.py:63-71`); ``extract_cookies_with_domains`` returns path-keyed
-> entries (`auth.py:1531-1566`); the save merge in
+> (defined as `CookieKey` in `_auth/cookies.py:23-31`); ``extract_cookies_with_domains`` returns path-keyed
+> entries (`_auth/cookies.py:356-380`); the save merge in
 > ``save_cookies_to_storage`` builds its merge key as
-> ``(name, domain, path)`` (`auth.py:1995-2010`); ``_cookie_map_from_jar``
-> preserves ``path`` on the way out of httpx (`auth.py:2644-2658`); and
+> ``(name, domain, path)`` (`_auth/storage.py:432-458`); ``_cookie_map_from_jar``
+> preserves ``path`` on the way out of httpx (`_auth/cookies.py:592-606`); and
 > ``build_httpx_cookies_from_storage`` loads all path variants into the
 > live jar. Two storage entries that share ``(name, domain)`` at distinct
 > paths survive a load → save round trip as independent rows.
@@ -622,10 +622,10 @@ makes sense. Current state of each former collapse site:
 
 | Site | Identity key today | Notes |
 |---|---|---|
-| `extract_cookies_with_domains` (`auth.py:1531-1566`) | `(name, domain, path)` | Path-aware since #369; per-path entries survive extraction. |
-| `_cookie_map_from_jar` (`auth.py:2644-2658`) | `(name, domain, path)` | Path-aware on the way out of httpx. |
-| `cookies_by_key` in `save_cookies_to_storage` (`auth.py:1995-2010`) | `(name, domain, path)` | Merge keyed by full triple; previously-shadowed variants are now refreshed independently. |
-| `AuthTokens.cookies`, `AuthTokens.cookie_header` (public API) | `(name, domain)` — intentionally lossy | Public return types cannot represent ``path`` without breaking compat. Compatibility surfaces, not the persistence-merge hot path. |
+| `extract_cookies_with_domains` (`_auth/cookies.py:356-380`) | `(name, domain, path)` | Path-aware since #369; per-path entries survive extraction. |
+| `_cookie_map_from_jar` (`_auth/cookies.py:592-606`) | `(name, domain, path)` | Path-aware on the way out of httpx. |
+| `cookies_by_key` in `save_cookies_to_storage` (`_auth/storage.py:432-458`) | `(name, domain, path)` | Merge keyed by full triple; previously-shadowed variants are now refreshed independently. |
+| `AuthTokens.cookies` | `DomainCookieMap` / `(name, domain, path)` | Path-aware type since refactoring. Backed by `DomainCookieMap` (maps `(name, domain, path)` to value). Normalizes legacy 2-tuple keys in `__post_init__` for compatibility (`auth.py:205-208,233-244` and `_auth/cookies.py:23-31`). |
 
 RFC 6265 treats `path` as part of cookie identity. If Google ever
 path-scopes a rotation target — `OSID` for a per-product path is the
@@ -940,10 +940,7 @@ flows (e.g. Workspace SSO) that we haven't ablated. See
   still applies on top of it — a session with a valid accept-tuple can still
   be killed by Google's risk model independent of which cookies are present.
 
-**Reproducer.** `tests/manual/test_cookie_ablation.py` (one-shot singleton)
-and `tests/manual/test_cookie_ablation_pairs.py` (105 pairs, ~10 min wall).
-Each operates on copies of a known-good `storage_state.json` — never mutates
-the original.
+**Reproducer.** The keepalive implementation in `src/notebooklm/_auth/keepalive.py` (which preserves and refreshes the cookie set against Google's rotation cadence).
 
 
 ---
@@ -1184,6 +1181,22 @@ The per-`(loop, profile)` lock dictionary is held in a
 `asyncio.run()` loop is garbage-collected its inner dict is reclaimed
 automatically — bounded cache without an `id()`-reuse hazard.
 
+### 5.7 Inline `__Secure-1PSIDTS` cold-start recovery
+
+Introduced in PR #872 (resolving issue #865) to handle cold-start scenarios where the local cookie store exists but lacks the transient `__Secure-1PSIDTS` cookie entirely.
+
+Under normal operation, `__Secure-1PSIDTS` is short-lived. If a new `Session` starts (cold-start) and reads a profile storage state that has the persistent `__Secure-1PSID` but no `__Secure-1PSIDTS`, a standard request would fail with an authentication error.
+
+To heal this proactively, `_recover_psidts_inline` (implemented in `src/notebooklm/_auth/psidts_recovery.py`) acts as a preflight healing step before session initialization:
+- **When it fires**: During session startup (inside `Session.from_storage` / client initialization).
+- **Conditions & Gates**:
+  1. It only runs if `__Secure-1PSID` is present but `__Secure-1PSIDTS` is missing.
+  2. It respects `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1` or other environment/auth skip configurations.
+  3. It uses a cross-process flock protection file lock (`psidts_recovery.lock`) to prevent concurrent cold-start processes from fanning out identical recovery calls.
+- **Mechanism**: It makes a preflight HTTP call to `accounts.google.com/RotateCookies` using `__Secure-1PSID`, which proactively mints a valid `__Secure-1PSIDTS` and writes it to the cookie jar and local storage before the primary session handshake begins.
+
+See [ADR-013 Consequences](./adr/0013-composable-session-capabilities.md#c-y-inline-__secure-1psidts-cold-start-recovery) for architectural context on the cold-start preflight design.
+
 ---
 
 ## 6 · Comparison with related projects
@@ -1196,7 +1209,7 @@ but the auth surface is identical (same `*.google.com` cookies, same
 
 **Strengths:**
 - The reference implementation of `RotateCookies` rotation
-  (`src/gemini_webapi/utils/rotate_1psidts.py`).
+  (mirrored in our codebase at `src/notebooklm/_auth/keepalive.py`).
 - Cache-file-mtime rate-limit guard.
 - Cache file keyed by `__Secure-1PSID` value
   (`.cached_cookies_<sid>.json`) — automatically scopes by Google account.
@@ -1387,7 +1400,7 @@ Two stacks, in order of preference:
 
 1. Sign in to NotebookLM **once** in Firefox (or any rookiepy-supported
    browser — see note below).
-2. `notebooklm login --browser-cookies firefox -p <profile>`.
+2. `notebooklm -p <profile> login --browser-cookies firefox`.
 3. Schedule a cron / launchd / systemd job:
    ```
    7,27,47 */1 * * * notebooklm --profile <profile> auth refresh
@@ -1470,16 +1483,17 @@ a successful library API call rather than the URL:
 ```python
 from notebooklm import NotebookLMClient, AuthError
 
-try:
-    async with await NotebookLMClient.from_storage() as client:
-        await client.notebooks.list()  # confirms auth
-except (AuthError, ValueError):
-    # ValueError: from_storage()'s CSRF / session-id extraction
-    #   detected a redirect to accounts.google.com during fetch_tokens
-    #   (see auth.py:extract_csrf_token_from_html / extract_session_id_from_html)
-    # AuthError: a subsequent RPC call decoded an auth-class failure
-    return  # don't overwrite a good file with a bad jar
-await context.storage_state(path=STORAGE)
+async def verify_and_save(context, STORAGE):
+    try:
+        async with await NotebookLMClient.from_storage() as client:
+            await client.notebooks.list()  # confirms auth
+    except (AuthError, ValueError):
+        # ValueError: from_storage()'s CSRF / session-id extraction
+        #   detected a redirect to accounts.google.com during fetch_tokens
+        #   (see auth.py:extract_csrf_token_from_html / extract_session_id_from_html)
+        # AuthError: a subsequent RPC call decoded an auth-class failure
+        return  # don't overwrite a good file with a bad jar
+    await context.storage_state(path=STORAGE)
 ```
 
 If you don't actually need a custom wrapper, prefer the supported

@@ -245,6 +245,7 @@ Fetches the canonical [SKILL.md](SKILL.md) directly from GitHub.
 
 ### For Contributors
 
+- **[Architecture](docs/architecture.md)** - Architectural overview and design principles
 - **[Development Guide](docs/development.md)** - Architecture, testing, and releasing
 - **[RPC Development](docs/rpc-development.md)** - Protocol capture and debugging
 - **[RPC Reference](docs/rpc-reference.md)** - Payload structures

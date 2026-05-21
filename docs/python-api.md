@@ -5,6 +5,10 @@
 
 Complete reference for the `notebooklm` Python library.
 
+See also:
+- [Architecture Guide](./architecture.md) for structural overview, capability protocols, and transport design.
+- [RPC Development Guide](./rpc-development.md) for custom RPC design, protocols, and mock assertions.
+
 ## Quick Start
 
 ```python
@@ -90,7 +94,7 @@ client = await NotebookLMClient.from_storage(profile="work")
 # From AuthTokens directly
 from notebooklm import AuthTokens
 auth = AuthTokens(
-    cookies={"SID": "...", "HSID": "...", ...},
+    cookies={"SID": "...", "HSID": "..."},  # (other cookies elided for brevity)
     csrf_token="...",
     session_id="..."
 )
@@ -620,7 +624,11 @@ class NotebookLMClient:
         rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: ConnectionLimits | None = None,
-    ) -> "NotebookLMClient"
+        max_concurrent_uploads: int | None = None,
+        max_concurrent_rpcs: int | None = None,
+        upload_timeout: httpx.Timeout | None = None,
+        on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+    ) -> "NotebookLMClient":
 
     def __init__(
         self, auth: AuthTokens, timeout: float = 30.0,
@@ -630,9 +638,15 @@ class NotebookLMClient:
         rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: ConnectionLimits | None = None,
-    )
+        max_concurrent_uploads: int | None = None,
+        max_concurrent_rpcs: int | None = None,
+        upload_timeout: httpx.Timeout | None = None,
+        on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+        cookie_saver: CookieSaver | None = None,
+        cookie_rotator: CookieRotator | None = None,
+    ):
 
-    async def refresh_auth(self) -> AuthTokens
+    async def refresh_auth(self) -> AuthTokens:
 
     async def rpc_call(
         self,
@@ -644,7 +658,7 @@ class NotebookLMClient:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-    ) -> Any
+    ) -> Any:
 ```
 
 `RPCMethod` is imported from `notebooklm.rpc` for raw-RPC calls; `Any` is
@@ -770,14 +784,14 @@ print(url)
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
-| `list(notebook_id)` | `notebook_id: str` | `list[Source]` | List sources |
+| `list(notebook_id, strict=False)` | `notebook_id: str, strict: bool = False` | `list[Source]` | List sources |
 | `get(notebook_id, source_id)` | `str, str` | `Source \| None` | Get source details (returns None if not found) |
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
 | `get_guide(notebook_id, source_id)` | `str, str` | `dict` | Get AI-generated summary and keywords |
 | `add_url(notebook_id, url, wait=False, wait_timeout=120.0)` | `str, str, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately) |
-| `add_text(notebook_id, title, content, wait=False, wait_timeout=120.0)` | `str, str, str, bool, float` | `Source` | Add text content |
+| `add_text(notebook_id, title, content, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, bool, float, bool` | `Source` | Add text content |
 | `add_file(notebook_id, file_path, mime_type=None, wait=False, wait_timeout=120.0, *, title=None, on_progress=None)` | `str, str \| Path, str \| None, bool, float, *, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` emits `DeprecationWarning` and is scheduled for removal in v0.6.0. `title` (keyword-only) sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
-| `add_drive(notebook_id, file_id, title, mime_type)` | `str, str, str, str` | `Source` | Add Google Drive doc |
+| `add_drive(notebook_id, file_id, title, mime_type=None, wait=False, wait_timeout=120.0)` | `str, str, str, str \| None, bool, float` | `Source` | Add Google Drive doc |
 | `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |
@@ -847,7 +861,7 @@ print(f"Keywords: {guide['keywords']}")
 
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
-| `list(notebook_id, type=None)` | `str, int` | `list[Artifact]` | List artifacts |
+| `list(notebook_id, artifact_type=None)` | `str, ArtifactType \| None` | `list[Artifact]` | List artifacts |
 | `get(notebook_id, artifact_id)` | `str, str` | `Artifact \| None` | Get artifact details (returns None if not found) |
 | `delete(notebook_id, artifact_id)` | `str, str` | `bool` | Delete artifact |
 | `rename(notebook_id, artifact_id, new_title)` | `str, str, str` | `None` | Rename artifact |
@@ -1100,7 +1114,7 @@ async def ask(
     question: str,
     source_ids: list[str] | None = None,  # Limit to specific sources (None = all)
     conversation_id: str | None = None,   # Continue existing conversation
-) -> AskResult
+) -> AskResult:
 ```
 
 **Conversation semantics (issue #659):**
@@ -1188,7 +1202,7 @@ if result.references:
 | Method | Parameters | Returns | Description |
 |--------|------------|---------|-------------|
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `dict \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
-| `poll(notebook_id)` | `str` | `dict` | Check research status |
+| `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `dict` | Check research status |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
 
 **Method Signatures:**
@@ -1206,9 +1220,9 @@ async def start(
     Raises: ValidationError if source/mode combination is invalid
     """
 
-async def poll(notebook_id: str) -> dict:
+async def poll(notebook_id: str, task_id: str | None = None) -> dict:
     """
-    Returns a dict for the LATEST research task. Top-level keys:
+    Returns a dict for the selected research task. If task_id is None, selects the latest research task and raises/emits an ambiguity warning if multiple tasks are in-flight. Top-level keys:
       - task_id:   str       — task/report identifier
       - status:    str       — "completed" | "in_progress" | "no_research"
       - query:     str       — original research query
@@ -1248,32 +1262,26 @@ async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) ->
 
 **Example:**
 ```python
-# Start fast web research (default)
+# Start research and capture the task_id discriminator
 result = await client.research.start(nb_id, "AI safety regulations")
 if result is None:
     raise RuntimeError("Research start returned None")
 task_id = result["task_id"]
 
-# Start deep web research
-result = await client.research.start(nb_id, "quantum computing", source="web", mode="deep")
-if result is None:
-    raise RuntimeError("Research start returned None")
-task_id = result["task_id"]
+# If you launch multiple concurrent research tasks on the same notebook
+# (web vs drive, fast vs deep), always pass the task_id to poll() so the
+# poll resolves to the intended task. Without it, poll() returns the
+# "latest task" and emits an ambiguity warning when multiple are in flight.
 
-# Start fast Drive research
-result = await client.research.start(nb_id, "project docs", source="drive", mode="fast")
-if result is None:
-    raise RuntimeError("Research start returned None")
-
-# Poll until complete
+# Poll until complete (always pass task_id for unambiguous targeting)
 import asyncio
 while True:
-    status = await client.research.poll(nb_id)
+    status = await client.research.poll(nb_id, task_id=task_id)
     if status["status"] == "completed":
         break
     await asyncio.sleep(10)
 
-# Import discovered sources
+# Import discovered sources (using the same task_id discriminator)
 imported = await client.research.import_sources(nb_id, task_id, status["sources"][:5])
 print(f"Imported {len(imported)} sources")
 ```
@@ -1589,6 +1597,10 @@ class GenerationStatus:
         """Check if generation failed."""
 
     @property
+    def is_in_progress(self) -> bool:
+        """Check if generation is in progress."""
+
+    @property
     def is_pending(self) -> bool:
         """Check if generation is pending."""
 
@@ -1638,7 +1650,11 @@ class ChatReference:
     cited_text: str | None             # Actual text passage being cited
     start_char: int | None             # Start position in source content
     end_char: int | None               # End position in source content
-    chunk_id: str | None               # Internal chunk ID (for debugging)
+    chunk_id: str | None               # ID of the chunk / internal chunk ID (for debugging)
+    passage_id: str | None             # ID of the passage
+    answer_start_char: int | None      # Start character offset in the answer
+    answer_end_char: int | None        # End character offset in the answer
+    score: float | None                # Citation score or relevance
 ```
 
 **Important:** The `cited_text` field often contains only a snippet or section header, not the full quoted passage. The `start_char`/`end_char` positions reference NotebookLM's internal chunked index, which does not directly correspond to positions in the raw fulltext returned by `get_fulltext()`.
@@ -1701,8 +1717,8 @@ class AccountLimits:
 
 Returned by `client.settings.get_account_tier()`. Raw tier metadata from
 NotebookLM's homepage tier RPC. `plan_name` is the user-facing label when
-available (e.g. `"NotebookLM Pro"`); `tier` is the internal identifier
-(`"STANDARD"`, `"PLUS"`, `"PRO"`, `"PRO_DASHER_END_USER"`, `"ULTRA"`).
+available (e.g. `"Google AI Pro"`); `tier` is the internal identifier
+(`"NOTEBOOKLM_TIER_STANDARD"`, `"NOTEBOOKLM_TIER_PLUS"`, `"NOTEBOOKLM_TIER_PRO"`, `"NOTEBOOKLM_TIER_PRO_DASHER_END_USER"`, `"NOTEBOOKLM_TIER_ULTRA"`).
 
 ```python
 @dataclass(frozen=True)
@@ -2021,4 +2037,147 @@ print(result.answer)
 
 # Streaming is handled internally by the library
 # The ask() method returns the complete response
+```
+
+---
+
+## Utility and Helper APIs
+
+The following public APIs are available under the top-level `notebooklm` namespaces for logging, research citation processing, and metadata-aware capability implementations.
+
+### Chat Citation Utilities
+
+#### `notebooklm.utils.resolve_chat_reference_passage`
+
+Locates the surrounding paragraph/passage of source text for a specific `ChatReference` citation. Since chat streaming returns only the matching citation fragment, this helper performs a single round-trip to pull the full source text and extract the surrounding context.
+
+```python
+async def resolve_chat_reference_passage(
+    client: NotebookLMClient,
+    notebook_id: str,
+    reference: ChatReference,
+    context_chars: int = 200,
+) -> str:
+    """Return the surrounding source-text passage for a chat citation."""
+```
+
+Example:
+```python
+from notebooklm import resolve_chat_reference_passage
+
+ask_result = await client.chat.ask(notebook_id, "Explain quantum computing")
+first_ref = ask_result.references[0]
+
+passage = await resolve_chat_reference_passage(
+    client, notebook_id, first_ref, context_chars=150
+)
+print(f"Context: {passage}")
+```
+
+### Research Extraction and Citation Filtering
+
+These are free/pure functions provided in the `notebooklm.research` module to inspect research reports and parse, normalize, or filter citations.
+
+#### `notebooklm.research.normalize_url`
+
+```python
+def normalize_url(url: str) -> str:
+    """Normalize source/report URLs for citation matching."""
+```
+
+#### `notebooklm.research.extract_report_urls`
+
+```python
+def extract_report_urls(report: str) -> set[str]:
+    """Extract normalized URLs from research report markdown/text."""
+```
+
+#### `notebooklm.research.select_cited_sources`
+
+```python
+def select_cited_sources(
+    sources: list[dict[str, Any]],
+    report: str,
+) -> CitedSourceSelection:
+    """Return research sources cited by the completed report.
+
+    Falls back to the original source list if no cited URLs are resolved.
+    """
+```
+
+Example:
+```python
+from notebooklm.research import select_cited_sources
+
+status = await client.research.poll(notebook_id, task_id=task_id)
+# Filter only the sources that were explicitly cited in the report markdown
+selection = select_cited_sources(status["sources"], status["report"])
+
+print(f"Total sources: {len(status['sources'])}")
+print(f"Cited sources: {len(selection.sources)}")
+```
+
+### Log Correlation and Context Primitives
+
+Used to configure logging and tag asynchronous execution paths with a persistent correlation ID for tracking requests across concurrency seams.
+
+#### `notebooklm.configure_logging`
+
+```python
+def configure_logging() -> None:
+    """Initialize package logging with redactors and correlation support."""
+```
+
+#### `notebooklm.get_request_id`, `set_request_id`, `reset_request_id`
+
+```python
+def get_request_id() -> str | None:
+    """Return the current correlation id, or None if unset."""
+
+def set_request_id(req_id: str | None = None) -> Token[str | None]:
+    """Set the correlation id for this Task/context, returning a ContextVar Token."""
+
+def reset_request_id(token: Token[str | None]) -> None:
+    """Restore the correlation id to its previous value."""
+```
+
+#### `notebooklm.correlation_id`
+
+An asynchronous-safe context manager that manages correlation ID state.
+
+```python
+import logging
+from notebooklm import correlation_id
+
+logger = logging.getLogger(__name__)
+
+with correlation_id("my-custom-flow-id"):
+    # All logging statements within this block are tagged with the ID
+    logger.info("Starting RPC call...")
+```
+
+### Capability Protocols (Extension Surface)
+
+Decomposed Protocols introduced in ADR-013 to decouple service facades from target domain runtimes.
+
+#### `NotebookSourceLister` Protocol
+
+```python
+from typing import Protocol
+
+class NotebookSourceLister(Protocol):
+    """Structural source-listing dependency shared across feature APIs."""
+    async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
+        """List sources for a notebook."""
+```
+
+#### `NotebookSourceIdProvider` Protocol
+
+```python
+from typing import Protocol
+
+class NotebookSourceIdProvider(Protocol):
+    """Structural source-id dependency needed by chat and artifact generation."""
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        """Return source IDs for a notebook."""
 ```

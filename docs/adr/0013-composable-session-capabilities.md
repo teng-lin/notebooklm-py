@@ -185,10 +185,7 @@ runtimes. Concretely:
   the new keyword-only collaborator arguments. The migration steps in
   `docs/refactor.md` pair each feature retyping with its same-commit
   test fixture update so the build stays green.
-- ~22 `notebooklm._core` test imports remain pinned by the existing
-  `_core.py` compatibility shim. Those imports are not retyped by this
-  refactor; they continue to receive the concrete `Session` through the
-  shim. The shim itself is retired in a future arc, not here.
+- The `_core.py` compatibility shim was removed in Phase 4 ([#889](https://github.com/teng-lin/notebooklm-py/pull/889)); see `tests/unit/test_public_shims.py:1166` for the removal pin.
 - Two `RpcCaller` Protocols coexist briefly: the shared *object*
   protocol in `_session_contracts.py` (used by every feature API) and a
   pre-existing local *callable* protocol in `_source_upload.py:43-56`
@@ -213,6 +210,13 @@ the step sequence. Step ordering may evolve as the migration progresses
 (e.g. when test fixture changes reveal a needed prior step), and the
 authoritative ordering lives in `docs/refactor.md` until the cutover
 lands.
+
+### Composed Runtime Consequences
+
+- **C-X. `cookie_saver` / `cookie_rotator` late-binding seams** — introduced by PR [#879](https://github.com/teng-lin/notebooklm-py/pull/879) (`76b301d`). The cookie persistence hooks are resolved dynamically during session lifecycle setup in `_session_lifecycle.py`, decoupling persistence logic from the core HTTP client transport and ensuring clean integration with the cookie keepalive loop.
+- **C-Y. Inline `__Secure-1PSIDTS` cold-start recovery** — introduced by PR [#872](https://github.com/teng-lin/notebooklm-py/pull/872) / issue #865 (`6d8b5f4`). Production utilizes `_recover_psidts_inline` in `_auth/psidts_recovery.py` to run a preflight healing check. If preconditions are met (e.g. not bypassing credentials in environment-driven auth, and utilizing a flock-based cross-process lock), the system proactively mints a valid `__Secure-1PSIDTS` cookie before initializing the session facade to prevent cold-start failures.
+- **C-Z. AST-based delegate-surface regression guard** — introduced by PR [#885](https://github.com/teng-lin/notebooklm-py/pull/885) (`f48d4b9`). To prevent erosion of the session-facade decoupling contract, a regression test in `tests/unit/test_session_compat_delegates.py` uses AST analysis to enforce that eight legacy/compatibility methods on the `Session` facade remain simple delegate forwards (6 `RpcExecutor`-adjacent and 2 `AuthRefreshCoordinator`-adjacent methods, each restricted to a maximum of 3 statements).
+- **C-AA. Localized `DrainHookRegistration` Protocol** — The `DrainHookRegistration` protocol has been retired from the general `_session_contracts.py` surface and is now local to the `ArtifactsRuntime` in `_artifacts.py`.
 
 ## Alternatives considered
 

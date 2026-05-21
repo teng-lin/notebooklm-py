@@ -3,14 +3,14 @@
 **Status:** Implementation complete — pending release.
 The capability-protocol refactor (ADR-013) landed across Phases 1-4
 (`.sisyphus/plans/refactor-completion-plan.md`). The post-refactor
-runtime shape is canonicalised in [`docs/architecture.md`](./architecture.md).
+runtime shape is canonicalized in [`docs/architecture.md`](architecture.md).
 The document below is preserved as the proposal that drove the work.
 **Last Updated:** 2026-05-21
 
 This proposal captured the agreed direction for repairing the feature-facing
 `Session` boundary and related note/mind-map service boundaries. It is kept
 as a historical record of the design intent. For the post-refactor map see
-[`docs/architecture.md`](./architecture.md).
+[`docs/architecture.md`](architecture.md).
 
 ## Problem
 
@@ -62,9 +62,7 @@ Preserved public surface:
   `__aexit__`, `close()`, `refresh_auth()`, `client.auth`.
 
 `client.kernel` is **not** a public attribute today: `NotebookLMClient` has no
-`kernel` property. The concrete `_session.Session.kernel` and the `_core.py`
-shim (see Non-Goals) are preserved, so the private path
-`client._core.kernel` continues to work — but it is not elevated to public.
+`kernel` property. Historically, the private path `client._core.kernel` worked via a shim, but the compatibility shim was deleted in Phase 4 (#889).
 - `client.notebooks.*`, `client.sources.*`, `client.chat.*`, `client.notes.*`,
   `client.artifacts.*`, `client.research.*`, `client.settings.*`,
   `client.sharing.*` — every existing method retains its signature, defaults,
@@ -588,11 +586,7 @@ Remove compatibility aliases/fallbacks from every touched feature API:
 - remove `_mind_map.MindMapService(session)` fallback from `NotesAPI`
   (`_notes.py:55-56`) and `ArtifactsAPI` (`_artifacts.py:181-183`)
 
-`NotebookLMClient._core` may remain as a temporary compatibility alias for
-external/private callers and tests, but new internal wiring should use
-`self._session`. The `_core.py` module shim (a `dir(_session)` re-export loop at
-`_core.py:13-16`) is also left untouched: ~22 test files import private names
-through `notebooklm._core`, and any `_session` rename cascades through the loop.
+Historically, `NotebookLMClient._core` was left as a compatibility alias, but both the attribute alias and the `_core.py` compatibility module were deleted in Phase 4 (#889). All internal and test imports have been migrated to target `_session` directly.
 
 ## Composition Root
 
@@ -658,8 +652,8 @@ This refactor should update docs in the same change:
   `Session`" to "type against the narrowest shared capability or a local
   feature runtime."
 - `docs/adr/0013-composable-session-capabilities.md`: new ADR ratifying the
-  capability-composition model; ADR-010 is re-statused as `Superseded by
-  ADR-013` in the same PR. (Both land before the 11-step migration begins;
+  capability-composition model; ADR-010 status changed to: Superseded by
+  ADR-013 (#866) in the same PR. (Both land before the 11-step migration begins;
   see ADR-013 §Status.)
 - `docs/adr/0012-implementation-surface-convention.md`: amend the stale
   five-member-Session reference — performed in the ADR-013 ratification PR.

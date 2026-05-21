@@ -291,8 +291,8 @@ All generate commands support:
 - `-s, --source` to use specific source(s) instead of all sources
 - `--language` to set output language (defaults to configured language or 'en')
 - `--json` for machine-readable output (returns `task_id` and `status`)
-- `--retry N` to automatically retry on rate limits with exponential backoff
-- `--prompt-file PATH` to read description/query from a file (mutually exclusive with positional argument; use for long prompts)
+- `--retry N` to automatically retry on rate limits with exponential backoff (supported on all subcommands **except** `mind-map`)
+- `--prompt-file PATH` to read description/query from a file (supported on all subcommands **except** `mind-map`; mutually exclusive with positional argument; use for long prompts)
 
 | Type | Command | Options | Download |
 |------|---------|---------|----------|
@@ -346,13 +346,13 @@ When user wants full automation (generate and download when ready):
 
 1. Create notebook and add sources as usual
 2. Wait for sources to be ready (use `source wait` or check `source list --json`)
-3. Run `notebooklm generate audio "..." --json` → parse `artifact_id` from output
+3. Run `notebooklm generate audio "..." --json` → parse `task_id` from output
 4. **Spawn a background agent** using Task tool:
-   ```
+   ```python
    Task(
-     prompt="Wait for artifact {artifact_id} in notebook {notebook_id} to complete, then download.
-             Use: notebooklm artifact wait {artifact_id} -n {notebook_id} --timeout 600
-             Then: notebooklm download audio ./podcast.mp3 -a {artifact_id} -n {notebook_id}",
+     prompt="Wait for artifact {task_id} in notebook {notebook_id} to complete, then download.
+             Use: notebooklm artifact wait {task_id} -n {notebook_id} --timeout 600
+             Then: notebooklm download audio ./podcast.mp3 -a {task_id} -n {notebook_id}",
      subagent_type="general-purpose"
    )
    ```

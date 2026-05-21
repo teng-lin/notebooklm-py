@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by ADR-013 (#866).
+Superseded by [ADR-013](0013-composable-session-capabilities.md) (#866).
 
 Tier-13 stabilised the 5-member Session/3-member Kernel/1-member DrainHookRegistration triad. ADR-013 documents the post-drift capability-composition model that replaces it.
 
@@ -12,8 +12,7 @@ Tier-13 stabilised the 5-member Session/3-member Kernel/1-member DrainHookRegist
 tracking, request-id allocation, cookie access, HTTP lifecycle, and the
 feature-facing capability surface. The Tier-12 middleware chain isolated
 cross-cutting transport concerns, but feature APIs still depend on
-per-feature `_<X>Core` Protocols and shared base Protocols in
-`src/notebooklm/_capabilities.py`.
+per-feature narrow capability Protocols and shared capability Protocols in `_session_contracts.py`; feature-local runtimes (`ChatRuntime` in `_chat.py:90`, `ArtifactsRuntime` in `_artifacts.py:154`).
 
 That shape blocks the Tier-13 decomposition: feature APIs need one stable
 orchestration contract, transport code needs a smaller HTTP-only contract,

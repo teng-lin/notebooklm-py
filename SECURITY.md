@@ -24,13 +24,17 @@ This library stores authentication credentials locally. Please understand these 
 
 ### Storage Locations
 
-Default location is `~/.notebooklm/` (can be changed via `NOTEBOOKLM_HOME` environment variable):
+By default, files are stored per-profile under `~/.notebooklm/profiles/<profile>/` (configurable via the `NOTEBOOKLM_HOME` and `NOTEBOOKLM_PROFILE` environment variables). Legacy layouts store files directly in the root of `~/.notebooklm/` (representing the `default` profile):
 
-| File | Contents | Permissions |
-|------|----------|-------------|
-| `storage_state.json` | Google session cookies | `0o600` (owner-only) |
-| `browser_profile/` | Chromium profile data | `0o700` (owner-only) |
-| `context.json` | Active notebook ID | Default |
+| File Path | Contents | Permissions |
+|-----------|----------|-------------|
+| `profiles/<profile>/storage_state.json` | Google session cookies | `0o600` (owner-only) |
+| `profiles/<profile>/browser_profile/` | Playwright Chromium profile | `0o700` (owner-only) |
+| `profiles/<profile>/context.json` | Active profile context / metadata | `0o600` (owner-only) |
+| `config.json` | Global CLI config (e.g. language/active profile) | Default |
+| `storage_state.json` *(legacy)* | Fallback root storage state (for `default` profile) | `0o600` (owner-only) |
+| `browser_profile/` *(legacy)* | Fallback root Playwright profile | `0o700` (owner-only) |
+| `context.json` *(legacy)* | Fallback root active notebook context | Default |
 
 ### Security Best Practices
 

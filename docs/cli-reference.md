@@ -232,7 +232,7 @@ All `artifact` subcommands also accept `-n/--notebook ID`.
 
 ### Download Commands (`notebooklm download <type>`)
 
-Every `download` subcommand accepts the same selection / safety / output flag set: `-n/--notebook ID`, `-a/--artifact ID`, `--all`, `--latest` (default), `--earliest`, `--name TEXT` (fuzzy title match), `--dry-run`, `--force`, `--no-clobber` (default), and `--json`.
+Every `download` subcommand accepts the same selection / safety / output flag set: `-n/--notebook ID`, `-a/--artifact ID`, `--all`, `--latest` (default), `--earliest`, `--name TEXT` (fuzzy title match), `--dry-run`, `--force`, `--no-clobber` (opt-in to skip existing; default is auto-rename), and `--json`.
 
 | Command | Arguments | Type-specific options | Example |
 |---------|-----------|-----------------------|---------|
@@ -986,7 +986,7 @@ notebooklm generate revise-slide "Remove taxonomy table" --artifact art123 --sli
 
 Generate a text report (briefing doc, study guide, blog post, or custom).
 
-> **Python equivalent:** [`client.artifacts.generate_report(nb_id, format=..., ...)`](python-api.md#generation-methods).
+> **Python equivalent:** [`client.artifacts.generate_report(nb_id, report_format=..., ...)`](python-api.md#generation-methods).
 
 ```bash
 notebooklm generate report [description] [OPTIONS]
@@ -1094,7 +1094,7 @@ notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
 
 | Type | Default Extension | Description |
 |------|-------------------|-------------|
-| `audio` | `.mp4` | Audio overview (podcast) in MP4 container |
+| `audio` | `.mp3` | Audio overview (podcast) as MP3 |
 | `video` | `.mp4` | Video overview |
 | `slide-deck` | `.pdf` or `.pptx` | Slide deck as PDF (default) or PowerPoint |
 | `infographic` | `.png` | Infographic image |
@@ -1110,7 +1110,7 @@ notebooklm download <type> [OUTPUT_PATH] [OPTIONS]
 - `-a, --artifact ID` - Select specific artifact by ID (supports partial IDs)
 - `--dry-run` - Show what would be downloaded without actually downloading
 - `--force` - Overwrite existing files
-- `--no-clobber` - Skip if file already exists (default)
+- `--no-clobber` - Skip if file already exists (opt-in; default is auto-rename)
 - `--format [pdf|pptx]` - Slide deck format (slide-deck command only, default: pdf)
 - `--json` - Output result in JSON format
 
@@ -1495,6 +1495,57 @@ for f in ./papers/*.pdf; do
   notebooklm source add "$f"
 done
 ```
+
+---
+
+### Doctor: `doctor`
+
+Check profile setup, auth status, and migration.
+
+Diagnoses common issues with profiles, authentication, and directory structure. Use `--fix` to automatically repair detected problems.
+
+```bash
+notebooklm doctor [OPTIONS]
+```
+
+**Options:**
+- `--fix` - Attempt to fix detected issues (e.g. missing directories, broken configurations)
+- `--json` - Output diagnostic results as a JSON structure for scripting/automation
+
+**Examples:**
+```bash
+# Check profile and authentication health
+notebooklm doctor
+
+# Auto-repair environment issues
+notebooklm doctor --fix
+
+# Print diagnostics in machine-readable format
+notebooklm doctor --json
+```
+
+---
+
+### Agent: `agent show`
+
+Show bundled instructions for supported agent environments.
+
+This command displays tailored instructions for different LLM agents (Codex or Claude Code) to help them understand how to use this CLI programmatically.
+
+```bash
+notebooklm agent show [OPTIONS] {codex|claude}
+```
+
+**Examples:**
+```bash
+# Show instructions for Codex
+notebooklm agent show codex
+
+# Show instructions for Claude Code
+notebooklm agent show claude
+```
+
+> **Note:** `agent show codex` prefers the root `AGENTS.md` file when running from a source checkout, so the CLI mirrors the same instructions Codex sees in the repository.
 
 ---
 

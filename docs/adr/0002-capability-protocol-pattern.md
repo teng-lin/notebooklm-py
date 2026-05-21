@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by the `arch-d2-cutover` PR (D2 PR-2). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol have been deleted; sub-clients now consume `Session` directly, typed against per-sub-client narrow Protocols (`_NotebooksCore`, `_SourcesCore`, `_ArtifactsCore`, `_ChatCore`, `_ResearchCore`, `_NotesCore`, `_SettingsCore`, `_SharingCore`) co-located with each sub-client. The base capability Protocols (`CoreRPCProvider`, `SourceListProvider`, `CoreReqIdProvider`, `PollRegistryProvider`, `AuthRouteProvider`, `CookieJarProvider`, `TransportOperationProvider`, `UploadConcurrencyProvider`, `LoopAffinityProvider`) remain in `src/notebooklm/_capabilities.py` because multiple sub-clients compose them.
+Superseded by [`arch-d2-cutover`](https://github.com/teng-lin/notebooklm-py/pull/835) (#835). The `SessionCapabilities` adapter and the transitional `ChatStreamingProvider` Protocol have been deleted; sub-clients now consume the Session facade directly, typed against shared capability Protocols in `_session_contracts.py` and feature-local runtimes (`ChatRuntime` in `_chat.py:90`, `ArtifactsRuntime` in `_artifacts.py:154`). The broader composable-capabilities arc continued in [ADR-013](0013-composable-session-capabilities.md) (#866), which finalized the per-feature Protocol model.
 
 This ADR documents the pre-cutover pattern for historical context. The "Decision" section below describes the state prior to D2 cutover; the "Alternatives considered" section describes the replacement now adopted.
 

@@ -334,21 +334,31 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
 tests/
 ├── unit/                            # No network, fast, mock everything
 ├── integration/                     # Mocked HTTP responses + VCR cassettes
-│   ├── test_artifacts.py            # ArtifactsAPI integration
+│   ├── test_artifacts_integration.py # ArtifactsAPI integration
 │   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
+│   ├── test_auth_refresh_vcr.py     # Auth refresh token VCR test
 │   ├── test_auto_refresh.py         # Keepalive/refresh integration
-│   ├── test_chat.py                 # ChatAPI integration
-│   ├── test_cli_source_delete.py    # CLI source-delete path
-│   ├── test_session_integration.py  # Session + RPC plumbing
+│   ├── test_chat_delete_conversation_vcr.py
+│   ├── test_chat_multi_source_vcr.py
+│   ├── test_chat_passage_resolver.py
+│   ├── test_cli_session_local.py
 │   ├── test_download_multi_artifact.py
+│   ├── test_error_paths_vcr.py      # Synthetic and VCR error paths
 │   ├── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
-│   ├── test_notebooks.py            # NotebooksAPI integration
-│   ├── test_notes.py                # NotesAPI integration
-│   ├── test_research_api.py         # ResearchAPI integration
-│   ├── test_settings.py             # SettingsAPI integration
-│   ├── test_sharing.py              # SharingAPI integration
+│   ├── test_notebooks_integration.py # NotebooksAPI integration
+│   ├── test_notes_integration.py     # NotesAPI integration
+│   ├── test_notes_idempotency.py
+│   ├── test_polling_vcr.py
+│   ├── test_research_deep_poll_vcr.py
+│   ├── test_research_idempotency.py
+│   ├── test_save_chat_as_note_integration.py
+│   ├── test_session_integration.py  # Session + RPC plumbing
+│   ├── test_settings_integration.py  # SettingsAPI integration
+│   ├── test_settings_vcr.py
+│   ├── test_sharing_integration.py   # SharingAPI integration
+│   ├── test_sharing_vcr.py
 │   ├── test_skill_packaging.py      # Packaging smoke (skills, entry-points)
-│   ├── test_sources.py              # SourcesAPI integration
+│   ├── test_sources_integration.py   # SourcesAPI integration
 │   ├── test_vcr_comprehensive.py    # End-to-end VCR walkthrough
 │   ├── test_vcr_example.py          # VCR pattern reference
 │   ├── test_vcr_real_api.py         # VCR against real-API cassettes
@@ -433,8 +443,8 @@ emails, and other sensitive patterns before the cassette hits disk. Verify
 the result with the cassette guard before committing:
 
 ```bash
-# Current guard (a Python replacement is planned)
-tests/check_cassettes_clean.sh
+# Verify recorded cassettes are clean of credentials
+uv run python tests/scripts/check_cassettes_clean.py
 ```
 
 #### Synthetic error cassettes
@@ -461,7 +471,9 @@ The plumbing has three opt-in layers:
 1. **Env var**: `NOTEBOOKLM_VCR_RECORD_ERRORS=<mode>` activates the transport
    wrapper inside `Session.open()`.
 2. **Pytest marker**: `@pytest.mark.synthetic_error("<mode>")` sets the env
-   var for the duration of a single test (auto-reverted on teardown).
+   var for the duration of a single test (auto-reverted on teardown). Note
+   that the `synthetic_error` marker is registered dynamically in
+   `tests/conftest.py:149` (rather than statically listed in `pyproject.toml`).
 3. **Filename prefix**: cassettes recorded under this mode MUST be named
    `error_synthetic_<mode>_<slug>.yaml` — use
    `tests.cassette_patterns.synthetic_error_cassette_name(mode, slug)` to
@@ -475,7 +487,7 @@ ships only the plumbing):
 ```bash
 NOTEBOOKLM_VCR_RECORD=1 \
 NOTEBOOKLM_VCR_RECORD_ERRORS=429 \
-  uv run pytest tests/integration/test_error_cassettes.py::test_rate_limit_records
+  uv run pytest tests/integration/test_error_paths_vcr.py
 ```
 
 Production behavior is unchanged when `NOTEBOOKLM_VCR_RECORD_ERRORS` is
@@ -560,7 +572,7 @@ Need network?
 
 ### Credential redaction
 
-The package handler installed by `configure_logging()` has a `RedactingFilter` attached. It runs for every record reaching the handler, including records originating in child loggers (`notebooklm._core`, `notebooklm._chat`, etc.) via Python logging's default propagation. The filter scrubs:
+The package handler installed by `configure_logging()` has a `RedactingFilter` attached. It runs for every record reaching the handler, including records originating in child loggers (`notebooklm._session`, `notebooklm._authed_transport`, `notebooklm._chat`, etc.) via Python logging's default propagation. The filter scrubs:
 
 - CSRF tokens (`at=...`)
 - Session IDs (`f.sid=...`)
@@ -570,7 +582,7 @@ The package handler installed by `configure_logging()` has a `RedactingFilter` a
 
 The filter pre-renders `record.exc_info` traceback into a scrubbed `record.exc_text` while preserving `record.exc_info` itself. The live exception object is not mutated.
 
-To add a new secret pattern: edit `_REDACT_PATTERNS` in `src/notebooklm/_logging.py` and add a unit test in `tests/unit/test__logging.py` before merging.
+To add a new secret pattern: edit `_REDACT_PATTERNS` in `src/notebooklm/_logging.py` and add a unit test in `tests/unit/test_logging.py` before merging.
 
 ### Attaching your own handler
 
@@ -619,7 +631,7 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 
 - Standard `logging.Formatter` uses `record.exc_text` (scrubbed by our filter) and does NOT re-render from `exc_info`. Safe.
 - Custom formatters that ignore `exc_text` and read `exc_info` directly may render an unredacted traceback. **Mitigation**: wrap such handlers with `apply_redaction()` so the formatter is decorated and post-scrubs the final output regardless of which exception attribute it reads.
-- Records propagate to root by default (`notebooklm.propagate = True`) so `caplog` and `basicConfig` work without changes. Our filter mutates the record before propagation, so downstream handlers (including root's) see the scrubbed version. **Caveat**: if a user attaches an unredacted handler directly to a child logger (`notebooklm._core`), that handler fires *before* propagation reaches our parent handler. Mitigation: `apply_redaction(child_handler)`.
+- Records propagate to root by default (`notebooklm.propagate = True`) so `caplog` and `basicConfig` work without changes. Our filter mutates the record before propagation, so downstream handlers (including root's) see the scrubbed version. **Caveat**: if a user attaches an unredacted handler directly to a child logger (`notebooklm._session`), that handler fires *before* propagation reaches our parent handler. Mitigation: `apply_redaction(child_handler)`.
 - Applications that want notebooklm logs *isolated* from root can set `logging.getLogger('notebooklm').propagate = False` themselves.
 
 ---
