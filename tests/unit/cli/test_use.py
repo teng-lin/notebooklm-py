@@ -6,14 +6,35 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 ``patch_session_login_dual`` lives in ``tests/_fixtures``.
 """
 
+import inspect
 import json
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
+
+from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Notebook
 
 from .conftest import create_mock_client, patch_main_cli_client
+
+
+def _split_stream_runner() -> CliRunner:
+    """Return a CliRunner whose stdout and stderr are captured separately.
+
+    The shared ``runner`` fixture in ``conftest.py`` uses ``CliRunner()`` with
+    default settings, which on Click 8.1.x means ``mix_stderr=True`` —
+    ``result.stdout`` then contains a mixed stream and ``result.stderr``
+    raises ``ValueError("stderr not separately captured")``. The
+    ``--json`` purity test needs pure-stdout / pure-stderr access to verify
+    that a diagnostic does not leak into stdout. Click 8.2+ removed
+    ``mix_stderr`` entirely (streams are always separate); 8.1.x supports
+    ``mix_stderr=False``. Detect via ``inspect.signature`` so this is
+    portable across the project's supported Click range (``>=8.0.0,<9``).
+    """
+    if "mix_stderr" in inspect.signature(CliRunner).parameters:
+        return CliRunner(mix_stderr=False)
+    return CliRunner()
 
 
 class TestUseCommand:
@@ -208,7 +229,7 @@ class TestUseJsonOutput:
         assert data.get("verified") is False
         assert mock_context_file.exists()
 
-    def test_use_json_with_partial_id_keeps_stdout_pure(self, runner, mock_auth, mock_context_file):
+    def test_use_json_with_partial_id_keeps_stdout_pure(self, mock_auth, mock_context_file):
         """`use <partial-id> --json` must NOT print the "Matched: ..." diagnostic to stdout.
 
         Regression test for the bug where the `use` command called
@@ -219,7 +240,14 @@ class TestUseJsonOutput:
 
         Contract: in `--json` mode, stdout MUST be parseable JSON. The
         "Matched: …" diagnostic must route to stderr.
+
+        Uses ``_split_stream_runner()`` instead of the shared ``runner``
+        fixture because the shared one defaults to ``mix_stderr=True`` on
+        Click 8.1.x — that would (a) put the diagnostic into ``stdout``
+        making the bug invisible to this test, and (b) raise on
+        ``result.stderr`` access. Project supports Click ``>=8.0.0,<9``.
         """
+        runner = _split_stream_runner()
         full_id = "nb_partial_resolved_full_id"
         with patch_main_cli_client() as mock_client_cls:
             mock_client = create_mock_client()
