@@ -331,7 +331,8 @@ def language_set(ctx, code, local, json_output):
         if json_output:
             # Match the shared JSON error schema from ``cli/rendering.py``:
             # ``{"error": True, "code": ..., "message": ..., **extra}``.
-            # ``json_error_response`` exits non-zero, so the call below does not return.
+            # ``json_error_response`` is ``NoReturn``; execution never reaches
+            # the text-mode ``console.print`` lines below when this branch fires.
             json_error_response(
                 "INVALID_LANGUAGE",
                 f"Unknown language code: {code}",
