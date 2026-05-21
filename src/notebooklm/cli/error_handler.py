@@ -44,6 +44,15 @@ def _output_error(
         exit_code: Exit code to use
         extra: Additional fields to include in JSON output
         hint: Additional hint to show in text mode
+
+    Note:
+        Also exported as the public alias :func:`output_error`. The leading
+        underscore name pre-dates the public-CLI-boundary contract enforced by
+        ``tests/unit/test_cli_boundary.py``; sibling ``cli/*`` modules may
+        import the private name directly (intra-package, level-1 relative
+        import), but ``cli/services/*`` and any other layer that crosses up
+        through ``..error_handler`` must use the public alias to stay on the
+        public side of that contract.
     """
     if json_output:
         response: dict = {"error": True, "code": code, "message": message}
@@ -55,6 +64,13 @@ def _output_error(
         if hint:
             safe_echo(hint, err=True)
     raise SystemExit(exit_code)
+
+
+#: Public alias for :func:`_output_error` — see the function docstring for the
+#: rationale. ``cli/services/*`` and other layers that must cross the CLI
+#: package boundary import this name to stay on the public side of the
+#: boundary contract enforced by ``tests/unit/test_cli_boundary.py``.
+output_error = _output_error
 
 
 def emit_cancelled_and_exit(

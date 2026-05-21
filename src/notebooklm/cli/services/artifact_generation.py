@@ -8,8 +8,8 @@ from typing import Any
 
 from ...client import NotebookLMClient
 from ...types import GenerationStatus
-from ..error_handler import emit_cancelled_and_exit
-from ..rendering import console, json_error_response, json_output_response
+from ..error_handler import emit_cancelled_and_exit, output_error
+from ..rendering import console, json_output_response
 
 # Retry constants
 RETRY_INITIAL_DELAY = 60.0  # seconds
@@ -209,31 +209,31 @@ async def handle_generation_result(
     Returns:
         Final GenerationStatus, or None if generation failed.
     """
-    # Handle failed generation or rate limiting
+    # Both failure branches route through ``output_error`` so the exit code
+    # is non-zero in both text and JSON modes. ``output_error`` always raises
+    # ``SystemExit`` — these calls never return. Runtime failures use
+    # ``output_error`` rather than ``click.ClickException``; the latter is
+    # reserved for input-validation boundaries (CLI argument parsing).
     if not result:
-        if json_output:
-            json_error_response(
-                "GENERATION_FAILED",
-                f"{artifact_type.title()} generation failed",
-            )
-        else:
-            console.print(f"[red]{artifact_type.title()} generation failed.[/red]")
-        return None
+        output_error(
+            f"{artifact_type.title()} generation failed",
+            "GENERATION_FAILED",
+            json_output,
+            1,
+        )
 
     # Check for rate limiting (result exists but failed due to rate limit)
     if isinstance(result, GenerationStatus) and result.is_rate_limited:
-        if json_output:
-            json_error_response(
-                "RATE_LIMITED",
-                f"{artifact_type.title()} generation rate limited by Google",
-            )
-        else:
-            console.print(
-                f"[red]{artifact_type.title()} generation rate limited by Google.[/red]\n"
-                "[yellow]Daily quota may be exceeded. Try again in 1-24 hours, "
-                "or use --retry N to retry automatically.[/yellow]"
-            )
-        return result
+        output_error(
+            f"{artifact_type.title()} generation rate limited by Google.",
+            "RATE_LIMITED",
+            json_output,
+            1,
+            hint=(
+                "Daily quota may be exceeded. Try again in 1-24 hours, "
+                "or use --retry N to retry automatically."
+            ),
+        )
 
     status: Any = result
     task_id = _extract_generation_task_id(result)
@@ -300,9 +300,22 @@ def _extract_task_id(status: Any) -> str | None:
 
 
 def _output_generation_status(status: Any, artifact_type: str, json_output: bool) -> None:
-    """Output generation status in appropriate format."""
+    """Output generation status in appropriate format.
+
+    The terminal ``is_failed`` branch routes through ``output_error`` so
+    failures observed after a ``--wait`` produce a non-zero exit in both
+    text and JSON modes.
+    """
     is_complete = hasattr(status, "is_complete") and status.is_complete
     is_failed = hasattr(status, "is_failed") and status.is_failed
+
+    if is_failed:
+        output_error(
+            getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
+            "GENERATION_FAILED",
+            json_output,
+            1,
+        )
 
     if json_output:
         if is_complete:
@@ -312,11 +325,6 @@ def _output_generation_status(status: Any, artifact_type: str, json_output: bool
                     "status": "completed",
                     "url": getattr(status, "url", None),
                 }
-            )
-        elif is_failed:
-            json_error_response(
-                "GENERATION_FAILED",
-                getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
             )
         else:
             task_id = _extract_task_id(status)
@@ -328,8 +336,6 @@ def _output_generation_status(status: Any, artifact_type: str, json_output: bool
                 console.print(f"[green]{artifact_type.title()} ready:[/green] {url}")
             else:
                 console.print(f"[green]{artifact_type.title()} ready[/green]")
-        elif is_failed:
-            console.print(f"[red]Failed:[/red] {getattr(status, 'error', None) or 'Unknown error'}")
         else:
             task_id = _extract_task_id(status)
             console.print(f"[yellow]Started:[/yellow] {task_id or status}")

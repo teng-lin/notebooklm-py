@@ -271,8 +271,11 @@ class TestGenerateAudio:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
-            assert result.exit_code == 0
-            assert "Audio generation failed" in result.output
+            # P1.T6: failed generation now exits non-zero in text mode (was 0
+            # pre-fix). Message lands on stderr via ``output_error`` →
+            # ``safe_echo(err=True)``.
+            assert result.exit_code != 0
+            assert "Audio generation failed" in result.stderr
 
 
 # =============================================================================
@@ -1527,18 +1530,35 @@ class TestOutputGenerationStatusDirect:
         )
 
     def test_json_failed(self):
-        """Line 251: JSON output for failed status."""
+        """JSON output for failed status routes through ``output_error``.
+
+        P1.T6: terminal ``is_failed`` no longer fans into separate text/JSON
+        branches — both modes go through ``output_error`` (the public alias
+        of ``error_handler._output_error``) so the exit code is unified at
+        1 across modes.
+        """
         status = self._make_status(is_failed=True, error="Something went wrong")
-        with patch.object(self.generate_module, "json_error_response") as mock_err:
-            self.generate_module._output_generation_status(status, "audio", json_output=True)
-        mock_err.assert_called_once_with("GENERATION_FAILED", "Something went wrong")
+        with patch.object(self.generate_module, "output_error") as mock_err:
+            with pytest.raises(SystemExit):
+                # output_error raises SystemExit; in real use the patch
+                # suppresses it but the SystemExit path is part of the
+                # contract — patch a side_effect to mirror the real call.
+                mock_err.side_effect = SystemExit(1)
+                self.generate_module._output_generation_status(status, "audio", json_output=True)
+        mock_err.assert_called_once_with("Something went wrong", "GENERATION_FAILED", True, 1)
 
     def test_json_failed_no_error_message(self):
-        """Line 251: JSON failed output falls back to default message when error is None."""
+        """JSON failed output falls back to default message when error is None.
+
+        Same ``output_error`` routing as ``test_json_failed`` — only the
+        message differs (default fallback when ``status.error`` is None).
+        """
         status = self._make_status(is_failed=True, error=None)
-        with patch.object(self.generate_module, "json_error_response") as mock_err:
-            self.generate_module._output_generation_status(status, "audio", json_output=True)
-        mock_err.assert_called_once_with("GENERATION_FAILED", "Audio generation failed")
+        with patch.object(self.generate_module, "output_error") as mock_err:
+            with pytest.raises(SystemExit):
+                mock_err.side_effect = SystemExit(1)
+                self.generate_module._output_generation_status(status, "audio", json_output=True)
+        mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", True, 1)
 
     def test_json_pending_with_task_id(self):
         """Lines 205-207, 257: JSON output for pending status extracts task_id from list."""
@@ -1571,18 +1591,34 @@ class TestOutputGenerationStatusDirect:
         mock_console.print.assert_called_once_with("[green]Audio ready[/green]")
 
     def test_text_failed(self):
-        """Line 266: Text output for failed status."""
+        """Text output for failed status routes through ``output_error``.
+
+        P1.T6: text-mode failures no longer print via Rich + return (which
+        kept exit code 0). They route through ``output_error`` →
+        ``safe_echo(err=True)`` → ``SystemExit(1)`` so text mode now exits
+        non-zero, matching JSON mode.
+        """
         status = self._make_status(is_failed=True, error="Transcription error")
-        with patch.object(self.generate_module, "console") as mock_console:
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
-        mock_console.print.assert_called_once_with("[red]Failed:[/red] Transcription error")
+        with patch.object(self.generate_module, "output_error") as mock_err:
+            with pytest.raises(SystemExit):
+                mock_err.side_effect = SystemExit(1)
+                self.generate_module._output_generation_status(status, "audio", json_output=False)
+        mock_err.assert_called_once_with("Transcription error", "GENERATION_FAILED", False, 1)
 
     def test_text_failed_no_error_message(self):
-        """Text failed output falls back to Unknown error when error is None."""
+        """Text failed output falls back to default message when error is None.
+
+        Note: pre-P1.T6 used ``"Unknown error"`` as the text-mode default and
+        ``"Audio generation failed"`` as the JSON-mode default. After
+        unification through ``output_error``, both modes use the same
+        ``"<Title> generation failed"`` fallback.
+        """
         status = self._make_status(is_failed=True, error=None)
-        with patch.object(self.generate_module, "console") as mock_console:
-            self.generate_module._output_generation_status(status, "audio", json_output=False)
-        mock_console.print.assert_called_once_with("[red]Failed:[/red] Unknown error")
+        with patch.object(self.generate_module, "output_error") as mock_err:
+            with pytest.raises(SystemExit):
+                mock_err.side_effect = SystemExit(1)
+                self.generate_module._output_generation_status(status, "audio", json_output=False)
+        mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", False, 1)
 
     def test_text_pending_with_task_id(self):
         """Line 268: Text output for pending status shows task_id."""
@@ -1983,7 +2019,12 @@ class TestHandleGenerationResultPaths:
         assert "task_list_1" in result.output or "Started" in result.output
 
     def test_generation_result_falsy_shows_failed_message(self, runner, mock_auth):
-        """Line 173: falsy result → text error message."""
+        """Falsy result → stderr error message + non-zero exit (P1.T6).
+
+        Pre-fix exited 0 in text mode; post-fix routes through
+        ``output_error`` → ``SystemExit(1)`` and writes the message to
+        stderr. See ``TestArtifactGenerationExitCodes`` for the contract.
+        """
         with patch_client_for_module("generate") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
@@ -1995,8 +2036,8 @@ class TestHandleGenerationResultPaths:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
 
-        assert result.exit_code == 0
-        assert "generation failed" in result.output.lower()
+        assert result.exit_code != 0
+        assert "generation failed" in result.stderr.lower()
 
     def test_generation_result_falsy_json_shows_error(self, runner, mock_auth):
         """Line 173: falsy result with --json → json_error_response (exits with code 1)."""
@@ -2357,3 +2398,180 @@ class TestGenerateWaitSigintResumeHint:
                         raise KeyboardInterrupt
 
         asyncio.run(_exercise())
+
+
+# =============================================================================
+# P1.T6 — Exit-code parity across text/JSON modes on artifact generation failure
+# =============================================================================
+
+
+class TestArtifactGenerationExitCodes:
+    """Failed artifact generation must exit non-zero in BOTH text and JSON modes.
+
+    Pre-fix behavior: text mode printed a Rich error to stdout and returned
+    normally (exit 0); JSON mode emitted a ``json_error_response`` envelope and
+    exited 1. The exit-code asymmetry meant shell scripts driving
+    ``notebooklm generate audio ...`` without ``--json`` could not detect
+    failures via ``$?``.
+
+    These tests pin the unified contract: every failure path inside
+    ``handle_generation_result`` (and ``_output_generation_status``'s terminal
+    failed branch reached via ``--wait``) routes through ``output_error``,
+    which exits non-zero and writes the human-readable message to stderr in
+    text mode or a structured envelope on stdout in JSON mode.
+    """
+
+    # --- Initial-call failure (result is None / falsy) ---------------------
+
+    def test_text_mode_none_result_exits_nonzero(self, runner, mock_auth):
+        """``generate audio`` without ``--json`` exits != 0 when the API returns None."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
+
+        assert result.exit_code != 0
+        # Message routed to stderr via safe_echo(err=True) under Click 8.2+ which
+        # separates stdout/stderr by default.
+        assert "Audio generation failed" in result.stderr
+
+    def test_json_mode_none_result_exits_nonzero(self, runner, mock_auth):
+        """``generate audio --json`` exits != 0 when the API returns None."""
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
+
+        assert result.exit_code != 0
+        data = json.loads(result.output)
+        assert data["error"] is True
+        assert data["code"] == "GENERATION_FAILED"
+        assert "Audio generation failed" in data["message"]
+
+    # --- Rate-limit failure --------------------------------------------------
+
+    def test_text_mode_rate_limited_exits_nonzero(self, runner, mock_auth):
+        """Rate-limited result (no retries left) exits != 0 in text mode."""
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123"])
+
+        assert result.exit_code != 0
+        # The "rate limited" message and the daily-quota hint both land on
+        # stderr; the second goes through ``output_error``'s ``hint`` arg.
+        assert "rate limited by Google" in result.stderr
+        assert "--retry" in result.stderr
+
+    def test_json_mode_rate_limited_exits_nonzero(self, runner, mock_auth):
+        """Rate-limited result exits != 0 with a RATE_LIMITED JSON envelope."""
+        from notebooklm.types import GenerationStatus
+
+        rate_limited = GenerationStatus(
+            task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
+
+        assert result.exit_code != 0
+        data = json.loads(result.output)
+        assert data["error"] is True
+        assert data["code"] == "RATE_LIMITED"
+
+    # --- Wait-then-failed terminal status -----------------------------------
+
+    def test_text_mode_wait_then_failed_exits_nonzero(self, runner, mock_auth):
+        """``--wait`` that observes a terminal is_failed status exits != 0 in text mode."""
+        from notebooklm.types import GenerationStatus
+
+        initial = GenerationStatus(
+            task_id="task_fail_1", status="pending", error=None, error_code=None
+        )
+        terminal = GenerationStatus(
+            task_id="task_fail_1",
+            status="failed",
+            error="Transcription error",
+            error_code="INTERNAL_ERROR",
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=initial)
+            mock_client.artifacts.wait_for_completion = AsyncMock(return_value=terminal)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--wait"])
+
+        assert result.exit_code != 0
+        assert "Transcription error" in result.stderr
+
+    def test_json_mode_wait_then_failed_exits_nonzero(self, runner, mock_auth):
+        """``--wait --json`` that observes a terminal is_failed status exits != 0."""
+        from notebooklm.types import GenerationStatus
+
+        initial = GenerationStatus(
+            task_id="task_fail_2", status="pending", error=None, error_code=None
+        )
+        terminal = GenerationStatus(
+            task_id="task_fail_2",
+            status="failed",
+            error="Transcription error",
+            error_code="INTERNAL_ERROR",
+        )
+
+        with patch_client_for_module("generate") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.artifacts.generate_audio = AsyncMock(return_value=initial)
+            mock_client.artifacts.wait_for_completion = AsyncMock(return_value=terminal)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli, ["generate", "audio", "-n", "nb_123", "--wait", "--json"]
+                )
+
+        assert result.exit_code != 0
+        data = json.loads(result.output)
+        assert data["error"] is True
+        assert data["code"] == "GENERATION_FAILED"
+        assert "Transcription error" in data["message"]
