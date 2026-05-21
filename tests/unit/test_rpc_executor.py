@@ -274,7 +274,7 @@ async def test_core_decode_response_monkeypatch_after_executor_construction(monk
         return {"decoded": rpc_id}
 
     monkeypatch.setattr(core, "_perform_authed_post", fake_perform_authed_post)
-    monkeypatch.setattr("notebooklm._core.decode_response", fake_decode)
+    monkeypatch.setattr("notebooklm.rpc.decode_response", fake_decode)
 
     result = await core._rpc_call_impl(
         RPCMethod.LIST_NOTEBOOKS,
@@ -449,7 +449,7 @@ async def test_core_sleep_monkeypatch_after_executor_construction(monkeypatch) -
 
     monkeypatch.setattr(core, "_await_refresh", fake_await_refresh)
     monkeypatch.setattr(core, "rpc_call", fake_rpc_call)
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
     result = await core._try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,

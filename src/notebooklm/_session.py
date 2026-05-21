@@ -178,9 +178,15 @@ _AUTH_COORD_INIT_LOCK = threading.Lock()
 
 
 def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
-    from . import _core
+    # Phase 2 PR 5 (``.sisyphus/plans/refactor-completion-plan.md``):
+    # imports ``decode_response`` from the canonical :mod:`notebooklm.rpc`
+    # surface rather than the legacy ``notebooklm._core`` compatibility
+    # shim. Tests that patched ``notebooklm._core.decode_response`` are
+    # re-targeted to ``notebooklm.rpc.decode_response`` in the same
+    # commit so the live RPC decode path stays patchable end-to-end.
+    from .rpc import decode_response
 
-    return _core.decode_response(raw, rpc_id, allow_null=allow_null)
+    return decode_response(raw, rpc_id, allow_null=allow_null)
 
 
 def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
@@ -1202,10 +1208,11 @@ class Session:
         """Return the RPC execution collaborator, lazily initialized.
 
         The adapters resolve through this module at call time so existing
-        monkeypatches of ``notebooklm._core.decode_response``,
-        ``notebooklm._core.is_auth_error``, and
-        ``notebooklm._core.asyncio.sleep`` keep affecting live RPC behavior
-        after the collaborator has been constructed.
+        monkeypatches of ``notebooklm.rpc.decode_response`` (Phase 2 PR 5
+        canonical target — previously the deprecated
+        ``notebooklm._core.decode_response`` shim), ``notebooklm._core.is_auth_error``,
+        and ``notebooklm._core.asyncio.sleep`` keep affecting live RPC
+        behavior after the collaborator has been constructed.
         """
         executor = getattr(self, "_rpc_executor", None)
         if executor is None:

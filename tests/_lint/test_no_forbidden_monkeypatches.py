@@ -154,6 +154,17 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_auth_psidts_recovery.py",
         "tests/unit/test_backoff.py",
         "tests/unit/test_chat_delete_conversation.py",
+        # Phase 2 PR 5 migrated this file's ``asyncio.to_thread`` patch
+        # off the legacy ``notebooklm._core.asyncio.to_thread`` shim onto
+        # its canonical importing module
+        # (``notebooklm._session_lifecycle.asyncio.to_thread``, where
+        # ``ClientLifecycle.save_cookies`` sources it). The new patch
+        # target is still a string-target into the ``notebooklm.*``
+        # namespace, so the file lands on the allowlist with the rest of
+        # the stdlib-seam patchers (``test_authed_transport.py``,
+        # ``test_rpc_executor.py``, ``test_side_effects_idempotency.py``,
+        # …) until ADR-007's pattern is extended to stdlib seams.
+        "tests/unit/test_cookie_persistence.py",
         "tests/unit/test_session_lifecycle.py",
         "tests/unit/test_rpc_executor.py",
         "tests/unit/test_authed_transport.py",

@@ -296,7 +296,7 @@ class TestRPCCallAuthRetry:
             mock_post = AsyncMock(return_value=success_response)
             install_post_as_stream(None, core._http_client, mock_post)
             with patch(
-                "notebooklm._core.decode_response",
+                "notebooklm.rpc.decode_response",
                 side_effect=[
                     RPCError("authentication expired"),
                     ["result_data"],
