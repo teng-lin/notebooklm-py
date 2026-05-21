@@ -56,13 +56,16 @@ def _build_parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
 def _inside_type_checking(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
     while node in parents:
         node = parents[node]
-        if isinstance(node, ast.If) and ast.unparse(node.test) == "TYPE_CHECKING":
+        if isinstance(node, ast.If) and ast.unparse(node.test) in {
+            "TYPE_CHECKING",
+            "typing.TYPE_CHECKING",
+        }:
             return True
     return False
 
 
 def _is_core_module_name(name: str) -> bool:
-    return name == "notebooklm._core" or name.endswith("._core")
+    return name.endswith("._core")
 
 
 def _scan(path: Path, extra_banned: frozenset[str]) -> list[tuple[int, str]]:
@@ -89,8 +92,7 @@ def _scan(path: Path, extra_banned: frozenset[str]) -> list[tuple[int, str]]:
             prefix = "." * level
 
             core_hit = (
-                module == "notebooklm._core"
-                or _is_core_module_name(module)
+                _is_core_module_name(module)
                 or (module == "notebooklm" and "_core" in names)
                 or (level > 0 and module == "_core")
                 or (level > 0 and not module and "_core" in names)
@@ -100,13 +102,15 @@ def _scan(path: Path, extra_banned: frozenset[str]) -> list[tuple[int, str]]:
                 violations.append((node.lineno, f"from {prefix}{module} import {joined}"))
 
             extra_hit_module = module in extra_banned
-            extra_hit_namelist = module == "notebooklm" and (names & extra_short)
+            extra_hit_namelist = (
+                module == "notebooklm" or (level > 0 and not module)
+            ) and (names & extra_short)
             if extra_hit_module:
                 joined = ", ".join(sorted(names))
                 violations.append((node.lineno, f"from {prefix}{module} import {joined}"))
             elif extra_hit_namelist:
                 joined = ", ".join(sorted(names & extra_short))
-                violations.append((node.lineno, f"from notebooklm import {joined}"))
+                violations.append((node.lineno, f"from {prefix}{module} import {joined}"))
 
     return violations
 
