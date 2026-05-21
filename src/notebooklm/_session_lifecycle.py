@@ -119,14 +119,15 @@ CookieRotator = Callable[..., Awaitable[None]]
 
 
 def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
-    """Default ``cookie_saver``: late-bind to ``notebooklm._core.save_cookies_to_storage``.
+    """Default ``cookie_saver``: late-bind to ``_auth.storage.save_cookies_to_storage``.
 
-    The ``from . import _core`` import lives INSIDE the function body
-    (intentionally, NOT at module top) so the
-    ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-    idiom in 8+ test files still affects the live save path through this
-    wrapper. A top-level import would capture the original reference at
-    module-import time and silently ignore later patches.
+    The import lives INSIDE the function body (intentionally, NOT at
+    module top) so any ``monkeypatch.setattr("notebooklm._auth.storage.
+    save_cookies_to_storage", …)`` swap is observed at call time. A
+    top-level import would capture the original reference at module-
+    import time and silently ignore later patches. The historical
+    ``notebooklm._core`` indirection was removed in v0.5.0 when the
+    ``_core`` compatibility shim was deleted.
 
     ``def`` (not ``async def``) is load-bearing: this wrapper is invoked
     INSIDE ``asyncio.to_thread(_save)`` in
@@ -135,25 +136,26 @@ def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
     would surface as a ``TypeError`` at runtime when ``to_thread`` tries
     to call the coroutine in a worker thread.
     """
-    from . import _core as _core_module
+    from ._auth.storage import save_cookies_to_storage
 
-    return _core_module.save_cookies_to_storage(*args, **kwargs)
+    return save_cookies_to_storage(*args, **kwargs)
 
 
 async def _default_cookie_rotator(*args: Any, **kwargs: Any) -> None:
-    """Default ``cookie_rotator``: late-bind to ``notebooklm._core._rotate_cookies``.
+    """Default ``cookie_rotator``: late-bind to ``_auth.keepalive._rotate_cookies``.
 
-    The ``from . import _core`` import lives INSIDE the function body so
-    ``monkeypatch.setattr("notebooklm._core._rotate_cookies", …)`` in
-    ``tests/unit/concurrency/test_close_cancellation_leak.py`` (and
-    similar) keeps affecting the live keepalive loop through this wrapper.
+    The import lives INSIDE the function body so any
+    ``monkeypatch.setattr("notebooklm._auth.keepalive._rotate_cookies", …)``
+    swap is observed at call time. The historical ``notebooklm._core``
+    indirection was removed in v0.5.0 when the ``_core`` compatibility
+    shim was deleted.
 
     ``async def`` (not ``def``) is load-bearing: ``_rotate_cookies`` at
     ``_auth/keepalive.py:298`` is async and must be awaited.
     """
-    from . import _core as _core_module
+    from ._auth.keepalive import _rotate_cookies
 
-    await _core_module._rotate_cookies(*args, **kwargs)
+    await _rotate_cookies(*args, **kwargs)
 
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in

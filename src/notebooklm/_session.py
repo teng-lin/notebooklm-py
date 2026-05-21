@@ -189,26 +189,34 @@ def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = Fal
 
 
 def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
-    from . import _core
+    """Late-bound ``asyncio.sleep`` so tests can patch the canonical seam.
 
-    return _core.asyncio.sleep(seconds)
+    Tests patch ``notebooklm._authed_transport.asyncio.sleep`` (per Phase
+    2 PR 5). The local stdlib import inside the function body keeps the
+    patch effective at call time — a module-top ``import asyncio`` would
+    capture the original reference.
+    """
+    import asyncio
+
+    return asyncio.sleep(seconds)
 
 
 def _live_is_auth_error(exc: Exception) -> bool:
-    """Resolve ``is_auth_error`` through the compatibility shim at call time.
+    """Resolve ``is_auth_error`` against the canonical seam at call time.
 
     Python function-body name lookup hits the module ``__dict__`` on each
-    call, so a ``monkeypatch.setattr("notebooklm._core.is_auth_error",
-    ...)`` swap is observed immediately. Used by every chain seed site
-    that wires ``AuthRefreshMiddleware`` and by ``RpcExecutor`` so the
-    project-wide test idiom of patching the symbol on this module stays
-    live without each seed site re-implementing the lambda. PR 12.9
-    cleanup of the prior inline lambdas / ``globals()["is_auth_error"]``
-    indirections.
+    call, so a ``monkeypatch.setattr("notebooklm._session_helpers.
+    is_auth_error", ...)`` swap is observed immediately. Used by every
+    chain seed site that wires ``AuthRefreshMiddleware`` and by
+    ``RpcExecutor`` so the project-wide test idiom of patching the symbol
+    on the canonical module stays live without each seed site re-
+    implementing the lambda. The historical ``notebooklm._core``
+    indirection was removed in v0.5.0 when the ``_core`` compatibility
+    shim was deleted.
     """
-    from . import _core
+    from ._session_helpers import is_auth_error
 
-    return _core.is_auth_error(exc)
+    return is_auth_error(exc)
 
 
 class Session:
