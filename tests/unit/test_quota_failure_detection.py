@@ -36,7 +36,6 @@ def _make_api():
     core.rpc_call = AsyncMock()
     # Real registry backing so wait_for_completion can ``dict.get(key)``.
     core.poll_registry = PollRegistry()
-    core._pending_polls = core.poll_registry.pending
     core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
     core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)

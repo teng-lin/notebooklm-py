@@ -29,7 +29,7 @@ async def test_next_reqid_concurrent_unique_and_monotonic() -> None:
     """100 concurrent ``next_reqid()`` calls produce 100 distinct values."""
     core = _make_core()
     step = 100000
-    baseline = core._reqid_counter  # 100000
+    baseline = core._reqid.value  # 100000
 
     results = await asyncio.gather(*[core.next_reqid(step=step) for _ in range(100)])
 
@@ -48,7 +48,7 @@ async def test_next_reqid_concurrent_unique_and_monotonic() -> None:
     )
 
     # The counter ends exactly where the largest call landed.
-    assert core._reqid_counter == expected[-1]
+    assert core._reqid.value == expected[-1]
 
 
 @pytest.mark.asyncio
@@ -56,7 +56,7 @@ async def test_next_reqid_concurrent_custom_step() -> None:
     """The custom-``step`` path is also race-free under contention."""
     core = _make_core()
     step = 7  # small step exercises the increment math under heavy contention
-    baseline = core._reqid_counter
+    baseline = core._reqid.value
 
     results = await asyncio.gather(*[core.next_reqid(step=step) for _ in range(50)])
 

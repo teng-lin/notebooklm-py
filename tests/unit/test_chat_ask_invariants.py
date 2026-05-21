@@ -2,8 +2,10 @@
 
 These assertions pin down the new contract:
 
-- ``ask`` uses ``core.next_reqid()`` for the URL ``_reqid`` param (no direct
-  ``_reqid_counter`` mutation, so no ``DeprecationWarning``).
+- ``ask`` uses ``core.next_reqid()`` for the URL ``_reqid`` param (the
+  ``_reqid_counter`` property + deprecation gesture were retired in the
+  session-shrink arc; this test now guards against any new
+  ``DeprecationWarning`` escaping ``_chat.py``).
 - ``authuser=`` is present on the chat URL when ``account_email`` is set on
   the auth tokens, mirroring the batchexecute path in ``_core._build_url``.
   Previously omitted entirely on the chat endpoint.

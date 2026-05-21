@@ -1141,10 +1141,10 @@ class TestBaselineNotAdvancedOnSaveFailure:
         client = NotebookLMClient(auth, cookie_saver=silent_fail)
 
         async with client:
-            baseline_before = client._session._loaded_cookie_snapshot
+            baseline_before = client._session.cookie_persistence.loaded_cookie_snapshot
             assert client._session._http_client is not None
             await client._session.save_cookies(client._session._http_client.cookies)
-            baseline_after = client._session._loaded_cookie_snapshot
+            baseline_after = client._session.cookie_persistence.loaded_cookie_snapshot
 
         assert baseline_after is baseline_before, (
             "save_cookies must NOT advance _loaded_cookie_snapshot when the "
@@ -1188,8 +1188,8 @@ class TestBaselineNotAdvancedOnSaveFailure:
             key = CookieSnapshotKey("__Secure-1PSIDTS", ".google.com", "/")
             assert auth.cookie_snapshot is not None
             assert auth.cookie_snapshot[key].value == "old"
-            assert core._loaded_cookie_snapshot is not None
-            assert core._loaded_cookie_snapshot[key].value == "old", (
+            assert core.cookie_persistence.loaded_cookie_snapshot is not None
+            assert core.cookie_persistence.loaded_cookie_snapshot[key].value == "old", (
                 "Session must inherit the pre-fetch baseline so the mutated "
                 "cookie remains a delta after the failed pre-client save"
             )
@@ -1539,8 +1539,8 @@ class TestCASVariantAware:
         core = Session(auth)
         await core.open()
         try:
-            assert core._loaded_cookie_snapshot is not None
-            assert core._loaded_cookie_snapshot[bare_key].value == "OLD", (
+            assert core.cookie_persistence.loaded_cookie_snapshot is not None
+            assert core.cookie_persistence.loaded_cookie_snapshot[bare_key].value == "OLD", (
                 "Session.open must inherit the variant-aware preserved "
                 "baseline from AuthTokens.cookie_snapshot"
             )
@@ -1556,9 +1556,9 @@ class TestCASVariantAware:
                 "variant-aware CAS lookup must still see the disk/baseline "
                 "divergence through the leading-dot variant"
             )
-            assert core._loaded_cookie_snapshot is not None
-            assert core._loaded_cookie_snapshot.get(dotted_key) is not None
-            assert core._loaded_cookie_snapshot[dotted_key].value == "SIBLING", (
+            assert core.cookie_persistence.loaded_cookie_snapshot is not None
+            assert core.cookie_persistence.loaded_cookie_snapshot.get(dotted_key) is not None
+            assert core.cookie_persistence.loaded_cookie_snapshot[dotted_key].value == "SIBLING", (
                 "After the second save, disk already matches the current "
                 "dotted-variant jar value, so the save must recover from the "
                 "prior CAS rejection and advance baseline to the converged "
@@ -1572,8 +1572,8 @@ class TestCASVariantAware:
                 "After convergence advances the baseline, a later OSID "
                 "rotation must persist through the variant-aware lookup"
             )
-            assert core._loaded_cookie_snapshot is not None
-            assert core._loaded_cookie_snapshot[dotted_key].value == "NEXT", (
+            assert core.cookie_persistence.loaded_cookie_snapshot is not None
+            assert core.cookie_persistence.loaded_cookie_snapshot[dotted_key].value == "NEXT", (
                 "The successful follow-up rotation should advance the dotted "
                 "baseline to the value now reflected on disk"
             )

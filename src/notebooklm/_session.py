@@ -4,7 +4,6 @@ import asyncio
 import logging
 import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
-import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
@@ -31,7 +30,7 @@ from ._middleware import (
 )
 from ._middleware_chain import MiddlewareChainBuilder
 from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
-from ._polling_registry import PendingPolls, PollRegistry
+from ._polling_registry import PollRegistry
 from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
 from ._reqid_counter import ReqidCounter
 from ._rpc_executor import RpcExecutor
@@ -49,7 +48,6 @@ from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
 from ._transport_drain import TransportDrainTracker, _TransportOperationToken
 from .auth import (
     AuthTokens,
-    CookieSnapshot,
 )
 from .auth import (
     authuser_query as _authuser_query_value,
@@ -339,10 +337,9 @@ class Session:
         # Request ID counter for chat API (must be unique per request).
         # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
         # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
-        # The ``_reqid_counter`` compat property below bridges the legacy
-        # ivar name back into this helper; ``_reqid_counter_value`` and
-        # ``_reqid_lock`` bridges were dropped in D1-audit-full (access
-        # ``self._reqid.value`` / ``self._reqid._lock`` directly if needed).
+        # Access ``self._reqid.value`` / ``self._reqid._lock`` directly;
+        # the ``_reqid_counter`` / ``_reqid_counter_value`` / ``_reqid_lock``
+        # compat bridges were all dropped in the session-shrink arc.
         # The ``on_lock_wait`` hook keeps the
         # cumulative ``lock_wait_seconds_*`` metrics ticking inside
         # ``self._metrics_obj`` even though the counter is now extracted.
@@ -404,12 +401,23 @@ class Session:
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
         )
-        # Owns the in-process save lock and open-time cookie baseline while
-        # compatibility properties below keep the legacy private attribute
-        # names observable for current tests and first-party callers.
+        # Owns the in-process save lock and open-time cookie baseline. The
+        # ``_save_lock`` / ``_loaded_cookie_snapshot`` compat bridges were
+        # retired in the session-shrink arc; first-party callers reach
+        # through ``self.cookie_persistence.<name>`` directly.
         self.cookie_persistence = CookiePersistence(self.auth, _resolved_storage_path)
         self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
-        # Compatibility-only: active artifact polling state is owned by ArtifactsAPI.
+        # Session-level :class:`PollRegistry` retained as a legacy attribute
+        # that the now-retired ``_pending_polls`` bridge exposed. Note that
+        # the *live* artifact-polling state is owned separately by
+        # :class:`ArtifactsAPI` (``src/notebooklm/_artifacts.py``), which
+        # constructs its own :class:`PollRegistry` and threads it into
+        # :class:`ArtifactPollingService` (``src/notebooklm/_artifact_polling.py``).
+        # This ``self.poll_registry`` is currently unused by production code;
+        # the tests in ``tests/integration/concurrency/test_artifact_poll_dedupe.py``
+        # observe it through the (vacuous) bridge-equivalent path. Migrating
+        # those tests to ``client.artifacts._polling.poll_registry.pending``
+        # — and dropping this attribute — is tracked as a follow-up audit.
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
@@ -432,22 +440,6 @@ class Session:
             self._middlewares,
             self._authed_post_chain_terminal,
         )
-
-    @property
-    def _save_lock(self) -> threading.Lock:
-        """Compatibility bridge to ``CookiePersistence``'s in-process save lock."""
-        return self.cookie_persistence.save_lock
-
-    # ``_save_lock`` setter dropped in arch-d2-cutover: zero external callers.
-
-    @property
-    def _loaded_cookie_snapshot(self) -> CookieSnapshot | None:
-        """Compatibility bridge to the cookie save baseline.
-
-        Phase 4 deleted the matching ``.setter``; write on
-        ``self.cookie_persistence.loaded_cookie_snapshot`` directly.
-        """
-        return self.cookie_persistence.loaded_cookie_snapshot
 
     # ``ClientMetrics`` compat bridges. The three observability ivars now live
     # on ``self._metrics_obj``; the bridges below delegate directly to that
@@ -595,55 +587,6 @@ class Session:
     # (D1-audit-full): zero external callers; live values remain on
     # ``self._lifecycle`` (and the lifecycle helper reads them as plain
     # ivars when it builds the ``httpx.AsyncClient``).
-
-    # ------------------------------------------------------------------
-    # Request-id counter (chat API requires a monotonic ``_reqid`` URL param).
-    #
-    # Historical contract: callers did ``self._session._reqid_counter += 100000``
-    # then read the new value. Two concurrent ``ChatAPI.ask`` calls on the same
-    # core would race on the read-modify-write, producing duplicate ``_reqid``
-    # values that Google rejects.
-    #
-    # New contract: ``await core.next_reqid()`` performs the increment under
-    # ``ReqidCounter._lock`` and returns the post-increment value. The state
-    # lives in :class:`notebooklm._reqid_counter.ReqidCounter` (``self._reqid``);
-    # the ``_reqid_counter`` property below is the last surviving read/write
-    # bridge — direct mutation of ``_reqid_counter`` still works for
-    # backwards compatibility but emits ``DeprecationWarning``. The
-    # ``_reqid_counter_value`` / ``_reqid_lock`` compat bridges were dropped
-    # (D1-audit-full): zero external callers; tests that need to seed the
-    # counter or substitute the lock should reach through ``self._reqid``
-    # directly.
-    # ------------------------------------------------------------------
-
-    @property
-    def _reqid_counter(self) -> int:
-        """Current request-id counter value. Read access is safe; write access
-        via the property setter emits ``DeprecationWarning``.
-        """
-        return self._reqid.value
-
-    @_reqid_counter.setter
-    def _reqid_counter(self, value: int) -> None:
-        warnings.warn(
-            "Direct mutation of Session._reqid_counter is deprecated; "
-            "use `await core.next_reqid()` instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._reqid.set_value(value)
-
-    @property
-    def _pending_polls(self) -> PendingPolls:
-        """Deprecated compatibility view of ``poll_registry.pending``.
-
-        The active artifact polling registry is feature-owned. Phase 4
-        deleted the matching ``.setter``; write on
-        ``self.poll_registry.pending`` directly. The read-side bridge
-        remains for external callers that still query
-        ``Session._pending_polls``.
-        """
-        return self.poll_registry.pending
 
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook."""

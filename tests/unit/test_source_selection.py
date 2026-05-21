@@ -55,9 +55,8 @@ def mock_core():
     core.auth.session_id = "test_session"
     core.auth.authuser = 0
     core.auth.account_email = None
-    # Reqid counter is now bumped via ``await core.next_reqid()``; the
-    # ``_reqid_counter`` attribute remains for backwards-compat assertions.
-    core._reqid_counter = 0
+    # Reqid counter is bumped via ``await core.next_reqid()``; the mock
+    # short-circuits the increment to a fixed post-bump value.
     core.next_reqid = AsyncMock(return_value=100000)
     core.bound_loop = None
     core.assert_bound_loop = MagicMock(return_value=None)

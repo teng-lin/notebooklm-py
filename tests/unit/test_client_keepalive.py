@@ -482,7 +482,7 @@ class TestSaveCookiesUnification:
             ``original_snapshot=`` through, the assertion below catches it
             before production silently reverts to legacy merge.
             """
-            lock_held_during_save.append(core_ref["core"]._save_lock.locked())
+            lock_held_during_save.append(core_ref["core"].cookie_persistence.save_lock.locked())
             call_kwargs.append(kwargs)
             return True
 
@@ -555,7 +555,7 @@ class TestSaveCookiesUnification:
             must route through the snapshot/delta path, never the legacy
             full-merge path.
             """
-            save_calls.append(client_ref["client"]._session._save_lock.locked())
+            save_calls.append(client_ref["client"]._session.cookie_persistence.save_lock.locked())
             snapshot_kwarg_present.append("original_snapshot" in kwargs)
             return True
 

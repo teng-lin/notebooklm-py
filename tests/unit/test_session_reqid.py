@@ -1,12 +1,14 @@
-"""Unit tests for ``Session.next_reqid`` and the deprecation guard on
-direct mutation of ``_reqid_counter``.
+"""Unit tests for ``Session.next_reqid``.
 
 Covers:
 - ``next_reqid()`` returns monotonic, post-increment values.
 - Custom ``step`` parameter works.
-- ``DeprecationWarning`` is emitted on ``core._reqid_counter = ...`` and on
-  ``core._reqid_counter += ...``.
 - ``next_reqid()`` itself does NOT emit a ``DeprecationWarning``.
+
+The ``_reqid_counter`` compat property + setter (the read-bridge and the
+deprecation gesture on direct mutation) were retired in the session-shrink
+arc; tests read ``core._reqid.value`` directly and use
+``core._reqid.set_value(...)`` to seed a baseline.
 """
 
 import warnings
@@ -30,7 +32,7 @@ def _make_core() -> Session:
 async def test_next_reqid_returns_post_increment_values() -> None:
     """Three successive calls bump by the default step and return new values."""
     core = _make_core()
-    assert core._reqid_counter == 100000  # baseline
+    assert core._reqid.value == 100000  # baseline
 
     first = await core.next_reqid()
     second = await core.next_reqid()
@@ -40,7 +42,7 @@ async def test_next_reqid_returns_post_increment_values() -> None:
     assert second == 300000
     assert third == 400000
     # And the property reflects the final state.
-    assert core._reqid_counter == 400000
+    assert core._reqid.value == 400000
 
 
 @pytest.mark.asyncio
@@ -67,25 +69,6 @@ async def test_next_reqid_does_not_warn() -> None:
     )
 
 
-def test_direct_assignment_warns() -> None:
-    """``core._reqid_counter = N`` must emit a ``DeprecationWarning``."""
-    core = _make_core()
-    with pytest.warns(DeprecationWarning, match="next_reqid"):
-        core._reqid_counter = 0
-    # Setter still applies the value (backwards compatible).
-    assert core._reqid_counter == 0
-
-
-def test_read_modify_write_warns() -> None:
-    """``core._reqid_counter += step`` must warn — this is the existing
-    ``_chat.py`` pattern targeted for migration.
-    """
-    core = _make_core()
-    with pytest.warns(DeprecationWarning, match="next_reqid"):
-        core._reqid_counter += 100000
-    assert core._reqid_counter == 200000
-
-
 @pytest.mark.asyncio
 async def test_next_reqid_rejects_zero_step() -> None:
     """``step=0`` would break uniqueness (two callers see the same value)."""
@@ -93,7 +76,7 @@ async def test_next_reqid_rejects_zero_step() -> None:
     with pytest.raises(ValueError, match="step must be positive"):
         await core.next_reqid(step=0)
     # Counter must not have moved.
-    assert core._reqid_counter == 100000
+    assert core._reqid.value == 100000
 
 
 @pytest.mark.asyncio
@@ -102,7 +85,7 @@ async def test_next_reqid_rejects_negative_step() -> None:
     core = _make_core()
     with pytest.raises(ValueError, match="step must be positive"):
         await core.next_reqid(step=-1)
-    assert core._reqid_counter == 100000
+    assert core._reqid.value == 100000
 
 
 @pytest.mark.asyncio
@@ -111,7 +94,7 @@ async def test_next_reqid_rejects_non_int_step() -> None:
     core = _make_core()
     with pytest.raises(TypeError, match="step must be int"):
         await core.next_reqid(step="100")  # type: ignore[arg-type]
-    assert core._reqid_counter == 100000
+    assert core._reqid.value == 100000
 
 
 @pytest.mark.asyncio
@@ -124,4 +107,4 @@ async def test_next_reqid_rejects_bool_step() -> None:
         await core.next_reqid(step=True)  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="step must be int"):
         await core.next_reqid(step=False)  # type: ignore[arg-type]
-    assert core._reqid_counter == 100000
+    assert core._reqid.value == 100000

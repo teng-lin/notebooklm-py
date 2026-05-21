@@ -37,38 +37,28 @@ def test_poll_registry_preserves_seeded_pending_mapping_identity() -> None:
     assert registry.pending is pending
 
 
-def test_session_exposes_poll_registry_and_pending_polls_bridge() -> None:
+def test_session_exposes_poll_registry() -> None:
     core = Session(_auth_tokens())
 
     assert isinstance(core.poll_registry, PollRegistry)
-    assert core._pending_polls is core.poll_registry.pending
+    assert core.poll_registry.pending == {}
 
 
-def test_client_core_pending_polls_assignment_replaces_registry_backing_mapping() -> None:
+def test_session_poll_registry_pending_can_be_swapped() -> None:
     core = Session(_auth_tokens())
     registry = core.poll_registry
     pending: PendingPolls = {}
 
-    # Phase 4: ``Session._pending_polls`` setter was removed; write on the
-    # collaborator directly. The read-side bridge stays.
+    # The ``_pending_polls`` compat bridge was retired in the
+    # session-shrink arc; write on the collaborator directly.
     core.poll_registry.pending = pending
 
     assert core.poll_registry is registry
     assert core.poll_registry.pending is pending
-    assert core._pending_polls is pending
-
-
-def test_client_core_pending_polls_bridge_reflects_poll_registry_mutations() -> None:
-    core = Session(_auth_tokens())
-    pending: PendingPolls = {}
-
-    core.poll_registry.pending = pending
-
-    assert core._pending_polls is pending
 
 
 @pytest.mark.asyncio
-async def test_client_core_pending_polls_bridge_preserves_entry_shape() -> None:
+async def test_session_poll_registry_preserves_entry_shape() -> None:
     core = Session(_auth_tokens())
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
@@ -76,7 +66,7 @@ async def test_client_core_pending_polls_bridge_preserves_entry_shape() -> None:
     key = ("notebook-1", "task-1")
 
     try:
-        core._pending_polls[key] = (future, task)
+        core.poll_registry.pending[key] = (future, task)
 
         assert core.poll_registry.pending[key] == (future, task)
     finally:

@@ -37,18 +37,19 @@ def _jar(sid: str = "sid", psidts: str = "psidts") -> httpx.Cookies:
     return jar
 
 
-def test_client_core_exposes_cookie_persistence_and_private_bridges(tmp_path: Path) -> None:
+def test_client_core_exposes_cookie_persistence(tmp_path: Path) -> None:
     core = Session(_auth_tokens(tmp_path / "storage_state.json"))
     baseline = snapshot_cookie_jar(_jar())
 
-    # Phase 4: the ``Session._loaded_cookie_snapshot`` setter was removed
-    # (write through the collaborator directly). The read-side bridge stays.
+    # The ``Session._save_lock`` + ``Session._loaded_cookie_snapshot`` compat
+    # bridges were retired in the session-shrink arc; tests read on the
+    # collaborator directly.
     core.cookie_persistence.loaded_cookie_snapshot = baseline
 
     assert isinstance(core.cookie_persistence, CookiePersistence)
-    assert core._save_lock is core.cookie_persistence.save_lock
     assert core.cookie_persistence.loaded_cookie_snapshot is baseline
-    assert core._loaded_cookie_snapshot is baseline
+    # The save lock is a stock ``threading.Lock`` owned by the collaborator.
+    assert isinstance(core.cookie_persistence.save_lock, type(threading.Lock()))
 
 
 @pytest.mark.asyncio

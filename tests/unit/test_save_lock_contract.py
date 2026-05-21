@@ -1,7 +1,7 @@
-"""Regression guard for the ``Session._save_lock`` contract.
+"""Regression guard for the ``CookiePersistence.save_lock`` contract.
 
-Contract (documented at ``_core.py`` next to the lock definition):
-``_save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``
+Contract (documented at ``_cookie_persistence.py`` next to the lock definition):
+``save_lock`` is acquired ONLY inside ``CookiePersistence.save``'s ``_save()``
 closure, which runs on a worker thread via ``asyncio.to_thread``. It is never
 held by an async context — a
 blocking ``threading.Lock`` taken on the event-loop thread would stall every
@@ -79,7 +79,7 @@ async def test_save_lock_acquired_off_event_loop_thread(
         # ``save_cookies_to_storage`` is called from inside ``with lock:``
         # in ``_save()``. Whichever thread runs this spy is, by definition,
         # the thread currently holding ``_save_lock``.
-        observed["lock_held"] = core_ref["core"]._save_lock.locked()
+        observed["lock_held"] = core_ref["core"].cookie_persistence.save_lock.locked()
         observed["holder_thread"] = threading.current_thread()
         return True
 
@@ -153,7 +153,7 @@ async def test_save_lock_does_not_block_event_loop(
             await asyncio.sleep(0.01)
         # If we reach here, the loop is still scheduling tasks AND the
         # worker thread is inside the spy (lock held).
-        loop_observations.append(core._save_lock.locked())
+        loop_observations.append(core.cookie_persistence.save_lock.locked())
         release_save.set()
 
     await asyncio.gather(core.save_cookies(httpx.Cookies()), heartbeat())

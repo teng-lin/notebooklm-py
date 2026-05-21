@@ -26,7 +26,6 @@ def mock_artifacts_api():
     # Real registry backing. A MagicMock attribute would return a child Mock
     # and confuse the ``existing is not None`` branch.
     mock_core.poll_registry = PollRegistry()
-    mock_core._pending_polls = mock_core.poll_registry.pending
     mock_core.operation_scope = MagicMock(side_effect=lambda _label: _noop_operation_scope())
     # ``bound_loop`` must be ``None`` (silent-no-op for the affinity
     # guard) so the artifact polling helper does not raise on a
