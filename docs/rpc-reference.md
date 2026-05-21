@@ -30,7 +30,7 @@
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
-| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_sources.py` |
+| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_source_content.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
@@ -1714,9 +1714,9 @@ await rpc_call(
 
 ### RPC: SHARE_ARTIFACT (RGP97b)
 
-**Source:** `_notebooks.py::share()`
+**Source:** `_sharing.py` (per-artifact deep-link toggle)
 
-Toggle notebook sharing. **Sharing is a notebook-level setting** - when enabled, ALL artifacts in the notebook become accessible via their URLs.
+Toggle per-artifact public deep-link sharing. Distinct from `SHARE_NOTEBOOK` (`QDyure`), which governs overall notebook visibility. `SHARE_ARTIFACT` toggles the public deep-link state of a specific artifact within an already-shared notebook context.
 
 Note: Mind Maps are NOT shareable (they don't have public URLs).
 

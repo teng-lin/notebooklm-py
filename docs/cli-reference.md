@@ -1546,7 +1546,6 @@ notebooklm agent show claude
 ```
 
 > **Note:** `agent show codex` prefers the root `AGENTS.md` file when running from a source checkout, so the CLI mirrors the same instructions Codex sees in the repository.
-```
 
 ---
 

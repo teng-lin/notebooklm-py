@@ -1481,7 +1481,6 @@ edge cases like in-page JS-driven sign-in prompts — gate persistence on
 a successful library API call rather than the URL:
 
 ```python
-import sys
 from notebooklm import NotebookLMClient, AuthError
 
 async def verify_and_save(context, STORAGE):

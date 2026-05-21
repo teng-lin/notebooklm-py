@@ -139,7 +139,7 @@ RPC Layer (rpc/)
 
 ### Repository Structure
 
-```
+```text
 src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── client.py                    # NotebookLMClient

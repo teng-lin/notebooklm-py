@@ -3,7 +3,7 @@
 **Status:** Implementation complete — pending release.
 The capability-protocol refactor (ADR-013) landed across Phases 1-4
 (`.sisyphus/plans/refactor-completion-plan.md`). The post-refactor
-runtime shape is canonicalised in [`docs/architecture.md`](architecture.md).
+runtime shape is canonicalized in [`docs/architecture.md`](architecture.md).
 The document below is preserved as the proposal that drove the work.
 **Last Updated:** 2026-05-21
 

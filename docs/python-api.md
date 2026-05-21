@@ -1262,25 +1262,18 @@ async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) ->
 
 **Example:**
 ```python
-# Start fast web research (default)
+# Start research and capture the task_id discriminator
 result = await client.research.start(nb_id, "AI safety regulations")
-if result is None:
-    raise RuntimeError("Research start returned None")
-task_id1 = result["task_id"]
-
-# Start deep web research
-result = await client.research.start(nb_id, "quantum computing", source="web", mode="deep")
-if result is None:
-    raise RuntimeError("Research start returned None")
-task_id2 = result["task_id"]
-
-# Start fast Drive research
-result = await client.research.start(nb_id, "project docs", source="drive", mode="fast")
 if result is None:
     raise RuntimeError("Research start returned None")
 task_id = result["task_id"]
 
-# Poll until complete (using task_id)
+# If you launch multiple concurrent research tasks on the same notebook
+# (web vs drive, fast vs deep), always pass the task_id to poll() so the
+# poll resolves to the intended task. Without it, poll() returns the
+# "latest task" and emits an ambiguity warning when multiple are in flight.
+
+# Poll until complete (always pass task_id for unambiguous targeting)
 import asyncio
 while True:
     status = await client.research.poll(nb_id, task_id=task_id)
@@ -1288,7 +1281,7 @@ while True:
         break
     await asyncio.sleep(10)
 
-# Import discovered sources (using task_id)
+# Import discovered sources (using the same task_id discriminator)
 imported = await client.research.import_sources(nb_id, task_id, status["sources"][:5])
 print(f"Imported {len(imported)} sources")
 ```
@@ -2153,7 +2146,10 @@ def reset_request_id(token: Token[str | None]) -> None:
 An asynchronous-safe context manager that manages correlation ID state.
 
 ```python
+import logging
 from notebooklm import correlation_id
+
+logger = logging.getLogger(__name__)
 
 with correlation_id("my-custom-flow-id"):
     # All logging statements within this block are tagged with the ID
@@ -2167,6 +2163,8 @@ Decomposed Protocols introduced in ADR-013 to decouple service facades from targ
 #### `NotebookSourceLister` Protocol
 
 ```python
+from typing import Protocol
+
 class NotebookSourceLister(Protocol):
     """Structural source-listing dependency shared across feature APIs."""
     async def list(self, notebook_id: str, *, strict: bool = False) -> list[Source]:
@@ -2176,6 +2174,8 @@ class NotebookSourceLister(Protocol):
 #### `NotebookSourceIdProvider` Protocol
 
 ```python
+from typing import Protocol
+
 class NotebookSourceIdProvider(Protocol):
     """Structural source-id dependency needed by chat and artifact generation."""
     async def get_source_ids(self, notebook_id: str) -> list[str]:

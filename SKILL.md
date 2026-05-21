@@ -348,7 +348,7 @@ When user wants full automation (generate and download when ready):
 2. Wait for sources to be ready (use `source wait` or check `source list --json`)
 3. Run `notebooklm generate audio "..." --json` → parse `task_id` from output
 4. **Spawn a background agent** using Task tool:
-   ```
+   ```python
    Task(
      prompt="Wait for artifact {task_id} in notebook {notebook_id} to complete, then download.
              Use: notebooklm artifact wait {task_id} -n {notebook_id} --timeout 600
