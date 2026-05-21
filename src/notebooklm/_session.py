@@ -13,44 +13,13 @@ from typing import TYPE_CHECKING, Any, NoReturn
 import httpx
 
 from ._authed_transport import (
-    MAX_RETRY_AFTER_SECONDS as MAX_RETRY_AFTER_SECONDS,
-)
-from ._authed_transport import (
     AuthedTransport,
     _AuthSnapshot,
     _BuildRequest,
 )
-from ._authed_transport import (
-    _parse_retry_after as _parse_retry_after,
-)
-from ._authed_transport import (
-    _TransportAuthExpired as _TransportAuthExpired,
-)
-from ._authed_transport import (
-    _TransportRateLimited as _TransportRateLimited,
-)
-from ._authed_transport import (
-    _TransportServerError as _TransportServerError,
-)
 from ._client_metrics import ClientMetrics
 from ._cookie_persistence import CookiePersistence
-
-# Synthetic-error helpers — re-exported so ``tests/conftest.py``,
-# ``tests/unit/test_vcr_config.py``, and any other test that imports
-# them through ``notebooklm._core`` keep resolving them as documented.
-# The pre-Tier-12 ``_SyntheticErrorTransport`` httpx transport was
-# deleted in PR 12.9 (substitution moved into
-# ``ErrorInjectionMiddleware`` in PR 12.6); only the env-var resolver
-# and the startup guard remain.
-from ._error_injection import (
-    ERROR_INJECT_ENV_VAR as ERROR_INJECT_ENV_VAR,
-)
-from ._error_injection import (
-    _get_error_injection_mode as _get_error_injection_mode,
-)
-from ._error_injection import (
-    _refuse_synthetic_error_outside_test_context as _refuse_synthetic_error_outside_test_context,
-)
+from ._error_injection import _refuse_synthetic_error_outside_test_context
 from ._kernel import Kernel
 from ._loop_affinity import assert_bound_loop
 from ._middleware import (
@@ -67,83 +36,26 @@ from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
 from ._reqid_counter import ReqidCounter
 from ._rpc_executor import RpcExecutor
 from ._session_auth import AuthRefreshCoordinator
-
-# Re-exports for the public-on-private import contract. ``_core.py``'s preamble
-# historically held the ``DEFAULT_*`` constants, the auth-error helpers, and the
-# test-only synthetic-error transport plumbing inline. They now live in
-# dedicated seam modules; the imports below preserve the
-# ``from notebooklm._core import …`` surface that tests and first-party callers
-# rely on. Each ``as`` alias keeps ruff's ``unused-import`` lint satisfied while
-# making the re-export intent explicit at the source.
 from ._session_config import (
-    DEFAULT_CONNECT_TIMEOUT as DEFAULT_CONNECT_TIMEOUT,
-)
-from ._session_config import (
-    DEFAULT_KEEPALIVE_MIN_INTERVAL as DEFAULT_KEEPALIVE_MIN_INTERVAL,
-)
-from ._session_config import (
-    DEFAULT_MAX_CONCURRENT_RPCS as DEFAULT_MAX_CONCURRENT_RPCS,
-)
-from ._session_config import (
-    DEFAULT_MAX_CONCURRENT_UPLOADS as DEFAULT_MAX_CONCURRENT_UPLOADS,
-)
-from ._session_config import (
-    DEFAULT_TIMEOUT as DEFAULT_TIMEOUT,
-)
-from ._session_config import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_KEEPALIVE_MIN_INTERVAL,
+    DEFAULT_MAX_CONCURRENT_RPCS,
+    DEFAULT_MAX_CONCURRENT_UPLOADS,
+    DEFAULT_TIMEOUT,
     normalize_max_concurrent_uploads,
 )
-
-# Cross-seam helpers — re-exported so ``from notebooklm._core import
-# is_auth_error`` keeps working for sub-clients and tests.
-from ._session_helpers import (
-    AUTH_ERROR_PATTERNS as AUTH_ERROR_PATTERNS,
-)
-from ._session_helpers import (
-    _resolve_keepalive_interval as _resolve_keepalive_interval,
-)
-from ._session_helpers import (
-    is_auth_error as is_auth_error,
-)
+from ._session_helpers import _resolve_keepalive_interval
 from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
-from ._transport_drain import TransportDrainTracker
-
-# Re-exported so the existing import path ``from notebooklm._core import
-# _TransportOperationToken`` keeps working after the dataclass moved into
-# ``_transport_drain``. ``_transport_drain`` is the source of truth for the token
-# shape; the alias below is the backwards-compat anchor.
-from ._transport_drain import _TransportOperationToken as _TransportOperationToken
-
-# ``save_cookies_to_storage`` is re-exported as ``notebooklm._core.save_cookies_to_storage``
-# so existing ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-# sites in tests keep working (used in 8+ test files). The lifecycle helper
-# (``_session_lifecycle.ClientLifecycle.save_cookies``) reads the attribute via
-# ``from . import _core; _core.save_cookies_to_storage`` at call time so the
-# monkeypatched value is what runs on the live save path.
-#
-# ``_rotate_cookies`` is re-exported on the same module-level attribute surface
-# so ``tests/unit/concurrency/test_close_cancellation_leak.py:138``'s
-# ``monkeypatch.setattr("notebooklm._core._rotate_cookies", …)`` keeps
-# affecting the live keepalive loop (the lifecycle helper resolves it via
-# ``from . import _core; _core._rotate_cookies`` at call time).
+from ._transport_drain import TransportDrainTracker, _TransportOperationToken
 from .auth import (
     AuthTokens,
     CookieSnapshot,
 )
 from .auth import (
-    _rotate_cookies as _rotate_cookies,
-)
-from .auth import (
     authuser_query as _authuser_query_value,
 )
 from .auth import (
-    build_cookie_jar as build_cookie_jar,
-)
-from .auth import (
     format_authuser_value as _format_authuser_header_value,
-)
-from .auth import (
-    save_cookies_to_storage as save_cookies_to_storage,
 )
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
