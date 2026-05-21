@@ -1856,7 +1856,7 @@ These RPC method IDs exist in `rpc/types.py` but are either legacy (superseded b
 | RPC ID | Method | Status | Notes |
 |--------|--------|--------|-------|
 
-> _GET_SOURCE (`hizoJc`) was previously listed here as "Broken" but is now active — used by `_source_content.py::get_fulltext()` (see [RPC Method Status](#rpc-method-status) and the detailed section above)._
+> **Note:** `GET_SOURCE` (`hizoJc`) was previously listed here as "Broken" but is now active — used by `_source_content.py::get_fulltext()`. See [RPC Method Status](#rpc-method-status) and the detailed section above.
 
 **Why keep these?** These IDs are preserved in the codebase in case:
 1. Google re-enables or changes their functionality
