@@ -84,7 +84,7 @@ def test_group_help_lists_every_subcommand(
     assert not missing, (
         f"`{group_name} --help` is missing subcommand(s): {missing}. "
         f"Update the group docstring 'Commands:' block in "
-        f"src/notebooklm/cli/{group_name}.py to include them."
+        f"src/notebooklm/cli/{group_name}_cmd.py to include them."
     )
 
 
@@ -110,5 +110,5 @@ def test_group_docstring_lists_every_subcommand(
     assert not missing, (
         f"`{group_name}` group docstring is missing subcommand(s): {missing}. "
         f"Update the docstring 'Commands:' / 'Types:' block in "
-        f"src/notebooklm/cli/{group_name}.py."
+        f"src/notebooklm/cli/{group_name}_cmd.py."
     )
