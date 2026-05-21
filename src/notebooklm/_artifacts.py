@@ -171,35 +171,35 @@ class _ArtifactsServiceMethods(Protocol):
     ``self._api._list_raw(...)`` / ``self._api._select_artifact(...)`` /
     ``self._api._format_interactive_content(...)`` / etc. This Protocol
     declares the subset of **method calls** those helpers actually make, so
-    follow-up migrations (T2 and T3 of
-    ``.sisyphus/phases/encapsulation-reach-in-remediation/phase-1.md``) can
-    type the helper's API-collaborator argument as
-    ``_ArtifactsServiceMethods`` instead of the full concrete
+    the two follow-up PRs that migrate ``_artifact_downloads.py`` and
+    ``_artifact_generation.py`` can type the helper's API-collaborator
+    argument as ``_ArtifactsServiceMethods`` instead of the full concrete
     ``ArtifactsAPI`` — pinning the dependency surface and unblocking the
-    AST guard pinned by ``test_artifact_services_have_no_facade_reach_in``.
+    AST guard pinned by ``test_artifact_services_have_no_facade_reach_in``
+    in ``tests/unit/test_init_order.py``.
 
     **Scope (intentionally narrow).** This Protocol covers method calls
     only. The helpers also currently reach through ``self._api`` for four
     *collaborator objects* — ``_notebooks`` (``NotebookSourceIdProvider``),
     ``_runtime`` (``ArtifactsRuntime``), ``_note_service`` (``NoteService``),
     and ``_mind_maps`` (``NoteBackedMindMapService``). Those are
-    deliberately **not** declared here. T2 and T3 will eliminate those
-    reach-throughs by injecting each collaborator as a separate constructor
-    argument on the helper service (mirroring how
+    deliberately **not** declared here. The follow-up migration PRs will
+    eliminate those reach-throughs by injecting each collaborator as a
+    separate constructor argument on the helper service (mirroring how
     :class:`ArtifactsAPI.__init__` already takes them), not by widening
     this Protocol. The reach-in guard catches any residual
     ``api._notebooks`` / ``api._runtime`` / ``api._note_service`` /
-    ``api._mind_maps`` access as a violation, forcing T2/T3 to do the
-    constructor-injection refactor rather than smuggling the same coupling
-    through a wider Protocol.
+    ``api._mind_maps`` access as a violation, forcing the migration to do
+    the constructor-injection refactor rather than smuggling the same
+    coupling through a wider Protocol.
 
-    **Migration note for T2/T3 implementers.** ``visit_Attribute`` in
+    **Migration note for follow-up implementers.** ``visit_Attribute`` in
     :class:`_ApiReachInVisitor` (``tests/unit/test_init_order.py``) flags
     **every** attribute access on ``self._api`` — including public methods
     like ``self._api.generate_report(...)``. Simply re-annotating
     ``self._api: _ArtifactsServiceMethods`` is therefore not enough to
-    clear the guard; T2/T3 must **rename** the stored reference (for
-    example to ``self._service``) so the visitor no longer sees
+    clear the guard; the migrating PR must **rename** the stored reference
+    (for example to ``self._service``) so the visitor no longer sees
     ``self._api`` at all. The Protocol declares ``generate_report`` /
     ``list_quizzes`` / ``list_flashcards`` so the renamed reference
     remains usable, not so the existing ``self._api`` name can be kept.

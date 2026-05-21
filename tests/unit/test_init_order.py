@@ -319,22 +319,23 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 # Artifact-service "reach-in" guard
 #
 # Modeled on the core-private-access guard above. Pins the invariant that
-# artifact-service helper modules (T2: ``_artifact_downloads.py``; T3:
+# artifact-service helper modules (``_artifact_downloads.py`` and
 # ``_artifact_generation.py``) depend only on the narrow
-# ``_ArtifactsServiceMethods`` Protocol, not on the full concrete
-# ``ArtifactsAPI``. T1 ships the visitor + guard with an empty migration
-# list (vacuously passing); T2 / T3 append their modules and migrate the
-# helpers to constructor injection.
+# ``_ArtifactsServiceMethods`` Protocol declared in ``_artifacts.py``, not
+# on the full concrete ``ArtifactsAPI``. This PR ships the visitor + guard
+# with an empty migration list (vacuously passing); the follow-up PRs that
+# migrate each helper to constructor injection will append the helper's
+# module name to ``_REACH_IN_MIGRATED_MODULES`` below.
 # ----------------------------------------------------------------------------
 
 
 # Modules already migrated to ``_ArtifactsServiceMethods`` constructor
 # injection — the guard below enforces no residual ``self._api`` reach-in.
 # Bookkeeping (mirrors the ``_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS`` pattern):
-#   * T2 (``.sisyphus/phases/encapsulation-reach-in-remediation/phase-1.md``)
-#     will append ``"_artifact_downloads.py"`` once that module is
-#     migrated.
-#   * T3 (same phase plan) will append ``"_artifact_generation.py"``.
+#   * The PR that migrates ``_artifact_downloads.py`` will append
+#     ``"_artifact_downloads.py"`` to this list.
+#   * The PR that migrates ``_artifact_generation.py`` will append
+#     ``"_artifact_generation.py"``.
 # Until both PRs land this list is empty and the guard test passes
 # vacuously.
 _REACH_IN_MIGRATED_MODULES: list[str] = []
@@ -353,15 +354,16 @@ def _is_self_api(node: ast.AST) -> bool:
 class _ApiReachInVisitor(ast.NodeVisitor):
     """Collect reach-ins to ``self._api`` (direct, aliased, nested-scope).
 
-    Modeled on ``_CorePrivateAccessVisitor`` (this file, lines 137-195):
-    function/async/lambda scopes are tracked, alias bindings recorded
+    Modeled on :class:`_CorePrivateAccessVisitor` defined earlier in this
+    file: function/async/lambda scopes are tracked, alias bindings recorded
     per-scope, and ``_is_api_access_base`` walks the entire active stack
     via ``reversed(self._alias_stack)`` so aliases in outer scopes are
     visible to attribute access in nested closures and comprehensions.
 
     The empty ``_REACH_IN_MIGRATED_MODULES`` list keeps the guard
-    vacuous in T1; T2 appends ``_artifact_downloads.py`` and T3 appends
-    ``_artifact_generation.py``.
+    vacuous until the follow-up PRs append ``_artifact_downloads.py`` /
+    ``_artifact_generation.py`` after migrating each helper to
+    constructor injection.
     """
 
     def __init__(self, module_name: str) -> None:
