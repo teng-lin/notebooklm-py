@@ -41,8 +41,8 @@ import threading
 import httpx
 import pytest
 
-from _fixtures import patch_auth_seam
 from notebooklm import auth as auth_mod
+from notebooklm._auth import refresh as _auth_refresh
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
 # integration-tree enforcement hook in ``tests/integration/conftest.py``.
@@ -149,11 +149,11 @@ async def test_failed_refresh_does_not_skip_concurrent_waiter(monkeypatch, tmp_p
             self._inner.release()
             return False
 
-    patch_auth_seam(monkeypatch, "_run_refresh_cmd", fake_run_refresh_cmd)
-    patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-    patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
-    patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
-    patch_auth_seam(monkeypatch, "_get_refresh_lock", aligned_get_refresh_lock)
+    monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
+    monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
+    monkeypatch.setattr(_auth_refresh, "_get_refresh_lock", aligned_get_refresh_lock)
 
     async def caller(jar):
         return await auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage)
@@ -248,10 +248,10 @@ async def test_concurrent_refresh_failure_followup_sees_attempt(monkeypatch, tmp
     def fake_snapshot(_j):
         return None
 
-    patch_auth_seam(monkeypatch, "_run_refresh_cmd", fake_run_refresh_cmd)
-    patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-    patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
-    patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
+    monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
+    monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
     async def caller(jar):
         return await auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage)
@@ -373,10 +373,10 @@ async def test_waiter_cancellation_does_not_kill_inflight_subprocess(monkeypatch
     def fake_snapshot(_j):
         return None
 
-    patch_auth_seam(monkeypatch, "_run_refresh_cmd", fake_run_refresh_cmd)
-    patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-    patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
-    patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
+    monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
+    monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
     async def caller(jar):
         return await auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage)
@@ -496,10 +496,10 @@ async def test_cancel_settle_race_does_not_bump_on_failure(monkeypatch, tmp_path
     def fake_snapshot(_j):
         return None
 
-    patch_auth_seam(monkeypatch, "_run_refresh_cmd", fake_run_refresh_cmd)
-    patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-    patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
-    patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
+    monkeypatch.setattr(_auth_refresh, "_run_refresh_cmd", fake_run_refresh_cmd)
+    monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
     jar = httpx.Cookies()
     task = asyncio.create_task(auth_mod._fetch_tokens_with_refresh(jar, storage_path=storage))
@@ -583,10 +583,10 @@ async def test_cancel_before_subprocess_registers_no_phantom_bump(monkeypatch, t
     def fake_snapshot(_j):
         return None
 
-    patch_auth_seam(monkeypatch, "_coalesced_run_refresh_cmd", fake_coalesced_run_refresh_cmd)
-    patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-    patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
-    patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
+    monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced_run_refresh_cmd)
+    monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
     # Pre-condition: registry is empty for this refresh_key on this loop.
     refresh_key = str(storage.expanduser().resolve())
@@ -690,10 +690,10 @@ async def test_cancel_before_register_with_warm_registry_no_phantom_bump(monkeyp
     def fake_snapshot(_j):
         return None
 
-    patch_auth_seam(monkeypatch, "_coalesced_run_refresh_cmd", fake_coalesced_run_refresh_cmd)
-    patch_auth_seam(monkeypatch, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-    patch_auth_seam(monkeypatch, "build_httpx_cookies_from_storage", fake_build)
-    patch_auth_seam(monkeypatch, "snapshot_cookie_jar", fake_snapshot)
+    monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", fake_coalesced_run_refresh_cmd)
+    monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
+    monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
+    monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
     jar = httpx.Cookies()
     result = await asyncio.gather(
