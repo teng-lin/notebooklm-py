@@ -61,14 +61,8 @@ from ._middleware import (
     RpcResponse,
     build_chain,
 )
-from ._middleware_auth_refresh import AuthRefreshMiddleware
 from ._middleware_chain import MiddlewareChainBuilder
-from ._middleware_drain import DrainMiddleware
-from ._middleware_error_injection import ErrorInjectionMiddleware
-from ._middleware_metrics import MetricsMiddleware
-from ._middleware_retry import RetryMiddleware
-from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY, SemaphoreMiddleware
-from ._middleware_tracing import TracingMiddleware
+from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
 from ._polling_registry import PendingPolls, PollRegistry
 from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
 from ._reqid_counter import ReqidCounter
