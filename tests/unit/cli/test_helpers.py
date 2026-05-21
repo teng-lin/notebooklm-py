@@ -40,7 +40,6 @@ from notebooklm.cli.helpers import (
     with_client,
 )
 from notebooklm.cli.research_import import import_with_retry
-from notebooklm.exceptions import NetworkError, RPCError, RPCTimeoutError
 from notebooklm.types import ArtifactType
 
 # =============================================================================

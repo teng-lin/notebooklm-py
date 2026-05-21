@@ -52,9 +52,7 @@ class TestImportSourcesWithVerification:
         mock_sources.list = AsyncMock()
         research.import_sources = AsyncMock()
 
-        imported = await research.import_sources_with_verification(
-            "nb_123", "task_123", []
-        )
+        imported = await research.import_sources_with_verification("nb_123", "task_123", [])
 
         assert imported == []
         research.import_sources.assert_not_awaited()
@@ -74,9 +72,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -105,9 +101,7 @@ class TestImportSourcesWithVerification:
                 "notebooklm._research.time.monotonic",
                 side_effect=[0.0, 1801.0],
             ),
-            patch(
-                "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-            ) as mock_sleep,
+            patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             pytest.raises(RPCTimeoutError),
         ):
             await research.import_sources_with_verification(
@@ -126,9 +120,7 @@ class TestImportSourcesWithVerification:
         research.import_sources = AsyncMock(side_effect=ValueError("boom"))
 
         with (
-            patch(
-                "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-            ) as mock_sleep,
+            patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             pytest.raises(ValueError, match="boom"),
         ):
             await research.import_sources_with_verification(
@@ -160,9 +152,7 @@ class TestImportSourcesWithVerification:
             side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -191,9 +181,7 @@ class TestImportSourcesWithVerification:
             side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -214,9 +202,7 @@ class TestImportSourcesWithVerification:
             side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -241,9 +227,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -280,9 +264,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -380,9 +362,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -429,9 +409,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -470,9 +448,7 @@ class TestImportSourcesWithVerification:
             side_effect=RPCTimeoutError("Timed out", timeout_seconds=30.0)
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -517,9 +493,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -665,9 +639,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -705,9 +677,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",
@@ -740,9 +710,7 @@ class TestImportSourcesWithVerification:
         with (
             # Time budget never expires — only the retry cap can stop the loop.
             patch("notebooklm._research.time.monotonic", return_value=0.0),
-            patch(
-                "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-            ) as mock_sleep,
+            patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             pytest.raises(RPCTimeoutError),
         ):
             await research.import_sources_with_verification(
@@ -787,9 +755,7 @@ class TestImportSourcesWithVerification:
             ]
         )
 
-        with patch(
-            "notebooklm._research.asyncio.sleep", new_callable=AsyncMock
-        ) as mock_sleep:
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             imported = await research.import_sources_with_verification(
                 "nb_123",
                 "task_123",

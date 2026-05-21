@@ -15,7 +15,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
 from ._session_contracts import RpcCaller
-from .exceptions import NetworkError, ResearchTaskMismatchError, RPCError, RPCTimeoutError, ValidationError
+from .exceptions import (
+    NetworkError,
+    ResearchTaskMismatchError,
+    RPCError,
+    RPCTimeoutError,
+    ValidationError,
+)
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
 
@@ -88,7 +94,7 @@ def _no_url_entry_count(sources: list[dict[str, Any]]) -> int:
     return sum(1 for source in sources if _source_url_norm(source) is None)
 
 
-def _imported_source_entry(source: "Source") -> dict[str, str]:
+def _imported_source_entry(source: Source) -> dict[str, str]:
     return {"id": source.id, "title": source.title or source.url or ""}
 
 
@@ -103,6 +109,7 @@ def _merge_imported_sources(
         *verified_imported,
         *(entry for entry in imported if entry.get("id") not in verified_imported_ids),
     ]
+
 
 # ---------------------------------------------------------------------------
 # Poll-payload extractors
@@ -280,7 +287,7 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, rpc: RpcCaller, *, sources: "SourcesAPI | None" = None):
+    def __init__(self, rpc: RpcCaller, *, sources: SourcesAPI | None = None):
         """Initialize the research API.
 
         Args:
@@ -815,9 +822,7 @@ class ResearchAPI:
         while True:
             try:
                 imported = await self.import_sources(notebook_id, task_id, sources)
-                return _merge_imported_sources(
-                    imported, verified_imported, verified_imported_ids
-                )
+                return _merge_imported_sources(imported, verified_imported, verified_imported_ids)
             except RPCTimeoutError:
                 elapsed = time.monotonic() - started_at
                 remaining = max_elapsed - elapsed
@@ -831,17 +836,12 @@ class ResearchAPI:
                             else []
                         )
                         new_urls_norm = {
-                            _normalize_import_url(src.url)
-                            for src in new_sources
-                            if src.url
+                            _normalize_import_url(src.url) for src in new_sources if src.url
                         }
                         current_urls_norm = {
                             _normalize_import_url(src.url) for src in current if src.url
                         }
-                        if (
-                            baseline_ids is not None
-                            and requested_urls_norm.issubset(new_urls_norm)
-                        ):
+                        if baseline_ids is not None and requested_urls_norm.issubset(new_urls_norm):
                             logger.warning(
                                 "IMPORT_RESEARCH timed out for notebook %s but "
                                 "sources.list shows all %d requested URLs among "
@@ -864,18 +864,14 @@ class ResearchAPI:
                             return _merge_imported_sources(
                                 timeout_verified, verified_imported, verified_imported_ids
                             )
-                        source_norms = [
-                            (source, _source_url_norm(source)) for source in sources
-                        ]
+                        source_norms = [(source, _source_url_norm(source)) for source in sources]
                         removed_urls_norm = {
                             url
                             for _, url in source_norms
                             if url is not None and url in current_urls_norm
                         }
                         filtered_sources = [
-                            source
-                            for source, url in source_norms
-                            if url not in current_urls_norm
+                            source for source, url in source_norms if url not in current_urls_norm
                         ]
                         if len(filtered_sources) != len(sources):
                             removed_count = len(sources) - len(filtered_sources)
@@ -914,8 +910,7 @@ class ResearchAPI:
                         # is not in this tuple — it propagates naturally for
                         # callers that need to cancel the operation cleanly.
                         logger.warning(
-                            "Failed to probe server state after timeout: %s; "
-                            "falling back to retry",
+                            "Failed to probe server state after timeout: %s; falling back to retry",
                             probe_exc,
                         )
 

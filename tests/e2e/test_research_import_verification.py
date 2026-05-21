@@ -148,9 +148,7 @@ class TestResearchImportVerification:
         research_timeout = 1800.0
         max_attempts = int(research_timeout / POLL_INTERVAL)
         for _ in range(max_attempts):
-            poll_result = await client.research.poll(
-                temp_notebook.id, task_id=polled_task_id
-            )
+            poll_result = await client.research.poll(temp_notebook.id, task_id=polled_task_id)
             status = poll_result.get("status")
 
             if polled_task_id is None:
@@ -174,9 +172,7 @@ class TestResearchImportVerification:
         # web rows with non-empty URLs. ``import_sources`` skips everything
         # else, so this is the upper bound we expect to land in sources.list.
         report_entries = [
-            src
-            for src in sources
-            if src.get("result_type") == 5 and src.get("report_markdown")
+            src for src in sources if src.get("result_type") == 5 and src.get("report_markdown")
         ]
         web_entries = [src for src in sources if src.get("url")]
         expected_import_count = len(report_entries) + len(web_entries)
