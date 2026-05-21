@@ -554,15 +554,17 @@ holds the `AuthTokens` for the running session. The supporting state
 conversation cache, etc.) is split across single-responsibility session
 and kernel collaborator modules such as `notebooklm._authed_transport`,
 `notebooklm._rpc_executor`, and `notebooklm._transport_drain`. The split
-is internal — first-party legacy private callers can still import the
-documented constants from `notebooklm._core` — but it matters when
-reading the source, when writing unit tests against a stub host, or when
-tracing where a particular ivar lives.
+is internal — module-level constants and helpers live in canonical seam
+modules (`_session_config`, `_session_helpers`, `_error_injection`,
+`_authed_transport`) and are imported from those modules directly. The
+historical `notebooklm._core` compatibility shim was removed in v0.5.0.
 
 | Module | Owns | Notes |
 |---|---|---|
-| `_session` | Concrete `Session` orchestrator; HTTP client lifecycle; module-level constants (`MAX_RETRY_AFTER_SECONDS`, `DEFAULT_TIMEOUT`, etc.); `is_auth_error`, `save_cookies_to_storage`; error-injection seam `_get_error_injection_mode`. | Concrete implementation. |
-| `_core` | Compatibility shim that re-exports legacy private import names. | Legacy private imports continue to resolve while first-party code uses `_session`. |
+| `_session` | Concrete `Session` orchestrator; HTTP client lifecycle. | Concrete implementation. |
+| `_session_config` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
+| `_session_helpers` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
+| `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
 | `_session_auth` | `AuthRefreshCoordinator`: refresh-task lifecycle, refresh lock, `_AuthSnapshot` rotation. | Lazy `asyncio.Lock` construction; never instantiated outside a running loop. |
 | `_conversation_cache` | Per-instance LRU `_conversation_cache` for `ChatAPI` continuity. | Pure in-process state; not shared across `Session` instances. |
 | `_cookie_persistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. | Exposes a `SaveCookiesToStorage` Protocol host. |
@@ -574,13 +576,19 @@ tracing where a particular ivar lives.
 | `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
 | `_authed_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `_TransportAuthExpired` / `_TransportRateLimited` / `_TransportServerError` transport-level exceptions. |
 
-Feature APIs depend on the shared `notebooklm._session_contracts.Session`
-Protocol rather than concrete session internals.
+Feature APIs depend on narrow per-capability Protocols defined in
+`notebooklm._session_contracts` (and feature-local runtime Protocols
+such as `ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) rather than
+on the concrete `Session` class. See [ADR-013](adr/0013-composable-session-capabilities.md)
+and [`docs/architecture.md`](architecture.md) for the rationale and the
+post-v0.5.0 collaborator graph.
 
-If you previously imported from `notebooklm._core_*` modules, see
+If you previously imported from `notebooklm._core` modules, see
 [`docs/migration-tier-12-to-13.md`](migration-tier-12-to-13.md) for the
-Tier 12 → Tier 13 rename table. The legacy `notebooklm._core` import path
-still resolves via a compatibility shim.
+Tier 12 → Tier 13 rename table. The `notebooklm._core` compatibility
+shim was removed in v0.5.0; first-party callers should import directly
+from the canonical seam modules (`_session_config`, `_session_helpers`,
+`_authed_transport`, `_error_injection`, `_transport_drain`, etc.).
 
 ---
 
