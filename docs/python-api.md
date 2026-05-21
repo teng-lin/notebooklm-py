@@ -645,9 +645,10 @@ forwards to the core delegator with today's literal defaults
 (`source_path="/"`, `_is_retry=False`, `operation_variant=None`).
 
 > **Deprecated kwargs (removal in v0.6.0).** `source_path` (when explicitly
-> set to anything other than `"/"`), `_is_retry` (any explicit value), and
-> `operation_variant` (any non-`None` value) emit `DeprecationWarning`.
-> See [`docs/deprecations.md`](deprecations.md) for the canonical removal
+> set to anything other than `"/"`), `_is_retry` (any explicit non-`None`
+> value, including `True` and `False`), and `operation_variant` (any
+> non-`None` value) emit `DeprecationWarning`. See
+> [`docs/deprecations.md`](deprecations.md) for the canonical removal
 > table and migration guidance. New callers should omit all three.
 
 **Long-lived clients:** pass `keepalive=<seconds>` to spawn a background task
