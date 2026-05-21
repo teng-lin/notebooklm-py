@@ -102,9 +102,9 @@ def _scan(path: Path, extra_banned: frozenset[str]) -> list[tuple[int, str]]:
                 violations.append((node.lineno, f"from {prefix}{module} import {joined}"))
 
             extra_hit_module = module in extra_banned
-            extra_hit_namelist = (
-                module == "notebooklm" or (level > 0 and not module)
-            ) and (names & extra_short)
+            extra_hit_namelist = (module == "notebooklm" or (level > 0 and not module)) and (
+                names & extra_short
+            )
             if extra_hit_module:
                 joined = ", ".join(sorted(names))
                 violations.append((node.lineno, f"from {prefix}{module} import {joined}"))
