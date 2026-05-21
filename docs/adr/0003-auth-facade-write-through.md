@@ -8,13 +8,16 @@ The write-through facade (`_AuthFacadeModule` + the 5 `_AUTH_*_FACADE_NAMES` /
 `_REFRESH_DEP_MIRROR_NAMES` / `_KEEPALIVE_DEP_MIRROR_NAMES` mirror tables)
 was deleted from `src/notebooklm/auth.py` in D1 PR-2. The remediation
 moved test-side mirroring into a small `tests/_fixtures/auth_seam.py`
-helper (`patch_auth_seam(monkeypatch, name, value)`), which walks the
-known `_auth/*` seam modules and patches every one that already binds
-the name. New tests should prefer constructor injection via
-`tests._fixtures.make_fake_core` (ADR-007); the helper exists only to
-bridge a small set of legacy tests that exercise module-level seam state
-(file locks, refresh-retry registries) where constructor injection is
-not a natural fit.
+helper (`patch_auth_seam(monkeypatch, name, value)`), which walked the
+known `_auth/*` seam modules and patched every one that already bound
+the name. **That helper was itself retired in the post-v0.5.0 audit
+cleanup** (`docs/test-suite-audit.md` §3): the ~50 call sites migrated
+to targeted `monkeypatch.setattr(<canonical module>, name, value)`
+against the consumer-side import, and the fixture was deleted. New
+tests should prefer constructor injection via
+`tests._fixtures.make_fake_core` (ADR-007); where module-level seam
+state (file locks, refresh-retry registries) makes injection awkward,
+patch the canonical home directly.
 
 The rest of this ADR is preserved as the historical record of why the
 facade existed at all.

@@ -175,9 +175,9 @@ def _validate_required_cookies(
     ``auth.py`` into ``_cookie_policy`` before delegating, then mirrors
     ``_SECONDARY_BINDING_WARNED`` back in the ``finally`` block. Tests that
     patch ``auth.MINIMUM_REQUIRED_COOKIES`` (or sibling names) continue to
-    work without going through ``patch_auth_seam``; modern tests should
-    prefer the seam helper. The ``_AuthFacadeModule`` write-through was
-    retired in D1 PR-2 (ADR-003).
+    work without going through a facade write-through; modern tests should
+    target the canonical home in ``_auth.cookie_policy`` directly. The
+    ``_AuthFacadeModule`` write-through was retired in D1 PR-2 (ADR-003).
     """
     global _SECONDARY_BINDING_WARNED
     _cookie_policy.MINIMUM_REQUIRED_COOKIES = MINIMUM_REQUIRED_COOKIES
@@ -513,10 +513,9 @@ _REFRESH_ATTEMPTED_ENV = _auth_paths._REFRESH_ATTEMPTED_ENV
 # per-profile lock registry, the public ``KEEPALIVE_ROTATE_URL`` listed in
 # ``__all__``, and white-box helpers like ``_poke_session`` /
 # ``_rotate_cookies``) keeps resolving against this module. Tests that
-# need to substitute a moved body should patch the seam directly via
-# ``tests/_fixtures/auth_seam.py::patch_auth_seam`` — production code no
-# longer mirrors writes (``_AuthFacadeModule`` retired in D1 PR-2,
-# ADR-003).
+# need to substitute a moved body should patch the canonical home directly
+# (``_auth.keepalive.X``) — production code no longer mirrors writes
+# (``_AuthFacadeModule`` retired in D1 PR-2, ADR-003).
 KEEPALIVE_ROTATE_URL = _auth_keepalive.KEEPALIVE_ROTATE_URL
 _KEEPALIVE_ROTATE_HEADERS = _auth_keepalive._KEEPALIVE_ROTATE_HEADERS
 _KEEPALIVE_ROTATE_BODY = _auth_keepalive._KEEPALIVE_ROTATE_BODY
@@ -559,9 +558,8 @@ _rotation_lock_path = _auth_paths._rotation_lock_path
 # the white-box surface (lock registries, ContextVar, ``_run_refresh_cmd``
 # carrying the tier-9 E (P1-18) redaction logic, etc.) keep resolving against
 # ``notebooklm.auth``. Tests that need to substitute a moved body should
-# patch the seam directly via
-# ``tests/_fixtures/auth_seam.py::patch_auth_seam`` — production code no
-# longer mirrors writes (``_AuthFacadeModule`` retired in D1 PR-2,
+# patch the canonical home directly (``_auth.refresh.X``) — production
+# code no longer mirrors writes (``_AuthFacadeModule`` retired in D1 PR-2,
 # ADR-003).
 _REFRESH_ATTEMPTED_CONTEXT = _auth_refresh._REFRESH_ATTEMPTED_CONTEXT
 _REFRESH_STATE_LOCK = _auth_refresh._REFRESH_STATE_LOCK

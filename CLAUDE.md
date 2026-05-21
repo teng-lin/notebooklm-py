@@ -103,7 +103,7 @@ RPC Layer (rpc/)
 | `_artifacts.py` | `client.artifacts` API |
 | `_chat.py` | `client.chat` API |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — flat re-exports from `_auth/*` seams (ADR-003 Superseded: `_AuthFacadeModule` retired in D1 PR-2; tests use `tests/_fixtures.patch_auth_seam` for seam-write-through) |
+| `auth.py` | Authentication facade — flat re-exports from `_auth/*` seams (ADR-003 Superseded: `_AuthFacadeModule` retired in D1 PR-2; tests patch the canonical home in `_auth.<module>` directly) |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/headers.py` | HTTP header construction |
