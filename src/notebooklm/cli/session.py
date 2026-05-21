@@ -52,36 +52,32 @@ from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id
 from .runtime import run_async
 
-# Direct re-imports replace the D1-PR-3-retired forwarding wrappers; see
-# ADR-008. Symbols not referenced in this module remain as patch-surface
-# re-exports for legacy ``patch("notebooklm.cli.session.X")`` test sites.
-from .services.login import (  # noqa: F401
-    _INCLUDE_DOMAINS_ALL,
-    _ROOKIEPY_BROWSER_ALIASES,
+# Direct imports replace the D1-PR-3-retired forwarding wrappers; see
+# ADR-008. Some of these bindings (notably ``_sync_server_language_to_config``)
+# double as session-level monkeypatch surfaces for tests pre-dating ADR-008's
+# services-side patching convention.
+from .services.login import (
     _build_google_cookie_domains,
     _enumerate_browser_accounts,
-    _enumerate_chromium_profiles_fanout,
-    _enumerate_one_jar,
-    _handle_rookiepy_error,
     _login_all_accounts_from_browser,
     _login_browser_cookies_single,
-    _login_with_browser_cookies,
-    _maybe_warn_firefox_containers_in_use,
-    _next_available_profile_name,
     _parse_include_domains,
-    _profile_account_email,
-    _profiles_by_account_email,
-    _read_browser_cookies,
-    _read_chromium_profile_cookies_from_selector,
-    _read_firefox_container_cookies,
     _refresh_from_browser_cookies,
-    _resolve_all_accounts_target,
-    _resolve_optional_cookie_domains,
-    _select_account,
-    _select_refresh_account,
-    _split_chromium_profile_browser_spec,
     _sync_server_language_to_config,
     _warn_missing_optional_domains,
+)
+
+# Re-exports kept solely for tests that bind these helpers on the
+# ``notebooklm.cli.session`` namespace — either via direct import
+# (``test_cookie_domain_split.py``, ``test_auth_subcommands.py``) or via
+# the dual-patch fixture in ``tests/_fixtures/cli_session.py`` (whose
+# ``patch_session_login_dual`` requires the name to exist on both modules).
+# These are not referenced in this module's body.
+from .services.login import (  # noqa: F401
+    _enumerate_one_jar,
+    _login_with_browser_cookies,
+    _resolve_optional_cookie_domains,
+    _select_account,
     _write_extracted_cookies,
 )
 
