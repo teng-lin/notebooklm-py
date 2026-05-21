@@ -213,13 +213,12 @@ class ArtifactsAPI:
         """
         self._runtime = runtime
         self._notebooks = notebooks
-        self._storage_path = storage_path
         self._mind_maps = mind_maps
         self._note_service = note_service
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(self)
-        self._downloads = ArtifactDownloadService(self)
+        self._downloads = ArtifactDownloadService(self, storage_path)
         self._polling = _artifact_polling.ArtifactPollingService(
             runtime,
             self._poll_registry,

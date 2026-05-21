@@ -85,8 +85,8 @@ def mock_artifacts_api(tmp_path):
         notebooks=MagicMock(),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         note_service=MagicMock(spec=NoteService),
+        storage_path=tmp_path / "storage.json",
     )
-    api._storage_path = str(tmp_path / "storage.json")
     return api, mock_core
 
 

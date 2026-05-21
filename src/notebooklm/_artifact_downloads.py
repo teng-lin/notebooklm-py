@@ -81,8 +81,9 @@ def _is_trusted_download_host(netloc: str) -> bool:
 class ArtifactDownloadService:
     """Download operations extracted from :class:`ArtifactsAPI`."""
 
-    def __init__(self, api: Any):
+    def __init__(self, api: Any, storage_path: Path | None):
         self._api = api
+        self._storage_path = storage_path
 
     async def download_audio(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
@@ -441,7 +442,7 @@ class ArtifactDownloadService:
         """Download multiple files using httpx with proper cookie handling."""
         result = DownloadResult()
 
-        cookies = await asyncio.to_thread(_load_httpx_cookies, self._api._storage_path)
+        cookies = await asyncio.to_thread(_load_httpx_cookies, self._storage_path)
 
         async with httpx.AsyncClient(
             cookies=cookies,
@@ -529,7 +530,7 @@ class ArtifactDownloadService:
         temp_file = Path(temp_path_str)
 
         try:
-            cookies = await asyncio.to_thread(_load_httpx_cookies, self._api._storage_path)
+            cookies = await asyncio.to_thread(_load_httpx_cookies, self._storage_path)
             timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
 
             try:

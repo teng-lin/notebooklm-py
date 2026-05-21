@@ -95,7 +95,7 @@ def _assert_offloaded_to_worker_thread(
 
 
 @pytest.fixture
-def mock_artifacts_api() -> tuple[ArtifactsAPI, MagicMock]:
+def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, MagicMock]:
     """``ArtifactsAPI`` wired to a mock ``Session``.
 
     Same shape as the unit-test fixture in ``tests/unit/test_artifact_downloads.py``
@@ -117,6 +117,7 @@ def mock_artifacts_api() -> tuple[ArtifactsAPI, MagicMock]:
         notebooks=MagicMock(),
         mind_maps=mind_maps,
         note_service=note_service,
+        storage_path=tmp_path / "fake_storage_state.json",
     )
     return api, mock_core
 
@@ -367,7 +368,6 @@ async def test_download_urls_batch_cookie_load_runs_off_loop_thread(
     the first request.
     """
     api, _ = mock_artifacts_api
-    api._storage_path = tmp_path / "fake_storage_state.json"
 
     loop_thread_id = threading.get_ident()
     captured: list[int] = []
@@ -410,7 +410,6 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
     the time the HTTP step runs.
     """
     api, _ = mock_artifacts_api
-    api._storage_path = tmp_path / "fake_storage_state.json"
     output_path = tmp_path / "download.bin"
 
     # URL must clear the production trusted-domain check

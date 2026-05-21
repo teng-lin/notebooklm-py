@@ -780,3 +780,59 @@ class TestDownloadDataTable:
 
             with pytest.raises(ArtifactParseError):
                 await api.download_data_table("nb_123", "/tmp/data.csv")
+
+
+class TestStoragePathEncapsulation:
+    """Regression guard for issue #838.
+
+    ``ArtifactDownloadService`` must read the storage path it was
+    constructed with, not via a sibling reach-in to
+    ``ArtifactsAPI._storage_path``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_download_url_uses_constructor_storage_path(self, tmp_path):
+        from notebooklm._artifact_downloads import ArtifactDownloadService
+
+        sentinel = tmp_path / "sentinel_storage.json"
+        # MagicMock has no real ``_storage_path`` — any reach-in attempt
+        # via ``self._api._storage_path`` would yield the mock's auto-spec
+        # rather than the sentinel, failing the equality check below.
+        api = MagicMock()
+        service = ArtifactDownloadService(api, sentinel)
+
+        captured: list[object] = []
+
+        class _StopAfterCapture(Exception):
+            pass
+
+        def recording(path):
+            captured.append(path)
+            raise _StopAfterCapture
+
+        with patch("notebooklm._artifacts.load_httpx_cookies", new=recording):
+            with pytest.raises(_StopAfterCapture):
+                await service.download_url(
+                    "https://storage.googleapis.com/x.bin", str(tmp_path / "out.bin")
+                )
+
+        assert captured == [sentinel]
+
+    @pytest.mark.asyncio
+    async def test_download_urls_batch_uses_constructor_storage_path(self, tmp_path):
+        from notebooklm._artifact_downloads import ArtifactDownloadService
+
+        sentinel = tmp_path / "sentinel_storage.json"
+        api = MagicMock()
+        service = ArtifactDownloadService(api, sentinel)
+
+        captured: list[object] = []
+
+        def recording(path):
+            captured.append(path)
+            return {}
+
+        with patch("notebooklm._artifacts.load_httpx_cookies", new=recording):
+            await service.download_urls_batch([])
+
+        assert captured == [sentinel]
