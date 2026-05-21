@@ -48,7 +48,11 @@ import pytest
 
 from notebooklm import _core as _core_module
 from notebooklm._session import _resolve_keepalive_interval
-from notebooklm._session_lifecycle import ClientLifecycle
+from notebooklm._session_lifecycle import (
+    ClientLifecycle,
+    _default_cookie_rotator,
+    _default_cookie_saver,
+)
 from notebooklm.auth import AuthTokens
 from notebooklm.types import ConnectionLimits
 
@@ -367,13 +371,21 @@ async def test_save_cookies_invokes_cookie_persistence(
     tmp_path: Path,
 ) -> None:
     """``save_cookies(host, jar, path)`` delegates to
-    ``host.cookie_persistence.save(...)`` with ``save_cookies_to_storage``
-    resolved from ``notebooklm._core`` at call time (so the
-    ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-    surface in 8+ test files keeps working).
+    ``host.cookie_persistence.save(...)``, forwarding the lifecycle's
+    ``_cookie_saver`` wrapper as the storage writer.
+
+    Phase 2 PR 3 (``.sisyphus/plans/refactor-completion-plan.md``)
+    replaced the direct ``_core.save_cookies_to_storage`` kwarg with an
+    injectable ``cookie_saver`` seam. With the default ``cookie_saver``
+    (``_default_cookie_saver``), invoking the captured wrapper must still
+    reach the ``notebooklm._core.save_cookies_to_storage`` attribute —
+    so a ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage",
+    …)`` placed BEFORE the wrapper is invoked still fires through, exactly
+    preserving the legacy 8+ test-file contract. This assertion is now
+    BEHAVIORAL (invoke the wrapper, observe the sentinel was called) rather
+    than identity-based (``is sentinel``), because the wrapper indirection
+    is the whole point of the seam.
     """
-    # Stub out save_cookies_to_storage at the module level so we can prove
-    # the lifecycle resolved the monkeypatched value at call time.
     sentinel = MagicMock()
     monkeypatch.setattr(_core_module, "save_cookies_to_storage", sentinel)
 
@@ -389,9 +401,19 @@ async def test_save_cookies_invokes_cookie_persistence(
     call = host.cookie_persistence.save.call_args
     assert call.args[0] is jar
     assert call.args[1] == target_path
-    # ``save_cookies_to_storage`` must be the monkeypatched sentinel — the
-    # lifecycle MUST resolve it from notebooklm._core at call time.
-    assert call.kwargs["save_cookies_to_storage"] is sentinel
+    # The kwarg is the lifecycle's wrapper (not the raw sentinel), so the
+    # ``CookiePersistence._save`` worker-thread invocation goes through
+    # ``_default_cookie_saver``'s late-bound ``_core`` lookup.
+    forwarded_saver = call.kwargs["save_cookies_to_storage"]
+    assert forwarded_saver is lifecycle._cookie_saver, (
+        "lifecycle.save_cookies must forward self._cookie_saver as the "
+        "storage writer (the wrapper indirection is what preserves the "
+        "_core monkeypatch surface)."
+    )
+    # Behavioral check: invoking the captured wrapper hits the monkeypatched
+    # sentinel via late-bound _core resolution.
+    forwarded_saver(jar, target_path)
+    sentinel.assert_called_once_with(jar, target_path)
     assert call.kwargs["to_thread"] is asyncio.to_thread
 
 
@@ -545,3 +567,113 @@ def test_init_is_event_loop_agnostic() -> None:
     assert lifecycle._connect_timeout == 10.0
     assert lifecycle.is_open() is False
     assert lifecycle.get_bound_loop() is None
+
+
+# ---------------------------------------------------------------------------
+# Injectable seams (Phase 2 PR 3 of .sisyphus/plans/refactor-completion-plan.md)
+#
+# Three load-bearing properties pinned here:
+#
+# 1. ``_default_cookie_saver`` performs a LATE-BOUND ``_core`` lookup inside
+#    its function body. Monkeypatching ``notebooklm._core.save_cookies_to_storage``
+#    AFTER the wrapper exists must still affect the wrapper's behavior.
+#    Without late-binding, the 8+ existing tests that patch ``_core.save_*``
+#    silently lose their effect under the seam refactor.
+#
+# 2. ``_default_cookie_rotator`` performs the same late-bound lookup for
+#    ``_core._rotate_cookies``. The keepalive-loop equivalent of (1).
+#
+# 3. ``ClientLifecycle.__init__`` wires the defaults when ``cookie_saver`` /
+#    ``cookie_rotator`` are ``None`` (or omitted), and accepts custom
+#    callables when supplied. The ``or _default_*`` resolution pattern is
+#    what lets ``_ensure_lifecycle`` (which does NOT pass the new kwargs)
+#    keep working unchanged.
+# ---------------------------------------------------------------------------
+
+
+def test_default_cookie_saver_late_binds_to_core(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``_default_cookie_saver`` resolves ``_core.save_cookies_to_storage``
+    at CALL time, not at module-import time.
+
+    Establish a sentinel AFTER ``_default_cookie_saver`` already exists,
+    then invoke the wrapper and prove the sentinel was called. A non-late-
+    bound wrapper would have captured the original ``save_cookies_to_storage``
+    reference at module load and silently ignored the monkeypatch.
+    """
+    sentinel = MagicMock(return_value=True)
+    monkeypatch.setattr(_core_module, "save_cookies_to_storage", sentinel)
+
+    jar = httpx.Cookies()
+    path = Path("/tmp/storage.json")
+    result = _default_cookie_saver(jar, path)
+
+    sentinel.assert_called_once_with(jar, path)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_default_cookie_rotator_late_binds_to_core(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_default_cookie_rotator`` resolves ``_core._rotate_cookies`` at
+    CALL time and awaits it. Async-shape counterpart to the saver test.
+    """
+    sentinel = AsyncMock(return_value=None)
+    monkeypatch.setattr(_core_module, "_rotate_cookies", sentinel)
+
+    client = MagicMock(spec=httpx.AsyncClient)
+    path = Path("/tmp/storage.json")
+    await _default_cookie_rotator(client, path)
+
+    sentinel.assert_awaited_once_with(client, path)
+
+
+def test_init_wires_default_seams_when_none_supplied() -> None:
+    """When ``cookie_saver`` / ``cookie_rotator`` are omitted (or ``None``),
+    ``ClientLifecycle.__init__`` wires the module-level late-binding
+    defaults; supplying custom callables overrides them.
+
+    This is what lets :meth:`Session._ensure_lifecycle` keep its existing
+    no-arg signature — it constructs ``ClientLifecycle(...)`` without the
+    new kwargs, and the ``or _default_*`` resolution preserves the legacy
+    ``_core`` monkeypatch surface.
+    """
+    # Defaults: omit the kwargs entirely.
+    default_lifecycle = ClientLifecycle(
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        keepalive_interval=None,
+        keepalive_storage_path=None,
+    )
+    assert default_lifecycle._cookie_saver is _default_cookie_saver
+    assert default_lifecycle._cookie_rotator is _default_cookie_rotator
+
+    # Explicit ``None`` resolves the same way as omission.
+    explicit_none_lifecycle = ClientLifecycle(
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        keepalive_interval=None,
+        keepalive_storage_path=None,
+        cookie_saver=None,
+        cookie_rotator=None,
+    )
+    assert explicit_none_lifecycle._cookie_saver is _default_cookie_saver
+    assert explicit_none_lifecycle._cookie_rotator is _default_cookie_rotator
+
+    # Custom callables override the defaults — pure pass-through, no
+    # ``_core`` indirection.
+    custom_saver = MagicMock(return_value=True)
+    custom_rotator = AsyncMock(return_value=None)
+    custom_lifecycle = ClientLifecycle(
+        timeout=30.0,
+        connect_timeout=10.0,
+        limits=ConnectionLimits(),
+        keepalive_interval=None,
+        keepalive_storage_path=None,
+        cookie_saver=custom_saver,
+        cookie_rotator=custom_rotator,
+    )
+    assert custom_lifecycle._cookie_saver is custom_saver
+    assert custom_lifecycle._cookie_rotator is custom_rotator

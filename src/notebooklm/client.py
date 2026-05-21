@@ -52,6 +52,7 @@ from ._session import (
     DEFAULT_TIMEOUT,
     Session,
 )
+from ._session_lifecycle import CookieRotator, CookieSaver
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._source_upload import SourceUploadPipeline
@@ -116,6 +117,8 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+        cookie_saver: CookieSaver | None = None,
+        cookie_rotator: CookieRotator | None = None,
     ):
         """Initialize the NotebookLM client.
 
@@ -196,6 +199,19 @@ class NotebookLMClient:
                 backend-agnostic ``RpcTelemetryEvent`` so applications can
                 forward telemetry to logging, Prometheus, OpenTelemetry, or
                 another metrics backend without this package depending on one.
+            cookie_saver: Optional injectable seam (Phase 2 PR 3) overriding
+                the on-disk cookie writer used on close / refresh / keepalive.
+                ``None`` (default) preserves the current behavior of resolving
+                ``notebooklm._core.save_cookies_to_storage`` via a late-bound
+                wrapper. Must be sync (``def``, not ``async def``) — it runs
+                inside ``asyncio.to_thread``. Custom callables bypass the
+                ``_core`` lookup entirely.
+            cookie_rotator: Optional injectable seam (Phase 2 PR 3)
+                overriding the keepalive-loop cookie rotator. ``None``
+                (default) preserves the current behavior of resolving
+                ``notebooklm._core._rotate_cookies`` via a late-bound
+                wrapper. Must be async — it is awaited from the keepalive
+                loop.
         """
         # Normalize the effective storage path onto the auth object so every
         # downstream code path (refresh_auth, Session.close on-close save,
@@ -266,6 +282,12 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
             max_concurrent_rpcs=max_concurrent_rpcs,
             on_rpc_event=on_rpc_event,
+            # Phase 2 PR 3 injectable seams — pass-through to the
+            # lifecycle. ``None`` (default) preserves the legacy late-
+            # binding contract via ``_default_cookie_saver`` /
+            # ``_default_cookie_rotator``.
+            cookie_saver=cookie_saver,
+            cookie_rotator=cookie_rotator,
         )
         # Compatibility alias for tests and private callers that still inspect
         # ``client._core`` directly.

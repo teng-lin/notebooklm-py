@@ -111,7 +111,7 @@ from ._session_helpers import (
 from ._session_helpers import (
     is_auth_error as is_auth_error,
 )
-from ._session_lifecycle import ClientLifecycle
+from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
 from ._transport_drain import TransportDrainTracker
 
 # Re-exported so the existing import path ``from notebooklm._core import
@@ -235,6 +235,8 @@ class Session:
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
+        cookie_saver: CookieSaver | None = None,
+        cookie_rotator: CookieRotator | None = None,
     ):
         """Initialize the core client.
 
@@ -314,6 +316,20 @@ class Session:
                 ``rpc_call`` succeeds or fails. The callback receives a
                 backend-agnostic :class:`RpcTelemetryEvent`; exceptions raised
                 by the callback are logged and never mask the RPC result.
+            cookie_saver: Optional injectable seam (Phase 2 PR 3) overriding
+                the on-disk cookie writer used by
+                :meth:`ClientLifecycle.save_cookies`. ``None`` (default)
+                resolves to :func:`_default_cookie_saver`, which late-binds
+                to ``notebooklm._core.save_cookies_to_storage`` so the
+                existing test-monkeypatch surface keeps affecting the live
+                path. Must be sync (``def``, not ``async def``) — it runs
+                inside ``asyncio.to_thread``. Custom callables bypass the
+                ``_core`` lookup entirely.
+            cookie_rotator: Optional injectable seam (Phase 2 PR 3)
+                overriding the keepalive-loop rotator. ``None`` (default)
+                resolves to :func:`_default_cookie_rotator`, which late-binds
+                to ``notebooklm._core._rotate_cookies``. Must be async — it
+                is awaited from :meth:`ClientLifecycle._keepalive_loop`.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
@@ -461,6 +477,12 @@ class Session:
             keepalive_interval=_resolve_keepalive_interval(keepalive, keepalive_min_interval),
             keepalive_storage_path=_resolved_storage_path,
             kernel=self._kernel,
+            # Phase 2 PR 3 injectable seams. ``None`` is forwarded so the
+            # lifecycle's ``or _default_*`` resolves to the late-binding
+            # wrapper — preserving the existing ``_core`` monkeypatch
+            # surface for unchanged callers.
+            cookie_saver=cookie_saver,
+            cookie_rotator=cookie_rotator,
         )
         # Owns the in-process save lock and open-time cookie baseline while
         # compatibility properties below keep the legacy private attribute

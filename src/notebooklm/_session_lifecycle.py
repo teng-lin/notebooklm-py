@@ -70,7 +70,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
@@ -86,7 +86,75 @@ if TYPE_CHECKING:
     from ._rpc_executor import RpcExecutor
     from ._session_auth import AuthRefreshCoordinator
     from ._transport_drain import TransportDrainTracker
+    from .auth import CookieSaveResult
     from .types import ConnectionLimits
+
+
+# ---------------------------------------------------------------------------
+# Injectable seams (Phase 2 PR 3 of `.sisyphus/plans/refactor-completion-plan.md`)
+# ---------------------------------------------------------------------------
+#
+# These two callable seams let host integrations swap the on-disk cookie
+# writer and the identity-surface poke without monkeypatching
+# ``notebooklm._core``. The defaults preserve the existing late-binding
+# contract (8+ test files patch ``notebooklm._core.{save_cookies_to_storage,
+# _rotate_cookies}``) by resolving the target inside the wrapper body — see
+# ``_default_cookie_saver`` / ``_default_cookie_rotator`` below.
+#
+# Concrete return types (not ``Callable[..., Any]``) are deliberate so mypy
+# rejects an ``async def`` mistakenly passed for ``cookie_saver`` (the
+# storage writer runs INSIDE ``asyncio.to_thread`` and must be sync) and a
+# plain ``def`` mistakenly passed for ``cookie_rotator`` (the rotator is
+# awaited from the keepalive loop and must return an ``Awaitable``).
+
+#: Callable shape for the on-disk cookie writer. ``CookieSaveResult`` is
+#: imported under ``TYPE_CHECKING``; the inner forward-string keeps the
+#: alias evaluable at runtime without a circular auth import.
+CookieSaver = Callable[..., "bool | CookieSaveResult"]
+
+#: Callable shape for the keepalive-loop cookie rotator. ``Awaitable[None]``
+#: pins the async-callable contract so mypy rejects sync ``def`` callables
+#: at the injection point.
+CookieRotator = Callable[..., Awaitable[None]]
+
+
+def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
+    """Default ``cookie_saver``: late-bind to ``notebooklm._core.save_cookies_to_storage``.
+
+    The ``from . import _core`` import lives INSIDE the function body
+    (intentionally, NOT at module top) so the
+    ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
+    idiom in 8+ test files still affects the live save path through this
+    wrapper. A top-level import would capture the original reference at
+    module-import time and silently ignore later patches.
+
+    ``def`` (not ``async def``) is load-bearing: this wrapper is invoked
+    INSIDE ``asyncio.to_thread(_save)`` in
+    :meth:`CookiePersistence._save`. ``save_cookies_to_storage`` itself is
+    a sync writer at ``_auth/storage.py:303``. Making this wrapper ``async``
+    would surface as a ``TypeError`` at runtime when ``to_thread`` tries
+    to call the coroutine in a worker thread.
+    """
+    from . import _core as _core_module
+
+    return _core_module.save_cookies_to_storage(*args, **kwargs)
+
+
+async def _default_cookie_rotator(*args: Any, **kwargs: Any) -> None:
+    """Default ``cookie_rotator``: late-bind to ``notebooklm._core._rotate_cookies``.
+
+    The ``from . import _core`` import lives INSIDE the function body so
+    ``monkeypatch.setattr("notebooklm._core._rotate_cookies", …)`` in
+    ``tests/unit/concurrency/test_close_cancellation_leak.py`` (and
+    similar) keeps affecting the live keepalive loop through this wrapper.
+
+    ``async def`` (not ``def``) is load-bearing: ``_rotate_cookies`` at
+    ``_auth/keepalive.py:298`` is async and must be awaited.
+    """
+    from . import _core as _core_module
+
+    await _core_module._rotate_cookies(*args, **kwargs)
+
 
 # Logger name pinned via :data:`CORE_LOGGER_NAME` so log filters in
 # tests — e.g. ``caplog.at_level("DEBUG", logger=CORE_LOGGER_NAME)`` —
@@ -141,6 +209,8 @@ class ClientLifecycle:
         keepalive_interval: float | None,
         keepalive_storage_path: Path | None,
         kernel: Kernel | None = None,
+        cookie_saver: CookieSaver | None = None,
+        cookie_rotator: CookieRotator | None = None,
     ) -> None:
         self._kernel = kernel if kernel is not None else Kernel()
         self._timeout: float = timeout
@@ -161,6 +231,16 @@ class ClientLifecycle:
         # attribute for tests and private callers that probe it directly.
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
+        # Injectable seams (Phase 2 PR 3). ``None`` resolves to the module-
+        # level late-binding default — same behavior as before the seam was
+        # added, because the default wraps the ``notebooklm._core`` lookup
+        # inside its body. Custom callables skip the ``_core`` hop entirely
+        # and run directly (host integrations that want to bypass the
+        # legacy monkeypatch surface). ``or`` (not ``if x is not None else``)
+        # is fine here: ``None`` is the only documented sentinel and any
+        # other callable is truthy.
+        self._cookie_saver: CookieSaver = cookie_saver or _default_cookie_saver
+        self._cookie_rotator: CookieRotator = cookie_rotator or _default_cookie_rotator
 
     @property
     def _http_client(self) -> httpx.AsyncClient | None:
@@ -263,17 +343,20 @@ class ClientLifecycle:
         """Persist a cookie jar through the shared cookie-persistence collaborator.
 
         Single chokepoint used by :meth:`close`, :meth:`_keepalive_loop`, and
-        ``NotebookLMClient.refresh_auth``. The storage writer is resolved
-        from ``notebooklm._core`` at call time so the
+        ``NotebookLMClient.refresh_auth``. The storage writer is delegated
+        to ``self._cookie_saver`` (Phase 2 PR 3 injectable seam). The
+        default :func:`_default_cookie_saver` wrapper performs a late-bound
+        ``from . import _core; _core.save_cookies_to_storage`` lookup inside
+        its body so the
         ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-        surface used by 8+ test files keeps affecting the live save path.
+        surface used by 8+ test files keeps affecting the live save path
+        through the wrapper. Custom callables bypass the ``_core`` hop
+        entirely.
         """
-        from . import _core as _core_module
-
         await host.cookie_persistence.save(
             jar,
             path,
-            save_cookies_to_storage=_core_module.save_cookies_to_storage,
+            save_cookies_to_storage=self._cookie_saver,
             to_thread=asyncio.to_thread,
         )
 
@@ -382,13 +465,14 @@ class ClientLifecycle:
         :class:`asyncio.CancelledError` from :meth:`close`.
         """
         logger.debug("Keepalive task started (interval=%.1fs)", interval)
-        # Resolved from ``notebooklm._core`` once, before the loop, so the
-        # existing ``monkeypatch.setattr("notebooklm._core._rotate_cookies",
-        # …)`` surface in ``test_close_cancellation_leak.py`` keeps affecting
-        # the live keepalive loop after the extraction. The attribute lookup
-        # on ``_core_module._rotate_cookies`` still happens at call time, so
-        # late monkeypatches remain effective without re-importing every tick.
-        from . import _core as _core_module
+        # Rotation is delegated to ``self._cookie_rotator`` (Phase 2 PR 3
+        # injectable seam). The default :func:`_default_cookie_rotator`
+        # wrapper performs a late-bound ``from . import _core;
+        # _core._rotate_cookies`` lookup inside its body so the
+        # ``monkeypatch.setattr("notebooklm._core._rotate_cookies", …)``
+        # surface in ``test_close_cancellation_leak.py`` (and similar)
+        # keeps affecting the live keepalive loop. Custom callables bypass
+        # the ``_core`` hop entirely.
 
         try:
             while True:
@@ -406,7 +490,7 @@ class ClientLifecycle:
                     # concurrent layer-1 callers (e.g. spawned ``fetch_tokens``
                     # tasks on the same profile) and other keepalive loops on
                     # the same profile see the fresh rotation and skip.
-                    await _core_module._rotate_cookies(client, self._keepalive_storage_path)
+                    await self._cookie_rotator(client, self._keepalive_storage_path)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001 - opportunistic best-effort
@@ -432,4 +516,11 @@ class ClientLifecycle:
             raise
 
 
-__all__ = ["ClientLifecycle", "_LifecycleHost"]
+__all__ = [
+    "ClientLifecycle",
+    "CookieRotator",
+    "CookieSaver",
+    "_LifecycleHost",
+    "_default_cookie_rotator",
+    "_default_cookie_saver",
+]
