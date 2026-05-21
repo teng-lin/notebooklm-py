@@ -333,16 +333,19 @@ async def test_new_backfill_emit_event_works_without_init() -> None:
 
 
 @pytest.mark.asyncio
-async def test_new_backfill_setter_writethrough_succeeds() -> None:
-    """Setting ``core._on_rpc_event = cb`` on a fresh ``__new__`` core succeeds.
+async def test_new_backfill_emits_rpc_event_after_explicit_backfill() -> None:
+    """Behaviour test: after ``_ensure_observability_state()`` primes the
+    collaborator, writing ``_on_rpc_event`` directly and then calling
+    ``_emit_rpc_event`` delivers the event.
 
-    The property setter must call ``_ensure_observability_state`` BEFORE the
-    writethrough so the helper exists when we delegate
-    ``self._metrics_obj._on_rpc_event = cb``.
+    Phase 4: the ``Session._on_rpc_event`` setter was removed; tests that
+    bypassed ``__init__`` via ``Session.__new__`` must now call the
+    backfill helper explicitly before writing on the collaborator.
     """
     events: list[RpcTelemetryEvent] = []
     core = Session.__new__(Session)
-    core._on_rpc_event = events.append
+    core._ensure_observability_state()  # explicit backfill (was implicit via setter)
+    core._metrics_obj._on_rpc_event = events.append
 
     event = RpcTelemetryEvent(method="ASK", status="success", elapsed_seconds=0.0)
     await core._emit_rpc_event(event)
@@ -371,30 +374,16 @@ def test_new_backfill_increment_metrics_lazy_construct() -> None:
     assert snapshot.rpc_calls_failed == 1
 
 
-def test_new_backfill_metrics_setter_writethrough() -> None:
-    """The ``_metrics`` setter writes through and snapshot reflects it."""
-    core = Session.__new__(Session)
-    replacement = ClientMetricsSnapshot(rpc_calls_started=42)
-    core._metrics = replacement
-    assert core.metrics_snapshot().rpc_calls_started == 42
-
-
 # ---------------------------------------------------------------------------
-# Compat property bridge round-trip (covers the getter + setter halves on
-# ``Session`` for ``_metrics_lock``, ``_metrics``, ``_on_rpc_event``).
+# Phase 4 deleted the ``_metrics_lock``, ``_metrics``, ``_on_rpc_event``
+# setters on ``Session``. The getters stay (with ``_ensure_observability_state``
+# backfill) so reading still works; writers reach into ``_metrics_obj``
+# directly. The round-trip + writethrough tests that pinned the deleted setters
+# were removed (they would tautologically assert that writing direct then
+# reading direct returns the written value). The single setter-removed test
+# above (``test_new_backfill_emits_rpc_event_after_explicit_backfill``)
+# preserves the behaviour-side regression guard.
 # ---------------------------------------------------------------------------
-
-
-def test_metrics_lock_compat_property_round_trip() -> None:
-    """Reading ``core._metrics_lock`` returns the helper's lock; writing replaces it."""
-    core = Session.__new__(Session)
-    original = core._metrics_lock  # triggers backfill + getter path
-    assert isinstance(original, type(threading.Lock()))
-
-    replacement = threading.Lock()
-    core._metrics_lock = replacement
-    # Re-read via the same property bridge — should now report the replacement.
-    assert core._metrics_lock is replacement
 
 
 def test_metrics_getter_returns_live_snapshot() -> None:
@@ -404,15 +393,3 @@ def test_metrics_getter_returns_live_snapshot() -> None:
     # The getter delegates to ``self._metrics_obj._metrics``, which has been
     # rebound by ``increment`` to a new dataclass via ``replace``.
     assert core._metrics.rpc_calls_started == 7
-
-
-def test_on_rpc_event_getter_returns_callback() -> None:
-    """``core._on_rpc_event`` getter returns whatever was assigned."""
-
-    def cb(_event: RpcTelemetryEvent) -> None:
-        pass
-
-    core = Session.__new__(Session)
-    assert core._on_rpc_event is None  # default after backfill
-    core._on_rpc_event = cb
-    assert core._on_rpc_event is cb

@@ -51,7 +51,9 @@ def test_client_core_pending_polls_assignment_replaces_registry_backing_mapping(
     registry = core.poll_registry
     pending: PendingPolls = {}
 
-    core._pending_polls = pending
+    # Phase 4: ``Session._pending_polls`` setter was removed; write on the
+    # collaborator directly. The read-side bridge stays.
+    core.poll_registry.pending = pending
 
     assert core.poll_registry is registry
     assert core.poll_registry.pending is pending

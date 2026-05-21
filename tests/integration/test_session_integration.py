@@ -292,7 +292,10 @@ class TestRPCCallAuthRetry:
             core._refresh_callback = refresh_callback
             import asyncio
 
-            core._refresh_lock = asyncio.Lock()
+            # Phase 4: ``Session._refresh_lock`` setter was removed; write on
+            # the collaborator directly. ``Session.__init__`` already built
+            # ``_auth_coord`` so this direct write is safe.
+            core._auth_coord._refresh_lock = asyncio.Lock()
 
             success_response = MagicMock()
             success_response.status_code = 200

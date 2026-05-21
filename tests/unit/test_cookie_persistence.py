@@ -42,7 +42,9 @@ def test_client_core_exposes_cookie_persistence_and_private_bridges(tmp_path: Pa
     core = Session(_auth_tokens(tmp_path / "storage_state.json"))
     baseline = snapshot_cookie_jar(_jar())
 
-    core._loaded_cookie_snapshot = baseline
+    # Phase 4: the ``Session._loaded_cookie_snapshot`` setter was removed
+    # (write through the collaborator directly). The read-side bridge stays.
+    core.cookie_persistence.loaded_cookie_snapshot = baseline
 
     assert isinstance(core.cookie_persistence, CookiePersistence)
     assert core._save_lock is core.cookie_persistence.save_lock

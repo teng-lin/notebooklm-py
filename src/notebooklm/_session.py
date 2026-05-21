@@ -447,82 +447,55 @@ class Session:
 
     @property
     def _loaded_cookie_snapshot(self) -> CookieSnapshot | None:
-        """Compatibility bridge to the cookie save baseline."""
+        """Compatibility bridge to the cookie save baseline.
+
+        Phase 4 deleted the matching ``.setter``; write on
+        ``self.cookie_persistence.loaded_cookie_snapshot`` directly.
+        """
         return self.cookie_persistence.loaded_cookie_snapshot
 
-    @_loaded_cookie_snapshot.setter
-    def _loaded_cookie_snapshot(self, value: CookieSnapshot | None) -> None:
-        self.cookie_persistence.loaded_cookie_snapshot = value
-
     # ``ClientMetrics`` compat bridges. The three observability ivars now live
-    # on ``self._metrics_obj``; each setter calls ``_ensure_observability_state``
-    # first so a ``__new__``-built fixture (no ``__init__`` ran) can still
-    # assign ``core._on_rpc_event = cb`` and have it write through.
+    # on ``self._metrics_obj``; the read-side bridges call
+    # ``_ensure_observability_state`` first so a ``__new__``-built fixture
+    # (no ``__init__`` ran) can still read through. Phase 4 deleted the
+    # matching ``.setter`` halves — write on ``self._metrics_obj.X``
+    # directly (after calling ``_ensure_observability_state()`` if you
+    # constructed via ``Session.__new__``).
     @property
     def _metrics_lock(self) -> threading.Lock:
         self._ensure_observability_state()
         return self._metrics_obj._metrics_lock
-
-    @_metrics_lock.setter
-    def _metrics_lock(self, value: threading.Lock) -> None:
-        self._ensure_observability_state()
-        self._metrics_obj._metrics_lock = value
 
     @property
     def _metrics(self) -> ClientMetricsSnapshot:
         self._ensure_observability_state()
         return self._metrics_obj._metrics
 
-    @_metrics.setter
-    def _metrics(self, value: ClientMetricsSnapshot) -> None:
-        self._ensure_observability_state()
-        self._metrics_obj._metrics = value
-
     @property
     def _on_rpc_event(self) -> Callable[[RpcTelemetryEvent], object] | None:
         self._ensure_observability_state()
         return self._metrics_obj._on_rpc_event
 
-    @_on_rpc_event.setter
-    def _on_rpc_event(self, value: Callable[[RpcTelemetryEvent], object] | None) -> None:
-        self._ensure_observability_state()
-        self._metrics_obj._on_rpc_event = value
-
     # ``TransportDrainTracker`` compat bridges. The four drain ivars now live
-    # on ``self._drain_tracker``; each setter calls
+    # on ``self._drain_tracker``; the read-side bridges call
     # ``_ensure_observability_state`` first so a ``__new__``-built fixture
-    # (no ``__init__`` ran) can still assign (e.g.) ``core._draining = True``
-    # or ``core._drain_condition = asyncio.Condition()`` and have it write
-    # through to a real helper.
+    # (no ``__init__`` ran) can still read through. Phase 4 deleted the
+    # matching ``.setter`` halves — write on ``self._drain_tracker.X``
+    # directly.
     @property
     def _in_flight_posts(self) -> int:
         self._ensure_observability_state()
         return self._drain_tracker._in_flight_posts
-
-    @_in_flight_posts.setter
-    def _in_flight_posts(self, value: int) -> None:
-        self._ensure_observability_state()
-        self._drain_tracker._in_flight_posts = value
 
     @property
     def _draining(self) -> bool:
         self._ensure_observability_state()
         return self._drain_tracker._draining
 
-    @_draining.setter
-    def _draining(self, value: bool) -> None:
-        self._ensure_observability_state()
-        self._drain_tracker._draining = value
-
     @property
     def _drain_condition(self) -> asyncio.Condition | None:
         self._ensure_observability_state()
         return self._drain_tracker._drain_condition
-
-    @_drain_condition.setter
-    def _drain_condition(self, value: asyncio.Condition | None) -> None:
-        self._ensure_observability_state()
-        self._drain_tracker._drain_condition = value
 
     # ``_operation_depths`` compat bridge dropped (D1-audit-full): zero
     # external callers; direct ivar lives on ``self._drain_tracker``.
@@ -564,13 +537,11 @@ class Session:
 
     @property
     def _refresh_lock(self) -> asyncio.Lock | None:
+        """Phase 4 deleted the matching ``.setter``; write on
+        ``self._auth_coord._refresh_lock`` directly.
+        """
         self._ensure_auth_coord()
         return self._auth_coord._refresh_lock
-
-    @_refresh_lock.setter
-    def _refresh_lock(self, value: asyncio.Lock | None) -> None:
-        self._ensure_auth_coord()
-        self._auth_coord._refresh_lock = value
 
     @property
     def _refresh_task(self) -> asyncio.Task[AuthTokens] | None:
@@ -672,13 +643,12 @@ class Session:
 
     @property
     def _keepalive_interval(self) -> float | None:
+        """Phase 4 deleted the matching ``.setter`` (zero external write
+        sites); write on ``self._lifecycle._keepalive_interval`` directly
+        if a test needs to override it.
+        """
         self._ensure_lifecycle()
         return self._lifecycle._keepalive_interval
-
-    @_keepalive_interval.setter
-    def _keepalive_interval(self, value: float | None) -> None:
-        self._ensure_lifecycle()
-        self._lifecycle._keepalive_interval = value
 
     @property
     def _keepalive_storage_path(self) -> Path | None:
@@ -749,15 +719,13 @@ class Session:
     def _pending_polls(self) -> PendingPolls:
         """Deprecated compatibility view of ``poll_registry.pending``.
 
-        The active artifact polling registry is feature-owned. This bridge
-        remains only for external callers and tests that still read or assign
-        ``Session._pending_polls`` directly.
+        The active artifact polling registry is feature-owned. Phase 4
+        deleted the matching ``.setter``; write on
+        ``self.poll_registry.pending`` directly. The read-side bridge
+        remains for external callers that still query
+        ``Session._pending_polls``.
         """
         return self.poll_registry.pending
-
-    @_pending_polls.setter
-    def _pending_polls(self, value: PendingPolls) -> None:
-        self.poll_registry.pending = value
 
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook."""

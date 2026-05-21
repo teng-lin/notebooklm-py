@@ -327,42 +327,15 @@ def test_new_backfill_drain_tracker_constructed_on_first_access() -> None:
     assert core._drain_condition is None
 
 
-def test_new_backfill_drain_setter_writethrough_succeeds() -> None:
-    """Setting ``core._draining = True`` on a ``__new__``-built core works.
-
-    The property setter must call ``_ensure_observability_state`` BEFORE
-    the writethrough; otherwise the writethrough hits an ``AttributeError``
-    because ``_drain_tracker`` doesn't exist yet.
-    """
-    core = Session.__new__(Session)
-    core._draining = True
-    assert core._draining is True
-    assert core._drain_tracker._draining is True
-
-
-def test_new_backfill_drain_condition_setter_writethrough_succeeds() -> None:
-    """Tests can inject ``core._drain_condition = asyncio.Condition()`` directly.
-
-    Some legacy fixtures pre-allocate the condition; the setter must
-    accept that even on a ``__new__``-built core.
-    """
-
-    async def _scope() -> None:
-        core = Session.__new__(Session)
-        injected = asyncio.Condition()
-        core._drain_condition = injected
-        assert core._drain_condition is injected
-        assert core._drain_tracker._drain_condition is injected
-
-    asyncio.run(_scope())
-
-
-def test_new_backfill_in_flight_setter_writethrough_succeeds() -> None:
-    """``core._in_flight_posts = 5`` on a ``__new__``-built core writes through."""
-    core = Session.__new__(Session)
-    core._in_flight_posts = 5
-    assert core._in_flight_posts == 5
-    assert core._drain_tracker._in_flight_posts == 5
+# ---------------------------------------------------------------------------
+# Phase 4 deleted the ``_draining``, ``_drain_condition``, ``_in_flight_posts``
+# setters on ``Session``. The getters stay (with backfill) so reads still work;
+# writers reach into ``_drain_tracker`` directly. The three pure-writethrough
+# tests that pinned those setters were removed (they would tautologically
+# assert that writing direct then reading direct returns the same value).
+# The ``__new__``-fixture invariant is still pinned by
+# ``tests/unit/test_chain_wiring.py::test_perform_authed_post_works_on_new_built_fixture``.
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
