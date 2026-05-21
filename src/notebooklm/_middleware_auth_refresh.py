@@ -102,8 +102,8 @@ class AuthRefreshMiddleware:
     - ``is_auth_error``: predicate that decides whether an exception is
       an auth failure (HTTP 400 / 401 / 403). Production wires
       :func:`notebooklm._session_helpers.is_auth_error` through a lambda
-      that resolves it via ``notebooklm._core``'s module globals at
-      call time, so ``monkeypatch.setattr("notebooklm._core.is_auth_error",
+      that resolves it via the canonical module's globals at call time,
+      so ``monkeypatch.setattr("notebooklm._session_helpers.is_auth_error",
       ...)`` reaches the chain live; tests that build the middleware
       directly typically pass the function itself.
     - ``refresh_callback_enabled``: a zero-arg callable returning ``True``

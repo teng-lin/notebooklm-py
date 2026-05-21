@@ -1,8 +1,9 @@
 """Cross-seam helpers: auth-error classification, keepalive validation.
 
-Small, pure helpers extracted from :mod:`notebooklm._core`'s preamble. Each
-helper is re-exported from :mod:`notebooklm._core` so existing
-``from notebooklm._core import is_auth_error`` imports keep working unchanged.
+Small, pure helpers extracted from the historical ``notebooklm._core``
+preamble (the compatibility shim was removed in v0.5.0). Callers import
+directly from this module — e.g.
+``from notebooklm._session_helpers import is_auth_error``.
 
 These helpers stay separate from :mod:`notebooklm._session_config` because
 they carry behavior (and therefore tests), while the constants module is

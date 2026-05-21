@@ -1,8 +1,9 @@
 """Module-level constants for the NotebookLM session client.
 
-Holds the ``DEFAULT_*`` knobs that historically lived in :mod:`notebooklm._core`'s
-preamble. Each constant is re-exported from :mod:`notebooklm._core` so existing
-``from notebooklm._core import DEFAULT_TIMEOUT`` imports keep working.
+Holds the ``DEFAULT_*`` knobs that historically lived in the
+``notebooklm._core`` preamble (the compatibility shim was removed in
+v0.5.0). Callers import directly from this module — e.g.
+``from notebooklm._session_config import DEFAULT_TIMEOUT``.
 
 These values are tuned for typical interactive workloads; see each docstring
 below for guidance on when an operator would want to override them via the
@@ -28,6 +29,12 @@ __all__ = [
 # repeated verbatim across seven modules; promoting it here eliminates
 # the drift risk on rename. Callers do
 # ``logger = logging.getLogger(CORE_LOGGER_NAME)``.
+#
+# The literal value is preserved as the historical ``"notebooklm._core"``
+# logging key even though the ``_core`` compatibility shim was deleted in
+# v0.5.0 — the logger is keyed by string, not module, and renaming would
+# silently break every ``caplog.at_level("notebooklm._core", ...)`` site
+# downstream. Treat this string as a public-ish logging contract.
 CORE_LOGGER_NAME = "notebooklm._core"
 
 # Default HTTP timeouts in seconds

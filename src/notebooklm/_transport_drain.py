@@ -62,8 +62,7 @@ class _TransportOperationToken:
     is the ``asyncio.Task`` whose operation depth was bumped on admission
     (or ``None`` for the unusual case of a begin issued outside any task).
 
-    Re-exported from ``notebooklm._core`` for backwards compatibility —
-    keep this dataclass frozen so token equality is by value.
+    Frozen so token equality is by value.
     """
 
     task: asyncio.Task[Any] | None

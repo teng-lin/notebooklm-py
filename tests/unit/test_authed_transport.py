@@ -98,23 +98,6 @@ def _status_error(code: int, *, retry_after: str | None = None) -> httpx.HTTPSta
     return httpx.HTTPStatusError(f"HTTP {code}", request=request, response=response)
 
 
-def test_core_reexports_transport_private_names():
-    """Private imports from ``notebooklm._core`` remain source compatible."""
-    from notebooklm import _authed_transport, _core
-
-    moved_names = [
-        "_AuthSnapshot",
-        "_BuildRequest",
-        "_TransportAuthExpired",
-        "_TransportRateLimited",
-        "_TransportServerError",
-        "_parse_retry_after",
-    ]
-    for name in moved_names:
-        assert getattr(_core, name) is getattr(_authed_transport, name)
-    assert _core.MAX_RETRY_AFTER_SECONDS == _authed_transport.MAX_RETRY_AFTER_SECONDS
-
-
 def test_authed_transport_has_no_runtime_core_imports():
     """The collaborator must not create a runtime import cycle back to _core."""
     path = Path(__file__).parents[2] / "src/notebooklm/_authed_transport.py"

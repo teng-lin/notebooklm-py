@@ -13,8 +13,7 @@ Owns the session-side open/close ordering that historically lived inline on
   ``accounts.google.com/RotateCookies`` while the client is open.
 * ``_keepalive_interval`` / ``_keepalive_storage_path`` — keepalive
   configuration; the interval is clamped against ``keepalive_min_interval``
-  via :func:`notebooklm._session_helpers._resolve_keepalive_interval` (re-exported
-  from :mod:`notebooklm._core` so the legacy import path keeps resolving).
+  via :func:`notebooklm._session_helpers._resolve_keepalive_interval`.
 * ``_timeout`` / ``_connect_timeout`` / ``_limits`` — HTTP timeouts and
   connection-pool tuning consumed in :meth:`open`.
 
@@ -46,10 +45,11 @@ Design constraints (load-bearing — see ``tests/unit/test_client_keepalive.py``
   short-circuits before the chain leaf reaches httpx, so the httpx-layer
   transport stays a real, unwrapped transport at all times.
 
-* :meth:`save_cookies` resolves ``save_cookies_to_storage`` from
-  ``notebooklm._core`` at call time so the
-  ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-  surface used by 8+ test files keeps affecting the live save path.
+* :meth:`save_cookies` forwards the lifecycle's ``_cookie_saver`` wrapper
+  (``_default_cookie_saver`` by default) to ``CookiePersistence._save``;
+  the wrapper late-binds ``save_cookies_to_storage`` from
+  ``notebooklm._auth.storage`` at call time so a ``monkeypatch.setattr``
+  on the canonical seam keeps affecting the live save path.
 
 * ``_bound_loop`` is bound exactly once per :meth:`open` call; :meth:`close`
   does NOT unbind so an accidental cross-loop call after close still raises
@@ -95,10 +95,11 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 #
 # These two callable seams let host integrations swap the on-disk cookie
-# writer and the identity-surface poke without monkeypatching
-# ``notebooklm._core``. The defaults preserve the existing late-binding
-# contract (8+ test files patch ``notebooklm._core.{save_cookies_to_storage,
-# _rotate_cookies}``) by resolving the target inside the wrapper body — see
+# writer and the identity-surface poke without monkeypatching the
+# canonical seams directly. The defaults preserve the late-binding
+# contract: tests patch ``notebooklm._auth.storage.save_cookies_to_storage``
+# or ``notebooklm._auth.keepalive._rotate_cookies`` and the wrapper body
+# observes the swap because it resolves the target inside its body — see
 # ``_default_cookie_saver`` / ``_default_cookie_rotator`` below.
 #
 # Concrete return types (not ``Callable[..., Any]``) are deliberate so mypy
@@ -223,8 +224,7 @@ class ClientLifecycle:
         # types.py import cycle.
         self._limits: ConnectionLimits = limits
         # Pre-clamped by :func:`notebooklm._session_helpers._resolve_keepalive_interval`
-        # (re-exported as ``notebooklm._core._resolve_keepalive_interval``) at
-        # the ``Session`` boundary so the floor-vs-user-value branching
+        # at the ``Session`` boundary so the floor-vs-user-value branching
         # stays in one place — the seam helper.
         self._keepalive_interval: float | None = keepalive_interval
         self._keepalive_storage_path: Path | None = keepalive_storage_path
@@ -234,13 +234,12 @@ class ClientLifecycle:
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._keepalive_task: asyncio.Task[None] | None = None
         # Injectable seams (Phase 2 PR 3). ``None`` resolves to the module-
-        # level late-binding default — same behavior as before the seam was
-        # added, because the default wraps the ``notebooklm._core`` lookup
-        # inside its body. Custom callables skip the ``_core`` hop entirely
-        # and run directly (host integrations that want to bypass the
-        # legacy monkeypatch surface). ``or`` (not ``if x is not None else``)
-        # is fine here: ``None`` is the only documented sentinel and any
-        # other callable is truthy.
+        # level late-binding default — the default wraps the canonical
+        # ``_auth.storage`` / ``_auth.keepalive`` lookup inside its body.
+        # Custom callables skip the late-bind hop entirely and run directly
+        # (host integrations that want to bypass the monkeypatch surface).
+        # ``or`` (not ``if x is not None else``) is fine here: ``None`` is
+        # the only documented sentinel and any other callable is truthy.
         self._cookie_saver: CookieSaver = cookie_saver or _default_cookie_saver
         self._cookie_rotator: CookieRotator = cookie_rotator or _default_cookie_rotator
 
@@ -348,12 +347,10 @@ class ClientLifecycle:
         ``NotebookLMClient.refresh_auth``. The storage writer is delegated
         to ``self._cookie_saver`` (Phase 2 PR 3 injectable seam). The
         default :func:`_default_cookie_saver` wrapper performs a late-bound
-        ``from . import _core; _core.save_cookies_to_storage`` lookup inside
-        its body so the
-        ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-        surface used by 8+ test files keeps affecting the live save path
-        through the wrapper. Custom callables bypass the ``_core`` hop
-        entirely.
+        ``from ._auth.storage import save_cookies_to_storage`` lookup inside
+        its body so a ``monkeypatch.setattr`` on the canonical seam keeps
+        affecting the live save path through the wrapper. Custom callables
+        bypass the late-bind hop entirely.
         """
         await host.cookie_persistence.save(
             jar,
@@ -469,12 +466,11 @@ class ClientLifecycle:
         logger.debug("Keepalive task started (interval=%.1fs)", interval)
         # Rotation is delegated to ``self._cookie_rotator`` (Phase 2 PR 3
         # injectable seam). The default :func:`_default_cookie_rotator`
-        # wrapper performs a late-bound ``from . import _core;
-        # _core._rotate_cookies`` lookup inside its body so the
-        # ``monkeypatch.setattr("notebooklm._core._rotate_cookies", …)``
-        # surface in ``test_close_cancellation_leak.py`` (and similar)
-        # keeps affecting the live keepalive loop. Custom callables bypass
-        # the ``_core`` hop entirely.
+        # wrapper performs a late-bound ``from ._auth.keepalive import
+        # _rotate_cookies`` lookup inside its body so a
+        # ``monkeypatch.setattr`` on the canonical seam keeps affecting
+        # the live keepalive loop. Custom callables bypass the late-bind
+        # hop entirely.
 
         try:
             while True:

@@ -62,7 +62,6 @@ RPC Layer (rpc/)
 
 2. **Session Layer** (`src/notebooklm/_session.py` + session/kernel collaborators):
    - `_session.py`: concrete `Session` orchestration
-   - `_core.py`: compatibility shim for legacy private imports
    - `_authed_transport.py`, `_rpc_executor.py`: HTTP client + RPC call abstraction
    - `_session_auth.py`, `_cookie_persistence.py`: Auth refresh + cookie storage
    - `_client_metrics.py`, `_transport_drain.py`, `_reqid_counter.py`: Telemetry, drain coordination, request-counter handling
@@ -85,7 +84,6 @@ RPC Layer (rpc/)
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
 | `_session.py` | Concrete `Session` orchestrator; HTTP client lifecycle; late-binding wrappers |
-| `_core.py` | Compatibility shim for legacy private imports |
 | `_session_config.py` | `DEFAULT_*` knobs and module-level constants |
 | `_session_helpers.py` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval` |
 | `_error_injection.py` | Synthetic-error env-var resolver + startup guard |
@@ -128,7 +126,6 @@ src/notebooklm/
 ├── auth.py                      # Authentication facade — flat re-exports from _auth/* (no write-through; ADR-003 Superseded)
 ├── types.py                     # Dataclasses
 ├── _session.py                  # Concrete Session orchestration (NotebookLMClient internals)
-├── _core.py                     # Compatibility shim for legacy private imports
 ├── _session_config.py           # DEFAULT_* knobs + module-level constants
 ├── _session_helpers.py          # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
 ├── _error_injection.py          # Synthetic-error env-var resolver + startup guard
