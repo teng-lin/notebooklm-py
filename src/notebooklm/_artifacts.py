@@ -328,7 +328,12 @@ class ArtifactsAPI:
         self._note_service = note_service
         self._poll_registry = PollRegistry()
         self._listing = ArtifactListingService()
-        self._generation = ArtifactGenerationService(self)
+        self._generation = ArtifactGenerationService(
+            runtime=self._runtime,
+            methods=self,
+            notebooks=self._notebooks,
+            note_service=self._note_service,
+        )
         self._downloads = ArtifactDownloadService(
             methods=self,
             mind_maps=self._mind_maps,
@@ -1015,7 +1020,7 @@ class ArtifactsAPI:
         self, notebook_id: str, params: builtins.list[Any]
     ) -> GenerationStatus:
         """Make a generation RPC call with error handling."""
-        return await self._generation._call_generate(notebook_id, params)
+        return await self._generation.call_generate(notebook_id, params)
 
     async def _list_mind_maps(self, notebook_id: str) -> builtins.list[Any]:
         """Get raw mind-map rows via the injected mind-map facade."""
@@ -1102,7 +1107,7 @@ class ArtifactsAPI:
         source: str = "_parse_generation_result",
     ) -> GenerationStatus:
         """Parse generation API result into GenerationStatus."""
-        return self._generation._parse_generation_result(
+        return self._generation.parse_generation_result(
             result,
             method_id=method_id,
             source=source,
