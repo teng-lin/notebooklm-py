@@ -13,6 +13,11 @@ This guide covers everything you need to contribute to `notebooklm-py`: architec
 
 ## Architecture
 
+> **Canonical post-refactor map:** see [`docs/architecture.md`](./architecture.md)
+> for the v0.5.0 collaborator graph + capability-protocol model. This section
+> remains as the contributor on-ramp (package layout + adding-features
+> guidance) and links out to the architecture doc rather than duplicating it.
+
 ### Package Structure
 
 ```
@@ -22,7 +27,6 @@ src/notebooklm/
 ├── auth.py              # Authentication handling
 ├── types.py             # Dataclasses and type definitions
 ├── _session.py          # Concrete Session HTTP/RPC infrastructure
-├── _core.py             # Legacy compatibility shim
 ├── _notebooks.py        # NotebooksAPI implementation
 ├── _notebook_metadata.py # Private notebook metadata composition service
 ├── _sources.py          # SourcesAPI implementation
@@ -85,20 +89,21 @@ src/notebooklm/
 |-------|-------|----------------|
 | **CLI** | `cli/*.py` | User commands, input validation, Rich output |
 | **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Session** | `_session.py`, `_core.py`, `_kernel.py`, session/kernel collaborators | `Session` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
+| **Session** | `_session.py`, `_kernel.py`, session/kernel collaborators | `Session` orchestrator + seam-module helpers (HTTP client lifecycle, RPC dispatch, metrics, drain bookkeeping, request-id counter, auth refresh, conversation cache, polling registry, cookie persistence) |
 | **RPC** | `rpc/*.py` | Protocol encoding/decoding, method IDs |
 
 #### Session-layer seam modules
 
-The `Session` layer is split across `_session.py` (orchestrator), `_core.py`
-(legacy compatibility shim), `_kernel.py` (HTTP client owner), and
-single-responsibility collaborator modules. Each helper exposes a
-Protocol-shim host interface so it can be unit-tested against a stub `Session`:
+The `Session` layer is split across `_session.py` (orchestrator),
+`_kernel.py` (HTTP client owner), and single-responsibility collaborator
+modules. (The legacy `_core.py` compatibility shim was deleted in v0.5.0;
+callers import directly from the canonical modules.) Each helper exposes
+a Protocol-shim host interface so it can be unit-tested against a stub
+`Session`:
 
 | Module | Class | Responsibility |
 |---|---|---|
 | `_session.py` | `Session` | Orchestrator owning the `httpx.AsyncClient` + `AuthTokens`; module-level constants and re-exports; error-injection seam (`_get_error_injection_mode`) used by middleware-level error injection. |
-| `_core.py` | shim | Compatibility re-export surface for legacy private imports. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_transport_drain.py` | `TransportDrainTracker` | In-flight transport counters, `_TransportOperationToken`, lazy `asyncio.Condition` powering `client.drain(...)`. |
 | `_reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
@@ -182,16 +187,22 @@ The architecture tests encode the current layer contract:
 1. Create `_newfeature.py` with `NewFeatureAPI` class.
 2. Type the constructor's runtime parameter against the **narrowest
    shared capability Protocol** it actually uses (`RpcCaller`,
-   `AsyncWorkRuntime`, etc.), or define a feature-local runtime
-   Protocol in your feature module if the slice you need is not
-   shared with any other feature (e.g. `ChatRuntime`, `ArtifactsRuntime`,
-   `UploadRuntime`). Do not type against a broad `Session` — that
-   Protocol was deleted in Phase 7 of the capability refactor; see
-   ADR-013 for the rationale.
-3. Add to `client.py`: `self.newfeature = NewFeatureAPI(self._core)` —
+   `AsyncWorkRuntime`, etc. — see
+   [`docs/architecture.md`](./architecture.md) for the protocol
+   catalog), or define a feature-local runtime Protocol in your feature
+   module if the slice you need is not shared with any other feature
+   (e.g. `ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`). **Do NOT
+   import the concrete `Session` class for type annotations** — the
+   broad `Session` Protocol was deleted in Phase 7 of the capability
+   refactor; see ADR-013 for the rationale.
+3. Add to `client.py`: `self.newfeature = NewFeatureAPI(self._session)` —
    the concrete `Session` structurally satisfies every capability
    Protocol, so the wiring stays straightforward.
-4. Export types from `__init__.py`.
+4. **Tests** should use `tests/_fixtures/fake_core.py:FakeSession`
+   which exposes the union of all capability protocols — it lets a
+   feature test substitute the broad runtime without constructing a
+   real `Session`.
+5. Export types from `__init__.py`.
 
 ---
 
