@@ -48,7 +48,6 @@ def notes_api(mock_core, save_chat_answer):
     note_service = NoteService(mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     return NotesAPI(
-        mock_core,
         notes=note_service,
         mind_maps=mind_maps,
         save_chat_answer=save_chat_answer,

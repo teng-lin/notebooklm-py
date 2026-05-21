@@ -1027,7 +1027,6 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
 
     core = MagicMock()
     notes = NotesAPI(
-        core,
         notes=MagicMock(spec=NoteService),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
         save_chat_answer=AsyncMock(),
@@ -1067,7 +1066,6 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
 
     def _make_notes() -> NotesAPI:
         return NotesAPI(
-            core,
             notes=MagicMock(spec=NoteService),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
             save_chat_answer=AsyncMock(),

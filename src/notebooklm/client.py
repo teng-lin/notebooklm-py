@@ -332,7 +332,6 @@ class NotebookLMClient:
         # has NotesAPI delegate via constructor injection.
         self.chat = ChatAPI(self._session, notebooks=self.notebooks)
         self.notes = NotesAPI(
-            self._session,
             notes=note_service,
             mind_maps=mind_maps,
             save_chat_answer=self.chat.save_answer_as_note,

@@ -22,7 +22,6 @@ from typing import Any, Protocol
 
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
-from ._session_contracts import RpcCaller
 from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
@@ -67,7 +66,6 @@ class NotesAPI:
 
     def __init__(
         self,
-        rpc: RpcCaller,
         *,
         notes: NoteService,
         mind_maps: NoteBackedMindMapService,
@@ -76,14 +74,6 @@ class NotesAPI:
         """Initialize the notes API.
 
         Args:
-            rpc: RPC dispatch surface (the narrow ``RpcCaller``
-                capability). Kept on ``NotesAPI`` so the legacy
-                ``self._core`` attribute (still expected by tests and
-                the ``_core`` shim) continues to point at a live
-                capability. The ``_core`` alias is preserved for
-                back-compat (refactor.md Non-Goals); a future arc may
-                rename the internal slot but it is not in scope for
-                Phase 7.
             notes: Backend note-row primitives. Owns
                 ``fetch_note_rows`` / ``classify_row`` / ``create_note``
                 / ``update_note`` / ``delete_note``.
@@ -96,12 +86,6 @@ class NotesAPI:
                 root. No default — without it, ``create_from_chat``
                 cannot delegate.
         """
-        # Preserve the legacy ``self._core`` attribute name so the
-        # ``_core`` compatibility shim and tests that inspect
-        # ``client.notes._core`` keep working. The alias is preserved
-        # indefinitely per refactor.md Non-Goals (ADR-013); renaming the
-        # internal slot is a future-arc task.
-        self._core = rpc
         self._notes = notes
         self._mind_maps = mind_maps
         self._save_chat_answer = save_chat_answer
