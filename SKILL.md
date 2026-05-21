@@ -292,7 +292,7 @@ All generate commands support:
 - `--language` to set output language (defaults to configured language or 'en')
 - `--json` for machine-readable output (returns `task_id` and `status`)
 - `--retry N` to automatically retry on rate limits with exponential backoff (supported on all subcommands **except** `mind-map`)
-- `--prompt-file PATH` to read description/query from a file (supported on all subcommands **except** `mind-map`; mutually exclusive with positional argument; use for long prompts)
+- `--prompt-file PATH` to read description/query from a file (supported on `ask`, `generate` subcommands except `mind-map`, and `source add-research`; mutually exclusive with positional argument; use for long prompts)
 
 | Type | Command | Options | Download |
 |------|---------|---------|----------|
