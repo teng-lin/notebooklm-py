@@ -267,13 +267,42 @@ def test_formatter_scrubs_papisid_with_correct_captured_name():
     """``__Secure-[13]PAPISID`` must be matched as its own alternative.
 
     Without an explicit alternative, the engine would match the ``APISID``
-    suffix instead, capturing only ``APISID`` as ``\\1`` while leaving the
-    ``__Secure-1P`` prefix in place. The substituted output still looks
-    correct (``__Secure-1PAPISID=***``) but the captured-name signal in
-    structured logging surfaces would be wrong. This test pins both the
-    leak being closed AND the captured-name shape via the prefix being
-    preserved in the redacted output exactly once.
+    suffix at position 11 instead, capturing only ``APISID`` as ``\\1``
+    while leaving the ``__Secure-1P`` prefix in place. The substituted
+    output looks identical at the surface (``__Secure-1PAPISID=***``)
+    because the unmatched prefix is preserved verbatim, so a string-shape
+    assertion alone cannot distinguish "full name captured" from
+    "coincidental prefix preservation."
+
+    We pin the invariant directly: walk ``_REDACT_PATTERNS`` and assert
+    that the first cookie-pattern match on a PAPISID input has
+    ``group(1) == "__Secure-1PAPISID"``. Removing the PAPISID alternative
+    from the regex would flip ``group(1)`` to ``"APISID"``, which this
+    assertion catches even though the substituted output would still look
+    correct.
     """
+    from notebooklm._logging import _REDACT_PATTERNS
+
+    # Find the cookie pattern (the one whose replacement is "\1=***" and
+    # whose source mentions __Secure-). Don't hardcode an index.
+    cookie_pattern = next(
+        p for p, repl in _REDACT_PATTERNS if repl == r"\1=***" and "__Secure" in p.pattern
+    )
+
+    # group(1) must be the FULL cookie name, not the APISID suffix.
+    m1 = cookie_pattern.search("__Secure-1PAPISID=SECRET_1PAPISID")
+    assert m1 is not None
+    assert m1.group(1) == "__Secure-1PAPISID", (
+        f"capture group resolved to suffix instead of full name: {m1.group(1)!r}"
+    )
+    m3 = cookie_pattern.search("__Secure-3PAPISID=SECRET_3PAPISID")
+    assert m3 is not None
+    assert m3.group(1) == "__Secure-3PAPISID", (
+        f"capture group resolved to suffix instead of full name: {m3.group(1)!r}"
+    )
+
+    # End-to-end shape check via the formatter (regression for the visible
+    # substitution + the no-PAPAPISID corruption guard).
     fmt = RedactingFormatter(logging.Formatter("%(message)s"))
     text = "jar: __Secure-1PAPISID=SECRET_1PAPISID; __Secure-3PAPISID=SECRET_3PAPISID"
     rec = _record(text)
@@ -282,8 +311,6 @@ def test_formatter_scrubs_papisid_with_correct_captured_name():
     assert "SECRET_3PAPISID" not in out
     assert "__Secure-1PAPISID=***" in out
     assert "__Secure-3PAPISID=***" in out
-    # Defense-in-depth: ensure we are not corrupting the cookie name with
-    # an over-eager suffix-match (e.g. ``__Secure-1PAPAPISID=***``).
     assert "PAPAPISID" not in out
 
 
