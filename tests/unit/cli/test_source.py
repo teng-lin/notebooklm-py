@@ -66,7 +66,9 @@ class TestSourceList:
                 result = runner.invoke(cli, ["source", "list", "-n", "nb_123"])
 
             assert result.exit_code == 0
-            assert "Source One" in result.output or "src_1" in result.output
+            assert "Sources in nb_123" in result.output
+            assert "src_1" in result.output
+            assert "Source One" in result.output
 
     def test_source_list_json_output(self, runner, mock_auth):
         with patch_client_for_module("source") as mock_client_cls:
@@ -91,8 +93,21 @@ class TestSourceList:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
+            assert list(data) == ["notebook_id", "notebook_title", "sources", "count"]
+            assert data["notebook_id"] == "nb_123"
+            assert data["notebook_title"] == "Test Notebook"
             assert "sources" in data
             assert data["count"] == 1
+            assert list(data["sources"][0]) == [
+                "index",
+                "id",
+                "title",
+                "type",
+                "url",
+                "status",
+                "status_id",
+                "created_at",
+            ]
             assert data["sources"][0]["id"] == "src_1"
 
     def test_source_list_limit_caps_rows(self, runner, mock_auth):

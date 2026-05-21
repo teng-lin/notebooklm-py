@@ -13,7 +13,6 @@ from dataclasses import asdict
 from typing import Any
 
 import click
-from rich.table import Table
 
 from ..client import NotebookLMClient
 from ..types import Note
@@ -23,6 +22,7 @@ from .input import read_stdin_text
 from .options import json_option, notebook_option
 from .rendering import cli_print, console, json_output_response
 from .resolve import require_notebook, resolve_note_id, resolve_notebook_id
+from .services.listing import ListSpec, run_list
 
 
 @click.group()
@@ -57,46 +57,51 @@ def note_list(ctx, notebook_id, json_output, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            notes = await client.notes.list(nb_id_resolved)
 
-            if json_output:
-                serialized = [
-                    {
-                        "id": n.id,
-                        "title": n.title or "Untitled",
-                        "preview": (n.content or "")[:100],
-                    }
-                    for n in notes
-                    if isinstance(n, Note)
-                ]
-                json_output_response(
-                    {
-                        "notebook_id": nb_id_resolved,
-                        "notes": serialized,
-                        "count": len(serialized),
-                    }
-                )
-                return
+            async def fetch_notes(client: NotebookLMClient, notebook_id: str) -> list[Note]:
+                notes = await client.notes.list(notebook_id)
+                return [note for note in notes if isinstance(note, Note)]
 
-            if not notes:
-                console.print("[yellow]No notes found[/yellow]")
-                return
+            async def envelope_extras(
+                _client: NotebookLMClient, notebook_id: str
+            ) -> dict[str, str]:
+                return {"notebook_id": notebook_id}
 
-            table = Table(title=f"Notes in {nb_id_resolved}")
-            table.add_column("ID", style="cyan", no_wrap=True)
-            table.add_column("Title", style="green")
-            table.add_column("Preview", style="dim", max_width=50)
-
-            for n in notes:
-                if isinstance(n, Note):
-                    preview = n.content[:50] if n.content else ""
-                    table.add_row(
-                        n.id,
-                        n.title or "Untitled",
-                        preview + "..." if len(n.content or "") > 50 else preview,
-                    )
-
-            console.print(table)
+            spec = ListSpec(
+                title="Notes in {notebook_id}",
+                items_key="notes",
+                fetch=fetch_notes,
+                serialize=lambda n: {
+                    "id": n.id,
+                    "title": n.title or "Untitled",
+                    "preview": (n.content or "")[:100],
+                },
+                columns=["ID", "Title", "Preview"],
+                column_options={
+                    "ID": {"style": "cyan", "no_wrap": True},
+                    "Title": {"style": "green"},
+                    "Preview": {"style": "dim", "max_width": 50},
+                },
+                row=lambda n: [
+                    n.id,
+                    n.title or "Untitled",
+                    (
+                        f"{n.content[:50]}..."
+                        if len(n.content or "") > 50
+                        else (n.content[:50] if n.content else "")
+                    ),
+                ],
+                envelope_extras=envelope_extras,
+                include_index=False,
+                empty_message="[yellow]No notes found[/yellow]",
+            )
+            await run_list(
+                spec,
+                client,
+                notebook_id=nb_id_resolved,
+                limit=None,
+                json_output=json_output,
+            )
 
     return _run()
 

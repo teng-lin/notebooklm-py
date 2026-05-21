@@ -69,6 +69,10 @@ class TestNoteList:
                 result = runner.invoke(cli, ["note", "list", "-n", "nb_123"])
 
             assert result.exit_code == 0
+            assert "Notes in nb_123" in result.output
+            assert "note_1" in result.output
+            assert "Note Title" in result.output
+            assert "Content 1" in result.output
 
     def test_note_list_empty(self, runner, mock_auth):
         """Shows 'No notes found' when the notebook has no notes."""
@@ -106,9 +110,11 @@ class TestNoteList:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
+            assert list(data) == ["notebook_id", "notes", "count"]
             assert data["notebook_id"] == "nb_123"
             assert len(data["notes"]) == 2
             assert data["count"] == 2
+            assert list(data["notes"][0]) == ["id", "title", "preview"]
             assert data["notes"][0]["id"] == "note_1"
 
     def test_note_list_json_empty(self, runner, mock_auth):

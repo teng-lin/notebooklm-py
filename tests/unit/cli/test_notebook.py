@@ -83,6 +83,8 @@ class TestNotebookList:
                 result = runner.invoke(cli, ["list"])
 
             assert result.exit_code == 0
+            assert "Notebooks" in result.output
+            assert "nb_1" in result.output
             assert "First Notebook" in result.output
             assert "Second Notebook" in result.output
 
@@ -109,8 +111,16 @@ class TestNotebookList:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
+            assert list(data) == ["notebooks", "count"]
             assert "notebooks" in data
             assert data["count"] == 1
+            assert list(data["notebooks"][0]) == [
+                "index",
+                "id",
+                "title",
+                "is_owner",
+                "created_at",
+            ]
             assert data["notebooks"][0]["id"] == "nb_1"
 
     def test_notebook_list_limit_caps_rows(self, runner, mock_auth):

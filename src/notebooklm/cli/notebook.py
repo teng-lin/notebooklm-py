@@ -11,10 +11,7 @@ Commands:
 Note: Sharing commands moved to 'share' command group.
 """
 
-from typing import Literal
-
 import click
-from rich.table import Table
 
 from ..client import NotebookLMClient
 from .auth_runtime import with_client
@@ -22,6 +19,7 @@ from .context import clear_context, get_current_notebook, set_current_notebook
 from .options import list_options, notebook_option
 from .rendering import cli_print, console, json_output_response
 from .resolve import require_notebook, resolve_notebook_id
+from .services.listing import ListSpec, run_list
 
 
 def register_notebook_commands(cli):
@@ -42,49 +40,32 @@ def register_notebook_commands(cli):
 
         async def _run():
             async with NotebookLMClient(client_auth) as client:
-                notebooks = await client.notebooks.list()
-
-                # Client-side offset slicing. No server-side
-                # cursors in scope for this phase — `client.notebooks.list()`
-                # always returns the full result set, we just trim before
-                # rendering / counting.
-                if limit is not None and limit >= 0:
-                    notebooks = notebooks[:limit]
-
-                if json_output:
-                    data = {
-                        "notebooks": [
-                            {
-                                "index": i,
-                                "id": nb.id,
-                                "title": nb.title,
-                                "is_owner": nb.is_owner,
-                                "created_at": nb.created_at.isoformat() if nb.created_at else None,
-                            }
-                            for i, nb in enumerate(notebooks, 1)
-                        ],
-                        "count": len(notebooks),
-                    }
-                    json_output_response(data)
-                    return
-
-                table = Table(title="Notebooks")
-                table.add_column("ID", style="cyan")
-                # Keep the legacy unconstrained Title rendering
-                # by default and rely on the explicit --no-truncate to also
-                # disable Rich's auto-ellipsis at narrow terminals via
-                # overflow="fold".
-                title_overflow: Literal["fold", "ellipsis"] = "fold" if no_truncate else "ellipsis"
-                table.add_column("Title", style="green", overflow=title_overflow)
-                table.add_column("Owner")
-                table.add_column("Created", style="dim")
-
-                for nb in notebooks:
-                    created = nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-"
-                    owner_status = "Owner" if nb.is_owner else "Shared"
-                    table.add_row(nb.id, nb.title, owner_status, created)
-
-                console.print(table)
+                spec = ListSpec(
+                    title="Notebooks",
+                    items_key="notebooks",
+                    fetch=lambda client, _: client.notebooks.list(),
+                    serialize=lambda nb: {
+                        "id": nb.id,
+                        "title": nb.title,
+                        "is_owner": nb.is_owner,
+                        "created_at": nb.created_at.isoformat() if nb.created_at else None,
+                    },
+                    columns=["ID", "Title", "Owner", "Created"],
+                    row=lambda nb: [
+                        nb.id,
+                        nb.title,
+                        "Owner" if nb.is_owner else "Shared",
+                        nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-",
+                    ],
+                )
+                await run_list(
+                    spec,
+                    client,
+                    notebook_id="",
+                    limit=limit,
+                    json_output=json_output,
+                    no_truncate=no_truncate,
+                )
 
         return _run()
 

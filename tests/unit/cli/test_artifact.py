@@ -64,7 +64,9 @@ class TestArtifactList:
                 result = runner.invoke(cli, ["artifact", "list", "-n", "nb_123"])
 
             assert result.exit_code == 0
-            assert "Quiz One" in result.output or "art_1" in result.output
+            assert "Artifacts in nb_123" in result.output
+            assert "art_1" in result.output
+            assert "Quiz One" in result.output
 
     def test_artifact_list_includes_mind_maps(self, runner, mock_auth):
         """Test that artifacts.list() includes mind maps (they come from the API now)."""
@@ -107,8 +109,21 @@ class TestArtifactList:
 
             assert result.exit_code == 0
             data = json.loads(result.output)
+            assert list(data) == ["notebook_id", "notebook_title", "artifacts", "count"]
+            assert data["notebook_id"] == "nb_123"
+            assert data["notebook_title"] == "Test Notebook"
             assert "artifacts" in data
             assert data["count"] == 1
+            assert list(data["artifacts"][0]) == [
+                "index",
+                "id",
+                "title",
+                "type",
+                "type_id",
+                "status",
+                "status_id",
+                "created_at",
+            ]
 
     @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_list_limit_caps_rows(self, runner, mock_auth):

@@ -22,7 +22,7 @@ import contextlib
 import os
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import click
 from rich.table import Table
@@ -54,6 +54,7 @@ from .resolve import require_notebook, resolve_notebook_id, resolve_source_id, v
 from .runtime import is_quiet
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
+from .services.listing import ListSpec, run_list
 from .services.polling import status_with_elapsed
 
 
@@ -257,51 +258,44 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            sources = await client.sources.list(nb_id_resolved)
-            # Client-side offset slicing.
-            if limit is not None and limit >= 0:
-                sources = sources[:limit]
-            nb = None
-            if json_output:
-                nb = await client.notebooks.get(nb_id_resolved)
 
-            if json_output:
-                data = {
-                    "notebook_id": nb_id_resolved,
-                    "notebook_title": nb.title if nb else None,
-                    "sources": [
-                        {
-                            "index": i,
-                            "id": src.id,
-                            "title": src.title,
-                            "type": str(src.kind),
-                            "url": src.url,
-                            "status": source_status_to_str(src.status),
-                            "status_id": src.status,
-                            "created_at": src.created_at.isoformat() if src.created_at else None,
-                        }
-                        for i, src in enumerate(sources, 1)
-                    ],
-                    "count": len(sources),
-                }
-                json_output_response(data)
-                return
+            async def envelope_extras(
+                client: NotebookLMClient, notebook_id: str
+            ) -> dict[str, str | None]:
+                nb = await client.notebooks.get(notebook_id)
+                return {"notebook_id": notebook_id, "notebook_title": nb.title if nb else None}
 
-            table = Table(title=f"Sources in {nb_id_resolved}")
-            table.add_column("ID", style="cyan")
-            title_overflow: Literal["fold", "ellipsis"] = "fold" if no_truncate else "ellipsis"
-            table.add_column("Title", style="green", overflow=title_overflow)
-            table.add_column("Type")
-            table.add_column("Created", style="dim")
-            table.add_column("Status", style="yellow")
-
-            for src in sources:
-                type_display = get_source_type_display(src.kind)
-                created = src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-"
-                status = source_status_to_str(src.status)
-                table.add_row(src.id, src.title or "-", type_display, created, status)
-
-            console.print(table)
+            spec = ListSpec(
+                title="Sources in {notebook_id}",
+                items_key="sources",
+                fetch=lambda client, notebook_id: client.sources.list(notebook_id),
+                serialize=lambda src: {
+                    "id": src.id,
+                    "title": src.title,
+                    "type": str(src.kind),
+                    "url": src.url,
+                    "status": source_status_to_str(src.status),
+                    "status_id": src.status,
+                    "created_at": src.created_at.isoformat() if src.created_at else None,
+                },
+                columns=["ID", "Title", "Type", "Created", "Status"],
+                row=lambda src: [
+                    src.id,
+                    src.title or "-",
+                    get_source_type_display(src.kind),
+                    src.created_at.strftime("%Y-%m-%d %H:%M") if src.created_at else "-",
+                    source_status_to_str(src.status),
+                ],
+                envelope_extras=envelope_extras,
+            )
+            await run_list(
+                spec,
+                client,
+                notebook_id=nb_id_resolved,
+                limit=limit,
+                json_output=json_output,
+                no_truncate=no_truncate,
+            )
 
     return _run()
 

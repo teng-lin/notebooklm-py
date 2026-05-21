@@ -11,8 +11,6 @@ Commands:
     suggestions Get AI-suggested report topics
 """
 
-from typing import Literal
-
 import click
 from rich.table import Table
 
@@ -33,6 +31,7 @@ from .resolve import (
     resolve_artifact_id,
     resolve_notebook_id,
 )
+from .services.listing import ListSpec, run_list
 from .services.polling import status_with_elapsed
 
 
@@ -98,53 +97,49 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, limit, no_trunca
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            # artifacts.list() already includes mind maps from notes system
-            artifacts = await client.artifacts.list(nb_id_resolved, artifact_type=type_filter)
-            # Client-side offset slicing.
-            if limit is not None and limit >= 0:
-                artifacts = artifacts[:limit]
 
-            if json_output:
-                nb = await client.notebooks.get(nb_id_resolved)
-                data = {
-                    "notebook_id": nb_id_resolved,
-                    "notebook_title": nb.title if nb else None,
-                    "artifacts": [
-                        {
-                            "index": i,
-                            "id": art.id,
-                            "title": art.title,
-                            "type": get_artifact_type_display(art).split(" ", 1)[-1],
-                            "type_id": art.kind.value,
-                            "status": art.status_str,
-                            "status_id": art.status,
-                            "created_at": art.created_at.isoformat() if art.created_at else None,
-                        }
-                        for i, art in enumerate(artifacts, 1)
-                    ],
-                    "count": len(artifacts),
-                }
-                json_output_response(data)
-                return
+            async def envelope_extras(
+                client: NotebookLMClient, notebook_id: str
+            ) -> dict[str, str | None]:
+                nb = await client.notebooks.get(notebook_id)
+                return {"notebook_id": notebook_id, "notebook_title": nb.title if nb else None}
 
-            if not artifacts:
-                console.print(f"[yellow]No {artifact_type} artifacts found[/yellow]")
-                return
-
-            table = Table(title=f"Artifacts in {nb_id_resolved}")
-            table.add_column("ID", style="cyan")
-            title_overflow: Literal["fold", "ellipsis"] = "fold" if no_truncate else "ellipsis"
-            table.add_column("Title", style="green", overflow=title_overflow)
-            table.add_column("Type")
-            table.add_column("Created", style="dim")
-            table.add_column("Status", style="yellow")
-
-            for art in artifacts:
-                type_display = get_artifact_type_display(art)
-                created = art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-"
-                table.add_row(art.id, art.title, type_display, created, art.status_str)
-
-            console.print(table)
+            spec = ListSpec(
+                title="Artifacts in {notebook_id}",
+                items_key="artifacts",
+                # artifacts.list() already includes mind maps from notes system
+                fetch=lambda client, notebook_id: client.artifacts.list(
+                    notebook_id,
+                    artifact_type=type_filter,
+                ),
+                serialize=lambda art: {
+                    "id": art.id,
+                    "title": art.title,
+                    "type": get_artifact_type_display(art).split(" ", 1)[-1],
+                    "type_id": art.kind.value,
+                    "status": art.status_str,
+                    "status_id": art.status,
+                    "created_at": art.created_at.isoformat() if art.created_at else None,
+                },
+                columns=["ID", "Title", "Type", "Created", "Status"],
+                row=lambda art: [
+                    art.id,
+                    art.title,
+                    get_artifact_type_display(art),
+                    art.created_at.strftime("%Y-%m-%d %H:%M") if art.created_at else "-",
+                    art.status_str,
+                ],
+                envelope_extras=envelope_extras,
+                empty_message=f"[yellow]No {artifact_type} artifacts found[/yellow]",
+            )
+            await run_list(
+                spec,
+                client,
+                notebook_id=nb_id_resolved,
+                limit=limit,
+                json_output=json_output,
+                no_truncate=no_truncate,
+            )
 
     return _run()
 
