@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import ast
 from collections.abc import Awaitable, Callable
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -136,37 +134,6 @@ def _executor(
         is_auth_error=is_auth_error or (lambda exc: False),
         sleep=sleep or _no_sleep,
     )
-
-
-def test_rpc_executor_has_no_runtime_core_imports() -> None:
-    path = Path(__file__).parents[2] / "src/notebooklm/_rpc_executor.py"
-    tree = ast.parse(path.read_text())
-    parents: dict[ast.AST, ast.AST] = {}
-    for parent in ast.walk(tree):
-        for child in ast.iter_child_nodes(parent):
-            parents[child] = parent
-
-    def inside_type_checking(node: ast.AST) -> bool:
-        while node in parents:
-            node = parents[node]
-            if isinstance(node, ast.If) and ast.unparse(node.test) == "TYPE_CHECKING":
-                return True
-        return False
-
-    violations: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if inside_type_checking(node):
-            continue
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "notebooklm._core" or alias.name.endswith("._core"):
-                    violations.append((node.lineno, alias.name))
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            if module in {"notebooklm._core", "_core"} or module.endswith("._core"):
-                violations.append((node.lineno, module))
-
-    assert not violations
 
 
 @pytest.mark.asyncio

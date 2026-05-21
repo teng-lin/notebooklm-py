@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import threading
 from pathlib import Path
 from typing import Any
@@ -222,19 +221,3 @@ async def test_cookie_persistence_advances_baseline_only_on_accepted_saves(
     assert persistence.loaded_cookie_snapshot[psidts_key].value == "psidts-final"
 
 
-def test_cookie_persistence_does_not_import_client_core_at_runtime() -> None:
-    source = (
-        Path(__file__).resolve().parents[2] / "src/notebooklm/_cookie_persistence.py"
-    ).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-
-    forbidden_imports: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module in {"_core", "notebooklm._core"}:
-            forbidden_imports.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.Import):
-            forbidden_imports.extend(
-                alias.name for alias in node.names if alias.name == "notebooklm._core"
-            )
-
-    assert forbidden_imports == []

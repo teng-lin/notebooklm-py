@@ -262,7 +262,15 @@ def test_client_refresh_auth_is_facade_only() -> None:
     assert violations == []
 
 
-def test_auth_session_has_no_runtime_client_or_core_imports() -> None:
+def test_auth_session_has_no_runtime_class_imports() -> None:
+    """``_auth/session.py`` must not import ``NotebookLMClient`` or ``Session``.
+
+    Module-level guards against importing ``notebooklm.client`` /
+    ``notebooklm._core`` modules live in
+    ``tests/_lint/test_no_core_imports.py``; this test covers the
+    type-name axis (import the *class* by name from anywhere), which the
+    module-level lint can't see.
+    """
     path = Path(__file__).parents[2] / "src/notebooklm/_auth/session.py"
     tree = ast.parse(path.read_text())
     parents: dict[ast.AST, ast.AST] = {}
@@ -277,30 +285,13 @@ def test_auth_session_has_no_runtime_client_or_core_imports() -> None:
                 return True
         return False
 
+    forbidden_type_names = {"NotebookLMClient", "Session"}
     violations: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if inside_type_checking(node):
             continue
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name in {"notebooklm.client", "notebooklm._core"}:
-                    violations.append((node.lineno, f"import {alias.name}"))
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
+        if isinstance(node, ast.ImportFrom):
             imported_names = {alias.name for alias in node.names}
-            if module in {"notebooklm.client", "notebooklm._core", "client", "_core"}:
-                violations.append((node.lineno, f"from {module} import ..."))
-            if (module == "notebooklm" or (node.level > 0 and module == "")) and imported_names & {
-                "client",
-                "_core",
-            }:
-                imported = ", ".join(sorted(imported_names & {"client", "_core"}))
-                violations.append(
-                    (node.lineno, f"from {'.' * node.level}{module} import {imported}")
-                )
-            if node.level > 0 and module in {"client", "_core"}:
-                violations.append((node.lineno, f"from {'.' * node.level}{module} import ..."))
-            forbidden_type_names = {"NotebookLMClient", "Session"}
             for name in sorted(imported_names & forbidden_type_names):
                 violations.append((node.lineno, name))
 

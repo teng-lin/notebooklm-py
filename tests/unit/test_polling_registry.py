@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -89,19 +87,3 @@ async def test_client_core_pending_polls_bridge_preserves_entry_shape() -> None:
             pass
 
 
-def test_polling_registry_does_not_import_client_core_at_runtime() -> None:
-    source = (
-        Path(__file__).resolve().parents[2] / "src/notebooklm/_polling_registry.py"
-    ).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-
-    forbidden_imports: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module in {"_core", "notebooklm._core"}:
-            forbidden_imports.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.Import):
-            forbidden_imports.extend(
-                alias.name for alias in node.names if alias.name == "notebooklm._core"
-            )
-
-    assert forbidden_imports == []

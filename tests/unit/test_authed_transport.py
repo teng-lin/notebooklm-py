@@ -22,11 +22,9 @@ cutover; equivalent coverage lives in ``tests/unit/test_chat_transport.py``.
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import json
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -96,49 +94,6 @@ def _status_error(code: int, *, retry_after: str | None = None) -> httpx.HTTPSta
     request = httpx.Request("POST", "https://example.test/x")
     response = httpx.Response(code, request=request, headers=headers)
     return httpx.HTTPStatusError(f"HTTP {code}", request=request, response=response)
-
-
-def test_authed_transport_has_no_runtime_core_imports():
-    """The collaborator must not create a runtime import cycle back to _core."""
-    path = Path(__file__).parents[2] / "src/notebooklm/_authed_transport.py"
-    tree = ast.parse(path.read_text())
-    parents: dict[ast.AST, ast.AST] = {}
-    for parent in ast.walk(tree):
-        for child in ast.iter_child_nodes(parent):
-            parents[child] = parent
-
-    def inside_type_checking(node: ast.AST) -> bool:
-        while node in parents:
-            node = parents[node]
-            if isinstance(node, ast.If):
-                test = node.test
-                if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
-                    return True
-        return False
-
-    forbidden: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if inside_type_checking(node):
-            continue
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "notebooklm._core" or alias.name.endswith("._core"):
-                    forbidden.append((node.lineno, f"import {alias.name}"))
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            names = {alias.name for alias in node.names}
-            if (
-                module == "notebooklm._core"
-                or (module == "notebooklm" and "_core" in names)
-                or (node.level > 0 and module == "_core")
-                or (node.level > 0 and not module and "_core" in names)
-            ):
-                imported = ", ".join(sorted(names))
-                forbidden.append(
-                    (node.lineno, f"from {'.' * node.level}{module} import {imported}")
-                )
-
-    assert forbidden == []
 
 
 # ---------------------------------------------------------------------------
