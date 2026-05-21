@@ -161,6 +161,91 @@ class ArtifactsRuntime(RpcCaller, AsyncWorkRuntime, DrainHookRegistration, Proto
     """
 
 
+class _ArtifactsServiceMethods(Protocol):
+    """Narrow ``ArtifactsAPI`` surface that helper services depend on.
+
+    Artifact service helpers (currently :class:`ArtifactDownloadService` and
+    :class:`ArtifactGenerationService`) accept an ``ArtifactsAPI`` instance
+    for back-references into selection / RPC / formatting flows. Today those
+    helpers reach in by holding ``self._api`` and calling
+    ``self._api._list_raw(...)`` / ``self._api._select_artifact(...)`` /
+    ``self._api._format_interactive_content(...)`` / etc. This Protocol
+    declares the **exact** subset of methods those helpers actually use, so
+    follow-up migrations (T2 and T3 of
+    ``.sisyphus/phases/encapsulation-reach-in-remediation/phase-1.md``) can
+    type their constructor argument as ``_ArtifactsServiceMethods`` instead
+    of the full concrete ``ArtifactsAPI`` — pinning the dependency surface
+    and unblocking the AST guard pinned by
+    ``test_artifact_services_have_no_facade_reach_in``.
+
+    The underscore-prefixed members are deliberate: this Protocol describes
+    a private collaboration contract between ``ArtifactsAPI`` and its own
+    helper services. ``RpcOwner`` in :mod:`notebooklm._rpc_executor`
+    (see ``docs/architecture.md`` § RpcExecutor) is the established
+    precedent — a Protocol that declares the underscore-prefixed methods
+    a sibling collaborator legitimately calls. See also
+    :class:`DrainHookRegistration` above for the local docstring pattern.
+
+    The three public members (``list_quizzes``, ``list_flashcards``,
+    ``generate_report``) are not new contract — they preserve the documented
+    monkeypatch seam ``ArtifactsAPI.generate_report`` referenced from
+    ``_artifact_generation.py`` (search for "Preserve the historical facade
+    seam") and the two ``list_*`` shapes used by interactive-artifact
+    formatting.
+    """
+
+    async def _list_raw(self, notebook_id: str) -> builtins.list[Any]: ...
+
+    def _select_artifact(
+        self,
+        candidates: builtins.list[Any],
+        artifact_id: str | None,
+        type_name: str,
+        no_result_error_key: str,
+        *,
+        type_code: ArtifactTypeCode,
+    ) -> Any: ...
+
+    async def _download_url(self, url: str, output_path: str) -> str: ...
+
+    async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None: ...
+
+    def _format_interactive_content(
+        self,
+        app_data: dict,
+        title: str,
+        output_format: str,
+        html_content: str,
+        is_quiz: bool,
+    ) -> str: ...
+
+    async def _call_generate(
+        self, notebook_id: str, params: builtins.list[Any]
+    ) -> GenerationStatus: ...
+
+    def _parse_generation_result(
+        self,
+        result: Any,
+        *,
+        method_id: str,
+        source: str = "_parse_generation_result",
+    ) -> GenerationStatus: ...
+
+    async def list_quizzes(self, notebook_id: str) -> builtins.list[Artifact]: ...
+
+    async def list_flashcards(self, notebook_id: str) -> builtins.list[Artifact]: ...
+
+    async def generate_report(
+        self,
+        notebook_id: str,
+        report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
+        source_ids: builtins.list[str] | None = None,
+        language: str | None = None,
+        custom_prompt: str | None = None,
+        extra_instructions: str | None = None,
+    ) -> GenerationStatus: ...
+
+
 class ArtifactsAPI:
     """Operations on NotebookLM artifacts (studio content).
 

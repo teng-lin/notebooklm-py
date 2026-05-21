@@ -315,6 +315,197 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
     )
 
 
+# ----------------------------------------------------------------------------
+# Artifact-service "reach-in" guard
+#
+# Modeled on the core-private-access guard above. Pins the invariant that
+# artifact-service helper modules (T2: ``_artifact_downloads.py``; T3:
+# ``_artifact_generation.py``) depend only on the narrow
+# ``_ArtifactsServiceMethods`` Protocol, not on the full concrete
+# ``ArtifactsAPI``. T1 ships the visitor + guard with an empty migration
+# list (vacuously passing); T2 / T3 append their modules and migrate the
+# helpers to constructor injection.
+# ----------------------------------------------------------------------------
+
+
+_REACH_IN_MIGRATED_MODULES: list[str] = []  # appended to by T2 and T3.
+
+
+def _is_self_api(node: ast.AST) -> bool:
+    """True for ast nodes representing ``self._api``."""
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "_api"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+    )
+
+
+class _ApiReachInVisitor(ast.NodeVisitor):
+    """Collect reach-ins to ``self._api`` (direct, aliased, nested-scope).
+
+    Modeled on ``_CorePrivateAccessVisitor`` (this file, lines 137-195):
+    function/async/lambda scopes are tracked, alias bindings recorded
+    per-scope, and ``_is_api_access_base`` walks the entire active stack
+    via ``reversed(self._alias_stack)`` so aliases in outer scopes are
+    visible to attribute access in nested closures and comprehensions.
+
+    The empty ``_REACH_IN_MIGRATED_MODULES`` list keeps the guard
+    vacuous in T1; T2 appends ``_artifact_downloads.py`` and T3 appends
+    ``_artifact_generation.py``.
+    """
+
+    def __init__(self, module_name: str) -> None:
+        self.module_name = module_name
+        self.violations: list[tuple[int, str]] = []
+        self._alias_stack: list[set[str]] = []
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function_scope(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._visit_function_scope(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if self._is_api_access_base(node.value):
+            for target in node.targets:
+                self._record_alias_target(target)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if node.value is not None and self._is_api_access_base(node.value):
+            self._record_alias_target(node.target)
+        self.generic_visit(node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        if self._is_api_access_base(node.value):
+            self._record_alias_target(node.target)
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if self._is_api_access_base(node.value):
+            base_repr = self._render_base(node.value)
+            self.violations.append((node.lineno, f"{base_repr}.{node.attr}"))
+        self.generic_visit(node)
+
+    def visit_Return(self, node: ast.Return) -> None:
+        if node.value is not None and self._is_api_access_base(node.value):
+            base_repr = self._render_base(node.value)
+            self.violations.append((node.lineno, f"bare retention: return {base_repr}"))
+        self.generic_visit(node)
+
+    def _visit_function_scope(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda,
+    ) -> None:
+        self._alias_stack.append(set())
+        self.generic_visit(node)
+        self._alias_stack.pop()
+
+    def _record_alias_target(self, target: ast.AST) -> None:
+        if isinstance(target, ast.Name) and self._alias_stack:
+            self._alias_stack[-1].add(target.id)
+
+    def _is_api_access_base(self, node: ast.AST) -> bool:
+        return (
+            _is_self_api(node)
+            or (
+                isinstance(node, ast.Name)
+                and any(node.id in aliases for aliases in reversed(self._alias_stack))
+            )
+            or (isinstance(node, ast.NamedExpr) and self._is_api_access_base(node.value))
+        )
+
+    def _render_base(self, node: ast.AST) -> str:
+        if _is_self_api(node):
+            return "self._api"
+        if isinstance(node, ast.Name):
+            return node.id
+        return "<api>"
+
+
+def test_artifact_services_have_no_facade_reach_in() -> None:
+    """Pin the no-reach-in invariant for migrated artifact-service modules."""
+    violations: dict[str, list[tuple[int, str]]] = {}
+    for module_name in _REACH_IN_MIGRATED_MODULES:
+        path = SRC_ROOT / module_name
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        visitor = _ApiReachInVisitor(module_name)
+        visitor.visit(tree)
+        if visitor.violations:
+            violations[module_name] = visitor.violations
+    assert not violations, (
+        f"Encapsulation violations found: {violations}. "
+        "Helpers must depend on _ArtifactsServiceMethods Protocol, not on ArtifactsAPI."
+    )
+
+
+def test_api_reach_in_visitor_catches_direct_access() -> None:
+    tree = ast.parse(
+        "class C:\n"
+        "    def __init__(self, api): self._api = api\n"
+        "    async def f(self): return self._api.foo\n"
+    )
+    visitor = _ApiReachInVisitor("test.py")
+    visitor.visit(tree)
+    assert any(v[1] == "self._api.foo" for v in visitor.violations)
+
+
+def test_api_reach_in_visitor_catches_alias() -> None:
+    tree = ast.parse(
+        "class C:\n"
+        "    def __init__(self, api): self._api = api\n"
+        "    async def f(self):\n"
+        "        api = self._api\n"
+        "        return api.foo\n"
+    )
+    visitor = _ApiReachInVisitor("test.py")
+    visitor.visit(tree)
+    assert any(v[1] == "api.foo" for v in visitor.violations)
+
+
+def test_api_reach_in_visitor_catches_nested_scope_alias() -> None:
+    tree = ast.parse(
+        "class C:\n"
+        "    def __init__(self, api): self._api = api\n"
+        "    async def f(self):\n"
+        "        api = self._api\n"
+        "        return [api.foo for x in items]\n"
+    )
+    visitor = _ApiReachInVisitor("test.py")
+    visitor.visit(tree)
+    assert any(v[1] == "api.foo" for v in visitor.violations), (
+        "Visitor must search outer scopes via reversed(_alias_stack)"
+    )
+
+
+def test_api_reach_in_visitor_catches_bare_retention() -> None:
+    tree = ast.parse(
+        "class C:\n"
+        "    def __init__(self, api): self._api = api\n"
+        "    def f(self): return self._api\n"
+    )
+    visitor = _ApiReachInVisitor("test.py")
+    visitor.visit(tree)
+    assert any("bare retention" in v[1] for v in visitor.violations)
+
+
+def test_api_reach_in_visitor_catches_annassign_alias() -> None:
+    tree = ast.parse(
+        "class C:\n"
+        "    def __init__(self, api): self._api = api\n"
+        "    def f(self) -> None:\n"
+        "        api: Any = self._api\n"
+        "        return api.foo\n"
+    )
+    visitor = _ApiReachInVisitor("test.py")
+    visitor.visit(tree)
+    assert any(v[1] == "api.foo" for v in visitor.violations)
+
+
 def test_legacy_capabilities_module_is_deleted() -> None:
     """Feature APIs now type against ``Session`` plus explicit collaborators."""
     assert not (SRC_ROOT / "_capabilities.py").exists()
