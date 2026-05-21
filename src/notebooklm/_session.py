@@ -4,7 +4,6 @@ import asyncio
 import logging
 import random  # noqa: F401 - tests patch this for _backoff jitter
 import threading
-import time
 import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
@@ -1262,67 +1261,45 @@ class Session:
         return self._auth_coord.get_refresh_lock()
 
     async def _snapshot(self) -> _AuthSnapshot:
-        """Capture the current auth headers as a frozen snapshot.
+        """Delegate to :meth:`AuthRefreshCoordinator.snapshot`.
 
-        Used by ``_perform_authed_post`` to make a single HTTP attempt's
-        URL/body consistent (no mid-attempt mutation from refresh /
-        keepalive). A fresh snapshot is taken on each retry.
-
-        Acquires :attr:`_auth_snapshot_lock` for the four scalar reads so
-        a concurrent ``refresh_auth`` can't interleave between
-        ``csrf_token``/``session_id``/``authuser``/``account_email``
-        reads. The critical section is purely synchronous attribute
-        reads — no ``await``s — so the lock is uncontested in steady
-        state and refresh's tiny write block can't block RPC throughput.
-
-        Body is kept here as real code (rather than delegating to
-        :meth:`AuthRefreshCoordinator.snapshot`) so the AST guard at
+        Body lived here pre-PR-8 so the AST guard at
         ``tests/unit/test_concurrency_refresh_race.py::test_snapshot_acquires_auth_snapshot_lock``
-        — which inspects this method's source and asserts it contains an
-        ``async with`` over ``_auth_snapshot_lock`` — keeps operating on
-        the real implementation. The coordinator method has the same
-        semantic shape (lock acquire → scalar reads → return) but routes
-        the lock-wait metric through the host's ``_metrics_obj`` directly
-        rather than via the ``_record_lock_wait`` facade.
+        could inspect ``Session._snapshot.__code__`` for the lock
+        acquire. PR 8 moved the guard to inspect
+        :meth:`AuthRefreshCoordinator.snapshot` (the canonical
+        implementation), so the body collapses to a delegate here.
 
-        Whole-request atomicity for ``(csrf, sid, cookies)`` on the wire
-        still depends on the no-await invariant between this method
-        returning and ``client.post(...)`` inside
-        :meth:`_perform_authed_post` (see the related AST guard in
+        The coordinator's body has the same semantic shape (lock acquire
+        → four scalar reads → return) but routes the lock-wait metric
+        through ``host._metrics_obj`` directly rather than via the
+        ``_record_lock_wait`` facade. Whole-request atomicity for
+        ``(csrf, sid, cookies)`` on the wire still depends on the
+        no-await invariant between this method returning and
+        ``client.post(...)`` inside :meth:`_perform_authed_post` (see
+        the related AST guard in
         ``tests/unit/test_concurrency_refresh_race.py``).
         """
-        wait_start = time.perf_counter()
-        async with self._get_auth_snapshot_lock():
-            self._record_lock_wait(time.perf_counter() - wait_start)
-            return _AuthSnapshot(
-                csrf_token=self.auth.csrf_token,
-                session_id=self.auth.session_id,
-                authuser=self.auth.authuser,
-                account_email=self.auth.account_email,
-            )
+        self._ensure_auth_coord()
+        return await self._auth_coord.snapshot(self)
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
-        """Atomically update auth token scalars under the snapshot lock.
+        """Delegate to :meth:`AuthRefreshCoordinator.update_auth_tokens`.
 
-        The body is kept here as real code (rather than a delegate to
-        :meth:`AuthRefreshCoordinator.update_auth_tokens`) so the AST
-        guard at ``tests/unit/test_concurrency_refresh_race.py:304-334``
-        — which inspects the source of this method and asserts there is
-        no ``await`` inside the csrf/session_id mutation block — keeps
-        operating on the real implementation. The coordinator method
-        has the same semantic shape (lock acquire → two scalar writes)
-        but routes the lock-wait metric through the host's
-        ``_metrics_obj`` directly rather than via ``_record_lock_wait``.
+        Body lived here pre-PR-8 so the AST guard at
+        ``tests/unit/test_concurrency_refresh_race.py::test_update_auth_tokens_has_no_await_inside_mutation_block``
+        could inspect ``Session.update_auth_tokens.__code__`` for the
+        no-await invariant inside the csrf/session_id mutation block.
+        PR 8 moved the guard to inspect
+        :meth:`AuthRefreshCoordinator.update_auth_tokens` (the canonical
+        implementation), so the body collapses to a delegate here. The
+        coordinator's body has the same semantic shape (lock acquire →
+        two scalar writes inside ``try``/``finally``) but routes the
+        lock-wait metric through ``host._metrics_obj`` directly rather
+        than via the ``_record_lock_wait`` facade.
         """
-        lock = self._get_auth_snapshot_lock()
-        wait_start = time.perf_counter()
-        await lock.acquire()
-        self._record_lock_wait(time.perf_counter() - wait_start)
-        try:
-            self.auth.csrf_token = csrf
-            self.auth.session_id = session_id
-        finally:
-            lock.release()
+        self._ensure_auth_coord()
+        await self._auth_coord.update_auth_tokens(self, csrf, session_id)
 
     def _build_url(
         self,
