@@ -846,9 +846,12 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
     default=1800,
     type=int,
     help=(
-        "Retry budget in seconds for --import-all when the IMPORT_RESEARCH RPC "
-        "times out (default: 1800). Mirrors 'research wait --timeout'. "
-        "Has no effect without --import-all."
+        "Total seconds to wait for research to complete and for --import-all "
+        "retries (default: 1800). Mirrors 'research wait --timeout'. Bumping "
+        "this is required for deep research that runs longer than the legacy "
+        "5-minute cap — otherwise the CLI gives up before IMPORT_RESEARCH "
+        "fires and the NotebookLM web UI is left showing an 'Add sources?' "
+        "modal."
     ),
 )
 @with_client
@@ -895,23 +898,32 @@ def source_add_research(
             task_id = result["task_id"]
             console.print(f"[dim]Task ID: {task_id}[/dim]")
 
-            # Non-blocking mode: return immediately
+            # Non-blocking mode: return immediately. Research will keep
+            # running server-side; until something fires IMPORT_RESEARCH the
+            # NotebookLM web UI will show an "Add sources?" modal (#315).
             if no_wait:
                 console.print(
                     "[green]Research started.[/green] "
-                    "Use 'research status' or 'research wait' to monitor."
+                    "Run 'notebooklm research wait --import-all' to commit "
+                    "sources once it completes, otherwise the NotebookLM web "
+                    "UI will keep an 'Add sources?' modal open."
                 )
                 return
 
+            # Poll budget mirrors `research wait --timeout`: total seconds
+            # divided by the 5 s interval. The legacy hardcoded 60-iteration
+            # cap stranded deep research (#315) because the import branch
+            # below is gated on `status == "completed"`.
+            _POLL_INTERVAL_S = 5
             status = None
-            for _ in range(60):
+            for _ in range(max(1, timeout // _POLL_INTERVAL_S)):
                 status = await client.research.poll(nb_id_resolved)
                 if status.get("status") == "completed":
                     break
                 elif status.get("status") == "no_research":
                     console.print("[red]Research failed to start[/red]")
                     raise SystemExit(1)
-                await asyncio.sleep(5)
+                await asyncio.sleep(_POLL_INTERVAL_S)
             else:
                 status = {"status": "timeout"}
 

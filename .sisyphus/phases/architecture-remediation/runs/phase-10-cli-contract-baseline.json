@@ -8394,7 +8394,7 @@
           "default": 1800,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Retry budget in seconds for --import-all when the IMPORT_RESEARCH RPC times out (default: 1800). Mirrors 'research wait --timeout'. Has no effect without --import-all.",
+          "help": "Total seconds to wait for research to complete and for --import-all retries (default: 1800). Mirrors 'research wait --timeout'. Bumping this is required for deep research that runs longer than the legacy 5-minute cap — otherwise the CLI gives up before IMPORT_RESEARCH fires and the NotebookLM web UI is left showing an 'Add sources?' modal.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,

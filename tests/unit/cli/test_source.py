@@ -1209,6 +1209,68 @@ class TestSourceAddResearch:
         assert result.exit_code == 0
         assert mock_import.await_args.kwargs["max_elapsed"] == 600
 
+    def test_add_research_poll_budget_respects_timeout(self, runner, mock_auth):
+        """Regression for #315: deep research that completes after the legacy
+        hardcoded 300 s poll cap must still trigger ``IMPORT_RESEARCH`` when
+        the caller bumps ``--timeout``.
+
+        Before the fix the poll loop was ``for _ in range(60)`` with a fixed
+        5 s interval, so deep-research tasks running longer than 5 minutes
+        timed out and the import branch was skipped entirely — leaving the
+        web UI's "Add sources?" modal hanging open server-side."""
+        in_progress = {
+            "status": "in_progress",
+            "task_id": "task_long",
+            "sources": [],
+        }
+        completed = {
+            "status": "completed",
+            "task_id": "task_long",
+            "sources": [{"title": "S", "url": "http://example.com"}],
+            "report": "",
+        }
+        # 70 in-progress polls before completion — past the legacy 60-cap,
+        # well within a 600 s / 5 s budget (=120 polls).
+        poll_responses = [in_progress] * 70 + [completed]
+
+        with (
+            patch_client_for_module("source") as mock_client_cls,
+            patch.object(
+                research_import_module, "import_with_retry", new_callable=AsyncMock
+            ) as mock_import,
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            mock_client = create_mock_client()
+            mock_client.research.start = AsyncMock(return_value={"task_id": "task_long"})
+            mock_client.research.poll = AsyncMock(side_effect=poll_responses)
+            mock_import.return_value = [{"id": "src_long", "title": "S"}]
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "add-research",
+                        "topic",
+                        "--mode",
+                        "deep",
+                        "--import-all",
+                        "--timeout",
+                        "600",
+                        "-n",
+                        "nb_123",
+                    ],
+                )
+
+        assert result.exit_code == 0, result.output
+        assert "Imported 1 sources" in result.output
+        mock_import.assert_awaited_once()
+        assert mock_client.research.poll.await_count == 71
+
 
 # =============================================================================
 # COMMAND EXISTENCE TESTS

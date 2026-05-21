@@ -924,7 +924,11 @@ class TestSourceAddResearch:
             mock_client.research.poll = AsyncMock(
                 return_value={"status": "completed", "sources": [{"id": "src_1"}]}
             )
-            mock_client.research.import_sources = AsyncMock(return_value=[{"id": "src_1"}])
+            # CLI's import_with_retry now delegates to the library's
+            # import_sources_with_verification method (#315).
+            mock_client.research.import_sources_with_verification = AsyncMock(
+                return_value=[{"id": "src_1"}]
+            )
             mock_client_cls.return_value = mock_client
 
             with patch(

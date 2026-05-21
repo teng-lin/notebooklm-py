@@ -4,15 +4,24 @@ Provides operations for starting research sessions, polling for results,
 and importing discovered sources into notebooks.
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
+import time
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
 from ._session_contracts import RpcCaller
-from .exceptions import ResearchTaskMismatchError, ValidationError
+from .exceptions import NetworkError, ResearchTaskMismatchError, RPCError, RPCTimeoutError, ValidationError
 from .rpc import RPCMethod, safe_index
 from .types import CitedSourceSelection
+
+if TYPE_CHECKING:
+    from ._sources import SourcesAPI
+    from .types import Source
 
 __all__ = ["CitedSourceSelection", "ResearchAPI"]
 
@@ -24,6 +33,76 @@ _RESEARCH_RESULT_TYPE_ALIASES = {
     "drive": 2,
     "report": 5,
 }
+
+
+# ---------------------------------------------------------------------------
+# IMPORT_RESEARCH timeout-verification helpers
+#
+# IMPORT_RESEARCH is classified NON_IDEMPOTENT_NO_RETRY in IDEMPOTENCY_REGISTRY
+# (see #808): the executor will surface the first 5xx/timeout to the caller
+# rather than retry blindly, because the wire protocol has no client-token
+# slot and a naive retry duplicates every source. ``ResearchAPI``'s
+# verification path sidesteps that constraint by snapshotting baseline
+# sources before the call and matching post-call ``sources.list`` URLs
+# against the request — disambiguating "server already committed but the
+# response was lost" from "request truly failed". These helpers mirror the
+# CLI-only logic that originally landed in PR #321 / #327; they live in the
+# library now so Python API consumers get the same deep-research fix the
+# CLI does (issue #315).
+# ---------------------------------------------------------------------------
+
+
+def _normalize_import_url(url: str) -> str:
+    """Lowercase scheme + host and strip a trailing slash for comparison.
+
+    Distinct from ``notebooklm.research.normalize_url`` (used for matching
+    URLs cited inside report markdown): this variant drops the URL fragment
+    because the server stores fragments stripped, and skips the
+    trailing-punctuation strip because these URLs come from a structured
+    ``sources.list`` payload rather than free-form markdown.
+    """
+    parsed = urlsplit(url)
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path.rstrip("/"),
+            parsed.query,
+            "",
+        )
+    )
+
+
+def _source_url_norm(source: dict[str, Any]) -> str | None:
+    url = source.get("url")
+    if not isinstance(url, str) or not url:
+        return None
+    return _normalize_import_url(url)
+
+
+def _requested_urls_norm(sources: list[dict[str, Any]]) -> set[str]:
+    return {url for source in sources if (url := _source_url_norm(source))}
+
+
+def _no_url_entry_count(sources: list[dict[str, Any]]) -> int:
+    return sum(1 for source in sources if _source_url_norm(source) is None)
+
+
+def _imported_source_entry(source: "Source") -> dict[str, str]:
+    return {"id": source.id, "title": source.title or source.url or ""}
+
+
+def _merge_imported_sources(
+    imported: list[dict[str, str]],
+    verified_imported: list[dict[str, str]],
+    verified_imported_ids: set[str],
+) -> list[dict[str, str]]:
+    if not verified_imported:
+        return imported
+    return [
+        *verified_imported,
+        *(entry for entry in imported if entry.get("id") not in verified_imported_ids),
+    ]
 
 # ---------------------------------------------------------------------------
 # Poll-payload extractors
@@ -201,13 +280,20 @@ class ResearchAPI:
                 )
     """
 
-    def __init__(self, rpc: RpcCaller):
+    def __init__(self, rpc: RpcCaller, *, sources: "SourcesAPI | None" = None):
         """Initialize the research API.
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
+            sources: Optional :class:`SourcesAPI` used by
+                :meth:`import_sources_with_verification` to snapshot baseline
+                source IDs before the import call and probe ``sources.list``
+                on timeout. ``NotebookLMClient`` wires this automatically; it
+                stays optional for tests that construct ``ResearchAPI``
+                directly with only an RPC stub.
         """
         self._rpc = rpc
+        self._sources = sources
 
     @staticmethod
     def _parse_result_type(value: Any) -> int | str:
@@ -640,3 +726,224 @@ class ResearchAPI:
                         imported.append({"id": src_id, "title": src_data[1]})
 
         return imported
+
+    async def import_sources_with_verification(
+        self,
+        notebook_id: str,
+        task_id: str,
+        sources: list[dict[str, Any]],
+        *,
+        max_elapsed: float = 1800,
+        initial_delay: float = 5,
+        backoff_factor: float = 2,
+        max_delay: float = 60,
+    ) -> list[dict[str, str]]:
+        """Import sources with timeout-tolerant verification.
+
+        Use this in preference to :meth:`import_sources` for deep research:
+        the underlying ``IMPORT_RESEARCH`` RPC commonly responds in >30 s on
+        deep-research payloads and a one-shot call times out at the client
+        even when the server has already committed.
+
+        Lifecycle:
+
+        1. Snapshot baseline source IDs via ``client.sources.list``.
+        2. Call :meth:`import_sources`.
+        3. On :class:`RPCTimeoutError`, probe ``client.sources.list`` again:
+           - If every requested URL appears among *new* (post-baseline)
+             sources, treat as success and return the imported entries
+             without retrying — the server committed before the response
+             was lost.
+           - Otherwise filter out URLs that are already present (the
+             server committed *some* of the batch) and retry only the
+             remaining sources.
+        4. Bound total elapsed time by ``max_elapsed``; back off between
+           retries (capped by ``max_delay``).
+        5. Report-only imports (no URLs to verify) cap retries at one
+           attempt to bound duplicate-inflation worst case.
+
+        This method preserves the #808 ``NON_IDEMPOTENT_NO_RETRY``
+        classification of the raw ``IMPORT_RESEARCH`` RPC: the executor
+        still refuses to retry internally; the safe retry happens here,
+        anchored on the pre-call snapshot, which is the disambiguation
+        the #808 analysis said was unavailable to the executor.
+
+        Raises:
+            RuntimeError: If the ResearchAPI was constructed without a
+                ``SourcesAPI`` handle (the snapshot would be unavailable).
+            RPCTimeoutError: If retries exhaust the ``max_elapsed`` budget.
+        """
+        if self._sources is None:
+            raise RuntimeError(
+                "import_sources_with_verification requires ResearchAPI to be "
+                "constructed with a SourcesAPI handle. Use this method via "
+                "NotebookLMClient.research; do not instantiate ResearchAPI "
+                "directly without `sources=`."
+            )
+
+        if not sources:
+            return []
+
+        started_at = time.monotonic()
+        delay = initial_delay
+        attempt = 1
+        verified_imported: list[dict[str, str]] = []
+        verified_imported_ids: set[str] = set()
+
+        requested_urls_norm = _requested_urls_norm(sources)
+        # Track how many non-URL entries (research reports, pasted text) the
+        # request includes so concurrent no-URL additions cannot inflate the
+        # synthesized return after a timeout.
+        requested_no_url_count = _no_url_entry_count(sources)
+
+        # Anchor verified-success on URLs of *new* sources (not on a
+        # baseline→current URL delta) so concurrent additions from another
+        # session and pre-existing URLs cannot satisfy the check.
+        baseline_ids: set[str] | None
+        try:
+            baseline = await self._sources.list(notebook_id, strict=True)
+            baseline_ids = {src.id for src in baseline}
+        except (NetworkError, RPCError) as snapshot_exc:
+            logger.warning(
+                "Pre-import sources.list snapshot failed for %s: %s; "
+                "verified-success path disabled for this call",
+                notebook_id,
+                snapshot_exc,
+            )
+            baseline_ids = None
+
+        while True:
+            try:
+                imported = await self.import_sources(notebook_id, task_id, sources)
+                return _merge_imported_sources(
+                    imported, verified_imported, verified_imported_ids
+                )
+            except RPCTimeoutError:
+                elapsed = time.monotonic() - started_at
+                remaining = max_elapsed - elapsed
+
+                if requested_urls_norm:
+                    try:
+                        current = await self._sources.list(notebook_id, strict=True)
+                        new_sources = (
+                            [src for src in current if src.id not in baseline_ids]
+                            if baseline_ids is not None
+                            else []
+                        )
+                        new_urls_norm = {
+                            _normalize_import_url(src.url)
+                            for src in new_sources
+                            if src.url
+                        }
+                        current_urls_norm = {
+                            _normalize_import_url(src.url) for src in current if src.url
+                        }
+                        if (
+                            baseline_ids is not None
+                            and requested_urls_norm.issubset(new_urls_norm)
+                        ):
+                            logger.warning(
+                                "IMPORT_RESEARCH timed out for notebook %s but "
+                                "sources.list shows all %d requested URLs among "
+                                "new sources; treating as success and skipping "
+                                "retry to avoid duplicate inflation",
+                                notebook_id,
+                                len(requested_urls_norm),
+                            )
+                            timeout_verified: list[dict[str, str]] = []
+                            remaining_no_url = requested_no_url_count
+                            for src in new_sources:
+                                if (
+                                    src.url
+                                    and _normalize_import_url(src.url) in requested_urls_norm
+                                ):
+                                    timeout_verified.append(_imported_source_entry(src))
+                                elif not src.url and remaining_no_url > 0:
+                                    timeout_verified.append(_imported_source_entry(src))
+                                    remaining_no_url -= 1
+                            return _merge_imported_sources(
+                                timeout_verified, verified_imported, verified_imported_ids
+                            )
+                        source_norms = [
+                            (source, _source_url_norm(source)) for source in sources
+                        ]
+                        removed_urls_norm = {
+                            url
+                            for _, url in source_norms
+                            if url is not None and url in current_urls_norm
+                        }
+                        filtered_sources = [
+                            source
+                            for source, url in source_norms
+                            if url not in current_urls_norm
+                        ]
+                        if len(filtered_sources) != len(sources):
+                            removed_count = len(sources) - len(filtered_sources)
+                            for src in new_sources:
+                                if (
+                                    src.url
+                                    and _normalize_import_url(src.url) in removed_urls_norm
+                                    and src.id not in verified_imported_ids
+                                ):
+                                    verified_imported.append(_imported_source_entry(src))
+                                    verified_imported_ids.add(src.id)
+                            sources = filtered_sources
+                            requested_urls_norm = _requested_urls_norm(sources)
+                            requested_no_url_count = _no_url_entry_count(sources)
+                            if not sources:
+                                logger.warning(
+                                    "IMPORT_RESEARCH timed out for notebook %s "
+                                    "but sources.list shows all requested URLs "
+                                    "already present; treating as success and "
+                                    "skipping retry to avoid duplicate inflation",
+                                    notebook_id,
+                                )
+                                return _merge_imported_sources(
+                                    [], verified_imported, verified_imported_ids
+                                )
+                            logger.warning(
+                                "IMPORT_RESEARCH timed out for notebook %s after "
+                                "%d requested source(s) were already present; "
+                                "retrying with %d remaining source(s)",
+                                notebook_id,
+                                removed_count,
+                                len(sources),
+                            )
+                    except (NetworkError, RPCError) as probe_exc:
+                        # CancelledError is a BaseException, not Exception, and
+                        # is not in this tuple — it propagates naturally for
+                        # callers that need to cancel the operation cleanly.
+                        logger.warning(
+                            "Failed to probe server state after timeout: %s; "
+                            "falling back to retry",
+                            probe_exc,
+                        )
+
+                if remaining <= 0:
+                    raise
+
+                # Report-only imports (no URLs to verify) can't use the success
+                # check above. Cap retries at one attempt to bound worst-case
+                # duplicate inflation for report entries when timeouts persist.
+                if not requested_urls_norm and attempt >= 2:
+                    logger.warning(
+                        "IMPORT_RESEARCH timed out for notebook %s with no URLs "
+                        "to verify; giving up after %d attempts to bound "
+                        "duplicate inflation",
+                        notebook_id,
+                        attempt,
+                    )
+                    raise
+
+                sleep_for = min(delay, max_delay, remaining)
+                logger.warning(
+                    "IMPORT_RESEARCH timed out for notebook %s; retrying in "
+                    "%.1fs (attempt %d, %.1fs elapsed)",
+                    notebook_id,
+                    sleep_for,
+                    attempt + 1,
+                    elapsed,
+                )
+                await asyncio.sleep(sleep_for)
+                delay = min(delay * backoff_factor, max_delay)
+                attempt += 1
