@@ -5,6 +5,8 @@
 
 This guide covers everything about NotebookLM's RPC protocol: capturing calls, debugging issues, and implementing new methods.
 
+See also: [Python API Reference](python-api.md)
+
 ---
 
 ## Protocol Overview
@@ -320,7 +322,7 @@ class SomeResult:
 def test_encode_new_method():
     params = ["value", "notebook_id", [2]]
     result = encode_rpc_request(RPCMethod.NEW_METHOD, params)
-    assert "AbCdEf" in result
+    assert result[0][0][0] == "AbCdEf"
 ```
 
 **Integration test** (`tests/integration/`):
@@ -469,9 +471,10 @@ Document:
 ```python
 async def validate_rpc_call(rpc_id: str, params: list, expected_action: str):
     from notebooklm import NotebookLMClient
+    from notebooklm.rpc import RPCMethod
 
     async with await NotebookLMClient.from_storage() as client:
-        result = await client._rpc_call(RPCMethod(rpc_id), params)
+        result = await client.rpc_call(RPCMethod(rpc_id), params)
 
     assert result is not None, f"RPC {rpc_id} returned None"
     return {"rpc_id": rpc_id, "action": expected_action, "status": "verified"}

@@ -104,6 +104,19 @@ DriveMimeType, ExportType
 AuthTokens
 notebooklm.paths.get_storage_path()
 
+# Logging and Correlation
+notebooklm.configure_logging
+notebooklm.get_request_id
+notebooklm.set_request_id
+notebooklm.reset_request_id
+notebooklm.correlation_id
+
+# Citation and Research Helpers
+notebooklm.utils.resolve_chat_reference_passage
+notebooklm.research.select_cited_sources
+notebooklm.research.normalize_url
+notebooklm.research.extract_report_urls
+
 # Helpers (cookies extra) - imported from notebooklm.auth
 notebooklm.auth.convert_rookiepy_cookies_to_storage_state  # requires `pip install "notebooklm-py[cookies]"` — see docs/installation.md#optional-extras-matrix
 
@@ -343,9 +356,6 @@ A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods for ID c
 **On mismatch detection:**
 - GitHub Issue auto-created with `bug`, `rpc-breakage`, and `automated` labels
 - Report shows expected vs actual IDs and which `RPCMethod` entries need updating
-
-**Configuration:**
-- `NOTEBOOKLM_RPC_DELAY`: Delay between RPC calls in seconds (default: 1.0)
 
 **Manual trigger:** `gh workflow run rpc-health.yml`
 

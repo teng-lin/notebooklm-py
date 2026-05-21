@@ -18,7 +18,7 @@ The audit's verified counts at HEAD `22355cf` are:
 | String-target patches — `monkeypatch.setattr("notebooklm.X.Y", …)` | 58 |
 | Object-attribute patches — `monkeypatch.setattr(obj, "attr", …)` | 152 |
 | Direct attribute assignment — `core.rpc_call = AsyncMock(…)` etc. | 63 |
-| `tests/unit/test_auth.py` size | 4,090 LOC · 70 patches |
+| `tests/unit/test_auth_*.py` split (concern-aligned: `test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.) | Formerly 4,090 LOC · 70 patches |
 | `tests/unit/cli/test_session.py` size | 4,431 LOC |
 
 Each of these patterns shares one root cause: production code is mutated from the outside *after* construction, rather than receiving its collaborators *during* construction. Three artifacts visible in `src/notebooklm/` exist solely to keep that style working as the architecture shifts beneath it:

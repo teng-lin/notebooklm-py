@@ -45,7 +45,7 @@ Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) on
 4. **Manual re-login** — `notebooklm login`.
 5. **External scheduler** — `notebooklm auth refresh` driven by cron / launchd / systemd / Task Scheduler / k8s CronJob, for idle profiles with no Python process running. Recommended cadence: 15–20 minutes.
 
-Most users only need layer 1 — it's on by default and requires no configuration. For the full strategy (trade-offs between layers, all knobs like `keepalive_min_interval` and `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`, and ready-to-paste launchd / systemd / cron / Task Scheduler / k8s CronJob recipes), see **[docs/auth-keepalive.md#tldr](auth-keepalive.md#tldr)** for a quick orientation, then [§4 The architecture](auth-keepalive.md#4--the-architecture) for the per-layer deep dive.
+Most users only need layer 1 — it's on by default and requires no configuration. For the full strategy (trade-offs between layers, including Python kwargs like `keepalive_min_interval` and environment variables like `NOTEBOOKLM_REFRESH_CMD_USE_SHELL`, and ready-to-paste launchd / systemd / cron / Task Scheduler / k8s CronJob recipes), see **[docs/auth-keepalive.md#tldr](auth-keepalive.md#tldr)** for a quick orientation, then [§4 The architecture](auth-keepalive.md#4--the-architecture) for the per-layer deep dive.
 
 #### macOS: `--browser-cookies` prompts for your password
 
@@ -125,7 +125,7 @@ Or re-run `notebooklm login` if session cookies are also expired. If the failure
 **Cause:** Google detecting automation and blocking login.
 
 **Solution:**
-1. Delete the browser profile: `rm -rf ~/.notebooklm/browser_profile/`
+1. Delete the browser profile: `rm -rf ~/.notebooklm/profiles/<profile>/browser_profile/` (or `~/.notebooklm/profiles/default/browser_profile/` for the default profile)
 2. Run `notebooklm login` again
 3. Complete any CAPTCHA or security challenges Google presents
 4. Ensure you're using a real mouse/keyboard (not pasting credentials via script)
@@ -373,8 +373,10 @@ Google enforces strict rate limits on the batchexecute endpoint.
 **CLI:** Use `--retry` for automatic exponential backoff:
 ```bash
 notebooklm generate audio --retry 3   # Retry up to 3 times on rate limit
-notebooklm generate video --retry 5   # Works with all generate commands
+notebooklm generate video --retry 5   # Works with most generate commands
 ```
+
+*Note: `generate mind-map` is synchronous and does not accept the `--retry` option. All other `generate` subcommands support `--retry`.*
 
 **Python:**
 ```python

@@ -30,6 +30,7 @@
 | `tGMBJ` | DELETE_SOURCE | Delete a source | `_sources.py` |
 | `b7Wfje` | UPDATE_SOURCE | Rename source | `_sources.py` |
 | `tr032e` | GET_SOURCE_GUIDE | Get source summary | `_sources.py` |
+| `hizoJc` | GET_SOURCE | Get clean fulltext content of a source | `_sources.py` |
 | `R7cb6c` | CREATE_ARTIFACT | Unified artifact generation | `_artifacts.py` |
 | `gArtLc` | LIST_ARTIFACTS | List artifacts in a notebook | `_artifacts.py` |
 | `V5N4be` | DELETE_ARTIFACT | Delete artifact | `_artifacts.py` |
@@ -51,8 +52,8 @@
 | `LBwxtb` | IMPORT_RESEARCH | Import research results | `_research.py` |
 | `rc3d8d` | RENAME_ARTIFACT | Rename artifact | `_artifacts.py` |
 | `Krh3pd` | EXPORT_ARTIFACT | Export to Docs/Sheets | `_artifacts.py` |
-| `RGP97b` | SHARE_ARTIFACT | Toggle notebook sharing | `_notebooks.py` |
-| `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_notebooks.py` |
+| `RGP97b` | SHARE_ARTIFACT | Toggle per-artifact public deep-link sharing | `_sharing.py` |
+| `QDyure` | SHARE_NOTEBOOK | Set notebook visibility (restricted/public) | `_sharing.py` |
 | `JFMDGd` | GET_SHARE_STATUS | Get notebook share settings | `_sharing.py` |
 | `ciyUvf` | GET_SUGGESTED_REPORTS | Get AI-suggested report formats | `_artifacts.py` |
 | `v9rmvd` | GET_INTERACTIVE_HTML | Fetch quiz/flashcard HTML content | `_artifacts.py` |
@@ -68,7 +69,7 @@
 | 1 | Audio | Audio Overview |
 | 2 | Report | Briefing Doc, Study Guide, Blog Post |
 | 3 | Video | Video Overview |
-| 4 | Quiz/Flashcards | Quiz (variant=2), Flashcards (variant=1) |
+| 4 | Quiz/Flashcards (QUIZ_FLASHCARD alias) | Quiz (variant=2), Flashcards (variant=1) |
 | 5 | Mind Map | Mind Map |
 | 7 | Infographic | Infographic |
 | 8 | Slide Deck | Slide Deck |
@@ -346,6 +347,33 @@ params = [
 params = [[[[source_id]]]]
 ```
 
+### RPC: GET_SOURCE (hizoJc)
+
+**Source:** `_source_content.py::get_fulltext()`
+
+**Purpose:** Get raw text or clean HTML/markdown content of a source.
+
+**Params:**
+```python
+# Position 0: Single-nested source ID
+# Position 1: Output type: [2] for plain text, [3] for cleaned HTML/markdown structure
+# Position 2: Format selector matching position 1
+params = [
+    [source_id],  # 0
+    [2],          # 1
+    [2],          # 2
+]
+```
+
+**Request format:**
+```python
+await rpc_call(
+    RPCMethod.GET_SOURCE,
+    params,
+    source_path=f"/notebook/{notebook_id}",
+)
+```
+
 ---
 
 ## Chat Panel
@@ -526,11 +554,11 @@ await page.locator(".create-artifact-button-container:has-text('Audio')").click(
 
 **All artifact types use `R7cb6c` with different content type codes and nested configs.**
 
-**Source:** `_artifacts.py`
+**Source:** `_artifact_generation.py` (facade: `_artifacts.py`)
 
 #### Audio Overview (Type 1)
 
-**Source:** `_artifacts.py::generate_audio()`
+**Source:** `_artifact_generation.py::ArtifactGenerationService` (facade: `_artifacts.py`)
 
 ```python
 source_ids_triple = [[[sid]] for sid in source_ids]  # [[[s1]], [[s2]], ...]

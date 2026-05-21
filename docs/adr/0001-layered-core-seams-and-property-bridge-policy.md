@@ -28,7 +28,7 @@ _session_lifecycle.py            Open/close lifecycle (loop-affinity guard + kee
 _cookie_persistence.py   Cookie-jar persistence + __Secure-1PSIDTS rotation
 _session_config.py            Module-level DEFAULT_* knobs
 _session_helpers.py              is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
-_error_injection.py      _SyntheticErrorTransport + env-var guard
+_error_injection.py      env-var guard (live implementation is chain-level `ErrorInjectionMiddleware` in `_middleware_error_injection.py:97`; `_SyntheticErrorTransport` retired)
 ```
 
 The extraction was constrained by an unusually high test-coupling load: tests reach into the live `Session` instance with `core._save_lock`, `core._metrics_lock`, `core._on_rpc_event`, and many other private attributes — patterns that pre-date the seam extraction. When the storage for these attributes moved into the seams, the legacy attribute names had to keep resolving on the `Session` instance or hundreds of tests would break in a single PR.

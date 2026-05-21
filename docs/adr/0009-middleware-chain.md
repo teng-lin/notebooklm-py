@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Tier 12 PR 12.1; closed by PR 12.9).
+Accepted (Tier 12 PR 12.1; closed by PR 12.9); context refined by [ADR-013](0013-composable-session-capabilities.md) (#866).
 
 This ADR shipped in PR 12.1 of the Tier-12/13 greenfield migration as
 type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
@@ -36,9 +36,7 @@ shape. PRs 12.2–12.7 also depend on the chain ordering and the
 
 ADR-002 ("Capability Protocol pattern, `SessionCapabilities` fat
 union") was superseded by the `arch-d2-cutover` PR (D2 PR-2), per
-ADR-002's own Status line. ADR-010 was the original Tier-13
-supersession plan but was itself superseded by ADR-013 ("Composable
-Session Capabilities") in v0.5.0. See [`docs/architecture.md`](../architecture.md)
+ADR-002's own Status line. ADR-010 was the original Tier-13 supersession plan but was itself superseded by [ADR-013](0013-composable-session-capabilities.md) ("Composable Session Capabilities") in v0.5.0. See [`docs/architecture.md`](../architecture.md)
 for the post-supersession capability-protocol model.
 
 ## Context

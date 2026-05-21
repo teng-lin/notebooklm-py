@@ -119,11 +119,11 @@ hasn't been narrowed yet.
                        |     Session     |  (facade — see "Known debt" below)
                        +--------+--------+
                                 |
-   +---------+---------+--------+---------+---------+---------+---------+
-   |         |         |        |         |         |         |         |
-   v         v         v        v         v         v         v         v
-RpcExec-  AuthRefresh- Client-  Middleware Transport ClientMetrics Reqid- CookiePers-
-utor      Coordinator  Lifecycle ChainBuilder DrainTracker         Counter istence
+   +-----+-----+-----+-----+----+----+-----+-----+-----+
+   |     |     |     |     |         |     |     |     |
+   v     v     v     v     v         v     v     v     v
+Rpc-  Auth-  Client- Mid-  Trans-  Metrics Reqid Cookie- Kernel
+Exec  Ref    Life    Chain Drain   Tracker Coun  Pers
    |         |         |        |         |
    |         |         |        v         |
    |         |         |   builds         |
@@ -141,6 +141,8 @@ utor      Coordinator  Lifecycle ChainBuilder DrainTracker         Counter isten
    |         +--- refresh task + auth-snapshot lock
    |
    +--- single RPC dispatch path (RpcExecutor.execute → chain → AuthedTransport → httpx)
+   |
+   +--- Kernel (transport core; owns httpx.AsyncClient + cookie jar)
 ```
 
 | Collaborator | Module | Responsibility |
@@ -155,6 +157,18 @@ utor      Coordinator  Lifecycle ChainBuilder DrainTracker         Counter isten
 | `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Cookie-jar persistence + `__Secure-1PSIDTS` rotation. |
 | `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor.execute()` consults it to resolve `effective_disable_internal_retries` and to inject client tokens for `CLIENT_TOKEN_DEDUPE` methods (most entries are currently `UNCLASSIFIED`, a behaviour-neutral default). Not Session-owned, but part of the RPC dispatch path. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
 
+## Domain-service collaborators
+
+Beyond the Session-orchestration graph, several feature APIs are implemented via dedicated domain services and helper modules:
+
+| Service / Module | Module | Responsibility |
+|-------------------|--------|----------------|
+| `NoteService` | [`_note_service.py`](../src/notebooklm/_note_service.py) | Service layer managing note CRUD, note-backed content generation, and sync. |
+| `NoteBackedMindMapService` | [`_mind_map.py`](../src/notebooklm/_mind_map.py) | Specific adapter service representing mind-maps, backed by standard notebook notes. |
+| `ArtifactDownloadService` | [`_artifact_downloads.py`](../src/notebooklm/_artifact_downloads.py) | Asynchronous download coordinator for finished artifacts. |
+| `_artifact_formatters` | [`_artifact_formatters.py`](../src/notebooklm/_artifact_formatters.py) | Markdown, HTML, and plain text formatters for artifacts. |
+| `_artifact_listing` | [`_artifact_listing.py`](../src/notebooklm/_artifact_listing.py) | Listing and filtering operations for notebook artifacts. |
+
 ## Middleware chain (ADR-009)
 
 The runtime chain order is pinned by
@@ -165,7 +179,7 @@ The runtime chain order is pinned by
 simultaneously updating the pin tests
 (`test_chain_seeded_with_final_adr_009_ordering`) is a bug.
 
-The chain list in [`MiddlewareChainBuilder.build()`](../src/notebooklm/_middleware_chain.py)
+The chain list in [`MiddlewareChainBuilder.build()`](../src/notebooklm/_middleware_chain.py) (PR [#883](https://github.com/teng-lin/notebooklm-py/pull/883))
 reads outermost-first (index 0 wraps everything below it):
 
 ```text
@@ -191,7 +205,7 @@ RPC dispatch leaf            (RpcExecutor → AuthedTransport → httpx)
 ## ADR cross-references
 
 - [ADR-001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy.
-- [ADR-002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by the arch-d2-cutover PR).
+- [ADR-002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by [arch-d2-cutover](https://github.com/teng-lin/notebooklm-py/pull/835) (#835)).
 - [ADR-009](./adr/0009-middleware-chain.md) — Middleware chain ordering (Accepted; load-bearing).
 - [ADR-013](./adr/0013-composable-session-capabilities.md) — Composable Session Capabilities (the post-v0.5.0 capability model).
 

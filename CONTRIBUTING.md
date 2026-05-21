@@ -182,7 +182,7 @@ Design decisions should be captured where they're most useful, not in separate d
 |------|--------|---------|
 | Root GitHub files | `UPPERCASE.md` | `README.md`, `CONTRIBUTING.md` |
 | Agent files | `UPPERCASE.md` | `CLAUDE.md`, `AGENTS.md` |
-| Subfolder README | `README.md` | `docs/examples/README.md` |
+| Subfolder README | `README.md` | `docs/adr/README.md` |
 | All other docs/ files | `lowercase-kebab.md` | `cli-reference.md`, `contributing.md` |
 | Scratch files | `YYYY-MM-DD-context.md` | `2026-01-06-debug-auth.md` |
 
@@ -209,17 +209,23 @@ Agents should ignore files marked `Deprecated`.
 
 ```
 docs/
-├── installation.md        # Canonical install guide (personas, extras, platform notes)
-├── cli-reference.md       # CLI command reference
+├── adr/                   # Architectural Decision Records (ADRs)
+├── architecture.md        # Monolithic Session to composable capabilities architecture map
+├── auth-keepalive.md      # Cookie expiration mitigation strategies and keepalive loops
 ├── cli-exit-codes.md      # CLI exit-code convention (binding contract for scripts/CI)
+├── cli-reference.md       # CLI command reference
+├── configuration.md       # Storage, profiles, and settings
+├── deprecations.md        # Staged API deprecations tracker
+├── development.md         # Architecture, testing, and VCR cassette practices
+├── installation.md        # Canonical install guide (personas, extras, platform notes)
+├── migration-tier-12-to-13.md # Guide for cutover to Tier 13 composable APIs
 ├── python-api.md          # Python API reference
-├── configuration.md       # Storage and settings
-├── troubleshooting.md     # Common issues and solutions
-├── stability.md           # API versioning policy
-├── development.md         # Architecture and testing
+├── refactor.md            # Post-refactor narrative and historical seams map
 ├── releasing.md           # Release checklist
 ├── rpc-development.md     # RPC capture and debugging
-├── rpc-reference.md       # RPC payload structures
+├── rpc-reference.md       # RPC payload structures and Content Type Codes
+├── stability.md           # API versioning and stability policy
+├── troubleshooting.md     # Common issues and solutions
 └── examples/              # Runnable example scripts
 ```
 

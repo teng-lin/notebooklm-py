@@ -20,11 +20,7 @@ anything.
 
 ## Quick guidance
 
-- **Stop importing from `notebooklm._core`** for new code. The module is now a
-  compatibility shim that re-exports the concrete `Session` orchestrator from
-  `notebooklm._session`. Existing imports still resolve, but the symbols
-  documented below live on their final home modules now and the shim may be
-  removed in a later refactor.
+- **`notebooklm._core` compatibility shim is removed**: In Phase 4 (#889), the `_core.py` compatibility module was completely deleted. Downstream code and tests must import from `notebooklm._session` or other final modules directly.
 - **Prefer the public surface** — `notebooklm.NotebookLMClient`,
   `notebooklm.AuthTokens`, `notebooklm.rpc.RPCMethod`, and the types/exceptions
   re-exported from the top-level package.
@@ -66,10 +62,7 @@ right.
 | `notebooklm._core_rpc` | `notebooklm._rpc_executor` |
 | `notebooklm._core_transport` | `notebooklm._authed_transport` |
 
-`notebooklm._core` itself still exists as a compatibility shim that re-exports
-the `Session` class (aliased as `ClientCore` for legacy callers) plus the
-constants and helpers in the table below. New code should import from the
-post-rename modules directly.
+`notebooklm._core` has been deleted. Downstream code and tests must import from the post-rename modules directly.
 
 ## Moved and renamed symbols
 
@@ -79,20 +72,20 @@ change, only their home module did.
 
 | Tier 12 symbol | Tier 13 home | Notes |
 |---|---|---|
-| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` still resolves via the `_core` shim. New code should use `notebooklm._session.Session`. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-013. |
-| `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._authed_transport.MAX_RETRY_AFTER_SECONDS` | Re-exported via `_session` and the `_core` shim. |
-| `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._session_config.DEFAULT_*` | Re-exported via `_session` and the `_core` shim. |
-| `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._session_helpers` | Re-exported via `_session` and the `_core` shim. |
-| `notebooklm._core.ERROR_INJECT_ENV_VAR` | `notebooklm._error_injection.ERROR_INJECT_ENV_VAR` | Re-exported via `_session` and the `_core` shim. |
+| `notebooklm._core.ClientCore` (class) | `notebooklm._session.Session` | `ClientCore` was retired; use `notebooklm._session.Session`. Feature APIs accept the narrow capability Protocols in `notebooklm._session_contracts` (`RpcCaller`, `AsyncWorkRuntime`, etc.) or a feature-local runtime; the broad `Session` Protocol was retired in the capability refactor — see ADR-013. |
+| `notebooklm._core.MAX_RETRY_AFTER_SECONDS` | `notebooklm._authed_transport.MAX_RETRY_AFTER_SECONDS` | Now lives in `_authed_transport.py:38`. No longer re-exported via `_session` or `_core`. |
+| `notebooklm._core.DEFAULT_*` (timeouts, concurrency knobs) | `notebooklm._session_config.DEFAULT_*` | Now lives in `_session_config.py:41`. |
+| `notebooklm._core.AUTH_ERROR_PATTERNS`, `notebooklm._core.is_auth_error` | `notebooklm._session_helpers` | Now lives in `_session_helpers.py:36`. No longer re-exported via `_session` or `_core`. |
+| `notebooklm._core.ERROR_INJECT_ENV_VAR` | `notebooklm._error_injection.ERROR_INJECT_ENV_VAR` | Now lives in `_error_injection.py:56`. No longer re-exported via `_session` or `_core`. |
 | `notebooklm._core._SyntheticErrorTransport` (class) | _Removed_ | Synthetic-error substitution moved into `notebooklm._middleware_error_injection.ErrorInjectionMiddleware` in Tier 12 PR 12.6. The env-var resolver (`_get_error_injection_mode`) and startup guard (`_refuse_synthetic_error_outside_test_context`) survive in `notebooklm._error_injection`. |
-| `notebooklm._core.AuthRefreshCoordinator` | `notebooklm._session_auth.AuthRefreshCoordinator` | The class itself is unchanged; only the home module moved. The shim still re-exports it. |
-| `notebooklm._core.TransportDrainTracker` | `notebooklm._transport_drain.TransportDrainTracker` | Same — shim re-exports. |
-| `notebooklm._core.ClientMetrics` | `notebooklm._client_metrics.ClientMetrics` | Same — shim re-exports. |
-| `notebooklm._core.ReqidCounter` | `notebooklm._reqid_counter.ReqidCounter` | Same — shim re-exports. |
-| `notebooklm._core.CookiePersistence` | `notebooklm._cookie_persistence.CookiePersistence` | Same — shim re-exports. |
-| `notebooklm._core.ClientLifecycle` | `notebooklm._session_lifecycle.ClientLifecycle` | Same — shim re-exports. |
-| `notebooklm._core.RpcExecutor` | `notebooklm._rpc_executor.RpcExecutor` | Same — shim re-exports. |
-| `notebooklm._core.AuthedTransport` | `notebooklm._authed_transport.AuthedTransport` | Same — shim re-exports. |
+| `notebooklm._core.AuthRefreshCoordinator` | `notebooklm._session_auth.AuthRefreshCoordinator` | The class itself is unchanged; only the home module moved. Import directly from the home module. |
+| `notebooklm._core.TransportDrainTracker` | `notebooklm._transport_drain.TransportDrainTracker` | Same — import directly from the home module. |
+| `notebooklm._core.ClientMetrics` | `notebooklm._client_metrics.ClientMetrics` | Same — import directly from the home module. |
+| `notebooklm._core.ReqidCounter` | `notebooklm._reqid_counter.ReqidCounter` | Same — import directly from the home module. |
+| `notebooklm._core.CookiePersistence` | `notebooklm._cookie_persistence.CookiePersistence` | Same — import directly from the home module. |
+| `notebooklm._core.ClientLifecycle` | `notebooklm._session_lifecycle.ClientLifecycle` | Same — import directly from the home module. |
+| `notebooklm._core.RpcExecutor` | `notebooklm._rpc_executor.RpcExecutor` | Same — import directly from the home module. |
+| `notebooklm._core.AuthedTransport` | `notebooklm._authed_transport.AuthedTransport` | Same — import directly from the home module. |
 
 ## New modules introduced by Tier 12 / 13
 
@@ -103,7 +96,7 @@ import from.
 | Module | Purpose |
 |---|---|
 | `notebooklm._session_contracts` | `AuthMetadata`, `Kernel`, and the four shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-013). The originally-shipped broad `Session` Protocol and the standalone `DrainHookRegistration` Protocol were deleted in Phase 7 of the refactor arc; feature-local runtimes (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) now live in their owning feature modules, and the canonical `DrainHookRegistration` is local to `_artifacts.py`. |
-| `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Wrapped by `Session` and consumed by middleware. |
+| `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Located at root (`src/notebooklm/_kernel.py`), not nested. |
 | `notebooklm._middleware` | Middleware chain primitives (`AuthedHttpClient` Protocol, `Middleware` Protocol, `RequestContext`, chain composition). |
 | `notebooklm._middleware_tracing` | Tier 12 PR 12.3 — request tracing middleware. |
 | `notebooklm._middleware_metrics` | Tier 12 PR 12.4 — metrics collection middleware. |

@@ -91,7 +91,7 @@ change.** Code referencing them should comment the inverted semantics.
 
 Implemented by `source_stale` in
 [`src/notebooklm/cli/source.py`](../src/notebooklm/cli/source.py) (around
-lines 1056-1082 at the time of writing).
+line 1146 at the time of writing).
 
 | Exit | Meaning |
 |------|---------|
@@ -100,7 +100,7 @@ lines 1056-1082 at the time of writing).
 
 The inversion lets you write the natural shell idiom:
 
-```sh
+```bash
 if notebooklm source stale "$SRC_ID"; then
     notebooklm source refresh "$SRC_ID"
 fi
@@ -141,7 +141,7 @@ a recoverable condition the caller may want to retry with a longer
 `--timeout`. Scripts that distinguish "transient" from "fatal" should branch
 on the specific code rather than the truthy/falsy value:
 
-```sh
+```bash
 notebooklm source wait "$SRC_ID" --timeout 300
 case $? in
   0)  echo "ready" ;;
@@ -155,7 +155,7 @@ esac
 
 ### Shell
 
-```sh
+```bash
 # Standard — non-zero is failure
 if ! notebooklm ask "$NOTEBOOK_ID" "Summarize"; then
     echo "ask failed (exit $?)" >&2
@@ -211,7 +211,7 @@ found" message to stdout and exited `0`. The new contract matches the rest of
 the CLI's user-error convention and lets scripts branch on the exit code
 without parsing output text:
 
-```sh
+```bash
 # Idiomatic
 if ! notebooklm source get "$SRC_ID"; then
     handle_missing "$SRC_ID"
@@ -239,24 +239,13 @@ race where partial-resolve succeeds but the subsequent `get` returns
 The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id`
 as a `ClickException`) was already exit `1` and is unchanged.
 
-### `download` exception paths will route through the typed handler
+### `download` exception paths route through the typed handler
 
-The `download` command group currently catches some exceptions in
-command-local `try/except` blocks that bypass the central `handle_errors`
-context. Concretely, generic `Exception` bubbles do not always honor `--json`
-(emitting plain stderr text instead of the JSON error document) and the exit
-code may not match the standard exception → exit-code mapping.
-
-An upcoming change will route all `download` exception paths through
-`handle_errors` so that:
+The `download` command group routes all `download` exception paths through `handle_errors` (`cli/download.py:699-737`) so that:
 
 - `--json` consistently produces the JSON error document on every failure.
 - Exit codes match the standard table above (`1` for known library errors,
   `2` for unexpected, `130` for `^C`).
-
-Callers already relying on `--json` should see no behavior change for
-*successful* downloads or for already-typed errors; only the previously
-plain-text exception paths will start emitting JSON.
 
 ## See also
 
