@@ -266,12 +266,14 @@ class TestKeepalivePersistenceFailure:
             save_calls.append(path)
             raise OSError("simulated disk full")
 
-        monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", boom)
-
+        # Phase 2 PR 4: inject the cookie-saver seam directly at the client
+        # constructor rather than monkeypatching the legacy
+        # ``notebooklm._core.save_cookies_to_storage`` indirection.
         client = NotebookLMClient(
             auth,
             keepalive=0.05,
             keepalive_min_interval=0.01,
+            cookie_saver=boom,
         )
 
         with caplog.at_level("WARNING", logger="notebooklm._core"):
@@ -378,9 +380,7 @@ class TestKeepaliveExplicitStoragePath:
 
     @pytest.mark.asyncio
     @pytest.mark.no_default_keepalive_mock
-    async def test_close_persists_to_explicit_storage_path(
-        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
-    ):
+    async def test_close_persists_to_explicit_storage_path(self, tmp_path, httpx_mock: HTTPXMock):
         """``Session.close()`` calls ``save_cookies_to_storage`` with the
         explicit constructor ``storage_path`` even when keepalive never ran
         and ``auth.storage_path`` was ``None`` originally — proving the
@@ -401,9 +401,8 @@ class TestKeepaliveExplicitStoragePath:
         def spy(cookies, path, **kwargs):
             save_calls.append((cookies, path))
 
-        monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", spy)
-
-        client = NotebookLMClient(auth, storage_path=storage_path)
+        # Phase 2 PR 4: inject the cookie-saver seam directly.
+        client = NotebookLMClient(auth, storage_path=storage_path, cookie_saver=spy)
         async with client:
             pass  # no RPC calls; keepalive disabled by default
 
@@ -460,7 +459,7 @@ class TestSaveCookiesUnification:
     keepalive, and refresh_auth all route through."""
 
     @pytest.mark.asyncio
-    async def test_save_cookies_takes_in_process_lock_before_writing(self, tmp_path, monkeypatch):
+    async def test_save_cookies_takes_in_process_lock_before_writing(self, tmp_path):
         """``Session.save_cookies`` holds ``_save_lock`` for the duration of
         the worker-thread write, so an older snapshot can't clobber a newer one
         within the same process."""
@@ -473,10 +472,10 @@ class TestSaveCookiesUnification:
             storage_path=tmp_path / "storage_state.json",
         )
         (tmp_path / "storage_state.json").write_text('{"cookies": []}')
-        core = Session(auth)
 
         lock_held_during_save: list[bool] = []
         call_kwargs: list[dict] = []
+        core_ref: dict[str, Session] = {}
 
         def spy(jar, path, **kwargs):
             """Record lock state and the kwargs.
@@ -486,11 +485,13 @@ class TestSaveCookiesUnification:
             ``original_snapshot=`` through, the assertion below catches it
             before production silently reverts to legacy merge.
             """
-            lock_held_during_save.append(core._save_lock.locked())
+            lock_held_during_save.append(core_ref["core"]._save_lock.locked())
             call_kwargs.append(kwargs)
             return True
 
-        monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", spy)
+        # Phase 2 PR 4: inject the cookie-saver seam at construction.
+        core = Session(auth, cookie_saver=spy)
+        core_ref["core"] = core
 
         await core.save_cookies(httpx.Cookies())
 
@@ -505,7 +506,7 @@ class TestSaveCookiesUnification:
 
     @pytest.mark.asyncio
     async def test_refresh_auth_routes_save_through_save_cookies(
-        self, tmp_path, monkeypatch, httpx_mock: HTTPXMock
+        self, tmp_path, httpx_mock: HTTPXMock
     ):
         """``refresh_auth`` no longer calls ``save_cookies_to_storage`` directly;
         it routes through ``Session.save_cookies`` so the in-process lock is
@@ -545,10 +546,9 @@ class TestSaveCookiesUnification:
             content=b'<html><script>window.WIZ_global_data={"SNlM0e":"new_csrf","FdrFJe":"new_sid"};</script></html>',
         )
 
-        client = NotebookLMClient(auth)
-
         save_calls: list[bool] = []
         snapshot_kwarg_present: list[bool] = []
+        client_ref: dict[str, NotebookLMClient] = {}
 
         def spy(jar, path, **kwargs):
             """Record whether ``_save_lock`` is held when refresh_auth's save fires
@@ -558,11 +558,13 @@ class TestSaveCookiesUnification:
             must route through the snapshot/delta path, never the legacy
             full-merge path.
             """
-            save_calls.append(client._core._save_lock.locked())
+            save_calls.append(client_ref["client"]._core._save_lock.locked())
             snapshot_kwarg_present.append("original_snapshot" in kwargs)
             return True
 
-        monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", spy)
+        # Phase 2 PR 4: inject the cookie-saver seam at construction.
+        client = NotebookLMClient(auth, cookie_saver=spy)
+        client_ref["client"] = client
 
         async with client:
             await client.refresh_auth()

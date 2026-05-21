@@ -179,11 +179,9 @@ async def test_refresh_auth_session_missing_session_id_wraps_extraction_error() 
 @pytest.mark.asyncio
 async def test_refresh_auth_session_persists_through_client_core_save_cookies(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     storage_path = tmp_path / "storage_state.json"
     auth = _auth(storage_path=storage_path)
-    core = Session(auth)
     calls: list[tuple[Path, bool, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -205,7 +203,10 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
         calls.append((path, return_result, original_snapshot))
         return True
 
-    monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", fake_save_cookies_to_storage)
+    # Inject the cookie-saver seam directly (Phase 2 PR 4 — replaces the
+    # legacy ``_core.save_cookies_to_storage`` string-target monkeypatch
+    # with constructor injection through ``ClientLifecycle._cookie_saver``).
+    core = Session(auth, cookie_saver=fake_save_cookies_to_storage)
 
     http_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),

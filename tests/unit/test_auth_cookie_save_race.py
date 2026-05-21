@@ -1121,7 +1121,7 @@ class TestBaselineNotAdvancedOnSaveFailure:
     """
 
     @pytest.mark.asyncio
-    async def test_baseline_unchanged_when_save_returns_false(self, tmp_path, monkeypatch):
+    async def test_baseline_unchanged_when_save_returns_false(self, tmp_path):
         from notebooklm.client import NotebookLMClient
 
         storage = tmp_path / "storage_state.json"
@@ -1143,13 +1143,14 @@ class TestBaselineNotAdvancedOnSaveFailure:
             storage_path=storage,
         )
 
-        client = NotebookLMClient(auth)
-
         # Make every save_cookies_to_storage call return False (silent failure).
+        # Phase 2 PR 4: inject the cookie-saver seam directly via
+        # ``NotebookLMClient(..., cookie_saver=…)`` rather than monkeypatching
+        # the legacy ``notebooklm._core.save_cookies_to_storage`` indirection.
         def silent_fail(jar, path, **kwargs):
             return False
 
-        monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", silent_fail)
+        client = NotebookLMClient(auth, cookie_saver=silent_fail)
 
         async with client:
             baseline_before = client._core._loaded_cookie_snapshot
@@ -1642,8 +1643,6 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
             session_id="s",
             storage_path=storage,
         )
-        core = Session(auth)
-        await core.open()
 
         captured_calls: list[tuple[str, dict | None]] = []
         real_save = auth_mod.save_cookies_to_storage
@@ -1660,7 +1659,10 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
             )
             return real_save(jar, path, original_snapshot=original_snapshot, **kwargs)
 
-        monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", capture_save)
+        # Phase 2 PR 4: inject the cookie-saver seam via the constructor
+        # rather than monkeypatching ``notebooklm._core.save_cookies_to_storage``.
+        core = Session(auth, cookie_saver=capture_save)
+        await core.open()
 
         # Explicit barrier: each coroutine records its submission and the
         # second arrival sets ``both_submitted``; both then ``await`` the

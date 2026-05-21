@@ -35,6 +35,7 @@ import pytest
 from conftest import install_post_as_stream
 from notebooklm._authed_transport import AuthedTransport
 from notebooklm._logging import get_request_id
+from notebooklm._middleware import RpcRequest, RpcResponse
 from notebooklm._session import (
     Session,
     _AuthSnapshot,
@@ -225,52 +226,60 @@ async def test_authed_transport_requires_open_client():
 
 
 @pytest.mark.asyncio
-async def test_chain_uses_late_bound_is_auth_error(monkeypatch):
-    """Tier-12 PR 12.8 lifted auth-refresh into ``AuthRefreshMiddleware``.
+async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
+    """``AuthRefreshMiddleware`` calls ``refresh_callable`` and retries
+    exactly once when the injected ``is_auth_error`` predicate returns
+    ``True``, regardless of the actual HTTP status code.
 
-    The middleware reads ``is_auth_error`` LIVE through
-    ``notebooklm._core``'s module globals (via the lambda in the chain
-    seed) so a test that monkeypatches
-    ``notebooklm._core.is_auth_error`` still drives the refresh path —
-    preserving the pre-PR-12.8 contract where ``AuthedTransport`` read
-    the same module attr live. Drives the chain via
-    ``core._perform_authed_post`` since retry behavior moved out of the
-    leaf.
+    Phase 2 PR 4 (``.sisyphus/plans/refactor-completion-plan.md``)
+    rewrote this test off the legacy ``_core.is_auth_error`` string-target
+    monkeypatch and instead constructs the middleware directly with an
+    injected predicate. The
+    production chain seeds ``AuthRefreshMiddleware`` with
+    ``is_auth_error=_live_is_auth_error`` (see
+    ``notebooklm._session._get_authed_transport``); that wiring is
+    covered separately. Here we pin the middleware-level contract:
+    *whatever* predicate is injected drives the refresh-and-retry
+    decision.
     """
+    from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
+
     refresh_calls: list[bool] = []
 
-    async def refresh() -> AuthTokens:
+    async def refresh() -> None:
         refresh_calls.append(True)
-        return core.auth
 
-    core = _make_core(refresh_callback=refresh)
-    await core.open()
-    try:
-        # Force the middleware to treat ANY exception as an auth error.
-        # The chain reads ``is_auth_error`` through the module so this
-        # patch takes effect on the next call.
-        monkeypatch.setattr("notebooklm._core.is_auth_error", lambda exc: True)
+    # A 418 (I'm a teapot) — NOT recognised by the production
+    # ``is_auth_error`` (which keys off 400/401/403). The injected
+    # predicate returns True unconditionally, so the middleware treats it
+    # as an auth error and runs the refresh path.
+    boom = _status_error(418)
+    call_count = {"n": 0}
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
-            return "https://example.test/x", "payload", {}
+    async def terminal(request):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise boom
+        return RpcResponse(response=_ok_response(), context=request.context)
 
-        call_count = {"n": 0}
+    middleware = AuthRefreshMiddleware(
+        refresh_callable=refresh,
+        is_auth_error=lambda exc: True,
+        refresh_callback_enabled=lambda: True,
+        refresh_retry_delay=lambda: 0.0,
+    )
 
-        async def fake_post(*args, **kwargs):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                raise _status_error(418)
-            return _ok_response()
+    request = RpcRequest(
+        url="https://example.test/x",
+        headers={},
+        body=b"payload",
+        context={"log_label": "test"},
+    )
+    response = await middleware(request, terminal)
 
-        install_post_as_stream(monkeypatch, core._http_client, fake_post)
-
-        response = await core._perform_authed_post(build_request=build, log_label="test")
-
-        assert response.status_code == 200
-        assert refresh_calls == [True]
-        assert call_count["n"] == 2
-    finally:
-        await core.close()
+    assert response.response.status_code == 200
+    assert refresh_calls == [True]
+    assert call_count["n"] == 2
 
 
 @pytest.mark.asyncio
