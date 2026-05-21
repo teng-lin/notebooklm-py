@@ -97,12 +97,13 @@ synthetic_error_cassette_name = _cassette_patterns.synthetic_error_cassette_name
 SYNTHETIC_ERROR_CASSETTE_PREFIX = _cassette_patterns.SYNTHETIC_ERROR_CASSETTE_PREFIX
 VALID_ERROR_MODES = _cassette_patterns.VALID_ERROR_MODES
 
-# env var name shared with ``src/notebooklm/_core.py``. Kept in sync
-# as a local copy so the VCR-only replay path (which does not import
-# ``notebooklm._core``) can still parse the env var without dragging the
-# production module in. The unit tests in ``tests/unit/test_vcr_config.py``
-# import ``ERROR_INJECT_ENV_VAR`` directly from ``notebooklm._core`` — the
-# duplication here covers ONLY the VCR-replay path, not the unit-test path.
+# env var name shared with ``src/notebooklm/_error_injection.py``. Kept in
+# sync as a local copy so the VCR-only replay path (which does not import
+# ``notebooklm._error_injection``) can still parse the env var without
+# dragging the production module in. Unit tests in
+# ``tests/unit/test_vcr_config.py`` import ``ERROR_INJECT_ENV_VAR`` directly
+# from the canonical home — this duplication covers ONLY the VCR-replay
+# path, not the unit-test path.
 ERROR_INJECT_ENV_VAR = "NOTEBOOKLM_VCR_RECORD_ERRORS"
 
 
@@ -128,9 +129,10 @@ def get_error_injection_mode() -> str | None:
     ``None`` so plumbing never crashes on a typo — the unit tests assert the
     typo path explicitly. The value comparison is case-insensitive.
 
-    This helper mirrors ``_get_error_injection_mode`` in ``_core.py``; both
-    sides validate against the same canonical set in
-    :mod:`tests.cassette_patterns` so they cannot drift.
+    This helper mirrors ``_get_error_injection_mode`` in
+    :mod:`notebooklm._error_injection`; both sides validate against the
+    same canonical set in :mod:`tests.cassette_patterns` so they cannot
+    drift.
     """
     raw = os.environ.get(ERROR_INJECT_ENV_VAR, "").strip().lower()
     if not raw:
@@ -175,7 +177,8 @@ def _substitute_synthetic_error(response: dict[str, Any]) -> dict[str, Any]:
     :data:`VALID_ERROR_MODES`), rewrite the response shape to the canonical
     synthetic-error shape from :mod:`tests.cassette_patterns`.
 
-    The transport wrapper in ``src/notebooklm/_core.py`` already substitutes
+    The error-injection middleware in
+    ``src/notebooklm/_middleware_error_injection.py`` already substitutes
     the live response BEFORE it reaches VCR, so in normal recording this hook
     sees the synthetic shape already. This pass exists so that:
 
@@ -227,7 +230,8 @@ def scrub_response(response: dict[str, Any]) -> dict[str, Any]:
     Synthetic-error recording: when ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to a valid mode,
     :func:`_substitute_synthetic_error` runs FIRST so that downstream scrub
     steps see the canonical synthetic shape rather than whatever the wire
-    produced (the transport wrapper in ``_core.py`` normally already
+    produced (the error-injection middleware in
+    :mod:`notebooklm._middleware_error_injection` normally already
     substituted, but this pass closes the loop for VCR-only test paths).
     """
     # synthetic-error substitution (no-op when env var unset).

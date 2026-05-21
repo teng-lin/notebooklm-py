@@ -823,8 +823,9 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
 # =============================================================================
 #
 # These helpers exist so error-shape cassettes can be generated whose
-# responses match the shapes our client's exception mapping in
-# ``src/notebooklm/_core.py`` keys on:
+# responses match the shapes our client's exception mapping (see
+# :mod:`notebooklm._session_helpers` for ``is_auth_error`` and the retry
+# middleware for 429/5xx) keys on:
 #
 #   - HTTP 429  -> ``_TransportRateLimited`` -> ``RateLimitError``
 #   - HTTP 5xx  -> ``_TransportServerError`` -> ``ServerError``
@@ -873,15 +874,15 @@ def build_synthetic_error_response(
     """Return a ``(status_code, body, headers)`` triple for a synthetic error.
 
     The shape is intentionally minimal; the client's exception mapping keys on
-    the HTTP status code (see ``_core.py:is_auth_error`` and the 429 / 5xx
-    branches in ``_perform_authed_post``), so a syntactically-valid Google
-    error-shaped body is sufficient.
+    the HTTP status code (see :func:`notebooklm._session_helpers.is_auth_error`
+    and the 429 / 5xx branches in the retry middleware), so a
+    syntactically-valid Google error-shaped body is sufficient.
 
     For the ``expired_csrf`` mode we return HTTP 400 — not 401 — because that
     matches the documented Google contract: NotebookLM returns 400 (not 401/403)
     when the embedded CSRF token has expired, which is why ``is_auth_error``
-    treats 400 as an auth-refresh trigger. See ``is_auth_error`` in
-    ``src/notebooklm/_core.py``.
+    treats 400 as an auth-refresh trigger. See
+    :func:`notebooklm._session_helpers.is_auth_error`.
 
     Args:
         mode: One of ``VALID_ERROR_MODES``.

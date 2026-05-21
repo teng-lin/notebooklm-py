@@ -372,9 +372,13 @@ class TestChatBlOverride:
     async def test_default_bl_is_pinned_constant(
         self, httpx_mock, monkeypatch, mock_get_conversation_id
     ):
-        """With ``NOTEBOOKLM_BL`` unset, the URL falls back to ``DEFAULT_BL``."""
-        from notebooklm._env import DEFAULT_BL
+        """With ``NOTEBOOKLM_BL`` unset, the URL falls back to the pinned default.
 
+        The expected literal is duplicated here on purpose: importing
+        ``DEFAULT_BL`` from the SUT and asserting equality would be a
+        tautology — any wrong-value edit to ``_env.DEFAULT_BL`` would still
+        pass. The literal pin catches that.
+        """
         monkeypatch.delenv("NOTEBOOKLM_BL", raising=False)
 
         auth = AuthTokens(
@@ -396,7 +400,10 @@ class TestChatBlOverride:
         request = next(
             r for r in httpx_mock.get_requests() if "GenerateFreeFormStreamed" in str(r.url)
         )
-        assert _extract_query_param(str(request.url), "bl") == DEFAULT_BL
+        assert (
+            _extract_query_param(str(request.url), "bl")
+            == "boq_labs-tailwind-frontend_20260301.03_p0"
+        )
 
 
 # ---------------------------------------------------------------------------
