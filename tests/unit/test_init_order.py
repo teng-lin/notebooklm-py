@@ -338,7 +338,9 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 #     ``"_artifact_generation.py"``.
 # Until both PRs land this list is empty and the guard test passes
 # vacuously.
-_REACH_IN_MIGRATED_MODULES: list[str] = []
+_REACH_IN_MIGRATED_MODULES: list[str] = [
+    "_artifact_downloads.py",
+]
 
 
 def _is_self_api(node: ast.AST) -> bool:

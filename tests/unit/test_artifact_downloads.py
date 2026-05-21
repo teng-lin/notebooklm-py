@@ -795,11 +795,14 @@ class TestStoragePathEncapsulation:
         from notebooklm._artifact_downloads import ArtifactDownloadService
 
         sentinel = tmp_path / "sentinel_storage.json"
-        # MagicMock has no real ``_storage_path`` — any reach-in attempt
-        # via ``self._api._storage_path`` would yield the mock's auto-spec
-        # rather than the sentinel, failing the equality check below.
-        api = MagicMock()
-        service = ArtifactDownloadService(api, sentinel)
+        # MagicMock collaborators are inert — the service must read the
+        # ``storage_path`` it was constructed with, not via any
+        # collaborator reach-through.
+        methods = MagicMock()
+        mind_maps = MagicMock()
+        service = ArtifactDownloadService(
+            methods=methods, mind_maps=mind_maps, storage_path=sentinel
+        )
 
         captured: list[object] = []
 
@@ -825,8 +828,11 @@ class TestStoragePathEncapsulation:
         from notebooklm._artifact_downloads import ArtifactDownloadService
 
         sentinel = tmp_path / "sentinel_storage.json"
-        api = MagicMock()
-        service = ArtifactDownloadService(api, sentinel)
+        methods = MagicMock()
+        mind_maps = MagicMock()
+        service = ArtifactDownloadService(
+            methods=methods, mind_maps=mind_maps, storage_path=sentinel
+        )
 
         captured: list[object] = []
 
