@@ -71,9 +71,19 @@ def _function_body_without_docstring(method) -> list[ast.stmt]:
     """Return the AST body of ``method`` with any leading docstring removed."""
     src = textwrap.dedent(inspect.getsource(method))
     tree = ast.parse(src)
-    func = next(n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    # ``inspect.getsource(method)`` returns the method's source with the
+    # FunctionDef/AsyncFunctionDef at top level. Read it directly from
+    # ``tree.body[0]`` rather than ``ast.walk`` (which yields nodes in
+    # unspecified order and could surface a nested function defined
+    # inside the body instead of the method itself).
+    func = tree.body[0]
+    assert isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef))
     body = func.body
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+    # ``ast.get_docstring`` correctly distinguishes a docstring (a string
+    # literal at the start of the body) from a bare constant expression
+    # of any other type, which a naive ``isinstance(..., ast.Constant)``
+    # check would also strip.
+    if ast.get_docstring(func) is not None:
         body = body[1:]
     return body
 
