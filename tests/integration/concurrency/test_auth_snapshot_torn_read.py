@@ -210,7 +210,9 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
             # Update the live httpx cookie jar synchronously — this is
             # the same jar httpx merges into the outgoing Cookie header.
             assert core._kernel.http_client is not None
-            core._kernel.get_http_client().cookies.set("SID", f"sid_cookie_{new_gen}", domain=".google.com")
+            core._kernel.get_http_client().cookies.set(
+                "SID", f"sid_cookie_{new_gen}", domain=".google.com"
+            )
             core.auth.cookies = {("SID", ".google.com"): f"sid_cookie_{new_gen}"}
             current_gen = new_gen
 

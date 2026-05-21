@@ -574,7 +574,9 @@ class TestSnapshotRefreshedAfterSave:
         client = NotebookLMClient(auth)
         async with client:
             # First save: rotates *PSIDTS in-process to A1, then save propagates.
-            _set_cookie_value(client._session._kernel.get_http_client().cookies, "__Secure-1PSIDTS", "A1")
+            _set_cookie_value(
+                client._session._kernel.get_http_client().cookies, "__Secure-1PSIDTS", "A1"
+            )
             await client.refresh_auth()
             assert _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == "A1"
 

@@ -2,11 +2,16 @@
 
 ## Status
 
-Accepted (retroactive). **Retirement in progress under the session-shrink multi-PR arc.**
+Superseded — bridge policy retired in the session-shrink arc (PRs 0-7).
 
-Documents a pattern shipped incrementally across tier-1 through tier-10 (PRs roughly mid-2025 through 2026-05). This ADR backfills the rationale; the code already reflects the decision.
-
-The bridge-retirement arc is the staged removal called out in the Decision section below ("Be retired the moment its only readers are themselves retired"). The arc lands as 8 PRs across 7 waves under the `session-shrink/*` branch prefix; an AST lint at [`tests/_lint/test_no_session_compat_bridges.py`](../../tests/_lint/test_no_session_compat_bridges.py) gates new readers while the existing allowlist drains to empty.
+Documents a pattern shipped incrementally across tier-1 through tier-10
+(PRs roughly mid-2025 through 2026-05). This ADR backfills the rationale
+for the temporary property-bridge policy. The policy's built-in exit
+condition ("Be retired the moment its only readers are themselves
+retired") has now been satisfied: the staged session-shrink arc removed
+the `Session` property shims and their test readers. The permanent guard
+is [`tests/_lint/test_no_session_compat_bridges.py`](../../tests/_lint/test_no_session_compat_bridges.py),
+whose allowlist is empty.
 
 ## Context
 
@@ -75,7 +80,10 @@ The seam extractions are behavior-preserving moves. Each one ships with a unit-t
 
 **Unwanted:**
 
-- `_core.py` is currently ~1,323 lines even after extraction because of the property-bridge zoo. The bridges are the *exit cost* of the architecture's test patterns, not the seam pattern itself. ADR-002 and ADR-007 plan the removal.
+- Historical: `_core.py` stayed large even after extraction because of
+  the property-bridge zoo. The bridges were the *exit cost* of the
+  architecture's test patterns, not the seam pattern itself. ADR-002,
+  ADR-007, and the later session-shrink arc supplied the removal path.
 - The seam protocols (`RpcOwner`, `DecodeResponse`, `_AuthedTransportHost`, etc.) introduce extra type surface. This pays for itself only because the seams are tested independently — if the seams collapsed back into `_core.py`, the protocols would be ceremonial.
 - New contributors must learn the seam map. The CLAUDE.md "Repository Structure" section exists for this reason; it should remain a thin onboarding guide rather than a duplicate of this ADR.
 
