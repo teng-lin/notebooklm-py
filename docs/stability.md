@@ -183,13 +183,8 @@ for the design rationale behind the default flip.
 
 ### Currently Deprecated
 
-The following are deprecated and will be removed in **v0.6.0**:
-
-| Deprecated | Replacement | Notes |
-|------------|-------------|-------|
-| `SourcesAPI.add_file(mime_type=...)` | omit `mime_type` | Server infers MIME from filename extension |
-| `notebooklm source add --mime-type` for file sources | omit `--mime-type` | Drive-source `--mime-type` remains live |
-| `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` | Same polling cadence, clearer name |
+See [`docs/deprecations.md`](deprecations.md) for the canonical list of
+APIs deprecated in v0.5.0 and scheduled for removal in v0.6.0.
 
 ### Removed in v0.5.0
 

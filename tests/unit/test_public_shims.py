@@ -1003,14 +1003,20 @@ async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
     )
     client._core.rpc_call = AsyncMock(return_value={"ok": True})
 
-    result = await client.rpc_call(
-        RPCMethod.CREATE_NOTEBOOK,
-        ["My Notebook"],
-        source_path="/notebook/abc",
-        allow_null=True,
-        _is_retry=True,
-        disable_internal_retries=True,
-    )
+    # This test intentionally exercises the deprecated kwargs to pin the
+    # forwarded keyword-for-keyword shape. Wrapping in pytest.warns keeps
+    # the existing forwarding asserts alive while documenting that the
+    # call SHOULD emit deprecations (source_path != "/" and explicit
+    # _is_retry both warn).
+    with pytest.warns(DeprecationWarning):
+        result = await client.rpc_call(
+            RPCMethod.CREATE_NOTEBOOK,
+            ["My Notebook"],
+            source_path="/notebook/abc",
+            allow_null=True,
+            _is_retry=True,
+            disable_internal_retries=True,
+        )
 
     assert result == {"ok": True}
     client._core.rpc_call.assert_awaited_once_with(

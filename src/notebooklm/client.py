@@ -24,6 +24,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
@@ -420,9 +421,9 @@ class NotebookLMClient:
         self,
         method: RPCMethod,
         params: list[Any],
-        source_path: str = "/",
+        source_path: str | None = None,
         allow_null: bool = False,
-        _is_retry: bool = False,
+        _is_retry: bool | None = None,
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
@@ -432,21 +433,54 @@ class NotebookLMClient:
         This is the public escape hatch for advanced callers who need an
         undocumented RPC before a typed API exists. Prefer the namespaced APIs
         (``client.notebooks``, ``client.sources``, etc.) when possible. Import
-        ``RPCMethod`` from ``notebooklm.rpc``. The ``_is_retry`` parameter is
-        exposed only to mirror ``Session.rpc_call`` exactly; callers should
-        leave it at the default unless they are intentionally reproducing core
-        retry behavior.
+        ``RPCMethod`` from ``notebooklm.rpc``.
 
-        The optional ``operation_variant`` selects a method-variant-specific
-        policy in the mutating-RPC idempotency registry. Most callers should
-        leave it ``None`` (the default) — Wave 2 will add variant entries.
+        .. deprecated:: 0.5.0
+            The following keyword arguments are deprecated and will be removed
+            in v0.6.0 (see :doc:`/deprecations`):
+
+            * ``source_path`` — omit the argument; the default ``"/"`` is
+              applied automatically. Passing ``"/"`` explicitly is still
+              silent (it matches the default).
+            * ``_is_retry`` — internal-only; never reach for this. Any
+              explicit value (``True`` or ``False``) warns, because callers
+              should not bind to this surface at all.
+            * ``operation_variant`` — internal-only; will be removed once
+              the mutating-RPC idempotency registry stabilizes.
+
+        The default-shape call (``client.rpc_call(method, params)``) remains
+        silent and forwards to :meth:`Session.rpc_call` with today's literal
+        defaults.
         """
+        if source_path is not None and source_path != "/":
+            warnings.warn(
+                "rpc_call(source_path=...) is deprecated; removal v0.6.0",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if _is_retry is not None:
+            warnings.warn(
+                "rpc_call(_is_retry=...) is deprecated; this is internal; removal v0.6.0",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if operation_variant is not None:
+            warnings.warn(
+                "rpc_call(operation_variant=...) is deprecated; removal v0.6.0",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        # Coerce sentinels back to today's literal defaults before
+        # delegating, so the forwarded keyword-for-keyword shape stays
+        # identical to the pre-deprecation contract.
+        resolved_source_path = "/" if source_path is None else source_path
+        resolved_is_retry = bool(_is_retry) if _is_retry is not None else False
         return await self._core.rpc_call(
             method=method,
             params=params,
-            source_path=source_path,
+            source_path=resolved_source_path,
             allow_null=allow_null,
-            _is_retry=_is_retry,
+            _is_retry=resolved_is_retry,
             disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
         )
