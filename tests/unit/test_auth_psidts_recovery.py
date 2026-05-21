@@ -137,7 +137,9 @@ class TestRecoveryPreconditions:
 
         # Force ``_try_claim_rotation`` to deny the claim, simulating a sibling
         # caller having just claimed the slot.
-        monkeypatch.setattr("notebooklm._auth.keepalive._try_claim_rotation", lambda _path: False)
+        monkeypatch.setattr(
+            "notebooklm._auth.psidts_recovery._try_claim_rotation", lambda _path: False
+        )
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
@@ -443,7 +445,7 @@ class TestEdgeCases:
             yield False
 
         monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._keepalive._file_lock_try_exclusive",
+            "notebooklm._auth.psidts_recovery._file_lock_try_exclusive",
             held_lock,
         )
 
@@ -489,9 +491,9 @@ class TestEdgeCases:
             call_counter["n"] += 1
             return pre_heal_state if call_counter["n"] == 1 else post_heal_state
 
-        monkeypatch.setattr("notebooklm._auth.cookies._load_storage_state", staged_load)
+        monkeypatch.setattr("notebooklm._auth.psidts_recovery._load_storage_state", staged_load)
         monkeypatch.setattr(
-            "notebooklm._auth.psidts_recovery._keepalive._file_lock_try_exclusive",
+            "notebooklm._auth.psidts_recovery._file_lock_try_exclusive",
             held_lock,
         )
 
@@ -530,7 +532,7 @@ class TestEdgeCases:
             call_counter["n"] += 1
             return pre_heal_state if call_counter["n"] == 1 else post_heal_state
 
-        monkeypatch.setattr("notebooklm._auth.cookies._load_storage_state", staged_load)
+        monkeypatch.setattr("notebooklm._auth.psidts_recovery._load_storage_state", staged_load)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is True
         # Crucial: no POST — recheck saw the heal before we fired.
@@ -557,7 +559,7 @@ class TestEdgeCases:
             call_counter["n"] += 1
             return pre_heal_state if call_counter["n"] == 1 else post_heal_state
 
-        monkeypatch.setattr("notebooklm._auth.cookies._load_storage_state", staged_load)
+        monkeypatch.setattr("notebooklm._auth.psidts_recovery._load_storage_state", staged_load)
 
         assert psidts_recovery._recover_psidts_inline(storage_path) is False
         # No POST — recheck saw the broken state and aborted before firing.

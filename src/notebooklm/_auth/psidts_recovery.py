@@ -43,6 +43,29 @@ from . import cookies as _auth_cookies
 from . import keepalive as _keepalive
 from . import storage as _auth_storage
 
+# ----------------------------------------------------------------------------
+# Cross-module helpers (module-scope aliases)
+# ----------------------------------------------------------------------------
+# These are documented at module scope to make the cross-module surface
+# explicit, matching the precedent at ``_auth/cookies.py:34-40``. The
+# underscored names remain module-private to their owning modules
+# (``_cookie_policy``, ``_keepalive``, ``_auth_cookies``); this module
+# consumes them through documented local aliases.
+#
+# Tests must patch these aliases at this module's path, not at the
+# canonical owner's path, because aliases are import-time bound.
+# ----------------------------------------------------------------------------
+_has_valid_secondary_binding = _cookie_policy._has_valid_secondary_binding
+_is_allowed_auth_domain = _cookie_policy._is_allowed_auth_domain
+_rotation_lock_path = _keepalive._rotation_lock_path
+_file_lock_try_exclusive = _keepalive._file_lock_try_exclusive
+_try_claim_rotation = _keepalive._try_claim_rotation
+_KEEPALIVE_POKE_TIMEOUT = _keepalive._KEEPALIVE_POKE_TIMEOUT
+_KEEPALIVE_ROTATE_HEADERS = _keepalive._KEEPALIVE_ROTATE_HEADERS
+_KEEPALIVE_ROTATE_BODY = _keepalive._KEEPALIVE_ROTATE_BODY
+_load_storage_state = _auth_cookies._load_storage_state
+_storage_entry_to_cookie = _auth_cookies._storage_entry_to_cookie
+
 logger = logging.getLogger("notebooklm.auth")
 
 _PSIDTS_COOKIE = "__Secure-1PSIDTS"
@@ -124,7 +147,7 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
         return False
     if _PSIDTS_COOKIE in cookie_names:
         return False
-    if not _cookie_policy._has_valid_secondary_binding(cookie_names):
+    if not _has_valid_secondary_binding(cookie_names):
         logger.debug(
             "PSIDTS recovery skipped: secondary binding incomplete "
             "(need OSID, or both APISID and SAPISID)"
@@ -135,7 +158,7 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
     # dict) and both fire ``RotateCookies``. The flock matches the outer guard
     # ``_poke_session`` uses; a held lock means the other process is rotating
     # right now.
-    rotate_lock_path = _keepalive._rotation_lock_path(storage_path)
+    rotate_lock_path = _rotation_lock_path(storage_path)
     if rotate_lock_path is None:
         # Defense-in-depth: ``_rotation_lock_path`` only returns None when its
         # argument is None, and we've early-returned above when path is None.
@@ -143,7 +166,7 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
         # equivalent branch.
         return _attempt_rotation(storage_path, cookie_entries)
 
-    with _keepalive._file_lock_try_exclusive(rotate_lock_path) as acquired:
+    with _file_lock_try_exclusive(rotate_lock_path) as acquired:
         if not acquired:
             # Holder may already have healed the file by the time they
             # released the lock. Re-read once before declining so the caller's
@@ -174,7 +197,7 @@ def _recover_psidts_inline(path: Path | str | None) -> bool:
         if "SID" not in fresh_names:
             logger.debug("PSIDTS recovery skipped: SID missing after flock acquisition")
             return False
-        if not _cookie_policy._has_valid_secondary_binding(fresh_names):
+        if not _has_valid_secondary_binding(fresh_names):
             logger.debug(
                 "PSIDTS recovery skipped: secondary binding incomplete after flock acquisition"
             )
@@ -194,7 +217,7 @@ def _read_storage_for_recovery(
     and lets unexpected ``ValueError`` propagate as an implementation bug.
     """
     try:
-        storage_state = _auth_cookies._load_storage_state(storage_path)
+        storage_state = _load_storage_state(storage_path)
     except (OSError, json.JSONDecodeError) as exc:
         logger.debug("PSIDTS recovery skipped: cannot read %s: %s", storage_path, exc)
         return None
@@ -229,7 +252,7 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
     every guard (preconditions, cross-process flock) has passed. Split out so
     the cross-process flock context manager has one clean exit point.
     """
-    if not _keepalive._try_claim_rotation(storage_path):
+    if not _try_claim_rotation(storage_path):
         logger.debug(
             "PSIDTS recovery skipped: %s claimed by another in-process caller",
             storage_path,
@@ -243,9 +266,9 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
     for entry in cookie_entries:
         if not entry.get("name") or not entry.get("value"):
             continue
-        if not _cookie_policy._is_allowed_auth_domain(entry.get("domain", "")):
+        if not _is_allowed_auth_domain(entry.get("domain", "")):
             continue
-        jar.jar.set_cookie(_auth_cookies._storage_entry_to_cookie(entry))
+        jar.jar.set_cookie(_storage_entry_to_cookie(entry))
 
     # ``httpx.Client(cookies=jar)`` copies the source jar into a private client
     # jar; Set-Cookie responses land in ``client.cookies``, not in ``jar``. So
@@ -255,13 +278,13 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
         with httpx.Client(
             cookies=jar,
             follow_redirects=True,
-            timeout=_keepalive._KEEPALIVE_POKE_TIMEOUT,
+            timeout=_KEEPALIVE_POKE_TIMEOUT,
         ) as client:
             snapshot = _auth_storage.snapshot_cookie_jar(client.cookies)
             response = client.post(
                 _keepalive.KEEPALIVE_ROTATE_URL,
-                headers=_keepalive._KEEPALIVE_ROTATE_HEADERS,
-                content=_keepalive._KEEPALIVE_ROTATE_BODY,
+                headers=_KEEPALIVE_ROTATE_HEADERS,
+                content=_KEEPALIVE_ROTATE_BODY,
             )
             response.raise_for_status()
             rotated_jar = client.cookies
