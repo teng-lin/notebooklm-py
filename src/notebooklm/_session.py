@@ -160,14 +160,19 @@ _OBSERVABILITY_INIT_LOCK = threading.Lock()
 # observability init lock so two threads can't both observe ``hasattr is False``
 # and race to construct competing :class:`AuthRefreshCoordinator` instances.
 #
-# Dual-implementation sites (kept identical for AST guards in
-# ``tests/unit/test_concurrency_refresh_race.py`` that inspect
-# ``inspect.getsource(Session.update_auth_tokens)`` /
-# ``Session._snapshot``):
-#   - ``Session._snapshot`` (this file) ↔ ``AuthRefreshCoordinator.snapshot``
-#   - ``Session.update_auth_tokens`` (this file) ↔ ``AuthRefreshCoordinator.update_auth_tokens``
-# Any change to auth-snapshot invariants must be applied to BOTH sites. Grep
-# anchor for future maintainers: ``_AUTH_COORD_INIT_LOCK``.
+# Auth-snapshot canonical implementation lives on
+# :class:`AuthRefreshCoordinator` (``_session_auth.py`` —
+# ``AuthRefreshCoordinator.snapshot`` / ``.update_auth_tokens``). The
+# :class:`Session` methods of the same name (``Session._snapshot`` /
+# ``Session.update_auth_tokens``) are thin delegates that forward through
+# ``self._auth_coord``; PR 8 collapsed their pre-PR-8 real bodies. The AST
+# guards in ``tests/unit/test_concurrency_refresh_race.py``
+# (``test_snapshot_acquires_auth_snapshot_lock`` /
+# ``test_update_auth_tokens_has_no_await_inside_mutation_block``) inspect
+# the coordinator's source via ``inspect.getsource(...)`` + AST parsing —
+# changes to auth-snapshot invariants must be applied to the coordinator
+# (not the delegates here). Grep anchor for future maintainers:
+# ``_AUTH_COORD_INIT_LOCK``.
 _AUTH_COORD_INIT_LOCK = threading.Lock()
 
 
@@ -1265,9 +1270,9 @@ class Session:
 
         Body lived here pre-PR-8 so the AST guard at
         ``tests/unit/test_concurrency_refresh_race.py::test_snapshot_acquires_auth_snapshot_lock``
-        could inspect ``Session._snapshot.__code__`` for the lock
-        acquire. PR 8 moved the guard to inspect
-        :meth:`AuthRefreshCoordinator.snapshot` (the canonical
+        could inspect ``Session._snapshot`` via ``inspect.getsource(...)``
+        + ``ast.parse(...)`` for the lock acquire. PR 8 moved the guard
+        to inspect :meth:`AuthRefreshCoordinator.snapshot` (the canonical
         implementation), so the body collapses to a delegate here.
 
         The coordinator's body has the same semantic shape (lock acquire
@@ -1288,9 +1293,10 @@ class Session:
 
         Body lived here pre-PR-8 so the AST guard at
         ``tests/unit/test_concurrency_refresh_race.py::test_update_auth_tokens_has_no_await_inside_mutation_block``
-        could inspect ``Session.update_auth_tokens.__code__`` for the
-        no-await invariant inside the csrf/session_id mutation block.
-        PR 8 moved the guard to inspect
+        could inspect ``Session.update_auth_tokens`` via
+        ``inspect.getsource(...)`` + ``ast.parse(...)`` for the no-await
+        invariant inside the csrf/session_id mutation block. PR 8 moved
+        the guard to inspect
         :meth:`AuthRefreshCoordinator.update_auth_tokens` (the canonical
         implementation), so the body collapses to a delegate here. The
         coordinator's body has the same semantic shape (lock acquire →

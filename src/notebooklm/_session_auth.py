@@ -164,13 +164,20 @@ class AuthRefreshCoordinator:
 
     # ------------------------------------------------------------------
     # Auth snapshot + token write — the load-bearing AST-guarded pair.
-    # The "no await inside the mutation block" invariant is enforced by
-    # tests/unit/test_concurrency_refresh_race.py against
-    # ``Session.update_auth_tokens``; ``Session`` keeps that method's
-    # body as real code (not a delegate) so the AST guard stays valid. The
-    # coordinator method here is the canonical implementation new callers
-    # should reach for, and the two stay in sync by construction (identical
-    # bodies, reviewed together).
+    # These two methods are the canonical implementations of the
+    # concurrency invariants: ``snapshot`` holds the ``_auth_snapshot_lock``
+    # across four synchronous scalar reads, and ``update_auth_tokens``
+    # forbids any ``await`` inside the csrf/session_id mutation try-block.
+    # The AST guards in ``tests/unit/test_concurrency_refresh_race.py``
+    # (``test_snapshot_acquires_auth_snapshot_lock`` and
+    # ``test_update_auth_tokens_has_no_await_inside_mutation_block``)
+    # inspect THIS module's source via ``inspect.getsource(...)`` + AST
+    # parsing — any structural change to either method body (e.g.
+    # extracting a helper, refactoring the lock dance, adding an
+    # ``await`` mid-mutation) will trip those guards. ``Session._snapshot``
+    # and ``Session.update_auth_tokens`` (`_session.py`) are now thin
+    # delegates that forward through ``self._auth_coord``; there is no
+    # longer a "second body" to keep in sync.
     # ------------------------------------------------------------------
 
     async def snapshot(self, host: _AuthRefreshHost) -> _AuthSnapshot:
