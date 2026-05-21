@@ -2048,7 +2048,13 @@ class TestHandleGenerationResultPaths:
         assert "generation failed" in result.stderr.lower()
 
     def test_generation_result_falsy_json_shows_error(self, runner, mock_auth):
-        """Line 173: falsy result with --json → json_error_response (exits with code 1)."""
+        """Falsy result with --json → GENERATION_FAILED envelope + non-zero exit.
+
+        Post-P1.T6 the path routes through ``output_error`` (not the older
+        ``json_error_response`` helper) so this test pins the JSON-mode
+        contract here; ``TestArtifactGenerationExitCodes`` covers the same
+        path with explicit exit-code assertions and the text-mode parity.
+        """
         with patch_client_for_module("generate") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
@@ -2060,7 +2066,7 @@ class TestHandleGenerationResultPaths:
                 mock_fetch.return_value = ("csrf", "session")
                 result = runner.invoke(cli, ["generate", "audio", "-n", "nb_123", "--json"])
 
-        # json_error_response calls sys.exit(1), so exit_code is 1
+        # ``output_error`` raises ``SystemExit(1)``; Click reports exit_code 1.
         data = json.loads(result.output)
         assert data["error"] is True
         assert data["code"] == "GENERATION_FAILED"
