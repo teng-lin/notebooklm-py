@@ -197,10 +197,10 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
 
     This test exercises ``_perform_authed_post`` directly with
     ``disable_internal_retries=True`` and verifies the very first 429
-    raises ``_TransportRateLimited`` (which the API layer translates
+    raises ``TransportRateLimited`` (which the API layer translates
     into ``RateLimitError``) without sleeping.
     """
-    from notebooklm._authed_transport import _TransportRateLimited
+    from notebooklm._authed_transport import TransportRateLimited
 
     mock_post = AsyncMock(return_value=_build_429("1"))
 
@@ -215,7 +215,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     def _build_request(_snap):
         return ("https://example.invalid/x", b"body", None)
 
-    with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(_TransportRateLimited):
+    with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(TransportRateLimited):
         await client._session._perform_authed_post(
             build_request=_build_request,
             log_label="test",

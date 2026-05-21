@@ -1,14 +1,14 @@
 from datetime import datetime, timedelta, timezone
 
-from notebooklm._authed_transport import MAX_RETRY_AFTER_SECONDS, _parse_retry_after
+from notebooklm._authed_transport import MAX_RETRY_AFTER_SECONDS, parse_retry_after
 
 
 def test_parse_retry_after_integer():
-    assert _parse_retry_after("30") == 30
-    assert _parse_retry_after(" 120 ") == 120
-    assert _parse_retry_after("0") == 0
-    assert _parse_retry_after("-5") == 0
-    assert _parse_retry_after(str(MAX_RETRY_AFTER_SECONDS + 1)) == MAX_RETRY_AFTER_SECONDS
+    assert parse_retry_after("30") == 30
+    assert parse_retry_after(" 120 ") == 120
+    assert parse_retry_after("0") == 0
+    assert parse_retry_after("-5") == 0
+    assert parse_retry_after(str(MAX_RETRY_AFTER_SECONDS + 1)) == MAX_RETRY_AFTER_SECONDS
 
 
 def test_parse_retry_after_http_date():
@@ -18,7 +18,7 @@ def test_parse_retry_after_http_date():
     date_str = future.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
     # Allow some slack (1-2 seconds) for test execution time
-    result = _parse_retry_after(date_str)
+    result = parse_retry_after(date_str)
     assert result is not None
     assert 58 <= result <= 60
 
@@ -26,12 +26,12 @@ def test_parse_retry_after_http_date():
 def test_parse_retry_after_past_date():
     past = datetime.now(timezone.utc) - timedelta(seconds=60)
     date_str = past.strftime("%a, %d %b %Y %H:%M:%S GMT")
-    assert _parse_retry_after(date_str) == 0
+    assert parse_retry_after(date_str) == 0
 
 
 def test_parse_retry_after_invalid():
-    assert _parse_retry_after("not a date") is None
-    assert _parse_retry_after("") is None
-    assert _parse_retry_after("   ") is None
+    assert parse_retry_after("not a date") is None
+    assert parse_retry_after("") is None
+    assert parse_retry_after("   ") is None
     # Partially valid but not what we want
-    assert _parse_retry_after("2026-05-13") is None
+    assert parse_retry_after("2026-05-13") is None

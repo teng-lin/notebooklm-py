@@ -57,7 +57,7 @@ class FakeAuthedPost:
     arguments arrived. The default return is a minimal
     :class:`httpx.Response` with status 200 and an empty body (no attached
     ``.request``, unlike the production buffered response from
-    ``_stream_post_with_size_cap``) — enough for middlewares that just
+    ``stream_post_with_size_cap``) — enough for middlewares that just
     observe and pass through.
 
     Override the return value by setting :attr:`response` (single fixed

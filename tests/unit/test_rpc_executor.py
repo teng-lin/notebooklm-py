@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from notebooklm._authed_transport import _AuthSnapshot
+from notebooklm._authed_transport import AuthSnapshot
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -60,7 +60,7 @@ class _Owner:
         self.rpc_retry_calls: list[dict[str, Any]] = []
         self.rpc_retry_result: Any = {"retried": True}
         self.response = _ok_response()
-        self.snapshot = _AuthSnapshot(
+        self.snapshot = AuthSnapshot(
             csrf_token="CSRF_SNAPSHOT",
             session_id="SID_SNAPSHOT",
             authuser=1,
@@ -147,7 +147,7 @@ def _executor(
 @pytest.mark.asyncio
 async def test_client_rpc_executor_wrappers_delegate_to_rpc_executor(monkeypatch) -> None:
     core = Session(_auth_tokens())
-    snapshot = _AuthSnapshot(
+    snapshot = AuthSnapshot(
         csrf_token="csrf",
         session_id="session",
         authuser=0,

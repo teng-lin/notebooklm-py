@@ -5,9 +5,9 @@ ADR-009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call`` invocation; result
   returned unchanged.
-- **Retry on ``_TransportRateLimited``** up to ``rate_limit_max_retries``;
+- **Retry on ``TransportRateLimited``** up to ``rate_limit_max_retries``;
   honor ``Retry-After`` when present, otherwise exponential backoff.
-- **Retry on ``_TransportServerError``** up to ``server_error_max_retries``;
+- **Retry on ``TransportServerError``** up to ``server_error_max_retries``;
   exponential backoff.
 - **Disable gate**: when ``context["disable_internal_retries"]`` is truthy,
   the first failure propagates without retry.
@@ -39,7 +39,7 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._authed_transport import _TransportRateLimited, _TransportServerError
+from notebooklm._authed_transport import TransportRateLimited, TransportServerError
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware_retry import RetryMiddleware
@@ -65,13 +65,13 @@ def _rate_limited(
     log_label: str = "RPC LIST_NOTEBOOKS",
     retry_after: int | None = None,
     status: int = 429,
-) -> _TransportRateLimited:
-    """Build a ``_TransportRateLimited`` instance shaped like the leaf would raise."""
+) -> TransportRateLimited:
+    """Build a ``TransportRateLimited`` instance shaped like the leaf would raise."""
     request = httpx.Request("POST", "https://example.test/x")
     headers = {"retry-after": str(retry_after)} if retry_after is not None else {}
     response = httpx.Response(status, request=request, headers=headers)
     original = httpx.HTTPStatusError(f"HTTP {status}", request=request, response=response)
-    return _TransportRateLimited(
+    return TransportRateLimited(
         f"{log_label} rate-limited (HTTP {status})",
         retry_after=retry_after,
         response=response,
@@ -83,12 +83,12 @@ def _server_error(
     *,
     log_label: str = "RPC LIST_NOTEBOOKS",
     status: int = 503,
-) -> _TransportServerError:
-    """Build a ``_TransportServerError`` instance shaped like the leaf would raise."""
+) -> TransportServerError:
+    """Build a ``TransportServerError`` instance shaped like the leaf would raise."""
     request = httpx.Request("POST", "https://example.test/x")
     response = httpx.Response(status, request=request)
     original = httpx.HTTPStatusError(f"HTTP {status}", request=request, response=response)
-    return _TransportServerError(
+    return TransportServerError(
         f"{log_label} server error (HTTP {status})",
         original=original,
         response=response,
@@ -96,11 +96,11 @@ def _server_error(
     )
 
 
-def _network_error(*, log_label: str = "RPC LIST_NOTEBOOKS") -> _TransportServerError:
-    """Build a ``_TransportServerError`` wrapping an ``httpx.RequestError``."""
+def _network_error(*, log_label: str = "RPC LIST_NOTEBOOKS") -> TransportServerError:
+    """Build a ``TransportServerError`` wrapping an ``httpx.RequestError``."""
     request = httpx.Request("POST", "https://example.test/x")
     original = httpx.RequestError("connect failed", request=request)
-    return _TransportServerError(
+    return TransportServerError(
         f"{log_label} network error: {original}",
         original=original,
     )
@@ -207,7 +207,7 @@ async def test_429_without_retry_after_uses_exponential_backoff() -> None:
 
 @pytest.mark.asyncio
 async def test_429_budget_exhausted_reraises_last_exception() -> None:
-    """After ``rate_limit_max_retries`` exhausted, the last ``_TransportRateLimited`` propagates."""
+    """After ``rate_limit_max_retries`` exhausted, the last ``TransportRateLimited`` propagates."""
     sleep, slept = _recording_sleep()
     last = _rate_limited(retry_after=1)
     terminal, calls = _scripted_terminal(
@@ -224,7 +224,7 @@ async def test_429_budget_exhausted_reraises_last_exception() -> None:
     )
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportRateLimited) as excinfo:
+    with pytest.raises(TransportRateLimited) as excinfo:
         await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert excinfo.value is last
@@ -264,7 +264,7 @@ async def test_retries_on_503_until_success() -> None:
 
 @pytest.mark.asyncio
 async def test_retries_on_network_error_until_success() -> None:
-    """``httpx.RequestError`` wrapped as ``_TransportServerError`` → retried."""
+    """``httpx.RequestError`` wrapped as ``TransportServerError`` → retried."""
     sleep, _slept = _recording_sleep()
     terminal, calls = _scripted_terminal(
         [
@@ -287,7 +287,7 @@ async def test_retries_on_network_error_until_success() -> None:
 
 @pytest.mark.asyncio
 async def test_5xx_budget_exhausted_reraises_last_exception() -> None:
-    """After ``server_error_max_retries`` exhausted, last ``_TransportServerError`` propagates."""
+    """After ``server_error_max_retries`` exhausted, last ``TransportServerError`` propagates."""
     sleep, _slept = _recording_sleep()
     last = _server_error(status=502)
     terminal, calls = _scripted_terminal(
@@ -303,7 +303,7 @@ async def test_5xx_budget_exhausted_reraises_last_exception() -> None:
     )
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportServerError) as excinfo:
+    with pytest.raises(TransportServerError) as excinfo:
         await chain(make_request())
 
     assert excinfo.value is last
@@ -328,7 +328,7 @@ async def test_disable_internal_retries_skips_429_retry() -> None:
     )
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportRateLimited) as excinfo:
+    with pytest.raises(TransportRateLimited) as excinfo:
         await chain(make_request(context={"disable_internal_retries": True}))
 
     assert excinfo.value is boom
@@ -349,7 +349,7 @@ async def test_disable_internal_retries_skips_5xx_retry() -> None:
     )
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportServerError) as excinfo:
+    with pytest.raises(TransportServerError) as excinfo:
         await chain(make_request(context={"disable_internal_retries": True}))
 
     assert excinfo.value is boom

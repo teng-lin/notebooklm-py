@@ -72,11 +72,11 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
     core = Session(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
-    # ``_build_url`` consumes an ``_AuthSnapshot`` so callers
+    # ``_build_url`` consumes an ``AuthSnapshot`` so callers
     # outside ``_perform_authed_post`` must build one inline.
-    from notebooklm._authed_transport import _AuthSnapshot
+    from notebooklm._authed_transport import AuthSnapshot
 
-    snapshot = _AuthSnapshot(
+    snapshot = AuthSnapshot(
         csrf_token=core.auth.csrf_token,
         session_id=core.auth.session_id,
         authuser=core.auth.authuser,

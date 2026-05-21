@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import httpx
 
-from ._authed_transport import _AuthSnapshot
+from ._authed_transport import AuthSnapshot
 from ._loop_affinity import assert_bound_loop
 from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
@@ -179,7 +179,7 @@ class AuthRefreshCoordinator:
     # longer a "second body" to keep in sync.
     # ------------------------------------------------------------------
 
-    async def snapshot(self, host: _AuthRefreshHost) -> _AuthSnapshot:
+    async def snapshot(self, host: _AuthRefreshHost) -> AuthSnapshot:
         """Capture the current auth scalars as a frozen snapshot.
 
         Acquires :attr:`_auth_snapshot_lock` for the four scalar reads so a
@@ -199,7 +199,7 @@ class AuthRefreshCoordinator:
         wait_start = time.perf_counter()
         async with self.get_auth_snapshot_lock():
             host._metrics_obj.record_lock_wait(time.perf_counter() - wait_start)
-            return _AuthSnapshot(
+            return AuthSnapshot(
                 csrf_token=host.auth.csrf_token,
                 session_id=host.auth.session_id,
                 authuser=host.auth.authuser,

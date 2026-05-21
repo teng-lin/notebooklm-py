@@ -9,7 +9,7 @@ Why this exists
 gunzips the body), so 89/89 cassettes in ``tests/cassettes/`` carry NO
 encoding header and a plaintext body. That hid issue #769 — every RPC
 failed in production with ``Error -3 while decompressing data: incorrect
-header check`` because :func:`notebooklm._authed_transport._stream_post_with_size_cap`
+header check`` because :func:`notebooklm._authed_transport.stream_post_with_size_cap`
 rebuilt the response with the upstream ``Content-Encoding: gzip`` header
 attached to *already-decoded* body bytes, triggering a second gzip-decode
 inside :class:`httpx.Response.__init__`. Cassettes that don't carry the
@@ -160,7 +160,7 @@ def inject_gzip_into_cassette(cassette: dict[str, Any]) -> int:
 
     Only responses whose request is a POST to a path containing
     ``batchexecute`` are touched — those are the ones that flow through
-    :func:`notebooklm._authed_transport._stream_post_with_size_cap` and
+    :func:`notebooklm._authed_transport.stream_post_with_size_cap` and
     exercise the rebuild step that bit #769. SPA-shell GET responses are
     left alone so the cassette diff stays focused.
 

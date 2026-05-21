@@ -24,14 +24,14 @@ EXPECTED_AUTHED_TRANSPORT_ALL: list[str] = [
     "MAX_RPC_RESPONSE_BYTES",
     "AuthedTransport",
     "_AuthedTransportHost",
-    "_AuthSnapshot",
-    "_BuildRequest",
-    "_PostBody",
-    "_TransportAuthExpired",
-    "_TransportRateLimited",
-    "_TransportServerError",
-    "_parse_retry_after",
-    "_stream_post_with_size_cap",
+    "AuthSnapshot",
+    "BuildRequest",
+    "PostBody",
+    "TransportAuthExpired",
+    "TransportRateLimited",
+    "TransportServerError",
+    "parse_retry_after",
+    "stream_post_with_size_cap",
 ]
 
 EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor", "RpcOwner"]

@@ -5,12 +5,12 @@ extracted from ``_rpc_call_impl``:
 
 - ``build_request`` factory is called once per HTTP attempt.
 - On a single auth-error retry, the factory is called TWICE, and the second
-  invocation observes a fresh ``_AuthSnapshot`` capturing whatever the
+  invocation observes a fresh ``AuthSnapshot`` capturing whatever the
   refresh callback mutated.
 - The request-id correlation tag (``[req=<id>]``) is stable across the retry
   chain.
 - ``rate_limit_max_retries`` bounds 429 retries; exhausting the budget
-  raises ``_TransportRateLimited``.
+  raises ``TransportRateLimited``.
 - The historical ``rpc_call`` happy path is unchanged byte-for-byte
   (URL + body identical to pre-extraction).
 
@@ -33,10 +33,10 @@ import pytest
 from conftest import install_post_as_stream
 from notebooklm._authed_transport import (
     AuthedTransport,
-    _AuthSnapshot,
-    _TransportAuthExpired,
-    _TransportRateLimited,
-    _TransportServerError,
+    AuthSnapshot,
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
 )
 from notebooklm._logging import get_request_id
 from notebooklm._middleware import RpcRequest, RpcResponse
@@ -131,7 +131,7 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
         # through Python's module identity.
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -158,7 +158,7 @@ async def test_authed_transport_requires_open_client():
     core = _make_core()
     transport = core._get_authed_transport()
 
-    def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+    def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
         return "https://example.test/x", "payload", {}
 
     with pytest.raises(RuntimeError, match="Client not initialized"):
@@ -261,7 +261,7 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
     await core.open()
     try:
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -310,7 +310,7 @@ async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
         monkeypatch.setattr("notebooklm._session.random.uniform", lambda a, b: 0.2)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -345,7 +345,7 @@ async def test_authed_transport_disable_internal_retries_short_circuits(monkeypa
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -356,7 +356,7 @@ async def test_authed_transport_disable_internal_retries_short_circuits(monkeypa
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportServerError):
+        with pytest.raises(TransportServerError):
             await transport.perform_authed_post(
                 build_request=build,
                 log_label="test",
@@ -374,9 +374,9 @@ async def test_build_request_called_once_on_happy_path(monkeypatch):
     core = _make_core()
     await core.open()
     try:
-        calls: list[_AuthSnapshot] = []
+        calls: list[AuthSnapshot] = []
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             calls.append(snapshot)
             return "https://example.test/x", "payload", {}
 
@@ -412,9 +412,9 @@ async def test_build_request_called_twice_with_fresh_snapshot_on_401(monkeypatch
     core = _make_core(refresh_callback=refresh)
     await core.open()
     try:
-        snapshots: list[_AuthSnapshot] = []
+        snapshots: list[AuthSnapshot] = []
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             snapshots.append(snapshot)
             return "https://example.test/x", f"body-{snapshot.csrf_token}", {}
 
@@ -456,7 +456,7 @@ async def test_transport_auth_expired_when_refresh_fails(monkeypatch):
     await core.open()
     try:
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         original = _status_error(401)
@@ -466,7 +466,7 @@ async def test_transport_auth_expired_when_refresh_fails(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportAuthExpired) as exc_info:
+        with pytest.raises(TransportAuthExpired) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         assert exc_info.value.original is original
@@ -488,7 +488,7 @@ async def test_429_retries_exhaust_to_transport_rate_limited(monkeypatch):
 
         monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -499,7 +499,7 @@ async def test_429_retries_exhaust_to_transport_rate_limited(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportRateLimited) as exc_info:
+        with pytest.raises(TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         # Initial attempt + 2 retries = 3 total POSTs.
@@ -516,7 +516,7 @@ async def test_429_without_retry_budget_raises_immediately(monkeypatch):
     await core.open()
     try:
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         async def fake_post(*args, **kwargs):
@@ -524,7 +524,7 @@ async def test_429_without_retry_budget_raises_immediately(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportRateLimited) as exc_info:
+        with pytest.raises(TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         assert exc_info.value.retry_after == 60
@@ -547,7 +547,7 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
     try:
         observed_request_ids: list[str | None] = []
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             observed_request_ids.append(get_request_id())
             return "https://example.test/x", "payload", {}
 
@@ -646,7 +646,7 @@ async def test_5xx_retries_then_succeeds(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -671,7 +671,7 @@ async def test_5xx_retries_then_succeeds(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
-    """Persistent 502 with budget=3 → 4 total attempts, then _TransportServerError."""
+    """Persistent 502 with budget=3 → 4 total attempts, then TransportServerError."""
     core = _make_core(server_error_max_retries=3)
     await core.open()
     try:
@@ -682,7 +682,7 @@ async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -693,7 +693,7 @@ async def test_5xx_exhausts_budget_raises_transport_server_error(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportServerError) as exc_info:
+        with pytest.raises(TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         # Initial + 3 retries = 4 total attempts.
@@ -719,7 +719,7 @@ async def test_network_error_retries_then_succeeds(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -743,7 +743,7 @@ async def test_network_error_retries_then_succeeds(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_network_error_exhausts_budget_raises_transport_server_error(monkeypatch):
-    """Repeated httpx.ConnectError → exhausts budget → _TransportServerError
+    """Repeated httpx.ConnectError → exhausts budget → TransportServerError
     wrapping the underlying RequestError (status_code/response are None)."""
     core = _make_core(server_error_max_retries=2)
     await core.open()
@@ -755,7 +755,7 @@ async def test_network_error_exhausts_budget_raises_transport_server_error(monke
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         async def fake_post(*args, **kwargs):
@@ -763,7 +763,7 @@ async def test_network_error_exhausts_budget_raises_transport_server_error(monke
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportServerError) as exc_info:
+        with pytest.raises(TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         # Initial + 2 retries = 3 attempts; 2 sleeps (1, 2).
@@ -788,7 +788,7 @@ async def test_server_error_budget_zero_raises_immediately(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         call_count = {"n": 0}
@@ -799,7 +799,7 @@ async def test_server_error_budget_zero_raises_immediately(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportServerError) as exc_info:
+        with pytest.raises(TransportServerError) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         # Exactly one attempt, no sleep.
@@ -823,7 +823,7 @@ async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         async def fake_post(*args, **kwargs):
@@ -831,7 +831,7 @@ async def test_exponential_backoff_caps_at_30_seconds(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportServerError):
+        with pytest.raises(TransportServerError):
             await core._perform_authed_post(build_request=build, log_label="test")
 
         # min(2 ** attempt, 30) for attempt in 0..7 → 1, 2, 4, 8, 16, 30, 30, 30.
@@ -854,7 +854,7 @@ async def test_5xx_path_does_not_touch_429_path(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         async def fake_post(*args, **kwargs):
@@ -862,7 +862,7 @@ async def test_5xx_path_does_not_touch_429_path(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportRateLimited) as exc_info:
+        with pytest.raises(TransportRateLimited) as exc_info:
             await core._perform_authed_post(build_request=build, log_label="test")
 
         # 429-path sleep uses Retry-After (5), NOT exponential backoff.
@@ -894,7 +894,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
 
         monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
-        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             return "https://example.test/x", "payload", {}
 
         async def fake_post(*args, **kwargs):
@@ -902,7 +902,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
-        with pytest.raises(_TransportServerError):
+        with pytest.raises(TransportServerError):
             await core._perform_authed_post(build_request=build, log_label="test")
 
         assert refresh_calls == []
@@ -911,7 +911,7 @@ async def test_5xx_path_does_not_trigger_auth_refresh(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# rpc_call wrapper for _TransportServerError
+# rpc_call wrapper for TransportServerError
 # ---------------------------------------------------------------------------
 
 
@@ -998,7 +998,7 @@ async def test_streamed_response_size_cap(monkeypatch):
     """
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import stream_post_with_size_cap
     from notebooklm.exceptions import RPCResponseTooLargeError
 
     cap = 1024  # 1 KiB cap so the test stays fast and small.
@@ -1031,7 +1031,7 @@ async def test_streamed_response_size_cap(monkeypatch):
         monkeypatch.setattr(client, "stream", fake_stream)
 
         with pytest.raises(RPCResponseTooLargeError) as exc_info:
-            await _stream_post_with_size_cap(
+            await stream_post_with_size_cap(
                 client,
                 "https://example.test/x",
                 body=b"",
@@ -1054,7 +1054,7 @@ async def test_normal_response_below_cap_works(monkeypatch):
     """A normal-sized response decodes through the streaming wrapper unchanged."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import stream_post_with_size_cap
 
     payload = b"hello world" * 1000  # ~11 KB, well under the 50 MiB default
 
@@ -1079,7 +1079,7 @@ async def test_normal_response_below_cap_works(monkeypatch):
     try:
         monkeypatch.setattr(client, "stream", fake_stream)
 
-        response = await _stream_post_with_size_cap(
+        response = await stream_post_with_size_cap(
             client,
             "https://example.test/x",
             body=b"",
@@ -1101,7 +1101,7 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
     auth-refresh / 429 / 5xx branches see the same error they always did."""
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import stream_post_with_size_cap
 
     chunk_reads = 0
 
@@ -1135,7 +1135,7 @@ async def test_streaming_raise_for_status_propagates_before_size_check(monkeypat
         monkeypatch.setattr(client, "stream", fake_stream)
 
         with pytest.raises(httpx.HTTPStatusError):
-            await _stream_post_with_size_cap(
+            await stream_post_with_size_cap(
                 client,
                 "https://example.test/x",
                 body=b"",
@@ -1184,7 +1184,7 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
         pytest.importorskip("zstandard")
     from contextlib import asynccontextmanager
 
-    from notebooklm._authed_transport import _stream_post_with_size_cap
+    from notebooklm._authed_transport import stream_post_with_size_cap
 
     # Realistic batchexecute prefix; only the bytes matter, not the framing.
     decoded_payload = b')]}\'\n\n[["wrb.fr",null,"[1]",null,null,null,"generic"]]'
@@ -1217,7 +1217,7 @@ async def test_streaming_strips_content_encoding_to_prevent_double_decode(monkey
         monkeypatch.setattr(client, "stream", fake_stream)
 
         # Pre-fix this call raised httpx.DecodingError during Response.__init__.
-        response = await _stream_post_with_size_cap(
+        response = await stream_post_with_size_cap(
             client,
             "https://example.test/x",
             body=b"",

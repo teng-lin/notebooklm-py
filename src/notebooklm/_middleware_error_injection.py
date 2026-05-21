@@ -29,12 +29,12 @@ middleware is now the only production substitution surface.
 Behavior contract:
 
 - Env var unset → ``await next_call(request)`` unchanged (pass-through).
-- Env var set, mode ``"429"`` → raise :class:`_TransportRateLimited` so the
+- Env var set, mode ``"429"`` → raise :class:`TransportRateLimited` so the
   OUTER ``RetryMiddleware`` retries (restoring ADR-009 §"ErrorInjection
   inside Retry — synthetic transient failures trigger retry"; codex iter-1
   catch on PR 12.7). The raised exception carries the synthetic
   ``Retry-After`` header so the retry honors the rate-limit timing.
-- Env var set, mode ``"5xx"`` → raise :class:`_TransportServerError` so
+- Env var set, mode ``"5xx"`` → raise :class:`TransportServerError` so
   ``RetryMiddleware`` retries with exponential backoff.
 - Env var set, mode ``"expired_csrf"`` (HTTP 400) → raise the raw
   :class:`httpx.HTTPStatusError` so ``AuthRefreshMiddleware`` (outside
@@ -78,9 +78,9 @@ import httpx
 
 from . import _error_injection
 from ._authed_transport import (
-    _parse_retry_after,
-    _TransportRateLimited,
-    _TransportServerError,
+    TransportRateLimited,
+    TransportServerError,
+    parse_retry_after,
 )
 from ._error_injection import ERROR_INJECT_ENV_VAR
 from ._middleware import NextCall, RpcRequest, RpcResponse
@@ -164,9 +164,9 @@ class ErrorInjectionMiddleware:
         # Raise the proper exception for each mode so the OUTER chain
         # middlewares actually fire — restoring ADR-009 §"Chain ordering
         # rationale" end-to-end:
-        # - 429 → ``_TransportRateLimited`` → ``RetryMiddleware`` retries
+        # - 429 → ``TransportRateLimited`` → ``RetryMiddleware`` retries
         #   with Retry-After or exponential backoff
-        # - 5xx → ``_TransportServerError`` → ``RetryMiddleware`` retries
+        # - 5xx → ``TransportServerError`` → ``RetryMiddleware`` retries
         #   with exponential backoff
         # - 400 / expired_csrf → raw ``httpx.HTTPStatusError`` →
         #   ``AuthRefreshMiddleware`` catches via ``is_auth_error``,
@@ -185,15 +185,15 @@ class ErrorInjectionMiddleware:
             response=response,
         )
         if status_code == 429:
-            retry_after = _parse_retry_after(response.headers.get("retry-after"))
-            raise _TransportRateLimited(
+            retry_after = parse_retry_after(response.headers.get("retry-after"))
+            raise TransportRateLimited(
                 f"{log_label} rate-limited (HTTP 429)",
                 retry_after=retry_after,
                 response=response,
                 original=original,
             ) from original
         if 500 <= status_code < 600:
-            raise _TransportServerError(
+            raise TransportServerError(
                 f"{log_label} server error (HTTP {status_code})",
                 original=original,
                 response=response,

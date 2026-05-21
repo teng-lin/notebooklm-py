@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from ._authed_transport import _AuthSnapshot
+from ._authed_transport import AuthSnapshot
 from ._chat_notes import save_chat_answer_as_note
 from ._chat_protocol import (
     build_streaming_chat_request,
@@ -302,7 +302,7 @@ class ChatAPI:
             # duplicate ``_reqid`` URL params.
             reqid = await self._runtime.next_reqid()
 
-            def build_request(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            def build_request(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
                 return self._build_chat_request(
                     snapshot=snapshot,
                     notebook_id=notebook_id,
@@ -781,7 +781,7 @@ class ChatAPI:
     def _build_chat_request(
         self,
         *,
-        snapshot: _AuthSnapshot,
+        snapshot: AuthSnapshot,
         notebook_id: str,
         question: str,
         source_ids: list[str],

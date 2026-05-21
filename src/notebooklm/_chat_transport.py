@@ -3,8 +3,8 @@
 This module owns the chat-flavored exception mapping that wraps a
 single authed POST attempt against the NotebookLM batchexecute
 endpoint. It is the chat-domain consumer-side seam: transport-layer
-exceptions (``_TransportAuthExpired``, ``_TransportRateLimited``,
-``_TransportServerError``, raw ``httpx.HTTPStatusError``) raised by
+exceptions (``TransportAuthExpired``, ``TransportRateLimited``,
+``TransportServerError``, raw ``httpx.HTTPStatusError``) raised by
 ``Session._perform_authed_post`` are translated into ``ChatError``
 or ``NetworkError`` so callers (currently only :class:`ChatAPI.ask`)
 stay free of HTTP-status branching.
@@ -21,9 +21,9 @@ from typing import TYPE_CHECKING
 import httpx
 
 from ._authed_transport import (
-    _TransportAuthExpired,
-    _TransportRateLimited,
-    _TransportServerError,
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
 )
 from .exceptions import ChatError, NetworkError
 
@@ -68,16 +68,16 @@ async def chat_aware_authed_post(
             build_request=build_request,
             parse_label=parse_label,
         )
-    except _TransportAuthExpired as exc:
+    except TransportAuthExpired as exc:
         raise ChatError(
             f"{parse_label} failed: authentication expired and refresh did not recover"
         ) from exc
-    except _TransportRateLimited as exc:
+    except TransportRateLimited as exc:
         raise ChatError(
             f"{parse_label} rate-limited (HTTP 429)."
             + (f" Retry after {exc.retry_after} seconds." if exc.retry_after is not None else "")
         ) from exc
-    except _TransportServerError as exc:
+    except TransportServerError as exc:
         if isinstance(exc.original, httpx.HTTPStatusError):
             raise ChatError(
                 f"{parse_label} failed with HTTP {exc.original.response.status_code} "
@@ -85,13 +85,13 @@ async def chat_aware_authed_post(
             ) from exc
         # Network-layer failure (RequestError / Timeout).
         # ``_perform_authed_post`` only wraps ``httpx.RequestError`` into
-        # ``_TransportServerError`` on the network path; this guard keeps
+        # ``TransportServerError`` on the network path; this guard keeps
         # the contract enforced under ``python -O`` (where ``assert``
         # would be stripped) and gives a clear diagnostic if the
         # invariant ever drifts.
         if not isinstance(exc.original, httpx.RequestError):
             raise TypeError(
-                f"Unexpected _TransportServerError.original type: {type(exc.original)}. "
+                f"Unexpected TransportServerError.original type: {type(exc.original)}. "
                 "Expected httpx.HTTPStatusError or httpx.RequestError."
             ) from exc
         # Preserve the timeout-specific message: TimeoutException is a
@@ -117,5 +117,5 @@ async def chat_aware_authed_post(
     # NOTE: bare ``httpx.TimeoutException`` / ``httpx.RequestError``
     # handlers were removed here because ``_perform_authed_post`` always
     # either retries those errors or wraps them in
-    # ``_TransportServerError`` (handled above), so they cannot reach
+    # ``TransportServerError`` (handled above), so they cannot reach
     # this scope.

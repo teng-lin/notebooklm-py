@@ -21,16 +21,16 @@ Why "exactly once": ADR-009 §"Retry semantics" pins
 "**exactly one** retry per ``next_call`` invocation. If the retry also
 raises 401, the exception propagates — no second retry, no recursion."
 ``RetryMiddleware`` outside this middleware does NOT retry on auth
-errors (it catches only ``_TransportRateLimited`` /
-``_TransportServerError``), so a persistent 401 surfaces cleanly to the
+errors (it catches only ``TransportRateLimited`` /
+``TransportServerError``), so a persistent 401 surfaces cleanly to the
 caller without burning the rate-limit / server-error budget on auth
 loops.
 
 Refresh-failure path: if the refresh callback itself raises (network
 flake, login expired, etc.), the middleware wraps the original
-``httpx.HTTPStatusError`` in :class:`_TransportAuthExpired` so callers
+``httpx.HTTPStatusError`` in :class:`TransportAuthExpired` so callers
 that key on the transport exception type still see a coherent shape.
-Matches the pre-PR-12.8 leaf-side ``_TransportAuthExpired`` raise.
+Matches the pre-PR-12.8 leaf-side ``TransportAuthExpired`` raise.
 
 Pre-refresh sleep: when ``refresh_retry_delay > 0`` the middleware sleeps
 that duration AFTER the successful refresh and BEFORE the retry. Matches
@@ -76,7 +76,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from ._authed_transport import _TransportAuthExpired
+from ._authed_transport import TransportAuthExpired
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._session_config import CORE_LOGGER_NAME
 
@@ -185,7 +185,7 @@ class AuthRefreshMiddleware:
            :class:`AuthRefreshCoordinator`).
         3. Mark ``context["auth_refreshed"] = True`` on success.
         4. If the refresh callable itself raises, wrap in
-           ``_TransportAuthExpired(original=exc)`` and propagate.
+           ``TransportAuthExpired(original=exc)`` and propagate.
         5. Optional post-refresh sleep (``refresh_retry_delay``).
         6. Increment ``rpc_auth_retries`` metric.
         7. Re-invoke ``next_call(request)`` — exactly once. If the retry
@@ -211,7 +211,7 @@ class AuthRefreshMiddleware:
                 await self._refresh_callable()
             except Exception as refresh_error:
                 self._logger.warning("Token refresh failed: %s", refresh_error)
-                raise _TransportAuthExpired(
+                raise TransportAuthExpired(
                     f"auth refresh failed for {log_label}",
                     original=exc,
                 ) from refresh_error

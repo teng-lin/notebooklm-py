@@ -106,7 +106,7 @@ import from.
 | `notebooklm._middleware_auth_refresh` | Tier 12 PR 12.8 — auth-refresh-on-401 middleware. |
 | `notebooklm._middleware_semaphore` | Tier 12 PR 12.9 — global RPC concurrency cap. |
 | `notebooklm._chat_transport` | Chat-domain consumer-side error mapping over `AuthedTransport`. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
-| `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction. Re-exports `_AuthSnapshot` and `_BuildRequest` from `_authed_transport` under the public-without-underscore names `AuthSnapshot` / `BuildRequest`, plus a new `BuildRequestResult` dataclass. |
+| `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction. Re-exports `AuthSnapshot` and `BuildRequest` from `_authed_transport`, plus the `BuildRequestResult` dataclass. |
 
 ## Deleted symbols and changed defaults
 

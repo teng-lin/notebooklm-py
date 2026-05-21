@@ -292,8 +292,8 @@ def test_build_chain_each_call_gets_independent_closures() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_auth_snapshot_alias_round_trip() -> None:
-    """``AuthSnapshot`` is a value-equivalent alias for ``_AuthSnapshot``."""
+def test_auth_snapshot_round_trip() -> None:
+    """``AuthSnapshot`` keeps value semantics through the request-types export."""
     snap = AuthSnapshot(
         csrf_token="csrf-1",
         session_id="sid-1",
@@ -313,15 +313,11 @@ def test_auth_snapshot_alias_round_trip() -> None:
     )
 
 
-def test_auth_snapshot_alias_is_same_object_as_underscore_original() -> None:
-    """The public alias and the private original refer to the same class.
+def test_auth_snapshot_export_is_same_object_as_transport_export() -> None:
+    """``AuthSnapshot`` re-exports the transport snapshot dataclass."""
+    from notebooklm._authed_transport import AuthSnapshot as TransportAuthSnapshot
 
-    PR 12.9 will collapse the alias by relocating the definition into
-    ``_request_types.py``; until then, the two names point at the same class.
-    """
-    from notebooklm._authed_transport import _AuthSnapshot
-
-    assert AuthSnapshot is _AuthSnapshot
+    assert AuthSnapshot is TransportAuthSnapshot
 
 
 def test_build_request_alias_is_callable_type() -> None:
@@ -343,11 +339,11 @@ def test_build_request_alias_is_callable_type() -> None:
     assert headers == {"X-Goog-AuthUser": "0"}
 
 
-def test_build_request_alias_is_same_object_as_underscore_original() -> None:
-    """``BuildRequest`` is the same type alias as ``_BuildRequest``."""
-    from notebooklm._authed_transport import _BuildRequest
+def test_build_request_export_is_same_object_as_transport_export() -> None:
+    """``BuildRequest`` re-exports the transport callable type."""
+    from notebooklm._authed_transport import BuildRequest as TransportBuildRequest
 
-    assert BuildRequest is _BuildRequest
+    assert BuildRequest is TransportBuildRequest
 
 
 def test_build_request_result_value_semantics() -> None:
@@ -364,29 +360,11 @@ def test_build_request_result_accepts_none_headers() -> None:
     assert r.headers is None
 
 
-# ---------------------------------------------------------------------------
-# _request_types underscore re-exports are still importable
-# ---------------------------------------------------------------------------
-
-
-def test_underscore_originals_remain_importable_from_request_types() -> None:
-    """The underscore-prefixed originals are importable from ``_request_types``.
-
-    They're excluded from ``__all__`` so star-imports don't propagate them,
-    but explicit import works for one cycle. PR 12.9 collapses the shim.
-    """
-    from notebooklm._request_types import _AuthSnapshot, _BuildRequest
-
-    assert _AuthSnapshot is AuthSnapshot
-    assert _BuildRequest is BuildRequest
-
-
-def test_request_types_all_excludes_underscore_names() -> None:
-    """``__all__`` is the canonical export list and excludes underscore names."""
+def test_request_types_all_contains_only_public_names() -> None:
+    """``__all__`` is the canonical public-within-package export list."""
     from notebooklm import _request_types
 
     assert "AuthSnapshot" in _request_types.__all__
     assert "BuildRequest" in _request_types.__all__
     assert "BuildRequestResult" in _request_types.__all__
-    assert "_AuthSnapshot" not in _request_types.__all__
-    assert "_BuildRequest" not in _request_types.__all__
+    assert all(not name.startswith("_") for name in _request_types.__all__)

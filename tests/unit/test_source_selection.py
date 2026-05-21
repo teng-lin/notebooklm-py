@@ -29,7 +29,7 @@ def mock_core():
     invokes the caller-supplied ``build_request`` factory so URL/body
     assertions still exercise the production request builder.
     """
-    from notebooklm._authed_transport import _AuthSnapshot
+    from notebooklm._authed_transport import AuthSnapshot
 
     core = MagicMock()
 
@@ -68,7 +68,7 @@ def mock_core():
     # answer response. Individual tests that need to inspect the URL/body can
     # read ``core._last_chat_request`` after calling ``ChatAPI.ask``.
     async def _transport_post_default(*, build_request, parse_label):
-        snapshot = _AuthSnapshot(
+        snapshot = AuthSnapshot(
             csrf_token=core.auth.csrf_token,
             session_id=core.auth.session_id,
             authuser=core.auth.authuser,

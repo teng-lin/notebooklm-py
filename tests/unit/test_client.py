@@ -929,16 +929,16 @@ class TestRpcCallAutoRetry:
 class TestBuildUrlAuthuser:
     """Regression for #359: batchexecute URL routes non-default profiles.
 
-    ``_build_url`` consumes an ``_AuthSnapshot`` rather than reading
+    ``_build_url`` consumes an ``AuthSnapshot`` rather than reading
     ``self.auth`` live, so each test constructs the snapshot
     inline from its ``AuthTokens`` fixture.
     """
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._authed_transport import _AuthSnapshot
+        from notebooklm._authed_transport import AuthSnapshot
 
-        return _AuthSnapshot(
+        return AuthSnapshot(
             csrf_token=core.auth.csrf_token,
             session_id=core.auth.session_id,
             authuser=core.auth.authuser,

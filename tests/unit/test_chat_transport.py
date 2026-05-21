@@ -32,9 +32,9 @@ import httpx
 import pytest
 
 from notebooklm._authed_transport import (
-    _TransportAuthExpired,
-    _TransportRateLimited,
-    _TransportServerError,
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
 )
 from notebooklm._chat_transport import chat_aware_authed_post
 from notebooklm.exceptions import ChatError, NetworkError
@@ -109,14 +109,14 @@ async def test_chat_aware_authed_post_returns_response_and_balances_bookkeeping(
 
 
 # ---------------------------------------------------------------------------
-# _TransportAuthExpired → ChatError
+# TransportAuthExpired → ChatError
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_transport_auth_expired_maps_to_chat_error():
     original = _make_status_error(401)
-    transport_exc = _TransportAuthExpired("auth refresh failed", original=original)
+    transport_exc = TransportAuthExpired("auth refresh failed", original=original)
     session = _make_stub_session(transport_side_effect=transport_exc)
 
     with pytest.raises(ChatError) as excinfo:
@@ -132,7 +132,7 @@ async def test_transport_auth_expired_maps_to_chat_error():
 
 
 # ---------------------------------------------------------------------------
-# _TransportRateLimited → ChatError
+# TransportRateLimited → ChatError
 # ---------------------------------------------------------------------------
 
 
@@ -140,7 +140,7 @@ async def test_transport_auth_expired_maps_to_chat_error():
 async def test_transport_rate_limited_with_retry_after_includes_retry_seconds():
     original = _make_status_error(429, retry_after="42")
     response = original.response
-    transport_exc = _TransportRateLimited(
+    transport_exc = TransportRateLimited(
         "rate-limited",
         retry_after=42,
         response=response,
@@ -166,7 +166,7 @@ async def test_transport_rate_limited_with_retry_after_includes_retry_seconds():
 async def test_transport_rate_limited_without_retry_after_omits_retry_clause():
     original = _make_status_error(429)
     response = original.response
-    transport_exc = _TransportRateLimited(
+    transport_exc = TransportRateLimited(
         "rate-limited",
         retry_after=None,
         response=response,
@@ -189,14 +189,14 @@ async def test_transport_rate_limited_without_retry_after_omits_retry_clause():
 
 
 # ---------------------------------------------------------------------------
-# _TransportServerError variants
+# TransportServerError variants
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_transport_server_error_with_http_status_error_maps_to_chat_error():
     original = _make_status_error(503)
-    transport_exc = _TransportServerError(
+    transport_exc = TransportServerError(
         "5xx after retries",
         original=original,
         response=original.response,
@@ -220,7 +220,7 @@ async def test_transport_server_error_with_http_status_error_maps_to_chat_error(
 @pytest.mark.asyncio
 async def test_transport_server_error_with_request_error_maps_to_network_error():
     original = httpx.RequestError("connect failed", request=_make_request())
-    transport_exc = _TransportServerError("network failure", original=original)
+    transport_exc = TransportServerError("network failure", original=original)
     session = _make_stub_session(transport_side_effect=transport_exc)
 
     with pytest.raises(NetworkError) as excinfo:
@@ -243,7 +243,7 @@ async def test_transport_server_error_with_timeout_exception_keeps_timeout_messa
     ``httpx.RequestError``; without the explicit timeout branch the message
     would collapse to the generic "network error after retries" line."""
     original = httpx.ReadTimeout("read timed out", request=_make_request())
-    transport_exc = _TransportServerError("timeout", original=original)
+    transport_exc = TransportServerError("timeout", original=original)
     session = _make_stub_session(transport_side_effect=transport_exc)
 
     with pytest.raises(NetworkError) as excinfo:
@@ -263,7 +263,7 @@ async def test_transport_server_error_with_timeout_exception_keeps_timeout_messa
 @pytest.mark.asyncio
 async def test_transport_server_error_with_unexpected_original_type_raises_type_error():
     """Defensive: the transport layer should only wrap
-    ``HTTPStatusError`` / ``RequestError`` into ``_TransportServerError``.
+    ``HTTPStatusError`` / ``RequestError`` into ``TransportServerError``.
     Anything else surfaces as ``TypeError`` so an invariant drift is loud
     rather than silently mis-mapped."""
 
@@ -271,7 +271,7 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
         pass
 
     original = _UnexpectedException("not http, not request")
-    transport_exc = _TransportServerError("bogus original", original=original)
+    transport_exc = TransportServerError("bogus original", original=original)
     session = _make_stub_session(transport_side_effect=transport_exc)
 
     with pytest.raises(TypeError) as excinfo:
@@ -282,7 +282,7 @@ async def test_transport_server_error_with_unexpected_original_type_raises_type_
         )
 
     message = str(excinfo.value)
-    assert "_TransportServerError.original" in message
+    assert "TransportServerError.original" in message
     # The diagnostic must include both the actual type and the expected
     # types so a future invariant drift produces an actionable error
     # (per gemini-code-assist review on PR #832).

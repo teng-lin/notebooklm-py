@@ -22,8 +22,8 @@ the innermost wrapper.
 PR 12.7 lifted the 429 / 5xx retry loops out of the leaf into
 ``RetryMiddleware``; PR 12.8 lifts the auth-refresh-once retry too.
 After PR 12.8 the leaf is a *pure* POST — every retry decision happens
-in the chain. The leaf still raises ``_TransportRateLimited`` /
-``_TransportServerError`` for 429 / 5xx so ``RetryMiddleware`` can
+in the chain. The leaf still raises ``TransportRateLimited`` /
+``TransportServerError`` for 429 / 5xx so ``RetryMiddleware`` can
 catch; raw ``httpx.HTTPStatusError`` (400/401/403) propagates so
 ``AuthRefreshMiddleware`` can catch via ``is_auth_error`` and drive
 refresh-then-retry.

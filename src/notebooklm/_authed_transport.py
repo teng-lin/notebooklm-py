@@ -7,14 +7,14 @@ __all__ = [
     "MAX_RPC_RESPONSE_BYTES",
     "AuthedTransport",
     "_AuthedTransportHost",
-    "_AuthSnapshot",
-    "_BuildRequest",
-    "_PostBody",
-    "_TransportAuthExpired",
-    "_TransportRateLimited",
-    "_TransportServerError",
-    "_parse_retry_after",
-    "_stream_post_with_size_cap",
+    "AuthSnapshot",
+    "BuildRequest",
+    "PostBody",
+    "TransportAuthExpired",
+    "TransportRateLimited",
+    "TransportServerError",
+    "parse_retry_after",
+    "stream_post_with_size_cap",
 ]
 
 import logging
@@ -54,7 +54,7 @@ MAX_RPC_RESPONSE_BYTES = 50 * 1024 * 1024
 _STRIP_HEADERS_ON_REBUFFER = frozenset({"content-encoding", "content-length"})
 
 
-def _parse_retry_after(value: str | None) -> int | None:
+def parse_retry_after(value: str | None) -> int | None:
     """Parse RFC 7231 Retry-After: integer-seconds OR HTTP-date.
 
     Returns seconds-until-retry as a non-negative int, clamped to
@@ -82,7 +82,7 @@ def _parse_retry_after(value: str | None) -> int | None:
 
 
 @dataclass(frozen=True)
-class _AuthSnapshot:
+class AuthSnapshot:
     """Point-in-time view of auth headers used to build a single request.
 
     Captured once per HTTP attempt by ``_perform_authed_post`` and passed
@@ -97,7 +97,7 @@ class _AuthSnapshot:
     account_email: str | None
 
 
-class _TransportAuthExpired(Exception):
+class TransportAuthExpired(Exception):
     """Raised by ``AuthRefreshMiddleware`` when the refresh callback itself
     failed during an auth recovery attempt.
 
@@ -105,7 +105,7 @@ class _TransportAuthExpired(Exception):
     PR 12.8 lifted that branch into
     :class:`notebooklm._middleware_auth_refresh.AuthRefreshMiddleware`;
     the class definition stays here so the existing import path
-    (``from notebooklm._authed_transport import _TransportAuthExpired``)
+    (``from notebooklm._authed_transport import TransportAuthExpired``)
     keeps working for ``_chat_transport.chat_aware_authed_post`` and its
     tests.
 
@@ -119,7 +119,7 @@ class _TransportAuthExpired(Exception):
         self.original = original
 
 
-class _TransportRateLimited(Exception):
+class TransportRateLimited(Exception):
     """Raised by ``_perform_authed_post`` when the 429 retry budget is
     exhausted (or no retries are configured).
     """
@@ -138,7 +138,7 @@ class _TransportRateLimited(Exception):
         self.original = original
 
 
-class _TransportServerError(Exception):
+class TransportServerError(Exception):
     """Raised by ``_perform_authed_post`` when the server-error retry budget
     is exhausted.
     """
@@ -157,18 +157,18 @@ class _TransportServerError(Exception):
         self.status_code = status_code
 
 
-# Build-request factory: receives a fresh ``_AuthSnapshot`` and returns the
+# Build-request factory: receives a fresh ``AuthSnapshot`` and returns the
 # triple (url, body, extra_headers) for one HTTP attempt. The transport invokes
 # this once per attempt so refreshed snapshots are picked up on retry.
-_PostBody = str | bytes
-_BuildRequest = Callable[[_AuthSnapshot], tuple[str, _PostBody, dict[str, str] | None]]
+PostBody = str | bytes
+BuildRequest = Callable[[AuthSnapshot], tuple[str, PostBody, dict[str, str] | None]]
 
 
-async def _stream_post_with_size_cap(
+async def stream_post_with_size_cap(
     client: httpx.AsyncClient,
     url: str,
     *,
-    body: _PostBody,
+    body: PostBody,
     headers: dict[str, str] | None,
     max_bytes: int = MAX_RPC_RESPONSE_BYTES,
 ) -> httpx.Response:
@@ -249,12 +249,12 @@ class _AuthedTransportHost(Protocol):
 
     - ``_kernel`` (concrete-class reference; streaming-POST transport
       + pre-open guard via ``get_http_client()``)
-    - ``_snapshot`` (fresh ``_AuthSnapshot`` per attempt)
+    - ``_snapshot`` (fresh ``AuthSnapshot`` per attempt)
     """
 
     _kernel: Kernel
 
-    async def _snapshot(self) -> _AuthSnapshot: ...
+    async def _snapshot(self) -> AuthSnapshot: ...
 
 
 class AuthedTransport:
@@ -279,7 +279,7 @@ class AuthedTransport:
     async def perform_authed_post(
         self,
         *,
-        build_request: _BuildRequest,
+        build_request: BuildRequest,
         log_label: str,
         disable_internal_retries: bool = False,
     ) -> httpx.Response:
@@ -319,7 +319,7 @@ class AuthedTransport:
         start = time.perf_counter()
 
         # The leaf is a pure POST: 429 and 5xx/network failures raise
-        # ``_TransportRateLimited`` / ``_TransportServerError`` so
+        # ``TransportRateLimited`` / ``TransportServerError`` so
         # :class:`RetryMiddleware` (outside this leaf) decides whether to
         # retry; raw ``httpx.HTTPStatusError`` (e.g. 400 / 401 / 403)
         # propagates so :class:`AuthRefreshMiddleware` (also outside this
@@ -344,8 +344,8 @@ class AuthedTransport:
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             # --- 429: raise for ``RetryMiddleware`` to catch ----------
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-                retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
-                raise _TransportRateLimited(
+                retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
+                raise TransportRateLimited(
                     f"{log_label} rate-limited (HTTP 429)",
                     retry_after=retry_after,
                     response=exc.response,
@@ -354,14 +354,14 @@ class AuthedTransport:
 
             # --- 5xx / network: raise for ``RetryMiddleware`` ---------
             if isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600:
-                raise _TransportServerError(
+                raise TransportServerError(
                     f"{log_label} server error (HTTP {exc.response.status_code})",
                     original=exc,
                     response=exc.response,
                     status_code=exc.response.status_code,
                 ) from exc
             if isinstance(exc, httpx.RequestError):
-                raise _TransportServerError(
+                raise TransportServerError(
                     f"{log_label} network error: {exc}",
                     original=exc,
                 ) from exc

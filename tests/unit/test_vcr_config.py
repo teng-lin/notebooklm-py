@@ -415,10 +415,10 @@ def test_build_synthetic_error_response_status_codes(mode, expected_status):
 
 def test_build_synthetic_error_response_429_has_retry_after():
     """The 429 shape carries a Retry-After header so the client's parser sees
-    a numeric hint to consume (parsed via ``_parse_retry_after``)."""
+    a numeric hint to consume (parsed via ``parse_retry_after``)."""
     _, _, headers = build_synthetic_error_response("429")
     assert "Retry-After" in headers
-    # Integer-seconds form so it round-trips through _parse_retry_after.
+    # Integer-seconds form so it round-trips through parse_retry_after.
     assert headers["Retry-After"].isdigit()
 
 

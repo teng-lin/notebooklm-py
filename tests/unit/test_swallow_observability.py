@@ -156,7 +156,7 @@ async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
 # Removed: ``test_retry_after_non_integer_logs_debug`` was self-fulfilling — it
 # called ``core_mod.logger.debug(...)`` inline rather than exercising production
 # code. A later refactor replaced the original "Retry-After header not an integer" log
-# site with the ``_parse_retry_after`` helper, which returns ``None`` silently
+# site with the ``parse_retry_after`` helper, which returns ``None`` silently
 # for unparseable input. Parse semantics are covered by
 # ``tests/unit/test_retry_after.py``.
 

@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 
 import httpx
 
-from ._authed_transport import _PostBody, _stream_post_with_size_cap
+from ._authed_transport import PostBody, stream_post_with_size_cap
 from .auth import AuthTokens, build_cookie_jar
 from .types import ConnectionLimits
 
@@ -96,10 +96,10 @@ class Kernel:
         self,
         url: str,
         headers: Mapping[str, str] | None,
-        body: _PostBody,
+        body: PostBody,
     ) -> httpx.Response:
         """Issue a raw buffered POST through the live HTTP client."""
-        return await _stream_post_with_size_cap(
+        return await stream_post_with_size_cap(
             self.get_http_client(),
             url,
             body=body,

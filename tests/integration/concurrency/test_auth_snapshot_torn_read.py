@@ -17,7 +17,7 @@ generation. The fix introduces a dedicated ``_auth_snapshot_lock`` that:
 2. The refresh-side mutation block in ``client.refresh_auth`` writes
    ``csrf_token`` + ``session_id`` under the same lock — tiny critical
    section, no awaits inside.
-3. ``_build_url()`` consumes the resulting ``_AuthSnapshot`` rather than
+3. ``_build_url()`` consumes the resulting ``AuthSnapshot`` rather than
    re-reading ``self.auth`` live, so the URL is built from the same
    generation the body was.
 
@@ -278,7 +278,7 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
         f"{len(torn)}/{len(captured)} requests carried mixed-generation auth state. "
         f"Sample: {torn[:5]}. This indicates the (csrf, sid, cookies) triple is no "
         f"longer atomic under refresh — check _snapshot() lock acquisition and that "
-        f"_build_url() consumes _AuthSnapshot rather than reading self.auth live."
+        f"_build_url() consumes AuthSnapshot rather than reading self.auth live."
     )
 
     # The refresh task MUST have completed (otherwise the concurrency

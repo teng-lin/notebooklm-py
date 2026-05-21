@@ -1,23 +1,18 @@
-"""Public-ish request-shape aliases for the Tier-12 middleware chain.
+"""Request-shape exports for the Tier-12 middleware chain.
 
-This module promotes a small set of types that were previously private to
-``_authed_transport.py`` so the Tier-12 middleware chain (introduced in PRs
-12.1–12.9) can refer to them without reaching across underscore-prefixed
-seams. The originals (``_AuthSnapshot`` and ``_BuildRequest`` in
-``_authed_transport.py``) remain in place; this module simply exposes them
-under names without a leading underscore. PR 12.9 collapses the aliases by
-relocating the definitions into this module and deleting the underscore
-originals.
+This module gathers the shared request-construction types used by the
+middleware chain. ``AuthSnapshot`` and ``BuildRequest`` are defined in
+``_authed_transport.py`` and re-exported here for call sites that prefer the
+request-types namespace; ``BuildRequestResult`` is owned here because it is the
+named dataclass shape used by auth-refresh request rebuilding.
 
 Three names live here:
 
 - :data:`AuthSnapshot` — point-in-time view of auth headers used to build
-  one HTTP attempt; alias for :class:`notebooklm._authed_transport._AuthSnapshot`.
-  ADR-009 pins this as the public input type of the
+  one HTTP attempt. ADR-009 pins this as the public input type of the
   ``AuthRefreshMiddleware`` callbacks.
 - :data:`BuildRequest` — sync callable that maps an ``AuthSnapshot`` to a
-  ``(url, body, headers)`` tuple ready for the transport. Alias for the
-  existing ``_BuildRequest`` callable type. The chain leaf in PR 12.2 reads
+  ``(url, body, headers)`` tuple ready for the transport. The chain leaf reads
   the callable from ``RpcRequest.context["build_request"]`` and invokes it
   inside ``AuthedTransport.perform_authed_post``.
 - :class:`BuildRequestResult` — the *named* dataclass form of the same
@@ -26,12 +21,6 @@ Three names live here:
   shape is preferred for new code (named fields, immutable, type-checked
   at construction) over the legacy tuple return. Existing callers continue
   to use the tuple shape until they migrate.
-
-The underscore-prefixed originals (``_AuthSnapshot``, ``_BuildRequest``)
-are imported here too so callers that want the private name during the
-one-cycle transition can write ``from notebooklm._request_types import
-_AuthSnapshot``. They are deliberately excluded from ``__all__`` so
-star-imports do not propagate the private names.
 
 See ``docs/adr/0009-middleware-chain.md`` for the full chain contract and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` section 2 for the
@@ -43,25 +32,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-# Re-exported under public names below. The underscore originals are also
-# kept importable from this module (see ``__all__`` note above).
-from ._authed_transport import _AuthSnapshot, _BuildRequest
-
-#: Point-in-time view of auth headers used to build one HTTP attempt.
-#:
-#: Alias for :class:`notebooklm._authed_transport._AuthSnapshot`. The underscore
-#: original remains the canonical definition site for one cycle; PR 12.9
-#: collapses the alias by relocating the dataclass definition here.
-AuthSnapshot = _AuthSnapshot
-
-#: Build-request factory callable type used by the transport and chain leaf.
-#:
-#: Receives a fresh ``AuthSnapshot`` and returns a ``(url, body, headers)``
-#: tuple for one HTTP attempt. Alias for the existing
-#: :data:`notebooklm._authed_transport._BuildRequest` type. Carried in
-#: :attr:`notebooklm._middleware.RpcRequest.context` under the
-#: ``"build_request"`` key (PR 12.2 wires the chain leaf).
-BuildRequest = _BuildRequest
+from ._authed_transport import AuthSnapshot, BuildRequest
 
 
 @dataclass(frozen=True)
@@ -78,7 +49,7 @@ class BuildRequestResult:
     - ``url`` — fully-built ``batchexecute`` URL (including ``authuser`` and
       ``_reqid`` query params).
     - ``body`` — encoded ``batchexecute`` body. Pinned to :class:`bytes` in
-      ADR-009; the legacy ``_BuildRequest`` tuple accepts ``str | bytes`` for
+      ADR-009; the legacy ``BuildRequest`` tuple accepts ``str | bytes`` for
       backward compatibility with existing call sites that build the body as
       a UTF-8 string.
     - ``headers`` — extra headers to merge for this request, or ``None`` when
@@ -94,11 +65,6 @@ class BuildRequestResult:
     headers: Mapping[str, str] | None
 
 
-# Only the public-named symbols are part of the module's documented API.
-# ``_AuthSnapshot`` and ``_BuildRequest`` remain importable from this module
-# (because they are bound at module scope by the ``from ._authed_transport ...``
-# line above) but are excluded from ``__all__`` so ``from notebooklm._request_types
-# import *`` does not propagate the private names.
 __all__ = [
     "AuthSnapshot",
     "BuildRequest",

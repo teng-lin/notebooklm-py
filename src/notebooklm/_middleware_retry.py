@@ -11,8 +11,8 @@ ships the interim 5-middleware chain
 This PR lifts the **retry-on-429** and **retry-on-5xx/network** loops out
 of ``AuthedTransport.perform_authed_post`` (the chain leaf). After PR
 12.7 the leaf is a single POST attempt that raises
-:class:`_TransportRateLimited` on HTTP 429 or
-:class:`_TransportServerError` on HTTP 5xx / network failures —
+:class:`TransportRateLimited` on HTTP 429 or
+:class:`TransportServerError` on HTTP 5xx / network failures —
 **immediately**, without internal retry. The middleware catches those
 exceptions and decides whether to retry by re-invoking the chain.
 Auth-refresh-and-retry stays in the leaf as a localized loop until PR
@@ -38,8 +38,8 @@ Behavior preservation (vs. pre-PR-12.7):
   produced by ``_idempotency.resolve_effective_disable_internal_retries``
   before chain entry; see ADR-009 §"Per-request behavior").
 - **Same exception types on exhaustion** —
-  :class:`_TransportRateLimited` /
-  :class:`_TransportServerError` re-raised verbatim so
+  :class:`TransportRateLimited` /
+  :class:`TransportServerError` re-raised verbatim so
   ``_chat_transport.chat_aware_authed_post`` (which catches both) sees
   the same shape it always did.
 
@@ -69,7 +69,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from ._authed_transport import _parse_retry_after, _TransportRateLimited, _TransportServerError
+from ._authed_transport import TransportRateLimited, TransportServerError, parse_retry_after
 from ._backoff import compute_backoff_delay
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._session_config import CORE_LOGGER_NAME
@@ -182,7 +182,7 @@ class RetryMiddleware:
         while True:
             try:
                 return await next_call(request)
-            except _TransportRateLimited as exc:
+            except TransportRateLimited as exc:
                 rate_limit_max = self._resolve_rate_limit_max()
                 if disable_internal_retries or rate_limit_retries >= rate_limit_max:
                     raise
@@ -196,7 +196,7 @@ class RetryMiddleware:
                 if self._metrics is not None:
                     self._metrics.increment(rpc_rate_limit_retries=1)
                 continue
-            except _TransportServerError as exc:
+            except TransportServerError as exc:
                 server_error_max = self._resolve_server_error_max()
                 if disable_internal_retries or server_error_retries >= server_error_max:
                     raise
@@ -214,7 +214,7 @@ class RetryMiddleware:
     async def _wait_for_rate_limit(
         self,
         *,
-        exc: _TransportRateLimited,
+        exc: TransportRateLimited,
         attempt: int,
         log_label: str,
         rate_limit_max: int,
@@ -222,14 +222,14 @@ class RetryMiddleware:
         """Honor ``Retry-After`` if present; otherwise exponential backoff.
 
         ``Retry-After`` is read from ``exc.retry_after`` — the leaf already
-        parsed it via :func:`_parse_retry_after` when it raised. We accept
+        parsed it via :func:`parse_retry_after` when it raised. We accept
         either the parsed integer (preferred) or fall back to re-parsing
         the header off ``exc.response`` if the parsed value is missing
         (defensive — production always populates ``retry_after``).
         """
         retry_after = exc.retry_after
         if retry_after is None and exc.response is not None:
-            retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
+            retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
 
         if retry_after is not None:
             sleep_seconds: float = float(retry_after)
@@ -256,7 +256,7 @@ class RetryMiddleware:
     async def _wait_for_server_error(
         self,
         *,
-        exc: _TransportServerError,
+        exc: TransportServerError,
         attempt: int,
         log_label: str,
         server_error_max: int,

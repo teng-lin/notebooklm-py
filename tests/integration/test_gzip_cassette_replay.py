@@ -1,4 +1,4 @@
-"""Replay a gzipped cassette through ``_stream_post_with_size_cap``.
+"""Replay a gzipped cassette through ``stream_post_with_size_cap``.
 
 #769 was a real production bug — every RPC failed with ``Error -3 while
 decompressing data: incorrect header check`` — that slipped through the
@@ -29,7 +29,7 @@ import httpx
 import pytest
 import vcr
 
-from notebooklm._authed_transport import _stream_post_with_size_cap
+from notebooklm._authed_transport import stream_post_with_size_cap
 
 # Required by the tier-enforcement rule in :mod:`tests.integration.conftest`
 # — every integration test must carry ``@pytest.mark.vcr``, be decorated
@@ -95,7 +95,7 @@ async def test_gzipped_cassette_replays_without_double_decode() -> None:
     """
     with _gzip_replay_vcr.use_cassette("artifacts_revise_slide_gzipped.yaml"):
         async with httpx.AsyncClient() as client:
-            response = await _stream_post_with_size_cap(
+            response = await stream_post_with_size_cap(
                 client,
                 _REVISE_SLIDE_URL,
                 body=_REVISE_SLIDE_BODY,

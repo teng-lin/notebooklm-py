@@ -12,8 +12,8 @@ import httpx
 
 from ._authed_transport import (
     AuthedTransport,
-    _AuthSnapshot,
-    _BuildRequest,
+    AuthSnapshot,
+    BuildRequest,
 )
 from ._client_metrics import ClientMetrics
 from ._cookie_persistence import CookiePersistence
@@ -734,7 +734,7 @@ class Session:
         """
         return self._auth_coord.get_refresh_lock()
 
-    async def _snapshot(self) -> _AuthSnapshot:
+    async def _snapshot(self) -> AuthSnapshot:
         """Delegate to :meth:`AuthRefreshCoordinator.snapshot`.
 
         Body lived here pre-PR-8 so the AST guard at
@@ -777,7 +777,7 @@ class Session:
     def _build_url(
         self,
         rpc_method: RPCMethod,
-        snapshot: _AuthSnapshot,
+        snapshot: AuthSnapshot,
         source_path: str = "/",
         rpc_id_override: str | None = None,
     ) -> str:
@@ -828,7 +828,7 @@ class Session:
     async def _perform_authed_post(
         self,
         *,
-        build_request: _BuildRequest,
+        build_request: BuildRequest,
         log_label: str,
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
@@ -906,7 +906,7 @@ class Session:
 
     async def transport_post(
         self,
-        build_request: _BuildRequest,
+        build_request: BuildRequest,
         parse_label: str,
         *,
         disable_internal_retries: bool = False,

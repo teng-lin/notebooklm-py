@@ -7,8 +7,8 @@ and ADR-009 §"Chain ordering":
   to ``next_call``; production behavior is byte-for-byte unchanged.
 - **Raise transport exceptions for 429 / 5xx (PR 12.7).** When the env var
   resolves to ``"429"`` the middleware raises
-  :class:`_TransportRateLimited` (carrying the synthetic ``Retry-After``);
-  ``"5xx"`` raises :class:`_TransportServerError`. This is the contract
+  :class:`TransportRateLimited` (carrying the synthetic ``Retry-After``);
+  ``"5xx"`` raises :class:`TransportServerError`. This is the contract
   that lets the OUTER ``RetryMiddleware`` retry, restoring ADR-009
   §"ErrorInjection inside Retry — synthetic transient failures trigger
   retry" (codex iter-1 catch on PR 12.7).
@@ -40,7 +40,7 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
-from notebooklm._authed_transport import _TransportRateLimited, _TransportServerError
+from notebooklm._authed_transport import TransportRateLimited, TransportServerError
 from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._middleware_error_injection import ErrorInjectionMiddleware
@@ -122,7 +122,7 @@ async def test_passes_through_when_env_var_unknown_mode(
 
 
 # ---------------------------------------------------------------------------
-# 429 → raise _TransportRateLimited
+# 429 → raise TransportRateLimited
 # ---------------------------------------------------------------------------
 
 
@@ -130,7 +130,7 @@ async def test_passes_through_when_env_var_unknown_mode(
 async def test_429_mode_raises_transport_rate_limited(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``429`` mode raises :class:`_TransportRateLimited` for ``RetryMiddleware``.
+    """``429`` mode raises :class:`TransportRateLimited` for ``RetryMiddleware``.
 
     Restores ADR-009 §"ErrorInjection inside Retry — synthetic transient
     failures trigger retry" (codex iter-1 catch on PR 12.7). The raised
@@ -142,7 +142,7 @@ async def test_429_mode_raises_transport_rate_limited(
     middleware = ErrorInjectionMiddleware()
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportRateLimited) as excinfo:
+    with pytest.raises(TransportRateLimited) as excinfo:
         await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert calls == []
@@ -163,7 +163,7 @@ async def test_429_response_carries_synthetic_request_url_and_body(
     chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
 
     custom_url = "https://example.test/_/LabsTailwindUi/data/batchexecute?authuser=0"
-    with pytest.raises(_TransportRateLimited) as excinfo:
+    with pytest.raises(TransportRateLimited) as excinfo:
         await chain(make_request(url=custom_url, body=b"chain-body"))
 
     response = excinfo.value.response
@@ -175,7 +175,7 @@ async def test_429_response_carries_synthetic_request_url_and_body(
 
 
 # ---------------------------------------------------------------------------
-# 5xx → raise _TransportServerError
+# 5xx → raise TransportServerError
 # ---------------------------------------------------------------------------
 
 
@@ -183,13 +183,13 @@ async def test_429_response_carries_synthetic_request_url_and_body(
 async def test_5xx_mode_raises_transport_server_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``5xx`` mode raises :class:`_TransportServerError` for ``RetryMiddleware``."""
+    """``5xx`` mode raises :class:`TransportServerError` for ``RetryMiddleware``."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "5xx")
     terminal, calls = _recording_terminal()
     middleware = ErrorInjectionMiddleware()
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportServerError) as excinfo:
+    with pytest.raises(TransportServerError) as excinfo:
         await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert calls == []
@@ -264,7 +264,7 @@ async def test_retry_outside_error_injection_retries_synthetic_429(
     """End-to-end: chain ``[Retry, ErrorInjection]`` retries synthetic 429s.
 
     This is the codex iter-1 catch: without ErrorInjection raising
-    :class:`_TransportRateLimited`, the synthetic 429 flowed back as a
+    :class:`TransportRateLimited`, the synthetic 429 flowed back as a
     returned response and Retry never saw it. With the exception-raising
     fix, Retry catches and retries N times before re-raising.
     """
@@ -286,7 +286,7 @@ async def test_retry_outside_error_injection_retries_synthetic_429(
         [retry, error_injection], _static_terminal(httpx.Response(200, content=b"x"))
     )
 
-    with pytest.raises(_TransportRateLimited):
+    with pytest.raises(TransportRateLimited):
         await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     # 1 initial + 2 retries → 2 sleeps observed.
@@ -318,7 +318,7 @@ async def test_retry_outside_error_injection_retries_synthetic_5xx(
         [retry, error_injection], _static_terminal(httpx.Response(200, content=b"x"))
     )
 
-    with pytest.raises(_TransportServerError):
+    with pytest.raises(TransportServerError):
         await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     # 1 initial + 1 retry → 1 sleep observed.
@@ -444,12 +444,12 @@ async def test_builder_loaded_once_across_calls(
     chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
 
     assert middleware._builder is None
-    with pytest.raises(_TransportRateLimited):
+    with pytest.raises(TransportRateLimited):
         await chain(make_request())
     first = middleware._builder
     assert first is not None
 
-    with pytest.raises(_TransportRateLimited):
+    with pytest.raises(TransportRateLimited):
         await chain(make_request())
     assert middleware._builder is first  # same object — no re-load
 
@@ -477,7 +477,7 @@ async def test_activation_flip_between_calls_is_observed(
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "5xx")
 
     # Call 2: short-circuit (now raises), leaf NOT reached again.
-    with pytest.raises(_TransportServerError):
+    with pytest.raises(TransportServerError):
         await chain(make_request())
     assert len(calls) == 1  # still 1 — leaf was bypassed on second call
 
@@ -517,7 +517,7 @@ async def test_monkeypatch_setattr_on_get_error_injection_mode_is_live(
     middleware = ErrorInjectionMiddleware()
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportServerError):
+    with pytest.raises(TransportServerError):
         await chain(make_request())
 
     assert calls == []
@@ -536,11 +536,11 @@ async def test_activation_log_fires_once_per_instance(
     with caplog.at_level("INFO", logger="notebooklm._core"):
         # Each call raises; this verifies the log is emitted on the FIRST
         # call's path and suppressed on subsequent calls.
-        with pytest.raises(_TransportServerError):
+        with pytest.raises(TransportServerError):
             await chain(make_request())
-        with pytest.raises(_TransportServerError):
+        with pytest.raises(TransportServerError):
             await chain(make_request())
-        with pytest.raises(_TransportServerError):
+        with pytest.raises(TransportServerError):
             await chain(make_request())
 
     activations = [r for r in caplog.records if "synthetic-error injection enabled" in r.message]

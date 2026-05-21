@@ -4,8 +4,8 @@ Pins the contract documented in ``src/notebooklm/_middleware_auth_refresh.py``
 and ADR-009 §"Chain ordering":
 
 - **Pass-through on success.** Single ``next_call``; result returned.
-- **Pass-through on non-auth exception.** ``_TransportRateLimited`` /
-  ``_TransportServerError`` propagate to ``RetryMiddleware`` outside.
+- **Pass-through on non-auth exception.** ``TransportRateLimited`` /
+  ``TransportServerError`` propagate to ``RetryMiddleware`` outside.
 - **Pass-through when no refresh callback configured.** The
   ``refresh_callback_enabled`` gate matches the legacy
   ``host._refresh_callback is not None`` check.
@@ -14,7 +14,7 @@ and ADR-009 §"Chain ordering":
   callable runs (coalesced single-flight) → optional post-refresh sleep
   → metric increment → exactly one retry via ``next_call(request)``.
 - **Refresh failure** → wrap original ``HTTPStatusError`` in
-  ``_TransportAuthExpired`` and propagate.
+  ``TransportAuthExpired`` and propagate.
 - **Exactly one retry.** Per ADR-009 §"Retry semantics", a second auth
   error on the retry leg propagates — no second refresh, no recursion.
 - **Post-refresh sleep honored** when ``refresh_retry_delay > 0``.
@@ -43,9 +43,9 @@ import pytest
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
 from notebooklm._authed_transport import (
-    _TransportAuthExpired,
-    _TransportRateLimited,
-    _TransportServerError,
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
 )
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
@@ -128,9 +128,9 @@ async def test_passes_through_on_success() -> None:
 
 @pytest.mark.asyncio
 async def test_passes_through_on_rate_limited() -> None:
-    """``_TransportRateLimited`` propagates to ``RetryMiddleware`` outside."""
+    """``TransportRateLimited`` propagates to ``RetryMiddleware`` outside."""
     request = httpx.Request("POST", "https://example.test/x")
-    boom = _TransportRateLimited(
+    boom = TransportRateLimited(
         "rate limited",
         retry_after=1,
         response=httpx.Response(429, request=request),
@@ -140,7 +140,7 @@ async def test_passes_through_on_rate_limited() -> None:
     middleware = _make_middleware()
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportRateLimited) as excinfo:
+    with pytest.raises(TransportRateLimited) as excinfo:
         await chain(make_request())
 
     assert excinfo.value is boom
@@ -149,9 +149,9 @@ async def test_passes_through_on_rate_limited() -> None:
 
 @pytest.mark.asyncio
 async def test_passes_through_on_server_error() -> None:
-    """``_TransportServerError`` propagates."""
+    """``TransportServerError`` propagates."""
     request = httpx.Request("POST", "https://example.test/x")
-    boom = _TransportServerError(
+    boom = TransportServerError(
         "server error",
         original=httpx.HTTPStatusError("HTTP 503", request=request, response=httpx.Response(503)),
     )
@@ -159,7 +159,7 @@ async def test_passes_through_on_server_error() -> None:
     middleware = _make_middleware()
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportServerError) as excinfo:
+    with pytest.raises(TransportServerError) as excinfo:
         await chain(make_request())
 
     assert excinfo.value is boom
@@ -290,13 +290,13 @@ async def test_refresh_retry_delay_zero_skips_sleep() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Refresh failure → _TransportAuthExpired
+# Refresh failure → TransportAuthExpired
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_refresh_failure_raises_transport_auth_expired() -> None:
-    """Refresh callable raises → wrap in ``_TransportAuthExpired``."""
+    """Refresh callable raises → wrap in ``TransportAuthExpired``."""
     boom = _auth_error(status=401)
     terminal, calls = _scripted_terminal([boom])  # only one attempt — refresh fails before retry
     refresh_error = RuntimeError("refresh blew up")
@@ -307,7 +307,7 @@ async def test_refresh_failure_raises_transport_auth_expired() -> None:
     middleware = _make_middleware(refresh_callable=refresh)
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportAuthExpired) as excinfo:
+    with pytest.raises(TransportAuthExpired) as excinfo:
         await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
 
     assert excinfo.value.original is boom
@@ -441,7 +441,7 @@ async def test_metrics_not_incremented_on_refresh_failure() -> None:
     middleware = _make_middleware(refresh_callable=refresh, metrics=metrics)
     chain = build_chain([middleware], terminal)
 
-    with pytest.raises(_TransportAuthExpired):
+    with pytest.raises(TransportAuthExpired):
         await chain(make_request())
 
     assert metrics.snapshot().rpc_auth_retries == 0
@@ -488,7 +488,7 @@ async def test_log_shape_on_refresh_failure(caplog: pytest.LogCaptureFixture) ->
 
     with (
         caplog.at_level("WARNING", logger="notebooklm._core"),
-        pytest.raises(_TransportAuthExpired),
+        pytest.raises(TransportAuthExpired),
     ):
         await chain(make_request())
 

@@ -827,8 +827,8 @@ def is_clean(text: str) -> tuple[bool, list[str]]:
 # :mod:`notebooklm._session_helpers` for ``is_auth_error`` and the retry
 # middleware for 429/5xx) keys on:
 #
-#   - HTTP 429  -> ``_TransportRateLimited`` -> ``RateLimitError``
-#   - HTTP 5xx  -> ``_TransportServerError`` -> ``ServerError``
+#   - HTTP 429  -> ``TransportRateLimited`` -> ``RateLimitError``
+#   - HTTP 5xx  -> ``TransportServerError`` -> ``ServerError``
 #   - HTTP 400  -> ``is_auth_error()``       -> refresh path + ``AuthError`` on
 #                                               second failure
 #

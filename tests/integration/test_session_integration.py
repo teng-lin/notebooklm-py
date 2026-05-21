@@ -510,7 +510,7 @@ class TestBuildUrlHL:
     This is the load-bearing site for setting the interface language on
     every RPC call.
 
-    ``_build_url`` now requires an ``_AuthSnapshot`` (consumes
+    ``_build_url`` now requires an ``AuthSnapshot`` (consumes
     ``session_id`` / ``authuser`` / ``account_email`` from it rather
     than reading ``self.auth`` live). Tests construct a snapshot inline
     from the fixture's ``AuthTokens`` so the URL-construction logic is
@@ -519,9 +519,9 @@ class TestBuildUrlHL:
 
     @staticmethod
     def _snapshot_for(core):
-        from notebooklm._authed_transport import _AuthSnapshot
+        from notebooklm._authed_transport import AuthSnapshot
 
-        return _AuthSnapshot(
+        return AuthSnapshot(
             csrf_token=core.auth.csrf_token,
             session_id=core.auth.session_id,
             authuser=core.auth.authuser,

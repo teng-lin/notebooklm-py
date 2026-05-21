@@ -17,12 +17,12 @@ if TYPE_CHECKING:
     from ._kernel import Kernel
 
 from ._authed_transport import (
-    _AuthSnapshot,
-    _BuildRequest,
-    _parse_retry_after,
-    _TransportAuthExpired,
-    _TransportRateLimited,
-    _TransportServerError,
+    AuthSnapshot,
+    BuildRequest,
+    TransportAuthExpired,
+    TransportRateLimited,
+    TransportServerError,
+    parse_retry_after,
 )
 from ._env import get_default_language
 from ._idempotency import (
@@ -65,7 +65,7 @@ class RpcOwner(Protocol):
     async def _perform_authed_post(
         self,
         *,
-        build_request: _BuildRequest,
+        build_request: BuildRequest,
         log_label: str,
         disable_internal_retries: bool = False,
         rpc_method: str | None = None,
@@ -252,7 +252,7 @@ class RpcExecutor:
         resolved_id = resolve_rpc_id(method.name, method.value)
         rpc_request = encode_rpc_request(method, params, rpc_id_override=resolved_id)
 
-        def _build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+        def _build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
             url = self.build_url(method, snapshot, source_path, rpc_id_override=resolved_id)
             body = build_request_body(rpc_request, snapshot.csrf_token)
             return url, body, {}
@@ -264,10 +264,10 @@ class RpcExecutor:
                 disable_internal_retries=effective_disable_internal_retries,
                 rpc_method=method.name,
             )
-        except _TransportAuthExpired as exc:
+        except TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.
             raise exc.original from exc.__cause__
-        except _TransportRateLimited as exc:
+        except TransportRateLimited as exc:
             elapsed = time.perf_counter() - start
             logger.error("RPC %s failed after %.3fs: HTTP 429", method.name, elapsed)
             msg = f"API rate limit exceeded calling {method.name}"
@@ -278,7 +278,7 @@ class RpcExecutor:
                 method_id=method.value,
                 retry_after=exc.retry_after,
             ) from exc.original
-        except _TransportServerError as exc:
+        except TransportServerError as exc:
             elapsed = time.perf_counter() - start
             if isinstance(exc.original, httpx.HTTPStatusError):
                 logger.error(
@@ -299,7 +299,7 @@ class RpcExecutor:
                 self.raise_rpc_error_from_request_error(exc.original, method)
 
             raise TypeError(
-                f"Unexpected _TransportServerError.original type: {type(exc.original)}"
+                f"Unexpected TransportServerError.original type: {type(exc.original)}"
             ) from exc
         except httpx.HTTPStatusError as exc:
             elapsed = time.perf_counter() - start
@@ -355,7 +355,7 @@ class RpcExecutor:
     def build_url(
         self,
         rpc_method: RPCMethod,
-        snapshot: _AuthSnapshot,
+        snapshot: AuthSnapshot,
         source_path: str = "/",
         rpc_id_override: str | None = None,
     ) -> str:
@@ -384,7 +384,7 @@ class RpcExecutor:
         status = exc.response.status_code
 
         if status == 429:
-            retry_after = _parse_retry_after(exc.response.headers.get("retry-after"))
+            retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
             msg = f"API rate limit exceeded calling {method.name}"
             if retry_after:
                 msg += f". Retry after {retry_after} seconds"

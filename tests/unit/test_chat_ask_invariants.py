@@ -30,7 +30,7 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm import NotebookLMClient
-from notebooklm._authed_transport import _AuthSnapshot
+from notebooklm._authed_transport import AuthSnapshot
 from notebooklm._chat import ChatAPI
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -254,7 +254,7 @@ class TestChatReqid:
 
 class TestChatRefreshRetry:
     """Snapshot-per-attempt invariant: ``build_request`` is invoked once
-    per attempt with a *fresh* ``_AuthSnapshot``, so the retry body carries
+    per attempt with a *fresh* ``AuthSnapshot``, so the retry body carries
     the post-refresh CSRF token rather than replaying the stale pre-refresh
     body."""
 
@@ -428,7 +428,7 @@ class TestBuildChatRequestFactory:
 
     def test_build_request_omits_authuser_for_default_profile(self):
         chat = self._factory()
-        snapshot = _AuthSnapshot(
+        snapshot = AuthSnapshot(
             csrf_token="csrf",
             session_id="sid",
             authuser=0,
@@ -450,7 +450,7 @@ class TestBuildChatRequestFactory:
 
     def test_build_request_authuser_email_wins_over_index(self):
         chat = self._factory()
-        snapshot = _AuthSnapshot(
+        snapshot = AuthSnapshot(
             csrf_token="csrf",
             session_id="sid",
             authuser=5,
@@ -470,7 +470,7 @@ class TestBuildChatRequestFactory:
 
     def test_build_request_omits_at_when_csrf_blank(self):
         chat = self._factory()
-        snapshot = _AuthSnapshot(
+        snapshot = AuthSnapshot(
             csrf_token="",
             session_id="sid",
             authuser=0,
@@ -489,7 +489,7 @@ class TestBuildChatRequestFactory:
 
     def test_build_request_source_encoding_is_triple_nested(self):
         chat = self._factory()
-        snapshot = _AuthSnapshot(
+        snapshot = AuthSnapshot(
             csrf_token="csrf",
             session_id="sid",
             authuser=0,

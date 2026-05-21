@@ -115,7 +115,7 @@ class TestErrorPaths:
         ``{"error": {"code": 429, ...}}`` body. With the rate-limit retry
         budget set to 0 on the client core, the first 429 surfaces directly
         as :class:`RateLimitError` (the documented mapping in
-        ``_core.py::_TransportRateLimited`` → ``rpc_call`` exception handler).
+        ``_core.py::TransportRateLimited`` → ``rpc_call`` exception handler).
         """
         client = NotebookLMClient(_synthetic_auth())
         # Disable rate-limit retries so the single synthetic 429 in the
@@ -154,7 +154,7 @@ class TestErrorPaths:
         returns HTTP 500 with a minimal ``{"error": {"code": 500, ...}}`` body.
         With the server-error retry budget set to 0 on the client core, the
         first 500 surfaces as :class:`ServerError` via the
-        ``_TransportServerError`` → ``_raise_rpc_error_from_http_status`` chain
+        ``TransportServerError`` → ``_raise_rpc_error_from_http_status`` chain
         in ``_core.py``.
         """
         client = NotebookLMClient(_synthetic_auth())

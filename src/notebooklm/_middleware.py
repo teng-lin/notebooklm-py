@@ -108,7 +108,7 @@ class RpcResponse:
     """The buffered :class:`httpx.Response` from the transport leaf.
 
     Identical in shape to what ``AuthedTransport.perform_authed_post``
-    returns today (see ``_authed_transport._stream_post_with_size_cap``):
+    returns today (see ``_authed_transport.stream_post_with_size_cap``):
     fully-buffered body, headers stripped of ``content-encoding`` /
     ``content-length`` so ``.text`` / ``.content`` work synchronously.
     """

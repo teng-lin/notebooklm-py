@@ -22,7 +22,7 @@ The auth-snapshot lock hardened the invariant by:
   observed atomically with respect to ``refresh_auth``'s
   write-block; and
 - refactoring ``_build_url()`` to consume the resulting
-  ``_AuthSnapshot`` rather than reading ``self.auth`` LIVE — that
+  ``AuthSnapshot`` rather than reading ``self.auth`` LIVE — that
   prior live-read was the actual torn-read hazard, since it let a
   refresh's write to ``self.auth.session_id`` slip into the URL between
   snapshot capture and request build.
@@ -39,7 +39,7 @@ This file *locks* the invariant in three ways:
 2. ``test_build_url_does_not_read_self_auth`` — static AST guard
    against any ``self.auth.<field>`` attribute access in
    ``RpcExecutor.build_url``. The method MUST consume only its
-   ``snapshot: _AuthSnapshot`` parameter; reverting to ``self.auth``
+   ``snapshot: AuthSnapshot`` parameter; reverting to ``self.auth``
    would silently un-do the atomicity fix.
 
 3. ``test_concurrent_refresh_does_not_corrupt_inflight_rpc_request`` —
@@ -143,7 +143,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
 
         Accepts either historical shape:
         - ``await client.post(...)`` (pre-streaming),
-        - ``await _stream_post_with_size_cap(...)`` (the helper performs the
+        - ``await stream_post_with_size_cap(...)`` (the helper performs the
           streaming POST internally, so it's the same conceptual POST site for
           the purposes of this concurrency invariant).
         """
@@ -155,7 +155,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
         func = call.func
         if isinstance(func, ast.Attribute) and func.attr == "post":
             return True
-        return isinstance(func, ast.Name) and func.id == "_stream_post_with_size_cap"
+        return isinstance(func, ast.Name) and func.id == "stream_post_with_size_cap"
 
     def _walk_outer(parent):
         """Yield nodes lexically inside ``parent`` itself (skip nested defs).
@@ -222,7 +222,7 @@ def test_build_url_does_not_read_self_auth():
     — producing a request whose URL was stamped with the *new*
     generation while the body still carried the *old* CSRF.
 
-    The fix made ``_build_url`` accept ``snapshot: _AuthSnapshot`` and
+    The fix made ``_build_url`` accept ``snapshot: AuthSnapshot`` and
     read every auth scalar off the snapshot. This guard asserts that
     contract statically so a future "convenience" refactor (e.g.
     "let's just read ``self.auth`` again, it's right there") can't

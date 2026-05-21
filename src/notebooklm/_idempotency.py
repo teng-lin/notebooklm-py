@@ -62,7 +62,7 @@ T = TypeVar("T")
 # request fails in a way that *might* have committed the write on the
 # server. With ``disable_internal_retries=True``, ``_perform_authed_post``
 # does not retry these on its own; instead it lets ``rpc_call`` translate
-# the underlying ``_TransportServerError``/network failure into
+# the underlying ``TransportServerError``/network failure into
 # ``ServerError`` / ``NetworkError`` / ``RateLimitError`` and surface it
 # here. ``idempotent_create`` catches exactly these; anything else (auth,
 # validation, decoding) propagates unchanged because it indicates the
