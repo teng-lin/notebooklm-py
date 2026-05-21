@@ -208,6 +208,71 @@ class TestUseJsonOutput:
         assert data.get("verified") is False
         assert mock_context_file.exists()
 
+    def test_use_json_with_partial_id_keeps_stdout_pure(self, runner, mock_auth, mock_context_file):
+        """`use <partial-id> --json` must NOT print the "Matched: ..." diagnostic to stdout.
+
+        Regression test for the bug where the `use` command called
+        ``resolve_notebook_id(client, notebook_id)`` without forwarding
+        ``json_output``, so the partial-ID-match "Matched: …" diagnostic
+        line went to stdout in JSON mode and broke ``json.loads`` for
+        scripted callers.
+
+        Contract: in `--json` mode, stdout MUST be parseable JSON. The
+        "Matched: …" diagnostic must route to stderr.
+        """
+        full_id = "nb_partial_resolved_full_id"
+        with patch_main_cli_client() as mock_client_cls:
+            mock_client = create_mock_client()
+            # Real resolver path: list() returns the candidates so the
+            # prefix-match branch fires and emits "Matched: …".
+            mock_client.notebooks.list = AsyncMock(
+                return_value=[
+                    Notebook(
+                        id=full_id,
+                        title="Partial Match Notebook",
+                        created_at=datetime(2026, 5, 21),
+                        is_owner=True,
+                    ),
+                ]
+            )
+            mock_client.notebooks.get = AsyncMock(
+                return_value=Notebook(
+                    id=full_id,
+                    title="Partial Match Notebook",
+                    created_at=datetime(2026, 5, 21),
+                    is_owner=True,
+                )
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                # NOTE: intentionally do NOT patch resolve_notebook_id —
+                # we want the real partial-ID resolver to run so we can
+                # verify it doesn't pollute stdout with "Matched: …".
+                result = runner.invoke(cli, ["use", "nb_partial", "--json"])
+
+        assert result.exit_code == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        # Hard contract: stdout (what `notebooklm use --json > out.json`
+        # captures) MUST be pure parseable JSON, regardless of what
+        # diagnostics get printed alongside on stderr.
+        data = json.loads(result.stdout)
+        assert data["active_notebook_id"] == full_id
+        assert data["success"] is True
+        # The diagnostic must route to stderr, not stdout.
+        assert "Matched:" not in result.stdout, (
+            f"`use --json` leaked partial-ID diagnostic to stdout: {result.stdout!r}"
+        )
+        # Sanity-check that the diagnostic DID run somewhere (otherwise
+        # this test could silently regress to "resolver didn't emit at
+        # all"). The "Matched: …" line should appear on stderr.
+        assert "Matched:" in result.stderr, (
+            f"resolver diagnostic missing from stderr — test setup may not "
+            f"be exercising the partial-ID match branch: stderr={result.stderr!r}"
+        )
+
 
 class TestUseAuthAwareError:
     """When `notebooklm use <id>` hits an `AuthError` (e.g. expired SID

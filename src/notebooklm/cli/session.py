@@ -946,8 +946,13 @@ def register_session_commands(cli):
 
         async def _get():
             async with NotebookLMClient(auth) as client:
-                # Resolve partial ID to full ID
-                resolved_id = await resolve_notebook_id(client, notebook_id)
+                # Resolve partial ID to full ID. Forward ``json_output`` so
+                # the resolver's "Matched: …" partial-ID diagnostic routes
+                # to stderr in --json mode and stdout stays pure parseable
+                # JSON for scripted callers.
+                resolved_id = await resolve_notebook_id(
+                    client, notebook_id, json_output=json_output
+                )
                 nb = await client.notebooks.get(resolved_id)
                 return nb, resolved_id
 
@@ -1421,6 +1426,18 @@ def register_session_commands(cli):
             checks["json_valid"] = True
         except json.JSONDecodeError as e:
             details["error"] = f"Invalid JSON: {e}"
+            _output_auth_check(checks, details, json_output)
+            return
+        except (OSError, UnicodeDecodeError) as e:
+            # ``storage_path.read_text(encoding="utf-8")`` can raise:
+            #   - ``OSError`` subclasses (PermissionError, IsADirectoryError,
+            #     FileNotFoundError if the earlier ``exists()`` race-lost, …)
+            #   - ``UnicodeDecodeError`` if the file exists but isn't valid
+            #     UTF-8 (a corrupted or truncated storage_state.json).
+            # Route both through the same structured renderer so --json
+            # callers get a parseable ``status: "error"`` envelope (with
+            # non-zero exit) instead of a raw Python traceback.
+            details["error"] = f"Storage unreadable: {e}"
             _output_auth_check(checks, details, json_output)
             return
 

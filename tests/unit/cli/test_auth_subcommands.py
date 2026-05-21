@@ -88,6 +88,95 @@ class TestAuthCheckCommand:
         assert output["checks"]["json_valid"] is False
         assert "Invalid JSON" in output["details"]["error"]
 
+    def test_auth_check_unreadable_storage_text_mode(self, runner, mock_storage_path):
+        """`auth check` when storage exists but cannot be read (OSError).
+
+        Regression test for the bug where ``auth check`` caught only
+        ``json.JSONDecodeError``, so an ``OSError`` raised by
+        ``storage_path.read_text(...)`` (e.g. permission denied, or path
+        is a directory) leaked as a raw Python traceback instead of
+        being reported through the structured ``_output_auth_check``
+        renderer.
+
+        Repro: replace the storage file with a directory. Reading a
+        directory as text raises ``IsADirectoryError``, a subclass of
+        ``OSError``.
+
+        Contract: text mode shows the checks table (no traceback) and
+        exits 0 just like the existing invalid-JSON case.
+        """
+        # The fixture yields a path under tmp_path but does not create the
+        # file. Make the path a directory so `read_text` raises
+        # IsADirectoryError instead of FileNotFoundError.
+        if mock_storage_path.exists():
+            mock_storage_path.unlink()
+        mock_storage_path.mkdir()
+
+        result = runner.invoke(cli, ["auth", "check"])
+
+        # No traceback should leak.
+        assert result.exit_code == 0, (
+            f"unexpected traceback / non-zero text-mode exit: "
+            f"stdout={result.output!r} exc={result.exception!r}"
+        )
+        assert result.exception is None or isinstance(result.exception, SystemExit), (
+            f"unhandled exception leaked: {result.exception!r}"
+        )
+        # Structured renderer ran — checks table visible.
+        assert "JSON valid" in result.output
+        assert "fail" in result.output.lower() or "✗" in result.output
+
+    def test_auth_check_unreadable_storage_json_mode(self, runner, mock_storage_path):
+        """`auth check --json` when storage exists but cannot be read (OSError).
+
+        Acceptance criterion (plan P1.T3): "auth check --json with an
+        unreadable storage file emits a structured JSON error (not a
+        raw traceback) and exits non-zero."
+        """
+        if mock_storage_path.exists():
+            mock_storage_path.unlink()
+        mock_storage_path.mkdir()
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        # MUST exit non-zero for fail-fast automation.
+        assert result.exit_code != 0, (
+            f"--json mode silently exited 0 on unreadable storage: stdout={result.output!r}"
+        )
+        # Stdout MUST be pure parseable JSON, NOT a Python traceback.
+        output = json.loads(result.output)
+        assert output["status"] == "error"
+        # Storage exists (directory does exist), but JSON parsing fails.
+        assert output["checks"]["storage_exists"] is True
+        assert output["checks"]["json_valid"] is False
+        # An error message must be present so callers can log/diagnose.
+        assert output["details"]["error"], f"empty error message on unreadable storage: {output!r}"
+
+    def test_auth_check_non_utf8_storage_json_mode(self, runner, mock_storage_path):
+        """`auth check --json` when storage exists but is not valid UTF-8.
+
+        Same bug class as the OSError leak: ``read_text(encoding="utf-8")``
+        raises ``UnicodeDecodeError`` (a ``ValueError`` subclass, NOT an
+        ``OSError`` subclass) on a binary or corrupted storage file, and
+        the original ``except json.JSONDecodeError`` clause never caught
+        it. Without the broadened handler, the traceback would leak to
+        stderr and stdout would be empty — breaking JSON-parsing callers.
+        """
+        # Write invalid UTF-8 bytes — a 0xff byte at position 0 is never
+        # the start of a valid UTF-8 sequence.
+        mock_storage_path.write_bytes(b"\xff\xfe\xfd not valid utf-8")
+
+        result = runner.invoke(cli, ["auth", "check", "--json"])
+
+        assert result.exit_code != 0, (
+            f"--json mode silently exited 0 on non-UTF-8 storage: stdout={result.output!r}"
+        )
+        output = json.loads(result.output)
+        assert output["status"] == "error"
+        assert output["checks"]["storage_exists"] is True
+        assert output["checks"]["json_valid"] is False
+        assert output["details"]["error"], f"empty error message on non-UTF-8 storage: {output!r}"
+
     def test_auth_check_missing_sid_cookie(self, runner, mock_storage_path):
         """Test auth check when SID cookie is missing."""
         # Valid JSON but no SID cookie
