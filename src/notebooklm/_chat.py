@@ -633,6 +633,15 @@ class ChatAPI:
         """
         return self._cache.clear(conversation_id)
 
+    def cache_size(self) -> int:
+        """Return the number of conversations currently held in the cache.
+
+        Surfaced for CLI ``history --clear --json`` so the emitted envelope
+        can report how many conversations were dropped without reaching
+        into ``_cache`` from the CLI layer.
+        """
+        return len(self._cache.conversations)
+
     async def configure(
         self,
         notebook_id: str,

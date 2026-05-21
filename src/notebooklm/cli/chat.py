@@ -7,6 +7,7 @@ Commands:
 """
 
 import logging
+from typing import Any
 
 import click
 from rich.table import Table
@@ -19,6 +20,7 @@ from .input import resolve_prompt
 from .options import _complete_sources, json_option, notebook_option, prompt_file_option
 from .rendering import (
     console,
+    emit_status,
     json_output_response,
 )
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_ids
@@ -73,6 +75,26 @@ async def _get_latest_conversation_from_server(
         if not json_output:
             console.print("[dim]Starting new conversation (history unavailable)[/dim]")
     return None
+
+
+def _history_json_payload(
+    notebook_id: str,
+    conversation_id: str | None,
+    qa_pairs: list[tuple[str, str]],
+) -> dict[str, Any]:
+    """Build the shared JSON envelope for ``history --json`` modes.
+
+    Same shape whether or not ``--save`` is set; the save branch merges a
+    ``note`` field on top of this base envelope.
+    """
+    return {
+        "notebook_id": notebook_id,
+        "conversation_id": conversation_id,
+        "count": len(qa_pairs),
+        "qa_pairs": [
+            {"turn": i, "question": q, "answer": a} for i, (q, a) in enumerate(qa_pairs, 1)
+        ],
+    }
 
 
 def register_chat_commands(cli):
@@ -243,16 +265,12 @@ def register_chat_commands(cli):
                 if result.conversation_id:
                     set_current_conversation(result.conversation_id)
 
-                if json_output:
-                    from dataclasses import asdict
-
-                    data = asdict(result)
-                    # Exclude raw_response from CLI output for brevity
-                    del data["raw_response"]
-                    json_output_response(data)
-                    if not save_as_note:
-                        return
-                else:
+                # Text-mode: original interactive layout (Answer first,
+                # save-as-note status after). JSON-mode (P1.T1 contract):
+                # save-as-note runs first into a stderr-routed status path
+                # and its outcome is merged into the JSON envelope, which
+                # is emitted LAST as the terminal stdout output.
+                if not json_output:
                     console.print("[bold cyan]Answer:[/bold cyan]")
                     console.print(result.answer)
                     if result.is_follow_up and resumed_from_server:
@@ -261,35 +279,70 @@ def register_chat_commands(cli):
                         )
                     elif result.is_follow_up:
                         console.print(
-                            f"\n[dim]Conversation: {result.conversation_id} (turn {result.turn_number or '?'})[/dim]"
+                            f"\n[dim]Conversation: {result.conversation_id} "
+                            f"(turn {result.turn_number or '?'})[/dim]"
                         )
                     else:
                         console.print(f"\n[dim]New conversation: {result.conversation_id}[/dim]")
 
+                note_save_result: dict[str, str] | None = None
+                note_save_error: str | None = None
+
                 if save_as_note:
                     if not result.answer:
-                        console.print("[yellow]Warning: No answer to save as note[/yellow]")
-                        return
-                    try:
-                        title = note_title or f"Chat: {question[:50].strip().replace(chr(10), ' ')}"
-                        if result.references:
-                            # Citation-rich path: server stores [N] markers as
-                            # hover-anchored references (issue #660).
-                            note = await client.notes.create_from_chat(
-                                nb_id_resolved, result, title=title
-                            )
-                        else:
-                            # No citations to preserve — fall back to the
-                            # plain-text path so the save still succeeds.
-                            console.print(
-                                "[dim]No citations in answer; saving as plain-text note.[/dim]"
-                            )
-                            note = await client.notes.create(nb_id_resolved, title, result.answer)
-                        console.print(
-                            f"\n[dim]Saved as note: {note.title} ({note.id[:8]}...)[/dim]"
+                        emit_status(
+                            "[yellow]Warning: No answer to save as note[/yellow]",
+                            json_output=json_output,
                         )
-                    except Exception as e:
-                        console.print(f"[yellow]Warning: Failed to save note: {e}[/yellow]")
+                        note_save_error = "No answer to save as note"
+                    else:
+                        try:
+                            title = (
+                                note_title or f"Chat: {question[:50].strip().replace(chr(10), ' ')}"
+                            )
+                            if result.references:
+                                # Citation-rich path: server stores [N] markers
+                                # as hover-anchored references (issue #660).
+                                note = await client.notes.create_from_chat(
+                                    nb_id_resolved, result, title=title
+                                )
+                            else:
+                                # No citations to preserve -- fall back to the
+                                # plain-text path so the save still succeeds.
+                                emit_status(
+                                    "[dim]No citations in answer; saving as plain-text note.[/dim]",
+                                    json_output=json_output,
+                                )
+                                note = await client.notes.create(
+                                    nb_id_resolved, title, result.answer
+                                )
+                            note_save_result = {"id": note.id, "title": note.title}
+                            emit_status(
+                                f"\n[dim]Saved as note: {note.title} ({note.id[:8]}...)[/dim]",
+                                json_output=json_output,
+                            )
+                        except Exception as e:
+                            note_save_error = str(e)
+                            emit_status(
+                                f"[yellow]Warning: Failed to save note: {e}[/yellow]",
+                                json_output=json_output,
+                            )
+
+                if json_output:
+                    from dataclasses import asdict
+
+                    data = asdict(result)
+                    # Exclude raw_response from CLI output for brevity.
+                    del data["raw_response"]
+                    if save_as_note:
+                        # Merge note-save outcome into the envelope so the
+                        # caller can observe success/failure from stdout
+                        # alone without parsing stderr text.
+                        if note_save_result is not None:
+                            data["note"] = note_save_result
+                        if note_save_error is not None:
+                            data["note_save_error"] = note_save_error
+                    json_output_response(data)
 
         return _run()
 
@@ -452,8 +505,22 @@ def register_chat_commands(cli):
         async def _run():
             async with NotebookLMClient(client_auth) as client:
                 if clear_cache:
-                    result = client.chat.clear_cache()
-                    if result:
+                    # Capture pre-clear conversation count so the JSON
+                    # envelope can report what was dropped. Done BEFORE the
+                    # clear call because ``clear_cache`` returns only a bool.
+                    pre_clear_count = client.chat.cache_size()
+                    cleared = client.chat.clear_cache()
+                    if json_output:
+                        # P1.T1 contract: stdout must be a single JSON
+                        # document; no Rich/text output.
+                        json_output_response(
+                            {
+                                "cleared": bool(cleared),
+                                "count": pre_clear_count if cleared else 0,
+                            }
+                        )
+                        return
+                    if cleared:
                         console.print("[green]Local conversation cache cleared[/green]")
                     else:
                         console.print("[yellow]No cache to clear[/yellow]")
@@ -474,20 +541,26 @@ def register_chat_commands(cli):
                     content = _format_history(qa_pairs)
                     title = note_title or "Chat History"
                     note = await client.notes.create(nb_id_resolved, title, content)
+                    if json_output:
+                        # P1.T1 contract: emit a single JSON envelope that
+                        # carries both the history payload and the
+                        # note-save outcome. Status text routes to stderr.
+                        emit_status(
+                            f"[green]Saved as note: {note.title} ({note.id[:8]}...)[/green]",
+                            json_output=json_output,
+                        )
+                        json_output_response(
+                            {
+                                **_history_json_payload(nb_id_resolved, conv_id, qa_pairs),
+                                "note": {"id": note.id, "title": note.title},
+                            }
+                        )
+                        return
                     console.print(f"[green]Saved as note: {note.title} ({note.id[:8]}...)[/green]")
                     return
 
                 if json_output:
-                    data = {
-                        "notebook_id": nb_id_resolved,
-                        "conversation_id": conv_id,
-                        "count": len(qa_pairs),
-                        "qa_pairs": [
-                            {"turn": i, "question": q, "answer": a}
-                            for i, (q, a) in enumerate(qa_pairs, 1)
-                        ],
-                    }
-                    json_output_response(data)
+                    json_output_response(_history_json_payload(nb_id_resolved, conv_id, qa_pairs))
                     return
 
                 if not qa_pairs:

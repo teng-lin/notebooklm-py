@@ -1,6 +1,6 @@
 """Tests for chat CLI commands (save-as-note, enhanced history)."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -854,3 +854,239 @@ class TestAskStdinDash:
             assert result.exit_code == 0, result.output
             call = mock_client.chat.ask.call_args
             assert call.args[1] == "literal question"
+
+
+class TestChatJsonStdoutContract:
+    """P1.T1 — chat ``--json`` modes emit pure JSON on stdout.
+
+    Audit-driven regression suite for `cli/chat.py`. Rich / text status
+    output is allowed on stderr in ``--json`` mode, but stdout must be
+    parseable as a single JSON document end-to-end.
+    """
+
+    def test_ask_json_save_as_note_emits_pure_json(self, runner, mock_auth):
+        """``ask --json --save-as-note`` must keep stdout valid JSON.
+
+        Pre-fix bug (`cli/chat.py:269`): the note-save branch ran
+        `console.print(...)` after `json_output_response(...)`, polluting
+        stdout with Rich-styled status lines. Acceptance is now that
+        ``json.loads(result.stdout)`` succeeds and the parsed envelope
+        carries a ``note`` field describing the saved note.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.notes.create = AsyncMock(return_value=make_note())
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["ask", "What is 42?", "--save-as-note", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 0, result.stderr or result.output
+            # Critical contract: stdout parses as a single JSON document.
+            data = json.loads(result.stdout)
+            assert data["answer"] == "The answer is 42."
+            # Note-save outcome merged into the JSON envelope.
+            assert data["note"]["id"] == "note_abc"
+            assert data["note"]["title"] == "Chat Note"
+            # Save-as-note status must NOT leak onto stdout.
+            assert "Saved as note" not in result.stdout
+
+    def test_ask_json_save_as_note_plain_text_path_emits_pure_json(self, runner, mock_auth):
+        """No-citations plain-text fallback also keeps stdout valid JSON.
+
+        Pre-fix bug: the ``[dim]No citations…[/dim]`` status line at
+        `cli/chat.py:285` printed to stdout. Acceptance is that the line
+        does not appear on stdout in ``--json`` mode.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.notes.create = AsyncMock(return_value=make_note())
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["ask", "What is 42?", "--save-as-note", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 0, result.stderr or result.output
+            data = json.loads(result.stdout)
+            assert data["answer"] == "The answer is 42."
+            # Plain-text-fallback diagnostic must not pollute stdout.
+            assert "No citations" not in result.stdout
+
+    def test_ask_json_save_as_note_empty_answer_records_error_in_envelope(self, runner, mock_auth):
+        """Empty-answer warning routes to stderr; JSON envelope still parses.
+
+        Pre-fix bug: the ``[yellow]Warning: No answer to save as note[/yellow]``
+        line at ``cli/chat.py:271`` printed to stdout and the function
+        returned without ever emitting JSON. Acceptance: stdout parses
+        and ``note_save_error`` is recorded inside the envelope.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result(answer=""))
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.notes.create = AsyncMock(return_value=make_note())
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["ask", "What is 42?", "--save-as-note", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 0, result.stderr or result.output
+            data = json.loads(result.stdout)
+            assert data["answer"] == ""
+            assert data["note_save_error"] == "No answer to save as note"
+            # No note was created.
+            mock_client.notes.create.assert_not_awaited()
+            assert "Warning" not in result.stdout
+
+    def test_ask_json_save_as_note_failure_records_error_in_envelope(self, runner, mock_auth):
+        """A note-save exception still leaves stdout parseable as JSON.
+
+        Pre-fix bug (`cli/chat.py:292`): the ``[yellow]Warning: Failed to
+        save note…[/yellow]`` line printed to stdout, breaking JSON. The
+        fix routes the warning to stderr and records the error inside the
+        JSON envelope under ``note_save_error``.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+            mock_client.notes.create = AsyncMock(side_effect=RuntimeError("boom"))
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["ask", "What is 42?", "--save-as-note", "-n", "nb_123", "--json"],
+                )
+
+            assert result.exit_code == 0, result.stderr or result.output
+            data = json.loads(result.stdout)
+            assert data["answer"] == "The answer is 42."
+            assert "boom" in data["note_save_error"]
+            assert "Warning" not in result.stdout
+
+    def test_history_json_clear_emits_pure_json(self, runner, mock_auth):
+        """``history --clear --json`` must emit JSON instead of Rich text.
+
+        Pre-fix bug (`cli/chat.py:454`): the clear-cache branch printed
+        ``[green]Chat history cleared[/green]`` and returned without any
+        JSON emission at all. Acceptance is a parseable envelope on
+        stdout with ``cleared`` and ``count`` fields.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.clear_cache = MagicMock(return_value=True)
+            # ``cache_size`` is read BEFORE ``clear_cache`` so the envelope
+            # can report how many conversations were dropped.
+            mock_client.chat.cache_size = MagicMock(return_value=3)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["history", "--clear", "--json", "-n", "nb_123"])
+
+            assert result.exit_code == 0, result.stderr or result.output
+            data = json.loads(result.stdout)
+            assert data["cleared"] is True
+            assert data["count"] == 3
+            # Rich markup must not leak onto stdout.
+            assert "[green]" not in result.stdout
+            assert "[yellow]" not in result.stdout
+
+    def test_history_json_clear_when_no_cache_still_emits_pure_json(self, runner, mock_auth):
+        """The 'No cache to clear' branch must also emit valid JSON."""
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.clear_cache = MagicMock(return_value=False)
+            mock_client.chat.cache_size = MagicMock(return_value=0)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["history", "--clear", "--json", "-n", "nb_123"])
+
+            assert result.exit_code == 0, result.stderr or result.output
+            data = json.loads(result.stdout)
+            assert data["cleared"] is False
+            assert data["count"] == 0
+            assert "[yellow]" not in result.stdout
+
+    def test_history_json_save_emits_pure_json(self, runner, mock_auth):
+        """``history --save --json`` must keep stdout valid JSON.
+
+        Pre-fix bug (`cli/chat.py:469`): the save branch ran before the
+        JSON branch at `cli/chat.py:480` and used ``console.print`` for
+        status, so stdout was Rich text and the JSON envelope was never
+        emitted. Acceptance: stdout is a single JSON envelope that
+        includes both the history payload and the note-save outcome.
+        """
+        import json
+
+        with patch_client_for_module("chat") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.chat.get_history = AsyncMock(return_value=MOCK_HISTORY)
+            mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
+            mock_client.notes.create = AsyncMock(
+                return_value=make_note(id="note_xyz", title="Chat History")
+            )
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(cli, ["history", "--save", "--json", "-n", "nb_123"])
+
+            assert result.exit_code == 0, result.stderr or result.output
+            data = json.loads(result.stdout)
+            # History payload still present.
+            assert data["notebook_id"] == "nb_123"
+            assert data["conversation_id"] == MOCK_CONV_ID
+            assert data["count"] == 2
+            # Note-save outcome merged into the JSON envelope.
+            assert data["note"]["id"] == "note_xyz"
+            assert data["note"]["title"] == "Chat History"
+            # Rich save-as-note status must not leak onto stdout.
+            assert "Saved as note" not in result.stdout
+            assert "[green]" not in result.stdout
