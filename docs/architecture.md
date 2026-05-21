@@ -11,15 +11,19 @@ map.
 ```text
 +----------------------------------------------------------+
 | CLI Layer (src/notebooklm/cli/*)                         |
-|   Click groups: login / use / list / source / generate / |
-|   download / chat / note. Pure adapter — no RPC logic.   |
+|   Top-level commands (login, use, status, list, ask,     |
+|   doctor, completion, ...) registered by the session/    |
+|   notebook/chat/doctor modules; plus subcommand groups   |
+|   (source, artifact, agent, generate, download, note,    |
+|   share, skill, research, language, profile). Pure       |
+|   adapter — no RPC logic.                                |
 +----------------------------------------------------------+
                           ▼
 +----------------------------------------------------------+
 | Client Layer (client.py + feature APIs)                  |
 |   NotebookLMClient + namespaced sub-clients:             |
 |     .notebooks  .sources  .artifacts  .chat              |
-|     .notes      .research                                |
+|     .notes      .research  .settings  .sharing           |
 |   Each feature API depends on a NARROW capability        |
 |   protocol — not on the broad ``Session`` class.         |
 +----------------------------------------------------------+
@@ -44,27 +48,63 @@ map.
 
 ## Per-capability protocol model
 
-ADR-013 ("Composable Session Capabilities") is the design rationale: feature
-APIs depend on narrow capability protocols defined in
-[`_session_contracts.py`](../src/notebooklm/_session_contracts.py), not on
-the concrete `Session` class. Production satisfies the union via `Session`;
-tests satisfy it via [`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py).
+ADR-013 ("Composable Session Capabilities") is the design rationale:
+feature APIs depend on narrow capability Protocols rather than on the
+concrete `Session` class. Six Protocols live in
+[`_session_contracts.py`](../src/notebooklm/_session_contracts.py) —
+four shared capability Protocols used by ≥2 features, plus `AuthMetadata`
+and `Kernel`, whose sole consumer today is `SourceUploadPipeline`. Per
+ADR-013 §Decision §2, those two stay in the shared contracts module
+(rather than moving into `_source_upload.py`) because they front
+Session-owned objects (the authenticated account snapshot and the
+transport kernel). ADR-013 explicitly rejects anticipatory promotion —
+"No capability is promoted on speculation." Feature-module-local runtime
+Protocols live next to their single consumer.
+
+**Module-level Protocols** (defined in
+[`_session_contracts.py`](../src/notebooklm/_session_contracts.py)):
 
 | Protocol | Responsibility |
 |----------|----------------|
 | `RpcCaller` | Exposes `rpc_call(method, params, ...)` — the chokepoint every feature API uses for batchexecute calls. |
-| `LoopGuard` | Exposes `bound_loop` and the cross-loop affinity check; consumed by anything that may touch the HTTP client. |
-| `OperationScopeProvider` | Exposes `operation_scope(label)` — the async context manager that scopes drain admission for graceful shutdown. |
-| `AsyncWorkRuntime` | Exposes `kernel.create_task(...)` for spawning task children that drain on close. |
-| `DrainHookRegistration` | Exposes `register_drain_hook(name, hook)` so feature APIs can wire close-time cleanup. |
-| `ChatRuntime` | Chat-specific surface (cache, next_reqid, transport_post). Local to `_chat.py`. |
-| `ArtifactsRuntime` | Artifact-specific surface (poll_registry, RPC dispatch). Local to `_artifacts.py`. |
-| `UploadRuntime` | Upload-specific surface (semaphore-gated upload pipeline). Local to `_source_upload.py`. |
+| `LoopGuard` | Exposes `assert_bound_loop()` — single-method cross-loop affinity check; consumed by anything that may touch the HTTP client. |
+| `OperationScopeProvider` | Exposes `operation_scope(label)` — async context manager that scopes drain admission for graceful shutdown. |
+| `AsyncWorkRuntime` | Composes `LoopGuard` + `OperationScopeProvider` for features that own async work. |
+| `AuthMetadata` | Selected-account routing metadata — `authuser` + `account_email` properties. Single consumer today: `SourceUploadPipeline`. |
+| `Kernel` | Pure transport surface — `post()` method, `cookies` property, `aclose()`. Single consumer today: `SourceUploadPipeline`. |
 
-Design rationale (ADR-013): feature APIs depend on a narrow capability
-protocol that names only what they need. Tests can substitute the broad
-`FakeSession` (which satisfies the union) without paying the cost of
-constructing a real `Session`.
+**Feature-module-local runtime Protocols** (not exported from
+`_session_contracts.py`; each lives next to its single consumer):
+
+| Protocol | Module | Responsibility |
+|----------|--------|----------------|
+| `ChatRuntime` | [`_chat.py`](../src/notebooklm/_chat.py) | Chat-feature capability union — composes `RpcCaller` + `LoopGuard` and adds chat-specific `transport_post()` + `next_reqid()` methods. (The `ConversationCache` lives on `ChatAPI`, not the Protocol.) |
+| `ArtifactsRuntime` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Artifact-feature capability union — composes `RpcCaller` + `AsyncWorkRuntime` + `DrainHookRegistration`. No own members; used by `ArtifactsAPI` for RPC dispatch, loop affinity, operation scopes, and close-time drain-hook registration. The `PollRegistry` lives on `ArtifactsAPI`, not the Protocol. |
+| `UploadRuntime` | [`_source_upload.py`](../src/notebooklm/_source_upload.py) | Upload-pipeline capability union — composes `RpcCaller` + `OperationScopeProvider`. The upload semaphore is internal to `SourceUploadPipeline`, not the Protocol. |
+| `DrainHookRegistration` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Exposes `register_drain_hook(name, hook)` for close-time cleanup. Sole `DrainHookRegistration` after the broad-`Session` Protocol was deleted from `_session_contracts.py` (see the `_session_contracts.py` module docstring). |
+
+Production satisfies the shared Protocols via `Session`; tests substitute
+[`tests/_fixtures/fake_core.py:FakeSession`](../tests/_fixtures/fake_core.py)
+(constructed via `make_fake_core(...)`) — the sanctioned ADR-007 / ADR-013
+fixture pattern.
+
+### Narrow ≠ all Protocols are narrow
+
+Not every `Protocol` in the codebase is a thin capability slice. The
+executor-facing `RpcOwner` Protocol at
+[`_rpc_executor.py:54`](../src/notebooklm/_rpc_executor.py) is
+deliberately **wide** — it declares ten members, including the public
+`rpc_call` method, four private attrs (`_timeout`, `_refresh_callback`,
+`_refresh_retry_delay`, `_http_client`), and five private methods
+(`_perform_authed_post`, `_await_refresh`, `_rpc_call_impl`,
+`_increment_metrics`, `_emit_rpc_event`) — because `RpcExecutor` was
+extracted from `Session` while preserving back-references to auth state,
+metrics emission, and the `_perform_authed_post` chain.
+Narrowing `RpcOwner` is gated on dismantling the property-bridge zoo
+(see [Known debt](#known-architectural-debt--session-is-a-wide-facade)).
+Feature APIs depend on capability Protocols that genuinely are narrow;
+the executor itself depends on a near-`Session`-shaped Protocol that
+hasn't been narrowed yet.
 
 ## Post-refactor `Session` collaborator graph
 
@@ -112,6 +152,7 @@ utor      Coordinator  Lifecycle ChainBuilder DrainTracker         Counter isten
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
 | `ReqidCounter` | [`_reqid_counter.py`](../src/notebooklm/_reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `await core.next_reqid()`. |
 | `CookiePersistence` | [`_cookie_persistence.py`](../src/notebooklm/_cookie_persistence.py) | Cookie-jar persistence + `__Secure-1PSIDTS` rotation. |
+| `IdempotencyRegistry` | [`_idempotency.py`](../src/notebooklm/_idempotency.py) | Policy/classification registry keyed by `(RPCMethod, operation_variant)`. `RpcExecutor.execute()` consults it to resolve `effective_disable_internal_retries` and to inject client tokens for `CLIENT_TOKEN_DEDUPE` methods (most entries are currently `UNCLASSIFIED`, a behaviour-neutral default). Not Session-owned, but part of the RPC dispatch path. Side-effect probing (`idempotent_create(...)`) is a separate mechanism not owned by this registry. |
 
 ## Middleware chain (ADR-009)
 
@@ -140,7 +181,8 @@ AuthRefreshMiddleware        refresh-on-auth-error; capped retries
    ↓
 ErrorInjectionMiddleware     synthetic-error harness; no-op in prod
    ↓
-TracingMiddleware            innermost — preserves OTel span boundary
+TracingMiddleware            innermost — structured-logging boundary
+                             (OpenTelemetry export is future work)
    ↓
 RPC dispatch leaf            (RpcExecutor → AuthedTransport → httpx)
 ```
@@ -154,22 +196,51 @@ RPC dispatch leaf            (RpcExecutor → AuthedTransport → httpx)
 
 ## Known architectural debt — `Session` is a wide facade
 
-**`Session` remains a wide facade (~1450 lines) post-v0.5.0.** The
-capability-protocol refactor (ADR-013) decomposed Session's *implementation*
-into focused collaborators (`RpcExecutor`, `AuthRefreshCoordinator`,
+**`Session` remains a wide facade (~1454 lines) post-v0.5.0.** ADR-013's
+capability-protocol refactor decomposed Session's *implementation* into
+focused collaborators (`RpcExecutor`, `AuthRefreshCoordinator`,
 `ClientLifecycle`, `MiddlewareChainBuilder`, `TransportDrainTracker`,
-`ClientMetrics`, `ReqidCounter`), but did not shrink the facade's *surface*.
-The property bridges + `_ensure_*()` lazy-init backfill are load-bearing
-for the `Session.__new__(Session)` test-fixture pattern; deleting them
-would require migrating dozens of tests off the fixture pattern first.
+`ClientMetrics`, `ReqidCounter`, `CookiePersistence`) but did not shrink
+the facade's *surface*. Two pieces of scaffolding in
+[`_session.py`](../src/notebooklm/_session.py) exist solely to keep the
+legacy `Session.__new__(Session)` test-fixture pattern working:
 
-Thin-facade work (a hypothetical target Session of ~400-500 lines) is
-**deferred indefinitely** pending a concrete feature blocker. The
-property bridges have no measurable cost in production; the debt
-exists only against future ergonomics for new contributors reading
-`Session` for the first time. Open a placeholder issue if you hit a
-specific friction point worth tracking — do not pre-plan absent a
-named pain point.
+- ~two dozen compatibility-bridge properties, starting at
+  [`_session.py:442`](../src/notebooklm/_session.py) and running through
+  the chat-conversation properties further down.
+- Four `_ensure_*()` lazy-init methods:
+  [`_ensure_auth_coord` (:514)](../src/notebooklm/_session.py),
+  [`_ensure_lifecycle` (:584)](../src/notebooklm/_session.py),
+  [`_ensure_observability_state` (:751)](../src/notebooklm/_session.py),
+  [`_ensure_authed_post_chain` (:785)](../src/notebooklm/_session.py).
+
+**The unblock is bounded.** 13 test sites across 6 files still construct
+fixtures via `Session.__new__(Session)`:
+
+- [`tests/unit/test_chain_wiring.py:350`](../tests/unit/test_chain_wiring.py)
+- [`tests/unit/test_client_metrics.py`](../tests/unit/test_client_metrics.py) (lines `328`, `346`, `361`, `370`, `391`)
+- [`tests/unit/test_logging_correlation.py:262`](../tests/unit/test_logging_correlation.py)
+- [`tests/unit/test_middleware_chain_builder.py:55`](../tests/unit/test_middleware_chain_builder.py)
+- [`tests/unit/test_swallow_observability.py`](../tests/unit/test_swallow_observability.py) (lines `26`, `49`, `67`)
+- [`tests/unit/test_transport_drain.py`](../tests/unit/test_transport_drain.py) (lines `319`, `355`)
+
+Once those 13 sites migrate to the ADR-007 / ADR-013-sanctioned
+`make_fake_core(...)` fixture, the `_ensure_*()` backfill and the
+compatibility-property bridges can be deleted, shrinking `_session.py`
+by an estimated 200–400 lines.
+
+**The bridge tax is not just ergonomic.** The `_ensure_*()` methods have
+ordering dependencies — `_ensure_auth_coord` primes
+`_ensure_observability_state` first because every coordinator method
+reaches into `host._metrics_obj`. Every new collaborator extraction grows
+the scaffold non-linearly: a fresh `_ensure_*()` plus a tranche of
+property bridges per seam, plus its position in the call chain. This is
+future-refactor friction, not first-read inconvenience.
+
+**Status: deferred until those tests migrate**, not deferred indefinitely.
+Effort estimate: Medium (1–2 days) — migrate the 13 fixture sites to
+`make_fake_core(...)`, then delete the bridges and `_ensure_*()` methods.
+Open an issue when picking this up so the migration can be tracked.
 
 ## See also
 
