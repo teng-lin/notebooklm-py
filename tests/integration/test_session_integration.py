@@ -46,11 +46,15 @@ class TestClientInitialization:
     @pytest.mark.asyncio
     async def test_close_does_not_sync_in_memory_auth_to_default_storage(self):
         auth = AuthTokens(cookies={"SID": "scratch"}, csrf_token="csrf", session_id="session")
-        core = Session(auth)
+        # Inject the cookie-saver seam directly (Phase 2 PR 4 — replaces the
+        # legacy ``_core.save_cookies_to_storage`` string-target monkeypatch
+        # with a constructor-injection seam wired through
+        # ``ClientLifecycle._cookie_saver``).
+        mock_save = MagicMock(return_value=False)
+        core = Session(auth, cookie_saver=mock_save)
         await core.open()
 
-        with patch("notebooklm._core.save_cookies_to_storage") as mock_save:
-            await core.close()
+        await core.close()
 
         mock_save.assert_not_called()
         assert core._http_client is None
@@ -58,11 +62,14 @@ class TestClientInitialization:
     @pytest.mark.asyncio
     async def test_close_closes_http_client_when_cookie_sync_fails(self, auth_tokens, tmp_path):
         auth_tokens.storage_path = tmp_path / "storage_state.json"
-        core = Session(auth_tokens)
+        # Inject a cookie-saver that raises so the test exercises the
+        # close()-handles-saver-failure path without monkeypatching the
+        # legacy ``_core.save_cookies_to_storage`` seam.
+        boom_save = MagicMock(side_effect=RuntimeError("boom"))
+        core = Session(auth_tokens, cookie_saver=boom_save)
         await core.open()
 
-        with patch("notebooklm._core.save_cookies_to_storage", side_effect=RuntimeError("boom")):
-            await core.close()
+        await core.close()
 
         assert core._http_client is None
 

@@ -135,8 +135,11 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
         rotate_entered.set()
         await hang_event.wait()
 
-    monkeypatch.setattr("notebooklm._core._rotate_cookies", _hanging_rotate)
-
+    # Phase 2 PR 4: inject the cookie-rotator seam directly. Prior to the
+    # injectable seam, this test monkeypatched
+    # ``notebooklm._core._rotate_cookies``; the rotator now flows through
+    # ``NotebookLMClient(..., cookie_rotator=...)`` -> ``ClientLifecycle``.
+    #
     # ``keepalive_min_interval`` clamps short intervals up to its floor
     # (default 60s). Pass ``keepalive_min_interval=0.01`` so a 0.05s
     # keepalive actually fires within the test window.
@@ -144,6 +147,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
         keepalive_auth,
         keepalive=0.05,
         keepalive_min_interval=0.01,
+        cookie_rotator=_hanging_rotate,
     )
 
     # Open the client and let the keepalive loop enter ``_rotate_cookies``

@@ -31,7 +31,7 @@ from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
 
-def _make_core(tmp_path: Path) -> Session:
+def _make_core(tmp_path: Path, *, cookie_saver=None) -> Session:
     """Build a minimal ``Session`` whose ``save_cookies`` is safe to call.
 
     Order matters: ``AuthTokens.__post_init__`` calls ``build_cookie_jar``,
@@ -39,6 +39,10 @@ def _make_core(tmp_path: Path) -> Session:
     branch (file absent) so construction succeeds, THEN write the baseline
     file so the subsequent ``save_cookies`` call has something to merge
     against.
+
+    ``cookie_saver`` (Phase 2 PR 4) is forwarded to ``Session(...)`` so
+    tests can inject the persistence spy at construction rather than via
+    the legacy ``notebooklm._core.save_cookies_to_storage`` monkeypatch.
     """
     storage_path = tmp_path / "storage_state.json"
     auth = AuthTokens(
@@ -48,12 +52,12 @@ def _make_core(tmp_path: Path) -> Session:
         storage_path=storage_path,
     )
     storage_path.write_text('{"cookies": []}')
-    return Session(auth)
+    return Session(auth, cookie_saver=cookie_saver)
 
 
 @pytest.mark.asyncio
 async def test_save_lock_acquired_off_event_loop_thread(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """The thread that holds ``_save_lock`` MUST NOT be the event-loop thread.
 
@@ -64,20 +68,25 @@ async def test_save_lock_acquired_off_event_loop_thread(
     without ``asyncio.to_thread``), the spy will see the loop thread holding
     the lock, and this assertion will fail.
     """
-    core = _make_core(tmp_path)
-
     loop_thread = threading.current_thread()
     observed: dict[str, object] = {}
+
+    # ``core`` is closed over by ``spy`` below; we declare a placeholder so
+    # the spy's reference can be resolved before ``_make_core`` returns.
+    core_ref: dict[str, Session] = {}
 
     def spy(jar, path, **kwargs):  # type: ignore[no-untyped-def]
         # ``save_cookies_to_storage`` is called from inside ``with lock:``
         # in ``_save()``. Whichever thread runs this spy is, by definition,
         # the thread currently holding ``_save_lock``.
-        observed["lock_held"] = core._save_lock.locked()
+        observed["lock_held"] = core_ref["core"]._save_lock.locked()
         observed["holder_thread"] = threading.current_thread()
         return True
 
-    monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", spy)
+    # Phase 2 PR 4: inject the cookie-saver seam via constructor injection
+    # rather than via the legacy ``_core.save_cookies_to_storage`` string-target monkeypatch.
+    core = _make_core(tmp_path, cookie_saver=spy)
+    core_ref["core"] = core
 
     await core.save_cookies(httpx.Cookies())
 
@@ -104,7 +113,7 @@ async def test_save_lock_acquired_off_event_loop_thread(
 
 @pytest.mark.asyncio
 async def test_save_lock_does_not_block_event_loop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """While ``_save_lock`` is held by a worker thread, the event loop must
     remain responsive.
@@ -116,8 +125,6 @@ async def test_save_lock_does_not_block_event_loop(
     until the worker released; with the contract intact, the heartbeat
     observes the lock IS held while the loop is still scheduling.
     """
-    core = _make_core(tmp_path)
-
     in_save = threading.Event()
     release_save = threading.Event()
     loop_observations: list[bool] = []
@@ -133,7 +140,8 @@ async def test_save_lock_does_not_block_event_loop(
         )
         return True
 
-    monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", spy)
+    # Phase 2 PR 4: inject the cookie-saver seam at construction.
+    core = _make_core(tmp_path, cookie_saver=spy)
 
     async def heartbeat() -> None:
         # Wait for the worker to enter the spy by polling — using asyncio.sleep
