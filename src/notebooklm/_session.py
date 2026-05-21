@@ -62,6 +62,7 @@ from ._middleware import (
     build_chain,
 )
 from ._middleware_auth_refresh import AuthRefreshMiddleware
+from ._middleware_chain import MiddlewareChainBuilder
 from ._middleware_drain import DrainMiddleware
 from ._middleware_error_injection import ErrorInjectionMiddleware
 from ._middleware_metrics import MetricsMiddleware
@@ -499,92 +500,21 @@ class Session:
         self.poll_registry: PollRegistry = PollRegistry()
         self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
-        # Tier-12 PR 12.2: empty middleware chain wired around
-        # ``AuthedTransport.perform_authed_post`` (the shared seam covering
-        # ``Session._perform_authed_post`` here and ``RpcExecutor.execute``'s
-        # call to ``self._owner._perform_authed_post`` at ``_rpc_executor.py:275``).
-        # PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
-        # ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware``
-        # outermost, PR 12.6 inserted ``ErrorInjectionMiddleware`` between
-        # ``MetricsMiddleware`` and ``TracingMiddleware``, PR 12.7
-        # inserted ``RetryMiddleware`` between ``MetricsMiddleware`` and
-        # ``ErrorInjectionMiddleware``, and PR 12.8 inserts
-        # ``AuthRefreshMiddleware`` BETWEEN ``RetryMiddleware`` and
-        # ``ErrorInjectionMiddleware`` so the list now reads the
-        # **final** ADR-009 ordering
-        # ``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``
-        # (outermost → innermost). ``build_chain`` composes the leftmost
-        # entry as the outermost wrapper, so keeping ``TracingMiddleware``
-        # at the RIGHT end of the list preserves Tracing as the innermost
-        # wrapper.
-        #
-        # PR 12.7 lifted the 429 / 5xx retry loops out of the leaf into
-        # ``RetryMiddleware``; PR 12.8 lifts the auth-refresh-once retry
-        # too. After PR 12.8 the leaf is a *pure* POST — every retry
-        # decision happens in the chain. The leaf still raises
-        # ``_TransportRateLimited`` / ``_TransportServerError`` for
-        # 429 / 5xx so ``RetryMiddleware`` can catch; raw
-        # ``httpx.HTTPStatusError`` (400/401/403) propagates so
-        # ``AuthRefreshMiddleware`` can catch via ``is_auth_error`` and
-        # drive refresh-then-retry.
-        #
-        # The terminal adapter reads ``build_request`` / ``log_label`` /
-        # ``disable_internal_retries`` from ``RpcRequest.context`` and
-        # delegates to ``self._get_authed_transport().perform_authed_post``.
-        # ``RetryMiddleware`` reads ``log_label`` /
-        # ``disable_internal_retries`` from the same ``context`` dict.
-        # ``AuthRefreshMiddleware`` reads ``log_label``. See ADR-009
-        # §"Per-request behavior" and
-        # ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
-        self._middlewares: list[Middleware] = [
-            DrainMiddleware(self._drain_tracker),
-            MetricsMiddleware(self._metrics_obj),
-            # Acquire the ``max_concurrent_rpcs`` slot AFTER Drain admits
-            # the call (so queued tasks count toward shutdown drain) and
-            # AFTER Metrics starts timing (so latency includes queue
-            # wait), but BEFORE Retry can re-enter the inner chain — that
-            # way ``RetryMiddleware``'s retry attempts stay in the same
-            # slot rather than racing to claim another, preserving the
-            # pre-Tier-12 "one slot per logical RPC" contract.
-            # ``_get_rpc_semaphore`` returns ``contextlib.nullcontext``
-            # when ``max_concurrent_rpcs is None`` (unbounded), so the
-            # ``async with`` collapses to a no-op for opted-out clients.
-            SemaphoreMiddleware(self._get_rpc_semaphore),
-            # Pass callable budgets so post-construction mutation of
-            # ``self._rate_limit_max_retries`` / ``self._server_error_max_retries``
-            # (an integration-test idiom; production never mutates these)
-            # still takes effect — bit-for-bit preserving the pre-PR-12.7
-            # live-binding contract where ``AuthedTransport`` read these
-            # attrs LIVE inside its retry loop.
-            RetryMiddleware(
-                rate_limit_max_retries=lambda: self._rate_limit_max_retries,
-                server_error_max_retries=lambda: self._server_error_max_retries,
-                metrics=self._metrics_obj,
-            ),
-            # AuthRefresh callbacks: refresh_callable invokes the same
-            # ``_await_refresh`` path the leaf used pre-PR-12.8, so the
-            # coalesced single-flight refresh contract from
-            # ``AuthRefreshCoordinator`` is preserved end-to-end.
-            # ``refresh_callback_enabled`` reads the coordinator's
-            # internal callback slot to skip refresh when no callback was
-            # configured (matches the legacy
-            # ``host._refresh_callback is not None`` gate in the leaf).
-            # ``refresh_retry_delay`` is callable for live-binding parity
-            # with retry budgets.
-            AuthRefreshMiddleware(
-                refresh_callable=self._await_refresh,
-                # ``_live_is_auth_error`` re-reads ``is_auth_error`` from
-                # this module's globals on every call so test monkeypatches
-                # of ``notebooklm._core.is_auth_error`` reach the chain;
-                # see that helper's docstring for the rationale.
-                is_auth_error=_live_is_auth_error,
-                refresh_callback_enabled=lambda: self._auth_coord.has_refresh_callback,
-                refresh_retry_delay=lambda: self._refresh_retry_delay,
-                metrics=self._metrics_obj,
-            ),
-            ErrorInjectionMiddleware(),
-            TracingMiddleware(),
-        ]
+        # ADR-009 chain construction. PR history, leaf exception shape,
+        # and ``RpcRequest.context`` contract live in
+        # ``_middleware_chain.py`` module docstring.
+        self._chain_builder = MiddlewareChainBuilder(
+            drain_tracker=self._drain_tracker,
+            metrics=self._metrics_obj,
+            rpc_semaphore_factory=self._get_rpc_semaphore,
+            rate_limit_max_retries_provider=lambda: self._rate_limit_max_retries,
+            server_error_max_retries_provider=lambda: self._server_error_max_retries,
+            refresh_retry_delay_provider=lambda: self._refresh_retry_delay,
+            refresh_callable=self._await_refresh,
+            is_auth_error=_live_is_auth_error,
+            refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
+        )
+        self._middlewares: list[Middleware] = self._chain_builder.build()
         self._authed_post_chain: NextCall = build_chain(
             self._middlewares,
             self._authed_post_chain_terminal,
