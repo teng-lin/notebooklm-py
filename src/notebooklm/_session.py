@@ -893,7 +893,7 @@ class Session:
         """Backfill the middleware chain for tests that construct via ``__new__``.
 
         Mirrors :meth:`_ensure_observability_state` — a ``__new__``-built
-        fixture skips ``__init__`` and so misses both ``_chain_builder``,
+        fixture skips ``__init__`` and so misses ``_chain_builder``,
         ``_middlewares``, and ``_authed_post_chain``. The first call to
         :meth:`_perform_authed_post` on such a fixture would raise
         ``AttributeError``; this helper backfills all three slots via
@@ -942,8 +942,16 @@ class Session:
                         server_error_max_retries_provider=lambda: getattr(
                             self, "_server_error_max_retries", 3
                         ),
+                        # ``getattr`` default matches ``__init__``'s argument
+                        # default (``refresh_retry_delay: float = 0.2``) so a
+                        # ``__new__``-built fixture that never set this attr
+                        # sees the same post-refresh sleep as the normal
+                        # path. (Restores the alignment first landed in PR
+                        # #850 / commit 73cf680 — inadvertently reverted to
+                        # 0.0 during the PR 12.9 cleanup refactor; CodeRabbit
+                        # caught the regression on PR #883.)
                         refresh_retry_delay_provider=lambda: getattr(
-                            self, "_refresh_retry_delay", 0.0
+                            self, "_refresh_retry_delay", 0.2
                         ),
                         refresh_callable=self._await_refresh,
                         is_auth_error=_live_is_auth_error,
