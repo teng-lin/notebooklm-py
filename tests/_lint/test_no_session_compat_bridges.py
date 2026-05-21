@@ -129,8 +129,8 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
 
 # Test files that currently access ``Session`` compat bridges. This is
 # the transitional allowlist; each session-shrink PR removes entries as
-# its readers migrate, and the allowlist must be empty after PR 6 (the
-# ClientLifecycle demolition).
+# its readers migrate, and the allowlist must be empty by the final
+# demolition PR (see ``docs/architecture.md`` for the per-PR arc).
 #
 # DO NOT wrap in ``sorted([...])`` — the self-test
 # :func:`test_allowlist_is_sorted` compares the literal against its
