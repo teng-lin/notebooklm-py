@@ -60,7 +60,28 @@ from .auth import (
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 if TYPE_CHECKING:
+    from ._authed_transport import _AuthedTransportHost
+    from ._rpc_executor import RpcOwner
     from .types import ConnectionLimits
+
+    def _assert_session_satisfies_protocols(s: "Session") -> None:
+        """Compile-time guard: :class:`Session` MUST satisfy the narrowed
+        :class:`RpcOwner` and :class:`_AuthedTransportHost` Protocols.
+
+        Session-shrink PR 3 narrowed both Protocols by removing
+        ``_timeout``, ``_refresh_callback``, ``_refresh_retry_delay``,
+        ``_http_client``, and ``_bound_loop`` declarations. The compat
+        bridges still exist on :class:`Session` (later PRs retire them);
+        what this assertion guarantees is that the narrowed Protocol
+        shape — only ``_kernel`` + methods for :class:`RpcOwner`, only
+        ``_kernel`` + ``_snapshot()`` for :class:`_AuthedTransportHost` —
+        is satisfied by :class:`Session`. mypy verifies this during
+        ``mypy src/notebooklm``; the function is a no-op at runtime
+        (gated by ``TYPE_CHECKING``).
+        """
+        _owner: RpcOwner = s
+        _host: _AuthedTransportHost = s
+
 
 from .rpc import RPCMethod
 
@@ -373,9 +394,10 @@ class Session:
         #
         # Event-loop affinity guard rationale: the lifecycle captures
         # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
-        # and the cross-loop check in ``_perform_authed_post`` (via
-        # :class:`AuthedTransport`) does a cheap ``is`` comparison against
-        # it. Each client is per-loop — the asyncio primitives we hold
+        # and the cross-loop check in ``_perform_authed_post`` does a cheap
+        # ``is`` comparison against it. (Session-shrink PR 3 lifted this
+        # check up out of :class:`AuthedTransport` and into
+        # ``Session._perform_authed_post``.) Each client is per-loop — the asyncio primitives we hold
         # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
         # ``_rpc_semaphore``, the ``httpx.AsyncClient``
         # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)
@@ -530,12 +552,14 @@ class Session:
     # ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``)
     # are preserved here as ``@property`` bridges. The
     # ``_connect_timeout`` / ``_limits`` bridges were dropped in
-    # D1-audit-full (zero external callers). The ``_timeout`` bridge is
-    # retained because ``RpcExecutor`` (``_rpc_executor.py``) reads
-    # ``self._owner._timeout`` via the :class:`RpcOwner` Protocol; removing
-    # it would surface as ``AttributeError`` on every RPC call.
-    # ``Session.__init__`` eager-constructs ``_lifecycle`` (and ``_kernel``),
-    # so the bridges delegate directly without lazy backfill.
+    # D1-audit-full (zero external callers). After session-shrink PR 3
+    # narrowed :class:`RpcOwner` + :class:`_AuthedTransportHost` to drop
+    # these attribute names, the bridges are no longer Protocol-required —
+    # they survive purely to support test monkeypatches that write to
+    # ``core._<bridge>``; later session-shrink PRs (4–6) retire them as
+    # the test readers migrate. ``Session.__init__`` eager-constructs
+    # ``_lifecycle`` (and ``_kernel``), so the bridges delegate directly
+    # without lazy backfill.
     # ------------------------------------------------------------------
 
     @property
@@ -552,9 +576,10 @@ class Session:
 
     @_bound_loop.setter
     def _bound_loop(self, value: asyncio.AbstractEventLoop | None) -> None:
-        # Required by the ``_AuthedTransportHost`` Protocol (declares
-        # ``_bound_loop`` as a settable variable). No external SET sites,
-        # but the Protocol contract demands a settable property.
+        # Retained for test monkeypatch writers (no external SET sites in
+        # prod; bridge demolition is tracked in session-shrink PR 6 once
+        # those tests migrate). Post-PR-3 the ``_AuthedTransportHost``
+        # Protocol no longer declares ``_bound_loop``.
         self._lifecycle._bound_loop = value
 
     @property
@@ -584,11 +609,11 @@ class Session:
 
     @_timeout.setter
     def _timeout(self, value: float) -> None:
-        # Required by ``RpcOwner`` Protocol (``_rpc_executor.py``) which
-        # declares ``_timeout: float`` as a settable variable. Pre-extraction
-        # ``_timeout`` was a plain ivar so attribute assignment worked
-        # implicitly; the property bridge needs an explicit setter to
-        # preserve that contract.
+        # Retained for test monkeypatch writers. Post-PR-3, ``RpcExecutor``
+        # reads via ``self._timeout_provider()`` (which closes over
+        # ``self._lifecycle._timeout`` directly), so ``RpcOwner`` no longer
+        # declares ``_timeout`` and the setter is not Protocol-required —
+        # it survives until the test readers migrate (session-shrink PR 6).
         self._lifecycle._timeout = value
 
     # ``_connect_timeout`` and ``_limits`` compat bridges dropped
@@ -828,6 +853,9 @@ class Session:
                 decode_response_late_bound=_decode_response_late_bound,
                 is_auth_error=_live_is_auth_error,
                 sleep=_sleep_late_bound,
+                timeout_provider=lambda: self._lifecycle._timeout,
+                refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
+                refresh_retry_delay_provider=lambda: self._refresh_retry_delay,
             )
             self._rpc_executor = executor
         return executor
@@ -1057,6 +1085,14 @@ class Session:
         intentionally stay empty until PRs 12.5/12.7/12.8 begin populating
         them as middlewares strip behavior out of :class:`AuthedTransport`.
         """
+        # Event-loop affinity guard. Session-shrink PR 3 lifted this OUT of
+        # ``AuthedTransport.perform_authed_post`` (where it ran once per
+        # leaf attempt) and up to here, so the check fires once per chain
+        # invocation. ``assert_bound_loop`` is a no-op when ``bound_loop``
+        # is ``None`` (pre-open / fresh fixture); it raises only when the
+        # currently-running loop differs from the one captured at
+        # ``open()``-time.
+        self.assert_bound_loop()
         request = RpcRequest(
             url="",
             headers={},

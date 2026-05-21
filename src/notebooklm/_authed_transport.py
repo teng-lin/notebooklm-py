@@ -17,7 +17,6 @@ __all__ = [
     "_stream_post_with_size_cap",
 ]
 
-import asyncio
 import logging
 import time
 from collections.abc import Callable
@@ -238,18 +237,22 @@ class _AuthedTransportHost(Protocol):
     those into chain middlewares, and PR 12.9 lifted the RPC
     semaphore + queue-wait recording up to
     :meth:`Session._perform_authed_post` (so the slot wraps the
-    whole chain invocation, not just one HTTP attempt). The Protocol
-    now declares only the members the leaf still touches:
+    whole chain invocation, not just one HTTP attempt).
 
-    - ``_kernel`` (the streaming-POST transport, post-PR #850)
-    - ``_http_client`` (only checked for pre-open ``None``)
-    - ``_bound_loop`` (event-loop affinity guard)
+    Session-shrink PR 3 narrowed the Protocol further: the
+    ``_http_client`` pre-open guard moved to a
+    :meth:`Kernel.get_http_client` call (which raises the historical
+    ``RuntimeError`` when the client is unopened), and the bound-loop
+    affinity check moved UP to :meth:`Session._perform_authed_post` so
+    it fires once per chain invocation (not once per leaf attempt). The
+    Protocol now declares only the members the leaf still touches:
+
+    - ``_kernel`` (concrete-class reference; streaming-POST transport
+      + pre-open guard via ``get_http_client()``)
     - ``_snapshot`` (fresh ``_AuthSnapshot`` per attempt)
     """
 
     _kernel: Kernel
-    _http_client: httpx.AsyncClient | None
-    _bound_loop: asyncio.AbstractEventLoop | None
 
     async def _snapshot(self) -> _AuthSnapshot: ...
 
@@ -301,17 +304,17 @@ class AuthedTransport:
         deadlock — ``asyncio.Semaphore`` is not reentrant.
         """
         host = self._host
-        # Fast-path: reject pre-open calls before loop checks and semaphore acquisition.
-        if host._http_client is None:
-            raise RuntimeError("Client not initialized. Use 'async with' context.")
+        # Pre-open guard: ``Kernel.get_http_client()`` raises the historical
+        # ``RuntimeError("Client not initialized. Use 'async with' context.")``
+        # when the HTTP client hasn't been opened yet. Session-shrink PR 3
+        # routed this through the kernel accessor so the Protocol can drop
+        # ``_http_client`` without losing the early-fail surface.
+        host._kernel.get_http_client()
 
-        # Event-loop affinity guard. Placed before any further awaits so
-        # cross-loop misuse never gets past the boundary.
-        if host._bound_loop is not None and asyncio.get_running_loop() is not host._bound_loop:
-            raise RuntimeError(
-                "NotebookLMClient is bound to a different event loop. "
-                "Each client is per-loop; create a new client in the target loop."
-            )
+        # Event-loop affinity guard moved UP to
+        # :meth:`Session._perform_authed_post` (session-shrink PR 3) so the
+        # check fires once per chain invocation rather than once per leaf
+        # attempt. The leaf no longer reads ``host._bound_loop``.
 
         start = time.perf_counter()
 

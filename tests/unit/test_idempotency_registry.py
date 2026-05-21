@@ -551,6 +551,13 @@ def _build_rpc_executor() -> Any:
         decode_response_late_bound=_decode,
         is_auth_error=_is_auth_error,
         sleep=_sleep,
+        # Session-shrink PR 3: providers replace direct owner-attr reads
+        # for the values that used to live on the :class:`RpcOwner`
+        # Protocol. The ``MagicMock`` owner still holds the legacy ivars,
+        # so each provider just reads through.
+        timeout_provider=lambda: owner._timeout,
+        refresh_callback_enabled_provider=lambda: owner._refresh_callback is not None,
+        refresh_retry_delay_provider=lambda: owner._refresh_retry_delay,
     )
     return executor, owner, captured
 

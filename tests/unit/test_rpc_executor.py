@@ -133,6 +133,14 @@ def _executor(
         decode_response_late_bound=decode_response_late_bound or _decode,
         is_auth_error=is_auth_error or (lambda exc: False),
         sleep=sleep or _no_sleep,
+        # Session-shrink PR 3 narrowed :class:`RpcOwner` and added
+        # constructor-time providers for the values that used to be
+        # read off the owner directly. The ``_Owner`` stub still holds
+        # the legacy ivars so individual tests can mutate them — the
+        # providers simply read through to those ivars.
+        timeout_provider=lambda: owner._timeout,
+        refresh_callback_enabled_provider=lambda: owner._refresh_callback is not None,
+        refresh_retry_delay_provider=lambda: owner._refresh_retry_delay,
     )
 
 

@@ -8,10 +8,13 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, NoReturn, Protocol
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlencode
 
 import httpx
+
+if TYPE_CHECKING:
+    from ._kernel import Kernel
 
 from ._authed_transport import (
     _AuthSnapshot,
@@ -52,10 +55,12 @@ class DecodeResponse(Protocol):
 
 
 class RpcOwner(Protocol):
-    _timeout: float
-    _refresh_callback: Callable[[], Awaitable[Any]] | None
-    _refresh_retry_delay: float
-    _http_client: Any
+    # Concrete-class reference (NOT a bridge attribute). Used by
+    # :meth:`RpcExecutor.execute_with_telemetry` for the pre-open guard
+    # via :meth:`Kernel.get_http_client`, which raises the historical
+    # ``RuntimeError("Client not initialized. Use 'async with' context.")``
+    # when the client hasn't been opened yet.
+    _kernel: Kernel
 
     async def _perform_authed_post(
         self,
@@ -107,11 +112,17 @@ class RpcExecutor:
         decode_response_late_bound: DecodeResponse,
         is_auth_error: Callable[[Exception], bool],
         sleep: Callable[[float], Awaitable[Any]],
+        timeout_provider: Callable[[], float],
+        refresh_callback_enabled_provider: Callable[[], bool],
+        refresh_retry_delay_provider: Callable[[], float],
     ):
         self._owner = owner
         self._decode_response = decode_response_late_bound
         self._is_auth_error = is_auth_error
         self._sleep = sleep
+        self._timeout_provider = timeout_provider
+        self._refresh_callback_enabled_provider = refresh_callback_enabled_provider
+        self._refresh_retry_delay_provider = refresh_retry_delay_provider
 
     async def execute_with_telemetry(
         self,
@@ -146,8 +157,13 @@ class RpcExecutor:
         every method default-resolves to ``UNCLASSIFIED`` (silent + no
         behavior change); Wave 2 will populate variant entries.
         """
-        if not self._owner._http_client:
-            raise RuntimeError("Client not initialized. Use 'async with' context.")
+        # Pre-open guard — preserves the historical ``RuntimeError`` surface by
+        # routing through ``Kernel.get_http_client()`` (which raises the same
+        # message when the client hasn't been opened). Going through the
+        # kernel accessor instead of the now-narrowed :class:`RpcOwner`
+        # Protocol attribute keeps the early-fail behavior intact while
+        # removing ``_http_client`` from the Protocol surface.
+        self._owner._kernel.get_http_client()
 
         # Only the outer call mints a request id; the decode-time retry path
         # (``_is_retry=True``) inherits the parent's id so a single
@@ -304,7 +320,7 @@ class RpcExecutor:
             elapsed = time.perf_counter() - start
             if (
                 not _is_retry
-                and self._owner._refresh_callback is not None
+                and self._refresh_callback_enabled_provider()
                 and self._is_auth_error(exc)
             ):
                 refreshed = await self.try_refresh_and_retry(
@@ -410,7 +426,7 @@ class RpcExecutor:
             raise RPCTimeoutError(
                 f"Request timed out calling {method.name}",
                 method_id=method.value,
-                timeout_seconds=self._owner._timeout,
+                timeout_seconds=self._timeout_provider(),
                 original_error=exc,
             ) from exc
 
@@ -447,8 +463,9 @@ class RpcExecutor:
             logger.warning("Token refresh failed: %s", refresh_error)
             raise original_error from refresh_error
 
-        if self._owner._refresh_retry_delay > 0:
-            await self._sleep(self._owner._refresh_retry_delay)
+        refresh_retry_delay = self._refresh_retry_delay_provider()
+        if refresh_retry_delay > 0:
+            await self._sleep(refresh_retry_delay)
 
         logger.info("Token refresh successful, retrying RPC %s", method.name)
         return await self._owner.rpc_call(
