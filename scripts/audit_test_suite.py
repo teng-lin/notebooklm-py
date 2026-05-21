@@ -18,6 +18,7 @@ import ast
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -43,7 +44,9 @@ def collect_total() -> tuple[int, int]:
         text=True,
         check=False,
     )
-    match = re.search(r"(\d+)\s+tests collected", result.stdout)
+    # ``tests?`` covers the singular form pytest emits when the suite has
+    # exactly one collected test.
+    match = re.search(r"(\d+)\s+tests?\s+collected", result.stdout)
     if not match:
         raise RuntimeError(
             "pytest --collect-only failed or produced unexpected output.\n"
@@ -150,34 +153,72 @@ def scan_core_monkeypatches() -> tuple[list[tuple[Path, int, str]], list[tuple[P
     return string_hits, object_hits
 
 
+def _is_comment_line(lines: list[str], lineno: int) -> bool:
+    """True when ``lineno`` (1-based) is a line whose first non-whitespace
+    character is ``#``. Used to filter false-positive matches sitting inside
+    commented-out code samples without rejecting matches whose surrounding
+    code happens to wrap across lines."""
+    if 1 <= lineno <= len(lines):
+        return lines[lineno - 1].lstrip().startswith("#")
+    return False
+
+
+def _lineno_at(content: str, offset: int) -> int:
+    """1-based line number for a character offset inside ``content``."""
+    return content.count("\n", 0, offset) + 1
+
+
 def scan_rpc_call_axis() -> tuple[list[tuple[Path, int]], set[Path]]:
+    """``rpc_call = AsyncMock`` / ``monkeypatch.setattr(..., "rpc_call", ...)``.
+
+    Uses ``re.finditer`` on the full file content rather than line-by-line
+    matching so that a formatter wrapping a long monkeypatch call across
+    multiple lines is still counted. ``AsyncMock`` is matched via a
+    dotted-prefix prefix (``mock.AsyncMock``, ``unittest.mock.AsyncMock``,
+    bare ``AsyncMock``) to track all canonical assignment shapes.
+    """
     hits: list[tuple[Path, int]] = []
-    assign_pattern = re.compile(r"^\s*\S+\.rpc_call\s*=\s*AsyncMock")
-    mp_pattern = re.compile(r'monkeypatch\.setattr\([^,]+,\s*["\']rpc_call["\']')
+    assign_pattern = re.compile(r"\S+\.rpc_call\s*=\s*(?:\w+\.)*AsyncMock")
+    mp_pattern = re.compile(r'monkeypatch\.setattr\(\s*[^,]+,\s*["\']rpc_call["\']')
 
     for path in TESTS.rglob("test_*.py"):
         try:
-            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-                if assign_pattern.match(line) or mp_pattern.search(line):
-                    hits.append((path, lineno))
+            content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
+        lines = content.splitlines()
+        for pattern in (assign_pattern, mp_pattern):
+            for m in pattern.finditer(content):
+                lineno = _lineno_at(content, m.start())
+                if _is_comment_line(lines, lineno):
+                    continue
+                hits.append((path, lineno))
 
     files = {p for p, _ in hits}
     return hits, files
 
 
 def scan_skipped() -> list[tuple[Path, int, str]]:
+    """``pytest.mark.{skip,skipif,xfail}`` references.
+
+    Drops the leading ``@`` so module-level ``pytestmark = pytest.mark.skip
+    (...)`` and ``pytestmark = [pytest.mark.skipif(...), ...]`` shapes are
+    counted alongside the decorator form. Commented-out markers
+    (``# @pytest.mark.skip``) are filtered out via line-prefix check.
+    """
     hits: list[tuple[Path, int, str]] = []
-    pattern = re.compile(r"@pytest\.mark\.(skip|skipif|xfail)\b")
+    pattern = re.compile(r"pytest\.mark\.(skip|skipif|xfail)\b")
     for path in TESTS.rglob("test_*.py"):
         try:
-            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-                m = pattern.search(line)
-                if m:
-                    hits.append((path, lineno, m.group(1)))
+            content = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
+        lines = content.splitlines()
+        for m in pattern.finditer(content):
+            lineno = _lineno_at(content, m.start())
+            if _is_comment_line(lines, lineno):
+                continue
+            hits.append((path, lineno, m.group(1)))
     return hits
 
 
@@ -212,7 +253,7 @@ def main() -> int:
     if bucket_total != files:
         print(f"  ! mismatch: bucket-sum {bucket_total} vs find total {files}")
 
-    banner("_core.X migration debt (PR-10 should have cleared this)")
+    banner("_core.X monkeypatch migration debt")
     string_hits, object_hits = scan_core_monkeypatches()
     print(f"String-target monkeypatch.setattr('notebooklm._core.X', ...):  {len(string_hits)}")
     for path, lineno, tgt in string_hits:
@@ -230,11 +271,9 @@ def main() -> int:
 
     banner("Skipped / xfailed / skipif")
     skip_hits = scan_skipped()
-    by_kind: dict[str, int] = {}
-    for _, _, kind in skip_hits:
-        by_kind[kind] = by_kind.get(kind, 0) + 1
+    by_kind = Counter(kind for _, _, kind in skip_hits)
     for kind, n in sorted(by_kind.items()):
-        print(f"  @pytest.mark.{kind:<10} {n}")
+        print(f"  pytest.mark.{kind:<10} {n}")
     print(f"  total                {len(skip_hits)}")
 
     banner("Big files (top 8 by line count)")
