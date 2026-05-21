@@ -239,6 +239,57 @@ race where partial-resolve succeeds but the subsequent `get` returns
 The pre-existing "no partial-ID match" branch (raised by `_resolve_partial_id`
 as a `ClickException`) was already exit `1` and is unchanged.
 
+### `note delete --json` without `--yes`, `note rename` race exit `1` (was `0`) ✅ **Landed**
+
+Two parallel surgical fixes to `cli/note.py` matching the broader `--json`
+exit-code convention pinned by the prior `get`-on-not-found change. Both
+cases previously emitted a `{"<verb>ed": false, "error": ...}` payload on
+exit `0`, which passed silently in `set -e` / `check_call`-style scripts
+branching on the exit code.
+
+`notebooklm note delete <id> --json` without `--yes` cannot prompt (it would
+corrupt the parseable-JSON contract callers depend on), but it must also not
+appear to succeed. The command now emits the standard typed envelope:
+
+```json
+{
+  "error": true,
+  "code": "VALIDATION_ERROR",
+  "message": "Pass --yes to confirm deletion in --json mode",
+  "id": "...",
+  "notebook_id": "..."
+}
+```
+
+on stdout and exits `1`. The text-mode interactive prompt path (no `--json`)
+is unchanged — declining the prompt is still a no-op exit `0`.
+
+`notebooklm note rename <id> "new title"` resolves the partial ID and then
+fetches the current note to preserve its content before issuing the update.
+A concurrent `note delete` can win the race between those two calls; the
+backend then returns `None` and the rename has nothing to update. The
+command now funnels that race into the same typed `NOT_FOUND` envelope used
+by `note get`'s Path B:
+
+```json
+{
+  "error": true,
+  "code": "NOT_FOUND",
+  "message": "Note not found",
+  "id": "...",
+  "notebook_id": "..."
+}
+```
+
+on stdout (text mode: plain `Note not found` on stderr) and exits `1`. The
+update RPC is **never** issued on this path — callers can rely on the
+absence of side effects when they see this envelope.
+
+**Migration:** scripts branching on the exit code now correctly catch both
+misconfigurations. Scripts parsing the JSON body must switch from
+`data["deleted"] == false` / `data["renamed"] == false` to
+`data["error"] == true` (or branch on `data["code"]`).
+
 ### `download` exception paths route through the typed handler
 
 The `download` command group routes all `download` exception paths through `handle_errors` (`cli/download.py:699-737`) so that:

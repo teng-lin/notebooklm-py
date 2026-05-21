@@ -337,21 +337,33 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
             resolved_id = await resolve_note_id(
                 client, nb_id_resolved, note_id, json_output=json_output
             )
-            # Get current note to preserve content
+            # Get current note to preserve content. The note may have
+            # disappeared between ``resolve_note_id`` and this ``get`` (e.g.
+            # a concurrent ``note delete`` won the race), in which case the
+            # backend returns ``None``. We funnel that through the same
+            # typed-error path as ``note get``'s Path B (resolve→missing)
+            # rather than the previous exit-0 ``{renamed: false, error: ...}``
+            # placeholder so ``set -e`` / ``check_call`` callers can branch on
+            # the exit code without parsing prose (audit P1.T5). See
+            # ``docs/cli-exit-codes.md`` and the BREAKING entry in
+            # ``CHANGELOG.md`` (Unreleased → Changed).
+            #
+            # The trailing ``raise AssertionError`` is unreachable at runtime
+            # (``_output_error`` always ``raise SystemExit``s) — it exists
+            # solely to narrow ``n`` from ``Note | None`` to ``Note`` for
+            # mypy without forcing a ``NoReturn`` annotation onto
+            # ``error_handler._output_error`` (which would change the shared
+            # helper's typing contract — same trick used by ``note get``).
             n = await client.notes.get(nb_id_resolved, resolved_id)
             if not isinstance(n, Note):
-                if json_output:
-                    json_output_response(
-                        {
-                            "id": resolved_id,
-                            "notebook_id": nb_id_resolved,
-                            "renamed": False,
-                            "error": "Note not found",
-                        }
-                    )
-                    return
-                console.print("[yellow]Note not found[/yellow]")
-                return
+                _output_error(
+                    "Note not found",
+                    code="NOT_FOUND",
+                    json_output=json_output,
+                    exit_code=1,
+                    extra={"id": resolved_id, "notebook_id": nb_id_resolved},
+                )
+                raise AssertionError("unreachable")  # pragma: no cover
 
             await client.notes.update(
                 nb_id_resolved, resolved_id, content=n.content or "", title=new_title
@@ -395,19 +407,28 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
 
             # In JSON mode, refuse to prompt: ``click.confirm`` writes to
             # stdout, which would corrupt the parseable JSON contract callers
-            # rely on (a `subprocess.check_output(...) -> json.loads(...)`
+            # rely on (a ``subprocess.check_output(...) -> json.loads(...)``
             # script would silently hang waiting for stdin). Surface a typed
-            # error and exit cleanly so the caller can re-run with ``--yes``.
+            # ``VALIDATION_ERROR`` JSON envelope on stdout AND exit non-zero so
+            # ``set -e`` / ``check_call`` script idioms catch the
+            # misconfiguration immediately instead of silently treating it as
+            # success (audit P1.T5).
+            #
+            # Migration: the prior shape was ``{deleted: false, error: ...}``
+            # + exit ``0``, which passed silently in scripts branching on the
+            # exit code. The new contract uses the standard typed envelope
+            # (``{error, code: "VALIDATION_ERROR", message, ...}``) + exit ``1``.
+            # See ``docs/cli-exit-codes.md`` and the BREAKING entry in
+            # ``CHANGELOG.md`` (Unreleased → Changed).
             if json_output and not yes:
-                json_output_response(
-                    {
-                        "id": resolved_id,
-                        "notebook_id": nb_id_resolved,
-                        "deleted": False,
-                        "error": "Pass --yes to confirm deletion in --json mode",
-                    }
+                _output_error(
+                    "Pass --yes to confirm deletion in --json mode",
+                    code="VALIDATION_ERROR",
+                    json_output=json_output,
+                    exit_code=1,
+                    extra={"id": resolved_id, "notebook_id": nb_id_resolved},
                 )
-                return
+                raise AssertionError("unreachable")  # pragma: no cover
 
             if not yes and not click.confirm(f"Delete note {resolved_id}?"):
                 return

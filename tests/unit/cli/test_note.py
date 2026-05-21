@@ -741,8 +741,18 @@ class TestNoteSaveJson:
             assert data["title"] == "New Title"
             assert data["renamed"] is True
 
-    def test_rename_target_missing_after_resolve(self, runner, mock_auth):
-        """When resolve succeeds but the GET returns None, JSON reports ``renamed: false``."""
+    def test_rename_target_missing_after_resolve_json_exits_1(self, runner, mock_auth):
+        """``rename`` race: resolve succeeds, then GET returns ``None`` (note
+        deleted between the two calls) → typed JSON ``NOT_FOUND`` envelope +
+        exit ``1``.
+
+        Mirrors ``note get``'s Path B contract (see
+        ``test_get_resolves_but_returns_none``). The prior shape was a
+        ``{renamed: false, error: "Note not found"}`` payload on exit ``0``,
+        which silently passed in ``set -e`` scripts that branch on the exit
+        code. See ``docs/cli-exit-codes.md`` and the BREAKING entry in
+        ``CHANGELOG.md`` (Unreleased → Changed).
+        """
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
@@ -767,10 +777,37 @@ class TestNoteSaveJson:
                     ],
                 )
 
-            assert result.exit_code == 0, result.output
+            assert result.exit_code == 1, result.output
             data = json.loads(result.output)
-            assert data["renamed"] is False
-            assert "error" in data
+            assert data["error"] is True
+            assert data["code"] == "NOT_FOUND"
+            assert "Note not found" in data["message"]
+            assert data["id"] == "note_123"
+            assert data["notebook_id"] == "nb_123"
+            # The race-loser path must NOT issue an update RPC.
+            mock_client.notes.update.assert_not_called()
+
+    def test_rename_target_missing_after_resolve_text_exits_1(self, runner, mock_auth):
+        """Same race in text mode: ``Note not found`` on stderr + exit 1."""
+        with patch_client_for_module("note") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
+            mock_client.notes.get = AsyncMock(return_value=None)
+            mock_client.notes.update = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["note", "rename", "note_123", "New", "-n", "nb_123"],
+                )
+
+            assert result.exit_code == 1, result.output
+            assert "Note not found" in result.output
+            mock_client.notes.update.assert_not_called()
 
 
 class TestNoteDeleteJson:
@@ -808,8 +845,17 @@ class TestNoteDeleteJson:
     def test_delete_json_without_yes_emits_typed_error(self, runner, mock_auth):
         """``--json`` mode without ``--yes`` must NOT prompt — it would corrupt
         stdout and break ``subprocess.check_output(...) -> json.loads(...)``
-        callers. Instead, surface a typed JSON error and exit cleanly so the
-        caller can re-run with ``--yes`` (raised in PR #499 review).
+        callers. Instead, surface a typed JSON error and exit non-zero so the
+        ``set -e`` / ``check_call`` family of script idioms catches the
+        misconfiguration immediately (audit P1.T5).
+
+        Migration from the prior shape: the response previously emitted
+        ``{deleted: false, error: "Pass --yes ..."}`` on exit ``0``, which
+        passed silently in scripts that branched on the exit code. The new
+        contract uses the standard typed envelope (``{error, code:
+        "VALIDATION_ERROR", message, ...}``) + exit ``1``. See
+        ``docs/cli-exit-codes.md`` and the BREAKING entry in
+        ``CHANGELOG.md`` (Unreleased → Changed).
         """
         with patch_client_for_module("note") as mock_client_cls:
             mock_client = create_mock_client()
@@ -829,14 +875,14 @@ class TestNoteDeleteJson:
                     ["note", "delete", "note_123", "-n", "nb_123", "--json"],
                 )
 
-            assert result.exit_code == 0, result.output
+            assert result.exit_code == 1, result.output
             # Stdout must be ONLY parseable JSON — no prompt residue.
             data = json.loads(result.output)
-            assert data["deleted"] is False
+            assert data["error"] is True
+            assert data["code"] == "VALIDATION_ERROR"
+            assert "--yes" in data["message"]
             assert data["id"] == "note_123"
             assert data["notebook_id"] == "nb_123"
-            assert "error" in data
-            assert "--yes" in data["error"]
             mock_client.notes.delete.assert_not_called()
 
     def test_delete_non_json_cancelled(self, runner, mock_auth):
