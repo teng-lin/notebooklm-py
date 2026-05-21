@@ -218,9 +218,8 @@ docs/
 ├── deprecations.md        # Staged API deprecations tracker
 ├── development.md         # Architecture, testing, and VCR cassette practices
 ├── installation.md        # Canonical install guide (personas, extras, platform notes)
-├── migration-tier-12-to-13.md # Guide for cutover to Tier 13 composable APIs
 ├── python-api.md          # Python API reference
-├── refactor.md            # Post-refactor narrative and historical seams map
+├── refactor-history.md    # Historical record of the Tier 12/13 refactor + downstream migration tables
 ├── releasing.md           # Release checklist
 ├── rpc-development.md     # RPC capture and debugging
 ├── rpc-reference.md       # RPC payload structures and Content Type Codes

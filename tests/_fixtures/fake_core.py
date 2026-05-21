@@ -10,7 +10,7 @@ feature-local runtime Protocols (``ChatRuntime``, ``ArtifactsRuntime``,
 sub-client constructor (``NotebooksAPI(fake)``) instead of constructing
 a real ``Session`` and mutating its attributes after the fact.
 
-Phase 7 (refactor.md §Migration Plan step 10) deleted the broad
+Phase 7 (refactor-history.md §Migration Plan step 10) deleted the broad
 ``Session`` Protocol that this factory's defaults dict previously
 mirrored member-for-member. The dict now lists only the attribute slots
 features actually exercise — promoting an attribute requires a real
@@ -102,7 +102,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         get_http_client=MagicMock(return_value=fake_http_client),
     )
 
-    # Phase 7 (refactor.md §Migration Plan step 10) shrunk this dict from
+    # Phase 7 (refactor-history.md §Migration Plan step 10) shrunk this dict from
     # the broad-Session-era 25+ entries to the minimum set that satisfies
     # the post-refactor capability and feature-local runtime Protocols.
     # New entries should only be added when a real test site exercises

@@ -7,7 +7,7 @@ download path uses).
 
 The classifier behaviour, CRUD wire payloads, and the audit §28
 cancel-shielded ``create_note`` are all exercised here; Phase 6
-(refactor.md Step 9, ADR-013) retired the legacy
+(refactor-history.md Step 9, ADR-013) retired the legacy
 ``test_mind_map_service.py`` tests because the underlying
 ``MindMapService`` class is gone.
 """
@@ -109,7 +109,7 @@ class TestClassifyRow:
     def test_saved_chat_with_unrecognized_metadata_falls_back_to_note(
         self, service: NoteService
     ) -> None:
-        """Per refactor.md §Risks: when saved-chat metadata is not
+        """Per refactor-history.md §Risks: when saved-chat metadata is not
         positively detectable, the classifier must default to NOTE so
         the row never silently drops out of ``NotesAPI.list()``.
         """
@@ -214,7 +214,7 @@ class TestCrud:
 class TestCreateNoteCancellation:
     """Audit item §28: cancel mid-UPDATE_NOTE must not leave an orphan row.
 
-    Moved to ``NoteService`` in Phase 6 (refactor.md Step 9, ADR-013).
+    Moved to ``NoteService`` in Phase 6 (refactor-history.md Step 9, ADR-013).
     The legacy ``_mind_map.MindMapService.create_note`` path that
     previously owned the shield + best-effort cleanup contract was
     retired in the same phase; the contract itself lives here now.

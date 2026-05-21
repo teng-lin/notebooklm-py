@@ -112,7 +112,7 @@ def mock_mind_map_service():
 
     These tests exercise generation/encoding paths that never call the
     mind-map services. The ``mind_maps`` + ``note_service`` parameters
-    are both required (Phase 5 / refactor.md Migration Plan steps 6-7)
+    are both required (Phase 5 / refactor-history.md Migration Plan steps 6-7)
     so we return a dict of stand-in mocks that construction sites can
     splat into ``ArtifactsAPI(...)`` calls via
     ``**mock_mind_map_service``.

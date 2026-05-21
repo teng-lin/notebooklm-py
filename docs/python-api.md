@@ -588,7 +588,7 @@ and [`docs/architecture.md`](architecture.md) for the rationale and the
 post-v0.5.0 collaborator graph.
 
 If you previously imported from `notebooklm._core` modules, see
-[`docs/migration-tier-12-to-13.md`](migration-tier-12-to-13.md) for the
+[`docs/refactor-history.md`](refactor-history.md) for the
 Tier 12 → Tier 13 rename table. The `notebooklm._core` compatibility
 shim was removed in v0.5.0; first-party callers should import directly
 from the canonical seam modules (`_session_config`, `_session_helpers`,

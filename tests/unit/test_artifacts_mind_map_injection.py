@@ -1,6 +1,6 @@
 """Tests for ``NoteBackedMindMapService`` injection into ``ArtifactsAPI``.
 
-After Phase 5 (refactor.md Migration Plan steps 6-7), ``ArtifactsAPI``
+After Phase 5 (refactor-history.md Migration Plan steps 6-7), ``ArtifactsAPI``
 takes two explicit services through its constructor:
 
 * ``mind_maps: NoteBackedMindMapService`` — the mind-map-only adapter
@@ -34,7 +34,7 @@ from notebooklm._note_service import NoteService
 async def test_list_mind_maps_delegates_to_injected_facade():
     """``_list_mind_maps`` calls the injected ``mind_maps`` facade.
 
-    Phase 6 (refactor.md Step 9, ADR-013) removed the module-level
+    Phase 6 (refactor-history.md Step 9, ADR-013) removed the module-level
     ``_mind_map.list_mind_maps`` wrapper that previously needed to be
     monkeypatched as a guard; the only path now is through the
     injected adapter. Confirming the adapter sees the call still pins

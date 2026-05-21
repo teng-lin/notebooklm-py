@@ -309,7 +309,7 @@ class NotebookLMClient:
             max_concurrent_uploads=max_concurrent_uploads,
         )
         self.notebooks = NotebooksAPI(self._session, sources_api=self.sources)
-        # Phase 5 wiring per docs/refactor.md Migration Plan steps 6-7:
+        # Phase 5 wiring per docs/refactor-history.md Migration Plan steps 6-7:
         # the legacy single-service handoff (``MindMapService(self._session)``
         # passed as ``mind_map_service=``) is replaced with the explicit
         # NoteService + NoteBackedMindMapService split. NoteService owns the
@@ -327,7 +327,7 @@ class NotebookLMClient:
         )
         # ``chat`` MUST be constructed before ``notes`` so the
         # ``save_chat_answer`` callback (= ``chat.save_answer_as_note``)
-        # exists at NotesAPI construction time. Phase 6 (refactor.md
+        # exists at NotesAPI construction time. Phase 6 (refactor-history.md
         # Step 8, ADR-013) moves saved-chat ownership to ChatAPI and
         # has NotesAPI delegate via constructor injection.
         self.chat = ChatAPI(self._session, notebooks=self.notebooks)

@@ -120,8 +120,8 @@ The feature-facing surface is the set of **capability Protocols** in
 `OperationScopeProvider`, `AsyncWorkRuntime`, plus the standalone
 `AuthMetadata` and `Kernel` consumed by the upload pipeline. The
 broad `Session` Protocol that previously bundled these together was
-deleted in Phase 7 of the capability refactor (`docs/refactor.md`
-§Migration Plan step 10); each feature now depends on the narrowest
+deleted in the final phase of the capability refactor (see
+[`docs/refactor-history.md`](refactor-history.md) and ADR-013); each feature now depends on the narrowest
 slice it needs, either by composing the shared Protocols here or by
 defining a feature-local runtime in its own module (`ChatRuntime` in
 `_chat.py`, `ArtifactsRuntime` in `_artifacts.py`, `UploadRuntime` in

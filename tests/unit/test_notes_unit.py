@@ -674,7 +674,7 @@ class TestDeleteMindMap:
 # create_from_chat() deprecation-forwarder tests (issue #660)
 # =============================================================================
 #
-# Per refactor.md Step 8 / ADR-013, ``NotesAPI.create_from_chat`` is now a
+# Per refactor-history.md Step 8 / ADR-013, ``NotesAPI.create_from_chat`` is now a
 # deprecated pure-delegate to the injected ``save_chat_answer`` callback —
 # the encoder semantics + empty-references handling live on
 # ``ChatAPI.save_answer_as_note`` and are covered by

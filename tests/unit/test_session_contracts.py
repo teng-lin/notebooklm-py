@@ -1,7 +1,7 @@
 """Typing checks for the capability-Protocol contracts in
 ``notebooklm._session_contracts``.
 
-Phase 7 (refactor.md §Migration Plan step 10) replaced the broad
+Phase 7 (refactor-history.md §Migration Plan step 10) replaced the broad
 ``Session`` Protocol with four shared capability Protocols
 (``RpcCaller``, ``LoopGuard``, ``OperationScopeProvider``,
 ``AsyncWorkRuntime``). ``AuthMetadata`` and ``Kernel`` are preserved

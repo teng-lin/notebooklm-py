@@ -9,7 +9,7 @@ mind-map-only facade lives in :mod:`_mind_map` as
 :class:`NoteBackedMindMapService`. Saved-from-chat note creation lives
 in :mod:`_chat` (``ChatAPI.save_answer_as_note``); ``NotesAPI`` calls
 into it via a constructor-injected :class:`SaveChatAnswerCallback`
-callback so this module does not import ``_chat`` (refactor.md Step 8,
+callback so this module does not import ``_chat`` (refactor-history.md Step 8,
 ADR-013).
 """
 
@@ -35,7 +35,7 @@ class SaveChatAnswerCallback(Protocol):
     ``ChatAPI.save_answer_as_note`` structurally satisfies this
     Protocol; ``NotesAPI`` receives the bound method via constructor
     injection so it does not have to import ``ChatAPI``
-    (refactor.md §Saved Chat Answer As Note, ADR-013).
+    (refactor-history.md §Saved Chat Answer As Note, ADR-013).
     """
 
     async def __call__(

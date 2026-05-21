@@ -94,7 +94,7 @@ class ChatRuntime(RpcCaller, LoopGuard, Protocol):
     chat-specific surfaces today and not shared with any other feature. If
     another feature later needs the same capability, promote these members
     to ``_session_contracts.py``; until then keeping them local minimises
-    the chat dependency surface (refactor.md §Local Chat Runtime, ADR-013).
+    the chat dependency surface (refactor-history.md §Local Chat Runtime, ADR-013).
     """
 
     async def transport_post(

@@ -19,7 +19,7 @@ from notebooklm.types import (
 def mock_artifacts_api():
     """Create an ArtifactsAPI with mocked core.
 
-    After Phase 5 (refactor.md Migration Plan steps 6-7), ``ArtifactsAPI``
+    After Phase 5 (refactor-history.md Migration Plan steps 6-7), ``ArtifactsAPI``
     takes ``mind_maps: NoteBackedMindMapService`` and
     ``note_service: NoteService`` instead of the single
     ``mind_map_service`` parameter. Mind-map persistence goes through

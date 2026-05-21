@@ -9,7 +9,7 @@ These pins guard against silent surface drift (e.g. someone exports a new
 helper from ``_authed_transport`` without updating ``__all__`` or the
 migration doc). They are NOT public-API contracts — see
 ``docs/stability.md`` for the public surface — but they pin the documented
-internal surface listed in ``docs/migration-tier-12-to-13.md``.
+internal surface listed in ``docs/refactor-history.md``.
 """
 
 from __future__ import annotations

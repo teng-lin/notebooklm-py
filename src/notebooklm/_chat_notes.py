@@ -1,4 +1,4 @@
-"""Saved-from-chat note encoder (private; refactor.md Step 8, ADR-013).
+"""Saved-from-chat note encoder (private; refactor-history.md Step 8, ADR-013).
 
 Owns the CREATE_NOTE wire format used by the web UI's "Save to note"
 button on a chat answer (issue #660). Moved out of ``_mind_map.py`` in

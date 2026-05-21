@@ -5,13 +5,13 @@
 Accepted.
 
 This ADR ratifies the capability-composition model originally proposed
-in `docs/refactor.md` (revision 5, dated 2026-05-20). It supersedes
+in `docs/refactor-history.md` (revision 5, dated 2026-05-20). It supersedes
 [ADR-010](0010-session-kernel-split.md) (Session/Kernel split), which
 was re-statused to `Superseded by ADR-013 (#866)` when this ADR landed.
 
-The 11-step migration described in `docs/refactor.md` §Migration Plan
+The 11-step migration described in `docs/refactor-history.md` §Migration Plan
 landed in full across Phases 1–7 of the capability refactor arc; the
-broad `Session` protocol was deleted in Phase 7 (refactor.md step 10),
+broad `Session` protocol was deleted in Phase 7 (refactor-history.md step 10),
 so this ADR is now a plain `Accepted` record with no outstanding
 sunset clause.
 
@@ -144,7 +144,7 @@ runtimes. Concretely:
 
 7. **No mixins for dependency expression.** Required capabilities are
    declared with `Protocol`s; extracted behavior is held by
-   collaborators/services. This restates `docs/refactor.md` §Design
+   collaborators/services. This restates `docs/refactor-history.md` §Design
    Rule 6 and is binding for this refactor and future feature work.
 
 8. **Underscore-prefix module privacy from
@@ -183,7 +183,7 @@ runtimes. Concretely:
   each migration step. Tests that instantiate `ChatAPI(session)`,
   `NotesAPI(session)`, `ArtifactsAPI(session)`, etc., must switch to
   the new keyword-only collaborator arguments. The migration steps in
-  `docs/refactor.md` pair each feature retyping with its same-commit
+  `docs/refactor-history.md` pair each feature retyping with its same-commit
   test fixture update so the build stays green.
 - The `_core.py` compatibility shim was removed in Phase 4 ([#889](https://github.com/teng-lin/notebooklm-py/pull/889)); see `tests/unit/test_public_shims.py:1166` for the removal pin.
 - Two `RpcCaller` Protocols coexist briefly: the shared *object*
@@ -204,11 +204,11 @@ runtimes. Concretely:
   across multiple ADRs.
 
 The 11-step incremental migration that realizes this decision is
-detailed in `docs/refactor.md` §Migration Plan. It is intentionally
+detailed in `docs/refactor-history.md` §Migration Plan. It is intentionally
 **not duplicated here**: this ADR records the architectural intent, not
 the step sequence. Step ordering may evolve as the migration progresses
 (e.g. when test fixture changes reveal a needed prior step), and the
-authoritative ordering lives in `docs/refactor.md` until the cutover
+authoritative ordering lives in `docs/refactor-history.md` until the cutover
 lands.
 
 ### Composed Runtime Consequences

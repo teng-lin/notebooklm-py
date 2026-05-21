@@ -15,7 +15,7 @@ Contents:
   promoted in Phase 1 of the capability refactor.
 
 The broad ``Session`` Protocol that previously bundled all of these
-together was deleted in Phase 7 (refactor.md §Migration Plan step 10).
+together was deleted in Phase 7 (refactor-history.md §Migration Plan step 10).
 Feature APIs that need more than one capability either compose the
 shared Protocols here or define a feature-local runtime in their own
 module (``ChatRuntime`` in ``_chat.py``, ``ArtifactsRuntime`` in

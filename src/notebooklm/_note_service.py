@@ -13,7 +13,7 @@ NOT part of the public ``notebooklm`` surface — the public ``Note``
 dataclass and ``client.notes`` / ``client.artifacts`` facades remain
 the only stable contract.
 
-Risk-mitigation note (refactor.md §Risks): saved-chat note metadata is
+Risk-mitigation note (refactor-history.md §Risks): saved-chat note metadata is
 not always reliably present on the wire. When the classifier cannot
 positively identify a row as a saved-from-chat note it defaults to
 ``NOTE`` (not ``UNKNOWN``) so the NotesAPI list path keeps surfacing
@@ -126,7 +126,7 @@ class NoteService:
         * saved-chat: a plain note row whose metadata flags chat mode.
           That metadata is not reliably present on the wire, so when we
           cannot positively confirm chat mode we fall through to
-          ``NOTE`` rather than ``UNKNOWN`` (refactor.md §Risks).
+          ``NOTE`` rather than ``UNKNOWN`` (refactor-history.md §Risks).
         * plain note: default for any other content-bearing row.
         """
         if not isinstance(row, list) or len(row) == 0:

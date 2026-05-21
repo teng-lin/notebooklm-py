@@ -3,7 +3,7 @@
 This document describes the runtime shape of `notebooklm-py` after the
 v0.5.0 refactor program closed (Phases 1-4 of the multi-phase refactor
 plan; the proposal that drove the work is preserved at
-[`docs/refactor.md`](./refactor.md)). It is the canonical post-refactor
+[`docs/refactor-history.md`](./refactor-history.md)). It is the canonical post-refactor
 map.
 
 ## Layered overview
@@ -231,5 +231,5 @@ directly.
 
 - [`CLAUDE.md`](../CLAUDE.md) — high-level navigation map for AI agents working in this repo.
 - [`docs/development.md`](./development.md) — how to add a new feature API.
-- [`docs/refactor.md`](./refactor.md) — historical narrative of the multi-phase refactor.
+- [`docs/refactor-history.md`](./refactor-history.md) — historical narrative of the multi-phase refactor + downstream migration tables.
 - [`docs/python-api.md`](./python-api.md) — public Python API surface.

@@ -1,7 +1,7 @@
 """Unit tests for ``ChatAPI.save_answer_as_note`` (Phase 6, issue #660).
 
 Saved-chat ownership moved from ``NotesAPI.create_from_chat`` to
-``ChatAPI.save_answer_as_note`` in refactor.md Step 8 / ADR-013. The
+``ChatAPI.save_answer_as_note`` in refactor-history.md Step 8 / ADR-013. The
 ``NotesAPI.create_from_chat`` forwarder still exists (deprecated, pure
 delegate) but the encoder + title-derivation semantics now live here.
 

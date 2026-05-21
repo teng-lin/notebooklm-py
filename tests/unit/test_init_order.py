@@ -782,7 +782,7 @@ def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> N
 def test_phase7_artifact_mind_map_patch_seams_are_current() -> None:
     """Final artifact services must still resolve mind-map seams via ``_artifacts``.
 
-    Phase 5 (refactor.md Migration Plan steps 6-7) moves the mind-map
+    Phase 5 (refactor-history.md Migration Plan steps 6-7) moves the mind-map
     create/list/extract paths off the ``_mind_map`` module-level seams
     and onto the injected ``NoteService`` + ``NoteBackedMindMapService``
     instances. The ``_artifact_generation`` module no longer needs an
@@ -846,7 +846,7 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
 
 
 def test_client_constructs_chat_before_notes_and_injects_save_chat_answer() -> None:
-    """Phase 6 (refactor.md Step 8, ADR-013): the composition root MUST
+    """Phase 6 (refactor-history.md Step 8, ADR-013): the composition root MUST
     construct ``self.chat`` before ``self.notes`` so the
     ``save_chat_answer=self.chat.save_answer_as_note`` callback exists
     at ``NotesAPI`` construction time.
@@ -1000,7 +1000,7 @@ def test_client_exposes_artifacts_and_notes(mock_auth: AuthTokens) -> None:
 
 def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> None:
     """``ArtifactsAPI`` no longer takes ``notes_api`` at all (per
-    docs/refactor.md Step 4) — the parameter was removed in favor of
+    docs/refactor-history.md Step 4) — the parameter was removed in favor of
     explicit ``mind_maps`` + ``note_service`` (Phase 5). The mind-map
     decoupling is now structural."""
     from notebooklm._mind_map import NoteBackedMindMapService
@@ -1021,7 +1021,7 @@ def test_artifacts_constructible_without_notes_api(mock_auth: AuthTokens) -> Non
 
 def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None:
     """The legacy ``notes_api=`` kwarg was removed in Phase 3
-    (docs/refactor.md Step 4). Passing it must raise ``TypeError``."""
+    (docs/refactor-history.md Step 4). Passing it must raise ``TypeError``."""
     from notebooklm._mind_map import NoteBackedMindMapService
     from notebooklm._note_service import NoteService
 
@@ -1044,7 +1044,7 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
 def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> None:
     """Both construction orders must succeed and produce working APIs.
 
-    Per Phase 6 (refactor.md Step 8, ADR-013), ``NotesAPI`` requires an
+    Per Phase 6 (refactor-history.md Step 8, ADR-013), ``NotesAPI`` requires an
     injected ``save_chat_answer`` callback at construction; in the
     composition root that callback is
     ``ChatAPI.save_answer_as_note``. This test uses an ``AsyncMock``
