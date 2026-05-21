@@ -172,6 +172,10 @@ async def test_fetch_tokens_with_domains_save_does_not_block_event_loop(
         # return is fine; mirror the real function's None-by-default.
         time.sleep(_SLEEP_SECONDS)
 
+    # ``fetch_tokens_with_domains`` calls ``save_cookies_to_storage`` via
+    # the module-local alias in ``notebooklm._auth.refresh``
+    # (_auth/refresh.py:58 + :814), so patch the consumer-side name on
+    # that module rather than the canonical home in ``_auth.storage``.
     monkeypatch.setattr(_auth_refresh, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0
