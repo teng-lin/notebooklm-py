@@ -291,13 +291,9 @@ class Session:
         # the live ``httpx.AsyncClient``, the captured ``_bound_loop``, and
         # the keepalive background task all live on ``self._lifecycle``
         # (constructed below alongside the other extracted helpers so the
-        # inter-helper dependency order is obvious). Compat properties further
-        # down preserve the legacy ``_timeout`` / ``_http_client`` /
-        # ``_bound_loop`` / ``_keepalive_task`` / ``_keepalive_interval`` /
-        # ``_keepalive_storage_path`` ivar names for tests and first-party
-        # callers that probe or assign them directly. The
-        # ``_connect_timeout`` / ``_limits`` bridges were dropped in
-        # D1-audit-full; access them via ``self._lifecycle`` if needed.
+        # inter-helper dependency order is obvious). Access lifecycle state
+        # through ``self._lifecycle`` and the live HTTP client through
+        # ``self._kernel``.
         _resolved_limits = limits if limits is not None else ConnectionLimits()
         # ``_refresh_retry_delay`` stays here directly — it is read on the
         # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
@@ -380,11 +376,10 @@ class Session:
         self._auth_coord = AuthRefreshCoordinator(refresh_callback=refresh_callback)
         # HTTP-client lifecycle — owns loop binding, keepalive, and close
         # ordering while delegating the live ``httpx.AsyncClient`` to
-        # ``self._kernel``. Compat properties further down preserve the legacy
-        # ivar names. The ``_resolve_keepalive_interval`` clamp lives in
-        # :mod:`notebooklm._session_helpers` and is imported above; we call
-        # it directly here. (The historical ``notebooklm._core`` re-export
-        # was removed in v0.5.0.)
+        # ``self._kernel``. The ``_resolve_keepalive_interval`` clamp lives
+        # in :mod:`notebooklm._session_helpers` and is imported above; we
+        # call it directly here. (The historical ``notebooklm._core``
+        # re-export was removed in v0.5.0.)
         #
         # Event-loop affinity guard rationale: the lifecycle captures
         # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
@@ -475,81 +470,9 @@ class Session:
     # dropped earlier in D1-audit-full; the live accessor remains
     # ``_get_auth_snapshot_lock()`` / ``AuthRefreshCoordinator.get_auth_snapshot_lock()``.
 
-    # ------------------------------------------------------------------
-    # ``ClientLifecycle`` compat bridges. HTTP-client lifecycle state now
-    # lives on ``self._lifecycle``; the six surviving legacy ivar names
-    # (``_http_client``, ``_bound_loop``, ``_keepalive_task``,
-    # ``_keepalive_interval``, ``_keepalive_storage_path``, ``_timeout``)
-    # are preserved here as ``@property`` bridges. The
-    # ``_connect_timeout`` / ``_limits`` bridges were dropped in
-    # D1-audit-full (zero external callers). After session-shrink PR 3
-    # narrowed :class:`RpcOwner` + :class:`_AuthedTransportHost` to drop
-    # these attribute names, the bridges are no longer Protocol-required —
-    # they survive purely to support test monkeypatches that write to
-    # ``core._<bridge>``; later session-shrink PRs (4–6) retire them as
-    # the test readers migrate. ``Session.__init__`` eager-constructs
-    # ``_lifecycle`` (and ``_kernel``), so the bridges delegate directly
-    # without lazy backfill.
-    # ------------------------------------------------------------------
-
-    @property
-    def _http_client(self) -> httpx.AsyncClient | None:
-        return self._lifecycle._http_client
-
-    @_http_client.setter
-    def _http_client(self, value: httpx.AsyncClient | None) -> None:
-        self._lifecycle._http_client = value
-
-    @property
-    def _bound_loop(self) -> asyncio.AbstractEventLoop | None:
-        return self._lifecycle._bound_loop
-
-    @_bound_loop.setter
-    def _bound_loop(self, value: asyncio.AbstractEventLoop | None) -> None:
-        # Retained for test monkeypatch writers (no external SET sites in
-        # prod; bridge demolition is tracked in session-shrink PR 6 once
-        # those tests migrate). Post-PR-3 the ``_AuthedTransportHost``
-        # Protocol no longer declares ``_bound_loop``.
-        self._lifecycle._bound_loop = value
-
-    @property
-    def _keepalive_task(self) -> asyncio.Task[None] | None:
-        return self._lifecycle._keepalive_task
-
-    # ``_keepalive_task`` setter dropped in arch-d2-cutover: zero external callers.
-
-    @property
-    def _keepalive_interval(self) -> float | None:
-        """Phase 4 deleted the matching ``.setter`` (zero external write
-        sites); write on ``self._lifecycle._keepalive_interval`` directly
-        if a test needs to override it.
-        """
-        return self._lifecycle._keepalive_interval
-
-    @property
-    def _keepalive_storage_path(self) -> Path | None:
-        return self._lifecycle._keepalive_storage_path
-
-    # ``_keepalive_storage_path`` setter dropped in arch-d2-cutover: zero
-    # external callers.
-
-    @property
-    def _timeout(self) -> float:
-        return self._lifecycle._timeout
-
-    @_timeout.setter
-    def _timeout(self, value: float) -> None:
-        # Retained for test monkeypatch writers. Post-PR-3, ``RpcExecutor``
-        # reads via ``self._timeout_provider()`` (which closes over
-        # ``self._lifecycle._timeout`` directly), so ``RpcOwner`` no longer
-        # declares ``_timeout`` and the setter is not Protocol-required —
-        # it survives until the test readers migrate (session-shrink PR 6).
-        self._lifecycle._timeout = value
-
-    # ``_connect_timeout`` and ``_limits`` compat bridges dropped
-    # (D1-audit-full): zero external callers; live values remain on
-    # ``self._lifecycle`` (and the lifecycle helper reads them as plain
-    # ivars when it builds the ``httpx.AsyncClient``).
+    # ``ClientLifecycle`` compat bridges retired in session-shrink PR 6:
+    # tests now read lifecycle state through ``self._lifecycle.<attr>`` and
+    # the live HTTP client through ``self._kernel``.
 
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook."""
@@ -1149,4 +1072,4 @@ class Session:
         Raises:
             RuntimeError: If client is not initialized.
         """
-        return self._lifecycle.get_http_client()
+        return self._kernel.get_http_client()

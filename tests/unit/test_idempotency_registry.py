@@ -527,7 +527,6 @@ def _build_rpc_executor() -> Any:
     owner._timeout = 30.0
     owner._refresh_callback = None
     owner._refresh_retry_delay = 0.0
-    owner._http_client = MagicMock()
     owner._perform_authed_post = AsyncMock(side_effect=_fake_perform_authed_post)
     owner._await_refresh = AsyncMock()
     owner._begin_transport_post = AsyncMock(return_value=object())

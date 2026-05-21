@@ -312,8 +312,8 @@ class TestChatRefreshRetry:
                     content=_make_answer_response_body(),
                 )
 
-            assert core._http_client is not None
-            install_post_as_stream(monkeypatch, core._http_client, fake_post)
+            assert core._kernel.http_client is not None
+            install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
             api = ChatAPI(core)
             result = await api.ask("nb_x", "Q?", source_ids=["s1"])

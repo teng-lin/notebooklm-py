@@ -68,7 +68,7 @@ def _make_client_with_transport(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
     )
-    client._session._http_client = httpx.AsyncClient(
+    client._session._kernel.http_client = httpx.AsyncClient(
         transport=transport,
         headers={
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -169,7 +169,7 @@ async def test_create_note_plain_no_inner_retry_on_5xx(auth_tokens) -> None:
         with pytest.raises(ServerError):
             await client.notes.create(notebook_id, title="My Note", content="hello")
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert create_count == 1, (
         f"expected exactly 1 CREATE_NOTE (NON_IDEMPOTENT_NO_RETRY), got {create_count}"
@@ -221,7 +221,7 @@ async def test_create_note_saved_from_chat_no_inner_retry_on_5xx(auth_tokens) ->
         with pytest.raises(ServerError):
             await client.notes.create_from_chat(notebook_id, ask_result, title="Chat note")
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert create_count == 1, (
         f"expected exactly 1 CREATE_NOTE (saved_from_chat variant, "
@@ -266,7 +266,7 @@ async def test_create_note_happy_path_one_post(auth_tokens) -> None:
     try:
         note = await client.notes.create(notebook_id, title="Happy", content="body")
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert note.id == "note_xyz"
     assert create_count == 1

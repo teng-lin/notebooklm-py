@@ -63,11 +63,11 @@ class _StubHost:
             cookies={"SID": "old_cookie"},
         )
         self._metrics_obj = ClientMetrics(on_rpc_event=None)
-        self._http_client = http_client
+        self.http_client = http_client
 
     def get_http_client(self) -> httpx.AsyncClient:
-        assert self._http_client is not None, "Test forgot to wire an http client."
-        return self._http_client
+        assert self.http_client is not None, "Test forgot to wire an http client."
+        return self.http_client
 
 
 @pytest.fixture

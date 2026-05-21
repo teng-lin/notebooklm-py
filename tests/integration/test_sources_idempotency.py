@@ -111,7 +111,7 @@ def _make_client_with_transport(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
     )
-    client._session._http_client = httpx.AsyncClient(
+    client._session._kernel.http_client = httpx.AsyncClient(
         transport=transport,
         headers={
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -168,7 +168,7 @@ async def test_add_url_probe_short_circuits_when_first_response_lost(auth_tokens
     try:
         source = await client.sources.add_url(notebook_id, url)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert source.url == url
@@ -220,7 +220,7 @@ async def test_add_drive_probe_short_circuits_when_first_response_lost(auth_toke
     try:
         source = await client.sources.add_drive(notebook_id, file_id, title)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert file_id in (source.url or "")
@@ -263,7 +263,7 @@ async def test_add_drive_probe_matches_segment_at_end_of_url(auth_tokens) -> Non
     try:
         source = await client.sources.add_drive(notebook_id, file_id, title)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert source.id == src_id
     assert add_count == 1, f"expected 1 ADD_SOURCE, got {add_count}"
@@ -332,7 +332,7 @@ async def test_add_drive_probe_does_not_substring_match_unrelated_file_id(
         with pytest.raises(ServerError):
             await client.sources.add_drive(notebook_id, target_file_id, title)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     # The probe must NOT have spuriously matched the unrelated Drive
     # source — instead the wrapper retried, exhausted, and re-raised.
@@ -414,7 +414,7 @@ async def test_register_file_source_probe_short_circuits_when_first_response_los
         ):
             source = await client.sources.add_file(notebook_id, test_file)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     assert source.id == src_id
     # Exactly ONE ADD_SOURCE_FILE register request (no naive re-POST)
@@ -493,7 +493,7 @@ async def test_register_file_source_does_not_match_pre_existing_filename(
         ):
             await client.sources.add_file(notebook_id, test_file)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     # The pre-existing source's id was never returned — instead, the
     # original transport error propagated after retries were exhausted.
@@ -570,7 +570,7 @@ async def test_register_file_source_baseline_unavailable_raises_on_ambiguity(
         ):
             await client.sources.add_file(notebook_id, test_file)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     # Pre-existing source's id was NOT silently returned — instead the
     # baseline-unavailable ambiguity guard fired.
@@ -632,7 +632,7 @@ async def test_add_text_no_probe_no_retry_under_5xx(
         with pytest.raises(NotebookLMError):
             await client.sources.add_text(notebook_id, title, content)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     # Exactly ONE ADD_SOURCE attempt: no retry loop, no probe.
     assert add_count == 1, (
@@ -686,7 +686,7 @@ async def test_add_url_probe_network_error_propagates(auth_tokens) -> None:
         with pytest.raises(NetworkError, match="probe synthetic connection error"):
             await client.sources.add_url(notebook_id, url)
     finally:
-        await client._session._http_client.aclose()
+        await client._session._kernel.get_http_client().aclose()
 
     # Probe was attempted (the original create failed with 502, then the
     # probe was issued and raised).

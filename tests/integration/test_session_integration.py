@@ -27,7 +27,7 @@ pytestmark = pytest.mark.allow_no_vcr
 
 def _install_error_post(core: Session, error: Exception) -> AsyncMock:
     mock_post = AsyncMock(side_effect=error)
-    install_post_as_stream(None, core._http_client, mock_post)
+    install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
     return mock_post
 
 
@@ -36,13 +36,13 @@ class TestClientInitialization:
     async def test_client_initialization(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
             assert client._session.auth == auth_tokens
-            assert client._session._http_client is not None
+            assert client._session._kernel.http_client is not None
 
     @pytest.mark.asyncio
     async def test_client_context_manager_closes(self, auth_tokens):
         async with NotebookLMClient(auth_tokens) as client:
-            assert client._session._http_client is not None  # client is open
-        assert client._session._http_client is None  # closed after exit
+            assert client._session._kernel.http_client is not None  # client is open
+        assert client._session._kernel.http_client is None  # closed after exit
 
     @pytest.mark.asyncio
     async def test_close_does_not_sync_in_memory_auth_to_default_storage(self):
@@ -58,7 +58,7 @@ class TestClientInitialization:
         await core.close()
 
         mock_save.assert_not_called()
-        assert core._http_client is None
+        assert core._kernel.http_client is None
 
     @pytest.mark.asyncio
     async def test_close_closes_http_client_when_cookie_sync_fails(self, auth_tokens, tmp_path):
@@ -76,7 +76,7 @@ class TestClientInitialization:
         # test could pass via an early exit that never reaches the saver,
         # silently weakening the regression guard.
         boom_save.assert_called_once()
-        assert core._http_client is None
+        assert core._kernel.http_client is None
 
     @pytest.mark.asyncio
     async def test_client_raises_if_not_initialized(self, auth_tokens):
@@ -302,7 +302,7 @@ class TestRPCCallAuthRetry:
             success_response.text = "some_valid_response"
 
             mock_post = AsyncMock(return_value=success_response)
-            install_post_as_stream(None, core._http_client, mock_post)
+            install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
             with patch(
                 "notebooklm.rpc.decode_response",
                 side_effect=[
@@ -433,7 +433,7 @@ class TestCrossDomainCookiePreservation:
         """Verify cookies persist when redirecting from notebooklm to accounts.google.com."""
         async with NotebookLMClient(auth_tokens) as client:
             core = client._session
-            http_client = core._http_client
+            http_client = core._kernel.get_http_client()
 
             # Set initial sentinel cookie in the jar
             http_client.cookies.set("REDIRECT_SENTINEL", "survives_refresh", domain=".google.com")
@@ -454,7 +454,7 @@ class TestCrossDomainCookiePreservation:
         """Verify update_auth_headers merges new cookies, preserving live redirect cookies."""
         async with NotebookLMClient(auth_tokens) as client:
             core = client._session
-            http_client = core._http_client
+            http_client = core._kernel.get_http_client()
 
             # Simulate a live cookie received from accounts.google.com redirect
             http_client.cookies.set(
@@ -480,7 +480,7 @@ class TestCrossDomainCookiePreservation:
 
         async with NotebookLMClient(auth_tokens) as client:
             core = client._session
-            http = core._http_client
+            http = core._kernel.get_http_client()
 
             # The .googleusercontent.com cookie must remain on its original domain
             assert http.cookies.get("download_token", domain=".googleusercontent.com") == "abc123"
@@ -492,7 +492,7 @@ class TestCrossDomainCookiePreservation:
         """update_auth_headers must merge, not replace, preserving redirect cookies."""
         async with NotebookLMClient(auth_tokens) as client:
             core = client._session
-            http = core._http_client
+            http = core._kernel.get_http_client()
 
             # Simulate Google setting a cookie during a redirect
             http.cookies.set("__Secure-1PSIDCC", "from_redirect", domain=".google.com")

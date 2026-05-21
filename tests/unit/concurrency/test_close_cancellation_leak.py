@@ -1,7 +1,7 @@
 """Regression test for the close-cancellation transport-leak shield.
 
 The audit covered whether the ``asyncio.shield`` wrapped around
-``self._http_client.aclose()`` inside :meth:`notebooklm._session.Session.close`
+``self._kernel.http_client.aclose()`` inside :meth:`notebooklm._session.Session.close`
 correctly survives a cancellation that lands while ``aclose`` itself is
 in flight, exercised through the user-facing ``__aexit__`` surface (not
 the bare ``close()`` task path already covered by the companion
@@ -26,7 +26,7 @@ a different cancel-injection site:
 - ``__aexit__`` driven through :func:`asyncio.wait_for(timeout=0.1)` so
   the outer cancel reliably arrives while the slowed ``aclose`` is in
   flight — i.e. inside the shielded await.
-- We hold a reference to ``client._session._http_client`` captured before
+- We hold a reference to ``client._session._kernel.http_client`` captured before
   the cancel (close nulls the attribute on success) and assert
   ``http_client_ref.is_closed`` is true afterwards — proof that the
   shielded ``aclose`` in the outer ``finally`` ran to completion.
@@ -91,7 +91,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
       fires during ``aclose``.
 
     The shield in :meth:`Session.close` wraps
-    ``self._http_client.aclose()`` in ``asyncio.shield`` inside an
+    ``self._kernel.http_client.aclose()`` in ``asyncio.shield`` inside an
     outer ``finally``. Without that shield, a cancel arriving inside
     ``aclose`` aborts the close and leaks the httpx transport. With
     it, the captured ``http_client_ref.is_closed`` must read ``True``
@@ -155,9 +155,9 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
     await client.__aenter__()
     try:
         # Save the transport ref BEFORE the cancel — successful close
-        # sets ``_core._http_client = None`` (inner finally), so we'd
+        # sets ``_core._kernel.http_client = None`` (inner finally), so we'd
         # have no handle otherwise.
-        http_client_ref = client._session._http_client
+        http_client_ref = client._session._kernel.get_http_client()
         assert http_client_ref is not None, "open() must have installed a transport"
 
         # Slow down ``aclose()`` so the outer ``wait_for(timeout=0.1)``
@@ -181,7 +181,7 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
             await original_aclose()
 
         # Patching the bound method on the instance — _core.close()
-        # calls ``self._http_client.aclose()`` which dispatches off
+        # calls through ``self._kernel.http_client.aclose()`` which dispatches off
         # the instance attribute first. ``setattr`` shadows the class
         # method for this one instance.
         monkeypatch.setattr(http_client_ref, "aclose", _slow_aclose)

@@ -574,7 +574,7 @@ class TestSnapshotRefreshedAfterSave:
         client = NotebookLMClient(auth)
         async with client:
             # First save: rotates *PSIDTS in-process to A1, then save propagates.
-            _set_cookie_value(client._session._http_client.cookies, "__Secure-1PSIDTS", "A1")
+            _set_cookie_value(client._session._kernel.get_http_client().cookies, "__Secure-1PSIDTS", "A1")
             await client.refresh_auth()
             assert _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == "A1"
 
@@ -1142,8 +1142,8 @@ class TestBaselineNotAdvancedOnSaveFailure:
 
         async with client:
             baseline_before = client._session.cookie_persistence.loaded_cookie_snapshot
-            assert client._session._http_client is not None
-            await client._session.save_cookies(client._session._http_client.cookies)
+            assert client._session._kernel.http_client is not None
+            await client._session.save_cookies(client._session._kernel.get_http_client().cookies)
             baseline_after = client._session.cookie_persistence.loaded_cookie_snapshot
 
         assert baseline_after is baseline_before, (
@@ -1547,9 +1547,9 @@ class TestCASVariantAware:
 
             # Set-Cookie aligns the in-memory dotted OSID with what disk now
             # holds. Run the second save through the real Session plumbing.
-            assert core._http_client is not None
-            _set_cookie_value(core._http_client.cookies, "OSID", "SIBLING")
-            await core.save_cookies(core._http_client.cookies)
+            assert core._kernel.http_client is not None
+            _set_cookie_value(core._kernel.get_http_client().cookies, "OSID", "SIBLING")
+            await core.save_cookies(core._kernel.get_http_client().cookies)
 
             assert _cookie_value(storage, "OSID", "accounts.google.com") == "SIBLING", (
                 "Second save must not re-clobber the sibling write — the "
@@ -1565,8 +1565,8 @@ class TestCASVariantAware:
                 "value instead of keeping the stale OLD baseline forever"
             )
 
-            _set_cookie_value(core._http_client.cookies, "OSID", "NEXT")
-            await core.save_cookies(core._http_client.cookies)
+            _set_cookie_value(core._kernel.get_http_client().cookies, "OSID", "NEXT")
+            await core.save_cookies(core._kernel.get_http_client().cookies)
 
             assert _cookie_value(storage, "OSID", "accounts.google.com") == "NEXT", (
                 "After convergence advances the baseline, a later OSID "
@@ -1688,7 +1688,7 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
         # test to depend on. The assertion below uses positional names
         # (first/second by worker execution order, not by gather argument
         # order) to stay robust across schedulers.
-        assert core._http_client is not None
+        assert core._kernel.http_client is not None
 
         def _fresh_jar(psidts_value: str) -> httpx.Cookies:
             j = httpx.Cookies()

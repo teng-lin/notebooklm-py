@@ -38,12 +38,12 @@ def _stub_open(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     async def _stub_open(self) -> None:
-        if self._http_client is not None:
+        if self._kernel.http_client is not None:
             return
         # Lazy import keeps the test file dep-free at module load.
         import httpx
 
-        self._http_client = httpx.AsyncClient()
+        self._kernel.http_client = httpx.AsyncClient()
 
     monkeypatch.setattr("notebooklm._session.Session.open", _stub_open)
 
@@ -60,9 +60,9 @@ async def test_body_raises_and_close_raises_body_wins(
     client = NotebookLMClient(auth_tokens)
 
     # Capture the http client reference BEFORE entering the cm — successful
-    # close sets `client._session._http_client = None`, so we need our own ref.
+    # close sets `client._session._kernel.http_client = None`, so we need our own ref.
     async with client:
-        http_client_ref = client._session._http_client
+        http_client_ref = client._session._kernel.get_http_client()
         assert http_client_ref is not None
 
         # Patch _core.close to raise after closing the transport, so we
@@ -81,7 +81,7 @@ async def test_body_raises_and_close_raises_body_wins(
         ):
             async with client:
                 # Sanity: client is open here.
-                assert client._session._http_client is not None
+                assert client._session._kernel.http_client is not None
                 raise ValueError("user error")
 
     # 1. The body's ValueError propagated (verified by pytest.raises above).
@@ -128,7 +128,7 @@ async def test_cancel_mid_close_does_not_leak_transport(
     """
     client = NotebookLMClient(auth_tokens)
     await client._session.open()
-    http_client_ref = client._session._http_client
+    http_client_ref = client._session._kernel.get_http_client()
     assert http_client_ref is not None
 
     # Wrap close() in a task so we can cancel it.

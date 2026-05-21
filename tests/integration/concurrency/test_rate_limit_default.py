@@ -91,7 +91,7 @@ async def test_default_retries_succeed_after_three_429s(auth_tokens) -> None:
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_http.post = mock_post
     install_post_as_stream(None, mock_http, mock_post)
-    client._session._http_client = mock_http
+    client._session._kernel.http_client = mock_http
 
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
         result = await client.notebooks.list()
@@ -121,7 +121,7 @@ async def test_default_retries_exhausted_raises_rate_limit_error(auth_tokens) ->
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_http.post = mock_post
     install_post_as_stream(None, mock_http, mock_post)
-    client._session._http_client = mock_http
+    client._session._kernel.http_client = mock_http
 
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
         await client.notebooks.list()
@@ -161,7 +161,7 @@ async def test_default_retries_use_exponential_backoff_when_header_missing(
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_http.post = mock_post
     install_post_as_stream(None, mock_http, mock_post)
-    client._session._http_client = mock_http
+    client._session._kernel.http_client = mock_http
 
     sleep_calls: list[float] = []
 
@@ -210,7 +210,7 @@ async def test_disable_internal_retries_skips_429_loop_under_new_default(
     mock_http = AsyncMock(spec=httpx.AsyncClient)
     mock_http.post = mock_post
     install_post_as_stream(None, mock_http, mock_post)
-    client._session._http_client = mock_http
+    client._session._kernel.http_client = mock_http
 
     def _build_request(_snap):
         return ("https://example.invalid/x", b"body", None)

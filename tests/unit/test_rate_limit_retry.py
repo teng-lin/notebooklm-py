@@ -54,7 +54,7 @@ async def test_rate_limit_retry_success_with_budget(auth_tokens):
     mock_client.post.side_effect = [_build_429("1"), _build_200([["result"]])]
 
     core = Session(auth_tokens, rate_limit_max_retries=2)
-    core._http_client = mock_client
+    core._kernel.http_client = mock_client
     install_post_as_stream(None, mock_client, mock_client.post)
 
     # Decode may fail on the synthetic 200 — that's fine, what we care about
@@ -77,7 +77,7 @@ async def test_rate_limit_retry_exhausted_with_budget(auth_tokens):
     mock_client.post.return_value = _build_429("1")
 
     core = Session(auth_tokens, rate_limit_max_retries=2)
-    core._http_client = mock_client
+    core._kernel.http_client = mock_client
     install_post_as_stream(None, mock_client, mock_client.post)
 
     with patch("asyncio.sleep", AsyncMock()) as mock_sleep, pytest.raises(RateLimitError):
@@ -104,7 +104,7 @@ async def test_rate_limit_no_retry_if_disabled(auth_tokens):
 
     # Explicitly disable retries
     core = Session(auth_tokens, rate_limit_max_retries=0)
-    core._http_client = mock_client
+    core._kernel.http_client = mock_client
     install_post_as_stream(None, mock_client, mock_client.post)
 
     with pytest.raises(RateLimitError):
@@ -127,7 +127,7 @@ async def test_rate_limit_exp_backoff_fallback_without_header(auth_tokens):
     mock_client.post.return_value = _build_429(retry_after=None)
 
     core = Session(auth_tokens, rate_limit_max_retries=2)
-    core._http_client = mock_client
+    core._kernel.http_client = mock_client
     install_post_as_stream(None, mock_client, mock_client.post)
 
     sleeps: list[float] = []
@@ -153,7 +153,7 @@ async def test_rate_limit_no_retry_without_header_when_disabled(auth_tokens):
     mock_client.post.return_value = _build_429(retry_after=None)
 
     core = Session(auth_tokens, rate_limit_max_retries=0)
-    core._http_client = mock_client
+    core._kernel.http_client = mock_client
     install_post_as_stream(None, mock_client, mock_client.post)
 
     with pytest.raises(RateLimitError):
