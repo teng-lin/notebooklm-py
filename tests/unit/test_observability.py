@@ -159,10 +159,10 @@ async def test_operation_scope_tracks_drain_without_upload_semaphore(
     core = Session(auth_tokens)
 
     async with core.operation_scope("plain-operation"):
-        assert core._in_flight_posts == 1
+        assert core._drain_tracker._in_flight_posts == 1
         assert not hasattr(core, "get_upload_semaphore")
 
-    assert core._in_flight_posts == 0
+    assert core._drain_tracker._in_flight_posts == 0
     assert "_upload_semaphore" not in core.__dict__
 
 

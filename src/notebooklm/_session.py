@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import random  # noqa: F401 - tests patch this for _backoff jitter
-import threading
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
@@ -341,17 +340,19 @@ class Session:
         # ``_max_concurrent_rpcs is None``, the accessor returns a
         # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
         self._rpc_semaphore: asyncio.Semaphore | None = None
-        # Observability counters + telemetry callback. Compat properties
-        # below (``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event``) bridge
-        # the legacy ivar names back into this helper.
+        # Observability counters + telemetry callback. The
+        # ``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event`` compat
+        # bridges were retired in session-shrink PR 4; readers now go
+        # straight to ``self._metrics_obj.<attr>`` (or call
+        # :meth:`metrics_snapshot` for a lock-safe copy).
         self._metrics_obj = ClientMetrics(on_rpc_event=on_rpc_event)
         # Transport drain bookkeeping (in-flight posts, drain condition,
-        # per-task operation depth, draining flag). Compat properties below
-        # (``_in_flight_posts`` / ``_drain_condition`` / ``_draining``)
-        # bridge the legacy ivar names back into this helper. The
-        # ``_operation_depths`` bridge was dropped in D1-audit-full; access
-        # the WeakKeyDictionary on ``self._drain_tracker`` directly. The
-        # helper's ``__init__`` is event-loop-agnostic; the
+        # per-task operation depth, draining flag). The
+        # ``_in_flight_posts`` / ``_drain_condition`` / ``_draining``
+        # compat bridges were retired in session-shrink PR 4; the
+        # ``_operation_depths`` bridge was dropped earlier in
+        # D1-audit-full. Readers now access ``self._drain_tracker.<attr>``
+        # directly. The helper's ``__init__`` is event-loop-agnostic; the
         # ``asyncio.Condition`` is created lazily on first
         # ``get_drain_condition`` call.
         self._drain_tracker = TransportDrainTracker()
@@ -463,42 +464,13 @@ class Session:
             self._authed_post_chain_terminal,
         )
 
-    # ``ClientMetrics`` compat bridges. The three observability ivars now live
-    # on ``self._metrics_obj``; the bridges below delegate directly to that
-    # collaborator since ``Session.__init__`` eager-constructs it. Phase 4
-    # deleted the matching ``.setter`` halves — write on
-    # ``self._metrics_obj.X`` directly.
-    @property
-    def _metrics_lock(self) -> threading.Lock:
-        return self._metrics_obj._metrics_lock
+    # ``ClientMetrics`` compat bridges retired in session-shrink PR 4: tests
+    # now read ``self._metrics_obj.<attr>`` directly, or call
+    # :meth:`metrics_snapshot` for a lock-safe copy.
 
-    @property
-    def _metrics(self) -> ClientMetricsSnapshot:
-        return self._metrics_obj._metrics
-
-    @property
-    def _on_rpc_event(self) -> Callable[[RpcTelemetryEvent], object] | None:
-        return self._metrics_obj._on_rpc_event
-
-    # ``TransportDrainTracker`` compat bridges. The four drain ivars now live
-    # on ``self._drain_tracker``; the bridges below delegate directly to that
-    # collaborator since ``Session.__init__`` eager-constructs it. Phase 4
-    # deleted the matching ``.setter`` halves — write on
-    # ``self._drain_tracker.X`` directly.
-    @property
-    def _in_flight_posts(self) -> int:
-        return self._drain_tracker._in_flight_posts
-
-    @property
-    def _draining(self) -> bool:
-        return self._drain_tracker._draining
-
-    @property
-    def _drain_condition(self) -> asyncio.Condition | None:
-        return self._drain_tracker._drain_condition
-
-    # ``_operation_depths`` compat bridge dropped (D1-audit-full): zero
-    # external callers; direct ivar lives on ``self._drain_tracker``.
+    # ``TransportDrainTracker`` compat bridges retired in session-shrink PR 4:
+    # tests now read ``self._drain_tracker.<attr>`` directly. The
+    # ``_operation_depths`` bridge was dropped earlier in D1-audit-full.
 
     # ------------------------------------------------------------------
     # ``AuthRefreshCoordinator`` compat bridges. Refresh/auth-snapshot state
