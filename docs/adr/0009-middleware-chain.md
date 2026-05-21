@@ -34,10 +34,12 @@ load-bearing: PR 12.8's implementation has zero degrees of freedom on
 shape. PRs 12.2–12.7 also depend on the chain ordering and the
 `RpcRequest.context` keys defined below.
 
-Forward reference: ADR-002 ("Capability Protocol pattern,
-`SessionCapabilities` fat union") will be superseded by ADR-010 in
-Tier 13. That supersession is *not* performed by this ADR; ADR-002 remains
-`Accepted (Sunset = D2 cutover)` until ADR-010 lands.
+ADR-002 ("Capability Protocol pattern, `SessionCapabilities` fat
+union") was superseded by the `arch-d2-cutover` PR (D2 PR-2), per
+ADR-002's own Status line. ADR-010 was the original Tier-13
+supersession plan but was itself superseded by ADR-013 ("Composable
+Session Capabilities") in v0.5.0. See [`docs/architecture.md`](../architecture.md)
+for the post-supersession capability-protocol model.
 
 ## Context
 
@@ -484,5 +486,13 @@ Tier-13 follow-up (tracked in
 `.sisyphus/plans/tier-12-13-greenfield-migration.md` row 13.2): rewrite
 `AuthRefreshMiddleware` against the pinned closure-callback signature
 once `Kernel.post` is the chain leaf. The signature pinned in
-§"AuthRefreshMiddleware constructor signature" above is the target;
-update this ADR's Status to "Superseded by ADR-010" when that lands.
+§"AuthRefreshMiddleware constructor signature" above is the target.
+
+ADR-010 (the original target of this forward reference) was itself
+superseded by ADR-013 ("Composable Session Capabilities") in v0.5.0.
+ADR-009's middleware-chain ordering remains load-bearing; chain
+construction now lives in `MiddlewareChainBuilder`
+(`_middleware_chain.py`) — an extraction performed inside this ADR's
+domain, not a supersession — and the order is preserved by
+`tests/unit/test_chain_wiring.py`. Status: Accepted (chain order
+load-bearing).
