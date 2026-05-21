@@ -100,11 +100,20 @@ _REDACT_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         r"\1***",
     ),
     # Google session cookies — preserve name, redact value. Longer/more-
-    # specific names first so SAPISID/SIDCC/SSID don't get partially shadowed
-    # by a bare-SID match.
+    # specific names appear first as a defensive convention. Python's ``re``
+    # engine backtracks (so ordering is NOT load-bearing for correctness —
+    # the engine retries the next alternative when the trailing ``=`` fails
+    # to match), but longer-first minimizes backtracking on the hot path and
+    # mirrors the canonical Google cookie-family layout. The ``PAPISID``
+    # variants must be enumerated explicitly (NOT covered by the bare
+    # ``APISID`` alternative) so the captured ``\1`` group reflects the full
+    # cookie name in the redacted output, not just the matching suffix.
     (
         re.compile(
-            r"(__Secure-1PSIDCC|__Secure-3PSIDCC|__Secure-1PSID|__Secure-3PSID"
+            r"(__Secure-1PAPISID|__Secure-3PAPISID"
+            r"|__Secure-1PSIDTS|__Secure-3PSIDTS"
+            r"|__Secure-1PSIDCC|__Secure-3PSIDCC"
+            r"|__Secure-1PSID|__Secure-3PSID"
             r"|SAPISID|APISID|SIDCC|HSID|SSID|LSID|SID)=([^;\s,\"'<>]+)"
         ),
         r"\1=***",
@@ -148,7 +157,7 @@ _DEFAULT_DATEFMT = "%H:%M:%S"
 #   \bf\.sid=<sid>                                       -> "f.sid"
 #   (refresh_token|access_token|id_token)= (IGNORECASE)  -> "_token="
 #   \bcode= (IGNORECASE)                                 -> "code="
-#   __Secure-*PSID(CC)?/SAPISID/APISID/SIDCC/HSID/SSID/LSID/SID= -> "sid"
+#   __Secure-*PAPISID/PSID(TS|CC)?/SAPISID/APISID/SIDCC/HSID/SSID/LSID/SID= -> "sid"
 #   Authorization:\s*Bearer (IGNORECASE)                 -> "authorization"
 #   Cookie: (IGNORECASE)                                 -> "cookie"
 #   Set-Cookie: (IGNORECASE)                             -> "set-cookie" (also "cookie")

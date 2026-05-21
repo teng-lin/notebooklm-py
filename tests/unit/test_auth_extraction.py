@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+from notebooklm._auth.extraction import _safe_url
 from notebooklm.auth import (
     AuthTokens,
     build_httpx_cookies_from_storage,
@@ -557,6 +558,94 @@ class TestFinalUrlScrubbing:
         assert "SECRET_TOKEN_USERINFO" not in message
         # Port is preserved so operators can still identify the endpoint.
         assert "https://x.example:8443/y" in message
+
+
+class TestSafeUrlGoogleAuthHosts:
+    """``_safe_url`` must drop the path component for Google OAuth hosts.
+
+    Background: Google's OAuth endpoints have historically embedded opaque
+    grant codes / tokens in the URL **path** (e.g. ``/o/oauth2/auth/<token>``
+    on ``accounts.google.com``). The original ``_safe_url`` stripped only
+    userinfo / query / fragment — a future redirect format change that put
+    a credential in the path segment would have leaked through
+    ``ValueError("... Redirected to: %s" % final_url)`` (see
+    ``_auth/refresh.py`` ``_fetch_tokens_with_jar``).
+
+    These tests pin the host-restricted path-redaction so non-auth endpoints
+    retain enough operator signal (host + path) to be diagnosable.
+    """
+
+    def test_accounts_google_com_path_redacted(self):
+        """accounts.google.com paths get replaced with /<redacted>."""
+        out = _safe_url("https://accounts.google.com/o/oauth2/auth/SECRET_GRANT_CODE?q=1")
+        assert "SECRET_GRANT_CODE" not in out
+        assert "/o/oauth2/auth" not in out
+        assert out == "https://accounts.google.com/<redacted>"
+
+    def test_oauth2_googleapis_com_path_redacted(self):
+        """oauth2.googleapis.com paths get replaced with /<redacted>."""
+        out = _safe_url("https://oauth2.googleapis.com/token/SECRET_PATH_TOKEN")
+        assert "SECRET_PATH_TOKEN" not in out
+        assert out == "https://oauth2.googleapis.com/<redacted>"
+
+    def test_oauth2_googleusercontent_com_path_redacted(self):
+        """oauth2.googleusercontent.com paths get replaced with /<redacted>."""
+        out = _safe_url("https://oauth2.googleusercontent.com/auth/SECRET_GRANT")
+        assert "SECRET_GRANT" not in out
+        assert out == "https://oauth2.googleusercontent.com/<redacted>"
+
+    def test_unrelated_googleusercontent_subdomain_path_preserved(self):
+        """Non-``oauth2`` subdomains of googleusercontent.com keep their path.
+
+        The wider ``.googleusercontent.com`` family hosts artifact downloads
+        (slide decks, audio) — operator signal there is more useful than the
+        narrow leak risk. Only the ``oauth2`` subdomain is in the redact set.
+        """
+        out = _safe_url("https://lh3.googleusercontent.com/a/AVATAR_PATH")
+        assert "AVATAR_PATH" in out, f"non-auth googleusercontent path lost: {out!r}"
+
+    def test_www_googleapis_com_path_preserved(self):
+        """www.googleapis.com is NOT in the redact set (hosts many non-auth APIs)."""
+        out = _safe_url("https://www.googleapis.com/drive/v3/files/foo")
+        assert "/drive/v3/files/foo" in out
+
+    def test_accounts_google_com_root_path_preserved(self):
+        """Root path ``/`` on Google auth hosts is NOT redacted (no signal to leak)."""
+        assert _safe_url("https://accounts.google.com/") == "https://accounts.google.com/"
+
+    def test_accounts_google_com_subdomain_path_redacted(self):
+        """Subdomains of accounts.google.com also get path-redacted."""
+        out = _safe_url("https://x.accounts.google.com/o/oauth2/auth/TOKEN")
+        assert "TOKEN" not in out
+        assert out == "https://x.accounts.google.com/<redacted>"
+
+    def test_non_google_host_path_preserved(self):
+        """Non-auth hosts keep their path so operators can identify endpoints."""
+        # Regression for ``test_final_url_stripped`` — non-Google host must
+        # round-trip the path through the safe-url pipe.
+        assert _safe_url("https://x.example/y") == "https://x.example/y"
+
+    def test_google_auth_host_case_insensitive(self):
+        """Host comparison must be case-insensitive (RFC 3986 §3.2.2)."""
+        out = _safe_url("https://Accounts.Google.COM/o/oauth2/auth/TOK")
+        assert "TOK" not in out
+        # Hostname casing is preserved verbatim from ``urlparse(...).hostname``
+        # which lowercases the host; the assertion targets the absence of
+        # ``TOK`` regardless of host-casing rendering.
+
+    def test_google_auth_host_query_and_path_both_stripped(self):
+        """Query is dropped by the existing pipe; path is dropped by the new
+        host-restricted rule. A URL with both must lose both."""
+        out = _safe_url(
+            "https://accounts.google.com/o/oauth2/auth/PATH_TOK?continue=https%3A%2F%2Fx.example"
+        )
+        assert "PATH_TOK" not in out
+        assert "continue=" not in out
+        assert out == "https://accounts.google.com/<redacted>"
+
+    def test_empty_url_still_empty(self):
+        """Empty input degenerates cleanly (regression for the existing pipe)."""
+        assert _safe_url("") == ""
 
 
 class TestExtractCookiesEdgeCases:

@@ -126,7 +126,11 @@ class TestFetchTokens:
         assert "continue=foo" not in message
         assert "f.sid=bar" not in message
         assert "access_token=frag" not in message
-        assert "https://accounts.google.com/signin" in message
+        # Path is redacted for Google auth hosts so a future redirect format
+        # that embeds a token in the path segment cannot leak. The host
+        # itself survives so operators still see the auth-host signal.
+        assert "https://accounts.google.com/<redacted>" in message
+        assert "/signin" not in message
 
     @pytest.mark.asyncio
     async def test_fetch_tokens_sends_cookies_on_account_redirect(self, httpx_mock: HTTPXMock):

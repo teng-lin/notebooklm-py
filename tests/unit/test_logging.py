@@ -119,6 +119,16 @@ _GOOGLE_COOKIE_PAIRS = [
     ("__Secure-3PSID", "psid_qrs"),
     ("__Secure-1PSIDCC", "psidcc_xyz"),
     ("__Secure-3PSIDCC", "psidcc_qrs"),
+    # PSIDTS — rotating token-state cookies. Pre-fix these only redacted when
+    # they appeared inside a ``Cookie:`` / ``Set-Cookie:`` header value; a
+    # standalone ``__Secure-1PSIDTS=<value>`` token (as appears in refresh-cmd
+    # stdout/stderr captured at DEBUG) passed through unredacted.
+    ("__Secure-1PSIDTS", "psidts_xyz"),
+    ("__Secure-3PSIDTS", "psidts_qrs"),
+    # PAPISID — auth-API session cookies. Without an explicit alternative the
+    # captured ``\1`` group would resolve to the ``APISID`` suffix only.
+    ("__Secure-1PAPISID", "papisid_xyz"),
+    ("__Secure-3PAPISID", "papisid_qrs"),
     ("SIDCC", "sidcc_val"),
     ("HSID", "hsid_val"),
     ("SSID", "ssid_val"),
@@ -184,6 +194,97 @@ def test_formatter_scrubs_set_cookie_response_header():
     out = fmt.format(rec)
     assert "server_minted_value" not in out
     assert "Set-Cookie: ***" in out
+
+
+def test_formatter_scrubs_psidts_in_non_header_shapes():
+    """Standalone ``__Secure-[13]PSIDTS=<value>`` tokens must be redacted in
+    every HTTP-shaped form they appear in (refresh-cmd stdout/stderr,
+    comma-separated cookie listings) — not just inside a ``Cookie:`` header.
+
+    Pre-fix, the cookie-name alternation listed ``__Secure-[13]PSID`` and
+    ``__Secure-[13]PSIDCC`` but NOT the ``PSIDTS`` (token-state) family. A
+    ``RuntimeError`` traceback containing ``__Secure-1PSIDTS=abc123`` from a
+    refresh subprocess therefore leaked the value verbatim through any error
+    surface that wasn't fronted by the ``Cookie:`` / ``Set-Cookie:`` regex.
+
+    Scope note: JSON-shaped ``"name":"__Secure-1PSIDTS","value":"..."`` is
+    NOT covered by this runtime redactor — that storage-state shape lives in
+    the VCR cassette sanitizer (see ``tests/vcr_config.py`` and
+    ``tests/unit/test_cookie_redaction.py``).
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+
+    cases = [
+        # Refresh-cmd stdout/stderr shape: plain ``name=value`` standalone token.
+        "rotation: __Secure-1PSIDTS=SECRET_PSIDTS_VALUE_A refreshed",
+        # Comma-separated listing.
+        "cookies: __Secure-1PSIDTS=SECRET_PSIDTS_VALUE_B, __Secure-3PSIDTS=SECRET_PSIDTS_VALUE_C",
+    ]
+    for text in cases:
+        rec = _record(text)
+        out = fmt.format(rec)
+        for secret in (
+            "SECRET_PSIDTS_VALUE_A",
+            "SECRET_PSIDTS_VALUE_B",
+            "SECRET_PSIDTS_VALUE_C",
+        ):
+            assert secret not in out, f"PSIDTS value {secret!r} leaked from {text!r}: got {out!r}"
+
+
+def test_formatter_psid_family_redacts_independently():
+    """The PSIDTS / PSIDCC / PSID variants must redact INDEPENDENTLY.
+
+    Python's ``re`` engine backtracks, so the bare ``__Secure-1PSID``
+    alternative does NOT shadow ``__Secure-1PSIDTS`` even if listed first
+    (the engine commits, finds no ``=`` immediately after, then retries
+    the next alternative). The longer-first ordering in the source regex
+    is a defensive convention + microscale perf, not load-bearing for
+    correctness.
+
+    This test pins what IS load-bearing: each of the three suffix variants
+    (``PSID`` / ``PSIDCC`` / ``PSIDTS``) must scrub when present together,
+    independent of any ordering subtlety.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    text = (
+        "jar: __Secure-1PSID=BARE_PSID_VAL; "
+        "__Secure-1PSIDCC=PSIDCC_VAL; "
+        "__Secure-1PSIDTS=PSIDTS_VAL"
+    )
+    rec = _record(text)
+    out = fmt.format(rec)
+    for secret in ("BARE_PSID_VAL", "PSIDCC_VAL", "PSIDTS_VAL"):
+        assert secret not in out, f"{secret} leaked: {out!r}"
+    for redacted in (
+        "__Secure-1PSID=***",
+        "__Secure-1PSIDCC=***",
+        "__Secure-1PSIDTS=***",
+    ):
+        assert redacted in out, f"missing {redacted}: {out!r}"
+
+
+def test_formatter_scrubs_papisid_with_correct_captured_name():
+    """``__Secure-[13]PAPISID`` must be matched as its own alternative.
+
+    Without an explicit alternative, the engine would match the ``APISID``
+    suffix instead, capturing only ``APISID`` as ``\\1`` while leaving the
+    ``__Secure-1P`` prefix in place. The substituted output still looks
+    correct (``__Secure-1PAPISID=***``) but the captured-name signal in
+    structured logging surfaces would be wrong. This test pins both the
+    leak being closed AND the captured-name shape via the prefix being
+    preserved in the redacted output exactly once.
+    """
+    fmt = RedactingFormatter(logging.Formatter("%(message)s"))
+    text = "jar: __Secure-1PAPISID=SECRET_1PAPISID; __Secure-3PAPISID=SECRET_3PAPISID"
+    rec = _record(text)
+    out = fmt.format(rec)
+    assert "SECRET_1PAPISID" not in out
+    assert "SECRET_3PAPISID" not in out
+    assert "__Secure-1PAPISID=***" in out
+    assert "__Secure-3PAPISID=***" in out
+    # Defense-in-depth: ensure we are not corrupting the cookie name with
+    # an over-eager suffix-match (e.g. ``__Secure-1PAPAPISID=***``).
+    assert "PAPAPISID" not in out
 
 
 def test_formatter_handles_nonstring_record_msg():

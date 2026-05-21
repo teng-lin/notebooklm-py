@@ -314,6 +314,14 @@ async def _run_refresh_cmd(storage_path: Path | None = None, profile: str | None
     if not cmd:
         raise RuntimeError(f"{NOTEBOOKLM_REFRESH_CMD_ENV} is not set; cannot refresh cookies.")
     refresh_env = os.environ.copy()
+    # ``NOTEBOOKLM_AUTH_JSON`` carries the full Playwright storage_state — a
+    # credential-equivalent payload. Forwarding it via ``os.environ.copy()``
+    # into the refresh subprocess would inherit it down the tree (visible via
+    # ``/proc/<pid>/environ`` to the same UID) and into any grandchild the
+    # refresh command spawns. The refresh command already receives the
+    # canonical on-disk storage path via ``NOTEBOOKLM_REFRESH_STORAGE_PATH``
+    # (set just below), so the in-env JSON is not needed by the child.
+    refresh_env.pop("NOTEBOOKLM_AUTH_JSON", None)
     refresh_env[_REFRESH_ATTEMPTED_ENV] = "1"
     refresh_env["NOTEBOOKLM_REFRESH_PROFILE"] = resolve_profile(profile)
     refresh_env["NOTEBOOKLM_REFRESH_STORAGE_PATH"] = str(

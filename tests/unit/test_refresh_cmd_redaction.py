@@ -168,6 +168,75 @@ def test_error_handler_handles_non_string_first_arg(
     assert "Unexpected error: 42" in (captured.out + captured.err)
 
 
+def _capture_refresh_subprocess_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Stub ``subprocess.run`` to record (and return) the ``env`` kwarg it received.
+
+    Returns a dict that the caller can inspect after ``_run_refresh_cmd`` runs;
+    the stub itself returns a zero-exit result so the refresh call completes
+    normally. Mirrors ``_stub_subprocess_run_with_leaky_output`` above.
+    """
+    captured: dict[str, str] = {}
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(*_args: Any, **kwargs: Any) -> _Result:
+        captured.update(kwargs.get("env") or {})
+        return _Result()
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    return captured
+
+
+def test_refresh_cmd_env_does_not_inherit_auth_json(
+    refresh_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``NOTEBOOKLM_AUTH_JSON`` must be stripped from the refresh subprocess env.
+
+    The env var carries the full Playwright ``storage_state`` (credential-
+    equivalent) when callers route auth through environment instead of disk.
+    ``os.environ.copy()`` would forward it to the refresh subprocess and any
+    grandchildren it spawns, where it is visible via ``/proc/<pid>/environ``
+    to the same UID and inherited by every child.
+
+    Strip it before exec. The refresh command already receives the canonical
+    on-disk path via ``NOTEBOOKLM_REFRESH_STORAGE_PATH``.
+    """
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies":[{"name":"SID","value":"X"}]}')
+    captured_env = _capture_refresh_subprocess_env(monkeypatch)
+
+    asyncio.run(auth_module._run_refresh_cmd())
+
+    assert captured_env, "subprocess.run was not invoked with an env kwarg"
+    assert "NOTEBOOKLM_AUTH_JSON" not in captured_env, (
+        f"NOTEBOOKLM_AUTH_JSON leaked into refresh subprocess env: keys={sorted(captured_env)}"
+    )
+    # The refresh-routing channel must still be set so the child can locate
+    # the on-disk storage (this is what replaces the env-borne JSON).
+    assert "NOTEBOOKLM_REFRESH_STORAGE_PATH" in captured_env
+    assert "NOTEBOOKLM_REFRESH_PROFILE" in captured_env
+    # Sanity: PATH (or some unrelated parent env var) still propagates so
+    # we are stripping selectively, not wholesale.
+    assert "PATH" in captured_env or "HOME" in captured_env, (
+        "expected unrelated parent env vars to still propagate"
+    )
+
+
+def test_refresh_cmd_env_unaffected_when_auth_json_unset(
+    refresh_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When ``NOTEBOOKLM_AUTH_JSON`` is not set, ``.pop(..., None)`` is a no-op
+    and the refresh subprocess still runs to completion (regression guard)."""
+    monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    captured_env = _capture_refresh_subprocess_env(monkeypatch)
+
+    asyncio.run(auth_module._run_refresh_cmd())
+    assert "NOTEBOOKLM_AUTH_JSON" not in captured_env
+    assert "NOTEBOOKLM_REFRESH_STORAGE_PATH" in captured_env
+
+
 def test_error_handler_routes_traceback_to_debug(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

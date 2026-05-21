@@ -104,17 +104,49 @@ def extract_wiz_field(html: str, key: str, *, strict: bool = True) -> str | None
     return None
 
 
+# Hosts whose path component may carry credentials and must be redacted in
+# error-message interpolations. These are Google's OAuth surfaces:
+#
+# * ``accounts.google.com`` — the legacy login/consent flow (including
+#   observed redirects of the shape ``/o/oauth2/auth/<token>``).
+# * ``oauth2.googleapis.com`` — the token-exchange endpoint family.
+# * ``oauth2.googleusercontent.com`` — observed grant-code return path in
+#   some OAuth flows. (The wider ``.googleusercontent.com`` family is also
+#   tagged trusted in ``_artifact_downloads.py`` for a related reason; we
+#   scope this list to the ``oauth2`` subdomain because the broader family
+#   carries non-auth payload URLs.)
+#
+# The query/fragment/userinfo stripping below applies to ALL hosts; the
+# path stripping is restricted to this allowlist so non-auth failures
+# still carry enough operator signal (host + path) to be diagnosable.
+# Notable omission: ``www.googleapis.com`` is deliberately NOT in this
+# list — it hosts many non-auth APIs (Drive, Calendar, Storage) where the
+# path is operator signal, not credential. Add the specific subdomain if
+# a future leak path emerges rather than the broad family.
+_AUTH_PATH_REDACT_HOSTS: frozenset[str] = frozenset(
+    {
+        "accounts.google.com",
+        "oauth2.googleapis.com",
+        "oauth2.googleusercontent.com",
+    }
+)
+
+
 def _safe_url(url: str) -> str:
     """Return ``url`` stripped of credential-shaped parts for error display.
 
-    Auth-handshake URLs can carry credentials in three positions, all of
-    which we strip:
+    Auth-handshake URLs can carry credentials in four positions, all of
+    which we strip (the path strip is restricted to known auth hosts):
 
     * **Query string** — ``f.sid=...``, ``continue=...``, ``access_token=...``.
     * **Fragment** — OAuth implicit-flow tokens (``#access_token=...``).
     * **Userinfo** — ``https://TOKEN@host/...`` shapes; ``parsed.netloc``
       preserves the userinfo, so we rebuild from ``hostname`` + optional
       port instead of trusting ``netloc`` directly.
+    * **Path** — restricted to ``_AUTH_PATH_REDACT_HOSTS`` (Google's OAuth
+      hosts) where the path can carry an opaque grant code or token
+      (``/o/oauth2/auth/<token>``). Non-auth hosts keep their path so
+      operators can still identify which endpoint failed.
 
     The surviving ``scheme://host[:port]/path`` is enough context for an
     operator to recognize which endpoint failed without leaking session
@@ -129,7 +161,21 @@ def _safe_url(url: str) -> str:
     # on malformed input, in which case we degrade gracefully to "scheme:///path".
     host = parsed.hostname or ""
     netloc = f"{host}:{parsed.port}" if parsed.port is not None else host
-    return f"{parsed.scheme}://{netloc}{parsed.path}"
+    path = parsed.path or ""
+    host_lc = host.lower()
+    # Match the exact host OR any subdomain — both ``accounts.google.com``
+    # and ``x.accounts.google.com`` count. Driving subdomain matching off the
+    # frozenset (instead of hardcoded ``.endswith`` calls per host) keeps
+    # adding a new host a one-line change.
+    if (
+        path
+        and path != "/"
+        and any(host_lc == h or host_lc.endswith("." + h) for h in _AUTH_PATH_REDACT_HOSTS)
+    ):
+        # Replace with a fixed sentinel so the URL still parses cleanly and
+        # the operator sees the auth-host signal without the path content.
+        path = "/<redacted>"
+    return f"{parsed.scheme}://{netloc}{path}"
 
 
 def extract_csrf_from_html(html: str, final_url: str = "") -> str:
