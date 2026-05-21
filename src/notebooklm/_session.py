@@ -99,12 +99,16 @@ def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = Fal
 
 
 def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
-    """Late-bound ``asyncio.sleep`` so tests can patch the canonical seam.
+    """Late-bound ``asyncio.sleep`` for tests that patch the module seam.
 
-    Tests patch ``notebooklm._authed_transport.asyncio.sleep`` (per Phase
-    2 PR 5). The local stdlib import inside the function body keeps the
-    patch effective at call time — a module-top ``import asyncio`` would
-    capture the original reference.
+    Tests patch ``notebooklm._session.asyncio.sleep`` (this module is
+    where the symbol is referenced) — e.g. ``test_authed_transport.py``
+    and ``test_rpc_executor.py``. Patching the ``asyncio.sleep``
+    attribute on the module singleton affects this function regardless
+    of whether the ``import asyncio`` lives at module top or inside the
+    body, because both forms resolve through the same ``asyncio`` module
+    object; the function-body import is kept for symmetry with the
+    other late-bound seams in this module.
     """
     import asyncio
 
@@ -115,14 +119,13 @@ def _live_is_auth_error(exc: Exception) -> bool:
     """Resolve ``is_auth_error`` against the canonical seam at call time.
 
     Python function-body name lookup hits the module ``__dict__`` on each
-    call, so a ``monkeypatch.setattr("notebooklm._session_helpers.
-    is_auth_error", ...)`` swap is observed immediately. Used by every
-    chain seed site that wires ``AuthRefreshMiddleware`` and by
-    ``RpcExecutor`` so the project-wide test idiom of patching the symbol
-    on the canonical module stays live without each seed site re-
-    implementing the lambda. The historical ``notebooklm._core``
-    indirection was removed in v0.5.0 when the ``_core`` compatibility
-    shim was deleted.
+    call, so a ``monkeypatch.setattr("notebooklm._session_helpers.is_auth_error", ...)``
+    swap is observed immediately. Used by every chain seed site that
+    wires ``AuthRefreshMiddleware`` and by ``RpcExecutor`` so the
+    project-wide test idiom of patching the symbol on the canonical
+    module stays live without each seed site re-implementing the lambda.
+    The historical ``notebooklm._core`` indirection was removed in
+    v0.5.0 when the ``_core`` compatibility shim was deleted.
     """
     from ._session_helpers import is_auth_error
 
@@ -243,16 +246,16 @@ class Session:
                 the on-disk cookie writer used by
                 :meth:`ClientLifecycle.save_cookies`. ``None`` (default)
                 resolves to :func:`_default_cookie_saver`, which late-binds
-                to ``notebooklm._core.save_cookies_to_storage`` so the
-                existing test-monkeypatch surface keeps affecting the live
-                path. Must be sync (``def``, not ``async def``) — it runs
-                inside ``asyncio.to_thread``. Custom callables bypass the
-                ``_core`` lookup entirely.
+                to ``notebooklm._auth.storage.save_cookies_to_storage`` so
+                the canonical-seam monkeypatch surface keeps affecting the
+                live path. Must be sync (``def``, not ``async def``) — it
+                runs inside ``asyncio.to_thread``. Custom callables bypass
+                the late-bind hop entirely.
             cookie_rotator: Optional injectable seam (Phase 2 PR 3)
                 overriding the keepalive-loop rotator. ``None`` (default)
                 resolves to :func:`_default_cookie_rotator`, which late-binds
-                to ``notebooklm._core._rotate_cookies``. Must be async — it
-                is awaited from :meth:`ClientLifecycle._keepalive_loop`.
+                to ``notebooklm._auth.keepalive._rotate_cookies``. Must be
+                async — it is awaited from :meth:`ClientLifecycle._keepalive_loop`.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
@@ -369,10 +372,10 @@ class Session:
         # HTTP-client lifecycle — owns loop binding, keepalive, and close
         # ordering while delegating the live ``httpx.AsyncClient`` to
         # ``self._kernel``. Compat properties further down preserve the legacy
-        # ivar names. The ``_resolve_keepalive_interval`` clamp now lives in
-        # :mod:`notebooklm._session_helpers` and is re-exported above so
-        # ``from notebooklm._core import _resolve_keepalive_interval`` keeps
-        # resolving; we call it through the re-exported binding here.
+        # ivar names. The ``_resolve_keepalive_interval`` clamp lives in
+        # :mod:`notebooklm._session_helpers` and is imported above; we call
+        # it directly here. (The historical ``notebooklm._core`` re-export
+        # was removed in v0.5.0.)
         #
         # Event-loop affinity guard rationale: the lifecycle captures
         # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
@@ -998,18 +1001,16 @@ class Session:
 
         The adapters intentionally resolve through this module at call time so
         existing tests and private callers that monkeypatch
-        ``notebooklm._core.is_auth_error`` (Wave 3 will rename this seam) or
-        ``notebooklm._session.asyncio.sleep`` (Phase 2 PR 5 canonical target —
-        previously the deprecated ``notebooklm._core.asyncio.sleep`` shim)
-        still affect live transport behavior after the collaborator has been
-        constructed. Backoff jitter routes through ``notebooklm._backoff``,
-        which in turn calls ``random.uniform`` on the shared module.
+        ``notebooklm._session_helpers.is_auth_error`` or
+        ``notebooklm._session.asyncio.sleep`` still affect live transport
+        behavior after the collaborator has been constructed. Backoff
+        jitter routes through ``notebooklm._backoff``, which in turn calls
+        ``random.uniform`` on the shared module.
         ``tests/unit/test_authed_transport.py`` relies on monkeypatching
-        ``notebooklm._session.random.uniform`` (Phase 2 PR 5 canonical
-        target — previously the deprecated ``notebooklm._core.random.uniform``
-        shim) to reach that jitter path; keep the otherwise-unused module
-        import so the path stays available. Attribute patches on the
-        singleton ``random`` module are visible to all importers.
+        ``notebooklm._session.random.uniform`` to reach that jitter path;
+        keep the otherwise-unused module import so the path stays
+        available. Attribute patches on the singleton ``random`` module
+        are visible to all importers.
         """
         transport = getattr(self, "_authed_transport", None)
         if transport is None:
@@ -1021,14 +1022,10 @@ class Session:
         """Return the RPC execution collaborator, lazily initialized.
 
         The adapters resolve through this module at call time so existing
-        monkeypatches of ``notebooklm.rpc.decode_response`` (Phase 2 PR 5
-        canonical target — previously the deprecated
-        ``notebooklm._core.decode_response`` shim),
-        ``notebooklm._core.is_auth_error`` (Wave 3 will rename this seam),
-        and ``notebooklm._session.asyncio.sleep`` (Phase 2 PR 5 canonical
-        target — previously the deprecated ``notebooklm._core.asyncio.sleep``
-        shim) keep affecting live RPC behavior after the collaborator has
-        been constructed.
+        monkeypatches of ``notebooklm.rpc.decode_response``,
+        ``notebooklm._session_helpers.is_auth_error``, and
+        ``notebooklm._session.asyncio.sleep`` keep affecting live RPC
+        behavior after the collaborator has been constructed.
         """
         executor = getattr(self, "_rpc_executor", None)
         if executor is None:
@@ -1065,13 +1062,13 @@ class Session:
 
         Thin facade over :meth:`ClientLifecycle.save_cookies`. The storage
         writer resolves through ``self._lifecycle._cookie_saver`` — by
-        default the Wave-1 ``_default_cookie_saver`` wrapper that
-        late-binds to ``notebooklm._core.save_cookies_to_storage`` so the
-        legacy ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-        idiom keeps affecting the live save path. Phase 2 PR 4 added the
-        ``cookie_saver=`` constructor kwarg as the preferred test-side
-        seam; passing a custom callable there bypasses the ``_core``
-        indirection entirely.
+        default the ``_default_cookie_saver`` wrapper that late-binds to
+        ``notebooklm._auth.storage.save_cookies_to_storage`` so a
+        ``monkeypatch.setattr("notebooklm._auth.storage.save_cookies_to_storage", …)``
+        on the canonical seam keeps affecting the live save path. Phase 2
+        PR 4 added the ``cookie_saver=`` constructor kwarg as the
+        preferred test-side seam; passing a custom callable there bypasses
+        the late-bind hop entirely.
         """
         self._ensure_lifecycle()
         await self._lifecycle.save_cookies(self, jar, path)

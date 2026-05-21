@@ -1,14 +1,14 @@
 # Architecture (post-v0.5.0)
 
 This document describes the runtime shape of `notebooklm-py` after the
-v0.5.0 refactor program closed (Phases 1-4 of
-[`refactor-completion-plan`](../.sisyphus/plans/refactor-completion-plan.md)).
-It is the canonical post-refactor map; the historical narrative lives in
-[`docs/refactor.md`](./refactor.md).
+v0.5.0 refactor program closed (Phases 1-4 of the multi-phase refactor
+plan; the proposal that drove the work is preserved at
+[`docs/refactor.md`](./refactor.md)). It is the canonical post-refactor
+map.
 
 ## Layered overview
 
-```
+```text
 +----------------------------------------------------------+
 | CLI Layer (src/notebooklm/cli/*)                         |
 |   Click groups: login / use / list / source / generate / |
@@ -68,7 +68,7 @@ constructing a real `Session`.
 
 ## Post-refactor `Session` collaborator graph
 
-```
+```text
                      +---------------------+
                      |  NotebookLMClient   |
                      +----------+----------+
@@ -126,7 +126,7 @@ simultaneously updating the pin tests
 The chain list in [`MiddlewareChainBuilder.build()`](../src/notebooklm/_middleware_chain.py)
 reads outermost-first (index 0 wraps everything below it):
 
-```
+```text
 DrainMiddleware              outermost — admits and tracks for shutdown drain
    ↓
 MetricsMiddleware            starts timing here (latency includes queue wait)

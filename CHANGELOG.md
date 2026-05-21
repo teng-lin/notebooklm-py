@@ -21,8 +21,8 @@ capability refactor (Phases 1-4 of
   …) instead of the broad `Session` class.
 - **`_core.py` compatibility shim removed.** Use canonical modules
   directly: `_session_config`, `_session_helpers`, `_authed_transport`,
-  `_error_injection`, `_transport_drain`, `_auth/storage`,
-  `_auth/keepalive`, `notebooklm.rpc`.
+  `_error_injection`, `_transport_drain`, `_auth.storage`,
+  `_auth.keepalive`, `notebooklm.rpc`.
 - **`_session.py` slimmed** — `MiddlewareChainBuilder` extracted; Session
   compat wrappers around `RpcExecutor` removed in favor of direct
   delegation; 10 non-Protocol setters removed (writes now reach the

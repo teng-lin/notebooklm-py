@@ -123,12 +123,12 @@ def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
     """Default ``cookie_saver``: late-bind to ``_auth.storage.save_cookies_to_storage``.
 
     The import lives INSIDE the function body (intentionally, NOT at
-    module top) so any ``monkeypatch.setattr("notebooklm._auth.storage.
-    save_cookies_to_storage", …)`` swap is observed at call time. A
-    top-level import would capture the original reference at module-
-    import time and silently ignore later patches. The historical
-    ``notebooklm._core`` indirection was removed in v0.5.0 when the
-    ``_core`` compatibility shim was deleted.
+    module top) so any
+    ``monkeypatch.setattr("notebooklm._auth.storage.save_cookies_to_storage", …)``
+    swap is observed at call time. A top-level import would capture the
+    original reference at module-import time and silently ignore later
+    patches. The historical ``notebooklm._core`` indirection was removed
+    in v0.5.0 when the ``_core`` compatibility shim was deleted.
 
     ``def`` (not ``async def``) is load-bearing: this wrapper is invoked
     INSIDE ``asyncio.to_thread(_save)`` in
