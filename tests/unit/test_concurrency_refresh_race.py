@@ -388,7 +388,7 @@ async def test_concurrent_refresh_does_not_corrupt_inflight_rpc_request(rpc_firs
         from notebooklm.client import NotebookLMClient
 
         client = NotebookLMClient.__new__(NotebookLMClient)
-        client._core = core
+        client._session = core
 
         # try/finally ensures the mock-transport handlers are unblocked even
         # if a wait_for times out — otherwise pending tasks dangle in the

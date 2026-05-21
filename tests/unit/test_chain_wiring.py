@@ -85,7 +85,7 @@ async def test_empty_chain_routes_perform_authed_post_to_transport() -> None:
     Covers the first of the two call paths from master plan line 160:
     direct callers of ``Session._perform_authed_post`` (the chat path
     in ``_chat_transport.py:64`` and any first-party caller via
-    ``client._core._perform_authed_post``).
+    ``client._session._perform_authed_post``).
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")
     fake = FakeAuthedPost(response=expected_response)

@@ -575,7 +575,7 @@ class TestSnapshotRefreshedAfterSave:
         client = NotebookLMClient(auth)
         async with client:
             # First save: rotates *PSIDTS in-process to A1, then save propagates.
-            _set_cookie_value(client._core._http_client.cookies, "__Secure-1PSIDTS", "A1")
+            _set_cookie_value(client._session._http_client.cookies, "__Secure-1PSIDTS", "A1")
             await client.refresh_auth()
             assert _cookie_value(storage, "__Secure-1PSIDTS", ".google.com") == "A1"
 
@@ -1153,10 +1153,10 @@ class TestBaselineNotAdvancedOnSaveFailure:
         client = NotebookLMClient(auth, cookie_saver=silent_fail)
 
         async with client:
-            baseline_before = client._core._loaded_cookie_snapshot
-            assert client._core._http_client is not None
-            await client._core.save_cookies(client._core._http_client.cookies)
-            baseline_after = client._core._loaded_cookie_snapshot
+            baseline_before = client._session._loaded_cookie_snapshot
+            assert client._session._http_client is not None
+            await client._session.save_cookies(client._session._http_client.cookies)
+            baseline_after = client._session._loaded_cookie_snapshot
 
         assert baseline_after is baseline_before, (
             "save_cookies must NOT advance _loaded_cookie_snapshot when the "

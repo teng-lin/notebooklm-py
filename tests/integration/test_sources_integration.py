@@ -213,10 +213,10 @@ class TestGetSource:
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            client._core.rpc_call = first_rpc
+            client._session.rpc_call = first_rpc
             assert await client.sources.list("nb_123") == []
 
-            client._core.rpc_call = second_rpc
+            client._session.rpc_call = second_rpc
             sources = await client.sources.list("nb_123")
 
         first_rpc.assert_awaited_once()

@@ -174,8 +174,8 @@ async def test_client_close_default_drain_is_true() -> None:
     async def fake_close() -> None:
         pass
 
-    client._core.drain = fake_drain  # type: ignore[method-assign]
-    client._core.close = fake_close  # type: ignore[method-assign]
+    client._session.drain = fake_drain  # type: ignore[method-assign]
+    client._session.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
 
@@ -196,8 +196,8 @@ async def test_client_close_drain_false_skips_drain() -> None:
     async def fake_close() -> None:
         pass
 
-    client._core.drain = fake_drain  # type: ignore[method-assign]
-    client._core.close = fake_close  # type: ignore[method-assign]
+    client._session.drain = fake_drain  # type: ignore[method-assign]
+    client._session.close = fake_close  # type: ignore[method-assign]
 
     await client.close(drain=False)
 
@@ -216,8 +216,8 @@ async def test_client_aexit_uses_drain_true_default() -> None:
     async def fake_close() -> None:
         pass
 
-    client._core.drain = fake_drain  # type: ignore[method-assign]
-    client._core.close = fake_close  # type: ignore[method-assign]
+    client._session.drain = fake_drain  # type: ignore[method-assign]
+    client._session.close = fake_close  # type: ignore[method-assign]
 
     # Drive __aexit__ directly rather than `async with` so we can use the
     # patched core without going through ``open()``.

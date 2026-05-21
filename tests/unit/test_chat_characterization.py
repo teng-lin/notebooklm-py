@@ -1821,7 +1821,7 @@ class TestGetConversationIdNullRaw:
         async with NotebookLMClient(auth_tokens) as client:
             # Patch rpc_call to return None directly (bypasses decode error)
             with patch.object(
-                client._core,
+                client._session,
                 "rpc_call",
                 new_callable=AsyncMock,
                 return_value=None,

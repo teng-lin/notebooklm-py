@@ -122,7 +122,7 @@ def _make_client_with_transport(
         auth_tokens,  # type: ignore[arg-type]
         server_error_max_retries=server_error_max_retries,
     )
-    client._core._http_client = httpx.AsyncClient(
+    client._session._http_client = httpx.AsyncClient(
         transport=transport,
         headers={
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -225,7 +225,7 @@ async def test_create_artifact_503_does_not_re_post(auth_tokens) -> None:
         with pytest.raises(ServerError):
             await client.artifacts.generate_audio(notebook_id="nb_test")
     finally:
-        await client._core._http_client.aclose()
+        await client._session._http_client.aclose()
 
     # Exactly ONE CREATE_ARTIFACT POST despite ``server_error_max_retries=3``
     # being configured: the PROBE_THEN_CREATE policy forced retries off.
@@ -263,7 +263,7 @@ async def test_create_artifact_429_does_not_re_post(auth_tokens) -> None:
         with pytest.raises(RateLimitError):
             await client.artifacts.generate_audio(notebook_id="nb_test")
     finally:
-        await client._core._http_client.aclose()
+        await client._session._http_client.aclose()
 
     assert create_count == 1, f"expected 1 CREATE_ARTIFACT POST, got {create_count}"
 
@@ -296,7 +296,7 @@ async def test_generate_mind_map_503_does_not_re_post(auth_tokens) -> None:
         with pytest.raises(ServerError):
             await client.artifacts.generate_mind_map(notebook_id="nb_test")
     finally:
-        await client._core._http_client.aclose()
+        await client._session._http_client.aclose()
 
     assert mind_map_count == 1, f"expected 1 GENERATE_MIND_MAP POST, got {mind_map_count}"
     assert get_notebook_count == 1
@@ -333,7 +333,7 @@ async def test_create_artifact_happy_path_still_returns_artifact(auth_tokens) ->
     try:
         status = await client.artifacts.generate_audio(notebook_id="nb_test")
     finally:
-        await client._core._http_client.aclose()
+        await client._session._http_client.aclose()
 
     assert status.task_id == artifact_id
     assert create_count == 1
@@ -379,7 +379,7 @@ async def test_generate_mind_map_happy_path_still_returns_mind_map(auth_tokens) 
     try:
         result = await client.artifacts.generate_mind_map(notebook_id="nb_test")
     finally:
-        await client._core._http_client.aclose()
+        await client._session._http_client.aclose()
 
     assert result["mind_map"] == mind_map_dict
     assert result["note_id"] == "note_stub"

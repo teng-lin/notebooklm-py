@@ -46,7 +46,7 @@ _EXPECTED_OPERATION_VARIANT_MSG = "rpc_call(operation_variant=...) is deprecated
 def _make_client() -> NotebookLMClient:
     """Build a NotebookLMClient with the core RPC patched to an AsyncMock.
 
-    No real transport is initialized; ``client._core.rpc_call`` is
+    No real transport is initialized; ``client._session.rpc_call`` is
     replaced before any authed HTTP path can fire.
     """
     client = NotebookLMClient(
@@ -56,7 +56,7 @@ def _make_client() -> NotebookLMClient:
             session_id="session",
         )
     )
-    client._core.rpc_call = AsyncMock(return_value=[])
+    client._session.rpc_call = AsyncMock(return_value=[])
     return client
 
 
@@ -74,7 +74,7 @@ async def test_default_call_emits_no_deprecation_warning() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         await client.rpc_call(_METHOD, [])
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=_METHOD,
         params=[],
         source_path="/",
@@ -97,7 +97,7 @@ async def test_explicit_source_path_root_emits_no_warning() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         await client.rpc_call(_METHOD, [], source_path="/")
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=_METHOD,
         params=[],
         source_path="/",
@@ -118,7 +118,7 @@ async def test_non_root_source_path_emits_deprecation_warning() -> None:
     dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert len(dep) == 1
     assert str(dep[0].message) == _EXPECTED_SOURCE_PATH_MSG
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=_METHOD,
         params=[],
         source_path="/notebook/x",
@@ -145,7 +145,7 @@ async def test_is_retry_explicit_false_emits_deprecation_warning() -> None:
     dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert len(dep) == 1
     assert str(dep[0].message) == _EXPECTED_IS_RETRY_MSG
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=_METHOD,
         params=[],
         source_path="/",
@@ -166,7 +166,7 @@ async def test_is_retry_explicit_true_emits_deprecation_warning() -> None:
     dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert len(dep) == 1
     assert str(dep[0].message) == _EXPECTED_IS_RETRY_MSG
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=_METHOD,
         params=[],
         source_path="/",
@@ -187,7 +187,7 @@ async def test_operation_variant_explicit_emits_deprecation_warning() -> None:
     dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert len(dep) == 1
     assert str(dep[0].message) == _EXPECTED_OPERATION_VARIANT_MSG
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=_METHOD,
         params=[],
         source_path="/",

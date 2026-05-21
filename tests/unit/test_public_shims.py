@@ -1001,7 +1001,7 @@ async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
             session_id="session",
         )
     )
-    client._core.rpc_call = AsyncMock(return_value={"ok": True})
+    client._session.rpc_call = AsyncMock(return_value={"ok": True})
 
     # This test intentionally exercises the deprecated kwargs to pin the
     # forwarded keyword-for-keyword shape. Wrapping in pytest.warns keeps
@@ -1019,7 +1019,7 @@ async def test_client_rpc_call_delegates_keyword_for_keyword() -> None:
         )
 
     assert result == {"ok": True}
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=RPCMethod.CREATE_NOTEBOOK,
         params=["My Notebook"],
         source_path="/notebook/abc",
@@ -1046,12 +1046,12 @@ async def test_client_rpc_call_forwards_default_arguments() -> None:
     )
     # No async context is needed: this test replaces the core RPC coroutine
     # before any real transport initialization can be required.
-    client._core.rpc_call = AsyncMock(return_value=[])
+    client._session.rpc_call = AsyncMock(return_value=[])
 
     result = await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
     assert result == []
-    client._core.rpc_call.assert_awaited_once_with(
+    client._session.rpc_call.assert_awaited_once_with(
         method=RPCMethod.LIST_NOTEBOOKS,
         params=[],
         source_path="/",

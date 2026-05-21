@@ -289,9 +289,6 @@ class NotebookLMClient:
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
         )
-        # Compatibility alias for tests and private callers that still inspect
-        # ``client._core`` directly.
-        self._core = self._session
 
         # Wire the upload pipeline explicitly with the concrete capability
         # surfaces (UploadRuntime via the Session, plus Kernel and AuthMetadata).
@@ -311,7 +308,7 @@ class NotebookLMClient:
             upload_timeout=upload_timeout,
             max_concurrent_uploads=max_concurrent_uploads,
         )
-        self.notebooks = NotebooksAPI(self._core, sources_api=self.sources)
+        self.notebooks = NotebooksAPI(self._session, sources_api=self.sources)
         # Phase 5 wiring per docs/refactor.md Migration Plan steps 6-7:
         # the legacy single-service handoff (``MindMapService(self._session)``
         # passed as ``mind_map_service=``) is replaced with the explicit
@@ -319,14 +316,6 @@ class NotebookLMClient:
         # raw row primitives; NoteBackedMindMapService is the mind-map-only
         # adapter the download path uses; the artifact-generation path uses
         # NoteService.create_note directly to persist a generated mind map.
-        #
-        # We pass ``self._session`` rather than the ``self._core`` alias because
-        # ``Session`` directly satisfies ``ArtifactsRuntime`` (RpcCaller +
-        # AsyncWorkRuntime + DrainHookRegistration) and the ``_core`` alias
-        # exists only for legacy callers that pre-date the runtime split. The
-        # ``_core`` alias is preserved indefinitely for back-compat (per
-        # refactor.md Non-Goals — see ADR-013); retiring it is a future
-        # arc and is out of scope here.
         note_service = NoteService(self._session)
         mind_maps = NoteBackedMindMapService(note_service)
         self.artifacts = ArtifactsAPI(
@@ -343,25 +332,25 @@ class NotebookLMClient:
         # has NotesAPI delegate via constructor injection.
         self.chat = ChatAPI(self._session, notebooks=self.notebooks)
         self.notes = NotesAPI(
-            self._core,
+            self._session,
             notes=note_service,
             mind_maps=mind_maps,
             save_chat_answer=self.chat.save_answer_as_note,
         )
         # Pure-RPC features (Phase 1 retypes: typed as `rpc: RpcCaller`).
-        self.research = ResearchAPI(self._core)
-        self.settings = SettingsAPI(self._core)
-        self.sharing = SharingAPI(self._core)
+        self.research = ResearchAPI(self._session)
+        self.settings = SettingsAPI(self._session)
+        self.sharing = SharingAPI(self._session)
 
     @property
     def auth(self) -> AuthTokens:
         """Get the authentication tokens."""
-        return self._core.auth
+        return self._session.auth
 
     async def __aenter__(self) -> NotebookLMClient:
         """Open the client connection."""
         logger.debug("Opening NotebookLM client")
-        await self._core.open()
+        await self._session.open()
         return self
 
     async def __aexit__(
@@ -393,7 +382,7 @@ class NotebookLMClient:
 
     async def drain(self, timeout: float | None = None) -> None:
         """Stop accepting new operations and wait for in-flight operations to finish."""
-        await self._core.drain(timeout=timeout)
+        await self._session.drain(timeout=timeout)
 
     async def close(
         self,
@@ -421,7 +410,7 @@ class NotebookLMClient:
                 await self.drain(timeout=drain_timeout)
             except TimeoutError as drain_exc:
                 try:
-                    await self._core.close()
+                    await self._session.close()
                 except Exception as close_exc:
                     logger.warning(
                         "Suppressing close() error after drain timeout to preserve timeout "
@@ -431,13 +420,13 @@ class NotebookLMClient:
                     raise drain_exc from close_exc
                 raise
             else:
-                await self._core.close()
+                await self._session.close()
                 return
-        await self._core.close()
+        await self._session.close()
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client."""
-        return self._core.metrics_snapshot()
+        return self._session.metrics_snapshot()
 
     async def rpc_call(
         self,
@@ -499,7 +488,7 @@ class NotebookLMClient:
         # not-None / None branches into one expression.
         resolved_source_path = "/" if source_path is None else source_path
         resolved_is_retry = bool(_is_retry)
-        return await self._core.rpc_call(
+        return await self._session.rpc_call(
             method=method,
             params=params,
             source_path=resolved_source_path,
@@ -512,7 +501,7 @@ class NotebookLMClient:
     @property
     def is_connected(self) -> bool:
         """Check if the client is connected."""
-        return self._core.is_open
+        return self._session.is_open
 
     @classmethod
     async def from_storage(
@@ -627,4 +616,4 @@ class NotebookLMClient:
         Raises:
             ValueError: If token extraction fails (page structure may have changed).
         """
-        return await refresh_auth_session(self._core)
+        return await refresh_auth_session(self._session)
