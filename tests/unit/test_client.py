@@ -559,7 +559,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._http_client, mock_post)
         core._http_client.headers = {"Cookie": "old"}
 
-        with patch("notebooklm._core.decode_response", return_value=["result"]):
+        with patch("notebooklm.rpc.decode_response", return_value=["result"]):
             result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once"
@@ -604,7 +604,7 @@ class TestRpcCallAutoRetry:
                 raise RPCError("Authentication expired", method_id="wXbhsf")
             return ["result"]
 
-        with patch("notebooklm._core.decode_response", side_effect=mock_decode):
+        with patch("notebooklm.rpc.decode_response", side_effect=mock_decode):
             result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once"
@@ -789,7 +789,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._http_client, mock_post)
         core._http_client.headers = {"Cookie": "old"}
 
-        with patch("notebooklm._core.decode_response", return_value=["result"]):
+        with patch("notebooklm.rpc.decode_response", return_value=["result"]):
             # Start two concurrent calls
             await asyncio.gather(
                 core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
@@ -845,7 +845,7 @@ class TestRpcCallAutoRetry:
         install_post_as_stream(None, core._http_client, mock_post)
         core._http_client.headers = {"Cookie": "old"}
 
-        with patch("notebooklm._core.decode_response", return_value=["result"]):
+        with patch("notebooklm.rpc.decode_response", return_value=["result"]):
             result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once on 400"

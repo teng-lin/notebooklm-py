@@ -158,7 +158,7 @@ async def test_delete_notebook_retries_remain_enabled(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
@@ -193,7 +193,7 @@ async def test_delete_source_retries_remain_enabled(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
@@ -224,7 +224,7 @@ async def test_delete_artifact_retries_remain_enabled(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=2)
@@ -323,7 +323,7 @@ async def test_share_notebook_does_not_retry_on_5xx(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens, server_error_max_retries=5)
@@ -396,7 +396,7 @@ async def test_notebooks_create_probe_propagates_network_error(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens)

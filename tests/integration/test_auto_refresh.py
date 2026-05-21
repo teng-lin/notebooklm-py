@@ -80,7 +80,7 @@ class TestAutoRefreshIntegration:
         async with client:
             install_post_as_stream(None, client._core._http_client, mock_post)
 
-            with patch("notebooklm._core.decode_response") as mock_decode:
+            with patch("notebooklm.rpc.decode_response") as mock_decode:
                 mock_decode.return_value = [[["nb1"], ["Notebook 1"]]]
                 await client.notebooks.list()
 
@@ -127,7 +127,7 @@ class TestAutoRefreshIntegration:
         async with client:
             install_post_as_stream(None, client._core._http_client, mock_post)
 
-            with patch("notebooklm._core.decode_response", side_effect=mock_decode):
+            with patch("notebooklm.rpc.decode_response", side_effect=mock_decode):
                 await client.notebooks.list()
 
         assert len(refresh_calls) == 1, "Should have refreshed once"
@@ -168,7 +168,7 @@ class TestAutoRefreshIntegration:
 
             start_time = asyncio.get_event_loop().time()
 
-            with patch("notebooklm._core.decode_response", return_value=[]):
+            with patch("notebooklm.rpc.decode_response", return_value=[]):
                 await client.notebooks.list()
 
             elapsed = asyncio.get_event_loop().time() - start_time

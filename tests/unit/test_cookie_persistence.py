@@ -11,7 +11,6 @@ import httpx
 import pytest
 
 import notebooklm._cookie_persistence as persistence_module
-import notebooklm._core as core_module
 from notebooklm._cookie_persistence import CookiePersistence
 from notebooklm._session import Session
 from notebooklm.auth import (
@@ -59,13 +58,16 @@ async def test_client_core_save_cookies_routes_through_injected_seam_and_to_thre
     ``asyncio.to_thread`` (off the loop) and then invokes the
     constructor-injected ``cookie_saver``.
 
-    Phase 2 PR 4 (``.sisyphus/plans/refactor-completion-plan.md``)
-    migrated the cookie-writer half of this test off the legacy
-    ``_core.save_cookies_to_storage`` string-target monkeypatch:
-    ``save_cookies_to_storage`` is now injected at construction via the
-    ``cookie_saver`` seam (Wave 1's :class:`ClientLifecycle` change).
-    The ``asyncio.to_thread`` patch is migrated to a canonical-module
-    target in Phase 2 PR 5 (next commit).
+    Phase 2 PR 4+5 (``.sisyphus/plans/refactor-completion-plan.md``)
+    migrated both halves of this test off the legacy
+    ``_core`` indirection:
+
+    - ``save_cookies_to_storage`` is injected at construction via the
+      ``cookie_saver`` seam (Wave 1's :class:`ClientLifecycle` change).
+    - ``asyncio.to_thread`` is patched on its canonical importing
+      module :mod:`notebooklm._session_lifecycle` (where
+      ``ClientLifecycle.save_cookies`` sources it via
+      ``cookie_persistence.save(to_thread=asyncio.to_thread)``).
     """
     calls: list[str] = []
 
@@ -79,7 +81,7 @@ async def test_client_core_save_cookies_routes_through_injected_seam_and_to_thre
         calls.append("to_thread")
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(core_module.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr("notebooklm._session_lifecycle.asyncio.to_thread", fake_to_thread)
     core = Session(_auth_tokens(tmp_path / "storage_state.json"), cookie_saver=fake_save)
 
     await core.save_cookies(_jar())

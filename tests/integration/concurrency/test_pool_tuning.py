@@ -67,7 +67,7 @@ async def test_default_limits_passed_to_async_client(auth_tokens) -> None:
         captured["limits"] = kwargs.get("limits")  # type: ignore[assignment]
         return real_async_client(**kwargs)  # type: ignore[arg-type]
 
-    with patch("notebooklm._core.httpx.AsyncClient", side_effect=_capturing_client):
+    with patch("notebooklm._session.httpx.AsyncClient", side_effect=_capturing_client):
         async with NotebookLMClient(auth_tokens):
             pass
 
@@ -92,7 +92,7 @@ async def test_custom_limits_passed_to_async_client(auth_tokens) -> None:
         captured["limits"] = kwargs.get("limits")  # type: ignore[assignment]
         return real_async_client(**kwargs)  # type: ignore[arg-type]
 
-    with patch("notebooklm._core.httpx.AsyncClient", side_effect=_capturing_client):
+    with patch("notebooklm._session.httpx.AsyncClient", side_effect=_capturing_client):
         async with NotebookLMClient(auth_tokens, limits=custom):
             pass
 

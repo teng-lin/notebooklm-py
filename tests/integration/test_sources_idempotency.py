@@ -624,7 +624,7 @@ async def test_add_text_no_probe_no_retry_under_5xx(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("notebooklm._core.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("notebooklm._session.asyncio.sleep", _no_sleep)
 
     transport = httpx.MockTransport(handler)
     client = _make_client_with_transport(transport, auth_tokens)
