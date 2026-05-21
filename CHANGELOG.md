@@ -5,11 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - TBD
+## [0.5.0] - UNRELEASED
 
 First release on the refactored core. Closes out the Tier 1-8 RPC/VCR
-remediation arc, the CLI UX refactor, the arch-disease cleanup, and the
-v0.3-era deprecation removal cycle.
+remediation arc, the CLI UX refactor, the arch-disease cleanup, the
+v0.3-era deprecation removal cycle, and the multi-phase Session
+capability refactor (Phases 1-4 of
+`.sisyphus/plans/refactor-completion-plan.md`).
+
+### Phase 4 highlights (Session demolition + capability protocols)
+
+- **Session capability refactor (ADR-013) — feature APIs depend on narrow
+  capability protocols** (`RpcCaller`, `OperationScopeProvider`,
+  `AsyncWorkRuntime`, `ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`,
+  …) instead of the broad `Session` class.
+- **`_core.py` compatibility shim removed.** Use canonical modules
+  directly: `_session_config`, `_session_helpers`, `_authed_transport`,
+  `_error_injection`, `_transport_drain`, `_auth/storage`,
+  `_auth/keepalive`, `notebooklm.rpc`.
+- **`_session.py` slimmed** — `MiddlewareChainBuilder` extracted; Session
+  compat wrappers around `RpcExecutor` removed in favor of direct
+  delegation; 10 non-Protocol setters removed (writes now reach the
+  owning collaborator directly).
+- **Public `NotebookLMClient.rpc_call` cleaned** — deprecated kwargs
+  `_is_retry`, `source_path`, `operation_variant` (removal targets v0.6.0).
+- **`NotesAPI.create_from_chat` deprecated** (removal v0.6.0); use
+  `ChatAPI.save_answer_as_note`.
+- **`docs/architecture.md` added** — post-v0.5.0 collaborator graph and
+  capability-protocol model.
+- **`docs/deprecations.md` tracker** kept current.
+
+### Phase 4 — breaking changes (none for end users)
+
+All deprecated kwargs and methods emit `DeprecationWarning` and remain
+functional through the v0.5.x series; removal targets v0.6.0.
+
+### Phase 4 — internal-only changes
+
+- `notebooklm._core.X` imports no longer resolve (the compatibility
+  shim was deleted). Tests and first-party callers must import from
+  canonical modules (`_session_config`, `_session_helpers`,
+  `_authed_transport`, `_error_injection`, `_transport_drain`,
+  `_auth.storage`, `_auth.keepalive`, `notebooklm.rpc`).
+- `Session._snapshot`, `Session.update_auth_tokens` now one-line
+  delegates; the canonical AST guards live on
+  `AuthRefreshCoordinator.{snapshot, update_auth_tokens}` in
+  `_session_auth.py` (Phase 3 PR 8).
+- 10 of 15 setters on `Session` removed. The 5 retained:
+  `_timeout` / `_bound_loop` / `_http_client` / `_refresh_callback`
+  (`RpcOwner` / `_AuthedTransportHost` Protocol surface — delegated to
+  collaborators); `_reqid_counter` (active `DeprecationWarning` track
+  through v0.5.x; removal v0.6.0).
+- `@property` pass-through getters on `Session` retained — their
+  `_ensure_*()` lazy-init backfill is required by the
+  `Session.__new__(Session)` test-fixture pattern.
+- `client.NotebookLMClient._core` attribute alias removed (Phase 2
+  PR 6); callers must use `client._session`.
+
+---
+
 
 This release also closes a CLI UX overhaul: a top-to-bottom pass that makes the CLI shell-, CI-, and agent-friendly. The headline changes are uniform `--json` envelopes on every mutating and detail command, an explicit codebase-wide exit-code policy (with two breaking corrections), graceful long-running waits with progress and SIGINT-resume, stdin / env-var / completion conventions across the surface, and the eradication of help-text drift and Python-traceback leaks.
 
