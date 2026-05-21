@@ -1,13 +1,16 @@
 """E2E test to verify research import correctly adds sources to notebook.
 
 This test verifies the complete flow:
-1. Start fast web research
-2. Import discovered sources
+1. Start fast / deep web research
+2. Import discovered sources via ``import_sources_with_verification``
 3. Wait for sources to process
 4. Verify source count matches expected
 
-Note: These tests are marked as flaky because Google's IMPORT_RESEARCH API
-can occasionally take longer than the default 30s timeout to respond.
+The ``@pytest.mark.flaky`` decorator below historically covered occasional
+``IMPORT_RESEARCH`` 30 s client-side timeouts. As of #315, the import path
+is verification-aware and recovers from those automatically, so the
+decorator now only guards against unrelated transient failures
+(snapshot/probe blips, upstream rate limits).
 """
 
 import asyncio
@@ -79,8 +82,12 @@ class TestResearchImportVerification:
         sources_to_import = sources_with_urls[:3]
         expected_import_count = len(sources_to_import)
 
-        # Step 4: Import sources
-        await client.research.import_sources(
+        # Step 4: Import sources. Use the verification-aware variant so an
+        # occasional 30 s IMPORT_RESEARCH timeout doesn't crash the test —
+        # that was the original reason this class was marked
+        # ``@pytest.mark.flaky(reruns=2)``. The fix that landed for #315
+        # makes this path robust for fast-mode imports too.
+        await client.research.import_sources_with_verification(
             temp_notebook.id,
             task_id,
             sources_to_import,
@@ -99,9 +106,9 @@ class TestResearchImportVerification:
             await asyncio.sleep(POLL_INTERVAL)
 
         # Step 6: Verify source count
-        # The critical assertion: verify ALL requested sources were actually imported
-        # Note: import_sources() return value may be incomplete due to API quirk,
-        # so we verify against actual notebook contents instead
+        # The critical assertion: verify ALL requested sources were actually
+        # imported. We poll sources.list rather than trust the import return
+        # value because the underlying RPC response is sometimes incomplete.
         assert new_source_count == expected_import_count, (
             f"Source count mismatch! "
             f"Requested to import {expected_import_count} but {new_source_count} "
