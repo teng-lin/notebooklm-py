@@ -2,27 +2,35 @@
 
 This package provides the command-line interface for NotebookLM automation.
 
-Command groups are organized into separate modules:
-- source.py: Source management commands (includes add-research)
-- artifact.py: Artifact management commands
-- agent.py: Agent integration helpers
-- generate.py: Content generation commands
-- download.py: Download commands
-- note.py: Note management commands
-- session.py: Session and context commands (login, use, status, clear)
-- notebook.py: Notebook management commands (list, create, delete, rename, share, summary)
-- chat.py: Chat commands (ask, configure, history)
-- doctor.py: Diagnostic and migration commands
-- profile.py: Profile management commands
+Command groups are organized into separate ``*_cmd`` modules (renamed in
+P3.T0 to break Python's package-attribute shadowing — see
+``tests/_lint/test_no_module_shadowing.py`` for the invariant this protects):
+
+- ``source_cmd``: Source management commands (includes add-research)
+- ``artifact_cmd``: Artifact management commands
+- ``agent_cmd``: Agent integration helpers
+- ``generate_cmd``: Content generation commands
+- ``download_cmd``: Download commands
+- ``note_cmd``: Note management commands
+- ``session_cmd``: Session and context commands (login, use, status, clear)
+- ``notebook_cmd``: Notebook management commands (list, create, delete, rename, share, summary)
+- ``chat_cmd``: Chat commands (ask, configure, history)
+- ``doctor_cmd``: Diagnostic and migration commands
+- ``profile_cmd``: Profile management commands
+
+The click groups themselves are still exported here under their historical
+names (``source``, ``artifact``, …) so ``from notebooklm.cli import source``
+keeps working for the public CLI assembler in ``notebooklm_cli.py`` and any
+external importer.
 """
 
 # Command groups (subcommand style)
-from .agent import agent
-from .artifact import artifact
-from .chat import register_chat_commands
-from .doctor import register_doctor_command
-from .download import download
-from .generate import generate
+from .agent_cmd import agent
+from .artifact_cmd import artifact
+from .chat_cmd import register_chat_commands
+from .doctor_cmd import register_doctor_command
+from .download_cmd import download
+from .generate_cmd import generate
 from .helpers import (
     clear_context,
     cli_name_to_artifact_type,
@@ -52,9 +60,9 @@ from .helpers import (
     # Decorators
     with_client,
 )
-from .language import get_language, language
-from .note import note
-from .notebook import register_notebook_commands
+from .language_cmd import get_language, language
+from .note_cmd import note
+from .notebook_cmd import register_notebook_commands
 from .options import (
     artifact_option,
     generate_options,
@@ -67,14 +75,14 @@ from .options import (
     standard_options,
     wait_option,
 )
-from .profile import profile
-from .research import research
+from .profile_cmd import profile
+from .research_cmd import research
 
 # Register functions (top-level command style)
-from .session import register_session_commands
-from .share import share
-from .skill import skill
-from .source import source
+from .session_cmd import register_session_commands
+from .share_cmd import share
+from .skill_cmd import skill
+from .source_cmd import source
 
 __all__ = [
     # Command groups (subcommand style)

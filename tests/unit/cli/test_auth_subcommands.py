@@ -479,7 +479,7 @@ class TestLoginBrowserCookies:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -519,7 +519,7 @@ class TestLoginBrowserCookies:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -619,7 +619,7 @@ class TestLoginBrowserCookies:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -696,7 +696,7 @@ class TestLoginBrowserCookies:
                 return_value=mock_cookies,
             ) as mock_extract,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -749,7 +749,7 @@ class TestLoginBrowserCookies:
                 return_value=mock_cookies,
             ) as mock_extract,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -863,7 +863,7 @@ class TestLoginBrowserCookies:
                 return_value=True,
             ),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -912,7 +912,7 @@ class TestLoginBrowserCookies:
                 return_value=False,
             ),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -947,7 +947,7 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
         ):
@@ -968,7 +968,7 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
         ):
@@ -987,7 +987,7 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
         ):
@@ -1009,11 +1009,11 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch(
-                "notebooklm.cli.session.shutil.rmtree",
+                "notebooklm.cli.session_cmd.shutil.rmtree",
                 side_effect=OSError("sharing violation"),
             ),
         ):
@@ -1034,7 +1034,7 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch.object(
@@ -1076,7 +1076,7 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
         ):
@@ -1102,7 +1102,7 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
         ):
@@ -1129,11 +1129,11 @@ class TestAuthLogoutCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch(
-                "notebooklm.cli.session.get_browser_profile_dir",
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
                 return_value=browser_dir,
             ),
             patch(
-                "notebooklm.cli.session.clear_context",
+                "notebooklm.cli.session_cmd.clear_context",
                 side_effect=OSError("file in use"),
             ),
         ):
@@ -1411,7 +1411,7 @@ class TestAuthRefreshCommand:
 class TestAuthInspect:
     def test_session_run_async_patch_reaches_login_service_helper(self):
         from notebooklm.auth import Account
-        from notebooklm.cli.session import _enumerate_one_jar
+        from notebooklm.cli.session_cmd import _enumerate_one_jar
 
         raw_cookies = _multiaccount_rookiepy_mock().chrome.return_value
         accounts = [Account(authuser=0, email="alice@example.com", is_default=True)]
@@ -1431,7 +1431,7 @@ class TestAuthInspect:
 
     def test_select_account_without_marked_default_uses_first_account(self):
         from notebooklm.auth import Account
-        from notebooklm.cli.session import _select_account
+        from notebooklm.cli.session_cmd import _select_account
 
         accounts = [
             Account(authuser=0, email="alice@example.com", is_default=False),

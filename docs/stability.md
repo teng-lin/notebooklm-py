@@ -213,7 +213,7 @@ The following v0.3-era deprecations completed their removal cycle in v0.5.0:
 | `notebooklm.DEFAULT_STORAGE_PATH` | `notebooklm.paths.get_storage_path()` | Module-level constant replaced by helper |
 | `notebooklm.rpc.types.StudioContentType` | `ArtifactType` | Internal raw code alias removed |
 | `notebooklm.rpc.StudioContentType` | `ArtifactType` | Internal re-export removed |
-| `notebooklm.cli.language.save_config` | `_save_config` | Private low-level write primitive only |
+| `notebooklm.cli.language_cmd.save_config` | `_save_config` | Private low-level write primitive only |
 
 ### Deprecated for a future major release
 

@@ -10,11 +10,11 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.profile import _PROFILE_NAME_RE, email_to_profile_name
+from notebooklm.cli.profile_cmd import _PROFILE_NAME_RE, email_to_profile_name
 from notebooklm.notebooklm_cli import cli
 from notebooklm.paths import _reset_config_cache, set_active_profile
 
-profile_module = importlib.import_module("notebooklm.cli.profile")
+profile_module = importlib.import_module("notebooklm.cli.profile_cmd")
 
 
 @pytest.fixture(autouse=True)

@@ -38,7 +38,7 @@ class TestSessionEdgeCases:
 
                 # Patch in session module where it's imported
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_error"
 
@@ -76,7 +76,7 @@ class TestSessionEdgeCases:
 
                 # Patch resolve_notebook_id to raise ClickException (e.g., ambiguous ID)
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.side_effect = click.ClickException("Multiple notebooks match 'nb'")
 
@@ -92,7 +92,7 @@ class TestSessionEdgeCases:
         mock_context_file.write_text("{ invalid json }")
 
         # Mock get_current_notebook to return an ID (simulating partial read)
-        with patch("notebooklm.cli.session.get_current_notebook") as mock_get_nb:
+        with patch("notebooklm.cli.session_cmd.get_current_notebook") as mock_get_nb:
             mock_get_nb.return_value = "nb_corrupted"
 
             result = runner.invoke(cli, ["status", "--json"])
@@ -135,8 +135,8 @@ class TestLoginWindowsPermissions:
         browser_profile = tmp_path / "profile"
 
         with (
-            patch("notebooklm.cli.session.get_storage_path", lambda: storage_path),
-            patch("notebooklm.cli.session.get_browser_profile_dir", lambda: browser_profile),
+            patch("notebooklm.cli.session_cmd.get_storage_path", lambda: storage_path),
+            patch("notebooklm.cli.session_cmd.get_browser_profile_dir", lambda: browser_profile),
         ):
             self.storage_parent = storage_path.parent
             self.browser_profile = browser_profile
@@ -144,7 +144,7 @@ class TestLoginWindowsPermissions:
 
     def test_windows_login_skips_mode_and_chmod(self, monkeypatch, _patch_login_deps, runner):
         """On Windows, login mkdir calls omit mode= and chmod is never called."""
-        import notebooklm.cli.session as session_mod
+        import notebooklm.cli.session_cmd as session_mod
 
         monkeypatch.setattr(session_mod.sys, "platform", "win32")
 
@@ -184,7 +184,7 @@ class TestLoginWindowsPermissions:
 
     def test_unix_login_sets_mode_and_chmod(self, monkeypatch, _patch_login_deps, runner):
         """On Unix, login mkdir calls include mode=0o700 and chmod is called."""
-        import notebooklm.cli.session as session_mod
+        import notebooklm.cli.session_cmd as session_mod
 
         monkeypatch.setattr(session_mod.sys, "platform", "linux")
 

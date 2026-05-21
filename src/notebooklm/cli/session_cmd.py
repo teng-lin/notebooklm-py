@@ -53,14 +53,14 @@ from .resolve import resolve_notebook_id
 from .runtime import run_async
 
 # Direct imports replace the D1-PR-3-retired forwarding wrappers; see ADR-008.
-# Several of these names also serve as ``notebooklm.cli.session.*`` monkeypatch
+# Several of these names also serve as ``notebooklm.cli.session_cmd.*`` monkeypatch
 # surfaces for tests that pre-date ADR-008's services-side patching convention
 # (e.g. ``_sync_server_language_to_config``, ``_login_browser_cookies_single``,
 # ``_refresh_from_browser_cookies``, ``_enumerate_browser_accounts``).
 #
 # The names tagged ``F401`` below are *only* patch surfaces — they are not
 # called from this module's body, but tests bind them on the
-# ``notebooklm.cli.session`` namespace either via direct import
+# ``notebooklm.cli.session_cmd`` namespace either via direct import
 # (``test_cookie_domain_split.py``, ``test_auth_subcommands.py``) or via the
 # dual-patch fixture in ``tests/_fixtures/cli_session.py`` (whose
 # ``patch_session_login_dual`` requires the name to exist on both modules).

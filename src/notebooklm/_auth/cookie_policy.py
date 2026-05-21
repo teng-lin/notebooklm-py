@@ -131,7 +131,7 @@ def _validate_required_cookies(
 #
 # REQUIRED is also fed verbatim to ``rookiepy.load(domains=...)`` by
 # ``_login_with_browser_cookies`` (via
-# :func:`notebooklm.cli.session._build_google_cookie_domains`); adding a
+# :func:`notebooklm.cli.session_cmd._build_google_cookie_domains`); adding a
 # domain here automatically extends what we ask the browser for at login.
 #
 # This frozenset is the single chokepoint for the cookie-domain

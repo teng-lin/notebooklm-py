@@ -215,19 +215,19 @@ src/notebooklm/
 │   ├── encoder.py               # Request encoding
 │   └── decoder.py               # Response parsing
 └── cli/                         # CLI implementation
-    ├── __init__.py
+    ├── __init__.py              # Re-exports click groups under historical names from *_cmd modules
     ├── helpers.py               # Shared Click utilities
-    ├── session.py               # login, use, status, clear
-    ├── notebook.py              # list, create, delete, rename
-    ├── source.py                # source add, list, delete
-    ├── artifact.py              # artifact commands
-    ├── generate.py              # generate audio, video, etc.
-    ├── download.py              # download commands
-    ├── chat.py                  # ask, configure, history
-    ├── note.py                  # note commands
-    ├── agent.py                 # agent show commands
+    ├── session_cmd.py           # login, use, status, clear (renamed in P3.T0)
+    ├── notebook_cmd.py          # list, create, delete, rename (renamed in P3.T0)
+    ├── source_cmd.py            # source add, list, delete (renamed in P3.T0)
+    ├── artifact_cmd.py          # artifact commands (renamed in P3.T0)
+    ├── generate_cmd.py          # generate audio, video, etc. (renamed in P3.T0)
+    ├── download_cmd.py          # download commands (renamed in P3.T0)
+    ├── chat_cmd.py              # ask, configure, history (renamed in P3.T0)
+    ├── note_cmd.py              # note commands (renamed in P3.T0)
+    ├── agent_cmd.py             # agent show commands (renamed in P3.T0)
     ├── agent_templates.py       # agent prompts and configurations
-    ├── doctor.py                # diagnostic/repair tool
+    ├── doctor_cmd.py            # diagnostic/repair tool (renamed in P3.T0)
     └── services/                # CLI-specific service layer (ADR-008 Click-to-service extraction)
         ├── __init__.py
         ├── artifact_generation.py

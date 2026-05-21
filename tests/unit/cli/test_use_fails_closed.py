@@ -60,7 +60,7 @@ def mock_context_file(tmp_path):
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.session.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.session_cmd.get_context_path", return_value=context_file),
     ):
         yield context_file
 
@@ -109,7 +109,7 @@ class TestUseFailsClosedBadId:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_missing"
 
@@ -136,7 +136,7 @@ class TestUseFailsClosedBadId:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_rpc_fail"
 
@@ -162,7 +162,7 @@ class TestUseFailsClosedGoodId:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_real"
 

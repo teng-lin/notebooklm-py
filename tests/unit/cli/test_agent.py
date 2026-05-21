@@ -1,5 +1,6 @@
 """Tests for agent CLI commands."""
 
+import importlib
 from unittest.mock import patch
 
 import pytest
@@ -7,10 +8,8 @@ from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import get_cli_module
-
-agent_module = get_cli_module("agent")
-agent_templates_module = get_cli_module("agent_templates")
+agent_module = importlib.import_module("notebooklm.cli.agent_cmd")
+agent_templates_module = importlib.import_module("notebooklm.cli.agent_templates")
 
 
 @pytest.fixture

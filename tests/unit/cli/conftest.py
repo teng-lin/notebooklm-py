@@ -202,50 +202,6 @@ def create_mock_client():
     return mock_client
 
 
-def get_cli_module(module_path: str):
-    """Get the actual CLI module by path, bypassing shadowed names.
-
-    In cli/__init__.py, module names are shadowed by click groups with the same name
-    (e.g., `from .source import source`). This function uses importlib to get the
-    actual module for Python 3.10 compatibility.
-
-    Args:
-        module_path: The module name within notebooklm.cli (e.g., "source", "skill")
-
-    Returns:
-        The actual module object
-    """
-    import importlib
-
-    return importlib.import_module(f"notebooklm.cli.{module_path}")
-
-
-def patch_client_for_module(module_path: str):
-    """Create a context manager that patches NotebookLMClient in the given module.
-
-    Args:
-        module_path: The module name within notebooklm.cli (e.g., "source", "artifact")
-
-    Returns:
-        A patch context manager for NotebookLMClient
-
-    Example:
-        with patch_client_for_module("source") as mock_cls:
-            mock_client = create_mock_client()
-            mock_cls.return_value = mock_client
-            # ... run test
-
-    Note:
-        Uses importlib to get the actual module, not the click group that shadows
-        the module name in cli/__init__.py. This is required for Python 3.10
-        compatibility where mock.patch's string path resolution gets the wrong object.
-    """
-    import importlib
-
-    module = importlib.import_module(f"notebooklm.cli.{module_path}")
-    return patch.object(module, "NotebookLMClient")
-
-
 class MultiMockProxy:
     """Proxy that forwards attribute access to all underlying mocks.
 
@@ -270,30 +226,21 @@ class MultiMockProxy:
 
 
 class MultiPatcher:
-    """Context manager that patches NotebookLMClient in multiple CLI modules.
+    """Context manager that patches ``NotebookLMClient`` in multiple CLI modules.
 
-    After refactoring, commands are spread across multiple modules, so we need
-    to patch NotebookLMClient in all of them.
-
-    Uses importlib to get the actual module objects, bypassing shadowed names
-    in cli/__init__.py where click groups share names with modules.
+    Top-level commands are spread across ``notebook_cmd`` / ``chat_cmd`` /
+    ``session_cmd`` / ``share_cmd`` so a single ``patch()`` cannot cover them.
+    Since P3.T0 broke the click-group shadow on the package attributes
+    (modules are now ``*_cmd``), direct string-form ``patch(...)`` works on
+    each module name without needing ``importlib`` indirection.
     """
 
     def __init__(self):
-        import importlib
-
-        # Get actual module objects to avoid Python 3.10 shadowing issues
-        # where cli/__init__.py exports click groups with same names as modules
-        notebook_mod = importlib.import_module("notebooklm.cli.notebook")
-        chat_mod = importlib.import_module("notebooklm.cli.chat")
-        session_mod = importlib.import_module("notebooklm.cli.session")
-        share_mod = importlib.import_module("notebooklm.cli.share")
-
         self.patches = [
-            patch.object(notebook_mod, "NotebookLMClient"),
-            patch.object(chat_mod, "NotebookLMClient"),
-            patch.object(session_mod, "NotebookLMClient"),
-            patch.object(share_mod, "NotebookLMClient"),
+            patch("notebooklm.cli.notebook_cmd.NotebookLMClient"),
+            patch("notebooklm.cli.chat_cmd.NotebookLMClient"),
+            patch("notebooklm.cli.session_cmd.NotebookLMClient"),
+            patch("notebooklm.cli.share_cmd.NotebookLMClient"),
         ]
         self.mocks = []
 
@@ -342,6 +289,6 @@ def mock_context_file(tmp_path):
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-        patch("notebooklm.cli.session.get_context_path", return_value=context_file),
+        patch("notebooklm.cli.session_cmd.get_context_path", return_value=context_file),
     ):
         yield context_file

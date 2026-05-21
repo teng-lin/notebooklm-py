@@ -18,13 +18,13 @@ from notebooklm.cli.services.polling import status_with_elapsed
 from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client
 
-# ``notebooklm.cli.generate`` (the module) is shadowed by ``cli.__init__``'s
+# ``notebooklm.cli.generate_cmd`` (the module) is shadowed by ``cli.__init__``'s
 # re-export of the ``generate`` Click Group (same name). Use ``importlib`` so
 # tests target the module's attribute set (``console``, helpers) rather than
 # the Click Group sitting at the same dotted path.
-generate_module = importlib.import_module("notebooklm.cli.generate")
+generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
 artifact_generation_module = importlib.import_module("notebooklm.cli.services.artifact_generation")
 
 
@@ -53,7 +53,7 @@ def mock_auth():
 
 class TestGenerateAudio:
     def test_generate_audio(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_123", "status": "processing"}
@@ -70,7 +70,7 @@ class TestGenerateAudio:
             assert "audio_123" in result.output or "Started" in result.output
 
     def test_generate_audio_with_format(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_123", "status": "processing"}
@@ -89,7 +89,7 @@ class TestGenerateAudio:
             mock_client.artifacts.generate_audio.assert_called()
 
     def test_generate_audio_with_length(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_123", "status": "processing"}
@@ -107,7 +107,7 @@ class TestGenerateAudio:
             assert result.exit_code == 0
 
     def test_generate_audio_with_wait(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_123", "status": "processing"}
@@ -138,7 +138,7 @@ class TestGenerateAudio:
         wait on/off as the legacy `--wait` flag did. The CLI surface is
         uniform with `artifact wait` / `source wait` after this change.
         """
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_xyz", "status": "processing"}
@@ -187,7 +187,7 @@ class TestGenerateAudio:
         them without --wait must NOT trigger a wait (preserves the default
         no-wait behavior promised by the original `--wait/--no-wait` toggle).
         """
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_xyz", "status": "processing"}
@@ -221,12 +221,12 @@ class TestGenerateAudio:
 
         The spinner gives interactive users feedback during the long wait, with
         a transient line naming the artifact kind (and a typical-duration hint).
-        Asserts the wrap by patching `notebooklm.cli.generate.console.status`
+        Asserts the wrap by patching `notebooklm.cli.generate_cmd.console.status`
         and confirming it is invoked exactly once with a message that mentions
         the artifact kind. Does not assert the elapsed-timer ticker — that's a
         rendering detail that relies on a TTY which `CliRunner` doesn't have.
         """
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_xyz", "status": "processing"}
@@ -260,7 +260,7 @@ class TestGenerateAudio:
             )
 
     def test_generate_audio_failure(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -285,7 +285,7 @@ class TestGenerateAudio:
 
 class TestGenerateVideo:
     def test_generate_video(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_video = AsyncMock(
                 return_value={"artifact_id": "video_123", "status": "processing"}
@@ -301,7 +301,7 @@ class TestGenerateVideo:
             assert result.exit_code == 0
 
     def test_generate_video_with_style(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_video = AsyncMock(
                 return_value={"artifact_id": "video_123", "status": "processing"}
@@ -319,7 +319,7 @@ class TestGenerateVideo:
             assert result.exit_code == 0
 
     def test_generate_video_with_custom_style_prompt(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_video = AsyncMock(
                 return_value={"artifact_id": "video_123", "status": "processing"}
@@ -410,7 +410,7 @@ class TestGenerateVideo:
 
 class TestGenerateCinematicVideo:
     def test_generate_cinematic_video(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_cinematic_video = AsyncMock(
                 return_value={"artifact_id": "cin_123", "status": "processing"}
@@ -426,7 +426,7 @@ class TestGenerateCinematicVideo:
             assert result.exit_code == 0
 
     def test_generate_cinematic_video_with_description(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_cinematic_video = AsyncMock(
                 return_value={"artifact_id": "cin_123", "status": "processing"}
@@ -452,7 +452,7 @@ class TestGenerateCinematicVideo:
 
     def test_generate_cinematic_video_ignores_style(self, runner, mock_auth):
         """Cinematic video accepts --style (inherited from video) but ignores it."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_cinematic_video = AsyncMock(
                 return_value={"artifact_id": "cin_123", "status": "processing"}
@@ -516,7 +516,7 @@ class TestGenerateCinematicVideo:
 
     def test_generate_cinematic_video_explicit_cinematic_format_ok(self, runner, mock_auth):
         """`cinematic-video --format cinematic` is the canonical happy path."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_cinematic_video = AsyncMock(
                 return_value={"artifact_id": "cin_123", "status": "processing"}
@@ -544,7 +544,7 @@ class TestGenerateCinematicVideo:
 
     def test_generate_cinematic_video_default_format_ok(self, runner, mock_auth):
         """`cinematic-video` with no --format defaults to cinematic and works."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_cinematic_video = AsyncMock(
                 return_value={"artifact_id": "cin_123", "status": "processing"}
@@ -577,7 +577,7 @@ class TestGenerateCinematicVideo:
 
 class TestGenerateQuiz:
     def test_generate_quiz(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_quiz = AsyncMock(
                 return_value={"artifact_id": "quiz_123", "status": "processing"}
@@ -593,7 +593,7 @@ class TestGenerateQuiz:
             assert result.exit_code == 0
 
     def test_generate_quiz_with_options(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_quiz = AsyncMock(
                 return_value={"artifact_id": "quiz_123", "status": "processing"}
@@ -628,7 +628,7 @@ class TestGenerateQuiz:
 
 class TestGenerateFlashcards:
     def test_generate_flashcards(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_flashcards = AsyncMock(
                 return_value={"artifact_id": "flash_123", "status": "processing"}
@@ -651,7 +651,7 @@ class TestGenerateFlashcards:
 
 class TestGenerateSlideDeck:
     def test_generate_slide_deck(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_slide_deck = AsyncMock(
                 return_value={"artifact_id": "slides_123", "status": "processing"}
@@ -667,7 +667,7 @@ class TestGenerateSlideDeck:
             assert result.exit_code == 0
 
     def test_generate_slide_deck_with_options(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_slide_deck = AsyncMock(
                 return_value={"artifact_id": "slides_123", "status": "processing"}
@@ -702,7 +702,7 @@ class TestGenerateSlideDeck:
 
 class TestGenerateInfographic:
     def test_generate_infographic(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_infographic = AsyncMock(
                 return_value={"artifact_id": "info_123", "status": "processing"}
@@ -718,7 +718,7 @@ class TestGenerateInfographic:
             assert result.exit_code == 0
 
     def test_generate_infographic_with_options(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_infographic = AsyncMock(
                 return_value={"artifact_id": "info_123", "status": "processing"}
@@ -760,7 +760,7 @@ class TestGenerateInfographic:
 
 class TestGenerateDataTable:
     def test_generate_data_table(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_data_table = AsyncMock(
                 return_value={"artifact_id": "table_123", "status": "processing"}
@@ -785,7 +785,7 @@ class TestGenerateDataTable:
 
 class TestGenerateMindMap:
     def test_generate_mind_map(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_mind_map = AsyncMock(
                 return_value={"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
@@ -808,7 +808,7 @@ class TestGenerateMindMap:
 
 class TestGenerateReport:
     def test_generate_report(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -824,7 +824,7 @@ class TestGenerateReport:
             assert result.exit_code == 0
 
     def test_generate_report_study_guide(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -842,7 +842,7 @@ class TestGenerateReport:
             assert result.exit_code == 0
 
     def test_generate_report_custom(self, runner, mock_auth):
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -871,7 +871,7 @@ class TestGenerateReport:
         self, runner, mock_auth, format_name, extra_text, expected_format
     ):
         """--append passes extra_instructions while keeping built-in format."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -904,7 +904,7 @@ class TestGenerateReport:
 
     def test_generate_report_append_with_custom_warns(self, runner, mock_auth):
         """--append with --format custom prints a warning and clears extra_instructions."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -937,7 +937,7 @@ class TestGenerateReport:
 
     def test_generate_report_append_with_description_warns(self, runner, mock_auth):
         """--append with a description arg (auto-promoted to custom) warns and clears extra_instructions."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -983,7 +983,7 @@ class TestGenerateJsonOutput:
     )
     def test_generate_json_output(self, runner, mock_auth, cmd, method, task_id):
         """Test --json flag produces valid JSON output for standard generate commands."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             setattr(
                 mock_client.artifacts,
@@ -1004,7 +1004,7 @@ class TestGenerateJsonOutput:
 
     def test_generate_data_table_json_output(self, runner, mock_auth):
         """Test --json for data-table (requires description argument)."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_data_table = AsyncMock(
                 return_value={"task_id": "table_123", "status": "processing"}
@@ -1025,7 +1025,7 @@ class TestGenerateJsonOutput:
 
     def test_generate_mind_map_json_output(self, runner, mock_auth):
         """Test --json for mind-map (different return structure)."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_mind_map = AsyncMock(
                 return_value={"mind_map": {"name": "Root", "children": []}, "note_id": "n1"}
@@ -1090,7 +1090,7 @@ class TestGenerateCommandsExist:
 class TestGenerateLanguageValidation:
     def test_invalid_language_code_rejected(self, runner, mock_auth):
         """Test that invalid language codes are rejected with helpful error."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
@@ -1109,7 +1109,7 @@ class TestGenerateLanguageValidation:
 
     def test_valid_language_code_accepted(self, runner, mock_auth):
         """Test that valid language codes are accepted."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={"artifact_id": "audio_123", "status": "processing"}
@@ -1320,7 +1320,7 @@ class TestRateLimitDetection:
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
             mock_client_cls.return_value = mock_client
@@ -1342,7 +1342,7 @@ class TestRateLimitDetection:
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
             mock_client_cls.return_value = mock_client
@@ -1372,7 +1372,7 @@ class TestResolveLanguageDirect:
 
         import click
 
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with pytest.raises(click.BadParameter) as exc_info:
             generate_module.resolve_language("xx_INVALID")
         assert "Unknown language code: xx_INVALID" in str(exc_info.value)
@@ -1382,7 +1382,7 @@ class TestResolveLanguageDirect:
         """Line 118: language is None, config_lang is not None → returns config_lang."""
         import importlib
 
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value="fr"):
             result = generate_module.resolve_language(None)
         assert result == "fr"
@@ -1391,7 +1391,7 @@ class TestResolveLanguageDirect:
         """Line 139: language is None and config_lang is None → returns DEFAULT_LANGUAGE."""
         import importlib
 
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value=None):
             result = generate_module.resolve_language(None)
         assert result == "en"
@@ -1401,7 +1401,7 @@ class TestResolveLanguageDirect:
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value="zh_Hans"):
             result = generate_module.resolve_language(None)
         assert result == "ja"
@@ -1411,7 +1411,7 @@ class TestResolveLanguageDirect:
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value="zh_Hans"):
             result = generate_module.resolve_language("ko")
         assert result == "ko"
@@ -1421,7 +1421,7 @@ class TestResolveLanguageDirect:
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value=None):
             result = generate_module.resolve_language(None)
         assert result == "ja"
@@ -1431,7 +1431,7 @@ class TestResolveLanguageDirect:
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value="zh_Hans"):
             result = generate_module.resolve_language(None)
         assert result == "zh_Hans"
@@ -1443,7 +1443,7 @@ class TestResolveLanguageDirect:
         import click
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "xx_INVALID")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with (
             patch.object(generate_module, "get_language", return_value=None),
             pytest.raises(click.BadParameter) as exc_info,
@@ -1457,7 +1457,7 @@ class TestResolveLanguageDirect:
 
         import click
 
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with (
             patch.object(generate_module, "get_language", return_value="xx_INVALID"),
             pytest.raises(click.BadParameter) as exc_info,
@@ -1470,7 +1470,7 @@ class TestResolveLanguageDirect:
         """A supported language stored in the config file is returned as-is."""
         import importlib
 
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value="ja"):
             result = generate_module.resolve_language(None)
         assert result == "ja"
@@ -1480,7 +1480,7 @@ class TestResolveLanguageDirect:
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "   ")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value="ja"):
             result = generate_module.resolve_language(None)
         assert result == "ja"
@@ -1490,7 +1490,7 @@ class TestResolveLanguageDirect:
         import importlib
 
         monkeypatch.setenv("NOTEBOOKLM_HL", "   ")
-        generate_module = importlib.import_module("notebooklm.cli.generate")
+        generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
         with patch.object(generate_module, "get_language", return_value=None):
             result = generate_module.resolve_language(None)
         assert result == "en"
@@ -1702,7 +1702,7 @@ class TestOutputMindMapResultDirect:
     def setup_method(self):
         import importlib
 
-        self.generate_module = importlib.import_module("notebooklm.cli.generate")
+        self.generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
 
     def test_falsy_result_json_calls_error(self):
         """Lines 624-626: falsy result with json_output → json_error_response."""
@@ -1756,7 +1756,7 @@ class TestGenerateReviseSlide:
 
     def test_revise_slide_basic(self, runner, mock_auth):
         """Lines 971-975: revise-slide command invokes client.artifacts.revise_slide."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.revise_slide = AsyncMock(
                 return_value={"artifact_id": "art_rev_1", "status": "processing"}
@@ -1787,7 +1787,7 @@ class TestGenerateReviseSlide:
 
     def test_revise_slide_passes_correct_args(self, runner, mock_auth):
         """Lines 985-989: verify artifact_id, slide_index, and prompt are forwarded."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.revise_slide = AsyncMock(
                 return_value={"artifact_id": "art_rev_2", "status": "processing"}
@@ -1822,7 +1822,7 @@ class TestGenerateReviseSlide:
 
     def test_revise_slide_missing_artifact_fails(self, runner, mock_auth):
         """revise-slide requires --artifact option."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
@@ -1847,7 +1847,7 @@ class TestGenerateReviseSlide:
 
     def test_revise_slide_missing_slide_fails(self, runner, mock_auth):
         """revise-slide requires --slide option."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
@@ -1872,7 +1872,7 @@ class TestGenerateReviseSlide:
 
     def test_revise_slide_json_output(self, runner, mock_auth):
         """revise-slide with --json flag produces JSON output."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.revise_slide = AsyncMock(
                 return_value={"artifact_id": "art_rev_3", "status": "processing"}
@@ -1918,7 +1918,7 @@ class TestGenerateReportWithNonBriefingFormat:
 
     def test_report_description_with_study_guide_format(self, runner, mock_auth):
         """Line 1057: description + non-default format → custom_prompt = description."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_xyz", "status": "processing"}
@@ -1950,7 +1950,7 @@ class TestGenerateReportWithNonBriefingFormat:
 
     def test_report_description_with_blog_post_format(self, runner, mock_auth):
         """Line 1057: description + blog-post format → custom_prompt set."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_abc", "status": "processing"}
@@ -1996,7 +1996,7 @@ class TestHandleGenerationResultPaths:
             task_id="task_gen_1", status="pending", error=None, error_code=None
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=status)
             mock_client_cls.return_value = mock_client
@@ -2012,7 +2012,7 @@ class TestHandleGenerationResultPaths:
 
     def test_generation_result_with_list_input(self, runner, mock_auth):
         """Lines 205-207: result is a list → task_id from first element."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=["task_list_1", "extra"])
             mock_client_cls.return_value = mock_client
@@ -2033,7 +2033,7 @@ class TestHandleGenerationResultPaths:
         ``output_error`` → ``SystemExit(1)`` and writes the message to
         stderr. See ``TestArtifactGenerationExitCodes`` for the contract.
         """
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -2055,7 +2055,7 @@ class TestHandleGenerationResultPaths:
         contract here; ``TestArtifactGenerationExitCodes`` covers the same
         path with explicit exit-code assertions and the text-mode parity.
         """
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -2087,7 +2087,7 @@ class TestHandleGenerationResultPaths:
             url="https://example.com/result.mp3",
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
@@ -2158,7 +2158,7 @@ class TestHandleGenerationResultListPathAndWait:
             url="https://example.com/audio.mp3",
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=completed_status)
@@ -2187,7 +2187,7 @@ class TestHandleGenerationResultListPathAndWait:
             url="https://example.com/audio.mp3",
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value=["task_list_wait", "extra"]
@@ -2216,7 +2216,7 @@ class TestHandleGenerationResultListPathAndWait:
             url="https://example.com/audio.mp3",
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(
                 return_value={
@@ -2246,7 +2246,7 @@ class TestOutputMindMapNonDictMindMap:
     def setup_method(self):
         import importlib
 
-        self.generate_module = importlib.import_module("notebooklm.cli.generate")
+        self.generate_module = importlib.import_module("notebooklm.cli.generate_cmd")
 
     def test_mind_map_non_dict_value_prints_directly(self):
         """Line 985->else (988-989): mind_map is not a dict → console.print(result)."""
@@ -2328,7 +2328,7 @@ class TestGenerateWaitSigintResumeHint:
             task_id="task_sigint_1", status="pending", error=None, error_code=None
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
             # The polling call is where Ctrl-C lands (asyncio.sleep inside the
@@ -2370,7 +2370,7 @@ class TestGenerateWaitSigintResumeHint:
             task_id="task_sigint_json", status="pending", error=None, error_code=None
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=initial_status)
             mock_client.artifacts.wait_for_completion = AsyncMock(side_effect=KeyboardInterrupt)
@@ -2440,7 +2440,7 @@ class TestArtifactGenerationExitCodes:
 
     def test_text_mode_none_result_exits_nonzero(self, runner, mock_auth):
         """``generate audio`` without ``--json`` exits != 0 when the API returns None."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -2458,7 +2458,7 @@ class TestArtifactGenerationExitCodes:
 
     def test_json_mode_none_result_exits_nonzero(self, runner, mock_auth):
         """``generate audio --json`` exits != 0 when the API returns None."""
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -2485,7 +2485,7 @@ class TestArtifactGenerationExitCodes:
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
             mock_client_cls.return_value = mock_client
@@ -2510,7 +2510,7 @@ class TestArtifactGenerationExitCodes:
             task_id="", status="failed", error="Rate limited", error_code="USER_DISPLAYABLE_ERROR"
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=rate_limited)
             mock_client_cls.return_value = mock_client
@@ -2542,7 +2542,7 @@ class TestArtifactGenerationExitCodes:
             error_code="INTERNAL_ERROR",
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=initial)
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=terminal)
@@ -2571,7 +2571,7 @@ class TestArtifactGenerationExitCodes:
             error_code="INTERNAL_ERROR",
         )
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_audio = AsyncMock(return_value=initial)
             mock_client.artifacts.wait_for_completion = AsyncMock(return_value=terminal)

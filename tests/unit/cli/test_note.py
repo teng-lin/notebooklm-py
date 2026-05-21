@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Note
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client
 
 
 def make_note(id: str, title: str, content: str, notebook_id: str = "nb_123") -> Note:
@@ -52,7 +52,7 @@ class TestNoteList:
 
     def test_note_list(self, runner, mock_auth):
         """Renders a table when notes exist."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(
                 return_value=[
@@ -76,7 +76,7 @@ class TestNoteList:
 
     def test_note_list_empty(self, runner, mock_auth):
         """Shows 'No notes found' when the notebook has no notes."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
@@ -92,7 +92,7 @@ class TestNoteList:
 
     def test_note_list_json(self, runner, mock_auth):
         """Outputs valid JSON with notebook_id, notes array, and count."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(
                 return_value=[
@@ -119,7 +119,7 @@ class TestNoteList:
 
     def test_note_list_json_empty(self, runner, mock_auth):
         """JSON output has empty notes array and count of zero when no notes exist."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
@@ -137,7 +137,7 @@ class TestNoteList:
 
     def test_note_list_json_count_matches_serialized_notes(self, runner, mock_auth):
         """count reflects only Note instances, not total items in the raw list."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Include a non-Note item to verify count only counts Note instances
             mock_client.notes.list = AsyncMock(
@@ -170,7 +170,7 @@ class TestNoteCreate:
 
     def test_note_create(self, runner, mock_auth):
         """Creates a note and confirms success message."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(
                 return_value=["note_new", ["note_new", "Hello world", None, None, "My Note"]]
@@ -191,7 +191,7 @@ class TestNoteCreate:
 
     def test_note_create_empty(self, runner, mock_auth):
         """Creates an empty note with the default title."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(
                 return_value=["note_new", ["note_new", "", None, None, "New Note"]]
@@ -208,7 +208,7 @@ class TestNoteCreate:
 
     def test_note_create_failure(self, runner, mock_auth):
         """Shows a warning when the API returns None."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -233,7 +233,7 @@ class TestNoteGet:
 
     def test_note_get(self, runner, mock_auth):
         """Displays note ID, title, and content."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list for resolve_note_id
             mock_client.notes.list = AsyncMock(
@@ -256,7 +256,7 @@ class TestNoteGet:
 
     def test_note_get_not_found(self, runner, mock_auth):
         """Exits with error code 1 when no matching note exists."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list to return empty (no match for resolve_note_id)
             mock_client.notes.list = AsyncMock(return_value=[])
@@ -284,7 +284,7 @@ class TestNoteGet:
         # Canonical 36-char UUID — matches the resolver's full-ID fast-path so
         # notes.list is bypassed and the backend ``get`` is hit directly.
         long_id = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
             mock_client.notes.get = AsyncMock(return_value=None)
@@ -303,7 +303,7 @@ class TestNoteGet:
     def test_note_get_not_found_pathA_long_id_json_exits_1(self, runner, mock_auth):
         """Path A under ``--json``: typed JSON error doc + exit 1."""
         long_id = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[])
             mock_client.notes.get = AsyncMock(return_value=None)
@@ -326,7 +326,7 @@ class TestNoteGet:
 
     def test_note_get_not_found_pathB_resolved_then_none_text_exits_1(self, runner, mock_auth):
         """Path B: partial-resolve succeeds, backend get() returns None → exit 1."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_xyz", "Doomed", "")])
             mock_client.notes.get = AsyncMock(return_value=None)
@@ -352,7 +352,7 @@ class TestNoteSave:
 
     def test_note_save_content(self, runner, mock_auth):
         """Updates note content and prints confirmation."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list for resolve_note_id
             mock_client.notes.list = AsyncMock(
@@ -374,7 +374,7 @@ class TestNoteSave:
 
     def test_note_save_title(self, runner, mock_auth):
         """Updates note title and prints confirmation."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list for resolve_note_id
             mock_client.notes.list = AsyncMock(
@@ -396,7 +396,7 @@ class TestNoteSave:
 
     def test_note_save_no_changes(self, runner, mock_auth):
         """Should show message when neither title nor content provided"""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
@@ -419,7 +419,7 @@ class TestNoteRename:
 
     def test_note_rename(self, runner, mock_auth):
         """Renames a note and prints the new title."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list for resolve_note_id
             mock_client.notes.list = AsyncMock(
@@ -444,7 +444,7 @@ class TestNoteRename:
 
     def test_note_rename_not_found(self, runner, mock_auth):
         """Exits with error code 1 when the note cannot be resolved."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list to return empty (no match for resolve_note_id)
             mock_client.notes.list = AsyncMock(return_value=[])
@@ -474,7 +474,7 @@ class TestNoteDelete:
 
     def test_note_delete(self, runner, mock_auth):
         """Deletes a note and prints the deleted note ID."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock notes.list for resolve_note_id
             mock_client.notes.list = AsyncMock(
@@ -553,7 +553,7 @@ class TestNoteCreateJson:
     """JSON shape for ``note create``."""
 
     def test_create_success(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(
                 return_value=["note_new", ["note_new", "Hello", None, None, "My Note"]]
@@ -586,7 +586,7 @@ class TestNoteCreateJson:
             assert data["notebook_id"] == "nb_123"
 
     def test_create_failure(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -607,7 +607,7 @@ class TestNoteGetJson:
     """JSON shape for ``note get`` (mirrors Note dataclass)."""
 
     def test_get_success(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "Body")])
             mock_client.notes.get = AsyncMock(return_value=make_note("note_123", "T", "Body"))
@@ -639,7 +639,7 @@ class TestNoteGetJson:
         message}``) + exit 1. See ``docs/cli-exit-codes.md`` and the BREAKING
         entry in ``CHANGELOG.md`` (Unreleased → Changed).
         """
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "B")])
             mock_client.notes.get = AsyncMock(return_value=None)
@@ -664,7 +664,7 @@ class TestNoteSaveJson:
     """JSON shape for ``note save``."""
 
     def test_save_content(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "Old")])
             mock_client.notes.update = AsyncMock(return_value=None)
@@ -696,7 +696,7 @@ class TestNoteSaveJson:
 
     def test_save_no_changes(self, runner, mock_auth):
         """No --title/--content with --json still emits parseable JSON."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client_cls.return_value = mock_client
 
@@ -719,7 +719,7 @@ class TestNoteSaveJson:
     """JSON shape for ``note rename``."""
 
     def test_rename_success(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
             mock_client.notes.get = AsyncMock(return_value=make_note("note_123", "Old", "Body"))
@@ -761,7 +761,7 @@ class TestNoteSaveJson:
         code. See ``docs/cli-exit-codes.md`` and the BREAKING entry in
         ``CHANGELOG.md`` (Unreleased → Changed).
         """
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
             mock_client.notes.get = AsyncMock(return_value=None)
@@ -797,7 +797,7 @@ class TestNoteSaveJson:
 
     def test_rename_target_missing_after_resolve_text_exits_1(self, runner, mock_auth):
         """Same race in text mode: ``Note not found`` on stderr + exit 1."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "Old", "Body")])
             mock_client.notes.get = AsyncMock(return_value=None)
@@ -822,7 +822,7 @@ class TestNoteDeleteJson:
     """JSON shape for ``note delete``."""
 
     def test_delete_success(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "Body")])
             mock_client.notes.delete = AsyncMock(return_value=None)
@@ -865,7 +865,7 @@ class TestNoteDeleteJson:
         ``docs/cli-exit-codes.md`` and the BREAKING entry in
         ``CHANGELOG.md`` (Unreleased → Changed).
         """
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "Body")])
             # ``delete`` must NOT be invoked — assert that below.
@@ -895,7 +895,7 @@ class TestNoteDeleteJson:
 
     def test_delete_non_json_cancelled(self, runner, mock_auth):
         """Non-JSON mode preserves the interactive prompt; declining is a no-op."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.list = AsyncMock(return_value=[make_note("note_123", "T", "Body")])
             mock_client.notes.delete = AsyncMock(return_value=None)
@@ -932,7 +932,7 @@ class TestNoteCreateStdinDash:
     """``note create --content -`` and ``note create -`` accept piped stdin."""
 
     def test_note_create_content_flag_dash_reads_stdin(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(
                 return_value=["note_new", ["note_new", "from stdin", None, None, "New Note"]]
@@ -955,7 +955,7 @@ class TestNoteCreateStdinDash:
             assert call.args[2] == "from stdin"
 
     def test_note_create_positional_dash_reads_stdin(self, runner, mock_auth):
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(
                 return_value=["note_new", ["note_new", "piped body", None, None, "New Note"]]
@@ -978,7 +978,7 @@ class TestNoteCreateStdinDash:
 
     def test_note_create_content_flag_literal_value_unchanged(self, runner, mock_auth):
         """Regression: ``--content "literal"`` is not interpreted as stdin."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(
                 return_value=["note_new", ["note_new", "literal", None, None, "New Note"]]
@@ -1001,7 +1001,7 @@ class TestNoteCreateStdinDash:
 
     def test_note_create_positional_and_content_flag_conflict(self, runner, mock_auth):
         """Passing both positional CONTENT and --content is a UsageError."""
-        with patch_client_for_module("note") as mock_client_cls:
+        with patch("notebooklm.cli.note_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.notes.create = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client

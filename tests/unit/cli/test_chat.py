@@ -8,7 +8,7 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import AskResult, ChatReference, Note
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client
 
 
 def make_note(id="note_abc", title="Chat Note", content="The answer") -> Note:
@@ -55,7 +55,7 @@ def mock_auth():
 
 class TestAskSaveAsNote:
     def test_ask_save_as_note_creates_note(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -77,7 +77,7 @@ class TestAskSaveAsNote:
             assert any("The answer is 42." in str(a) for a in all_args)
 
     def test_ask_save_as_note_uses_custom_title(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -107,7 +107,7 @@ class TestAskSaveAsNote:
             assert any("My Title" in str(a) for a in all_args)
 
     def test_ask_without_flag_does_not_create_note(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -132,7 +132,7 @@ class TestAskSaveAsNote:
         Note: ``notes.create_from_chat`` is a deprecated forwarder; the
         CLI calls the canonical ``chat.save_answer_as_note`` directly.
         """
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             ask_result = AskResult(
                 answer="Apples are mentioned [1].",
@@ -175,7 +175,7 @@ class TestAskSaveAsNote:
         """When AskResult.references is empty (no citations in the
         answer), --save-as-note falls back to plain-text notes.create()
         rather than failing."""
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())  # empty refs
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -199,7 +199,7 @@ class TestAskSaveAsNote:
 
 class TestHistoryCommand:
     def test_history_shows_qa_pairs(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=MOCK_HISTORY)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
@@ -216,7 +216,7 @@ class TestHistoryCommand:
             assert "Explain AI" in result.output
 
     def test_history_save_creates_note(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
             mock_client.chat.get_history = AsyncMock(return_value=MOCK_HISTORY)
@@ -233,7 +233,7 @@ class TestHistoryCommand:
             mock_client.notes.create.assert_awaited_once()
 
     def test_history_empty_shows_message(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
             mock_client.chat.get_history = AsyncMock(return_value=[])
@@ -249,7 +249,7 @@ class TestHistoryCommand:
             assert "No conversation history" in result.output
 
     def test_history_json_outputs_valid_json(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=MOCK_HISTORY)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
@@ -274,7 +274,7 @@ class TestHistoryCommand:
             assert data["qa_pairs"][1]["turn"] == 2
 
     def test_history_json_empty(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=[])
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -298,7 +298,7 @@ class TestHistoryCommand:
         long_a = "A" * 100
         pairs = [(long_q, long_a)]
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=pairs)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
@@ -330,7 +330,7 @@ class TestHistoryCommand:
         long_a = "A" * 100
         pairs = [(long_q, long_a)]
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=pairs)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
@@ -362,7 +362,7 @@ class TestHistoryCommand:
         long_a = "A" * 200
         pairs = [(long_q, long_a)]
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=pairs)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)
@@ -385,7 +385,7 @@ class TestHistoryCommand:
 
 class TestAskTimeout:
     def test_ask_passes_timeout_to_client(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -405,7 +405,7 @@ class TestAskTimeout:
 
     def test_ask_omits_timeout_kwarg_when_flag_not_set(self, runner, mock_auth):
         """When --timeout is not passed, the CLI must not override the library default."""
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -429,7 +429,7 @@ class TestConfigureJsonOutput:
     """Smoke tests for `configure --json`."""
 
     def test_configure_mode_json(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.set_mode = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -453,7 +453,7 @@ class TestConfigureJsonOutput:
             mock_client.chat.set_mode.assert_awaited_once()
 
     def test_configure_persona_json(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.configure = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -496,7 +496,7 @@ class TestConfigureJsonOutput:
         Mirrors the non-JSON "Chat configured (no changes)" path so callers
         running the command in a script can still parse a result.
         """
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.configure = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -538,7 +538,7 @@ class TestAskServerResumed:
             raw_response="",
         )
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=ask_result)
             mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
@@ -572,7 +572,7 @@ class TestAskServerResumed:
             raw_response="",
         )
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=ask_result)
             mock_client_cls.return_value = mock_client
@@ -618,7 +618,7 @@ class TestAskNewFlag:
             raw_response="",
         )
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=fresh_result)
             mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
@@ -650,7 +650,7 @@ class TestAskNewFlag:
         context_file = tmp_path / "context.json"
         context_file.write_text('{"notebook_id": "nb_123"}')
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock()
             mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
@@ -692,7 +692,7 @@ class TestAskNewFlag:
             raw_response="",
         )
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=fresh_result)
             mock_client.chat.get_conversation_id = AsyncMock(return_value="conv-server-abc")
@@ -717,7 +717,7 @@ class TestAskNewFlag:
 
     def test_ask_new_conflicts_with_conversation_id(self, runner, mock_auth):
         """`ask --new --conversation-id <id>` should raise UsageError (exit 2)."""
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -761,7 +761,7 @@ class TestAskNewFlag:
             raw_response="",
         )
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=fresh_result)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -801,7 +801,7 @@ class TestAskStdinDash:
     """``notebooklm ask -`` and ``--prompt-file -`` accept piped stdin."""
 
     def test_ask_positional_dash_reads_stdin(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -819,7 +819,7 @@ class TestAskStdinDash:
             assert call.args[1] == "what is X?"
 
     def test_ask_prompt_file_dash_reads_stdin(self, runner, mock_auth):
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -841,7 +841,7 @@ class TestAskStdinDash:
 
     def test_ask_positional_non_dash_unchanged(self, runner, mock_auth):
         """Regression: literal questions are not interpreted as stdin."""
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -885,7 +885,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -922,7 +922,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             ask_result = AskResult(
                 answer="Apples are mentioned [1].",
@@ -981,7 +981,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -1013,7 +1013,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result(answer=""))
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -1047,7 +1047,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -1079,7 +1079,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.clear_cache = MagicMock(return_value=True)
             # ``cache_size`` is read BEFORE ``clear_cache`` so the envelope
@@ -1105,7 +1105,7 @@ class TestChatJsonStdoutContract:
         """The 'No cache to clear' branch must also emit valid JSON."""
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.clear_cache = MagicMock(return_value=False)
             mock_client.chat.cache_size = MagicMock(return_value=0)
@@ -1134,7 +1134,7 @@ class TestChatJsonStdoutContract:
         """
         import json
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.get_history = AsyncMock(return_value=MOCK_HISTORY)
             mock_client.chat.get_conversation_id = AsyncMock(return_value=MOCK_CONV_ID)

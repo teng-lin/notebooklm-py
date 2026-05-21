@@ -29,7 +29,7 @@ from ...client import NotebookLMClient
 from ...io import atomic_write_json
 from ...paths import get_storage_path
 from ..error_handler import exit_with_code
-from ..language import set_language
+from ..language_cmd import set_language
 from ..rendering import console
 from ..runtime import run_async
 

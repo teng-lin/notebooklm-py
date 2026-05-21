@@ -34,13 +34,13 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Source
 
 # ``cli/__init__.py`` re-exports the ``source`` click Group under that
-# name, which shadows the underlying module. ``import notebooklm.cli.source``
+# name, which shadows the underlying module. ``import notebooklm.cli.source_cmd``
 # *does* bind to the module via the dotted-path machinery, but
 # ``from notebooklm.cli import source`` would bind to the Group. We use
 # ``importlib.import_module`` here as the explicit, unambiguous form so
 # ``patch.object(_source_module, "NotebookLMClient")`` targets the module
 # attribute the CLI handler actually reads.
-_source_module = importlib.import_module("notebooklm.cli.source")
+_source_module = importlib.import_module("notebooklm.cli.source_cmd")
 
 
 @pytest.fixture

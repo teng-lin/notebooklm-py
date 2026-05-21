@@ -25,7 +25,7 @@ Each of these patterns shares one root cause: production code is mutated from th
 
 - `_AuthFacadeModule` (`auth.py:288-339`) — a `types.ModuleType` subclass whose `__setattr__` mirrors writes from `notebooklm.auth.<name>` across `_auth/storage`, `_auth/account`, `_auth/keepalive`, `_auth/refresh`, plus header/cookie/policy seams. The shim exists because ~152 patches target the `notebooklm.auth` namespace and would silently no-op if the facade were a passive re-export. See ADR-003.
 - The `_core.py` property-bridge zoo (lines 450-774, ~324 LOC) — read/write properties that delegate to the seam where the storage actually lives. They exist because `monkeypatch.setattr(core, "_save_lock", fake)` is a load-bearing idiom across dozens of tests. See ADR-001 and ADR-002.
-- The `cli/session.py` proxy block (lines 141-490, ~350 LOC) — module-level functions that mirror service-layer symbols so `monkeypatch.setattr("notebooklm.cli.session.X", fake)` reaches the real implementation in `cli/services/login.py`.
+- The `cli/session.py` proxy block (lines 141-490, ~350 LOC) — module-level functions that mirror service-layer symbols so `monkeypatch.setattr("notebooklm.cli.session_cmd.X", fake)` reaches the real implementation in `cli/services/login.py`.
 
 Every previous seam extraction (tier 7 through tier 10) has had to add or extend one of these structures rather than break the patches. The cost compounds: each new refactor that crosses one of these load-bearing boundaries either preserves the shim (cementing it) or breaks ~100 tests at once.
 

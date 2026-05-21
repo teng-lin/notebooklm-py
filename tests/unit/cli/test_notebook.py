@@ -13,7 +13,7 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, Notebook
 
-from .conftest import create_mock_client, patch_client_for_module, patch_main_cli_client
+from .conftest import create_mock_client, patch_main_cli_client
 
 
 @pytest.fixture
@@ -559,8 +559,10 @@ class TestNotebookDelete:
                 patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
                 patch("notebooklm.cli.context.get_context_path", return_value=context_file),
                 patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
-                patch("notebooklm.cli.notebook.get_current_notebook", return_value="nb_to_delete"),
-                patch("notebooklm.cli.notebook.clear_context"),
+                patch(
+                    "notebooklm.cli.notebook_cmd.get_current_notebook", return_value="nb_to_delete"
+                ),
+                patch("notebooklm.cli.notebook_cmd.clear_context"),
                 patch(
                     "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
                 ) as mock_fetch,
@@ -917,7 +919,7 @@ class TestNotebookConfigure:
 
 class TestSourceAddResearch:
     def test_source_add_research_success(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.start = AsyncMock(return_value={"task_id": "task_123"})
             mock_client.research.poll = AsyncMock(
@@ -937,7 +939,7 @@ class TestSourceAddResearch:
             assert "Found 1 sources" in result.output
 
     def test_source_add_research_failed_to_start(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.start = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
@@ -954,7 +956,7 @@ class TestSourceAddResearch:
             assert "Research failed to start" in result.output
 
     def test_source_add_research_with_import(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.start = AsyncMock(return_value={"task_id": "task_123"})
             mock_client.research.poll = AsyncMock(

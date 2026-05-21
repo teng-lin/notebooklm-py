@@ -146,7 +146,7 @@ class TestLoginBrowserCookies:
         # cassette only captures the homepage GET. Without this, the run would
         # also fire a batchexecute call for ``get_output_language``.
         monkeypatch.setattr(
-            "notebooklm.cli.session._sync_server_language_to_config",
+            "notebooklm.cli.session_cmd._sync_server_language_to_config",
             lambda *a, **kw: None,
         )
 
@@ -181,7 +181,7 @@ class TestLoginBrowserCookies:
 
         monkeypatch.setattr("notebooklm.cli.services.login._read_browser_cookies", _capture)
         monkeypatch.setattr(
-            "notebooklm.cli.session._sync_server_language_to_config",
+            "notebooklm.cli.session_cmd._sync_server_language_to_config",
             lambda *a, **kw: None,
         )
 

@@ -1,6 +1,6 @@
 """Tests for the --prompt-file option across prompt-based CLI commands."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import click
 import pytest
@@ -10,7 +10,7 @@ from notebooklm.notebooklm_cli import cli
 from notebooklm.rpc.types import ReportFormat
 from notebooklm.types import AskResult
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client
 
 
 def make_ask_result(answer: str = "The answer is 42.") -> AskResult:
@@ -99,7 +99,7 @@ class TestAskPromptFile:
         prompt_file = tmp_path / "question.txt"
         prompt_file.write_text("What is 42?", encoding="utf-8")
 
-        with patch_client_for_module("chat") as mock_client_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=make_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -125,7 +125,7 @@ class TestGeneratePromptFile:
         prompt_file = tmp_path / "report.txt"
         prompt_file.write_text("Create a white paper about AI trends", encoding="utf-8")
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_report = AsyncMock(
                 return_value={"artifact_id": "report_123", "status": "processing"}
@@ -147,7 +147,7 @@ class TestGeneratePromptFile:
         prompt_file = tmp_path / "table.txt"
         prompt_file.write_text("Compare key concepts", encoding="utf-8")
 
-        with patch_client_for_module("generate") as mock_client_cls:
+        with patch("notebooklm.cli.generate_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.generate_data_table = AsyncMock(
                 return_value={"artifact_id": "table_123", "status": "processing"}
@@ -169,7 +169,7 @@ class TestSourceAddResearchPromptFile:
         prompt_file = tmp_path / "research.txt"
         prompt_file.write_text("AI papers", encoding="utf-8")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.start = AsyncMock(return_value={"task_id": "task_123"})
             mock_client_cls.return_value = mock_client

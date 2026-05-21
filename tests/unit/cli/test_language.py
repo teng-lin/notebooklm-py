@@ -13,7 +13,7 @@ from notebooklm.notebooklm_cli import cli
 
 # Import the module explicitly to avoid confusion with the Click group
 # (notebooklm.cli exports 'language' as a Click Group, which shadows the module)
-language_module = importlib.import_module("notebooklm.cli.language")
+language_module = importlib.import_module("notebooklm.cli.language_cmd")
 
 
 def test_save_config_alias_removed() -> None:

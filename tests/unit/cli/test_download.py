@@ -1,5 +1,6 @@
 """Tests for download CLI commands."""
 
+import importlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -11,10 +12,10 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Artifact
 
-from .conftest import create_mock_client, get_cli_module, patch_client_for_module
+from .conftest import create_mock_client
 
 # Get the actual download module (not the click group that shadows it)
-download_module = get_cli_module("download")
+download_module = importlib.import_module("notebooklm.cli.download_cmd")
 
 
 def make_artifact(
@@ -81,7 +82,7 @@ def mock_fetch_tokens():
 
 class TestDownloadAudio:
     def test_download_audio(self, runner, mock_auth, tmp_path):
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "audio.mp3"
@@ -109,7 +110,7 @@ class TestDownloadAudio:
             assert output_file.exists()
 
     def test_download_audio_dry_run(self, runner, mock_auth, tmp_path):
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_artifact("audio_123", "My Audio", 1)]
@@ -128,7 +129,7 @@ class TestDownloadAudio:
             assert "DRY RUN" in result.output
 
     def test_download_audio_no_artifacts(self, runner, mock_auth):
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
@@ -151,7 +152,7 @@ class TestDownloadAudio:
 
 class TestDownloadVideo:
     def test_download_video(self, runner, mock_auth, tmp_path):
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "video.mp4"
@@ -186,7 +187,7 @@ class TestDownloadVideo:
 
 class TestDownloadInfographic:
     def test_download_infographic(self, runner, mock_auth, tmp_path):
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "infographic.png"
@@ -223,7 +224,7 @@ class TestDownloadInfographic:
 
 class TestDownloadSlideDeck:
     def test_download_slide_deck(self, runner, mock_auth, tmp_path):
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_dir = tmp_path / "slides"
@@ -261,7 +262,7 @@ class TestDownloadSlideDeck:
 class TestDownloadFlags:
     def test_download_audio_latest(self, runner, mock_auth, tmp_path):
         """Test --latest flag selects most recent artifact"""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "audio.mp3"
@@ -298,7 +299,7 @@ class TestDownloadFlags:
 
     def test_download_audio_earliest(self, runner, mock_auth, tmp_path):
         """Test --earliest flag selects oldest artifact"""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "audio.mp3"
@@ -335,7 +336,7 @@ class TestDownloadFlags:
 
     def test_download_force_overwrites(self, runner, mock_auth, tmp_path):
         """Test --force flag overwrites existing file"""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "audio.mp3"
@@ -367,7 +368,7 @@ class TestDownloadFlags:
 
     def test_download_no_clobber_skips(self, runner, mock_auth, tmp_path):
         """Test --no-clobber flag skips existing file"""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_artifact("audio_123", "Audio", 1)]
@@ -454,7 +455,7 @@ class TestDownloadCommandsExist:
 
     def test_download_cinematic_video_alias_callable(self, runner, mock_auth, tmp_path):
         """Verify 'download cinematic-video' alias invokes download video logic."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "cinematic.mp4"
@@ -494,7 +495,7 @@ class TestDownloadFlagConflicts:
 
     def test_force_and_no_clobber_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """Test --force and --no-clobber cannot be used together."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_artifact("audio_123", "Audio", 1)]
@@ -510,7 +511,7 @@ class TestDownloadFlagConflicts:
 
     def test_latest_and_earliest_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """Test --latest and --earliest cannot be used together."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_artifact("audio_123", "Audio", 1)]
@@ -526,7 +527,7 @@ class TestDownloadFlagConflicts:
 
     def test_all_and_artifact_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """Test --all and --artifact cannot be used together."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_artifact("audio_123", "Audio", 1)]
@@ -552,7 +553,7 @@ class TestDownloadAutoRename:
 
     def test_auto_renames_on_conflict(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """When file exists without --force or --no-clobber, should auto-rename."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "audio.mp3"
@@ -589,7 +590,7 @@ class TestDownloadAll:
 
     def test_download_all_basic(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test basic --all download to a directory."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_dir = tmp_path / "downloads"
@@ -619,7 +620,7 @@ class TestDownloadAll:
 
     def test_download_all_dry_run(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test --all --dry-run shows preview without downloading."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_dir = tmp_path / "downloads"
@@ -650,7 +651,7 @@ class TestDownloadAll:
         exit code (the loop still attempts every artifact, but the command does
         not silently report success when some artifacts failed).
         """
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_dir = tmp_path / "downloads"
@@ -707,7 +708,7 @@ class TestDownloadAllExitCodeContract:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """When every artifact fails, exit non-zero with full failure envelope."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
 
@@ -750,7 +751,7 @@ class TestDownloadAllExitCodeContract:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """When some succeed and some fail, exit non-zero and report both counts."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
             call_count = 0
@@ -805,7 +806,7 @@ class TestDownloadAllExitCodeContract:
         string-error shape only, so the typed-counts envelope falls through to
         the ``download_all`` summary block.
         """
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
             call_count = 0
@@ -849,7 +850,7 @@ class TestDownloadAllExitCodeContract:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """When every artifact succeeds, exit zero and omit the error key."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
 
@@ -892,7 +893,7 @@ class TestDownloadAllNameFilter:
     def test_name_filter_restricts_downloads(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """`--all --name "Beta"` must download only matching artifacts (substring,
         case-insensitive), not every artifact in the notebook."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
             downloaded_ids: list[str | None] = []
@@ -936,7 +937,7 @@ class TestDownloadAllNameFilter:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """`--all --name <name> --dry-run` previews only matching artifacts."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
 
@@ -976,7 +977,7 @@ class TestDownloadAllNameFilter:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """`--all --name <name>` with no matches: error envelope, non-zero exit."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
 
@@ -1023,7 +1024,7 @@ class TestDownloadAllDryRunFilenameParity:
     ):
         """Three artifacts with the same title produce three distinct filenames
         in dry-run output, matching what the execution path would emit."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "downloads"
 
@@ -1066,7 +1067,7 @@ class TestDownloadAllDryRunFilenameParity:
     ):
         """The filenames listed in dry-run must be the actual filenames the
         execution path writes to disk."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir_dry = tmp_path / "dry"
 
@@ -1098,7 +1099,7 @@ class TestDownloadAllDryRunFilenameParity:
 
         # Second: real execution pass (separate patch context — runner resets
         # the client mock between invocations).
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir_exec = tmp_path / "exec"
 
@@ -1130,7 +1131,7 @@ class TestDownloadAllDryRunFilenameParity:
 
     def test_download_all_with_no_clobber(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Test --all --no-clobber skips existing files."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_dir = tmp_path / "downloads"
@@ -1173,7 +1174,7 @@ class TestDownloadArtifactFlag:
 
     def test_download_by_full_artifact_id(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Full artifact ID (20+ chars) bypasses prefix search and selects correctly."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "audio.mp3"
             downloaded_ids = []
@@ -1212,7 +1213,7 @@ class TestDownloadArtifactFlag:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """Full-length ID (20+ chars) that doesn't exist in the artifact list should error."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             mock_client.artifacts.list = AsyncMock(
@@ -1230,7 +1231,7 @@ class TestDownloadArtifactFlag:
 
     def test_download_by_partial_artifact_id(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Partial artifact ID prefix resolves and selects the correct artifact."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "audio.mp3"
             downloaded_ids = []
@@ -1261,7 +1262,7 @@ class TestDownloadArtifactFlag:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """Partial ID matching multiple artifacts produces an error."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             mock_client.artifacts.list = AsyncMock(
@@ -1284,7 +1285,7 @@ class TestDownloadArtifactFlag:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """Partial ID matching nothing produces an error."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             mock_client.artifacts.list = AsyncMock(
@@ -1306,7 +1307,7 @@ class TestDownloadErrorHandling:
 
     def test_download_single_failure(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """When download fails, should return error gracefully."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
 
             output_file = tmp_path / "audio.mp3"
@@ -1327,7 +1328,7 @@ class TestDownloadErrorHandling:
 
     def test_download_name_not_found(self, runner, mock_auth, mock_fetch_tokens):
         """When --name matches no artifacts, should show helpful error."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_artifact("audio_123", "My Audio", 1)]
@@ -1399,7 +1400,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_basic_download_writes_file(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """Single-artifact download writes the file via the dispatched API call."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
 
@@ -1422,7 +1423,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_latest_flag_selects_newest(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """--latest picks the newest completed quiz artifact."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
             chosen_ids: list[str | None] = []
@@ -1459,7 +1460,7 @@ class TestDownloadQuizStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--earliest picks the oldest completed quiz artifact."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
             chosen_ids: list[str | None] = []
@@ -1494,7 +1495,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_name_filter(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """--name picks the artifact whose title fuzzy-matches."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
             chosen_ids: list[str | None] = []
@@ -1525,7 +1526,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_dry_run_does_not_download(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """--dry-run shows preview without invoking the API."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
             api_calls: list[str] = []
@@ -1552,7 +1553,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_all_flag_downloads_each(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """--all batch-downloads every completed quiz to the target directory."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "quizzes"
             downloaded: list[str | None] = []
@@ -1586,7 +1587,7 @@ class TestDownloadQuizStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--force overwrites a file that already exists at output_path."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
             output_file.write_text("OLD")
@@ -1615,7 +1616,7 @@ class TestDownloadQuizStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--no-clobber leaves an existing file untouched."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
             output_file.write_text("EXISTING")
@@ -1642,7 +1643,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_force_and_no_clobber_conflict(self, runner, mock_auth, mock_fetch_tokens):
         """--force + --no-clobber must fail with a clear message."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[make_quiz_artifact("quiz_1", "Quiz")]
@@ -1659,7 +1660,7 @@ class TestDownloadQuizStandardFlags:
 
     def test_quiz_json_output_emits_json(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """--json emits a parseable JSON document on success."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.json"
 
@@ -1690,7 +1691,7 @@ class TestDownloadQuizStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--format markdown propagates output_format='markdown' to the API."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "quiz.md"
             captured: dict[str, str] = {}
@@ -1750,7 +1751,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """Single-artifact download writes the file via the dispatched API call."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.json"
 
@@ -1777,7 +1778,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--all batch-downloads every completed deck to the target directory."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_dir = tmp_path / "flashcards"
             downloaded: list[str | None] = []
@@ -1811,7 +1812,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--dry-run shows preview without invoking the API."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.json"
             api_calls: list[str] = []
@@ -1840,7 +1841,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--force overwrites a file that already exists at output_path."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.json"
             output_file.write_text("OLD")
@@ -1869,7 +1870,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--no-clobber leaves an existing file untouched."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.json"
             output_file.write_text("EXISTING")
@@ -1897,7 +1898,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--json emits a parseable JSON document on success."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.json"
 
@@ -1928,7 +1929,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """--format html propagates output_format='html' to the API."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.html"
             captured: dict[str, str] = {}
@@ -1966,7 +1967,7 @@ class TestDownloadFlashcardsStandardFlags:
         self, runner, mock_auth, mock_fetch_tokens, tmp_path
     ):
         """-a/--artifact selects a specific deck by ID (partial-match resolution)."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "cards.json"
             chosen_ids: list[str | None] = []
@@ -2052,7 +2053,7 @@ class TestDownloadTypedErrorPath:
         """RateLimitError surfaces as exit 1 with retry hint in text mode."""
         from notebooklm.exceptions import RateLimitError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(
                 RateLimitError("Quota exceeded", retry_after=42)
             )
@@ -2068,7 +2069,7 @@ class TestDownloadTypedErrorPath:
         """`--json` emits a typed JSON error envelope with retry_after."""
         from notebooklm.exceptions import RateLimitError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(
                 RateLimitError("Quota exceeded", retry_after=42)
             )
@@ -2087,7 +2088,7 @@ class TestDownloadTypedErrorPath:
         """No retry_after on the exception → field absent from JSON."""
         from notebooklm.exceptions import RateLimitError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(RateLimitError("Quota exceeded"))
             result = runner.invoke(cli, ["download", "audio", "--json", "-n", "nb_123"])
 
@@ -2102,7 +2103,7 @@ class TestDownloadTypedErrorPath:
         """AuthError on the download path shows the typed re-auth hint."""
         from notebooklm.exceptions import AuthError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(AuthError("Token expired"))
             result = runner.invoke(cli, ["download", "audio", "-n", "nb_123"])
 
@@ -2115,7 +2116,7 @@ class TestDownloadTypedErrorPath:
         """`--json` emits {"error": true, "code": "AUTH_ERROR", ...} for AuthError."""
         from notebooklm.exceptions import AuthError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(AuthError("Token expired"))
             result = runner.invoke(cli, ["download", "audio", "--json", "-n", "nb_123"])
 
@@ -2129,7 +2130,7 @@ class TestDownloadTypedErrorPath:
 
     def test_unexpected_exception_exits_with_code_2(self, runner, mock_auth, mock_fetch_tokens):
         """Unknown exceptions exit 2 per error_handler.py:64-67 policy."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(RuntimeError("kaboom"))
             result = runner.invoke(cli, ["download", "audio", "-n", "nb_123"])
 
@@ -2140,7 +2141,7 @@ class TestDownloadTypedErrorPath:
 
     def test_unexpected_exception_json_envelope(self, runner, mock_auth, mock_fetch_tokens):
         """`--json` emits {"code": "UNEXPECTED_ERROR"} with exit 2."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(RuntimeError("kaboom"))
             result = runner.invoke(cli, ["download", "audio", "--json", "-n", "nb_123"])
 
@@ -2156,7 +2157,7 @@ class TestDownloadTypedErrorPath:
         """ValidationError reaches the typed handler with its own code."""
         from notebooklm.exceptions import ValidationError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(ValidationError("bad input"))
             result = runner.invoke(cli, ["download", "audio", "--json", "-n", "nb_123"])
 
@@ -2168,7 +2169,7 @@ class TestDownloadTypedErrorPath:
         """NetworkError reaches the typed handler and surfaces its hint in text."""
         from notebooklm.exceptions import NetworkError
 
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client_cls.return_value = self._list_raises(NetworkError("DNS down"))
             text_result = runner.invoke(cli, ["download", "audio", "-n", "nb_123"])
 
@@ -2180,7 +2181,7 @@ class TestDownloadTypedErrorPath:
 
     def test_json_happy_path_shape_unchanged(self, runner, mock_auth, mock_fetch_tokens, tmp_path):
         """The JSON happy-path envelope is preserved (operation/status/...)."""
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             output_file = tmp_path / "audio.mp3"
 
@@ -2218,7 +2219,7 @@ class TestDownloadTypedErrorPath:
         NOT be re-routed through the typed handler — exit 1 with the legacy
         ``error: "<msg>"`` JSON shape is the documented behavior.
         """
-        with patch_client_for_module("download") as mock_client_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client

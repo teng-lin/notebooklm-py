@@ -25,10 +25,10 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from notebooklm.cli.artifact import artifact
-from notebooklm.cli.download import download
-from notebooklm.cli.note import note
-from notebooklm.cli.source import source
+from notebooklm.cli.artifact_cmd import artifact
+from notebooklm.cli.download_cmd import download
+from notebooklm.cli.note_cmd import note
+from notebooklm.cli.source_cmd import source
 
 
 @pytest.fixture

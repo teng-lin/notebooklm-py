@@ -159,11 +159,11 @@ class TestLoginLanguageSync:
         """Full flow: login -> fetch server language via RPC -> persist to local config."""
         import importlib
 
-        from notebooklm.cli.session import _sync_server_language_to_config
+        from notebooklm.cli.session_cmd import _sync_server_language_to_config
 
         config_path = tmp_path / "config.json"
         # Use importlib to bypass Click group shadowing on Python 3.10
-        language_mod = importlib.import_module("notebooklm.cli.language")
+        language_mod = importlib.import_module("notebooklm.cli.language_cmd")
 
         # Mock the RPC response for GET_USER_SETTINGS returning "zh_Hans"
         response_data = [
@@ -178,7 +178,7 @@ class TestLoginLanguageSync:
 
         with (
             patch(
-                "notebooklm.cli.session.NotebookLMClient.from_storage",
+                "notebooklm.cli.session_cmd.NotebookLMClient.from_storage",
                 new_callable=AsyncMock,
                 return_value=NotebookLMClient(auth_tokens),
             ),

@@ -59,7 +59,7 @@ class TestUseCommand:
 
                 # Patch in session module where it's imported
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_123"
 
@@ -89,7 +89,7 @@ class TestUseCommand:
 
                 # Patch in session module where it's imported
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_full_id_123"
 
@@ -156,7 +156,7 @@ class TestUseCommand:
 
                 # Patch in session module where it's imported
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_shared"
 
@@ -196,7 +196,7 @@ class TestUseJsonOutput:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_json_use"
 
@@ -325,7 +325,7 @@ class TestUseAuthAwareError:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_auth_expired"
 
@@ -355,7 +355,7 @@ class TestUseAuthAwareError:
             ) as mock_fetch:
                 mock_fetch.return_value = ("csrf", "session")
                 with patch(
-                    "notebooklm.cli.session.resolve_notebook_id", new_callable=AsyncMock
+                    "notebooklm.cli.session_cmd.resolve_notebook_id", new_callable=AsyncMock
                 ) as mock_resolve:
                     mock_resolve.return_value = "nb_auth_expired"
 

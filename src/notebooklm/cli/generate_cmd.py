@@ -36,7 +36,7 @@ from ..types import (
 )
 from .auth_runtime import with_client
 from .input import resolve_prompt
-from .language import SUPPORTED_LANGUAGES, get_language
+from .language_cmd import SUPPORTED_LANGUAGES, get_language
 from .options import (
     _complete_artifacts,
     _complete_sources,

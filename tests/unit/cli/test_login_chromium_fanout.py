@@ -313,7 +313,7 @@ class TestChromiumFanoutAccountSelector:
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts),
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -390,7 +390,7 @@ class TestChromiumExplicitProfileSelector:
         with (
             _install_chromium_fanout_patches(profiles, cookies, accounts, read_calls=read_calls),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,

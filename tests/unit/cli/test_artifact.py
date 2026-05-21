@@ -11,13 +11,13 @@ from click.testing import CliRunner
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Artifact
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client
 
-# ``notebooklm.cli.artifact`` (the module) is shadowed by ``cli.__init__``'s
+# ``notebooklm.cli.artifact_cmd`` (the module) is shadowed by ``cli.__init__``'s
 # re-export of the ``artifact`` Click Group (same name). Use ``importlib`` so
 # tests target the module's attribute set (``console``, helpers) rather than
 # the Click Group sitting at the same dotted path.
-artifact_module = importlib.import_module("notebooklm.cli.artifact")
+artifact_module = importlib.import_module("notebooklm.cli.artifact_cmd")
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def mock_auth():
 class TestArtifactList:
     @pytest.mark.filterwarnings("ignore::notebooklm.types.UnknownTypeWarning")
     def test_artifact_list(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -70,7 +70,7 @@ class TestArtifactList:
 
     def test_artifact_list_includes_mind_maps(self, runner, mock_auth):
         """Test that artifacts.list() includes mind maps (they come from the API now)."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mind maps are now included via artifacts.list() from the notes system
             mock_client.artifacts.list = AsyncMock(
@@ -90,7 +90,7 @@ class TestArtifactList:
             assert "Mind Map" in result.output
 
     def test_artifact_list_json_output(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -132,7 +132,7 @@ class TestArtifactList:
             Artifact(id=f"art_{i:02d}", title=f"Artifact {i:02d}", _artifact_type=4, status=3)
             for i in range(15)
         ]
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=many)
             mock_client_cls.return_value = mock_client
@@ -156,7 +156,7 @@ class TestArtifactList:
             Artifact(id=f"art_{i:02d}", title=f"Artifact {i:02d}", _artifact_type=4, status=3)
             for i in range(15)
         ]
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=many)
             mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test"))
@@ -185,7 +185,7 @@ class TestArtifactList:
         so the title wraps instead, preserving every character.
         """
         long_title = "X" * 200
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # _artifact_type=1 (AUDIO) avoids the QUIZ/FLASHCARDS variant
             # disambiguation so the Type column stays narrow ("🎧 Audio")
@@ -210,7 +210,7 @@ class TestArtifactList:
     def test_artifact_list_default_truncates_long_title(self, runner, mock_auth):
         """Default rendering inserts an ellipsis for over-wide titles."""
         long_title = "X" * 200
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -237,7 +237,7 @@ class TestArtifactList:
 
 class TestArtifactGet:
     def test_artifact_get(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -267,7 +267,7 @@ class TestArtifactGet:
             assert "art_123" in result.output
 
     def test_artifact_get_not_found(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list to return empty (no match for resolve_artifact_id)
             mock_client.artifacts.list = AsyncMock(return_value=[])
@@ -286,7 +286,7 @@ class TestArtifactGet:
 
     def test_artifact_get_json_output(self, runner, mock_auth):
         """`artifact get --json` emits structured JSON mirroring the Artifact."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -335,7 +335,7 @@ class TestArtifactGet:
         (changed from the previous exit-0 ``{found: false}`` placeholder).
         See ``docs/cli-exit-codes.md`` and the BREAKING entry in ``CHANGELOG.md``.
         """
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Resolve succeeds (list contains the ID) but get() returns None
             # (e.g., concurrent delete from another session).
@@ -372,7 +372,7 @@ class TestArtifactGet:
         # Canonical 36-char UUID — qualifies for the resolver's full-ID fast-path
         # so artifacts.list is bypassed and the backend ``get`` is hit directly.
         long_id = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=[])
             mock_client.artifacts.get = AsyncMock(return_value=None)
@@ -391,7 +391,7 @@ class TestArtifactGet:
     def test_artifact_get_not_found_pathA_long_id_json_exits_1(self, runner, mock_auth):
         """Path A under ``--json``: typed JSON error doc + exit 1."""
         long_id = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=[])
             mock_client.artifacts.get = AsyncMock(return_value=None)
@@ -414,7 +414,7 @@ class TestArtifactGet:
 
     def test_artifact_get_not_found_pathB_resolved_then_none_text_exits_1(self, runner, mock_auth):
         """Path B: partial-resolve succeeds, backend get() returns None → exit 1."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_xyz", title="Doomed", _artifact_type=4, status=3)]
@@ -439,7 +439,7 @@ class TestArtifactGet:
 
 class TestArtifactRename:
     def test_artifact_rename(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -464,7 +464,7 @@ class TestArtifactRename:
 
     def test_artifact_rename_json_output(self, runner, mock_auth):
         """`artifact rename --json` emits a structured success payload."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Old Title", _artifact_type=4, status=3)]
@@ -487,7 +487,7 @@ class TestArtifactRename:
             assert data == {"id": "art_123", "renamed": True, "new_title": "New Title"}
 
     def test_artifact_rename_rejects_mind_map(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution (include the mind map)
             mock_client.artifacts.list = AsyncMock(
@@ -519,7 +519,7 @@ class TestArtifactRename:
 
 class TestArtifactDelete:
     def test_artifact_delete(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -541,7 +541,7 @@ class TestArtifactDelete:
             assert "Deleted artifact" in result.output
 
     def test_artifact_delete_cancelled(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -566,7 +566,7 @@ class TestArtifactDelete:
 
     def test_artifact_delete_json_output(self, runner, mock_auth):
         """`artifact delete --json` emits a structured success payload."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -591,7 +591,7 @@ class TestArtifactDelete:
 
     def test_artifact_delete_json_without_yes_does_not_prompt(self, runner, mock_auth):
         """Current JSON contract treats --json as non-interactive execution."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -620,7 +620,7 @@ class TestArtifactDelete:
 
     def test_artifact_delete_mind_map_json_output(self, runner, mock_auth):
         """`artifact delete --json` flags mind-map carve-out in the payload."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[
@@ -650,7 +650,7 @@ class TestArtifactDelete:
             assert data["kind"] == "mind_map"
 
     def test_artifact_delete_mind_map_clears(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution (include the mind map)
             mock_client.artifacts.list = AsyncMock(
@@ -684,7 +684,7 @@ class TestArtifactDelete:
 
 class TestArtifactExport:
     def test_artifact_export_docs(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -715,7 +715,7 @@ class TestArtifactExport:
             assert call_args[0][4] == ExportType.DOCS, "export_type should be ExportType.DOCS"
 
     def test_artifact_export_sheets(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -758,7 +758,7 @@ class TestArtifactExport:
 
     def test_artifact_export_json_output(self, runner, mock_auth):
         """`artifact export --json` emits structured payload with the export result."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Doc", _artifact_type=2, status=3)]
@@ -795,7 +795,7 @@ class TestArtifactExport:
             assert data["result"] == {"url": "https://docs.google.com/document/d/123"}
 
     def test_artifact_export_failure(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -823,7 +823,7 @@ class TestArtifactExport:
 
 class TestArtifactPoll:
     def test_artifact_poll(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.poll_status = AsyncMock(
                 return_value={"status": "completed", "artifact_id": "art_123"}
@@ -843,7 +843,7 @@ class TestArtifactPoll:
         """`artifact poll --json` mirrors the GenerationStatus dataclass fields."""
         from notebooklm.types import GenerationStatus
 
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.poll_status = AsyncMock(
                 return_value=GenerationStatus(
@@ -879,7 +879,7 @@ class TestArtifactPoll:
 class TestArtifactWait:
     def test_artifact_wait_completed(self, runner, mock_auth):
         """Test waiting for artifact that completes successfully."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock list for partial ID resolution
             mock_client.artifacts.list = AsyncMock(
@@ -903,7 +903,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_failed(self, runner, mock_auth):
         """Test waiting for artifact that fails generation."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
@@ -926,7 +926,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_timeout(self, runner, mock_auth):
         """Test waiting for artifact that times out."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
@@ -949,7 +949,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_json_output(self, runner, mock_auth):
         """Test waiting with JSON output."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=3)]
@@ -982,7 +982,7 @@ class TestArtifactWait:
         but pin the wiring so the shared `wait_polling_options` decorator
         cannot silently drop one of the values during the refactor.
         """
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=3)]
@@ -1024,7 +1024,7 @@ class TestArtifactWait:
 
     def test_artifact_wait_timeout_json_output(self, runner, mock_auth):
         """Test timeout with JSON output."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=1)]
@@ -1050,12 +1050,12 @@ class TestArtifactWait:
         """`artifact wait` wraps the polling call in `console.status`.
 
         The spinner gives interactive users feedback during the blocking wait.
-        Asserts the wrap by patching `notebooklm.cli.artifact.console.status`
+        Asserts the wrap by patching `notebooklm.cli.artifact_cmd.console.status`
         and confirming it is invoked exactly once with a message that mentions
         the wait. Does not assert under `--json` because the JSON path
         intentionally suppresses the spinner to keep stdout pure JSON.
         """
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=3)]
@@ -1091,7 +1091,7 @@ class TestArtifactWait:
         The spinner is suppressed under JSON mode so automation parsing stdout
         does not see Rich escape sequences leak in.
         """
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_123", title="Test", _artifact_type=1, status=3)]
@@ -1128,7 +1128,7 @@ class TestArtifactWait:
         ``KeyboardInterrupt`` from the awaitable that the wait loop is
         currently suspended on.
         """
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_sigint", title="Test", _artifact_type=1, status=3)]
@@ -1156,7 +1156,7 @@ class TestArtifactWait:
 
         Keeps stdout-as-JSON automation from breaking on a Python traceback.
         """
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=[Artifact(id="art_json_sigint", title="T", _artifact_type=1, status=3)]
@@ -1184,7 +1184,7 @@ class TestArtifactWait:
 
 class TestArtifactSuggestions:
     def test_artifact_suggestions(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.suggest_reports = AsyncMock(
                 return_value=[
@@ -1204,7 +1204,7 @@ class TestArtifactSuggestions:
             assert "Suggested Reports" in result.output
 
     def test_artifact_suggestions_empty(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.suggest_reports = AsyncMock(return_value=[])
             mock_client_cls.return_value = mock_client
@@ -1219,7 +1219,7 @@ class TestArtifactSuggestions:
             assert "No suggestions available" in result.output
 
     def test_artifact_suggestions_json(self, runner, mock_auth):
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.suggest_reports = AsyncMock(
                 return_value=[
@@ -1241,7 +1241,7 @@ class TestArtifactSuggestions:
 
     def test_artifact_suggestions_json_preserves_unicode(self, runner, mock_auth):
         """CJK / emoji in suggestion titles should be emitted as real UTF-8."""
-        with patch_client_for_module("artifact") as mock_client_cls:
+        with patch("notebooklm.cli.artifact_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.suggest_reports = AsyncMock(
                 return_value=[

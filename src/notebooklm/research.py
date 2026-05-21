@@ -1,7 +1,7 @@
 """Public research utilities (free functions; no client instance required).
 
 Note: this is the *library* research helper module. The CLI command group lives
-at ``notebooklm.cli.research`` — different file, different concern.
+at ``notebooklm.cli.research_cmd`` — different file, different concern.
 """
 
 from __future__ import annotations

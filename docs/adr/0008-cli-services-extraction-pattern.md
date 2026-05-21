@@ -10,7 +10,7 @@ CLI commands grew organically: every new feature added a new Click command (or s
 
 The audit identified three concrete failure modes:
 
-1. **Click commands were not unit-testable in isolation.** Testing "what happens if browser profile enumeration returns three entries" required either driving the full Click test runner (slow, mixes parsing + business logic + presentation in every assertion) or `monkeypatch.setattr("notebooklm.cli.session._enumerate_…", fake)` — the test-monkeypatch gravity pattern that ADR-003 and ADR-007 describe.
+1. **Click commands were not unit-testable in isolation.** Testing "what happens if browser profile enumeration returns three entries" required either driving the full Click test runner (slow, mixes parsing + business logic + presentation in every assertion) or `monkeypatch.setattr("notebooklm.cli.session_cmd._enumerate_…", fake)` — the test-monkeypatch gravity pattern that ADR-003 and ADR-007 describe.
 2. **Business logic was uncoupled from re-use.** The same browser-profile enumeration logic would have been useful from the Python API, but importing it required reaching past Click decorators into `cli/session.py`. The CLI module became a sink for logic that should have been library-level.
 3. **CLI commands could not shrink.** Even the trivial commands carried ~50 lines of validation / setup before they could call into the actual work, because the "actual work" was inline.
 

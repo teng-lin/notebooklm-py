@@ -1,5 +1,6 @@
 """Tests for skill CLI commands."""
 
+import importlib
 from unittest.mock import patch
 
 import pytest
@@ -7,10 +8,8 @@ from click.testing import CliRunner
 
 from notebooklm.notebooklm_cli import cli
 
-from .conftest import get_cli_module
-
 # Get the actual skill module (not the click group that shadows it)
-skill_module = get_cli_module("skill")
+skill_module = importlib.import_module("notebooklm.cli.skill_cmd")
 
 
 @pytest.fixture
@@ -262,7 +261,7 @@ class TestSkillVersionExtraction:
 
     def test_get_skill_version_extracts_version(self, tmp_path):
         """Test version extraction from skill file."""
-        from notebooklm.cli.skill import get_skill_version
+        from notebooklm.cli.skill_cmd import get_skill_version
 
         skill_file = tmp_path / "SKILL.md"
         skill_file.write_text("---\nname: test\n---\n<!-- notebooklm-py v1.2.3 -->\n# Test")
@@ -272,7 +271,7 @@ class TestSkillVersionExtraction:
 
     def test_get_skill_version_no_version(self, tmp_path):
         """Test version extraction when no version present."""
-        from notebooklm.cli.skill import get_skill_version
+        from notebooklm.cli.skill_cmd import get_skill_version
 
         skill_file = tmp_path / "SKILL.md"
         skill_file.write_text("# Test\nNo version here")
@@ -282,7 +281,7 @@ class TestSkillVersionExtraction:
 
     def test_get_skill_version_file_not_exists(self, tmp_path):
         """Test version extraction when file doesn't exist."""
-        from notebooklm.cli.skill import get_skill_version
+        from notebooklm.cli.skill_cmd import get_skill_version
 
         skill_file = tmp_path / "nonexistent.md"
         version = get_skill_version(skill_file)
@@ -310,7 +309,7 @@ class TestAddVersionComment:
 
     def test_inserts_after_frontmatter(self):
         """Version comment is inserted after closing --- preserving surrounding whitespace."""
-        from notebooklm.cli.skill import add_version_comment
+        from notebooklm.cli.skill_cmd import add_version_comment
 
         content = "---\nname: notebooklm\n---\n# Body"
         result = add_version_comment(content, "1.2.3")
@@ -318,7 +317,7 @@ class TestAddVersionComment:
 
     def test_prepends_when_no_frontmatter(self):
         """Version comment is prepended when no frontmatter delimiters exist."""
-        from notebooklm.cli.skill import add_version_comment
+        from notebooklm.cli.skill_cmd import add_version_comment
 
         content = "# No Frontmatter\nBody text"
         result = add_version_comment(content, "2.0.0")
@@ -326,7 +325,7 @@ class TestAddVersionComment:
 
     def test_prepends_with_incomplete_frontmatter(self):
         """Version comment is prepended when only one --- delimiter exists."""
-        from notebooklm.cli.skill import add_version_comment
+        from notebooklm.cli.skill_cmd import add_version_comment
 
         content = "---\nbroken frontmatter"
         result = add_version_comment(content, "1.0.0")
@@ -338,7 +337,7 @@ class TestRemoveEmptyParents:
 
     def test_cleans_empty_intermediate_directories(self, tmp_path):
         """Empty parent directories up to scope root are removed."""
-        from notebooklm.cli.skill import remove_empty_parents
+        from notebooklm.cli.skill_cmd import remove_empty_parents
 
         home = tmp_path / "home"
         skill_path = home / ".claude" / "skills" / "notebooklm" / "SKILL.md"
@@ -355,7 +354,7 @@ class TestRemoveEmptyParents:
 
     def test_stops_at_non_empty_directory(self, tmp_path):
         """Removal stops when a directory is non-empty."""
-        from notebooklm.cli.skill import remove_empty_parents
+        from notebooklm.cli.skill_cmd import remove_empty_parents
 
         home = tmp_path / "home"
         skill_path = home / ".agents" / "skills" / "notebooklm" / "SKILL.md"
@@ -373,7 +372,7 @@ class TestRemoveEmptyParents:
 
     def test_scope_root_is_never_removed(self, tmp_path):
         """The scope root directory itself is never deleted."""
-        from notebooklm.cli.skill import remove_empty_parents
+        from notebooklm.cli.skill_cmd import remove_empty_parents
 
         home = tmp_path / "home"
         home.mkdir()

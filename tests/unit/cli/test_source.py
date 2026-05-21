@@ -19,9 +19,9 @@ from notebooklm.types import (
     SourceTimeoutError,
 )
 
-from .conftest import create_mock_client, patch_client_for_module
+from .conftest import create_mock_client
 
-source_module = importlib.import_module("notebooklm.cli.source")
+source_module = importlib.import_module("notebooklm.cli.source_cmd")
 research_import_module = importlib.import_module("notebooklm.cli.research_import")
 
 
@@ -50,7 +50,7 @@ def mock_auth():
 
 class TestSourceList:
     def test_source_list(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
@@ -71,7 +71,7 @@ class TestSourceList:
             assert "Source One" in result.output
 
     def test_source_list_json_output(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
@@ -113,7 +113,7 @@ class TestSourceList:
     def test_source_list_limit_caps_rows(self, runner, mock_auth):
         """`source list --limit N` returns at most N data rows."""
         many = [Source(id=f"src_{i:02d}", title=f"Source {i:02d}") for i in range(20)]
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=many)
             mock_client_cls.return_value = mock_client
@@ -133,7 +133,7 @@ class TestSourceList:
     def test_source_list_limit_json_caps_rows(self, runner, mock_auth):
         """`source list --limit N --json` caps the JSON `sources` array."""
         many = [Source(id=f"src_{i:02d}", title=f"Source {i:02d}") for i in range(20)]
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=many)
             mock_client.notebooks.get = AsyncMock(return_value=MagicMock(title="Test"))
@@ -162,7 +162,7 @@ class TestSourceList:
         so the title wraps instead, preserving every character.
         """
         long_title = "X" * 200
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_long", title=long_title)]
@@ -182,7 +182,7 @@ class TestSourceList:
     def test_source_list_default_truncates_long_title(self, runner, mock_auth):
         """Default rendering inserts an ellipsis for over-wide titles."""
         long_title = "X" * 200
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_long", title=long_title)]
@@ -207,7 +207,7 @@ class TestSourceList:
 
 class TestSourceAdd:
     def test_source_add_url(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(
@@ -229,7 +229,7 @@ class TestSourceAdd:
             assert result.exit_code == 0
 
     def test_source_add_youtube_url(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(
@@ -252,7 +252,7 @@ class TestSourceAdd:
             mock_client.sources.add_url.assert_called()
 
     def test_source_add_text(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="My Text Source")
@@ -271,7 +271,7 @@ class TestSourceAdd:
             assert result.exit_code == 0
 
     def test_source_add_text_with_title(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Custom Title")
@@ -304,7 +304,7 @@ class TestSourceAdd:
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
                 return_value=Source(id="src_file", title="test.pdf")
@@ -334,7 +334,7 @@ class TestSourceAdd:
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
                 return_value=Source(id="src_file", title="test.pdf")
@@ -388,7 +388,7 @@ class TestSourceAdd:
         test_file.write_bytes(b"fake pdf content")
         monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", "1")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
                 return_value=Source(id="src_file", title="test.pdf")
@@ -418,7 +418,7 @@ class TestSourceAdd:
         assert "unused for file sources" not in result.output
 
     def test_source_add_json_output(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(
@@ -442,7 +442,7 @@ class TestSourceAdd:
             assert data["source"]["id"] == "src_new"
 
     def test_source_add_timeout_flag_threaded_to_client(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(id="src_t", title="X", url="https://example.com")
@@ -470,7 +470,7 @@ class TestSourceAdd:
             assert mock_client_cls.call_args.kwargs["timeout"] == 120.0
 
     def test_source_add_default_does_not_override_client_timeout(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(
                 return_value=Source(id="src_d", title="Y", url="https://example.com")
@@ -496,7 +496,7 @@ class TestSourceAdd:
 
 class TestSourceGet:
     def test_source_get(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
@@ -523,7 +523,7 @@ class TestSourceGet:
             assert "src_123" in result.output
 
     def test_source_get_not_found(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list to return empty (no match for resolve_source_id)
             mock_client.sources.list = AsyncMock(return_value=[])
@@ -563,7 +563,7 @@ class TestSourceGet:
         # Canonical 36-char UUID — matches the resolver's full-ID fast-path so
         # sources.list is bypassed and the backend ``get`` is hit directly.
         long_id = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # list() must NOT be called on this path; assert below.
             mock_client.sources.list = AsyncMock(return_value=[])
@@ -583,7 +583,7 @@ class TestSourceGet:
     def test_source_get_not_found_pathA_long_id_json_exits_1(self, runner, mock_auth):
         """Path A under ``--json``: typed JSON error doc + exit 1."""
         long_id = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[])
             mock_client.sources.get = AsyncMock(return_value=None)
@@ -605,7 +605,7 @@ class TestSourceGet:
 
     def test_source_get_not_found_pathB_resolved_then_none_text_exits_1(self, runner, mock_auth):
         """Path B: partial-resolve succeeds, backend get() returns None → exit 1."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Resolution succeeds (list contains a matching item) but the
             # subsequent get() returns None (race: source deleted between
@@ -627,7 +627,7 @@ class TestSourceGet:
 
     def test_source_get_not_found_pathB_resolved_then_none_json_exits_1(self, runner, mock_auth):
         """Path B under ``--json``: typed JSON error doc + exit 1."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_resolved", title="Doomed")]
@@ -658,7 +658,7 @@ class TestSourceGet:
 
 class TestSourceDelete:
     def test_source_delete(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for source delete resolution
             mock_client.sources.list = AsyncMock(
@@ -678,7 +678,7 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_called_once_with("nb_123", "src_123")
 
     def test_source_delete_cancelled(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -699,7 +699,7 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_failure(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for source delete resolution
             mock_client.sources.list = AsyncMock(
@@ -718,7 +718,7 @@ class TestSourceDelete:
             assert "Delete may have failed" in result.output
 
     def test_source_delete_full_uuid_skips_source_list(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock()
             mock_client.sources.delete = AsyncMock(return_value=True)
@@ -736,7 +736,7 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_called_once_with("nb_123", source_id)
 
     def test_source_delete_long_hex_string_does_not_skip_source_list(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[])
             mock_client.sources.delete = AsyncMock(return_value=True)
@@ -754,7 +754,7 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_title_suggests_delete_by_title(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
@@ -780,7 +780,7 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_unknown_long_string_fails_locally(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -802,7 +802,7 @@ class TestSourceDelete:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_ambiguous_partial_id(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
@@ -826,7 +826,7 @@ class TestSourceDelete:
 
 class TestSourceDeleteByTitle:
     def test_source_delete_by_title(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -847,7 +847,7 @@ class TestSourceDeleteByTitle:
             mock_client.sources.delete.assert_called_once_with("nb_123", "src_123")
 
     def test_source_delete_by_title_duplicate_titles(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[
@@ -871,7 +871,7 @@ class TestSourceDeleteByTitle:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_by_title_not_found(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[])
             mock_client.sources.delete = AsyncMock(return_value=True)
@@ -890,7 +890,7 @@ class TestSourceDeleteByTitle:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_delete_by_title_confirmation_shows_title_and_id(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -920,7 +920,7 @@ class TestSourceDeleteByTitle:
 
 class TestSourceRename:
     def test_source_rename(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
@@ -951,7 +951,7 @@ class TestSourceRename:
 
 class TestSourceRefresh:
     def test_source_refresh(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
@@ -972,7 +972,7 @@ class TestSourceRefresh:
             assert "Source refreshed" in result.output
 
     def test_source_refresh_no_result(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             # Mock sources.list for resolve_source_id
             mock_client.sources.list = AsyncMock(
@@ -998,7 +998,7 @@ class TestSourceRefresh:
 
 class TestSourceAddDrive:
     def test_source_add_drive_google_doc(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_drive = AsyncMock(
                 return_value=Source(
@@ -1020,7 +1020,7 @@ class TestSourceAddDrive:
             assert "Added Drive source" in result.output
 
     def test_source_add_drive_pdf(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_drive = AsyncMock(
                 return_value=Source(
@@ -1060,7 +1060,7 @@ class TestSourceAddDrive:
         picks.
         """
         for choice in ("google-doc", "google-slides", "google-sheets", "pdf"):
-            with patch_client_for_module("source") as mock_client_cls:
+            with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
                 mock_client = create_mock_client()
                 mock_client.sources.add_drive = AsyncMock(
                     return_value=Source(id="src_drive", title="My Drive Source")
@@ -1100,7 +1100,7 @@ class TestSourceAddDrive:
 class TestSourceAddResearch:
     def test_add_research_with_import_all_uses_retry_helper(self, runner, mock_auth):
         with (
-            patch_client_for_module("source") as mock_client_cls,
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
             patch.object(
                 research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
@@ -1148,7 +1148,7 @@ class TestSourceAddResearch:
 
     def test_add_research_with_import_all_cited_only(self, runner, mock_auth):
         with (
-            patch_client_for_module("source") as mock_client_cls,
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
             patch.object(
                 research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
@@ -1210,7 +1210,7 @@ class TestSourceAddResearch:
 
     def test_add_research_timeout_flag_threaded_to_import_with_retry(self, runner, mock_auth):
         with (
-            patch_client_for_module("source") as mock_client_cls,
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
             patch.object(
                 research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
@@ -1274,7 +1274,7 @@ class TestSourceAddResearch:
         poll_responses = [in_progress] * 70 + [completed]
 
         with (
-            patch_client_for_module("source") as mock_client_cls,
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
             patch.object(
                 research_import_module, "import_with_retry", new_callable=AsyncMock
             ) as mock_import,
@@ -1324,7 +1324,7 @@ class TestSourceAddResearch:
 
 class TestSourceGuide:
     def test_source_guide_with_summary_and_keywords(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1350,7 +1350,7 @@ class TestSourceGuide:
             assert "AI" in result.output
 
     def test_source_guide_no_guide_available(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1368,7 +1368,7 @@ class TestSourceGuide:
             assert "No guide available" in result.output
 
     def test_source_guide_json_output(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1394,7 +1394,7 @@ class TestSourceGuide:
 
     def test_source_guide_summary_only(self, runner, mock_auth):
         """Test that summary is displayed even when keywords are empty."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1417,7 +1417,7 @@ class TestSourceGuide:
 
     def test_source_guide_keywords_only(self, runner, mock_auth):
         """Test that keywords are displayed even when summary is empty."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1447,7 +1447,7 @@ class TestSourceGuide:
 class TestSourceStale:
     def test_source_stale_is_stale(self, runner, mock_auth):
         """Test exit code 0 when source is stale (needs refresh)."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1467,7 +1467,7 @@ class TestSourceStale:
 
     def test_source_stale_is_fresh(self, runner, mock_auth):
         """Test exit code 1 when source is fresh (no refresh needed)."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1536,7 +1536,7 @@ class TestSourceAddAutoDetect:
         test_file = tmp_path / "notes.txt"
         test_file.write_text("Some file content")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
                 return_value=Source(id="src_file", title="notes.txt")
@@ -1560,7 +1560,7 @@ class TestSourceAddAutoDetect:
 
         Should auto-detect as 'text' with default title 'Pasted Text'.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -1587,7 +1587,7 @@ class TestSourceAddAutoDetect:
 
         Title should be the custom title, not 'Pasted Text'.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Custom Title")
@@ -1625,7 +1625,7 @@ class TestSourceAddAutoDetect:
         test_file = tmp_path / "boring-filename.md"
         test_file.write_text("# content\n")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
                 return_value=Source(id="src_md", title="Real Intended Title")
@@ -1679,7 +1679,7 @@ class TestSourceAddPathShapedMissing:
 
         Source is still added as text — warning is advisory, not fatal.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -1709,7 +1709,7 @@ class TestSourceAddPathShapedMissing:
         ``missing.md`` (no slash, has ``.md``) is path-shaped: ``./missing.md``
         without the leading dot-slash is a common shell mistake.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -1734,7 +1734,7 @@ class TestSourceAddPathShapedMissing:
         The user has stated intent: "treat this as text, not a path." The
         heuristic must respect that and stay silent.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -1769,7 +1769,7 @@ class TestSourceAddPathShapedMissing:
         Regression guard: the heuristic must not fire on legitimate inline
         text content like ``"My notes here"``.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -1800,7 +1800,7 @@ class TestSourceAddPathShapedMissing:
         test_file = tmp_path / "real.md"
         test_file.write_text("# real content\n")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_file = AsyncMock(
                 return_value=Source(id="src_file", title="real.md")
@@ -1827,7 +1827,7 @@ class TestSourceAddPathShapedMissing:
 class TestSourceFulltext:
     def test_source_fulltext_console_output(self, runner, mock_auth):
         """Short content (<= 2000 chars) is displayed in full."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1859,7 +1859,7 @@ class TestSourceFulltext:
     def test_source_fulltext_truncated_output(self, runner, mock_auth):
         """Long content (> 2000 chars) is truncated with a 'more chars' message."""
         long_content = "A" * 3000
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1889,7 +1889,7 @@ class TestSourceFulltext:
         output_file = tmp_path / "output.txt"
         content = "Full text content to save."
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1920,7 +1920,7 @@ class TestSourceFulltext:
 
     def test_source_fulltext_json_output(self, runner, mock_auth):
         """--json outputs JSON with fulltext fields."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -1953,7 +1953,7 @@ class TestSourceFulltext:
 
     def test_source_fulltext_format_markdown_propagates(self, runner, mock_auth):
         """`-f markdown` propagates output_format='markdown' to the API."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="MD Source")]
@@ -1986,7 +1986,7 @@ class TestSourceFulltext:
 
     def test_source_fulltext_with_url(self, runner, mock_auth):
         """Shows URL field when present in fulltext."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Web Source")]
@@ -2020,7 +2020,7 @@ class TestSourceFulltext:
 class TestSourceWait:
     def test_source_wait_success(self, runner, mock_auth):
         """wait_until_ready returns a Source → prints 'ready'."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2041,7 +2041,7 @@ class TestSourceWait:
 
     def test_source_wait_success_with_title(self, runner, mock_auth):
         """Source has a title → prints the title after 'ready' message."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="My Source Title")]
@@ -2062,7 +2062,7 @@ class TestSourceWait:
 
     def test_source_wait_success_json(self, runner, mock_auth):
         """--json output on successful wait."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2085,7 +2085,7 @@ class TestSourceWait:
 
     def test_source_wait_not_found(self, runner, mock_auth):
         """Raises SourceNotFoundError → exit code 1."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2106,7 +2106,7 @@ class TestSourceWait:
 
     def test_source_wait_not_found_json(self, runner, mock_auth):
         """--json on SourceNotFoundError → JSON with status 'not_found', exit 1."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2129,7 +2129,7 @@ class TestSourceWait:
 
     def test_source_wait_processing_error(self, runner, mock_auth):
         """Raises SourceProcessingError → exit code 1."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2150,7 +2150,7 @@ class TestSourceWait:
 
     def test_source_wait_processing_error_json(self, runner, mock_auth):
         """--json on SourceProcessingError → JSON with status 'error', exit 1."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2174,7 +2174,7 @@ class TestSourceWait:
 
     def test_source_wait_timeout(self, runner, mock_auth):
         """Raises SourceTimeoutError → exit code 2."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2204,7 +2204,7 @@ class TestSourceWait:
         not-found-or-error / 2 timeout) is preserved by the success path here
         — exit code stays 0 when the source becomes ready.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2244,7 +2244,7 @@ class TestSourceWait:
 
     def test_source_wait_timeout_json(self, runner, mock_auth):
         """--json on SourceTimeoutError → JSON with status 'timeout', exit 2."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2272,12 +2272,12 @@ class TestSourceWait:
 
         The spinner replaces the static "Waiting for source ..." print with a
         live transient line that includes the source ID. Asserts the wrap by
-        patching `notebooklm.cli.source.console.status` and confirming it is
+        patching `notebooklm.cli.source_cmd.console.status` and confirming it is
         invoked exactly once with a message that mentions the source. Does not
         assert under `--json` because the JSON path intentionally suppresses
         the spinner to keep stdout pure JSON.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2311,7 +2311,7 @@ class TestSourceWait:
         The spinner is suppressed under JSON mode so automation parsing stdout
         does not see Rich escape sequences leak in.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -2345,7 +2345,7 @@ class TestSourceWait:
         than the ``artifact poll <task_id>`` shape used by the other two
         long-running paths.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_sigint", title="Test Source")]
@@ -2370,7 +2370,7 @@ class TestSourceWait:
     def test_source_wait_sigint_json_emits_cancelled_envelope(self, runner, mock_auth):
         """Ctrl-C under ``source wait --json`` emits a CANCELLED envelope, exits 130
         ."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_json_sigint", title="T")]
@@ -2625,7 +2625,9 @@ class _CleanPatch:
         self._exit_stack = contextlib.ExitStack()
 
     def __enter__(self):
-        mock_client_cls = self._exit_stack.enter_context(patch_client_for_module("source"))
+        mock_client_cls = self._exit_stack.enter_context(
+            patch("notebooklm.cli.source_cmd.NotebookLMClient")
+        )
 
         mock_client = create_mock_client()
         mock_client.sources.list = AsyncMock(return_value=self._sources)
@@ -2669,7 +2671,7 @@ class TestSourceJsonOutput:
         )
 
     def test_source_get_json(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="My Source")]
@@ -2701,7 +2703,7 @@ class TestSourceJsonOutput:
         # message}``) instead of the previous exit-0 ``{found: false}``
         # placeholder. See ``docs/cli-exit-codes.md`` and the BREAKING entry
         # in ``CHANGELOG.md`` (Unreleased → Changed).
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_resolved", title="Existing")]
@@ -2722,7 +2724,7 @@ class TestSourceJsonOutput:
             assert data["source_id"] == "src_resolved"
 
     def test_source_delete_json(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="My Source")]
@@ -2744,7 +2746,7 @@ class TestSourceJsonOutput:
             assert data["status"] == "deleted"
 
     def test_source_delete_by_title_json(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_999", title="Doomed")]
@@ -2775,7 +2777,7 @@ class TestSourceJsonOutput:
             assert data["status"] == "deleted"
 
     def test_source_rename_json(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Old")])
             mock_client.sources.rename = AsyncMock(return_value=Source(id="src_123", title="New"))
@@ -2795,7 +2797,7 @@ class TestSourceJsonOutput:
             assert data["status"] == "renamed"
 
     def test_source_refresh_json(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Original")]
@@ -2818,7 +2820,7 @@ class TestSourceJsonOutput:
             assert data["status"] == "refreshed"
 
     def test_source_refresh_json_no_result(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Original")]
@@ -2838,7 +2840,7 @@ class TestSourceJsonOutput:
             assert data["status"] == "no_result"
 
     def test_source_add_drive_json(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_drive = AsyncMock(
                 return_value=Source(id="src_drive", title="My Drive Doc")
@@ -2876,7 +2878,7 @@ class TestSourceJsonOutput:
         ``if notebooklm source stale ID; then refresh; fi`` still works in
         JSON mode. See docs/cli-exit-codes.md.
         """
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Stale")])
             mock_client.sources.check_freshness = AsyncMock(return_value=False)
@@ -2896,7 +2898,7 @@ class TestSourceJsonOutput:
 
     def test_source_stale_json_is_fresh_exits_one(self, runner, mock_auth):
         """Inverted exit-code semantics, fresh branch: exit 1 (predicate false)."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Fresh")])
             mock_client.sources.check_freshness = AsyncMock(return_value=True)
@@ -2915,7 +2917,7 @@ class TestSourceJsonOutput:
             assert data["source_id"] == "src_123"
 
     def test_source_clean_json_already_clean(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[_src("src_1", title="Page", url="https://ex.com/a")]
@@ -2934,7 +2936,7 @@ class TestSourceJsonOutput:
             assert data["deleted_count"] == 0
 
     def test_source_clean_json_dry_run(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[_src("src_err", title="oops", status=SourceStatus.ERROR)]
@@ -2957,7 +2959,7 @@ class TestSourceJsonOutput:
             mock_client.sources.delete.assert_not_called()
 
     def test_source_clean_json_completed(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[_src("src_err", title="oops", status=SourceStatus.ERROR)]
@@ -2992,7 +2994,7 @@ class TestSourceAddStdinDash:
     """``notebooklm source add -`` reads inline text from stdin."""
 
     def test_source_add_dash_reads_stdin(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -3017,7 +3019,7 @@ class TestSourceAddStdinDash:
             assert call.args[2] == "content from stdin"
 
     def test_source_add_dash_with_title(self, runner, mock_auth):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="My Title")
@@ -3041,7 +3043,7 @@ class TestSourceAddStdinDash:
 
     def test_source_add_literal_dash_path_unchanged(self, runner, mock_auth):
         """Regression: a normal text argument is not treated as stdin."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_text = AsyncMock(
                 return_value=Source(id="src_text", title="Pasted Text")
@@ -3101,7 +3103,7 @@ class TestSourceBundleP1T2:
     ):
         """`source delete <id> --json` without `--yes` must NOT prompt; instead
         emit a structured JSON error and exit non-zero."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="My Source")]
@@ -3128,7 +3130,7 @@ class TestSourceBundleP1T2:
     def test_source_delete_by_title_json_without_yes_emits_structured_error_no_prompt(
         self, runner, mock_auth
     ):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Test Source")]
@@ -3163,7 +3165,7 @@ class TestSourceBundleP1T2:
     def test_source_clean_json_without_yes_with_candidates_emits_structured_error_no_prompt(
         self, runner, mock_auth
     ):
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[_src("src_err", title="oops", status=SourceStatus.ERROR)]
@@ -3185,7 +3187,7 @@ class TestSourceBundleP1T2:
     def test_source_clean_json_already_clean_without_yes_does_not_error(self, runner, mock_auth):
         """`source clean --json` without --yes must NOT error when there are no
         candidates — the confirmation is a no-op in that path."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[_src("src_1", title="Page", url="https://ex.com/a")]
@@ -3211,7 +3213,7 @@ class TestSourceBundleP1T2:
         output_file = tmp_path / "fulltext.txt"
         body = "A" * 1024  # large enough to make the duplication smell obvious
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(
                 return_value=[Source(id="src_123", title="Big Source")]
@@ -3257,7 +3259,7 @@ class TestSourceBundleP1T2:
     def test_source_fulltext_json_without_output_file_keeps_full_payload(self, runner, mock_auth):
         """Regression guard: when `-o` is OMITTED, `--json` mode still emits the
         full asdict(SourceFulltext) payload on stdout — unchanged behavior."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=[Source(id="src_123", title="Tiny")])
             mock_client.sources.get_fulltext = AsyncMock(
@@ -3314,7 +3316,7 @@ class TestSourceBundleP1T2:
             timeline.append("upload.start")
             return Source(id="src_new", title="Added", url="https://ex.com")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.add_url = AsyncMock(side_effect=_record_add_url)
             mock_client_cls.return_value = mock_client
@@ -3338,7 +3340,7 @@ class TestSourceBundleP1T2:
         """`source add-research` must pass ``task_id`` to ``client.research.poll``
         so a second research task starting mid-poll cannot cross-wire its
         sources into this task's import branch."""
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.research.start = AsyncMock(return_value={"task_id": "task_pinned"})
             # First poll returns in_progress (so the loop continues at least once
@@ -3362,8 +3364,8 @@ class TestSourceBundleP1T2:
 
             # Short-circuit asyncio.sleep so the test does not wait 5s between polls.
             # Use patch.object on the already-imported module to avoid the dotted-string
-            # path "notebooklm.cli.source.asyncio.sleep" which fails on Python 3.10 because
-            # mock.patch tries to import "notebooklm.cli.source" as a package first.
+            # path "notebooklm.cli.source_cmd.asyncio.sleep" which fails on Python 3.10 because
+            # mock.patch tries to import "notebooklm.cli.source_cmd" as a package first.
             with (
                 self._patch_fetch_tokens(),
                 patch.object(source_module.asyncio, "sleep", AsyncMock()),
@@ -3419,7 +3421,7 @@ class TestSourceBundleP1T2:
             if sid == "src_b":
                 raise RuntimeError("boom")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=sources)
             mock_client.sources.delete = AsyncMock(side_effect=fake_delete)
@@ -3443,7 +3445,7 @@ class TestSourceBundleP1T2:
             if sid == "src_b":
                 raise RuntimeError("boom")
 
-        with patch_client_for_module("source") as mock_client_cls:
+        with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
             mock_client.sources.list = AsyncMock(return_value=sources)
             mock_client.sources.delete = AsyncMock(side_effect=fake_delete)

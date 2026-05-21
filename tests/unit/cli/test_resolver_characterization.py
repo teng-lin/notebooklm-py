@@ -38,7 +38,6 @@ from notebooklm.types import AskResult
 
 from .conftest import (
     create_mock_client,
-    patch_client_for_module,
 )
 
 # ----------------------------------------------------------------------------
@@ -96,7 +95,7 @@ class TestChatNotebookResolution:
         backend listing - the explicit arg is the authoritative source.
         """
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("chat") as mock_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -126,7 +125,7 @@ class TestChatNotebookResolution:
             lambda *a, **kw: tmp_path / "nonexistent.json",
         )
 
-        with patch_client_for_module("chat") as mock_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -150,7 +149,7 @@ class TestChatNotebookResolution:
         monkeypatch.delenv("NOTEBOOKLM_NOTEBOOK", raising=False)
         monkeypatch.setattr(resolve_helpers, "get_context_path", lambda *a, **kw: ctx_file)
 
-        with patch_client_for_module("chat") as mock_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
@@ -226,7 +225,7 @@ class TestDownloadNotebookResolution:
         Resolver does not call ``notebooks.list`` for a UUID-shaped id.
         """
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
-        with patch_client_for_module("download") as mock_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(
                 return_value=_make_artifact_list(
@@ -266,7 +265,7 @@ class TestDownloadNotebookResolution:
                 ("xyz00000-aaaa-4abc-def0-000000000002", "second"),
             ]
         )
-        with patch_client_for_module("download") as mock_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=artifacts)
             mock_client.artifacts.download_audio = AsyncMock(return_value=str(tmp_path / "out.mp3"))
@@ -313,7 +312,7 @@ class TestDownloadNotebookResolution:
                 ("abc22222-aaaa-4abc-def0-000000000002", "second"),
             ]
         )
-        with patch_client_for_module("download") as mock_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=artifacts)
             mock_client.artifacts.download_audio = AsyncMock()
@@ -347,7 +346,7 @@ class TestDownloadNotebookResolution:
         """Unknown artifact prefix surfaces ``not found`` in the output."""
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
         artifacts = _make_artifact_list([("aaaa1111-aaaa-4abc-def0-000000000001", "only")])
-        with patch_client_for_module("download") as mock_cls:
+        with patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.artifacts.list = AsyncMock(return_value=artifacts)
             mock_client.artifacts.download_audio = AsyncMock()
@@ -393,7 +392,7 @@ class TestChatConversationFallback:
     def test_explicit_conversation_id_wins(self, runner, mock_auth, mock_fetch):
         full_uuid = "abc12345-6789-4abc-def0-1234567890ab"
         conv_id = "11111111-2222-3333-4444-555555555555"
-        with patch_client_for_module("chat") as mock_cls:
+        with patch("notebooklm.cli.chat_cmd.NotebookLMClient") as mock_cls:
             mock_client = create_mock_client()
             mock_client.chat.ask = AsyncMock(return_value=_ask_result())
             mock_client.chat.get_conversation_id = AsyncMock(return_value="zzz-different-conv")

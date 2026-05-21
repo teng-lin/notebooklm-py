@@ -14,7 +14,7 @@ Fixtures (``runner``, ``mock_auth``, ``mock_context_file``) live in
 priority over plugin fixtures, so defining them in two places makes the
 plugin copies dead. The conftest definitions cover the session-CLI use
 cases (the ``__Secure-1PSIDTS`` cookie + the
-``notebooklm.cli.session.get_context_path`` patch site).
+``notebooklm.cli.session_cmd.get_context_path`` patch site).
 
 This file holds the chromium-fanout helpers (``_make_chromium_profile``,
 ``_chromium_fanout_setup``, ``_install_chromium_fanout_patches``) and the
@@ -68,7 +68,7 @@ def _account_exists(storage_path: Path) -> bool:
 # Since ``tests/unit/cli/conftest.py`` already defines those names, the
 # plugin copies were dead. The authoritative definitions now live in
 # ``tests/unit/cli/conftest.py`` — including the
-# ``notebooklm.cli.session.get_context_path`` patch (added per D1 PR-3
+# ``notebooklm.cli.session_cmd.get_context_path`` patch (added per D1 PR-3
 # review) and the ``__Secure-1PSIDTS`` cookie in ``mock_auth`` (required
 # by ``_validate_required_cookies``).
 

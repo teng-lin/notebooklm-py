@@ -343,7 +343,7 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
     from notebooklm.auth import AuthTokens
     from notebooklm.exceptions import RateLimitError
 
-    from .conftest import create_mock_client, patch_client_for_module
+    from .conftest import create_mock_client
 
     auth = AuthTokens(
         cookies={
@@ -366,7 +366,7 @@ def test_json_stdout_routing_and_exit_codes_for_download_runtime(
 
     with (
         patch("notebooklm.cli.helpers.get_auth_tokens") as mock_get_auth_tokens,
-        patch_client_for_module("download") as mock_client_cls,
+        patch("notebooklm.cli.download_cmd.NotebookLMClient") as mock_client_cls,
     ):
         if setup == "missing_storage":
             mock_get_auth_tokens.side_effect = FileNotFoundError("Storage file not found")

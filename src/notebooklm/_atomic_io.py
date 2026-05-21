@@ -1,6 +1,6 @@
 """Atomic JSON write helpers.
 
-Shared by :mod:`notebooklm.auth` and :mod:`notebooklm.cli.session` so both
+Shared by :mod:`notebooklm.auth` and :mod:`notebooklm.cli.session_cmd` so both
 write sites for ``storage_state.json`` use the same crash- and concurrency-safe
 pattern (NamedTemporaryFile in the same directory, ``chmod 0o600``, then
 ``os.replace``).

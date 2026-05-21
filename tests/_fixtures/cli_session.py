@@ -3,11 +3,11 @@
 Background
 ----------
 
-Before D1 PR-3, ``notebooklm.cli.session`` wrapped every helper that
+Before D1 PR-3, ``notebooklm.cli.session_cmd`` wrapped every helper that
 ``cli.services.login`` exposed in a per-call
 ``_patched_login_service_dependencies()`` context manager. The wrapper copied
 session-side monkeypatches forward into ``cli.services.login`` at call time,
-which is why historical tests could ``patch("notebooklm.cli.session.X")`` and
+which is why historical tests could ``patch("notebooklm.cli.session_cmd.X")`` and
 have the patch be visible to ``cli.services.login`` internals that referenced
 ``X`` by local name.
 
@@ -23,7 +23,7 @@ What this module provides
 
 ``patch_session_login_dual(name, **patch_kwargs)`` —
     Convenience context manager that patches both
-    ``notebooklm.cli.session.<name>`` and
+    ``notebooklm.cli.session_cmd.<name>`` and
     ``notebooklm.cli.services.login.<name>`` with the same mock. Returns the
     primary mock (the services-side one — that's where the canonical
     implementation lives, so the patch surface that matters most).
@@ -47,7 +47,7 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
 
     ``name`` is a helper symbol that lives in
     :mod:`notebooklm.cli.services.login` and is re-imported by
-    :mod:`notebooklm.cli.session`. Tests that need a helper intercepted
+    :mod:`notebooklm.cli.session_cmd`. Tests that need a helper intercepted
     regardless of which module's binding resolves the call use this to
     avoid hand-wiring two ``patch(...)`` calls.
 
@@ -66,7 +66,7 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
         The shared mock used for both surfaces.
     """
     services_target = f"notebooklm.cli.services.login.{name}"
-    session_target = f"notebooklm.cli.session.{name}"
+    session_target = f"notebooklm.cli.session_cmd.{name}"
 
     with ExitStack() as stack:
         primary = stack.enter_context(patch(services_target, **patch_kwargs))

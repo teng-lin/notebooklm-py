@@ -42,7 +42,7 @@ class TestLoginMultiAccount:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
@@ -521,7 +521,7 @@ class TestStaleAccountMetadataCleanup:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session._sync_server_language_to_config"),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,

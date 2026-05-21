@@ -35,7 +35,7 @@ from notebooklm.auth import (
     _is_allowed_cookie_domain,
     convert_rookiepy_cookies_to_storage_state,
 )
-from notebooklm.cli.session import (
+from notebooklm.cli.session_cmd import (
     _build_google_cookie_domains,
     _parse_include_domains,
     _resolve_optional_cookie_domains,
@@ -474,7 +474,7 @@ class TestLoginCliFlag:
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session._login_browser_cookies_single") as login_single:
+        with patch("notebooklm.cli.session_cmd._login_browser_cookies_single") as login_single:
             result = runner.invoke(
                 cli,
                 [
@@ -496,7 +496,7 @@ class TestLoginCliFlag:
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session._login_browser_cookies_single"):
+        with patch("notebooklm.cli.session_cmd._login_browser_cookies_single"):
             result = runner.invoke(
                 cli,
                 ["login", "--browser-cookies", "chrome"],
@@ -510,7 +510,7 @@ class TestLoginCliFlag:
         monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session._login_browser_cookies_single"):
+        with patch("notebooklm.cli.session_cmd._login_browser_cookies_single"):
             result = runner.invoke(
                 cli,
                 [
@@ -575,7 +575,7 @@ class TestAuthRefreshCliFlag:
         monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session._refresh_from_browser_cookies") as helper:
+        with patch("notebooklm.cli.session_cmd._refresh_from_browser_cookies") as helper:
             result = runner.invoke(
                 cli,
                 [
@@ -606,7 +606,7 @@ class TestAuthInspectCliFlag:
         """``--include-domains=youtube`` reaches ``_enumerate_browser_accounts``."""
         runner = CliRunner()
 
-        with patch("notebooklm.cli.session._enumerate_browser_accounts") as enum:
+        with patch("notebooklm.cli.session_cmd._enumerate_browser_accounts") as enum:
             enum.return_value = ([], [])
             result = runner.invoke(
                 cli,
