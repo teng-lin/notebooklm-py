@@ -33,6 +33,7 @@ import time
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm._auth.refresh as _auth_refresh
 from notebooklm import auth as auth_module
 from notebooklm.auth import AuthTokens
 
@@ -101,7 +102,7 @@ async def test_from_storage_save_does_not_block_event_loop(
     # module-local alias in ``notebooklm.auth`` (auth.py:86), so patch the
     # consumer-side name on that module rather than the canonical home in
     # ``_auth.storage``.
-    monkeypatch.setattr("notebooklm.auth.save_cookies_to_storage", _blocking_save)
+    monkeypatch.setattr(auth_module, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0
     stop = asyncio.Event()
@@ -171,7 +172,7 @@ async def test_fetch_tokens_with_domains_save_does_not_block_event_loop(
         # return is fine; mirror the real function's None-by-default.
         time.sleep(_SLEEP_SECONDS)
 
-    monkeypatch.setattr("notebooklm._auth.refresh.save_cookies_to_storage", _blocking_save)
+    monkeypatch.setattr(_auth_refresh, "save_cookies_to_storage", _blocking_save)
 
     heartbeats = 0
     stop = asyncio.Event()
