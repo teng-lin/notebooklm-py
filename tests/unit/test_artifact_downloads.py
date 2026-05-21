@@ -810,11 +810,13 @@ class TestStoragePathEncapsulation:
             captured.append(path)
             raise _StopAfterCapture
 
-        with patch("notebooklm._artifacts.load_httpx_cookies", new=recording):
-            with pytest.raises(_StopAfterCapture):
-                await service.download_url(
-                    "https://storage.googleapis.com/x.bin", str(tmp_path / "out.bin")
-                )
+        with (
+            patch("notebooklm._artifacts.load_httpx_cookies", new=recording),
+            pytest.raises(_StopAfterCapture),
+        ):
+            await service.download_url(
+                "https://storage.googleapis.com/x.bin", str(tmp_path / "out.bin")
+            )
 
         assert captured == [sentinel]
 
