@@ -893,8 +893,25 @@ class ResearchAPI:
                             for _, url in source_norms
                             if url is not None and url in current_urls_norm
                         }
+                        # Filter for retry: drop already-present URLs.
+                        # Additionally, when *any* URL was verified
+                        # committed, drop no-URL entries (deep-research
+                        # reports): reports are appended FIRST in the
+                        # IMPORT_RESEARCH payload (see
+                        # ``_build_report_import_entry`` usage in
+                        # ``import_sources``), so a committed URL implies
+                        # the report committed too. Without this guard,
+                        # each retry duplicates the report server-side.
+                        # When no URL committed, keep no-URL entries —
+                        # the report's fate is unknown and the
+                        # report-only attempt cap further down bounds
+                        # the worst case.
+                        drop_no_url_entries = bool(removed_urls_norm)
                         filtered_sources = [
-                            source for source, url in source_norms if url not in current_urls_norm
+                            source
+                            for source, url in source_norms
+                            if url not in current_urls_norm
+                            and not (drop_no_url_entries and url is None)
                         ]
                         if len(filtered_sources) != len(sources):
                             removed_count = len(sources) - len(filtered_sources)

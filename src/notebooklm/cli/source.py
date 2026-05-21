@@ -846,12 +846,14 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
     default=1800,
     type=int,
     help=(
-        "Total seconds to wait for research to complete and for --import-all "
-        "retries (default: 1800). Mirrors 'research wait --timeout'. Bumping "
-        "this is required for deep research that runs longer than the legacy "
-        "5-minute cap — otherwise the CLI gives up before IMPORT_RESEARCH "
-        "fires and the NotebookLM web UI is left showing an 'Add sources?' "
-        "modal."
+        "Per-phase seconds budget for (a) the research-completion poll loop "
+        "and (b) the --import-all retry loop (default: 1800). Each phase "
+        "gets the full budget independently, so worst-case total wall time "
+        "is up to 2× this value. Matches 'research wait --timeout' "
+        "semantics. Bumping this is required for deep research that runs "
+        "longer than the legacy 5-minute cap — otherwise the CLI gives up "
+        "before IMPORT_RESEARCH fires and the NotebookLM web UI is left "
+        "showing an 'Add sources?' modal."
     ),
 )
 @with_client

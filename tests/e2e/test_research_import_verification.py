@@ -21,6 +21,7 @@ from .conftest import POLL_INTERVAL, requires_auth
 
 
 @requires_auth
+@pytest.mark.e2e
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
 class TestResearchImportVerification:
     """Verify research import actually adds sources to the notebook."""

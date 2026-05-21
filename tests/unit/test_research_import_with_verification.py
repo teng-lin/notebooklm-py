@@ -281,9 +281,16 @@ class TestImportSourcesWithVerification:
         mock_sleep.assert_awaited_once_with(5)
 
     @pytest.mark.asyncio
-    async def test_partial_timeout_preserves_report_entries_for_retry(self):
-        """Filtering URL entries that are already visible must leave no-URL
-        report entries in the retry payload.
+    async def test_partial_timeout_drops_report_entries_when_any_url_committed(self):
+        """When the partial-success probe shows at least one requested URL
+        already in the notebook, no-URL entries (deep-research reports) MUST
+        be dropped from the retry batch.
+
+        Reports are appended first in the IMPORT_RESEARCH payload (see
+        ``_build_report_import_entry`` usage in ``ResearchAPI.import_sources``),
+        so a verified URL implies the report committed too. Retrying the
+        report on each subsequent timeout would create duplicate report
+        sources server-side (gemini-code-assist review on PR #882).
         """
         imported_src = MagicMock(id="src_1", title="Source 1", url="https://one.example.com")
         report_entry = {
@@ -306,7 +313,7 @@ class TestImportSourcesWithVerification:
         research.import_sources = AsyncMock(
             side_effect=[
                 RPCTimeoutError("Timed out", timeout_seconds=30.0),
-                [{"id": "src_2", "title": "Source 2"}, {"id": "src_report", "title": "Report"}],
+                [{"id": "src_2", "title": "Source 2"}],
             ]
         )
 
@@ -318,16 +325,67 @@ class TestImportSourcesWithVerification:
                 initial_delay=5,
             )
 
-        assert imported == [
-            {"id": "src_1", "title": "Source 1"},
-            {"id": "src_2", "title": "Source 2"},
-            {"id": "src_report", "title": "Report"},
-        ]
+        # The retry batch must NOT include the report entry.
         retry_call_sources = research.import_sources.await_args_list[1].args[2]
         assert retry_call_sources == [
             {"url": "https://two.example.com", "title": "Source 2"},
+        ], "Report entry should be dropped from retry batch once any URL is verified committed"
+
+        # Returned set: URL 1 (verified during partial probe) + URL 2 (from
+        # the retry's successful response). The report is not in the
+        # return list because the function has no reliable way to attribute
+        # a no-URL source to this call vs. concurrent activity once the
+        # report was already committed under the timed-out RPC.
+        assert imported == [
+            {"id": "src_1", "title": "Source 1"},
+            {"id": "src_2", "title": "Source 2"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_partial_timeout_keeps_report_entry_when_no_url_committed(self):
+        """When the partial-success probe shows NO requested URLs in the
+        notebook, no-URL report entries stay in the retry batch — their
+        fate is unknown and dropping them would lose the report.
+
+        The report-only retry path is then bounded by the no-URL attempt
+        cap below (``test_report_only_import_bounded_retries_on_persistent_timeout``).
+        """
+        report_entry = {
+            "title": "Research Report",
+            "report_markdown": "# Findings\n...",
+            "result_type": 5,
+        }
+        sources = [
+            {"url": "https://one.example.com", "title": "Source 1"},
             report_entry,
         ]
+        research, _, mock_source_lister = _make_research()
+        mock_source_lister.list = AsyncMock(
+            side_effect=[
+                [],  # baseline
+                [],  # post-timeout probe — nothing committed yet
+            ]
+        )
+        research.import_sources = AsyncMock(
+            side_effect=[
+                RPCTimeoutError("Timed out", timeout_seconds=30.0),
+                [{"id": "src_1", "title": "Source 1"}, {"id": "src_report", "title": "Report"}],
+            ]
+        )
+
+        with patch("notebooklm._research.asyncio.sleep", new_callable=AsyncMock):
+            await research.import_sources_with_verification(
+                "nb_123",
+                "task_123",
+                sources,
+                initial_delay=5,
+            )
+
+        # No URL was verified committed → keep the report in the retry.
+        retry_call_sources = research.import_sources.await_args_list[1].args[2]
+        assert retry_call_sources == sources, (
+            "Report must remain in retry batch when nothing was verified committed"
+        )
 
     @pytest.mark.asyncio
     async def test_partial_timeout_merges_prior_verified_sources_on_later_verified_success(self):
