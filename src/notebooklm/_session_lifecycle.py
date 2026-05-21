@@ -118,7 +118,7 @@ CookieSaver = Callable[..., "bool | CookieSaveResult"]
 CookieRotator = Callable[..., Awaitable[None]]
 
 
-def _default_cookie_saver(*args: Any, **kwargs: Any) -> bool | CookieSaveResult:
+def _default_cookie_saver(*args: Any, **kwargs: Any) -> "bool | CookieSaveResult":
     """Default ``cookie_saver``: late-bind to ``notebooklm._core.save_cookies_to_storage``.
 
     The ``from . import _core`` import lives INSIDE the function body
