@@ -56,9 +56,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # Bridge attribute names — see :file:`src/notebooklm/_session.py`
-# bridge block (the ``@property`` declarations between the auth-coord
-# ``_ensure_*`` and the ``get_http_client`` tail). Update this set when
-# a bridge is added or retired.
+# bridge block (the ``@property`` declarations in the
+# ``AuthRefreshCoordinator`` / ``ClientMetrics`` / ``TransportDrainTracker`` /
+# ``ClientLifecycle`` / ``CookiePersistence`` / ``ReqidCounter`` /
+# ``PollingRegistry`` compat-bridge sections, between the constructor wiring
+# and the ``get_http_client`` tail). Update this set when a bridge is added
+# or retired.
 FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
     {
         # ClientLifecycle bridges
@@ -174,7 +177,6 @@ ALLOWLIST: list[str] = [
     "tests/unit/test_cookie_persistence.py",
     "tests/unit/test_drain_middleware.py",
     "tests/unit/test_idempotency_registry.py",
-    "tests/unit/test_logging_correlation.py",
     "tests/unit/test_metrics_middleware.py",
     "tests/unit/test_observability.py",
     "tests/unit/test_polling_registry.py",
@@ -419,14 +421,10 @@ def test_no_session_compat_bridges() -> None:
     """Every test file outside ALLOWLIST + CARVE_OUT_MODULES must be clean."""
     failures: list[str] = []
     for path in _collect_test_files():
-<<<<<<< HEAD
         # Use as_posix() so the comparison against ALLOWLIST (forward-slash
         # POSIX paths) is correct on Windows, where ``str(Path)`` produces
         # backslashes that miss every allowlist entry.
         rel = path.relative_to(REPO_ROOT).as_posix()
-=======
-        rel = str(path.relative_to(REPO_ROOT))
->>>>>>> a2ba837 (chore(session-shrink): doc correction + AST lint scaffolding for bridge retirement)
         if rel in ALLOWLIST or is_carve_out(rel):
             continue
         violations = _scan_file(path)

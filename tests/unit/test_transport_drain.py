@@ -21,10 +21,6 @@ pins the helper-class invariants the facade depends on:
   work).
 * ``current_operation_depth(None)`` returns zero (the documented
   "outside any task" branch).
-* The ``Session.__new__(Session)`` regression path: the drain
-  property setters on a ``__new__``-built core (no ``__init__`` ran)
-  must succeed because the setters call
-  ``_ensure_observability_state`` before writethrough.
 """
 
 from __future__ import annotations
@@ -33,7 +29,6 @@ import asyncio
 
 import pytest
 
-from notebooklm._session import Session
 from notebooklm._transport_drain import TransportDrainTracker, _TransportOperationToken
 
 # ---------------------------------------------------------------------------
@@ -301,63 +296,3 @@ def test_token_is_frozen_dataclass() -> None:
     token = _TransportOperationToken(task=None)
     with pytest.raises(FrozenInstanceError):
         token.task = None  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# ``Session.__new__`` backfill regression
-# ---------------------------------------------------------------------------
-
-
-def test_new_backfill_drain_tracker_constructed_on_first_access() -> None:
-    """A ``__new__``-built core must lazy-construct the tracker on first probe.
-
-    Regression guard: ``Session.__new__(Session)`` skips ``__init__``,
-    so neither ``_metrics_obj`` nor ``_drain_tracker`` is set. The first
-    facade-method call must run ``_ensure_observability_state`` and
-    backfill both.
-    """
-    core = Session.__new__(Session)
-    assert not hasattr(core, "_drain_tracker")
-
-    core._ensure_observability_state()
-    assert isinstance(core._drain_tracker, TransportDrainTracker)
-    # The compat properties must read through cleanly.
-    assert core._in_flight_posts == 0
-    assert core._draining is False
-    assert core._drain_condition is None
-
-
-# ---------------------------------------------------------------------------
-# Phase 4 deleted the ``_draining``, ``_drain_condition``, ``_in_flight_posts``
-# setters on ``Session``. The getters stay (with backfill) so reads still work;
-# writers reach into ``_drain_tracker`` directly. The three pure-writethrough
-# tests that pinned those setters were removed (they would tautologically
-# assert that writing direct then reading direct returns the same value).
-# The ``__new__``-fixture invariant is still pinned by
-# ``tests/unit/test_chain_wiring.py::test_perform_authed_post_works_on_new_built_fixture``.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Facade integration — exercise Session delegation through the tracker
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_session_drain_facade_delegates_to_tracker() -> None:
-    """A real ``Session`` instance must route ``drain`` through the tracker.
-
-    Construction via ``__new__`` keeps the test off the full ``__init__``
-    surface (no auth, no httpx). The facade methods still rely on
-    ``_ensure_observability_state`` to backfill, which is exactly the path
-    we want to exercise here.
-    """
-    core = Session.__new__(Session)
-    # Begin/finish through the facade should bump and clear in-flight.
-    token = await core._begin_transport_post("facade-test")
-    assert core._in_flight_posts == 1
-    await core._finish_transport_post(token)
-    assert core._in_flight_posts == 0
-    # Drain with nothing in flight should return immediately and set flag.
-    await core.drain(timeout=0.5)
-    assert core._draining is True

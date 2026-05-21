@@ -42,22 +42,3 @@ def test_builder_returns_adr_009_order():
     assert isinstance(chain[4], AuthRefreshMiddleware)
     assert isinstance(chain[5], ErrorInjectionMiddleware)
     assert isinstance(chain[6], TracingMiddleware)
-
-
-def test_new_built_session_lazy_builds_chain_via_builder():
-    """A Session created via __new__ must build its chain through the
-    builder when _ensure_authed_post_chain is called. After backfill,
-    the Session must have a _chain_builder attribute (not just
-    _middlewares + _authed_post_chain as the legacy inline backfill
-    produced)."""
-    from notebooklm._session import Session
-
-    s = Session.__new__(Session)
-    s._ensure_authed_post_chain()
-
-    assert hasattr(s, "_chain_builder"), (
-        "post-backfill Session must have _chain_builder; inline-construction fallback regressed"
-    )
-    assert hasattr(s, "_middlewares")
-    assert len(s._middlewares) == 7
-    assert hasattr(s, "_authed_post_chain")

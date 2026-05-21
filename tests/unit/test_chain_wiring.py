@@ -333,37 +333,6 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     assert fake.call_count == 1
 
 
-@pytest.mark.asyncio
-async def test_perform_authed_post_works_on_new_built_fixture() -> None:
-    """A ``__new__``-built fixture can still call ``_perform_authed_post``.
-
-    Mirrors the ``_ensure_observability_state`` /
-    ``_ensure_auth_coord`` / ``_ensure_lifecycle`` backfill pattern: a
-    test that constructs ``Session.__new__(Session)`` (skipping
-    ``__init__``) must still be able to drive the authed-POST path.
-    The :meth:`Session._ensure_authed_post_chain` helper backfills
-    ``_middlewares`` and ``_authed_post_chain`` lazily so the first call
-    succeeds. This regression guard catches the path before any
-    middleware PR (12.3+) inadvertently moves the chain build out of
-    the backfill.
-    """
-    core = Session.__new__(Session)
-    fake = FakeAuthedPost(response=httpx.Response(status_code=200, content=b"new"))
-    _swap_transport(core, fake)
-
-    def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
-        return ("https://fake/new", b"", None)
-
-    response = await core._perform_authed_post(
-        build_request=build_request,
-        log_label="new-fixture",
-        disable_internal_retries=False,
-    )
-
-    assert response.status_code == 200
-    assert fake.call_count == 1
-
-
 def test_build_chain_empty_returns_terminal_unchanged() -> None:
     """:func:`build_chain` returns the terminal unchanged when ``middlewares`` is empty.
 

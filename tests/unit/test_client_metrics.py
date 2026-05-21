@@ -13,10 +13,6 @@ invariants the facade depends on:
 * ``emit_rpc_event`` dispatches sync, async, and exception-raising callbacks
   via ``maybe_await_callback`` (back-pressure semantics — never
   fire-and-forget).
-* The ``Session.__new__(Session)`` regression path: setting
-  ``_on_rpc_event`` on a ``__new__``-built core (no ``__init__`` ran) must
-  succeed because the property setter calls ``_ensure_observability_state``
-  before writethrough.
 """
 
 from __future__ import annotations
@@ -28,7 +24,6 @@ import threading
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._session import Session
 from notebooklm.types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 # ---------------------------------------------------------------------------
@@ -302,94 +297,3 @@ async def test_emit_rpc_event_swallows_async_callback_exception(caplog) -> None:
         for r in caplog.records
         if r.levelno == logging.WARNING
     )
-
-
-# ---------------------------------------------------------------------------
-# __new__-backfill regression — Session side
-#
-# These tests verify the property-bridge contract on ``Session``: a
-# ``__new__``-built fixture must be able to (a) set ``_on_rpc_event`` directly
-# and (b) await ``_emit_rpc_event`` without a prior ``__init__``. Both hinge
-# on ``_ensure_observability_state`` lazy-constructing ``_metrics_obj`` on
-# the first access path.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_new_backfill_emit_event_works_without_init() -> None:
-    """``Session.__new__(Session); await core._emit_rpc_event(...)`` must work.
-
-    Regression guard for the property-descriptor gate failure: after A1
-    turned ``_metrics_lock`` / ``_metrics`` / ``_on_rpc_event`` into class
-    descriptors, the legacy ``hasattr`` short-circuit always returned True
-    and the backfill never ran. The gate now hinges on the real
-    ``_metrics_obj`` instance attribute.
-    """
-    core = Session.__new__(Session)
-    # No __init__ has run; no callback configured.
-    event = RpcTelemetryEvent(method="ASK", status="success", elapsed_seconds=0.0)
-    await core._emit_rpc_event(event)
-    # No callback ⇒ silent no-op. Just assert no AttributeError surfaced.
-
-
-@pytest.mark.asyncio
-async def test_new_backfill_emits_rpc_event_after_explicit_backfill() -> None:
-    """Behaviour test: after ``_ensure_observability_state()`` primes the
-    collaborator, writing ``_on_rpc_event`` directly and then calling
-    ``_emit_rpc_event`` delivers the event.
-
-    Phase 4: the ``Session._on_rpc_event`` setter was removed; tests that
-    bypassed ``__init__`` via ``Session.__new__`` must now call the
-    backfill helper explicitly before writing on the collaborator.
-    """
-    events: list[RpcTelemetryEvent] = []
-    core = Session.__new__(Session)
-    core._ensure_observability_state()  # explicit backfill (was implicit via setter)
-    core._metrics_obj._on_rpc_event = events.append
-
-    event = RpcTelemetryEvent(method="ASK", status="success", elapsed_seconds=0.0)
-    await core._emit_rpc_event(event)
-    assert events == [event]
-
-
-def test_new_backfill_metrics_snapshot_returns_zero_snapshot() -> None:
-    """``metrics_snapshot()`` on a ``__new__``-built core returns the zeroed default.
-
-    Useful for tests that call into ``Session`` helpers (e.g.
-    ``rpc_call``-flavored mocks) without paying for a full ``__init__``.
-    """
-    core = Session.__new__(Session)
-    snapshot = core.metrics_snapshot()
-    assert isinstance(snapshot, ClientMetricsSnapshot)
-    assert snapshot.rpc_calls_started == 0
-    assert snapshot.rpc_calls_succeeded == 0
-
-
-def test_new_backfill_increment_metrics_lazy_construct() -> None:
-    """``_increment_metrics`` lazy-constructs the helper on a ``__new__`` core."""
-    core = Session.__new__(Session)
-    core._increment_metrics(rpc_calls_started=2, rpc_calls_failed=1)
-    snapshot = core.metrics_snapshot()
-    assert snapshot.rpc_calls_started == 2
-    assert snapshot.rpc_calls_failed == 1
-
-
-# ---------------------------------------------------------------------------
-# Phase 4 deleted the ``_metrics_lock``, ``_metrics``, ``_on_rpc_event``
-# setters on ``Session``. The getters stay (with ``_ensure_observability_state``
-# backfill) so reading still works; writers reach into ``_metrics_obj``
-# directly. The round-trip + writethrough tests that pinned the deleted setters
-# were removed (they would tautologically assert that writing direct then
-# reading direct returns the written value). The single setter-removed test
-# above (``test_new_backfill_emits_rpc_event_after_explicit_backfill``)
-# preserves the behaviour-side regression guard.
-# ---------------------------------------------------------------------------
-
-
-def test_metrics_getter_returns_live_snapshot() -> None:
-    """``core._metrics`` getter returns the helper's current snapshot."""
-    core = Session.__new__(Session)
-    core._increment_metrics(rpc_calls_started=7)
-    # The getter delegates to ``self._metrics_obj._metrics``, which has been
-    # rebound by ``increment`` to a new dataclass via ``replace``.
-    assert core._metrics.rpc_calls_started == 7

@@ -20,11 +20,10 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 @pytest.mark.asyncio
 async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
     """_notebooks.py:get_source_ids — non-list at notebook_data[0] triggers WARNING."""
+    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
-    from notebooklm._session import Session
 
-    core = Session.__new__(Session)
-    core.rpc_call = AsyncMock(return_value=[{"unexpected": "dict"}])
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[{"unexpected": "dict"}]))
     api = NotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
@@ -43,12 +42,11 @@ async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
 @pytest.mark.asyncio
 async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
     """_notebooks.py:get_source_ids — notebook_info[1] not list triggers WARNING."""
+    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
-    from notebooklm._session import Session
 
-    core = Session.__new__(Session)
     # notebook_data[0] is a list of length >1 but [1] is not a list
-    core.rpc_call = AsyncMock(return_value=[[None, "not a list", "x"]])
+    core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, "not a list", "x"]]))
     api = NotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
@@ -61,11 +59,12 @@ async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
 @pytest.mark.asyncio
 async def test_get_source_ids_happy_path_no_warning(caplog):
     """Well-formed payload extracts source ids and emits no warning."""
+    from _fixtures.fake_core import make_fake_core
     from notebooklm._notebooks import NotebooksAPI
-    from notebooklm._session import Session
 
-    core = Session.__new__(Session)
-    core.rpc_call = AsyncMock(return_value=[[None, [[["src_alpha"]], [["src_beta"]]]]])
+    core = make_fake_core(
+        rpc_call=AsyncMock(return_value=[[None, [[["src_alpha"]], [["src_beta"]]]]])
+    )
     api = NotebooksAPI(core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):

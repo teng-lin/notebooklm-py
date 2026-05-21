@@ -65,11 +65,7 @@ if TYPE_CHECKING:
 from .rpc import RPCMethod
 
 logger = logging.getLogger(__name__)
-_OBSERVABILITY_INIT_LOCK = threading.Lock()
-# Guards ``_auth_coord`` backfill on ``__new__``-built fixtures. Mirrors the
-# observability init lock so two threads can't both observe ``hasattr is False``
-# and race to construct competing :class:`AuthRefreshCoordinator` instances.
-#
+
 # Auth-snapshot canonical implementation lives on
 # :class:`AuthRefreshCoordinator` (``_session_auth.py`` —
 # ``AuthRefreshCoordinator.snapshot`` / ``.update_auth_tokens``). The
@@ -81,9 +77,7 @@ _OBSERVABILITY_INIT_LOCK = threading.Lock()
 # ``test_update_auth_tokens_has_no_await_inside_mutation_block``) inspect
 # the coordinator's source via ``inspect.getsource(...)`` + AST parsing —
 # changes to auth-snapshot invariants must be applied to the coordinator
-# (not the delegates here). Grep anchor for future maintainers:
-# ``_AUTH_COORD_INIT_LOCK``.
-_AUTH_COORD_INIT_LOCK = threading.Lock()
+# (not the delegates here).
 
 
 def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
@@ -456,46 +450,37 @@ class Session:
         return self.cookie_persistence.loaded_cookie_snapshot
 
     # ``ClientMetrics`` compat bridges. The three observability ivars now live
-    # on ``self._metrics_obj``; the read-side bridges call
-    # ``_ensure_observability_state`` first so a ``__new__``-built fixture
-    # (no ``__init__`` ran) can still read through. Phase 4 deleted the
-    # matching ``.setter`` halves — write on ``self._metrics_obj.X``
-    # directly (after calling ``_ensure_observability_state()`` if you
-    # constructed via ``Session.__new__``).
+    # on ``self._metrics_obj``; the bridges below delegate directly to that
+    # collaborator since ``Session.__init__`` eager-constructs it. Phase 4
+    # deleted the matching ``.setter`` halves — write on
+    # ``self._metrics_obj.X`` directly.
     @property
     def _metrics_lock(self) -> threading.Lock:
-        self._ensure_observability_state()
         return self._metrics_obj._metrics_lock
 
     @property
     def _metrics(self) -> ClientMetricsSnapshot:
-        self._ensure_observability_state()
         return self._metrics_obj._metrics
 
     @property
     def _on_rpc_event(self) -> Callable[[RpcTelemetryEvent], object] | None:
-        self._ensure_observability_state()
         return self._metrics_obj._on_rpc_event
 
     # ``TransportDrainTracker`` compat bridges. The four drain ivars now live
-    # on ``self._drain_tracker``; the read-side bridges call
-    # ``_ensure_observability_state`` first so a ``__new__``-built fixture
-    # (no ``__init__`` ran) can still read through. Phase 4 deleted the
-    # matching ``.setter`` halves — write on ``self._drain_tracker.X``
-    # directly.
+    # on ``self._drain_tracker``; the bridges below delegate directly to that
+    # collaborator since ``Session.__init__`` eager-constructs it. Phase 4
+    # deleted the matching ``.setter`` halves — write on
+    # ``self._drain_tracker.X`` directly.
     @property
     def _in_flight_posts(self) -> int:
-        self._ensure_observability_state()
         return self._drain_tracker._in_flight_posts
 
     @property
     def _draining(self) -> bool:
-        self._ensure_observability_state()
         return self._drain_tracker._draining
 
     @property
     def _drain_condition(self) -> asyncio.Condition | None:
-        self._ensure_observability_state()
         return self._drain_tracker._drain_condition
 
     # ``_operation_depths`` compat bridge dropped (D1-audit-full): zero
@@ -504,61 +489,34 @@ class Session:
     # ------------------------------------------------------------------
     # ``AuthRefreshCoordinator`` compat bridges. Refresh/auth-snapshot state
     # now lives on ``self._auth_coord``; the four legacy ivar names are
-    # preserved as writeable properties so the dozens of test sites that
-    # do ``core._refresh_callback = stub`` / ``core._refresh_lock = asyncio.Lock()``
-    # keep working without modification. ``_ensure_auth_coord`` mirrors the
-    # ``_ensure_observability_state`` backfill so ``__new__``-built fixtures
-    # (no ``__init__`` ran) still resolve cleanly.
+    # preserved as properties so the dozens of test sites that read them keep
+    # working without modification. Only ``_refresh_callback`` retains a setter
+    # (``core._refresh_callback = stub`` is still load-bearing — see
+    # ``tests/integration/test_session_integration.py:217,292``); the other
+    # three are read-only, so writes must go through ``self._auth_coord.<name>``
+    # directly. ``Session.__init__`` eager-constructs the coordinator, so the
+    # bridges delegate directly without lazy backfill.
     # ------------------------------------------------------------------
-
-    def _ensure_auth_coord(self) -> None:
-        """Backfill ``_auth_coord`` for tests that construct via ``__new__``.
-
-        Mirrors :meth:`_ensure_observability_state` — uses a module-level
-        threading lock for double-checked locking so two threads racing
-        through ``hasattr`` cannot both decide they need to construct a
-        coordinator and silently discard each other's locks/refresh task.
-
-        Also primes ``_metrics_obj`` because every coordinator method reaches
-        into ``host._metrics_obj`` (e.g. ``record_lock_wait`` inside
-        :meth:`AuthRefreshCoordinator.snapshot` /
-        :meth:`AuthRefreshCoordinator.update_auth_tokens`). Without this,
-        a ``__new__``-built fixture that calls ``_await_refresh`` /
-        ``_snapshot`` / ``update_auth_tokens`` before any observability
-        compat-bridge setter would surface as
-        ``AttributeError: '_StubCore' has no attribute '_metrics_obj'``
-        rather than backfilling gracefully.
-        """
-        if hasattr(self, "_auth_coord"):
-            return
-        self._ensure_observability_state()
-        with _AUTH_COORD_INIT_LOCK:
-            if not hasattr(self, "_auth_coord"):
-                self._auth_coord = AuthRefreshCoordinator(refresh_callback=None)
 
     @property
     def _refresh_lock(self) -> asyncio.Lock | None:
         """Phase 4 deleted the matching ``.setter``; write on
         ``self._auth_coord._refresh_lock`` directly.
         """
-        self._ensure_auth_coord()
         return self._auth_coord._refresh_lock
 
     @property
     def _refresh_task(self) -> asyncio.Task[AuthTokens] | None:
-        self._ensure_auth_coord()
         return self._auth_coord._refresh_task
 
     # ``_refresh_task`` setter dropped in arch-d2-cutover: zero external callers.
 
     @property
     def _refresh_callback(self) -> Callable[[], Awaitable[AuthTokens]] | None:
-        self._ensure_auth_coord()
         return self._auth_coord._refresh_callback
 
     @_refresh_callback.setter
     def _refresh_callback(self, value: Callable[[], Awaitable[AuthTokens]] | None) -> None:
-        self._ensure_auth_coord()
         self._auth_coord._refresh_callback = value
 
     # ``_auth_snapshot_lock`` compat bridge dropped (D1-audit-full): zero
@@ -576,55 +534,20 @@ class Session:
     # retained because ``RpcExecutor`` (``_rpc_executor.py``) reads
     # ``self._owner._timeout`` via the :class:`RpcOwner` Protocol; removing
     # it would surface as ``AttributeError`` on every RPC call.
-    # ``_ensure_lifecycle`` mirrors the ``_ensure_observability_state`` /
-    # ``_ensure_auth_coord`` backfill so ``__new__``-built fixtures (no
-    # ``__init__`` ran) still resolve cleanly.
+    # ``Session.__init__`` eager-constructs ``_lifecycle`` (and ``_kernel``),
+    # so the bridges delegate directly without lazy backfill.
     # ------------------------------------------------------------------
-
-    def _ensure_lifecycle(self) -> None:
-        """Backfill ``_lifecycle`` for tests that construct via ``__new__``.
-
-        Uses a module-level threading lock (the existing
-        ``_OBSERVABILITY_INIT_LOCK``) for double-checked locking so two
-        threads racing through ``hasattr`` cannot both decide they need to
-        construct a lifecycle and silently discard each other's
-        ``_http_client`` references.
-
-        ``__new__``-built fixtures may not have the underlying timeout /
-        limits attributes; we synthesise a minimally-configured lifecycle
-        in that case (the same shape ``Session.__init__`` would produce
-        for default args).
-        """
-        if hasattr(self, "_lifecycle"):
-            return
-        with _OBSERVABILITY_INIT_LOCK:
-            if not hasattr(self, "_lifecycle"):
-                # Lazy import to break the types.py -> _core.py cycle.
-                from .types import ConnectionLimits
-
-                self._kernel = Kernel(async_client_factory=httpx.AsyncClient)
-                self._lifecycle = ClientLifecycle(
-                    timeout=DEFAULT_TIMEOUT,
-                    connect_timeout=DEFAULT_CONNECT_TIMEOUT,
-                    limits=ConnectionLimits(),
-                    keepalive_interval=None,
-                    keepalive_storage_path=None,
-                    kernel=self._kernel,
-                )
 
     @property
     def _http_client(self) -> httpx.AsyncClient | None:
-        self._ensure_lifecycle()
         return self._lifecycle._http_client
 
     @_http_client.setter
     def _http_client(self, value: httpx.AsyncClient | None) -> None:
-        self._ensure_lifecycle()
         self._lifecycle._http_client = value
 
     @property
     def _bound_loop(self) -> asyncio.AbstractEventLoop | None:
-        self._ensure_lifecycle()
         return self._lifecycle._bound_loop
 
     @_bound_loop.setter
@@ -632,12 +555,10 @@ class Session:
         # Required by the ``_AuthedTransportHost`` Protocol (declares
         # ``_bound_loop`` as a settable variable). No external SET sites,
         # but the Protocol contract demands a settable property.
-        self._ensure_lifecycle()
         self._lifecycle._bound_loop = value
 
     @property
     def _keepalive_task(self) -> asyncio.Task[None] | None:
-        self._ensure_lifecycle()
         return self._lifecycle._keepalive_task
 
     # ``_keepalive_task`` setter dropped in arch-d2-cutover: zero external callers.
@@ -648,12 +569,10 @@ class Session:
         sites); write on ``self._lifecycle._keepalive_interval`` directly
         if a test needs to override it.
         """
-        self._ensure_lifecycle()
         return self._lifecycle._keepalive_interval
 
     @property
     def _keepalive_storage_path(self) -> Path | None:
-        self._ensure_lifecycle()
         return self._lifecycle._keepalive_storage_path
 
     # ``_keepalive_storage_path`` setter dropped in arch-d2-cutover: zero
@@ -661,7 +580,6 @@ class Session:
 
     @property
     def _timeout(self) -> float:
-        self._ensure_lifecycle()
         return self._lifecycle._timeout
 
     @_timeout.setter
@@ -671,7 +589,6 @@ class Session:
         # ``_timeout`` was a plain ivar so attribute assignment worked
         # implicitly; the property bridge needs an explicit setter to
         # preserve that contract.
-        self._ensure_lifecycle()
         self._lifecycle._timeout = value
 
     # ``_connect_timeout`` and ``_limits`` compat bridges dropped
@@ -745,136 +662,21 @@ class Session:
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:
         """Return cumulative observability counters for this client instance."""
-        self._ensure_observability_state()
         return self._metrics_obj.snapshot()
 
-    def _ensure_observability_state(self) -> None:
-        """Backfill observability fields for tests that construct via ``__new__``.
-
-        Gates on ``_metrics_obj`` AND ``_drain_tracker`` AND
-        ``_max_concurrent_rpcs`` (all three are real instance attributes,
-        not property-bridged ivars whose ``hasattr`` probes would always
-        be True because the descriptors live on the class). The
-        ``_max_concurrent_rpcs`` slot was added by PR 12.9 audit-find #1
-        so a ``__new__``-built fixture can call ``_perform_authed_post``
-        without ``AttributeError`` when ``SemaphoreMiddleware`` reads the
-        accessor.
-        """
-        if (
-            hasattr(self, "_metrics_obj")
-            and hasattr(self, "_drain_tracker")
-            and hasattr(self, "_max_concurrent_rpcs")
-        ):
-            return
-        with _OBSERVABILITY_INIT_LOCK:
-            if not hasattr(self, "_metrics_obj"):
-                self._metrics_obj = ClientMetrics(on_rpc_event=None)
-            if not hasattr(self, "_drain_tracker"):
-                self._drain_tracker = TransportDrainTracker()
-            if not hasattr(self, "_max_concurrent_rpcs"):
-                # Audit-find #1 (PR 12.9): the RPC semaphore wraps the
-                # chain dispatch in ``_perform_authed_post`` and reads
-                # this attr to decide whether to gate at all. A
-                # ``__new__``-built fixture must see ``None`` (no gate)
-                # so the first authed-POST call doesn't ``AttributeError``
-                # — the live ``Session.__init__`` path sets it
-                # explicitly to either ``DEFAULT_MAX_CONCURRENT_RPCS`` or
-                # the operator's override.
-                self._max_concurrent_rpcs = None
-
-    def _ensure_authed_post_chain(self) -> None:
-        """Backfill the middleware chain for tests that construct via ``__new__``.
-
-        Mirrors :meth:`_ensure_observability_state` — a ``__new__``-built
-        fixture skips ``__init__`` and so misses ``_chain_builder``,
-        ``_middlewares``, and ``_authed_post_chain``. The first call to
-        :meth:`_perform_authed_post` on such a fixture would raise
-        ``AttributeError``; this helper backfills all three slots via
-        :class:`MiddlewareChainBuilder` with the same chain shape that
-        ``__init__`` would have produced (ADR-009 ordering pinned by
-        ``tests/unit/test_chain_wiring.py:235`` and at builder level by
-        ``tests/unit/test_middleware_chain_builder.py``).
-
-        Guarded by :data:`_OBSERVABILITY_INIT_LOCK` for the same reason
-        :meth:`_ensure_observability_state` is — two threads observing
-        ``hasattr is False`` simultaneously must not both construct a
-        chain (one would clobber the other and break the
-        ``self._middlewares`` ↔ ``self._authed_post_chain`` linkage).
-        """
-        if hasattr(self, "_authed_post_chain"):
-            return
-        # ``MetricsMiddleware`` needs ``self._metrics_obj``, which a
-        # ``__new__``-built fixture hasn't constructed yet. Run the
-        # observability backfill BEFORE acquiring
-        # ``_OBSERVABILITY_INIT_LOCK`` (its own contract is "no-op when
-        # already initialized" and it takes the same lock internally —
-        # acquiring twice on this thread would deadlock since the lock
-        # is a plain :class:`threading.Lock`, not a reentrant lock).
-        self._ensure_observability_state()
-        with _OBSERVABILITY_INIT_LOCK:
-            if hasattr(self, "_authed_post_chain"):
-                return
-            self._ensure_auth_coord()
-            if not hasattr(self, "_middlewares"):
-                if not hasattr(self, "_chain_builder"):
-                    # __new__-fixture path: __init__ was bypassed. Build
-                    # the builder with safe getattr-defaults mirroring
-                    # __init__'s argument defaults so a fixture that
-                    # never set the attrs still gets sane middleware
-                    # instances. ``_drain_tracker`` and ``_metrics_obj``
-                    # are guaranteed populated by the
-                    # ``_ensure_observability_state()`` call above the
-                    # lock.
-                    self._chain_builder = MiddlewareChainBuilder(
-                        drain_tracker=self._drain_tracker,
-                        metrics=self._metrics_obj,
-                        rpc_semaphore_factory=self._get_rpc_semaphore,
-                        rate_limit_max_retries_provider=lambda: getattr(
-                            self, "_rate_limit_max_retries", 3
-                        ),
-                        server_error_max_retries_provider=lambda: getattr(
-                            self, "_server_error_max_retries", 3
-                        ),
-                        # ``getattr`` default matches ``__init__``'s argument
-                        # default (``refresh_retry_delay: float = 0.2``) so a
-                        # ``__new__``-built fixture that never set this attr
-                        # sees the same post-refresh sleep as the normal
-                        # path. (Restores the alignment first landed in PR
-                        # #850 / commit 73cf680 — inadvertently reverted to
-                        # 0.0 during the PR 12.9 cleanup refactor; CodeRabbit
-                        # caught the regression on PR #883.)
-                        refresh_retry_delay_provider=lambda: getattr(
-                            self, "_refresh_retry_delay", 0.2
-                        ),
-                        refresh_callable=self._await_refresh,
-                        is_auth_error=_live_is_auth_error,
-                        refresh_callback_enabled_provider=(
-                            lambda: self._auth_coord.has_refresh_callback
-                        ),
-                    )
-                self._middlewares = self._chain_builder.build()
-            self._authed_post_chain = build_chain(
-                self._middlewares,
-                self._authed_post_chain_terminal,
-            )
-
     def _increment_metrics(self, **increments: int | float) -> None:
-        self._ensure_observability_state()
         self._metrics_obj.increment(**increments)
 
     def _record_rpc_queue_wait(self, wait_seconds: float) -> None:
-        self._ensure_observability_state()
         self._metrics_obj.record_rpc_queue_wait(wait_seconds)
 
     def record_upload_queue_wait(self, wait_seconds: float) -> None:
         """Record time spent waiting for the upload semaphore."""
-        self._ensure_observability_state()
         self._metrics_obj.record_upload_queue_wait(wait_seconds)
 
     # Session/support surface consumed by feature APIs and private helpers.
     @property
     def kernel(self) -> Kernel:
-        self._ensure_lifecycle()
         return self._kernel
 
     @property
@@ -916,25 +718,20 @@ class Session:
         assert_bound_loop(self.bound_loop)
 
     def _record_lock_wait(self, wait_seconds: float) -> None:
-        self._ensure_observability_state()
         self._metrics_obj.record_lock_wait(wait_seconds)
 
     async def _emit_rpc_event(self, event: RpcTelemetryEvent) -> None:
         """Invoke the optional telemetry callback without affecting RPC behavior."""
-        self._ensure_observability_state()
         await self._metrics_obj.emit_rpc_event(event)
 
     def _get_drain_condition(self) -> asyncio.Condition:
-        self._ensure_observability_state()
         return self._drain_tracker.get_drain_condition()
 
     def _current_operation_depth(self, task: asyncio.Task[Any] | None) -> int:
-        self._ensure_observability_state()
         return self._drain_tracker.current_operation_depth(task)
 
     async def _begin_transport_post(self, log_label: str) -> _TransportOperationToken:
         """Reject new top-level transport work once graceful drain has started."""
-        self._ensure_observability_state()
         return await self._drain_tracker.begin_transport_post(log_label)
 
     async def _begin_transport_task(
@@ -943,11 +740,9 @@ class Session:
         log_label: str,
     ) -> _TransportOperationToken:
         """Admit an internally-spawned task as part of the current operation."""
-        self._ensure_observability_state()
         return await self._drain_tracker.begin_transport_task(task, log_label)
 
     async def _finish_transport_post(self, token: _TransportOperationToken) -> None:
-        self._ensure_observability_state()
         await self._drain_tracker.finish_transport_post(token)
 
     def operation_scope(self, label: str) -> AbstractAsyncContextManager[None]:
@@ -970,7 +765,6 @@ class Session:
         remains in draining mode so shutdown callers do not accidentally admit
         new work after a missed deadline.
         """
-        self._ensure_observability_state()
         await self._drain_tracker.drain(timeout)
 
     def _get_rpc_semaphore(self) -> AbstractAsyncContextManager[Any]:
@@ -1054,7 +848,6 @@ class Session:
         unbind so an
         accidental cross-loop call after close still raises actionably.
         """
-        self._ensure_lifecycle()
         await self._lifecycle.open(self)
 
     async def save_cookies(self, jar: httpx.Cookies, path: Path | None = None) -> None:
@@ -1070,7 +863,6 @@ class Session:
         preferred test-side seam; passing a custom callable there bypasses
         the late-bind hop entirely.
         """
-        self._ensure_lifecycle()
         await self._lifecycle.save_cookies(self, jar, path)
 
     async def close(self) -> None:
@@ -1089,7 +881,6 @@ class Session:
            ``_rpc_executor`` so a follow-up :meth:`open` rebuilds the
            transport collaborators against the new ``httpx.AsyncClient``.
         """
-        self._ensure_lifecycle()
         await self._lifecycle.close(self)
 
     async def _keepalive_loop(self, interval: float) -> None:
@@ -1099,13 +890,11 @@ class Session:
         as a ``Session`` method so ``test_client_keepalive`` and other
         tests that introspect ``core._keepalive_loop`` continue to resolve.
         """
-        self._ensure_lifecycle()
         await self._lifecycle._keepalive_loop(self, interval)
 
     @property
     def is_open(self) -> bool:
         """Check if the HTTP client is open."""
-        self._ensure_lifecycle()
         return self._lifecycle.is_open()
 
     def update_auth_headers(self) -> None:
@@ -1121,7 +910,6 @@ class Session:
         Raises:
             RuntimeError: If client is not initialized.
         """
-        self._ensure_auth_coord()
         self._auth_coord.update_auth_headers(self)
 
     def _get_auth_snapshot_lock(self) -> asyncio.Lock:
@@ -1133,7 +921,6 @@ class Session:
         the ``is None`` check and the assignment unless we ``await`` (and
         the accessor does not).
         """
-        self._ensure_auth_coord()
         return self._auth_coord.get_auth_snapshot_lock()
 
     def _get_refresh_lock(self) -> asyncio.Lock:
@@ -1145,7 +932,6 @@ class Session:
         so the single-flight refresh dedupe in :meth:`_await_refresh` is
         preserved.
         """
-        self._ensure_auth_coord()
         return self._auth_coord.get_refresh_lock()
 
     async def _snapshot(self) -> _AuthSnapshot:
@@ -1168,7 +954,6 @@ class Session:
         the related AST guard in
         ``tests/unit/test_concurrency_refresh_race.py``).
         """
-        self._ensure_auth_coord()
         return await self._auth_coord.snapshot(self)
 
     async def update_auth_tokens(self, csrf: str, session_id: str) -> None:
@@ -1187,7 +972,6 @@ class Session:
         lock-wait metric through ``host._metrics_obj`` directly rather
         than via the ``_record_lock_wait`` facade.
         """
-        self._ensure_auth_coord()
         await self._auth_coord.update_auth_tokens(self, csrf, session_id)
 
     def _build_url(
@@ -1273,7 +1057,6 @@ class Session:
         intentionally stay empty until PRs 12.5/12.7/12.8 begin populating
         them as middlewares strip behavior out of :class:`AuthedTransport`.
         """
-        self._ensure_authed_post_chain()
         request = RpcRequest(
             url="",
             headers={},
@@ -1344,7 +1127,6 @@ class Session:
         replaced only on the next refresh wave once the current task
         transitions to ``done()``.
         """
-        self._ensure_auth_coord()
         await self._auth_coord.await_refresh(self)
 
     async def rpc_call(
@@ -1450,5 +1232,4 @@ class Session:
         Raises:
             RuntimeError: If client is not initialized.
         """
-        self._ensure_lifecycle()
         return self._lifecycle.get_http_client()
