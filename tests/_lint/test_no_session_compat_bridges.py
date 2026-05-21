@@ -76,12 +76,13 @@ FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
         "_refresh_task",
         "_refresh_lock",
         # Observability (ClientMetrics + TransportDrainTracker) bridges
-        "_metrics",
-        "_metrics_lock",
-        "_on_rpc_event",
-        "_in_flight_posts",
-        "_draining",
-        "_drain_condition",
+        # retired in session-shrink PR 4 — readers now go straight to
+        # ``session._metrics_obj.<attr>`` / ``session._drain_tracker.<attr>``
+        # or the lock-safe ``session.metrics_snapshot()``. The names are
+        # intentionally NOT listed here so the lint no longer flags the
+        # legitimate direct-collaborator reads in tests like
+        # ``test_client_metrics.py`` / ``test_transport_drain.py`` that
+        # exercise the helpers in isolation.
         # CookiePersistence + PollingRegistry + ReqidCounter bridges
         "_save_lock",
         "_loaded_cookie_snapshot",
@@ -173,11 +174,8 @@ ALLOWLIST: list[str] = [
     "tests/unit/test_chat_ask_invariants.py",
     "tests/unit/test_client.py",
     "tests/unit/test_client_keepalive.py",
-    "tests/unit/test_client_metrics.py",
     "tests/unit/test_cookie_persistence.py",
-    "tests/unit/test_drain_middleware.py",
     "tests/unit/test_idempotency_registry.py",
-    "tests/unit/test_metrics_middleware.py",
     "tests/unit/test_observability.py",
     "tests/unit/test_polling_registry.py",
     "tests/unit/test_quota_failure_detection.py",
@@ -193,7 +191,6 @@ ALLOWLIST: list[str] = [
     "tests/unit/test_session_reqid.py",
     "tests/unit/test_session_reqid_concurrent.py",
     "tests/unit/test_source_selection.py",
-    "tests/unit/test_transport_drain.py",
     "tests/unit/test_vcr_config.py",
 ]
 
@@ -333,13 +330,14 @@ def test_allowlist_entries_currently_violate() -> None:
         ("def f(c):\n    c._http_client = None\n", [(2, "_http_client", "Store")]),
         ("def f(c):\n    del c._http_client\n", [(2, "_http_client", "Del")]),
         (
-            "def f(c):\n    c._in_flight_posts += 1\n",
-            [(2, "_in_flight_posts", "AugAssign")],
+            "def f(c):\n    c._keepalive_interval += 1\n",
+            [(2, "_keepalive_interval", "AugAssign")],
         ),
-        # Newly-included bridge that was missed in the first revision.
+        # Sample a non-ClientLifecycle bridge so the parametrized suite
+        # exercises a second forbidden name.
         (
-            "def f(c):\n    return c._metrics_lock\n",
-            [(2, "_metrics_lock", "Load")],
+            "def f(c):\n    return c._save_lock\n",
+            [(2, "_save_lock", "Load")],
         ),
         # Dynamic-access builtins with constant-string second arg.
         (
@@ -360,7 +358,7 @@ def test_allowlist_entries_currently_violate() -> None:
         "store",
         "del",
         "augassign",
-        "metrics_lock_load",
+        "save_lock_load",
         "getattr",
         "setattr",
         "delattr",
