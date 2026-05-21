@@ -140,3 +140,7 @@ async with await NotebookLMClient.from_storage() as client:
 
 See [`docs/python-api.md`](python-api.md) for the canonical public API
 reference and [`docs/stability.md`](stability.md) for the stability contract.
+
+Tier 13 closed in v0.5.0 — see [`docs/architecture.md`](architecture.md)
+for the post-refactor runtime shape (Session collaborator graph +
+capability-protocol model).

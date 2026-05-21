@@ -1,11 +1,16 @@
 # Session Capability Refactor Proposal
 
-**Status:** Draft for review (revision 5)
-**Last Updated:** 2026-05-20
+**Status:** Implementation complete — pending release.
+The capability-protocol refactor (ADR-013) landed across Phases 1-4
+(`.sisyphus/plans/refactor-completion-plan.md`). The post-refactor
+runtime shape is canonicalised in [`docs/architecture.md`](./architecture.md).
+The document below is preserved as the proposal that drove the work.
+**Last Updated:** 2026-05-21
 
-This proposal captures the agreed direction for repairing the feature-facing
-`Session` boundary and related note/mind-map service boundaries. It is not an
-implementation document yet; use it to review the design before changing code.
+This proposal captured the agreed direction for repairing the feature-facing
+`Session` boundary and related note/mind-map service boundaries. It is kept
+as a historical record of the design intent. For the post-refactor map see
+[`docs/architecture.md`](./architecture.md).
 
 ## Problem
 
