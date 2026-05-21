@@ -8,6 +8,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+import notebooklm._auth.keepalive as _auth_keepalive
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
@@ -176,7 +177,7 @@ class TestKeepalivePokes:
         the loop's pacing is the only thing being tested here.
         """
 
-        monkeypatch.setattr("notebooklm._auth.keepalive._KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
+        monkeypatch.setattr(_auth_keepalive, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
         httpx_mock.add_response(
             url=ROTATE_URL_RE,
             is_optional=True,
@@ -208,7 +209,7 @@ class TestKeepalivePokes:
         attempt by the in-process claim.
         """
 
-        monkeypatch.setattr("notebooklm._auth.keepalive._KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
+        monkeypatch.setattr(_auth_keepalive, "_KEEPALIVE_RATE_LIMIT_SECONDS", 0.0)
         # First poke: connection error. Subsequent pokes: 204.
         httpx_mock.add_exception(
             url=ROTATE_URL_RE,
