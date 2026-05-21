@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import Any
 
 from ._types import artifacts as _artifact_types
-from ._types import notebooks as _notebook_types
 from ._types import sources as _source_types
 from ._types.artifacts import (
     Artifact,
@@ -100,20 +99,15 @@ from .rpc.types import (
 
 # Keep private facade names that first-party tests and external callers have
 # historically imported while the implementation moves into _types modules.
-_ARTIFACT_TYPE_CODE_MAP = _artifact_types._ARTIFACT_TYPE_CODE_MAP
-_SOURCE_TYPE_CODE_MAP = _source_types._SOURCE_TYPE_CODE_MAP
 _SOURCE_TYPE_COMPAT_MAP = _source_types._SOURCE_TYPE_COMPAT_MAP
 _extract_artifact_url = _artifact_types._extract_artifact_url
 _extract_audio_artifact_url = _artifact_types._extract_audio_artifact_url
 _extract_infographic_artifact_url = _artifact_types._extract_infographic_artifact_url
-_extract_notebook_sources_count = _notebook_types._extract_notebook_sources_count
 _extract_slide_deck_artifact_url = _artifact_types._extract_slide_deck_artifact_url
 _extract_source_created_at = _source_types._extract_source_created_at
 _extract_source_url = _source_types._extract_source_url
 _extract_video_artifact_url = _artifact_types._extract_video_artifact_url
 _is_valid_artifact_url = _artifact_types._is_valid_artifact_url
-_map_artifact_kind = _artifact_types._map_artifact_kind
-_safe_source_type = _source_types._safe_source_type
 _warned_artifact_types = _artifact_types._warned_artifact_types
 _warned_source_types = _source_types._warned_source_types
 
