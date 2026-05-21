@@ -47,13 +47,15 @@ class TestIntervalRange:
         ``cli/options.py``, so this exercises the shared decorator path.
         """
         runner = CliRunner()
-        result = runner.invoke(cli, ["artifact", "wait", "--interval", "0", "--id", "x"])
+        result = runner.invoke(cli, ["artifact", "wait", "x", "--interval", "0"])
         assert result.exit_code == 2
+        assert "interval" in result.output.lower()
 
     def test_source_wait_interval_zero_is_usage_error(self) -> None:
         runner = CliRunner()
-        result = runner.invoke(cli, ["source", "wait", "--interval", "0", "--source", "x"])
+        result = runner.invoke(cli, ["source", "wait", "x", "--interval", "0"])
         assert result.exit_code == 2
+        assert "interval" in result.output.lower()
 
     def test_interval_positive_value_accepts(self) -> None:
         """``--interval 1`` is the lower bound and must parse.

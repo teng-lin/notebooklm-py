@@ -344,7 +344,7 @@ def list_options(f: FC) -> FC:
         # ``None``, not 0.
         type=click.IntRange(min=0),
         default=None,
-        help="Show at most N rows. 0 = show no rows. Omit for unlimited.",
+        help="Show at most N rows. 0 = show no rows. Omit for unlimited. Applies to both text and --json output.",
     )(f)
     return f
 
