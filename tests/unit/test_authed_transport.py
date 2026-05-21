@@ -33,15 +33,15 @@ import httpx
 import pytest
 
 from conftest import install_post_as_stream
-from notebooklm._authed_transport import AuthedTransport
-from notebooklm._logging import get_request_id
-from notebooklm._middleware import RpcRequest, RpcResponse
 from notebooklm._authed_transport import (
+    AuthedTransport,
     _AuthSnapshot,
     _TransportAuthExpired,
     _TransportRateLimited,
     _TransportServerError,
 )
+from notebooklm._logging import get_request_id
+from notebooklm._middleware import RpcRequest, RpcResponse
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
