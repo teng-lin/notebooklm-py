@@ -578,8 +578,11 @@ def test_types_private_helper_seam_manifest_matches_first_party_imports() -> Non
 
 
 def test_types_private_state_seams_are_live_objects(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Warning de-duplication and compat maps must remain live facade aliases."""
+    """Warning-dedup sets and compat map must remain shared between canonical
+    owners in ``_types/`` and their ``notebooklm.types`` re-exports."""
     import notebooklm.types as public_types
+    from notebooklm._types import artifacts as _artifact_types_seam
+    from notebooklm._types import sources as _source_types_seam
     from notebooklm.types import (
         _SOURCE_TYPE_COMPAT_MAP,
         Artifact,
@@ -592,8 +595,13 @@ def test_types_private_state_seams_are_live_objects(monkeypatch: pytest.MonkeyPa
     assert _SOURCE_TYPE_COMPAT_MAP is public_types._SOURCE_TYPE_COMPAT_MAP
     source_warnings: set[int] = set()
     artifact_warnings: set[tuple[int | None, int | None]] = set()
-    monkeypatch.setattr("notebooklm._types.sources._warned_source_types", source_warnings)
-    monkeypatch.setattr("notebooklm._types.artifacts._warned_artifact_types", artifact_warnings)
+    # ADR-007 seam-aliased object-target form: patch the canonical owners in
+    # ``_types/{sources,artifacts}`` directly. ``notebooklm.types._warned_*``
+    # is a re-export (see ``types.py:117-118``), so the test must target the
+    # canonical home — patching the public facade would rebind only the
+    # facade alias and not the module-global the parser reads.
+    monkeypatch.setattr(_source_types_seam, "_warned_source_types", source_warnings)
+    monkeypatch.setattr(_artifact_types_seam, "_warned_artifact_types", artifact_warnings)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UnknownTypeWarning)
