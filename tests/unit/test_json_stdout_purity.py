@@ -169,8 +169,6 @@ def _patch_modules() -> list:
     Caller does the ``with`` dance themselves so they can swap in a fresh mock
     instance for each command invocation.
     """
-    import importlib
-
     modules = [
         "notebooklm.cli.notebook_cmd",
         "notebooklm.cli.chat_cmd",
@@ -183,7 +181,9 @@ def _patch_modules() -> list:
         "notebooklm.cli.generate_cmd",
         "notebooklm.cli.download_cmd",
     ]
-    return [patch.object(importlib.import_module(name), "NotebookLMClient") for name in modules]
+    # Post-P3.T0: `*_cmd` modules are not shadowed, so direct string-form
+    # `patch(...)` resolves correctly without importlib indirection.
+    return [patch(f"{name}.NotebookLMClient") for name in modules]
 
 
 def _run_with_mock_client(runner: CliRunner, args: list[str], client: MagicMock):
