@@ -65,4 +65,3 @@ class TestGetConversationTurnsCommand:
         assert result.exit_code == 0, result.output
         assert "What question should I" in result.output
         assert "Based on the sources" in result.output
-
