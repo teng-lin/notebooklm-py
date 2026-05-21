@@ -61,7 +61,7 @@ class TestTimestampParsing:
         """Platform-specific timestamp errors should normalize to None."""
         from notebooklm.types import _datetime_from_timestamp
 
-        with patch("notebooklm.types.datetime") as mock_datetime:
+        with patch("notebooklm._types.common.datetime") as mock_datetime:
             mock_datetime.fromtimestamp.side_effect = OSError("timestamp out of range")
             parsed = _datetime_from_timestamp(1704067200)
 

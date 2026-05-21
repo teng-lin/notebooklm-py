@@ -9,9 +9,6 @@ Usage:
     from notebooklm.types import SourceType, ArtifactType  # str enums for .kind
 """
 
-from datetime import datetime
-from typing import Any
-
 from ._types import artifacts as _artifact_types
 from ._types import sources as _source_types
 from ._types.artifacts import (
@@ -35,9 +32,7 @@ from ._types.common import (
     RpcTelemetryEvent,
     UnknownTypeWarning,
 )
-from ._types.common import (
-    _datetime_from_timestamp as _common_datetime_from_timestamp,
-)
+from ._types.common import _datetime_from_timestamp
 from ._types.notebooks import (
     Notebook,
     NotebookDescription,
@@ -114,11 +109,6 @@ _warned_source_types = _source_types._warned_source_types
 # Imported for the historical ``notebooklm.types.ArtifactTypeCode`` attribute,
 # but intentionally absent from ``__all__``.
 ArtifactTypeCode = _ArtifactTypeCode
-
-
-def _datetime_from_timestamp(value: Any) -> datetime | None:
-    """Convert an API seconds timestamp to ``datetime``, returning ``None`` if invalid."""
-    return _common_datetime_from_timestamp(value, datetime_type=datetime)
 
 
 __all__ = [

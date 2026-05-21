@@ -28,7 +28,7 @@ INTERNAL_ARCHITECTURE_DOCS = {
 
 # Add names here only for explicit facade wrappers that must keep a public
 # monkeypatch seam while delegating implementation to a private _types module.
-ALLOWED_TYPES_WRAPPER_BODIES = {"_datetime_from_timestamp"}
+ALLOWED_TYPES_WRAPPER_BODIES: set[str] = set()
 PRIVATE_NOTEBOOKLM_IMPORT_RE = re.compile(
     r"\b(?:from\s+notebooklm(?:\._(?!_)\w+(?:\.\w+)*|\s+import\s+_(?!_)\w+)\b"
     r"|import\s+notebooklm\._(?!_)\w+(?:\.\w+)*\b)"

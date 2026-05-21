@@ -9,8 +9,7 @@ from enum import Enum
 from typing import Any
 
 from ..rpc.types import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
-from .common import UnknownTypeWarning
-from .common import _datetime_from_timestamp as _common_datetime_from_timestamp
+from .common import UnknownTypeWarning, _datetime_from_timestamp
 
 
 class ArtifactType(str, Enum):
@@ -91,11 +90,6 @@ def _map_artifact_kind(artifact_type: int, variant: int | None) -> ArtifactType:
             )
         return ArtifactType.UNKNOWN
     return result
-
-
-def _datetime_from_timestamp(value: Any) -> datetime | None:
-    """Convert an API seconds timestamp to ``datetime``, returning ``None`` if invalid."""
-    return _common_datetime_from_timestamp(value, datetime_type=datetime)
 
 
 def _is_valid_artifact_url(value: Any) -> bool:

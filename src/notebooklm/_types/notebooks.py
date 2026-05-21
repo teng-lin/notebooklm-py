@@ -55,7 +55,7 @@ class Notebook:
         if len(data) > 5 and isinstance(data[5], list) and len(data[5]) > 5:
             ts_data = data[5][5]
             if isinstance(ts_data, list) and len(ts_data) > 0:
-                created_at = _datetime_from_timestamp(ts_data[0], datetime_type=datetime)
+                created_at = _datetime_from_timestamp(ts_data[0])
 
         is_owner = True
         if len(data) > 5 and isinstance(data[5], list) and len(data[5]) > 1:

@@ -6,12 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .common import _datetime_from_timestamp as _common_datetime_from_timestamp
-
-
-def _datetime_from_timestamp(value: Any) -> datetime | None:
-    """Convert an API seconds timestamp to ``datetime``, returning ``None`` if invalid."""
-    return _common_datetime_from_timestamp(value, datetime_type=datetime)
+from .common import _datetime_from_timestamp
 
 
 @dataclass

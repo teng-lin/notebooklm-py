@@ -127,7 +127,7 @@ def _extract_source_created_at(metadata: Any) -> datetime | None:
     if not isinstance(timestamp_list, list) or not timestamp_list:
         return None
 
-    return _datetime_from_timestamp(timestamp_list[0], datetime_type=datetime)
+    return _datetime_from_timestamp(timestamp_list[0])
 
 
 @dataclass

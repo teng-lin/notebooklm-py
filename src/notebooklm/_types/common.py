@@ -117,11 +117,9 @@ class CitedSourceSelection:
     used_fallback: bool = False
 
 
-def _datetime_from_timestamp(
-    value: Any, *, datetime_type: type[datetime] = datetime
-) -> datetime | None:
+def _datetime_from_timestamp(value: Any) -> datetime | None:
     """Convert an API seconds timestamp to ``datetime``, returning ``None`` if invalid."""
     try:
-        return datetime_type.fromtimestamp(value)
+        return datetime.fromtimestamp(value)
     except (TypeError, ValueError, OSError, OverflowError):
         return None
