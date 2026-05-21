@@ -15,7 +15,7 @@ the broader stability policy (semver promise, supported Python versions, the
 |------------|-------------|-------|---------|-------|
 | `NOTEBOOKLM_STRICT_DECODE=0` soft-mode | Unset the variable (strict is the only mode) | v0.5.0 | v0.6.0 | Warning at `tests/unit/test_strict_decode_default.py:73`; rationale in `docs/stability.md` "Strict decode" + ADR-011 |
 | `SourcesAPI.add_file(mime_type=...)` | Omit `mime_type` — server infers from filename extension | v0.5.0 | v0.6.0 | Warning emitted at `src/notebooklm/_source_upload.py:287` |
-| `notebooklm source add --mime-type` (file sources) | Omit `--mime-type`; Drive-source `--mime-type` remains live | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/cli/source.py:437` |
+| `notebooklm source add --mime-type` (file sources) | Omit `--mime-type`; Drive-source `--mime-type` remains live | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/cli/source_cmd.py:437` |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_artifact_polling.py:154` |
 | `NotesAPI.create_from_chat(...)` | `ChatAPI.save_answer_as_note(...)` | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_notes.py:192` |
 | `NotebookLMClient.rpc_call(source_path=...)` | Omit the argument, or pass `"/"` explicitly | v0.5.0 | v0.6.0 | Explicit `source_path="/"` is silent (matches default); any other value warns |
