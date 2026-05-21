@@ -71,6 +71,10 @@ class TestClientInitialization:
 
         await core.close()
 
+        # Assert the injected saver was actually invoked — otherwise the
+        # test could pass via an early exit that never reaches the saver,
+        # silently weakening the regression guard.
+        boom_save.assert_called_once()
         assert core._http_client is None
 
     @pytest.mark.asyncio

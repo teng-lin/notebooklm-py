@@ -285,6 +285,75 @@ async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
 
 
 @pytest.mark.asyncio
+async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
+    """Production-chain regression: a real ``HTTPStatusError(401)`` raised
+    by the transport leaf must drive the refresh-and-retry path through
+    ``Session._perform_authed_post``.
+
+    This is the wiring-level counterpart to
+    :func:`test_auth_refresh_middleware_honors_injected_predicate` (which
+    pins the middleware-level contract in isolation). Together they
+    cover both halves of the contract:
+
+    1. ``AuthRefreshMiddleware`` honors its injected predicate.
+    2. ``Session.__init__`` actually wires the middleware with a
+       predicate that recognises real auth errors — currently
+       ``is_auth_error=_live_is_auth_error`` (see
+       ``notebooklm._session._get_authed_transport`` /
+       ``_get_rpc_executor``), where ``_live_is_auth_error`` resolves
+       :func:`notebooklm._session_helpers.is_auth_error` at call time.
+
+    Restored in Phase 2 PR 4 after the migration of
+    ``test_chain_uses_late_bound_is_auth_error`` (which used
+    ``monkeypatch.setattr("notebooklm._core.is_auth_error", lambda exc:
+    True)`` to force ANY exception to be treated as an auth error)
+    deleted the only end-to-end check of that wiring. Codex / agy
+    review caught the regression; this test re-adds the coverage
+    without depending on the soon-to-be-retired ``_core`` indirection
+    by using a real 401 that the canonical predicate already
+    recognises.
+    """
+    refresh_calls: list[bool] = []
+
+    async def refresh() -> AuthTokens:
+        refresh_calls.append(True)
+        return core.auth
+
+    core = _make_core(refresh_callback=refresh)
+    await core.open()
+    try:
+
+        def build(snapshot: _AuthSnapshot) -> tuple[str, str, dict[str, str]]:
+            return "https://example.test/x", "payload", {}
+
+        call_count = {"n": 0}
+
+        async def fake_post(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # Real 401 — recognised by ``is_auth_error``, which
+                # ``_live_is_auth_error`` resolves at call time. No
+                # monkeypatch needed: the predicate's natural behavior
+                # drives the refresh path.
+                raise _status_error(401)
+            return _ok_response()
+
+        install_post_as_stream(monkeypatch, core._http_client, fake_post)
+
+        response = await core._perform_authed_post(build_request=build, log_label="test")
+
+        assert response.status_code == 200
+        assert refresh_calls == [True], (
+            "Production chain must drive the refresh-and-retry path on a "
+            "real 401 — proves Session wires AuthRefreshMiddleware with a "
+            "predicate that recognises canonical auth errors."
+        )
+        assert call_count["n"] == 2
+    finally:
+        await core.close()
+
+
+@pytest.mark.asyncio
 async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch):
     """``RetryMiddleware`` resolves ``asyncio.sleep`` at call time and uses
     the shared ``random`` module for jitter, so tests can monkey-patch both
@@ -554,18 +623,15 @@ async def test_request_id_constant_across_retry_chain(monkeypatch):
 
         install_post_as_stream(monkeypatch, core._http_client, fake_post)
 
-        # Drive through rpc_call so set_request_id is in scope (rpc_call is
-        # the caller boundary that owns the request-id context).
-        async def fake_decode(*args, **kwargs):
-            return []
-
-        monkeypatch.setattr(
-            "notebooklm.rpc.decode_response",
-            lambda *args, **kwargs: [],
-        )
-
         # Use _perform_authed_post directly inside set_request_id to verify
-        # the helper itself doesn't reset the id.
+        # the helper itself doesn't reset the id. ``_perform_authed_post``
+        # is the transport-level call below ``rpc_call``; it never invokes
+        # ``decode_response``, so no decode_response patch is needed here.
+        # (Pre-Phase-2-PR-5 this test carried a stale
+        # ``monkeypatch.setattr("notebooklm._core.decode_response", …)`` —
+        # dead code from when the test was earlier driven through
+        # ``rpc_call``. Removed in PR 5 alongside the stdlib seam
+        # migration to keep the diff localized to a single review pass.)
         from notebooklm._logging import reset_request_id, set_request_id
 
         token = set_request_id("REQ-stable-1234")

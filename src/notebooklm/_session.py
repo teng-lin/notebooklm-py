@@ -1189,14 +1189,18 @@ class Session:
 
         The adapters intentionally resolve through this module at call time so
         existing tests and private callers that monkeypatch
-        ``notebooklm._core.is_auth_error`` or ``notebooklm._core.asyncio.sleep``
+        ``notebooklm._core.is_auth_error`` (Wave 3 will rename this seam) or
+        ``notebooklm._session.asyncio.sleep`` (Phase 2 PR 5 canonical target —
+        previously the deprecated ``notebooklm._core.asyncio.sleep`` shim)
         still affect live transport behavior after the collaborator has been
         constructed. Backoff jitter routes through ``notebooklm._backoff``,
         which in turn calls ``random.uniform`` on the shared module.
         ``tests/unit/test_authed_transport.py`` relies on monkeypatching
-        ``notebooklm._core.random.uniform`` to reach that jitter path; keep the
-        otherwise-unused module import so the path stays available. Attribute
-        patches on the singleton ``random`` module are visible to all importers.
+        ``notebooklm._session.random.uniform`` (Phase 2 PR 5 canonical
+        target — previously the deprecated ``notebooklm._core.random.uniform``
+        shim) to reach that jitter path; keep the otherwise-unused module
+        import so the path stays available. Attribute patches on the
+        singleton ``random`` module are visible to all importers.
         """
         transport = getattr(self, "_authed_transport", None)
         if transport is None:
@@ -1210,9 +1214,12 @@ class Session:
         The adapters resolve through this module at call time so existing
         monkeypatches of ``notebooklm.rpc.decode_response`` (Phase 2 PR 5
         canonical target — previously the deprecated
-        ``notebooklm._core.decode_response`` shim), ``notebooklm._core.is_auth_error``,
-        and ``notebooklm._core.asyncio.sleep`` keep affecting live RPC
-        behavior after the collaborator has been constructed.
+        ``notebooklm._core.decode_response`` shim),
+        ``notebooklm._core.is_auth_error`` (Wave 3 will rename this seam),
+        and ``notebooklm._session.asyncio.sleep`` (Phase 2 PR 5 canonical
+        target — previously the deprecated ``notebooklm._core.asyncio.sleep``
+        shim) keep affecting live RPC behavior after the collaborator has
+        been constructed.
         """
         executor = getattr(self, "_rpc_executor", None)
         if executor is None:
@@ -1248,10 +1255,14 @@ class Session:
         """Persist a cookie jar through the shared cookie-persistence collaborator.
 
         Thin facade over :meth:`ClientLifecycle.save_cookies`. The storage
-        writer ``save_cookies_to_storage`` is resolved from this module at
-        call time inside the lifecycle helper so existing
-        ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
-        sites continue to affect the live save path.
+        writer resolves through ``self._lifecycle._cookie_saver`` — by
+        default the Wave-1 ``_default_cookie_saver`` wrapper that
+        late-binds to ``notebooklm._core.save_cookies_to_storage`` so the
+        legacy ``monkeypatch.setattr("notebooklm._core.save_cookies_to_storage", …)``
+        idiom keeps affecting the live save path. Phase 2 PR 4 added the
+        ``cookie_saver=`` constructor kwarg as the preferred test-side
+        seam; passing a custom callable there bypasses the ``_core``
+        indirection entirely.
         """
         self._ensure_lifecycle()
         await self._lifecycle.save_cookies(self, jar, path)
