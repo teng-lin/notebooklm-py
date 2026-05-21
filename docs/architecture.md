@@ -69,31 +69,37 @@ constructing a real `Session`.
 ## Post-refactor `Session` collaborator graph
 
 ```
-        +---------------------+
-        |  NotebookLMClient   |
-        +----------+----------+
-                   |
-                   v
-          +--------+--------+
-          |     Session     |  (facade — see "Known debt" below)
-          +--------+--------+
-                   |
-   +---------------+----------------+------------------+
-   |               |                |                  |
-   v               v                v                  v
-RpcExecutor   AuthRefresh-   ClientLifecycle   MiddlewareChain-
-              Coordinator                       Builder
-   |               |                |                  |
-   |               |                |                  v
-   |               |                |          (chain construction
-   |               |                |           ordered per ADR-009)
-   |               |                v
-   |               |        TransportDrainTracker
-   |               v
-   |       (refresh task + auth-snapshot lock)
-   v
-ClientMetrics + ReqidCounter + CookiePersistence
-       (per-instance state)
+                     +---------------------+
+                     |  NotebookLMClient   |
+                     +----------+----------+
+                                |
+                                v
+                       +--------+--------+
+                       |     Session     |  (facade — see "Known debt" below)
+                       +--------+--------+
+                                |
+   +---------+---------+--------+---------+---------+---------+---------+
+   |         |         |        |         |         |         |         |
+   v         v         v        v         v         v         v         v
+RpcExec-  AuthRefresh- Client-  Middleware Transport ClientMetrics Reqid- CookiePers-
+utor      Coordinator  Lifecycle ChainBuilder DrainTracker         Counter istence
+   |         |         |        |         |
+   |         |         |        v         |
+   |         |         |   builds         |
+   |         |         |   chain via      |
+   |         |         |   ADR-009 order  |
+   |         |         |   into Drain/    |
+   |         |         |   Metrics/Sema/  |
+   |         |         |   Retry/AuthRef/ |
+   |         |         |   ErrInj/Tracing |
+   |         |         |                  |
+   |         |         |                  +--- counters touched by MetricsMiddleware
+   |         |         |
+   |         |         +--- HTTP open/close + keepalive task
+   |         |
+   |         +--- refresh task + auth-snapshot lock
+   |
+   +--- single RPC dispatch path (RpcExecutor.execute → chain → AuthedTransport → httpx)
 ```
 
 | Collaborator | Module | Responsibility |
@@ -110,24 +116,31 @@ ClientMetrics + ReqidCounter + CookiePersistence
 ## Middleware chain (ADR-009)
 
 The runtime chain order is pinned by
-[`tests/unit/test_chain_wiring.py`](../tests/unit/test_chain_wiring.py). The
-order is load-bearing: changing it without simultaneously updating the
-pin tests (`test_chain_seeded_with_final_adr_009_ordering`) is a bug.
+[`tests/unit/test_chain_wiring.py`](../tests/unit/test_chain_wiring.py)
+(facade-level) and
+[`tests/unit/test_middleware_chain_builder.py`](../tests/unit/test_middleware_chain_builder.py)
+(builder-level). The order is load-bearing: changing it without
+simultaneously updating the pin tests
+(`test_chain_seeded_with_final_adr_009_ordering`) is a bug.
+
+The chain list in [`MiddlewareChainBuilder.build()`](../src/notebooklm/_middleware_chain.py)
+reads outermost-first (index 0 wraps everything below it):
 
 ```
-TracingMiddleware
+DrainMiddleware              outermost — admits and tracks for shutdown drain
    ↓
-SemaphoreMiddleware
+MetricsMiddleware            starts timing here (latency includes queue wait)
    ↓
-DrainMiddleware
+SemaphoreMiddleware          max_concurrent_rpcs slot acquired AFTER Drain/Metrics,
+                             BEFORE Retry can re-enter (one slot per logical RPC)
    ↓
-ErrorInjectionMiddleware     (synthetic-error harness; no-op in prod)
+RetryMiddleware              429 / 5xx with Retry-After honor
    ↓
-RetryMiddleware              (429 / 5xx with Retry-After honor)
+AuthRefreshMiddleware        refresh-on-auth-error; capped retries
    ↓
-AuthRefreshMiddleware        (refresh-on-auth-error; capped retries)
+ErrorInjectionMiddleware     synthetic-error harness; no-op in prod
    ↓
-MetricsMiddleware
+TracingMiddleware            innermost — preserves OTel span boundary
    ↓
 RPC dispatch leaf            (RpcExecutor → AuthedTransport → httpx)
 ```
