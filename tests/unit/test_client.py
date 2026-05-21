@@ -474,7 +474,7 @@ class TestSessionRefreshCallback:
             pass
 
         core = Session(auth, refresh_callback=mock_refresh)
-        assert core._refresh_callback is mock_refresh
+        assert core._auth_coord._refresh_callback is mock_refresh
 
     def test_refresh_callback_defaults_to_none(self):
         """Session should default refresh_callback to None."""
@@ -486,7 +486,7 @@ class TestSessionRefreshCallback:
         )
 
         core = Session(auth)
-        assert core._refresh_callback is None
+        assert core._auth_coord._refresh_callback is None
 
     def test_refresh_lock_lazy_at_construction(self):
         """Refresh lock is ``None`` at construction regardless of callback.
@@ -508,13 +508,13 @@ class TestSessionRefreshCallback:
 
         # With callback: lazy — lock is None until first refresh attempt.
         core_with_cb = Session(auth, refresh_callback=mock_refresh)
-        assert core_with_cb._refresh_lock is None
-        assert core_with_cb._refresh_callback is mock_refresh
+        assert core_with_cb._auth_coord._refresh_lock is None
+        assert core_with_cb._auth_coord._refresh_callback is mock_refresh
 
         # Without callback: also None (unchanged behavior on this axis).
         core_without_cb = Session(auth)
-        assert core_without_cb._refresh_lock is None
-        assert core_without_cb._refresh_callback is None
+        assert core_without_cb._auth_coord._refresh_lock is None
+        assert core_without_cb._auth_coord._refresh_callback is None
 
 
 # =============================================================================

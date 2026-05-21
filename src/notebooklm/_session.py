@@ -67,14 +67,13 @@ if TYPE_CHECKING:
 
         Session-shrink PR 3 narrowed both Protocols by removing
         ``_timeout``, ``_refresh_callback``, ``_refresh_retry_delay``,
-        ``_http_client``, and ``_bound_loop`` declarations. The compat
-        bridges still exist on :class:`Session` (later PRs retire them);
-        what this assertion guarantees is that the narrowed Protocol
-        shape — only ``_kernel`` + methods for :class:`RpcOwner`, only
-        ``_kernel`` + ``_snapshot()`` for :class:`_AuthedTransportHost` —
-        is satisfied by :class:`Session`. mypy verifies this during
-        ``mypy src/notebooklm``; the function is a no-op at runtime
-        (gated by ``TYPE_CHECKING``).
+        ``_http_client``, and ``_bound_loop`` declarations. Some of those
+        compatibility bridges have since been retired; what this assertion
+        guarantees is that the narrowed Protocol shape — only ``_kernel`` +
+        methods for :class:`RpcOwner`, only ``_kernel`` + ``_snapshot()`` for
+        :class:`_AuthedTransportHost` — is satisfied by :class:`Session`.
+        mypy verifies this during ``mypy src/notebooklm``; the function is a
+        no-op at runtime (gated by ``TYPE_CHECKING``).
         """
         _owner: RpcOwner = s
         _host: _AuthedTransportHost = s
@@ -303,10 +302,9 @@ class Session:
         # ``_refresh_retry_delay`` stays here directly — it is read on the
         # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
         # by integration tests against ``client._session``. The refresh
-        # callback + the four refresh/auth-snapshot ivars (``_refresh_lock``,
-        # ``_refresh_task``, ``_refresh_callback``, ``_auth_snapshot_lock``)
-        # live on ``self._auth_coord``, constructed below alongside the other
-        # extracted helpers so the inter-helper dependency order is obvious.
+        # callback + refresh/auth-snapshot state live on ``self._auth_coord``,
+        # constructed below alongside the other extracted helpers so the
+        # inter-helper dependency order is obvious.
         self._refresh_retry_delay = refresh_retry_delay
         if rate_limit_max_retries < 0:
             raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
@@ -369,12 +367,10 @@ class Session:
         # Auth refresh coordination — single-flight refresh task, snapshot
         # serialization, and cookie-jar sync. The coordinator owns
         # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
-        # ``_auth_snapshot_lock``; field names match the legacy
-        # ``Session`` ivars so the surviving compat properties
-        # (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``)
-        # delegate cleanly. The ``_auth_snapshot_lock`` bridge was dropped
-        # in D1-audit-full; the live lock is reachable via
-        # :meth:`_get_auth_snapshot_lock`.
+        # ``_auth_snapshot_lock``. The matching ``Session`` compat bridges
+        # are retired; tests and internal callers that need implementation
+        # state read the coordinator directly. The live auth snapshot lock is
+        # reachable via :meth:`_get_auth_snapshot_lock`.
         # The auth snapshot lock is intentionally distinct from
         # ``_refresh_lock`` — mixing them would re-introduce the
         # reentrancy ambiguity that snapshot-side serialization was added
@@ -472,42 +468,12 @@ class Session:
     # tests now read ``self._drain_tracker.<attr>`` directly. The
     # ``_operation_depths`` bridge was dropped earlier in D1-audit-full.
 
-    # ------------------------------------------------------------------
-    # ``AuthRefreshCoordinator`` compat bridges. Refresh/auth-snapshot state
-    # now lives on ``self._auth_coord``; the four legacy ivar names are
-    # preserved as properties so the dozens of test sites that read them keep
-    # working without modification. Only ``_refresh_callback`` retains a setter
-    # (``core._refresh_callback = stub`` is still load-bearing — see
-    # ``tests/integration/test_session_integration.py:217,292``); the other
-    # three are read-only, so writes must go through ``self._auth_coord.<name>``
-    # directly. ``Session.__init__`` eager-constructs the coordinator, so the
-    # bridges delegate directly without lazy backfill.
-    # ------------------------------------------------------------------
-
-    @property
-    def _refresh_lock(self) -> asyncio.Lock | None:
-        """Phase 4 deleted the matching ``.setter``; write on
-        ``self._auth_coord._refresh_lock`` directly.
-        """
-        return self._auth_coord._refresh_lock
-
-    @property
-    def _refresh_task(self) -> asyncio.Task[AuthTokens] | None:
-        return self._auth_coord._refresh_task
-
-    # ``_refresh_task`` setter dropped in arch-d2-cutover: zero external callers.
-
-    @property
-    def _refresh_callback(self) -> Callable[[], Awaitable[AuthTokens]] | None:
-        return self._auth_coord._refresh_callback
-
-    @_refresh_callback.setter
-    def _refresh_callback(self, value: Callable[[], Awaitable[AuthTokens]] | None) -> None:
-        self._auth_coord._refresh_callback = value
-
-    # ``_auth_snapshot_lock`` compat bridge dropped (D1-audit-full): zero
-    # external callers. Live accessor remains ``_get_auth_snapshot_lock()`` /
-    # ``AuthRefreshCoordinator.get_auth_snapshot_lock()``.
+    # ``AuthRefreshCoordinator`` compat bridges retired in session-shrink PR 5:
+    # readers (and the two ``_refresh_callback`` writers in
+    # ``tests/integration/test_session_integration.py``) now go straight to
+    # ``self._auth_coord.<attr>``. The ``_auth_snapshot_lock`` bridge was
+    # dropped earlier in D1-audit-full; the live accessor remains
+    # ``_get_auth_snapshot_lock()`` / ``AuthRefreshCoordinator.get_auth_snapshot_lock()``.
 
     # ------------------------------------------------------------------
     # ``ClientLifecycle`` compat bridges. HTTP-client lifecycle state now

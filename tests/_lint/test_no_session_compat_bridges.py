@@ -71,10 +71,14 @@ FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
         "_keepalive_task",
         "_keepalive_interval",
         "_keepalive_storage_path",
-        # AuthRefreshCoordinator bridges
-        "_refresh_callback",
-        "_refresh_task",
-        "_refresh_lock",
+        # AuthRefreshCoordinator bridges retired in session-shrink PR 5 —
+        # readers (and the two ``_refresh_callback`` writers in
+        # ``tests/integration/test_session_integration.py``) now go straight
+        # to ``session._auth_coord.<attr>``. Names intentionally NOT listed
+        # so the lint no longer flags legitimate direct-coordinator reads
+        # in ``test_session_auth.py`` (and the unrelated ``owner._refresh_callback``
+        # attribute used by the fake ``_Owner`` in ``test_rpc_executor.py`` /
+        # ``test_idempotency_registry.py``).
         # Observability (ClientMetrics + TransportDrainTracker) bridges
         # retired in session-shrink PR 4 — readers now go straight to
         # ``session._metrics_obj.<attr>`` / ``session._drain_tracker.<attr>``
@@ -152,11 +156,8 @@ ALLOWLIST: list[str] = [
     "tests/integration/concurrency/test_max_concurrent_rpcs.py",
     "tests/integration/concurrency/test_note_create_cancel.py",
     "tests/integration/concurrency/test_rate_limit_default.py",
-    "tests/integration/concurrency/test_refresh_cancellation_propagation.py",
     "tests/integration/test_artifact_generation_idempotency.py",
-    "tests/integration/test_auth_refresh_vcr.py",
     "tests/integration/test_auto_refresh.py",
-    "tests/integration/test_error_paths_vcr.py",
     "tests/integration/test_notes_idempotency.py",
     "tests/integration/test_research_idempotency.py",
     "tests/integration/test_session_integration.py",
@@ -175,8 +176,6 @@ ALLOWLIST: list[str] = [
     "tests/unit/test_idempotency_registry.py",
     "tests/unit/test_observability.py",
     "tests/unit/test_rate_limit_retry.py",
-    "tests/unit/test_refresh_lock_lazy_init.py",
-    "tests/unit/test_refresh_state_machine.py",
     "tests/unit/test_rpc_executor.py",
     "tests/unit/test_rpc_overrides.py",
     "tests/unit/test_session_auth.py",

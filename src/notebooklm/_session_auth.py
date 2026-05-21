@@ -85,10 +85,9 @@ class AuthRefreshCoordinator:
     """Owns refresh single-flight, snapshot serialization, and auth-header sync.
 
     Field names (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``,
-    ``_auth_snapshot_lock``) deliberately mirror the legacy ``Session``
-    ivars so the compat ``@property`` bridges on ``Session`` can delegate
-    with ``return self._auth_coord._<attr>`` and stay readable for reviewers
-    grepping the codebase.
+    ``_auth_snapshot_lock``) deliberately mirror the retired legacy
+    ``Session`` ivars so bridge-retirement diffs and coordinator-specific
+    tests remain easy to audit.
     """
 
     def __init__(

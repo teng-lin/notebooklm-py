@@ -28,13 +28,15 @@ class TestAutoRefreshIntegration:
 
         client = NotebookLMClient(auth)
         # Bound methods aren't identical, so compare underlying function
-        assert client._session._refresh_callback is not None
-        assert client._session._refresh_callback.__func__ is NotebookLMClient.refresh_auth
+        assert client._session._auth_coord._refresh_callback is not None
+        assert (
+            client._session._auth_coord._refresh_callback.__func__ is NotebookLMClient.refresh_auth
+        )
         # ``_refresh_lock`` is lazily created on first ``_await_refresh``.
         # At construction time it is ``None`` so the client can be
         # instantiated outside a running loop; the helper allocates the
         # lock on demand inside the async refresh path.
-        assert client._session._refresh_lock is None
+        assert client._session._auth_coord._refresh_lock is None
 
     @pytest.mark.asyncio
     async def test_full_refresh_flow_http_error(self):
@@ -59,7 +61,7 @@ class TestAutoRefreshIntegration:
             client._session.update_auth_headers()
             return client._session.auth
 
-        client._session._refresh_callback = tracking_refresh
+        client._session._auth_coord._refresh_callback = tracking_refresh
 
         # Mock HTTP responses
         call_count = [0]
@@ -107,7 +109,7 @@ class TestAutoRefreshIntegration:
             client._session.update_auth_headers()
             return client._session.auth
 
-        client._session._refresh_callback = tracking_refresh
+        client._session._auth_coord._refresh_callback = tracking_refresh
 
         # Mock HTTP to succeed, but decode_response to fail with auth error first
         async def mock_post(*args, **kwargs):
@@ -148,7 +150,7 @@ class TestAutoRefreshIntegration:
         async def mock_refresh():
             return auth
 
-        client._session._refresh_callback = mock_refresh
+        client._session._auth_coord._refresh_callback = mock_refresh
 
         call_count = [0]
 
@@ -192,7 +194,7 @@ class TestAutoRefreshIntegration:
             # Simulates refresh_auth detecting redirect to login
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
 
-        client._session._refresh_callback = failing_refresh
+        client._session._auth_coord._refresh_callback = failing_refresh
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])

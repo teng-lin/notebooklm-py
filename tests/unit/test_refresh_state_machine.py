@@ -49,7 +49,7 @@ async def _wait_for_inflight_refresh_task(core, ticks: int = 20) -> bool:
     """Yield up to ``ticks`` times for the shared refresh task to appear."""
     for _ in range(ticks):
         await asyncio.sleep(0)
-        if core._refresh_task is not None and not core._refresh_task.done():
+        if core._auth_coord._refresh_task is not None and not core._auth_coord._refresh_task.done():
             return True
     return False
 
@@ -174,11 +174,11 @@ async def test_second_wave_creates_distinct_refresh_task():
         core.rpc_call = fake_retry
 
         await _trigger_refresh(core)
-        first_task = core._refresh_task
+        first_task = core._auth_coord._refresh_task
         assert first_task is not None and first_task.done()
 
         await _trigger_refresh(core)
-        second_task = core._refresh_task
+        second_task = core._auth_coord._refresh_task
         assert second_task is not None and second_task.done()
 
         assert first_task is not second_task, "Second wave reused completed task"

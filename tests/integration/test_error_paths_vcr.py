@@ -196,7 +196,7 @@ class TestErrorPaths:
         attempt. The exact post-refresh exception type is incidental
         (``ClientError`` because 400 is not 401/403, 5xx, or 429); what
         matters is that the auth-refresh hook fired, observed via a spy
-        installed on ``_core._refresh_callback`` and corroborated by the
+        installed on ``_core._auth_coord._refresh_callback`` and corroborated by the
         ``play_count == 2`` assertion on the cassette.
         """
         client = NotebookLMClient(_synthetic_auth())
@@ -225,7 +225,7 @@ class TestErrorPaths:
             client._session.update_auth_headers()
             return client._session.auth
 
-        client._session._refresh_callback = stub_refresh
+        client._session._auth_coord._refresh_callback = stub_refresh
 
         with notebooklm_vcr.use_cassette("error_synthetic_stale_csrf.yaml") as cassette:
             async with client:

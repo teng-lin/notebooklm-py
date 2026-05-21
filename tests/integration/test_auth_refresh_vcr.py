@@ -131,7 +131,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
 
     # The refresh callback is captured by Session at construction;
     # patch it on the core so the wrapper is what the retry loop sees.
-    client._session._refresh_callback = tracking_refresh
+    client._session._auth_coord._refresh_callback = tracking_refresh
 
     with notebooklm_vcr.use_cassette(CASSETTE_NAME) as cassette:
         async with client:

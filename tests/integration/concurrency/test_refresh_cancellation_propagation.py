@@ -146,8 +146,8 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         # The shared task must still be alive — caller #1's cancellation
         # should not have cancelled it. This is the load-bearing
         # invariant the shield protects.
-        assert core._refresh_task is not None, "shared refresh task vanished"
-        assert not core._refresh_task.done(), (
+        assert core._auth_coord._refresh_task is not None, "shared refresh task vanished"
+        assert not core._auth_coord._refresh_task.done(), (
             "Shared refresh task completed/cancelled before release — "
             "Shield regression: waiter cancellation propagated into the "
             "shared task."
@@ -211,14 +211,14 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
         await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
 
         # Snapshot the task identity before the cancellation lands.
-        in_flight = core._refresh_task
+        in_flight = core._auth_coord._refresh_task
         assert in_flight is not None
 
         with pytest.raises((TimeoutError, asyncio.TimeoutError)):
             await task
 
         # Slot still points at the same task — not cleared, not replaced.
-        assert core._refresh_task is in_flight, (
+        assert core._auth_coord._refresh_task is in_flight, (
             "Refresh slot mutated by waiter cancellation — invariant "
             "broken: the slot must persist until the task completes."
         )
