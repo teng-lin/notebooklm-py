@@ -7,6 +7,7 @@ for older imports and patch targets.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -19,6 +20,20 @@ from ..types import ArtifactType
 if TYPE_CHECKING:
     from ..types import Artifact
 
+
+def _resolve_quiet(ctx: click.Context | None) -> bool:
+    """Resolve root ``--quiet`` without importing ``cli.runtime``."""
+    if ctx is None:
+        ctx = click.get_current_context(silent=True)
+        if ctx is None:
+            return False
+    try:
+        value = ctx.find_root().params.get("quiet", False)
+    except (AttributeError, RuntimeError):
+        return False
+    return value if isinstance(value, bool) else False
+
+
 console = Console()
 # Diagnostic / status output in --json mode must go to stderr so stdout stays
 # parseable JSON for automation.
@@ -30,11 +45,16 @@ def _emit_status(
     *,
     json_output: bool,
     style: str | None = None,
+    quiet: bool = False,
     stdout_console: Console = console,
     stderr_output_console: Console = stderr_console,
 ) -> None:
     # Shared implementation for callers that need explicit stdout/stderr
     # console injection while preserving the public ``emit_status`` wrapper.
+    # Quiet suppresses status prose only. Errors and JSON payloads use their
+    # own output paths and are intentionally unaffected.
+    if quiet or _resolve_quiet(None):
+        return
     target = stderr_output_console if json_output else stdout_console
     if style is not None:
         target.print(msg, style=style)
@@ -47,17 +67,94 @@ def emit_status(
     *,
     json_output: bool,
     style: str | None = None,
+    quiet: bool = False,
     stdout_console: Console = console,
     stderr_output_console: Console = stderr_console,
 ) -> None:
-    """Emit a status / diagnostic line."""
+    """Emit a status / diagnostic line.
+
+    Args:
+        msg: The status message to print (Rich markup allowed).
+        json_output: When True, route the line to stderr so stdout stays
+            parseable JSON for automation. When False, route to stdout.
+        style: Optional Rich style string (e.g. ``"bold red"``).
+        quiet: When True, suppress entirely. The active root ``--quiet`` flag
+            is also honored automatically inside a Click invocation.
+        stdout_console: Override target for non-JSON mode (defaults to the
+            module-level ``console`` — patchable by callers).
+        stderr_output_console: Override target for JSON mode (defaults to
+            the module-level ``stderr_console``).
+    """
     _emit_status(
         msg,
         json_output=json_output,
         style=style,
+        quiet=quiet,
         stdout_console=stdout_console,
         stderr_output_console=stderr_output_console,
     )
+
+
+def cli_print(
+    *args: Any,
+    ctx: click.Context | None = None,
+    output_console: Console | None = None,
+    **kwargs: Any,
+) -> None:
+    """Quiet-aware drop-in replacement for ``console.print(...)``.
+
+    Use this for CLI status prose that should disappear under root
+    ``--quiet``. Outside a Click invocation, it forwards normally.
+
+    Args:
+        *args: Positional args forwarded to ``console.print`` (e.g. a
+            Rich-markup string, a ``Table``, a ``Panel``).
+        ctx: Optional Click context. When omitted, the helper consults
+            ``click.get_current_context(silent=True)``; outside any Click
+            context (library importers, direct unit tests) the helper
+            forwards unconditionally so non-CLI callers are unaffected.
+        output_console: Optional Console override. Defaults to the module-
+            level ``console`` so tests that patch ``rendering.console``
+            (or ``helpers.console``) still see the print routed through
+            their patched target.
+        **kwargs: Forwarded to ``console.print`` (``style``, ``markup``,
+            ``highlight``, etc.).
+
+    Note:
+        Errors must NOT route through this helper — ``--quiet`` silences
+        *status*, not *errors*. Error paths use ``_output_error`` (which
+        writes to stderr unconditionally) or, for JSON envelopes,
+        ``json_error_response``.
+    """
+    if _resolve_quiet(ctx):
+        return
+    target = output_console if output_console is not None else console
+    target.print(*args, **kwargs)
+
+
+def cli_status(
+    status_message: str,
+    *,
+    ctx: click.Context | None = None,
+    output_console: Console | None = None,
+    **kwargs: Any,
+):
+    """Quiet-aware replacement for ``console.status(...)``.
+
+    Returns a context manager that wraps a Rich spinner. Under ``--quiet``
+    (resolved the same way as :func:`cli_print`), the spinner is replaced
+    with a no-op context manager so no animation reaches the terminal.
+
+    Args:
+        status_message: The status text shown next to the spinner.
+        ctx: Optional Click context (see :func:`cli_print`).
+        output_console: Optional Console override.
+        **kwargs: Forwarded to ``console.status`` (e.g. ``spinner=`` kwarg).
+    """
+    if _resolve_quiet(ctx):
+        return contextlib.nullcontext()
+    target = output_console if output_console is not None else console
+    return target.status(status_message, **kwargs)
 
 
 _CLI_ARTIFACT_ALIASES = {

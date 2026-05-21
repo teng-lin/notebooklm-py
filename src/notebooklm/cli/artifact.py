@@ -27,6 +27,7 @@ from .error_handler import _output_error, emit_cancelled_and_exit
 from .options import json_option, list_options, notebook_option, wait_polling_options
 from .rendering import (
     cli_name_to_artifact_type,
+    cli_print,
     console,
     get_artifact_type_display,
     json_output_response,
@@ -309,8 +310,8 @@ def artifact_rename(ctx, artifact_id, new_title, notebook_id, json_output, clien
             if json_output:
                 json_output_response({"id": resolved_id, "renamed": True, "new_title": new_title})
             else:
-                console.print(f"[green]Renamed artifact:[/green] {resolved_id}")
-                console.print(f"[bold]New title:[/bold] {new_title}")
+                cli_print(f"[green]Renamed artifact:[/green] {resolved_id}", ctx=ctx)
+                cli_print(f"[bold]New title:[/bold] {new_title}", ctx=ctx)
 
     return _run()
 
@@ -359,9 +360,10 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
                             }
                         )
                     else:
-                        console.print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}")
-                        console.print(
-                            "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]"
+                        cli_print(f"[yellow]Cleared mind map:[/yellow] {resolved_id}", ctx=ctx)
+                        cli_print(
+                            "[dim]Note: Mind maps are cleared, not removed. Google may garbage collect them later.[/dim]",
+                            ctx=ctx,
                         )
                     return
 
@@ -369,7 +371,7 @@ def artifact_delete(ctx, artifact_id, notebook_id, yes, json_output, client_auth
             if json_output:
                 json_output_response({"id": resolved_id, "deleted": True})
             else:
-                console.print(f"[green]Deleted artifact:[/green] {resolved_id}")
+                cli_print(f"[green]Deleted artifact:[/green] {resolved_id}", ctx=ctx)
 
     return _run()
 

@@ -21,7 +21,7 @@ from .auth_runtime import with_client
 from .error_handler import _output_error
 from .input import read_stdin_text
 from .options import json_option, notebook_option
-from .rendering import console, json_output_response
+from .rendering import cli_print, console, json_output_response
 from .resolve import require_notebook, resolve_note_id, resolve_notebook_id
 
 
@@ -181,10 +181,10 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
                 return
 
             if result:
-                console.print("[green]Note created[/green]")
-                console.print(result)
+                cli_print("[green]Note created[/green]", ctx=ctx)
+                cli_print(result, ctx=ctx)
             else:
-                console.print("[yellow]Creation may have failed[/yellow]")
+                cli_print("[yellow]Creation may have failed[/yellow]", ctx=ctx)
 
     return _run()
 
@@ -286,7 +286,7 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
                     }
                 )
                 return
-            console.print("[yellow]Provide --title and/or --content[/yellow]")
+            cli_print("[yellow]Provide --title and/or --content[/yellow]", ctx=ctx)
 
         return _no_changes()
 
@@ -313,7 +313,7 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
                 json_output_response(payload)
                 return
 
-            console.print(f"[green]Note updated:[/green] {resolved_id}")
+            cli_print(f"[green]Note updated:[/green] {resolved_id}", ctx=ctx)
 
     return _run()
 
@@ -380,7 +380,7 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
                 )
                 return
 
-            console.print(f"[green]Note renamed:[/green] {new_title}")
+            cli_print(f"[green]Note renamed:[/green] {new_title}", ctx=ctx)
 
     return _run()
 
@@ -445,6 +445,6 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
                 )
                 return
 
-            console.print(f"[green]Deleted note:[/green] {resolved_id}")
+            cli_print(f"[green]Deleted note:[/green] {resolved_id}", ctx=ctx)
 
     return _run()

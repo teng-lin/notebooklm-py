@@ -51,12 +51,24 @@ def load_auth_from_storage(*args: Any, **kwargs: Any) -> Any:
     return auth_helpers.load_auth_from_storage(*args, **kwargs)
 
 
-def emit_status(msg: str, *, json_output: bool, style: str | None = None) -> None:
-    """Emit a status / diagnostic line."""
+def emit_status(
+    msg: str,
+    *,
+    json_output: bool,
+    style: str | None = None,
+    quiet: bool = False,
+) -> None:
+    """Emit a status / diagnostic line.
+
+    The ``quiet`` kwarg is forwarded to the renderer; when True, the line is
+    suppressed entirely. The renderer also honors the active root ``--quiet``
+    flag automatically inside a Click invocation.
+    """
     rendering_helpers.emit_status(
         msg,
         json_output=json_output,
         style=style,
+        quiet=quiet,
         stdout_console=console,
         stderr_output_console=stderr_console,
     )

@@ -173,14 +173,13 @@ falsy and opts back into the soft-mode fallback.
 bare `export NOTEBOOKLM_NOTEBOOK=` does not block `notebooklm use` /
 `-n/--notebook` from resolving.
 
-**The `--quiet` global flag.** `notebooklm --quiet <subcommand>` raises the
-`notebooklm` package logger floor to `ERROR` for the duration of one
-invocation, so cron and CI logs stay clean while real failures still surface.
-It is mutually exclusive with `-v/-vv` — combining the two raises a
-`UsageError` (exit `2`) since the resolved log levels conflict
-(`ERROR` vs `INFO`/`DEBUG`). For per-call (rather than per-shell) silencing
-of `INFO`/`WARN` the global flag is the preferred surface; `NOTEBOOKLM_LOG_LEVEL`
-remains the right tool for shell-wide / always-on suppression.
+**The `--quiet` global flag.** `notebooklm --quiet <subcommand>` suppresses
+status prose and raises the `notebooklm` package logger floor to `ERROR` for
+the duration of one invocation, so cron and CI logs stay clean while real
+failures still surface. Structured `--json` payloads are still emitted. It is
+mutually exclusive with `-v/-vv` — combining the two raises a `UsageError`
+(exit `2`) since the resolved log levels conflict (`ERROR` vs `INFO`/`DEBUG`).
+For shell-wide / always-on log suppression, use `NOTEBOOKLM_LOG_LEVEL`.
 
 ### NOTEBOOKLM_HOME
 
@@ -361,7 +360,7 @@ batchexecute response contains RPC IDs but not the one the call requested
 | `--storage PATH` | Path to storage_state.json | `$NOTEBOOKLM_HOME/profiles/<profile>/storage_state.json` |
 | `-p, --profile NAME` | Use a named profile | Active profile or `default` |
 | `-v, --verbose` | Enable verbose output (`-v` for INFO, `-vv` for DEBUG) | - |
-| `--quiet` | Suppress INFO/WARN logs on stderr (only ERROR survives). Mutually exclusive with `-v`. | - |
+| `--quiet` | Suppress status output and INFO/WARN logs (only errors survive). Mutually exclusive with `-v`. | - |
 | `--version` | Show version | - |
 | `--help` | Show help | - |
 

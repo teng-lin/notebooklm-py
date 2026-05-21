@@ -20,7 +20,7 @@ from ..client import NotebookLMClient
 from .auth_runtime import with_client
 from .context import clear_context, get_current_notebook, set_current_notebook
 from .options import list_options, notebook_option
-from .rendering import console, json_output_response
+from .rendering import cli_print, console, json_output_response
 from .resolve import require_notebook, resolve_notebook_id
 
 
@@ -132,12 +132,13 @@ def register_notebook_commands(cli):
                     json_output_response(data)
                     return
 
-                console.print(f"[green]Created notebook:[/green] {nb.id} - {nb.title}")
+                cli_print(f"[green]Created notebook:[/green] {nb.id} - {nb.title}", ctx=ctx)
                 if switch_context:
-                    console.print("[dim]Context set to new notebook[/dim]")
+                    cli_print("[dim]Context set to new notebook[/dim]", ctx=ctx)
                 else:
-                    console.print(
-                        f"[dim]Tip: pass --use next time, or run 'notebooklm use {nb.id}'.[/dim]"
+                    cli_print(
+                        f"[dim]Tip: pass --use next time, or run 'notebooklm use {nb.id}'.[/dim]",
+                        ctx=ctx,
                     )
 
         return _run()
@@ -164,13 +165,13 @@ def register_notebook_commands(cli):
 
                 success = await client.notebooks.delete(resolved_id)
                 if success:
-                    console.print(f"[green]Deleted notebook:[/green] {resolved_id}")
+                    cli_print(f"[green]Deleted notebook:[/green] {resolved_id}", ctx=ctx)
                     # Clear context if we deleted the current notebook
                     if get_current_notebook() == resolved_id:
                         clear_context()
-                        console.print("[dim]Cleared current notebook context[/dim]")
+                        cli_print("[dim]Cleared current notebook context[/dim]", ctx=ctx)
                 else:
-                    console.print("[yellow]Delete may have failed[/yellow]")
+                    cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)
 
         return _run()
 
@@ -189,8 +190,8 @@ def register_notebook_commands(cli):
             async with NotebookLMClient(client_auth) as client:
                 resolved_id = await resolve_notebook_id(client, notebook_id)
                 await client.notebooks.rename(resolved_id, new_title)
-                console.print(f"[green]Renamed notebook:[/green] {resolved_id}")
-                console.print(f"[bold]New title:[/bold] {new_title}")
+                cli_print(f"[green]Renamed notebook:[/green] {resolved_id}", ctx=ctx)
+                cli_print(f"[bold]New title:[/bold] {new_title}", ctx=ctx)
 
         return _run()
 

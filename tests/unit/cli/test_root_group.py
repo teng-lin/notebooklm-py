@@ -1,6 +1,6 @@
 """Tests for root-group flags on the top-level ``notebooklm`` Click group.
 
-Covers the ``--quiet`` flag (env-var precedence + global quiet mode):
+Covers the root-group pieces of ``--quiet`` (env-var precedence + global quiet mode):
 
 * ``notebooklm --quiet ...`` suppresses INFO/WARN logs from the ``notebooklm``
   package logger; only ERROR (and above) survive on stderr.
@@ -11,6 +11,8 @@ Covers the ``--quiet`` flag (env-var precedence + global quiet mode):
 * ``--quiet`` does NOT collide with the existing subcommand-scoped
   ``auth refresh --quiet`` flag — Click parses the closer scope first, so
   ``notebooklm auth refresh --quiet`` continues to hit the subcommand flag.
+
+Status-output suppression is covered in ``test_quiet_flag.py``.
 
 The new ``NOTEBOOKLM_NOTEBOOK`` env-var integration is tested in
 ``test_helpers.py::TestRequireNotebook`` (the resolver covers both the direct

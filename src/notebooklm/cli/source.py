@@ -42,6 +42,8 @@ from .options import (
     wait_polling_options,
 )
 from .rendering import (
+    cli_print,
+    cli_status,
     console,
     display_report,
     display_research_sources,
@@ -51,6 +53,7 @@ from .rendering import (
 )
 from .research_import import import_research_sources
 from .resolve import require_notebook, resolve_notebook_id, resolve_source_id, validate_id
+from .runtime import is_quiet
 from .services import source_add as source_add_service
 from .services import source_clean as source_clean_service
 
@@ -512,7 +515,7 @@ def source_add(
                 json_output_response(data)
                 return
 
-            console.print(f"[green]Added source:[/green] {src.id}")
+            cli_print(f"[green]Added source:[/green] {src.id}", ctx=ctx)
 
     return _run()
 
@@ -639,9 +642,9 @@ def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
                 return
 
             if success:
-                console.print(f"[green]Deleted source:[/green] {resolved_id}")
+                cli_print(f"[green]Deleted source:[/green] {resolved_id}", ctx=ctx)
             else:
-                console.print("[yellow]Delete may have failed[/yellow]")
+                cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)
 
     return _run()
 
@@ -692,9 +695,9 @@ def source_delete_by_title(ctx, title, notebook_id, yes, json_output, client_aut
                 return
 
             if success:
-                console.print(f"[green]Deleted source:[/green] {source.id}")
+                cli_print(f"[green]Deleted source:[/green] {source.id}", ctx=ctx)
             else:
-                console.print("[yellow]Delete may have failed[/yellow]")
+                cli_print("[yellow]Delete may have failed[/yellow]", ctx=ctx)
 
     return _run()
 
@@ -733,8 +736,8 @@ def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_au
                 )
                 return
 
-            console.print(f"[green]Renamed source:[/green] {src.id}")
-            console.print(f"[bold]New title:[/bold] {src.title}")
+            cli_print(f"[green]Renamed source:[/green] {src.id}", ctx=ctx)
+            cli_print(f"[bold]New title:[/bold] {src.title}", ctx=ctx)
 
     return _run()
 
@@ -762,7 +765,7 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
             if json_output:
                 src = await client.sources.refresh(nb_id_resolved, resolved_id)
             else:
-                with console.status("Refreshing source..."):
+                with cli_status("Refreshing source...", ctx=ctx):
                     src = await client.sources.refresh(nb_id_resolved, resolved_id)
 
             if json_output:
@@ -795,12 +798,12 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
                 return
 
             if src and src is not True:
-                console.print(f"[green]Source refreshed:[/green] {src.id}")
-                console.print(f"[bold]Title:[/bold] {src.title}")
+                cli_print(f"[green]Source refreshed:[/green] {src.id}", ctx=ctx)
+                cli_print(f"[bold]Title:[/bold] {src.title}", ctx=ctx)
             elif src is True:
-                console.print(f"[green]Source refreshed:[/green] {resolved_id}")
+                cli_print(f"[green]Source refreshed:[/green] {resolved_id}", ctx=ctx)
             else:
-                console.print("[yellow]Refresh returned no result[/yellow]")
+                cli_print("[yellow]Refresh returned no result[/yellow]", ctx=ctx)
 
     return _run()
 
@@ -857,8 +860,8 @@ def source_add_drive(ctx, file_id, title, notebook_id, mime_type, json_output, c
                 )
                 return
 
-            console.print(f"[green]Added Drive source:[/green] {src.id}")
-            console.print(f"[bold]Title:[/bold] {src.title}")
+            cli_print(f"[green]Added Drive source:[/green] {src.id}", ctx=ctx)
+            cli_print(f"[bold]Title:[/bold] {src.title}", ctx=ctx)
 
     return _run()
 
@@ -1387,6 +1390,8 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
     """Automatically remove duplicate, error, and access-blocked sources."""
     nb_id = require_notebook(notebook_id)
 
+    quiet_mode = is_quiet(ctx)
+
     async def _run():
         async with NotebookLMClient(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
@@ -1394,7 +1399,7 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
             async def _list_sources(notebook_id: str) -> list[Source]:
                 if json_output:
                     return await client.sources.list(notebook_id)
-                with console.status("Fetching sources for cleanup..."):
+                with cli_status("Fetching sources for cleanup...", ctx=ctx):
                     return await client.sources.list(notebook_id)
 
             # P1.T2 bug 3: in --json mode, never prompt — automation cannot
@@ -1409,6 +1414,18 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 else (lambda count: click.confirm(f"Delete {count} source(s)?"))
             )
 
+            # Candidate tables and progress lines are status prose; JSON and
+            # quiet modes both suppress them.
+            on_candidates = None if (json_output or quiet_mode) else _print_clean_candidates
+            on_delete_start = (
+                None
+                if (json_output or quiet_mode)
+                else lambda count: cli_print(
+                    f"[dim]Cleaning {count} source(s) (in chunks of 10)...[/dim]",
+                    ctx=ctx,
+                )
+            )
+
             result = await source_clean_service.run_source_clean(
                 notebook_id=nb_id_resolved,
                 dry_run=dry_run,
@@ -1416,12 +1433,8 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 list_sources=_list_sources,
                 delete_source=client.sources.delete,
                 confirm_delete=confirm_delete,
-                on_candidates=None if json_output else _print_clean_candidates,
-                on_delete_start=None
-                if json_output
-                else lambda count: console.print(
-                    f"[dim]Cleaning {count} source(s) (in chunks of 10)...[/dim]"
-                ),
+                on_candidates=on_candidates,
+                on_delete_start=on_delete_start,
                 classify_sources=_classify_junk_sources,
             )
 
@@ -1465,12 +1478,16 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 return
 
             if result.status == "already_clean":
-                console.print("[green]Notebook is already clean. No junk sources found.[/green]")
+                cli_print(
+                    "[green]Notebook is already clean. No junk sources found.[/green]",
+                    ctx=ctx,
+                )
                 return
 
             if result.status == "dry_run":
-                console.print(
-                    f"[yellow]Dry run: would delete {result.candidate_count} source(s).[/yellow]"
+                cli_print(
+                    f"[yellow]Dry run: would delete {result.candidate_count} source(s).[/yellow]",
+                    ctx=ctx,
                 )
                 return
 
@@ -1478,17 +1495,24 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 return
 
             if result.failures:
-                console.print(
+                cli_print(
                     f"[yellow]Cleaned {result.deleted_count} source(s). "
-                    f"{len(result.failures)} deletion(s) failed.[/yellow]"
+                    f"{len(result.failures)} deletion(s) failed.[/yellow]",
+                    ctx=ctx,
                 )
                 for sid, err in result.failures[:5]:
-                    console.print(f"  [red]{sid}:[/red] {err}")
+                    cli_print(f"  [red]{sid}:[/red] {err}", ctx=ctx)
                 if len(result.failures) > 5:
-                    console.print(f"  [dim]...and {len(result.failures) - 5} more[/dim]")
+                    cli_print(
+                        f"  [dim]...and {len(result.failures) - 5} more[/dim]",
+                        ctx=ctx,
+                    )
                 # P1.T2 bug 8: text-mode parity with JSON-mode exit code.
                 raise SystemExit(1)
 
-            console.print(f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]")
+            cli_print(
+                f"[green]Successfully cleaned {result.deleted_count} source(s).[/green]",
+                ctx=ctx,
+            )
 
     return _run()

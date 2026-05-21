@@ -7054,7 +7054,7 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Suppress INFO/WARN log records on stderr (only ERROR survives). Mutually exclusive with -v/-vv.",
+          "help": "Suppress status output and INFO/WARN log records (only errors survive). Mutually exclusive with -v/-vv.",
           "is_flag": true,
           "kind": "option",
           "multiple": false,

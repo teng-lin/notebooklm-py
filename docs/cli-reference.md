@@ -18,7 +18,7 @@ notebooklm [-p PROFILE] [--storage PATH] [--version] [-v|--quiet] <command> [OPT
 - `-p, --profile NAME` - Use a named profile (overrides `NOTEBOOKLM_PROFILE` env var)
 - `--storage PATH` - Override the default storage location
 - `-v, --verbose` - Increase verbosity (`-v` for INFO, `-vv` for DEBUG)
-- `--quiet` - Suppress INFO/WARN log records on stderr (only ERROR survives). Mutually exclusive with `-v`/`-vv`; combining the two raises `UsageError` (exit `2`).
+- `--quiet` - Suppress status output and INFO/WARN log records (only errors survive). Structured `--json` payloads are still emitted. Mutually exclusive with `-v`/`-vv`; combining the two raises `UsageError` (exit `2`).
 - `--version` - Show version and exit
 - `--help` - Show help message
 
@@ -1573,7 +1573,7 @@ When using this CLI programmatically:
 
 6. **Stdin pipelines**: Four surfaces accept the canonical Unix `-` placeholder for "read from stdin": `notebooklm ask -`, `notebooklm ask --prompt-file -`, `notebooklm note create -` (or `--content -`), and `notebooklm source add -` (forces text-source path; bypasses path-shaped detection). Same convention applies to the various `generate <kind> --prompt-file -` flags.
 
-7. **Quiet logs for CI/cron**: Pass `--quiet` (root-level) to suppress INFO/WARN log records; only ERROR survives. `--quiet` is mutually exclusive with `-v/-vv` (combining the two raises `UsageError` with exit `2`). For long-running keepalive loops, `notebooklm auth refresh --quiet` is the subcommand-scoped equivalent.
+7. **Quiet output for CI/cron**: Pass `--quiet` (root-level) to suppress status output and INFO/WARN log records; errors still surface and structured `--json` payloads are still emitted. `--quiet` is mutually exclusive with `-v/-vv` (combining the two raises `UsageError` with exit `2`). For long-running keepalive loops, `notebooklm auth refresh --quiet` is the subcommand-scoped equivalent.
 
 8. **Error handling**: Commands exit with non-zero status on failure (`1` for user/library errors, `2` for system/unexpected errors per [CLI Exit-Code Convention](cli-exit-codes.md)). With `--json`, failures surface as a typed envelope `{"error": true, "code": "<TYPED_CODE>", "message": "..."}` on stdout; without `--json`, error messages go to stderr.
 

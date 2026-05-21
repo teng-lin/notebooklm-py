@@ -146,7 +146,7 @@ from .cli.grouped import SectionedGroup
     is_flag=True,
     default=False,
     help=(
-        "Suppress INFO/WARN log records on stderr (only ERROR survives). "
+        "Suppress status output and INFO/WARN log records (only errors survive). "
         "Mutually exclusive with -v/-vv."
     ),
 )
@@ -212,6 +212,9 @@ def cli(ctx, storage, profile, verbose, quiet):
     # namespace (see ``cli.helpers._current_storage_override``).
     ctx.obj["storage_path"] = Path(storage).expanduser().resolve() if storage else None
     ctx.obj["profile"] = profile
+    # Mirror the root quiet flag for call sites that already read ctx.obj.
+    # ``cli.runtime.is_quiet(ctx)`` remains the canonical reader.
+    ctx.obj["quiet"] = bool(quiet)
 
 
 # =============================================================================
