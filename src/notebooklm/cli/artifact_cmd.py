@@ -25,6 +25,7 @@ from .rendering import (
     console,
     get_artifact_type_display,
     json_output_response,
+    render_list,
 )
 from .resolve import (
     require_notebook,
@@ -32,7 +33,7 @@ from .resolve import (
     resolve_notebook_id,
 )
 from .services.confirming_mutation import MutationPlan, run_confirmed_mutation
-from .services.listing import ListSpec, run_list
+from .services.listing import ListSpec, prepare_list
 from .services.polling import status_with_elapsed
 
 
@@ -133,13 +134,15 @@ def artifact_list(ctx, notebook_id, artifact_type, json_output, limit, no_trunca
                 envelope_extras=envelope_extras,
                 empty_message=f"[yellow]No {artifact_type} artifacts found[/yellow]",
             )
-            await run_list(
-                spec,
-                client,
-                notebook_id=nb_id_resolved,
-                limit=limit,
-                json_output=json_output,
-                no_truncate=no_truncate,
+            render_list(
+                await prepare_list(
+                    spec,
+                    client,
+                    notebook_id=nb_id_resolved,
+                    limit=limit,
+                    json_output=json_output,
+                    no_truncate=no_truncate,
+                )
             )
 
     return _run()

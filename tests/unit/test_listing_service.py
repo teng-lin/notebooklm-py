@@ -1,4 +1,16 @@
-"""Unit tests for the shared CLI list-command service."""
+"""Unit tests for the shared CLI list-command service.
+
+Split across the two layers:
+
+* ``prepare_list`` (pure-data, lives in ``cli.services.listing``) is exercised
+  for envelope ordering, item serialization, and the empty-state signal.
+* ``render_list`` (presentation, lives in ``cli.rendering``) is exercised for
+  JSON stdout output, empty-message printing, and Rich table assembly via a
+  monkeypatched console.
+
+The split mirrors the ADR-008 boundary refactor in PR-C: ``cli.services.listing``
+no longer imports anything from ``..rendering`` and never writes to stdout.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +20,7 @@ from typing import Any
 
 import pytest
 
+from notebooklm.cli import rendering
 from notebooklm.cli.services import listing
 
 
@@ -26,7 +39,7 @@ class RecordingConsole:
 
 
 @pytest.mark.asyncio
-async def test_run_list_json_merges_envelope_extras_before_items_and_count(capsys):
+async def test_prepare_list_json_merges_envelope_extras_before_items_and_count():
     async def fetch(client: object, notebook_id: str) -> list[Thing]:
         assert client is fake_client
         assert notebook_id == "nb_123"
@@ -48,7 +61,7 @@ async def test_run_list_json_merges_envelope_extras_before_items_and_count(capsy
         envelope_extras=envelope_extras,
     )
 
-    result = await listing.run_list(
+    render = await listing.prepare_list(
         spec,
         fake_client,
         notebook_id="nb_123",
@@ -56,20 +69,45 @@ async def test_run_list_json_merges_envelope_extras_before_items_and_count(capsy
         json_output=True,
     )
 
-    data = json.loads(capsys.readouterr().out)
-    assert list(data) == ["notebook_id", "notebook_title", "things", "count"]
-    assert data == {
+    # prepare_list returns pure data — no stdout writes happened.
+    assert render.json_envelope is not None
+    assert list(render.json_envelope) == ["notebook_id", "notebook_title", "things", "count"]
+    assert render.json_envelope == {
         "notebook_id": "nb_123",
         "notebook_title": "Notebook",
         "things": [{"index": 1, "id": "thing_1", "title": "Thing One"}],
         "count": 1,
     }
-    assert result.items == [Thing("thing_1", "Thing One")]
-    assert result.envelope == data
+    assert render.items == [Thing("thing_1", "Thing One")]
+
+    # And the backward-compat ListResult view round-trips the envelope.
+    legacy = render.to_list_result()
+    assert legacy.items == render.items
+    assert legacy.envelope == render.json_envelope
 
 
 @pytest.mark.asyncio
-async def test_run_list_text_renders_table_without_envelope_extras(monkeypatch):
+async def test_render_list_json_writes_envelope_to_stdout(capsys):
+    render = listing.ListRender(
+        items=[Thing("thing_1", "Thing One")],
+        title="Things in nb_123",
+        json_envelope={
+            "notebook_id": "nb_123",
+            "notebook_title": "Notebook",
+            "things": [{"index": 1, "id": "thing_1", "title": "Thing One"}],
+            "count": 1,
+        },
+    )
+
+    rendering.render_list(render)
+
+    data = json.loads(capsys.readouterr().out)
+    assert list(data) == ["notebook_id", "notebook_title", "things", "count"]
+    assert data["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_prepare_list_text_returns_table_payload_without_calling_envelope_extras():
     extras_called = False
 
     async def fetch(client: object, notebook_id: str) -> list[Thing]:
@@ -80,8 +118,6 @@ async def test_run_list_text_renders_table_without_envelope_extras(monkeypatch):
         extras_called = True
         return {"notebook_id": notebook_id}
 
-    console = RecordingConsole()
-    monkeypatch.setattr(listing, "console", console)
     spec = listing.ListSpec[Thing](
         title="Things in {notebook_id}",
         items_key="things",
@@ -92,7 +128,7 @@ async def test_run_list_text_renders_table_without_envelope_extras(monkeypatch):
         envelope_extras=envelope_extras,
     )
 
-    result = await listing.run_list(
+    render = await listing.prepare_list(
         spec,
         object(),
         notebook_id="nb_123",
@@ -102,8 +138,28 @@ async def test_run_list_text_renders_table_without_envelope_extras(monkeypatch):
     )
 
     assert not extras_called
-    assert result.envelope is None
-    assert result.items == [Thing("thing_1", "Thing in nb_123")]
+    assert render.json_envelope is None
+    assert render.empty_message is None
+    assert render.title == "Things in nb_123"
+    assert render.columns == ["ID", "Title"]
+    assert render.rows == [["thing_1", "Thing in nb_123"]]
+    assert render.no_truncate is True
+    assert render.items == [Thing("thing_1", "Thing in nb_123")]
+
+
+def test_render_list_text_renders_table_with_column_headers(monkeypatch):
+    console = RecordingConsole()
+    monkeypatch.setattr(rendering, "console", console)
+    render = listing.ListRender(
+        items=[Thing("thing_1", "Thing in nb_123")],
+        title="Things in nb_123",
+        columns=["ID", "Title"],
+        rows=[["thing_1", "Thing in nb_123"]],
+        no_truncate=True,
+    )
+
+    rendering.render_list(render)
+
     assert len(console.printed) == 1
     table = console.printed[0]
     assert table.title == "Things in nb_123"
@@ -111,12 +167,10 @@ async def test_run_list_text_renders_table_without_envelope_extras(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_list_text_uses_empty_message_instead_of_empty_table(monkeypatch):
+async def test_prepare_list_text_signals_empty_message_for_empty_items():
     async def fetch(client: object, notebook_id: str) -> list[Thing]:
         return []
 
-    console = RecordingConsole()
-    monkeypatch.setattr(listing, "console", console)
     spec = listing.ListSpec[Thing](
         title="Things in {notebook_id}",
         items_key="things",
@@ -127,7 +181,7 @@ async def test_run_list_text_uses_empty_message_instead_of_empty_table(monkeypat
         empty_message="[yellow]No things found[/yellow]",
     )
 
-    result = await listing.run_list(
+    render = await listing.prepare_list(
         spec,
         object(),
         notebook_id="nb_123",
@@ -135,5 +189,22 @@ async def test_run_list_text_uses_empty_message_instead_of_empty_table(monkeypat
         json_output=False,
     )
 
-    assert result.items == []
+    assert render.items == []
+    assert render.empty_message == "[yellow]No things found[/yellow]"
+    # Empty-state mode: no table payload built.
+    assert render.columns == []
+    assert render.rows == []
+
+
+def test_render_list_text_prints_empty_message(monkeypatch):
+    console = RecordingConsole()
+    monkeypatch.setattr(rendering, "console", console)
+    render = listing.ListRender(
+        items=[],
+        title="Things in nb_123",
+        empty_message="[yellow]No things found[/yellow]",
+    )
+
+    rendering.render_list(render)
+
     assert console.printed == ["[yellow]No things found[/yellow]"]

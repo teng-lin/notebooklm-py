@@ -189,7 +189,8 @@ def extract_cookies_from_storage(storage_state: dict[str, Any]) -> dict[str, str
         Dict mapping cookie names to values.
 
     Raises:
-        ValueError: If required cookies (SID) are missing from storage state.
+        ValueError: If required cookies (SID + ``__Secure-1PSIDTS``) are missing
+            from storage state.
 
     Example:
         >>> storage = {"cookies": [
@@ -370,7 +371,8 @@ def extract_cookies_with_domains(
         Example: ``{("SID", ".google.com", "/"): "abc123"}``.
 
     Raises:
-        ValueError: If required cookies (SID) are missing from storage state.
+        ValueError: If required cookies (SID + ``__Secure-1PSIDTS``) are missing
+            from storage state.
     """
     cookie_map: DomainCookieMap = {}
 

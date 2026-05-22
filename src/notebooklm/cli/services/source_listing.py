@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ...types import Source, source_status_to_str
-from ..rendering import get_source_type_display
-from .listing import ListResult, ListSpec, run_list
+from ..rendering import get_source_type_display, render_list
+from .listing import ListResult, ListSpec, prepare_list
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
@@ -70,7 +70,7 @@ def _build_spec() -> ListSpec[Source]:
 async def execute_source_list(client: NotebookLMClient, plan: SourceListPlan) -> ListResult[Source]:
     """Fetch + render the source list per the prepared plan."""
     spec = _build_spec()
-    return await run_list(
+    render = await prepare_list(
         spec,
         client,
         notebook_id=plan.notebook_id,
@@ -78,6 +78,8 @@ async def execute_source_list(client: NotebookLMClient, plan: SourceListPlan) ->
         json_output=plan.json_output,
         no_truncate=plan.no_truncate,
     )
+    render_list(render)
+    return render.to_list_result()
 
 
 __all__ = ["SourceListPlan", "execute_source_list"]

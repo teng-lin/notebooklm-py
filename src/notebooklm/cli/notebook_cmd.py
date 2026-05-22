@@ -17,10 +17,10 @@ from ..client import NotebookLMClient
 from .auth_runtime import with_client
 from .context import clear_context, get_current_notebook, set_current_notebook
 from .options import list_options, notebook_option
-from .rendering import cli_print, console, json_output_response
+from .rendering import cli_print, console, json_output_response, render_list
 from .resolve import require_notebook, resolve_notebook_id
 from .services.confirming_mutation import MutationPlan, run_confirmed_mutation
-from .services.listing import ListSpec, run_list
+from .services.listing import ListSpec, prepare_list
 
 
 def register_notebook_commands(cli):
@@ -59,13 +59,15 @@ def register_notebook_commands(cli):
                         nb.created_at.strftime("%Y-%m-%d") if nb.created_at else "-",
                     ],
                 )
-                await run_list(
-                    spec,
-                    client,
-                    notebook_id="",
-                    limit=limit,
-                    json_output=json_output,
-                    no_truncate=no_truncate,
+                render_list(
+                    await prepare_list(
+                        spec,
+                        client,
+                        notebook_id="",
+                        limit=limit,
+                        json_output=json_output,
+                        no_truncate=no_truncate,
+                    )
                 )
 
         return _run()

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import json
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 import click
 from rich.console import Console
@@ -19,6 +19,7 @@ from ..types import ArtifactType
 
 if TYPE_CHECKING:
     from ..types import Artifact
+    from .services.listing import ListRender
 
 
 def _resolve_quiet(ctx: click.Context | None) -> bool:
@@ -311,3 +312,58 @@ def get_source_type_display(source_type: str) -> str:
         "unknown": "❓ Unknown",
     }
     return type_map.get(type_str, f"❓ {type_str}")
+
+
+def _list_column_options(header: str, *, no_truncate: bool) -> dict[str, Any]:
+    """Return the default Rich column options for common list-table headers.
+
+    Layering note: this lives in ``cli.rendering`` (presentation layer) so
+    ``cli.services.listing`` stays free of Rich/Click imports per ADR-008.
+    """
+    title_overflow: Literal["fold", "ellipsis"] = "fold" if no_truncate else "ellipsis"
+    if header == "ID":
+        return {"style": "cyan"}
+    if header == "Title":
+        return {"style": "green", "overflow": title_overflow}
+    if header == "Created":
+        return {"style": "dim"}
+    if header == "Status":
+        return {"style": "yellow"}
+    if header == "Preview":
+        return {"style": "dim", "max_width": 50}
+    return {}
+
+
+def render_list(render: ListRender) -> None:
+    """Render a :class:`~notebooklm.cli.services.listing.ListRender` payload.
+
+    Handles all three modes the service can emit:
+
+    - JSON mode (``render.json_envelope`` set) → write the envelope to stdout
+      via :func:`json_output_response`.
+    - Empty-state text mode (``render.empty_message`` set) → print the
+      command-supplied placeholder via the Rich console.
+    - Standard table mode → build a Rich :class:`~rich.table.Table` from the
+      render's columns / rows / column-option overrides and print it.
+
+    This is the only place that touches ``rich.table.Table`` and the global
+    ``console`` for list commands; ``cli.services.listing`` returns pure data.
+    """
+    if render.json_envelope is not None:
+        json_output_response(render.json_envelope)
+        return
+
+    if render.empty_message is not None:
+        console.print(render.empty_message)
+        return
+
+    table = Table(title=render.title)
+    for header in render.columns:
+        options = _list_column_options(header, no_truncate=render.no_truncate)
+        override = render.column_options.get(header)
+        if override:
+            options.update(override)
+        table.add_column(header, **options)
+    for row in render.rows:
+        table.add_row(*row)
+    console.print(table)

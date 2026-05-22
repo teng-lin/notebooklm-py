@@ -1355,7 +1355,7 @@ def register_session_commands(cli):
         Validates that authentication is properly configured by checking:
         - Storage file exists and is readable
         - JSON structure is valid
-        - Required cookies (SID) are present
+        - Required cookies (SID + ``__Secure-1PSIDTS``) are present
         - Cookie domains are correct
 
         Use --test to also verify tokens can be fetched from NotebookLM

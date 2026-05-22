@@ -20,10 +20,10 @@ from .auth_runtime import with_client
 from .error_handler import _output_error
 from .input import read_stdin_text
 from .options import json_option, notebook_option
-from .rendering import cli_print, console, json_output_response
+from .rendering import cli_print, console, json_output_response, render_list
 from .resolve import require_notebook, resolve_note_id, resolve_notebook_id
 from .services.confirming_mutation import MutationPlan, run_confirmed_mutation
-from .services.listing import ListSpec, run_list
+from .services.listing import ListSpec, prepare_list
 
 
 @click.group()
@@ -96,12 +96,14 @@ def note_list(ctx, notebook_id, json_output, client_auth):
                 include_index=False,
                 empty_message="[yellow]No notes found[/yellow]",
             )
-            await run_list(
-                spec,
-                client,
-                notebook_id=nb_id_resolved,
-                limit=None,
-                json_output=json_output,
+            render_list(
+                await prepare_list(
+                    spec,
+                    client,
+                    notebook_id=nb_id_resolved,
+                    limit=None,
+                    json_output=json_output,
+                )
             )
 
     return _run()
