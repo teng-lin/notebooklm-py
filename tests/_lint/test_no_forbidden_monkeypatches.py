@@ -174,6 +174,16 @@ _ALLOWLIST: frozenset[str] = frozenset(
         "tests/unit/test_authed_transport.py",
         "tests/unit/test_download_url.py",
         "tests/unit/test_firefox_containers.py",
+        # P3.T1 generate-extraction service tests stub the CLI resolver
+        # functions (``notebooklm.cli.resolve.resolve_notebook_id`` and
+        # ``resolve_source_ids``) via ``monkeypatch.setattr`` string targets.
+        # Those resolvers are module-level CLI seams above the
+        # ``NotebookLMClient`` core that ``make_fake_core(...)`` covers, so
+        # the same string-target pattern that ``test_public_shims.py`` /
+        # ``test_rpc_call_public_surface.py`` use for their non-core seams
+        # is required here. Revisit when ADR-007's seam-substitution pattern
+        # is extended to cover the CLI resolver surface.
+        "tests/unit/test_generate_service.py",
         "tests/unit/test_idempotency_registry.py",
         "tests/unit/test_init_order.py",
         "tests/unit/test_migration_lock.py",
