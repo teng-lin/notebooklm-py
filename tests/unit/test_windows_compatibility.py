@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from notebooklm.cli.session_cmd import _windows_playwright_event_loop
+from notebooklm.cli.services.playwright_login import windows_playwright_event_loop as _windows_playwright_event_loop
 
 
 @pytest.mark.requires_playwright
