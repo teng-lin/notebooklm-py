@@ -105,9 +105,7 @@ class TestLoginCharacterization:
         """``login --browser chrome`` reaches the Playwright entry point."""
         with (
             patch("notebooklm.cli.session_cmd._run_playwright_login") as mock_run,
-            patch(
-                "notebooklm.cli.session_cmd._sync_server_language_to_config"
-            ) as mock_sync,
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config") as mock_sync,
             patch(
                 "notebooklm.cli.session_cmd._prepare_login_paths",
                 return_value=(
@@ -129,9 +127,7 @@ class TestLoginCharacterization:
     def test_login_no_browser_via_browser_cookies(self, char_runner):
         """``login --browser-cookies`` skips Playwright (no-browser path)."""
         with (
-            patch(
-                "notebooklm.cli.session_cmd._login_browser_cookies_single"
-            ) as mock_single,
+            patch("notebooklm.cli.session_cmd._login_browser_cookies_single") as mock_single,
             patch("notebooklm.cli.session_cmd._warn_missing_optional_domains"),
         ):
             result = char_runner.invoke(cli, ["login", "--browser-cookies", "chrome"])
@@ -415,9 +411,7 @@ class TestAuthCheckCharacterization:
         """P1.T3 regression: OSError on read does not raise; reports error gracefully."""
         # File exists but read raises OSError (permission denied simulation).
         char_storage_file.write_text("{}")
-        with patch(
-            "pathlib.Path.read_text", side_effect=OSError("Permission denied")
-        ):
+        with patch("pathlib.Path.read_text", side_effect=OSError("Permission denied")):
             result = char_runner.invoke(cli, ["auth", "check"])
         assert result.exit_code == 0
         assert "Storage unreadable" in result.output or "Permission denied" in result.output
@@ -425,9 +419,7 @@ class TestAuthCheckCharacterization:
     def test_auth_check_oserror_json_p1t3(self, char_runner, char_storage_file):
         """P1.T3 regression: ``auth check --json`` exits 1 on OSError."""
         char_storage_file.write_text("{}")
-        with patch(
-            "pathlib.Path.read_text", side_effect=OSError("Permission denied")
-        ):
+        with patch("pathlib.Path.read_text", side_effect=OSError("Permission denied")):
             result = char_runner.invoke(cli, ["auth", "check", "--json"])
         assert result.exit_code == 1
         data = json.loads(result.output)
@@ -443,21 +435,15 @@ class TestAuthCheckCharacterization:
 class TestAuthRefreshCharacterization:
     """Golden snapshots for ``notebooklm auth refresh``."""
 
-    def test_auth_refresh_rejects_when_auth_json_env_set(
-        self, char_runner, monkeypatch
-    ):
+    def test_auth_refresh_rejects_when_auth_json_env_set(self, char_runner, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies":[]}')
         result = char_runner.invoke(cli, ["auth", "refresh"])
         assert result.exit_code != 0
         assert "NOTEBOOKLM_AUTH_JSON" in result.output
 
-    def test_auth_refresh_default_path_success(
-        self, char_runner, char_storage_file
-    ):
+    def test_auth_refresh_default_path_success(self, char_runner, char_storage_file):
         """Default path (no --browser-cookies) calls ``fetch_tokens_with_domains``."""
-        char_storage_file.write_text(
-            json.dumps({"cookies": [{"name": "SID", "value": "x"}]})
-        )
+        char_storage_file.write_text(json.dumps({"cookies": [{"name": "SID", "value": "x"}]}))
         with patch(
             "notebooklm.cli.session_cmd.fetch_tokens_with_domains",
             new_callable=AsyncMock,
@@ -469,9 +455,7 @@ class TestAuthRefreshCharacterization:
         assert "ok" in result.output
         assert "refreshed" in result.output
 
-    def test_auth_refresh_quiet_suppresses_success_output(
-        self, char_runner, char_storage_file
-    ):
+    def test_auth_refresh_quiet_suppresses_success_output(self, char_runner, char_storage_file):
         with patch(
             "notebooklm.cli.session_cmd.fetch_tokens_with_domains",
             new_callable=AsyncMock,
@@ -482,22 +466,14 @@ class TestAuthRefreshCharacterization:
         assert result.output.strip() == ""
 
     def test_auth_refresh_browser_cookies_path(self, char_runner, char_storage_file):
-        with patch(
-            "notebooklm.cli.session_cmd._refresh_from_browser_cookies"
-        ) as mock_refresh:
-            result = char_runner.invoke(
-                cli, ["auth", "refresh", "--browser-cookies", "chrome"]
-            )
+        with patch("notebooklm.cli.session_cmd._refresh_from_browser_cookies") as mock_refresh:
+            result = char_runner.invoke(cli, ["auth", "refresh", "--browser-cookies", "chrome"])
         assert result.exit_code == 0
         mock_refresh.assert_called_once()
 
-    def test_auth_refresh_include_domains_without_browser_cookies_errors(
-        self, char_runner
-    ):
+    def test_auth_refresh_include_domains_without_browser_cookies_errors(self, char_runner):
         """``--include-domains`` without ``--browser-cookies`` is a usage error."""
-        result = char_runner.invoke(
-            cli, ["auth", "refresh", "--include-domains", "youtube"]
-        )
+        result = char_runner.invoke(cli, ["auth", "refresh", "--include-domains", "youtube"])
         assert result.exit_code != 0
         assert "--include-domains" in result.output
 
@@ -514,9 +490,7 @@ class TestAuthInspectCharacterization:
         """``auth inspect`` (text) lists accounts in a table."""
         fake_account_1 = MagicMock(email="a@example.com", is_default=True, browser_profile=None)
         fake_account_2 = MagicMock(email="b@example.com", is_default=False, browser_profile=None)
-        with patch(
-            "notebooklm.cli.session_cmd._enumerate_browser_accounts"
-        ) as mock_enum:
+        with patch("notebooklm.cli.session_cmd._enumerate_browser_accounts") as mock_enum:
             mock_enum.return_value = ("chrome", [fake_account_1, fake_account_2])
             result = char_runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])
         assert result.exit_code == 0
@@ -528,13 +502,9 @@ class TestAuthInspectCharacterization:
         fake_account = MagicMock(
             email="primary@example.com", is_default=True, browser_profile="Default"
         )
-        with patch(
-            "notebooklm.cli.session_cmd._enumerate_browser_accounts"
-        ) as mock_enum:
+        with patch("notebooklm.cli.session_cmd._enumerate_browser_accounts") as mock_enum:
             mock_enum.return_value = ("chrome", [fake_account])
-            result = char_runner.invoke(
-                cli, ["auth", "inspect", "--browser", "chrome", "--json"]
-            )
+            result = char_runner.invoke(cli, ["auth", "inspect", "--browser", "chrome", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data == {

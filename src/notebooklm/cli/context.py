@@ -8,7 +8,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-import click
 from filelock import FileLock, Timeout
 
 from ..io import atomic_update_json, atomic_write_json
@@ -25,14 +24,16 @@ def _describe_json_shape(value: Any) -> str:
 
 
 def _current_storage_override() -> Path | None:
-    """Resolve the active ``--storage`` override from the current Click context."""
-    ctx = click.get_current_context(silent=True)
-    if ctx is None or not ctx.obj:
-        return None
-    storage = ctx.obj.get("storage_path")
-    if storage is None:
-        return None
-    return Path(storage).expanduser().resolve()
+    """Resolve the active ``--storage`` override from the current Click context.
+
+    Backward-compatibility shim — delegates to
+    :func:`notebooklm.cli.services.auth_source.current_storage_override`.
+    New callers should use the :class:`AuthSource` resolver directly so
+    they pick up the full precedence chain (env-var fast path etc.).
+    """
+    from .services.auth_source import current_storage_override
+
+    return current_storage_override()
 
 
 def _resolve_context_path(context_path_fn: ContextPathFn | None = None) -> Path:

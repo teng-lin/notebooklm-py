@@ -193,9 +193,13 @@ def cli(ctx, storage, profile, verbose, quiet):
     set_active_profile(profile)
 
     # Only set up profiles dir when not using an explicit auth source.
-    # --storage and NOTEBOOKLM_AUTH_JSON bypass the profile system entirely
-    # and must not require a writable NOTEBOOKLM_HOME.
-    if not storage and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+    # ``--storage`` and the env-var auth fast path bypass the profile system
+    # entirely and must not require a writable NOTEBOOKLM_HOME. The env-var
+    # check goes through :mod:`cli.services.auth_source` so the precedence
+    # logic stays in one place.
+    from .cli.services.auth_source import has_env_auth_json
+
+    if not storage and not has_env_auth_json():
         try:
             from .migration import ensure_profiles_dir
 
@@ -209,7 +213,7 @@ def cli(ctx, storage, profile, verbose, quiet):
     ctx.ensure_object(dict)
     # Canonicalize once at the boundary: ``--storage ~/foo.json`` and
     # ``--storage /Users/x/foo.json`` must map to the same sibling-context
-    # namespace (see ``cli.helpers._current_storage_override``).
+    # namespace (see :class:`notebooklm.cli.services.auth_source.AuthSource`).
     ctx.obj["storage_path"] = Path(storage).expanduser().resolve() if storage else None
     ctx.obj["profile"] = profile
     # Mirror the root quiet flag for call sites that already read ctx.obj.

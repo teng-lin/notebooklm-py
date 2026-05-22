@@ -90,7 +90,7 @@ CONTEXT_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "resolve",
     "runtime",
 }
-AUTH_RUNTIME_ALLOWED_MODULES = {"error_handler", "helpers"}
+AUTH_RUNTIME_ALLOWED_MODULES = {"error_handler", "helpers", "services"}
 RESOLVE_FORBIDDEN_MODULES = CLI_COMMAND_MODULES | {
     "auth_runtime",
     "completion",
@@ -539,7 +539,9 @@ def test_auth_runtime_imports_only_runtime_facade_collaborators() -> None:
 
     assert imports <= AUTH_RUNTIME_ALLOWED_MODULES, (
         "cli.auth_runtime must not import command, rendering, context, resolve, "
-        "input, or completion modules directly. "
+        "input, or completion modules directly. The ``services`` subpackage is "
+        "allowed because P3.T3 consolidated the auth-source precedence chain into "
+        ":class:`notebooklm.cli.services.auth_source.AuthSource`. "
         f"Offenders: {sorted(imports - AUTH_RUNTIME_ALLOWED_MODULES)}"
     )
 

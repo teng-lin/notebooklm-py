@@ -8,7 +8,6 @@ as ``notebooklm.cli.helpers.get_auth_tokens`` and
 """
 
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
@@ -19,6 +18,7 @@ from typing import Any, NoReturn, TypeVar, cast
 import click
 
 from ..auth import AuthTokens
+from .services.auth_source import AUTH_JSON_ENV_NAME, AuthSource, has_env_auth_json
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -42,15 +42,23 @@ def _auth_context(ctx) -> tuple[Path | str | None, str | None]:
 def _resolve_auth_storage_path(
     storage_path: Path | str | None, profile: str | None
 ) -> Path | str | None:
-    """Resolve storage unless auth is supplied directly by environment."""
-    if storage_path is not None:
-        return storage_path
-    if os.environ.get("NOTEBOOKLM_AUTH_JSON"):
-        return None
+    """Resolve storage unless auth is supplied directly by environment.
 
-    from ..paths import get_storage_path
-
-    return get_storage_path(profile=profile)
+    Thin wrapper over :meth:`AuthSource.resolve` kept for ``ctx.obj``
+    caching compatibility (callers see the same return shape they did
+    before P3.T3). ``--storage`` overrides everything; otherwise the
+    env-var fast path returns ``None``; finally the profile-resolved
+    storage file is returned.
+    """
+    storage_override: Path | None
+    if storage_path is None:
+        storage_override = None
+    elif isinstance(storage_path, Path):
+        storage_override = storage_path
+    else:
+        storage_override = Path(storage_path)
+    auth = AuthSource.from_components(storage_override=storage_override, profile=profile)
+    return auth.resolve()
 
 
 def _resolved_auth_storage_path(ctx) -> Path | str | None:
@@ -106,7 +114,7 @@ def get_auth_tokens(ctx) -> AuthTokens:
     resolved_storage_path = _resolved_auth_storage_path(ctx)
     typed_storage_path = cast(Path | None, resolved_storage_path)
 
-    if os.environ.get("NOTEBOOKLM_AUTH_JSON") and storage_path is None:
+    if has_env_auth_json() and storage_path is None:
         from ..auth import build_httpx_cookies_from_storage
 
         jar = build_httpx_cookies_from_storage(None)
@@ -130,21 +138,24 @@ def get_auth_tokens(ctx) -> AuthTokens:
 
 def handle_auth_error(json_output: bool = False) -> NoReturn:
     """Handle authentication errors with helpful context."""
-    from ..paths import get_path_info, get_storage_path
+    import os
+
+    from ..paths import get_path_info
     from .error_handler import exit_with_code
 
     helpers = _helpers_facade()
     ctx = click.get_current_context(silent=True)
-    profile = ctx.obj.get("profile") if ctx and ctx.obj else None
-    storage_override = helpers._current_storage_override()
-    path_info = get_path_info(profile=profile, storage_path=storage_override)
-    storage_path = (
-        storage_override if storage_override is not None else get_storage_path(profile=profile)
-    )
-    storage_path = Path(storage_path).expanduser().resolve()
-    has_env_var = bool(os.environ.get("NOTEBOOKLM_AUTH_JSON"))
+    auth = AuthSource.from_click_context(ctx)
+    storage_override = auth.storage_override
+    path_info = get_path_info(profile=auth.profile, storage_path=storage_override)
+    storage_path = auth.storage_path_for_diagnostics()
+    has_env_var = auth.has_env_auth
     has_home_env = bool(os.environ.get("NOTEBOOKLM_HOME"))
     storage_source = path_info["home_source"]
+    # ``AUTH_JSON_ENV_NAME`` exposes the env-var name as a constant so this
+    # module does not redeclare the literal — see P3.T3 AuthSource
+    # consolidation gate.
+    env_var_name = AUTH_JSON_ENV_NAME
 
     if json_output:
         helpers.json_error_response(
@@ -154,9 +165,9 @@ def handle_auth_error(json_output: bool = False) -> NoReturn:
                 "checked_paths": {
                     "storage_file": str(storage_path),
                     "storage_source": storage_source,
-                    "env_var": "NOTEBOOKLM_AUTH_JSON" if has_env_var else None,
+                    "env_var": env_var_name if has_env_var else None,
                 },
-                "help": "Run 'notebooklm login' or set NOTEBOOKLM_AUTH_JSON",
+                "help": f"Run 'notebooklm login' or set {env_var_name}",
             },
         )
         exit_with_code(1)
@@ -167,10 +178,10 @@ def handle_auth_error(json_output: bool = False) -> NoReturn:
         if has_home_env:
             helpers.console.print("    [dim](via $NOTEBOOKLM_HOME)[/dim]")
         env_status = "[yellow]set but invalid[/yellow]" if has_env_var else "[dim]not set[/dim]"
-        helpers.console.print(f"  • NOTEBOOKLM_AUTH_JSON: {env_status}")
+        helpers.console.print(f"  • {env_var_name}: {env_status}")
         helpers.console.print("\n[bold]Options to authenticate:[/bold]")
         helpers.console.print("  1. Run: [green]notebooklm login[/green]")
-        helpers.console.print("  2. Set [cyan]NOTEBOOKLM_AUTH_JSON[/cyan] env var (for CI/CD)")
+        helpers.console.print(f"  2. Set [cyan]{env_var_name}[/cyan] env var (for CI/CD)")
         helpers.console.print("  3. Use [cyan]--storage /path/to/file.json[/cyan] flag")
         exit_with_code(1)
 
