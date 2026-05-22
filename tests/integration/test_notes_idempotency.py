@@ -180,8 +180,8 @@ async def test_create_note_plain_no_inner_retry_on_5xx(auth_tokens) -> None:
     )
 
 
-async def test_create_note_saved_from_chat_no_inner_retry_on_5xx(auth_tokens) -> None:
-    """A 502 on ``notes.create_from_chat()`` fires exactly ONE CREATE_NOTE POST.
+async def test_save_answer_as_note_no_inner_retry_on_5xx(auth_tokens) -> None:
+    """A 502 on ``chat.save_answer_as_note()`` fires exactly ONE CREATE_NOTE POST.
 
     The saved-from-chat variant is a single round-trip — no follow-up
     UPDATE_NOTE. Classifying it NON_IDEMPOTENT_NO_RETRY forces the inner
@@ -219,7 +219,7 @@ async def test_create_note_saved_from_chat_no_inner_retry_on_5xx(auth_tokens) ->
     )
     try:
         with pytest.raises(ServerError):
-            await client.notes.create_from_chat(notebook_id, ask_result, title="Chat note")
+            await client.chat.save_answer_as_note(notebook_id, ask_result, title="Chat note")
     finally:
         await client._session._kernel.get_http_client().aclose()
 

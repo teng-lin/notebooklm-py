@@ -1,6 +1,6 @@
 """Integration-via-httpx-mock tests for saved-from-chat notes (issue #660).
 
-These exercise the full ``NotebookLMClient.notes.create_from_chat()``
+These exercise the full ``NotebookLMClient.chat.save_answer_as_note()``
 path: the encoder builds the 7-element params, ``Session.rpc_call``
 wraps them in the batchexecute envelope and POSTs to the server, and we
 assert (a) the wire body matches our captured request byte-for-byte and
@@ -89,12 +89,12 @@ def _build_ask_result_from_request_params(params: list) -> AskResult:
 
 
 @pytest.mark.asyncio
-async def test_create_from_chat_wire_round_trip(
+async def test_save_answer_as_note_wire_round_trip(
     auth_tokens,
     httpx_mock: HTTPXMock,
     build_rpc_response,
 ):
-    """End-to-end: client.notes.create_from_chat() POSTs the captured
+    """End-to-end: client.chat.save_answer_as_note() POSTs the captured
     wire format and parses the captured response into a Note."""
     request_params = _load_request_params()
     response_note = _load_response_note()
@@ -109,7 +109,7 @@ async def test_create_from_chat_wire_round_trip(
     ask_result = _build_ask_result_from_request_params(request_params)
 
     async with NotebookLMClient(auth_tokens) as client:
-        note = await client.notes.create_from_chat(notebook_id, ask_result, title=requested_title)
+        note = await client.chat.save_answer_as_note(notebook_id, ask_result, title=requested_title)
 
     # Assert the request body carried the exact captured params.
     request = httpx_mock.get_request()
