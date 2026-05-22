@@ -218,6 +218,48 @@ def source_option(f: FC) -> FC:
     )(f)
 
 
+def multi_source_option(f: FC) -> FC:
+    """Add the ``--source/-s`` option used by ``generate <kind>`` commands.
+
+    Multi-valued, optional ``--source`` flag that collects source IDs into a
+    ``source_ids`` tuple (matches the ``multiple=True`` shape used by every
+    ``generate`` subcommand pre-extraction). Distinct from
+    :func:`source_option`, which is single-valued and required (used by
+    ``download source-content`` and friends).
+
+    Tab completion follows the same notebook-resolution rules as
+    :func:`source_option`.
+    """
+    # Decl order matches the pre-extraction inline ``@click.option("--source",
+    # "-s", "source_ids", ...)`` form in cli/generate_cmd.py. Click preserves
+    # decl order in ``param.opts`` and the CLI-contract baseline pins it; the
+    # long-flag-first order must stay even though the single-source
+    # :func:`source_option` above uses short-flag-first.
+    return click.option(
+        "--source",
+        "-s",
+        "source_ids",
+        multiple=True,
+        help="Limit to specific source IDs",
+        shell_complete=_complete_sources,
+    )(f)
+
+
+def language_option(f: FC) -> FC:
+    """Add the shared ``--language`` flag used by generation commands.
+
+    Resolution chain (handled by the command body, not the decorator):
+    ``--language`` flag > ``NOTEBOOKLM_HL`` env var > config file > ``"en"``
+    default. The decorator only declares the flag; the body must call
+    ``resolve_language(language)`` to walk the chain.
+    """
+    return click.option(
+        "--language",
+        default=None,
+        help="Output language (default: --language > NOTEBOOKLM_HL env > config > 'en')",
+    )(f)
+
+
 def artifact_option(f: FC) -> FC:
     """Add --artifact/-a option for artifact ID.
 
