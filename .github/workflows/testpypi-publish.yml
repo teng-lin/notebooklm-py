@@ -85,6 +85,7 @@ jobs:
     name: Publish to TestPyPI
     needs: build-and-test
     runs-on: ubuntu-latest
+    environment: testpypi
     # Minimum-scope publish job: only the trusted PyPA action runs here. No
     # `actions/checkout`, no Python install, no third-party dependencies in
     # the runner environment — so the OIDC token request that `id-token:
@@ -104,6 +105,10 @@ jobs:
       uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # @ v1.14.0
       with:
         repository-url: https://test.pypi.org/legacy/
+        # PEP 740 attestations: pypa/gh-action-pypi-publish generates an
+        # in-toto attestation for the uploaded artifacts and publishes it
+        # via PyPI's Trusted Publishing flow (OIDC, no API token).
+        attestations: true
 
     - name: Summary
       run: |
