@@ -76,7 +76,7 @@ class ResearchWaitResult:
     timeout: int
     task_id: str | None = None
     query: str = ""
-    sources: list[dict] = field(default_factory=list)
+    sources: list[dict[str, Any]] = field(default_factory=list)
     report: str = ""
     import_result: ResearchImportResult | None = None
 
@@ -92,7 +92,7 @@ async def _null_wait_context() -> AsyncIterator[None]:
     yield
 
 
-WaitContextFactory = Callable[[], "contextlib.AbstractAsyncContextManager[None]"]
+WaitContextFactory = Callable[[], contextlib.AbstractAsyncContextManager[None]]
 ResolveNotebookIdFn = Callable[..., Awaitable[str]]
 ImportResearchSourcesFn = Callable[..., Awaitable[ResearchImportResult]]
 
@@ -167,9 +167,6 @@ async def execute_research_wait(
             interval=float(plan.interval),
         )
 
-    status = poll_result.value
-    status_val = status.get("status", "unknown")
-
     def _terminal(outcome: ResearchWaitOutcome, **extra: Any) -> ResearchWaitResult:
         """Build a terminal result with the common notebook/timeout/task_id fields."""
         return ResearchWaitResult(
@@ -180,8 +177,14 @@ async def execute_research_wait(
             **extra,
         )
 
+    # Check timeout before inspecting status — keeps control flow readable
+    # (claude[bot] #5: avoid signalling that status_val matters on the
+    # timeout branch).
     if poll_result.timed_out:
         return _terminal("timeout")
+
+    status = poll_result.value
+    status_val = status.get("status", "unknown")
 
     if status_val == "no_research":
         return _terminal("no_research")

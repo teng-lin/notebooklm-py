@@ -10,6 +10,8 @@ loop, P1.T2 task-id pinning, and import orchestration live in the service.
 This module owns input validation, spinner I/O, rendering, and exit codes.
 """
 
+from typing import Any
+
 import click
 
 from ..client import NotebookLMClient
@@ -213,7 +215,7 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
 
     # outcome == "completed"
     if plan.json_output:
-        payload: dict = {
+        payload: dict[str, Any] = {
             "status": "completed",
             "query": result.query,
             "sources_found": result.sources_count,

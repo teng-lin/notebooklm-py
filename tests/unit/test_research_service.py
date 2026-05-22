@@ -115,14 +115,11 @@ async def test_timeout_returns_outcome_without_completion(monkeypatch):
     monkeypatch.setattr(polling.time, "monotonic", lambda: clock["t"])
     monkeypatch.setattr(polling.asyncio, "sleep", fake_sleep)
 
-    plan = ResearchWaitPlan(notebook_id="nb_123", timeout=1, interval=1)
-    client = _FakeClient(poll_side_effect=lambda *a, **kw: {"status": "in_progress", "query": "AI"})
-
-    # AsyncMock with a sync side_effect callable — wrap it for AsyncMock.
     async def _poll(nb_id, *, task_id=None):  # noqa: ARG001
         return {"status": "in_progress", "query": "AI"}
 
-    client.research.poll = AsyncMock(side_effect=_poll)
+    plan = ResearchWaitPlan(notebook_id="nb_123", timeout=1, interval=1)
+    client = _FakeClient(poll_side_effect=_poll)
 
     result = await execute_research_wait(plan, client=client, resolve_id=_fake_resolve)
 
