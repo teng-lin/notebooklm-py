@@ -211,7 +211,7 @@ def run_auth_check(plan: AuthCheckPlan) -> AuthCheckResult:
             checks["token_fetch"] = True
             details["csrf_length"] = len(csrf)
             details["session_id_length"] = len(session_id)
-        except Exception as exc:  # noqa: BLE001 — same broad catch as the legacy code
+        except Exception as exc:
             checks["token_fetch"] = False
             details["error"] = f"Token fetch failed: {exc}"
 

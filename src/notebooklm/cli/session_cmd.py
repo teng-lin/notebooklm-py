@@ -32,13 +32,13 @@ import logging
 import shutil  # noqa: F401 — preserved patch surface
 import sys  # noqa: F401 — preserved patch surface
 import time  # noqa: F401 — preserved patch surface
-from pathlib import Path  # noqa: F401 — preserved patch surface
+from pathlib import Path
 from typing import Any
 
 import click
 from rich.table import Table
 
-from ..client import NotebookLMClient  # noqa: F401 — preserved patch surface
+from ..client import NotebookLMClient
 from ..exceptions import AuthError, NotebookNotFoundError
 from ..paths import (  # noqa: F401 — get_browser_profile_dir / get_path_info / get_context_path / get_storage_path are patch surfaces
     get_browser_profile_dir,
