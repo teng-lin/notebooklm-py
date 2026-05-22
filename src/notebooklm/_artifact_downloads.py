@@ -10,6 +10,7 @@ import os
 import queue
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -577,24 +578,38 @@ class ArtifactDownloadService:
 
                         # Producer/consumer split: a single dedicated
                         # writer thread drains a bounded queue and writes
-                        # to ``temp_file``. The async chunk loop puts
-                        # bytes on the queue; ``await asyncio.to_thread(
-                        # q.put, ...)`` blocks the producer when the
-                        # queue is full, giving us back-pressure without
-                        # spawning a fresh thread call per 64 KiB chunk
-                        # (which for multi-GB downloads is thousands of
-                        # thread-pool allocations and contention).
+                        # to ``temp_file``. Compared to the legacy
+                        # per-chunk ``asyncio.to_thread(f.write, chunk)``,
+                        # this avoids thousands of thread-pool allocations
+                        # for multi-GB downloads.
+                        #
+                        # The writer runs on a dedicated ``threading.Thread``
+                        # rather than ``asyncio.to_thread`` so it does NOT
+                        # tie up a slot in asyncio's default executor pool.
+                        # With many concurrent downloads, default-executor
+                        # saturation by long-lived writers (each blocking
+                        # on ``chunk_q.get()``) could deadlock producers
+                        # trying to ``put`` via ``to_thread`` — addresses
+                        # the gemini-code-assist HIGH-severity finding on
+                        # the original PR.
+                        #
+                        # Producer puts use ``put_nowait`` first and only
+                        # fall back to ``to_thread(put, ...)`` when the
+                        # queue is full, minimizing default-executor
+                        # pressure during normal flow.
                         #
                         # End-of-stream is signalled with a ``None``
-                        # sentinel. The writer surfaces filesystem errors
-                        # by re-raising from its ``to_thread`` task; the
-                        # producer detects that path by checking
-                        # ``writer_task.done()`` before pushing each
-                        # chunk so a dead writer doesn't deadlock the
-                        # producer in ``q.put``.
+                        # sentinel. Writer-side failures are surfaced via
+                        # ``writer_error`` and an early ``writer_failed``
+                        # ``threading.Event`` so the producer can short-
+                        # circuit BEFORE the writer's drain completes,
+                        # avoiding wasted network reads — addresses the
+                        # gemini-code-assist MEDIUM-severity finding.
                         chunk_q: queue.Queue[bytes | None] = queue.Queue(
                             maxsize=_DOWNLOAD_WRITER_QUEUE_SIZE
                         )
+                        writer_failed = threading.Event()
+                        writer_error: list[BaseException] = []
 
                         def _writer_loop() -> None:
                             # If the writer raises (e.g. OSError on
@@ -604,9 +619,16 @@ class ArtifactDownloadService:
                             # hangs forever because we are the only
                             # consumer. The ``finally`` drains pending
                             # items via ``get_nowait`` so blocked puts
-                            # complete and the producer can observe
-                            # ``writer_task.done()`` on its next
-                            # iteration.
+                            # complete and the producer can observe the
+                            # failure signal on its next iteration.
+                            #
+                            # ``writer_failed`` is set in the ``except``
+                            # BEFORE the drain so the producer's
+                            # short-circuit check fires as early as
+                            # possible — the drain itself can run for a
+                            # few milliseconds clearing the queue, during
+                            # which the producer would otherwise read and
+                            # discard network bytes pointlessly.
                             try:
                                 with open(temp_file, "wb") as fh:
                                     while True:
@@ -614,6 +636,17 @@ class ArtifactDownloadService:
                                         if item is None:
                                             return
                                         fh.write(item)
+                            except BaseException as exc:
+                                # Capture-and-don't-reraise: the producer
+                                # surfaces the exception via
+                                # ``writer_error[0]`` after joining.
+                                # Re-raising here would only land in the
+                                # thread's bootstrap as
+                                # ``PytestUnhandledThreadExceptionWarning``
+                                # / sys.unraisablehook noise without
+                                # carrying any new information.
+                                writer_error.append(exc)
+                                writer_failed.set()
                             finally:
                                 while True:
                                     try:
@@ -621,24 +654,45 @@ class ArtifactDownloadService:
                                     except queue.Empty:
                                         break
 
-                        writer_task = asyncio.create_task(asyncio.to_thread(_writer_loop))
+                        writer_thread = threading.Thread(
+                            target=_writer_loop,
+                            name=f"artifact-dl-writer-{temp_file.name}",
+                            daemon=True,
+                        )
+                        writer_thread.start()
                         total_bytes = 0
                         try:
                             async for chunk in response.aiter_bytes(chunk_size=65536):
-                                if writer_task.done():
-                                    # Writer died (likely OSError). Stop
-                                    # producing and surface the failure
-                                    # via the ``await writer_task`` below.
+                                if writer_failed.is_set():
+                                    # Writer raised mid-stream. Stop
+                                    # reading — further network bytes
+                                    # would just be discarded by the
+                                    # drain. The original error is
+                                    # re-raised via ``writer_error[0]``
+                                    # below.
                                     break
-                                await asyncio.to_thread(chunk_q.put, chunk)
+                                # ``put_nowait`` avoids a ``to_thread``
+                                # round-trip when the queue has space
+                                # (the common case under balanced flow);
+                                # fall back to ``to_thread`` only when
+                                # the queue is full so the loop suspends
+                                # cleanly under back-pressure.
+                                try:
+                                    chunk_q.put_nowait(chunk)
+                                except queue.Full:
+                                    await asyncio.to_thread(chunk_q.put, chunk)
                                 total_bytes += len(chunk)
-                            # Sentinel signals clean EOF. If we broke out
-                            # of the loop because the writer died, the
-                            # ``put`` here would block forever — guard
-                            # against that.
-                            if not writer_task.done():
-                                await asyncio.to_thread(chunk_q.put, None)
-                            await writer_task
+                            if not writer_failed.is_set():
+                                try:
+                                    chunk_q.put_nowait(None)
+                                except queue.Full:
+                                    await asyncio.to_thread(chunk_q.put, None)
+                            # Join surfaces any exception the writer
+                            # captured. ``to_thread(.join)`` is needed
+                            # because ``Thread.join`` is sync-blocking.
+                            await asyncio.to_thread(writer_thread.join)
+                            if writer_error:
+                                raise writer_error[0]
                         except BaseException:
                             # On producer-side failure (network error,
                             # cancellation, HTML payload), make sure the
@@ -664,14 +718,8 @@ class ArtifactDownloadService:
                                     # get — the next put attempt will
                                     # succeed.
                                     pass
-                            # Wait for the writer to consume the sentinel
-                            # and release the temp-file handle before the
-                            # outer ``except`` unlinks it. ``shield``
-                            # plus ``suppress`` mirrors the original
-                            # cancellation-aware wait so a re-cancel
-                            # during cleanup doesn't drop the await.
                             with contextlib.suppress(BaseException):
-                                await asyncio.shield(writer_task)
+                                await asyncio.to_thread(writer_thread.join)
                             raise
 
                         if total_bytes == 0:

@@ -459,25 +459,25 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
     churn and contention on the default executor.
 
     Post-fix the producer pushes chunks onto a bounded queue drained by
-    a single dedicated writer thread. We assert the property directly:
-    only ONE ``asyncio.to_thread`` call dispatches a writer body, even
-    when the stream yields many chunks.
+    a single dedicated writer thread. The writer runs on a dedicated
+    ``threading.Thread`` (NOT ``asyncio.to_thread``) so it does not tie
+    up a slot in asyncio's default executor pool — addresses the
+    gemini-code-assist HIGH-severity finding about default-executor
+    saturation under many concurrent downloads.
 
     Methodology
     -----------
-    The fix structures the chunk loop as one ``asyncio.to_thread(
-    _writer_loop)`` (long-lived, drains a ``queue.Queue``) plus per-chunk
-    ``asyncio.to_thread(q.put, chunk)`` calls (the queue ``put`` is the
-    back-pressure await). We patch ``asyncio.to_thread`` with a recorder
-    that classifies each call:
+    We patch ``threading.Thread`` with a recorder that classifies each
+    instantiation:
 
-    * Calls whose first positional arg is a callable named ``_writer_loop``
-      (the closure produced inside ``_download_url``) are "writer" calls.
-    * All other calls are passthroughs (cookie load, ``queue.put``, etc.).
+    * Threads whose ``target`` is a callable named ``_writer_loop``
+      (the closure produced inside ``_download_url``) are "writer"
+      threads.
+    * All other threads (rare on this path) are passthroughs.
 
-    We require *exactly one* writer call regardless of chunk count. A
-    regression that goes back to per-chunk ``to_thread(f.write, ...)``
-    bumps the count to N.
+    We require *exactly one* writer thread per download regardless of
+    chunk count. A regression that goes back to per-chunk
+    ``to_thread(f.write, ...)`` bumps the count to N.
     """
     api, _ = mock_artifacts_api
     output_path = tmp_path / "many_chunks.bin"
@@ -505,23 +505,24 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    original_to_thread = asyncio.to_thread
-    writer_calls = 0
+    import threading as real_threading
 
-    async def recording_to_thread(func, /, *args, **kwargs):  # type: ignore[no-untyped-def]
-        nonlocal writer_calls
-        # The writer closure is defined inside ``_download_url`` so we
-        # match on the qualified name suffix. Anything else (cookie
-        # load, ``queue.Queue.put``, etc.) passes through untouched.
-        name = getattr(func, "__qualname__", "") or getattr(func, "__name__", "")
-        if name.endswith("_writer_loop"):
-            writer_calls += 1
-        return await original_to_thread(func, *args, **kwargs)
+    original_thread_cls = real_threading.Thread
+    writer_threads = 0
+
+    class _RecordingThread(original_thread_cls):  # type: ignore[misc, valid-type]
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal writer_threads
+            target = kwargs.get("target") or (args[1] if len(args) > 1 else None)
+            name = getattr(target, "__qualname__", "") or getattr(target, "__name__", "")
+            if name.endswith("_writer_loop"):
+                writer_threads += 1
+            super().__init__(*args, **kwargs)
 
     with (
         patch.object(real_httpx, "AsyncClient", return_value=mock_client),
         patch("notebooklm._artifacts.load_httpx_cookies", return_value=MagicMock()),
-        patch("notebooklm._artifact_downloads.asyncio.to_thread", new=recording_to_thread),
+        patch("notebooklm._artifact_downloads.threading.Thread", new=_RecordingThread),
     ):
         result = await api._download_url(
             "https://storage.googleapis.com/many_chunks.bin", str(output_path)
@@ -532,11 +533,10 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
     assert output_path.stat().st_size == sum(len(c) for c in chunks), (
         "The temp-file → final-file atomic replace must preserve all bytes."
     )
-    assert writer_calls == 1, (
-        f"_download_url dispatched {writer_calls} writer thread jobs for a "
+    assert writer_threads == 1, (
+        f"_download_url created {writer_threads} writer threads for a "
         f"{len(chunks)}-chunk download. The fix requires exactly ONE long-lived "
-        "writer thread fed via a bounded queue, not a fresh asyncio.to_thread "
-        "per chunk."
+        "writer thread fed via a bounded queue, not a fresh thread per chunk."
     )
 
 

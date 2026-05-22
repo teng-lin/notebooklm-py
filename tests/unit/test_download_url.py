@@ -257,46 +257,49 @@ class TestDownloadUrlErrorWrapping:
     async def test_cancellation_during_write_removes_temp_file(self, mock_artifacts_api, tmp_path):
         """Cancelled streaming writes must not leave the mkstemp temp file behind.
 
-        After the single-writer-thread refactor (PR T1.M.4 — issue #?),
-        the producer's per-chunk yield point is ``asyncio.to_thread(
-        chunk_q.put, chunk)`` (back-pressure into the writer queue), not
-        a direct ``to_thread(f.write, ...)``. The test gates cancellation
-        on the first queue-put rather than the first file-write so the
-        producer is reliably parked on a cancellable await when we
-        cancel the task. The invariant under test — no leftover
-        ``mkstemp`` temp file — is unchanged.
+        After the review-fix refactor (PR #981 r2: gemini findings), the
+        producer uses ``put_nowait`` whenever the bounded queue has
+        space, falling back to ``to_thread(put, ...)`` only under back-
+        pressure. For small payloads that fit in the queue, no
+        ``to_thread(put)`` call fires — so the test cannot gate on it.
+        Instead we gate on the producer's ``aiter_bytes`` await, which
+        is the canonical async-cancellable yield point inside the chunk
+        loop. The invariant under test — no leftover ``mkstemp`` temp
+        file after cancellation — is unchanged.
         """
         api = mock_artifacts_api
         output_path = tmp_path / "file.mp4"
+
+        chunk_yielded = asyncio.Event()
+        allow_finish = asyncio.Event()
+
+        async def mock_aiter_bytes(chunk_size: int = 8192):
+            # Yield one real chunk so the producer enters the chunk
+            # loop body and pushes a chunk onto the queue, then park
+            # at a cancellable ``await`` so the test can deliver
+            # ``task.cancel()`` while the producer is mid-stream.
+            yield b"partial media payload"
+            chunk_yielded.set()
+            await allow_finish.wait()
+
         response = _build_mock_response(content=b"partial media payload")
+        response.aiter_bytes = mock_aiter_bytes
         client_patch, cookies_patch = _patch_httpx_client(response)
 
-        original_to_thread = asyncio.to_thread
-        put_started = asyncio.Event()
-        release_put = asyncio.Event()
-
-        async def controlled_to_thread(func, /, *args, **kwargs):
-            # The chunk producer awaits ``to_thread(chunk_q.put, chunk)``
-            # for each yielded chunk. We gate on that to park the
-            # producer at a known cancellable await point. Other
-            # to_thread calls (cookie load, the long-lived
-            # ``_writer_loop``, the final sentinel ``put``) pass through.
-            if getattr(func, "__name__", "") == "put" and args:
-                put_started.set()
-                await release_put.wait()
-            return await original_to_thread(func, *args, **kwargs)
-
-        with (
-            client_patch,
-            cookies_patch,
-            patch("notebooklm._artifact_downloads.asyncio.to_thread", controlled_to_thread),
-        ):
+        with client_patch, cookies_patch:
             task = asyncio.create_task(
                 api._download_url("https://storage.googleapis.com/file.mp4", str(output_path))
             )
-            await asyncio.wait_for(put_started.wait(), timeout=1)
+            # Wait until the producer has yielded once and is parked
+            # on ``allow_finish.wait()`` inside the mocked
+            # ``aiter_bytes``.
+            await asyncio.wait_for(chunk_yielded.wait(), timeout=2)
             task.cancel()
-            release_put.set()
+            # Release the mock so the cancel-propagation path unwinds
+            # cleanly. Without this the awaited Event would briefly
+            # delay the cancellation visitor; asyncio still cancels,
+            # but the release makes the unwind deterministic.
+            allow_finish.set()
 
             with pytest.raises(asyncio.CancelledError):
                 await task
