@@ -37,7 +37,9 @@ from pathlib import Path
 
 import pytest
 
-_BASELINE_PATH = Path(__file__).resolve().parents[3] / "tests" / "_fixtures" / "session_reexport_baseline.txt"
+_BASELINE_PATH = (
+    Path(__file__).resolve().parents[3] / "tests" / "_fixtures" / "session_reexport_baseline.txt"
+)
 
 
 def _active_session_module_name() -> str:
@@ -62,7 +64,11 @@ def _load_baseline_names() -> list[str]:
             f"Golden baseline fixture missing: {_BASELINE_PATH}. "
             "Re-capture it per the phase-3.md P3.T4 spec before running this test."
         )
-    return [line.strip() for line in _BASELINE_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        line.strip()
+        for line in _BASELINE_PATH.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 # Expected-type map for non-callable names. Functions / classes are checked
@@ -119,7 +125,9 @@ def test_name_is_importable_and_correctly_typed(name: str, session_module) -> No
 
 
 @pytest.mark.parametrize("name", _load_baseline_names())
-def test_name_is_monkeypatchable(name: str, session_module, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_name_is_monkeypatchable(
+    name: str, session_module, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = f"{session_module.__name__}.{name}"
     sentinel = object()
     monkeypatch.setattr(target, sentinel)

@@ -220,21 +220,25 @@ class TestLoginWindowsPermissions:
         """On Windows, storage_state.json chmod(0o600) is also skipped.
 
         The ``storage_state.json`` save path runs through
-        ``services.login._write_extracted_cookies`` (D1 PR-3 cutover moved the
-        body out of session.py). We verify the Windows guard exists by
-        grepping the source of that module — fragile compared to a behaviour
-        assertion, but the writer is wrapped in ``atomic_write_json`` which
-        intentionally hides the platform-dependent ``chmod`` from observers.
+        ``services.login.cookie_writes._write_extracted_cookies`` and
+        ``services.login.refresh._login_with_browser_cookies`` (D1 PR-3
+        cutover moved the body out of session.py; P3.T4 split the single
+        ``services/login.py`` module into a package). We verify the
+        Windows guard exists by grepping the source of those submodules —
+        fragile compared to a behaviour assertion, but the writers are
+        wrapped in ``atomic_write_json`` which intentionally hides the
+        platform-dependent ``chmod`` from observers.
         """
         import inspect
 
-        import notebooklm.cli.services.login as login_service
+        from notebooklm.cli.services.login import cookie_writes, refresh
 
-        source = inspect.getsource(login_service)
-        # The pattern: ``if sys.platform != "win32": storage_path.parent.chmod(0o700)``
-        # (see ``services/login.py`` around line 697). Either quote style is
-        # acceptable so the assertion survives style changes.
-        assert 'sys.platform != "win32"' in source or "sys.platform != 'win32'" in source, (
-            "Missing Windows guard for storage_state.json chmod in "
-            "notebooklm.cli.services.login (moved from session.py in D1 PR-3)"
-        )
+        # The pattern: ``if sys.platform != "win32": storage_path.parent.chmod(0o700)``.
+        # Either quote style is acceptable so the assertion survives style changes.
+        for module in (cookie_writes, refresh):
+            source = inspect.getsource(module)
+            assert 'sys.platform != "win32"' in source or "sys.platform != 'win32'" in source, (
+                f"Missing Windows guard for storage_state.json chmod in "
+                f"{module.__name__} (moved from session.py in D1 PR-3, "
+                "split into login/ package in P3.T4)"
+            )

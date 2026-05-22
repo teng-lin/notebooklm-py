@@ -42,9 +42,7 @@ def _is_dunder_all(node: ast.stmt) -> bool:
     value = node.value
     if not isinstance(value, (ast.List, ast.Tuple)):
         return False
-    return all(
-        isinstance(elt, ast.Constant) and isinstance(elt.value, str) for elt in value.elts
-    )
+    return all(isinstance(elt, ast.Constant) and isinstance(elt.value, str) for elt in value.elts)
 
 
 def _is_alias_reexport(node: ast.stmt) -> bool:

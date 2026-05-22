@@ -47,8 +47,8 @@ ALLOWED_CLICK_EXCEPTION_SITES: list[tuple[str, int, str]] = [
     ("src/notebooklm/cli/profile_cmd.py", 254, "profile rename destination validation"),
     ("src/notebooklm/cli/resolve.py", 58, "entity ID argument validation"),
     (
-        "src/notebooklm/cli/services/login.py",
-        54,
+        "src/notebooklm/cli/services/login/profile_targets.py",
+        26,
         "shared profile-name argument validation",
     ),
 ]

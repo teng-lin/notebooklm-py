@@ -231,7 +231,17 @@ src/notebooklm/
     └── services/                # CLI-specific service layer (ADR-008 Click-to-service extraction)
         ├── __init__.py
         ├── artifact_generation.py
-        ├── login.py
+        ├── login/                # split into a package in P3.T4 (leaf-ward DAG)
+        │   ├── __init__.py       # re-export-only patch surface
+        │   ├── browser_accounts.py
+        │   ├── chromium_accounts.py
+        │   ├── cookie_domains.py
+        │   ├── cookie_jar.py
+        │   ├── cookie_writes.py
+        │   ├── firefox_accounts.py
+        │   ├── profile_targets.py
+        │   ├── refresh.py
+        │   └── rookiepy_errors.py
         ├── source_add.py
         └── source_clean.py
 ```

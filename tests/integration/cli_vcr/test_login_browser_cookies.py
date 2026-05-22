@@ -137,9 +137,19 @@ class TestLoginBrowserCookies:
 
         # Replace the real browser-cookie reader with our sanitized fixture so
         # the test never opens the user's actual browser cookie database.
+        # ``_read_browser_cookies`` is defined in ``services/login/browser_accounts.py``
+        # and re-exported by the package's ``__init__.py``; the caller path
+        # (``refresh._login_with_browser_cookies``) imports it via the
+        # ``browser_accounts`` binding, so we patch the call-site module too.
+        _fake_reader = lambda *a, **kw: SANITIZED_ROOKIEPY_COOKIES  # noqa: E731
+        monkeypatch.setattr("notebooklm.cli.services.login._read_browser_cookies", _fake_reader)
         monkeypatch.setattr(
-            "notebooklm.cli.services.login._read_browser_cookies",
-            lambda *a, **kw: SANITIZED_ROOKIEPY_COOKIES,
+            "notebooklm.cli.services.login.browser_accounts._read_browser_cookies",
+            _fake_reader,
+        )
+        monkeypatch.setattr(
+            "notebooklm.cli.services.login.refresh._read_browser_cookies",
+            _fake_reader,
         )
 
         # Skip the post-verification settings RPC (line session.py:984) so the
@@ -179,7 +189,15 @@ class TestLoginBrowserCookies:
             called_with.append(name)
             return SANITIZED_ROOKIEPY_COOKIES
 
+        # ``_read_browser_cookies`` is defined in ``browser_accounts`` and called
+        # from ``refresh._login_with_browser_cookies``; both binding sites need the
+        # patch so the dispatcher's local lookup hits our capture function.
         monkeypatch.setattr("notebooklm.cli.services.login._read_browser_cookies", _capture)
+        monkeypatch.setattr(
+            "notebooklm.cli.services.login.browser_accounts._read_browser_cookies",
+            _capture,
+        )
+        monkeypatch.setattr("notebooklm.cli.services.login.refresh._read_browser_cookies", _capture)
         monkeypatch.setattr(
             "notebooklm.cli.session_cmd._sync_server_language_to_config",
             lambda *a, **kw: None,

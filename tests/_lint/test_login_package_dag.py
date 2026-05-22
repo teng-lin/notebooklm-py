@@ -29,6 +29,13 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "firefox_accounts",
         "cookie_jar",
         "rookiepy_errors",
+        # The phase-3 DAG diagram routes cookie_domains via chromium/firefox
+        # subordinates, but ``_read_browser_cookies``'s "auto" + named-alias
+        # branch (the legacy ``rookiepy.load`` path) constructs its own domain
+        # list — that call site lives in browser_accounts, not in the
+        # browser-family subordinates. Adding the edge here keeps the dispatch
+        # logic colocated; the DAG stays acyclic (cookie_domains is a leaf).
+        "cookie_domains",
     },
     "profile_targets": set(),
     "cookie_writes": {"browser_accounts", "cookie_domains"},
