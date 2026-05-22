@@ -724,6 +724,7 @@ IDEMPOTENCY_REGISTRY.register(
 # won't drown in WARN spam. The choice of 30s mirrors the cadence of
 # similar advisory-log throttles elsewhere in the codebase.
 _AT_LEAST_ONCE_LOG_INTERVAL: float = 30.0
+# Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
 _at_least_once_last_logged: dict[tuple[RPCMethod, str | None], float] = {}
 
 

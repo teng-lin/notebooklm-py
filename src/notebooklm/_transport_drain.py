@@ -143,7 +143,16 @@ class TransportDrainTracker:
         is what lets an in-flight source upload finish its sub-RPCs after
         ``drain()`` starts. See
         ``tests/unit/test_observability.py::test_drain_allows_nested_work_inside_accepted_operation``.
+
+        Audit C1: catch cross-loop admission *before* touching the lazy
+        ``_drain_condition``. The condition is loop-bound on first
+        ``get_drain_condition`` — a cross-loop call would either silently
+        bind it to the wrong loop or hang on ``async with condition``
+        against a primitive belonging to the originally-bound loop.
+        Mirrors the existing guard in :meth:`drain` so both admission
+        and shutdown paths surface the same diagnostic.
         """
+        assert_bound_loop(self._bound_loop)
         condition = self.get_drain_condition()
         task = asyncio.current_task()
         depth = self.current_operation_depth(task)

@@ -66,6 +66,11 @@ def mock_core():
 
     core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
+    # Audit C1: ``UploadRuntime`` now includes ``LoopGuard`` so
+    # :meth:`SourceUploadPipeline.add_file` short-circuits cross-loop
+    # misuse. MagicMock blocks ``assert``-prefixed attribute access as a
+    # foot-gun guard, so the no-op stub must be installed explicitly.
+    core.assert_bound_loop = MagicMock()
     return core
 
 

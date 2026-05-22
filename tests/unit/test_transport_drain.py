@@ -296,3 +296,40 @@ def test_token_is_frozen_dataclass() -> None:
     token = _TransportOperationToken(task=None)
     with pytest.raises(FrozenInstanceError):
         token.task = None  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Cross-loop affinity guard on the admission entry-point (audit C1)
+# ---------------------------------------------------------------------------
+
+
+def test_begin_transport_post_guards_against_cross_loop_call() -> None:
+    """``begin_transport_post`` must raise on cross-loop misuse.
+
+    Regression guard for audit finding C1: ``drain()`` already calls
+    :func:`assert_bound_loop` before touching the lazy ``asyncio.Condition``,
+    but the admission entry-point ``begin_transport_post`` previously did
+    not — so a cross-loop POST admission could either silently bind the
+    Condition to the wrong loop (if the admission won the lazy-init race)
+    or hang on ``async with condition`` against a loop-A-bound primitive
+    when called from loop B. Bind the tracker to a foreign loop, then
+    drive ``begin_transport_post`` from a fresh ``asyncio.run`` — the
+    guard must surface the cross-loop misuse with the same diagnostic
+    the transport guard uses.
+    """
+    tracker = TransportDrainTracker()
+    other_loop = asyncio.new_event_loop()
+    try:
+        tracker.set_bound_loop(other_loop)
+
+        async def inner() -> None:
+            await tracker.begin_transport_post("test")
+
+        with pytest.raises(RuntimeError, match="different event loop"):
+            asyncio.run(inner())
+        # Confirm the cross-loop guard fired *before* the lazy
+        # ``_drain_condition`` was allocated — the whole point of the
+        # guard is to prevent a foreign loop from binding the condition.
+        assert tracker._drain_condition is None
+    finally:
+        other_loop.close()

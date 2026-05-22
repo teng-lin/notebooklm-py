@@ -25,6 +25,7 @@ from ._session_config import (
 from ._session_contracts import (
     AuthMetadata,
     Kernel,
+    LoopGuard,
     OperationScopeProvider,
     RpcCaller,
 )
@@ -70,13 +71,19 @@ class RpcCallback(Protocol):
     ) -> Any: ...
 
 
-class UploadRuntime(RpcCaller, OperationScopeProvider, Protocol):
+class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     """Runtime capabilities required by source upload.
 
-    Combines :class:`RpcCaller` (``rpc_call`` method) and
+    Combines :class:`RpcCaller` (``rpc_call`` method),
     :class:`OperationScopeProvider` (``operation_scope`` async-context
-    manager) — the only ``Session`` surfaces the pipeline needs at runtime.
-    A concrete :class:`Session` structurally satisfies this Protocol.
+    manager), and :class:`LoopGuard` (``assert_bound_loop`` method) — the
+    only ``Session`` surfaces the pipeline needs at runtime. A concrete
+    :class:`Session` structurally satisfies this Protocol.
+
+    Audit C1: ``LoopGuard`` is included so :meth:`SourceUploadPipeline.add_file`
+    can short-circuit cross-loop misuse *before* entering
+    ``operation_scope`` or lazily allocating the per-loop upload semaphore.
+    Mirrors the ``ChatRuntime`` / ``ArtifactsRuntime`` pattern.
     """
 
 
@@ -144,6 +151,7 @@ ListSources = Callable[[str], Awaitable[list[Source]]]
 QueueWaitRecorder = Callable[[float], None]
 
 
+# Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
 _BACKGROUND_CANCEL_TASKS: set[asyncio.Task[None]] = set()
 
 
@@ -282,6 +290,12 @@ class SourceUploadPipeline:
         logger: Any,
     ) -> Source:
         """Add a file source to a notebook using resumable upload."""
+        # Audit C1: catch cross-loop add_file *before* touching
+        # ``operation_scope`` or lazily allocating the upload semaphore.
+        # Both are loop-bound on first use, so a cross-loop call would
+        # otherwise attach a primitive to the wrong loop before the
+        # documented ``RuntimeError`` guard fires (ADR-004).
+        self._runtime.assert_bound_loop()
         logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
         if mime_type is not None:
             warnings.warn(
