@@ -157,7 +157,7 @@ These modules did not exist before Tier 12 began:
 |---|---|
 | `notebooklm._session_contracts` | `AuthMetadata`, `Kernel`, and the four shared capability Protocols (`RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`) added in the capability refactor (ADR-013). The originally-shipped broad `Session` Protocol and the standalone `DrainHookRegistration` Protocol were deleted in the final phase; feature-local runtimes (`ChatRuntime`, `ArtifactsRuntime`, `UploadRuntime`) now live in their owning feature modules, and the canonical `DrainHookRegistration` is local to `_artifacts.py`. |
 | `notebooklm._kernel` | Concrete `Kernel` transport core (owns the `httpx.AsyncClient`, exposes `post` / `cookies` / `aclose`). Located at root (`src/notebooklm/_kernel.py`), not nested. |
-| `notebooklm._middleware` | Middleware chain primitives (`AuthedHttpClient` Protocol, `Middleware` Protocol, `RequestContext`, chain composition). |
+| `notebooklm._middleware` | Middleware chain primitives (`Middleware` Protocol, `NextCall` callable type, `RpcRequest` / `RpcResponse` envelope dataclasses, `build_chain` composer). |
 | `notebooklm._middleware_tracing` | Tier 12 PR 12.3 — request tracing middleware. |
 | `notebooklm._middleware_metrics` | Tier 12 PR 12.4 — metrics collection middleware. |
 | `notebooklm._middleware_drain` | Tier 12 PR 12.5 — drain bookkeeping middleware. |
@@ -272,7 +272,7 @@ that slice was declared as a Protocol in the feature's own module:
   AsyncWorkRuntime + DrainHookRegistration`. Artifact polling owns
   the only close-time cleanup hook in the codebase today.
 - `UploadRuntime` in `_source_upload.py` — `RpcCaller +
-  OperationScopeProvider`. The upload pipeline also receives
+  OperationScopeProvider + LoopGuard`. The upload pipeline also receives
   `kernel` and `auth` as constructor args, since uploads need
   upload-specific auth routing and live cookies — but those wires
   are explicit, not implicit through a god-object.
@@ -335,7 +335,7 @@ NotebooksAPI(rpc, *, sources_api=sources)
 ChatAPI(runtime, *, notebooks=notebooks)
 ArtifactsAPI(runtime, *, notebooks=notebooks, mind_maps=mind_maps,
              note_service=note_service)
-NotesAPI(rpc, *, notes=note_service, mind_maps=mind_maps,
+NotesAPI(*, notes=note_service, mind_maps=mind_maps,
          save_chat_answer=...)
 ```
 

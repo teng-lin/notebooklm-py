@@ -80,7 +80,7 @@ not exported from `_session_contracts.py`):
 |----------|--------|----------------|
 | `ChatRuntime` | [`_chat.py`](../src/notebooklm/_chat.py) | Chat-feature capability union — composes `RpcCaller` + `LoopGuard` and adds chat-specific `transport_post()` + `next_reqid()` methods. (The `ConversationCache` lives on `ChatAPI`, not the Protocol.) |
 | `ArtifactsRuntime` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Artifact-feature capability union — composes `RpcCaller` + `AsyncWorkRuntime` + `DrainHookRegistration`. No own members; used by `ArtifactsAPI` for RPC dispatch, loop affinity, operation scopes, and close-time drain-hook registration. The `PollRegistry` lives on `ArtifactsAPI`, not the Protocol. |
-| `UploadRuntime` | [`_source_upload.py`](../src/notebooklm/_source_upload.py) | Upload-pipeline capability union — composes `RpcCaller` + `OperationScopeProvider`. The upload semaphore is internal to `SourceUploadPipeline`, not the Protocol. |
+| `UploadRuntime` | [`_source_upload.py`](../src/notebooklm/_source_upload.py) | Upload-pipeline capability union — composes `RpcCaller` + `OperationScopeProvider` + `LoopGuard`. The upload semaphore is internal to `SourceUploadPipeline`, not the Protocol. |
 | `DrainHookRegistration` | [`_artifacts.py`](../src/notebooklm/_artifacts.py) | Exposes `register_drain_hook(name, hook)` for close-time cleanup. Sole `DrainHookRegistration` after the broad-`Session` Protocol was deleted from `_session_contracts.py` (see the `_session_contracts.py` module docstring). |
 
 Production satisfies the shared Protocols via `Session`; tests substitute

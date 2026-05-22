@@ -9,11 +9,10 @@ in `docs/refactor-history.md` (revision 5, dated 2026-05-20). It supersedes
 [ADR-010](0010-session-kernel-split.md) (Session/Kernel split), which
 was re-statused to `Superseded by ADR-013 (#866)` when this ADR landed.
 
-The 11-step migration described in `docs/refactor-history.md` §Migration Plan
-landed in full across Phases 1–7 of the capability refactor arc; the
-broad `Session` protocol was deleted in Phase 7 (refactor-history.md step 10),
-so this ADR is now a plain `Accepted` record with no outstanding
-sunset clause.
+The 11-step migration originally drafted alongside this ADR landed in
+full across Phases 1–7 of the capability refactor arc; the broad
+`Session` protocol was deleted in Phase 7, so this ADR is now a plain
+`Accepted` record with no outstanding sunset clause.
 
 ## Context
 
@@ -119,7 +118,8 @@ runtimes. Concretely:
    - `ArtifactsRuntime` and `DrainHookRegistration` in `_artifacts.py`
      (composes `RpcCaller + AsyncWorkRuntime + DrainHookRegistration`).
    - `UploadRuntime` in `_source_upload.py` (composes `RpcCaller +
-     OperationScopeProvider` plus `kernel` + `auth` constructor args).
+     OperationScopeProvider + LoopGuard` plus `kernel` + `auth`
+     constructor args).
 
 4. **Each feature constructor names its dependency by capability**, not
    by the broad `Session`:
@@ -205,13 +205,11 @@ runtimes. Concretely:
   saved-chat ownership move) and they would not be coherent if split
   across multiple ADRs.
 
-The 11-step incremental migration that realizes this decision is
-detailed in `docs/refactor-history.md` §Migration Plan. It is intentionally
-**not duplicated here**: this ADR records the architectural intent, not
-the step sequence. Step ordering may evolve as the migration progresses
-(e.g. when test fixture changes reveal a needed prior step), and the
-authoritative ordering lives in `docs/refactor-history.md` until the cutover
-lands.
+The incremental migration that realized this decision shipped across
+Phases 1–7 of the capability refactor arc and is now complete; this ADR
+records the architectural intent rather than the step sequence. See
+`docs/refactor-history.md` for the as-shipped module map and the
+narrative of how the cutover landed.
 
 ### Composed Runtime Consequences
 
