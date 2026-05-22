@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-test:
     name: Build wheel and run release smoke
@@ -57,9 +61,11 @@ jobs:
       # the publish job receives.
       uses: actions/upload-artifact@v7
       with:
-        name: python-distribution
+        name: notebooklm-py-dist
         path: dist/
         if-no-files-found: error
+        # One-day retention is intentional: publish consumes this artifact
+        # immediately. See issue #829 for the recovery trade-off.
         retention-days: 1
 
     - name: Install built wheel + canonical contributor extras in a clean venv
@@ -102,7 +108,7 @@ jobs:
     - name: Download distribution artifacts
       uses: actions/download-artifact@v7
       with:
-        name: python-distribution
+        name: notebooklm-py-dist
         path: dist/
 
     - name: Publish to PyPI
