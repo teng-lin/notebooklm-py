@@ -292,14 +292,14 @@ All generate commands support:
 
 ¹ `--append` only customizes the built-in templates. With `--format custom`, pass the prompt as the positional `DESCRIPTION` argument (`notebooklm generate report "PROMPT" --format custom`); `--append` is silently ignored in that mode (the CLI prints a warning).
 
-² **Portrait / vertical slide decks via prompt.** Slide-deck has no `--orientation` flag (unlike infographic), but the underlying model honors orientation cues written into the `instructions` positional argument. Including phrases like `"9:16 portrait"`, `"vertical layout"`, `"竖屏"`, or `"纵向排版"` causes NotebookLM to render each slide as a 9:16 portrait image. Empirically:
+² **Portrait / vertical slide decks via prompt.** Slide-deck has no `--orientation` flag (unlike infographic). Treat portrait decks as skill-level prompt guidance, not a typed CLI/API contract: NotebookLM currently honors orientation cues written into the `instructions` positional argument. Including phrases like `"9:16 portrait"`, `"vertical layout"`, `"竖屏"`, or `"纵向排版"` can make NotebookLM render each slide as a 9:16 portrait image. Empirically:
 
-- The `.pptx` canvas itself usually stays 16:9, but each slide's embedded image is rendered as 9:16 portrait — useful for vertical/mobile video material extracted via `python-pptx`.
-- Orientation is decided once at generation time. `generate revise-slide` edits content within an existing slide but does not change its orientation; if a slide falls back to landscape (occasional inconsistency), regenerate the whole deck rather than revising the single page.
+- The `.pptx` canvas itself may stay 16:9, but each slide's embedded image can be rendered as 9:16 portrait — useful for vertical/mobile video material extracted via `python-pptx`.
+- Orientation is steered once at generation time. `generate revise-slide` edits content within an existing slide but does not change its orientation; if a slide falls back to landscape (occasional inconsistency), regenerate the whole deck rather than revising the single page.
 - Combine with an explicit page count in the prompt (e.g. `"必须精准生成 8 页，且使用竖屏（9:16 纵向排版）"`) for the most predictable output.
 
 ```bash
-# Generates a deck where every slide is rendered as a 9:16 portrait image
+# Skill prompt hint: ask NotebookLM to render each slide as a 9:16 portrait image
 notebooklm generate slide-deck "Create an 8-page deck in 9:16 portrait orientation for mobile viewing" --length default
 ```
 
