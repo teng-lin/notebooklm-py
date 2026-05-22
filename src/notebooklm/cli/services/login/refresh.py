@@ -146,6 +146,9 @@ def _login_all_accounts_from_browser(
     profiles_by_email = _profiles_by_account_email(existing_profiles)
     unavailable: set[str] = set(existing_profiles)
     claimed: set[str] = set()
+    # Server language is persisted as one CLI-wide preference, so syncing once
+    # avoids a network request and config write per discovered account.
+    language_sync_target: tuple[Path, str] | None = None
     for account in accounts:
         base_name = email_to_profile_name(account.email)
         target_profile = profiles_by_email.get(account.email.casefold())
@@ -169,6 +172,10 @@ def _login_all_accounts_from_browser(
             authuser=account.authuser,
             email=account.email,
         )
+        language_sync_target = (target_storage, target_profile)
+
+    if language_sync_target is not None:
+        target_storage, target_profile = language_sync_target
         _sync_server_language_to_config(storage_path=target_storage, profile=target_profile)
 
 

@@ -147,16 +147,10 @@ class TestLoginMultiAccount:
         bob_meta = _read_account(target_root / "bob" / "storage_state.json")
         assert alice_meta == {"authuser": 0, "email": "alice@example.com"}
         assert bob_meta == {"authuser": 1, "email": "bob@gmail.com"}
-        assert [call.kwargs for call in mock_sync.call_args_list] == [
-            {
-                "storage_path": target_root / "alice" / "storage_state.json",
-                "profile": "alice",
-            },
-            {
-                "storage_path": target_root / "bob" / "storage_state.json",
-                "profile": "bob",
-            },
-        ]
+        mock_sync.assert_called_once_with(
+            storage_path=target_root / "bob" / "storage_state.json",
+            profile="bob",
+        )
 
     def test_all_accounts_rerun_reuses_profiles_by_email(self, runner, tmp_path):
         mock_rk = _multiaccount_rookiepy_mock()
