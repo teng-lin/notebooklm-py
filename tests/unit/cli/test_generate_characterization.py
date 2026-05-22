@@ -145,9 +145,7 @@ def test_generate_happy_path_json_snapshot(
     ``{"task_id": <id>, "status": "pending"}`` on a no-wait happy path."""
     result = authed_invoke(
         ["generate", cmd, "--json", "-n", "nb_123", *extra_args],
-        configure=_attach_async_return(
-            method, {"task_id": task_id, "status": "processing"}
-        ),
+        configure=_attach_async_return(method, {"task_id": task_id, "status": "processing"}),
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -166,9 +164,7 @@ def test_generate_happy_path_text_snapshot(
     on a no-wait happy path."""
     result = authed_invoke(
         ["generate", cmd, "-n", "nb_123", *extra_args],
-        configure=_attach_async_return(
-            method, {"task_id": task_id, "status": "processing"}
-        ),
+        configure=_attach_async_return(method, {"task_id": task_id, "status": "processing"}),
     )
     assert result.exit_code == 0, result.output
     assert result.output == f"Started: {task_id}\n"
@@ -205,10 +201,7 @@ def test_generate_mind_map_text_snapshot(authed_invoke: Callable[..., Result]) -
     )
     assert result.exit_code == 0, result.output
     assert result.output == (
-        "Mind map generated:\n"
-        "  Note ID: n1\n"
-        "  Root: Root\n"
-        "  Children: 2 nodes\n"
+        "Mind map generated:\n  Note ID: n1\n  Root: Root\n  Children: 2 nodes\n"
     )
 
 
@@ -324,9 +317,7 @@ def test_video_style_custom_requires_style_prompt(
     authed_invoke: Callable[..., Result],
 ) -> None:
     """``--style custom`` requires ``--style-prompt`` for non-cinematic video."""
-    result = authed_invoke(
-        ["generate", "video", "--style", "custom", "-n", "nb_123"]
-    )
+    result = authed_invoke(["generate", "video", "--style", "custom", "-n", "nb_123"])
     assert result.exit_code == 2
     assert "--style custom requires --style-prompt" in result.output
 
@@ -335,9 +326,7 @@ def test_video_style_prompt_requires_style_custom(
     authed_invoke: Callable[..., Result],
 ) -> None:
     """``--style-prompt`` requires ``--style custom`` for non-cinematic video."""
-    result = authed_invoke(
-        ["generate", "video", "--style-prompt", "foo", "-n", "nb_123"]
-    )
+    result = authed_invoke(["generate", "video", "--style-prompt", "foo", "-n", "nb_123"])
     assert result.exit_code == 2
     assert "--style-prompt requires --style custom" in result.output
 
@@ -358,10 +347,7 @@ def test_cinematic_video_alias_rejects_non_cinematic_format(
         ],
     )
     assert result.exit_code == 2
-    assert (
-        "--format must be 'cinematic' for the cinematic-video subcommand"
-        in result.output
-    )
+    assert "--format must be 'cinematic' for the cinematic-video subcommand" in result.output
 
 
 # ---------------------------------------------------------------------------
