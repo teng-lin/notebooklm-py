@@ -5,9 +5,12 @@ Owns the path that persists extracted cookies to ``storage_state.json``
 (``_select_account`` for the ``--browser-cookies``-driven targeted
 extraction, ``_select_refresh_account`` for the refresh-from-cached path).
 
-Imports from :mod:`.browser_accounts` (allowed-but-not-required per
-the DAG; the writer itself does not call into the browser-account
-discovery dispatchers) and :mod:`.cookie_domains` (likewise).
+No in-package imports today. The DAG
+(``test_login_package_dag.py``) allows edges to :mod:`.browser_accounts`
+and :mod:`.cookie_domains` for future use, but neither is currently
+needed: ``_write_extracted_cookies`` and the selectors operate on
+already-loaded cookie data + already-discovered accounts, and the
+selectors do not need to query the cookie-domain policy themselves.
 """
 
 from __future__ import annotations

@@ -18,12 +18,31 @@ PKG_PATH = Path("src/notebooklm/cli/services/login")
 # guard (test_login_init_is_reexport_only) covers it. The DAG check below skips
 # `__init__` from edge iteration to avoid flagging legitimate sibling re-exports
 # (`from .cookie_domains import …`) as DAG violations.
+# ``ALLOWED_EDGES`` is an UPPER BOUND, not an equality check — the DAG test
+# verifies ``actual_edges ⊆ allowed_edges``. Edges marked "allowed but
+# currently unused" below are pre-declared room for likely future imports
+# (per the phase-3.md DAG diagram); the implementation modules don't take
+# them today. If you remove an "unused" entry, the test will still pass —
+# but you also remove the documented design intent that says "this edge is
+# legitimate when needed". Keep the entry; add a comment when you start
+# using it.
 ALLOWED_EDGES: dict[str, set[str]] = {
     "cookie_domains": set(),
     "rookiepy_errors": set(),
-    "cookie_jar": {"rookiepy_errors"},
+    "cookie_jar": {
+        # allowed but currently unused — _enumerate_one_jar formats its own
+        # rookiepy error messages and does not call _handle_rookiepy_error.
+        "rookiepy_errors",
+    },
     "chromium_accounts": {"cookie_jar", "rookiepy_errors", "cookie_domains"},
-    "firefox_accounts": {"cookie_jar", "rookiepy_errors", "cookie_domains"},
+    "firefox_accounts": {
+        # allowed but currently unused — the firefox helpers hand raw cookies
+        # back to the caller (browser_accounts) which then routes through
+        # _enumerate_one_jar; this module does not import it directly.
+        "cookie_jar",
+        "rookiepy_errors",
+        "cookie_domains",
+    },
     "browser_accounts": {
         "chromium_accounts",
         "firefox_accounts",
@@ -38,7 +57,12 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "cookie_domains",
     },
     "profile_targets": set(),
-    "cookie_writes": {"browser_accounts", "cookie_domains"},
+    "cookie_writes": {
+        # allowed but currently unused — the writer operates on already-loaded
+        # cookie data and the selectors don't query the cookie-domain policy.
+        "browser_accounts",
+        "cookie_domains",
+    },
     "refresh": {"browser_accounts", "cookie_writes", "profile_targets"},
 }
 

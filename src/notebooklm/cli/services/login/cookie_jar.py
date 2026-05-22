@@ -10,9 +10,11 @@ name → rookiepy function-name map (referenced by
 :mod:`.browser_accounts._read_browser_cookies` for the named-browser
 dispatch path).
 
-Imports from :mod:`.rookiepy_errors` only (used implicitly via the
-shared error printing in caller modules; this module itself relies on
-the auth-side helpers for cookie shape conversion).
+No in-package imports today. The DAG (``test_login_package_dag.py``)
+allows an edge to :mod:`.rookiepy_errors` for future use, but
+``_enumerate_one_jar`` currently formats its own error messages and does
+not call :func:`.rookiepy_errors._handle_rookiepy_error`. This module
+relies on the auth-side helpers for cookie shape conversion.
 """
 
 from __future__ import annotations
