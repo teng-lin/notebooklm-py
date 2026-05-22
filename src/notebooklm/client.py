@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import os
 import warnings
 from collections.abc import Callable, Generator
 from pathlib import Path
@@ -766,15 +765,8 @@ class _FromStorageContext:
         path = kwargs["path"]
         profile = kwargs["profile"]
 
-        storage_path = Path(path) if path else None
-        auth = await AuthTokens.from_storage(storage_path, profile=profile)
-        # Always resolve the storage path so downstream cookie loading
-        # (e.g. artifact downloads) uses the correct file, whether the
-        # caller provided an explicit path, a named profile, or neither.
-        if storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
-            from .paths import get_storage_path
-
-            storage_path = get_storage_path(profile)
+        auth = await AuthTokens.from_storage(Path(path) if path else None, profile=profile)
+        storage_path = auth.storage_path
 
         self._client = self._cls(
             auth,
