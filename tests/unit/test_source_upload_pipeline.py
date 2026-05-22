@@ -304,6 +304,40 @@ async def test_register_file_source_uses_rpc_shape_and_wraps_rpc_error(
 
 
 @pytest.mark.asyncio
+async def test_register_file_source_status3_includes_source_limit_context(
+    service: SourceUploadPipeline,
+) -> None:
+    rpc_error = RPCError(
+        "RPC o4cbdc returned null result with status code 3 (Invalid argument).",
+        method_id="o4cbdc",
+        rpc_code=3,
+    )
+    rpc = RecordingRpc(rpc_error)
+    existing_sources = [
+        Source(id=f"source_{index}", title=f"Source {index}") for index in range(56)
+    ]
+    get_source_limit = AsyncMock(return_value=50)
+
+    with pytest.raises(SourceAddError) as exc_info:
+        await service.register_file_source(
+            "nb_123",
+            "report.pdf",
+            rpc_call=rpc,
+            list_sources=AsyncMock(return_value=existing_sources),
+            get_source_limit=get_source_limit,
+            logger=MagicMock(),
+        )
+
+    assert exc_info.value.cause is rpc_error
+    message = str(exc_info.value)
+    assert "56/50 sources" in message
+    assert "tier-specific" in message
+    assert "per-notebook source limit" in message
+    assert "fresh notebook" in message
+    get_source_limit.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
 async def test_register_file_source_truncates_large_string_response_preview(
     service: SourceUploadPipeline,
 ) -> None:

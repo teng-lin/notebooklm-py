@@ -14,6 +14,7 @@ import httpx
 from . import _source_upload
 from ._session_config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ._session_contracts import RpcCaller
+from ._settings import build_get_user_settings_params, extract_account_limits
 from ._source_add import SourceAddService
 from ._source_content import SourceContentRenderer
 from ._source_listing import SourceLister
@@ -799,8 +800,18 @@ class SourcesAPI:
             notebook_id,
             filename,
             list_sources=self.list,
+            get_source_limit=self._get_source_limit,
             logger=logger,
         )
+
+    async def _get_source_limit(self) -> int | None:
+        """Return the current account's per-notebook source limit when advertised."""
+        result = await self._rpc_call(
+            RPCMethod.GET_USER_SETTINGS,
+            build_get_user_settings_params(),
+            source_path="/",
+        )
+        return extract_account_limits(result).source_limit
 
     async def _start_resumable_upload(
         self,

@@ -71,6 +71,9 @@ class RpcCallback(Protocol):
     ) -> Any: ...
 
 
+GetSourceLimit = Callable[[], Awaitable[int | None]]
+
+
 class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     """Runtime capabilities required by source upload.
 
@@ -85,6 +88,63 @@ class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     ``operation_scope`` or lazily allocating the per-loop upload semaphore.
     Mirrors the ``ChatRuntime`` / ``ArtifactsRuntime`` pattern.
     """
+
+
+_INVALID_ARGUMENT_RPC_CODE = 3
+_SOURCE_LIMIT_HINT_FLOOR = 50
+_TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
+
+
+async def _build_invalid_argument_source_limit_hint(
+    *,
+    source_count: int | None,
+    get_source_limit: GetSourceLimit | None,
+    logger: Any,
+) -> str:
+    """Build a best-effort hint for ADD_SOURCE_FILE status code 3 failures."""
+    source_limit: int | None = None
+    if get_source_limit is not None:
+        try:
+            source_limit = await get_source_limit()
+        except Exception:  # noqa: BLE001 - hint lookup must not mask the upload error.
+            logger.debug(
+                "register_file_source: source-limit lookup failed; continuing without limit hint",
+                exc_info=True,
+            )
+
+    if source_limit is not None and source_limit <= 0:
+        source_limit = None
+
+    if source_count is not None and source_limit is not None:
+        if source_count >= source_limit:
+            return (
+                f" Notebook currently has {source_count}/{source_limit} sources, "
+                "so this likely means the notebook has reached its tier-specific "
+                "per-notebook source limit. Delete sources or try a fresh notebook, "
+                "then retry."
+            )
+        return (
+            f" Notebook currently has {source_count}/{source_limit} sources, below "
+            "the advertised account limit. If the file is valid, try the same add "
+            "in a fresh notebook to distinguish file rejection from notebook state."
+        )
+
+    if source_count is not None and source_count >= _SOURCE_LIMIT_HINT_FLOOR:
+        return (
+            f" Notebook currently has {source_count} sources; status code 3 can "
+            "indicate the notebook is at or near the tier-specific per-notebook "
+            f"source limit ({_TIER_SOURCE_LIMITS_SUMMARY}). Delete sources or "
+            "try a fresh notebook, then retry."
+        )
+
+    if source_limit is not None:
+        return (
+            f" Advertised source limit for this tier is {source_limit}; compare "
+            "it with this notebook's source count. Status code 3 can indicate a "
+            "per-notebook source-limit rejection."
+        )
+
+    return ""
 
 
 class RegisterFileSource(Protocol):
@@ -380,6 +440,7 @@ class SourceUploadPipeline:
         *,
         list_sources: ListSources,
         logger: Any,
+        get_source_limit: GetSourceLimit | None = None,
         rpc_call: RpcCallback | None = None,
     ) -> str:
         """Register a file source intent and get SOURCE_ID.
@@ -423,14 +484,18 @@ class SourceUploadPipeline:
         # same-name source would otherwise direct the subsequent upload
         # stream to the wrong source.
         baseline_ids: set[str] | None
+        baseline_source_count: int | None
         try:
-            baseline_ids = {source.id for source in await list_sources(notebook_id)}
+            baseline_sources = await list_sources(notebook_id)
+            baseline_ids = {source.id for source in baseline_sources}
+            baseline_source_count = len(baseline_sources)
         except Exception:
             logger.debug(
                 "register_file_source: baseline list() failed; baseline unavailable",
                 exc_info=True,
             )
             baseline_ids = None
+            baseline_source_count = None
 
         async def _probe() -> str | None:
             try:
@@ -491,10 +556,17 @@ class SourceUploadPipeline:
                 # can catch them and run the probe before retrying.
                 raise
             except RPCError as exc:
+                hint = ""
+                if getattr(exc, "rpc_code", None) == _INVALID_ARGUMENT_RPC_CODE:
+                    hint = await _build_invalid_argument_source_limit_hint(
+                        source_count=baseline_source_count,
+                        get_source_limit=get_source_limit,
+                        logger=logger,
+                    )
                 raise SourceAddError(
                     filename,
                     cause=exc,
-                    message=f"Failed to register file source for {filename}: {exc}",
+                    message=f"Failed to register file source for {filename}: {exc}{hint}",
                 ) from exc
 
             source_id = _extract_register_file_source_id(result, filename)
