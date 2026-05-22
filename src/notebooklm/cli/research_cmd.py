@@ -3,9 +3,12 @@
 Commands:
     status      Check research status (single check)
     wait        Wait for research to complete (blocking)
-"""
 
-from typing import Any
+The ``wait`` command is a thin Click handler over
+:func:`notebooklm.cli.services.research.execute_research_wait` — the polling
+loop, P1.T2 task-id pinning, and import orchestration live in the service.
+This module owns input validation, spinner I/O, rendering, and exit codes.
+"""
 
 import click
 
@@ -19,12 +22,16 @@ from .rendering import (
     display_research_sources,
     json_output_response,
 )
-from .research_import import import_research_sources
 from .resolve import (
     require_notebook,
     resolve_notebook_id,
 )
-from .services.polling import poll_until, status_with_elapsed
+from .services.polling import status_with_elapsed
+from .services.research import (
+    ResearchWaitPlan,
+    ResearchWaitResult,
+    execute_research_wait,
+)
 
 # UI-only cap for the research summary preview shown in `research status` /
 # `research wait`. Unlike RPC error previews (see
@@ -149,115 +156,85 @@ def research_wait(
         raise click.UsageError("--cited-only requires --import-all")
 
     nb_id = require_notebook(notebook_id)
+    plan = ResearchWaitPlan(
+        notebook_id=nb_id,
+        timeout=timeout,
+        interval=interval,
+        import_all=import_all,
+        cited_only=cited_only,
+        json_output=json_output,
+    )
 
     async def _run():
         async with NotebookLMClient(client_auth) as client:
-            nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            task_id: str | None = None
-
-            async def _fetch_status() -> dict[str, Any]:
-                """Fetch the next research status and pin a discovered task id.
-
-                Once the first poll identifies a task_id, subsequent polls pin
-                to that specific task via the ``task_id`` discriminator. This
-                guards the wait loop against the cross-wire bug where a second
-                research task started mid-wait (e.g. by a concurrent caller
-                or a retry) could substitute its results into ``status`` /
-                ``sources`` and mis-attribute provenance on import.
-                """
-                nonlocal task_id
-                current_status = await client.research.poll(nb_id_resolved, task_id=task_id)
-                status_val = current_status.get("status", "unknown")
-
-                if status_val == "no_research":
-                    if json_output:
-                        json_output_response(
-                            {"status": "no_research", "error": "No research running"}
-                        )
-                    else:
-                        console.print("[red]No research running[/red]")
-                    exit_with_code(1)
-
-                if task_id is None:
-                    task_id = current_status.get("task_id")
-
-                return current_status
-
-            def _is_complete(current_status: dict[str, Any]) -> bool:
-                return current_status.get("status", "unknown") == "completed"
-
-            async with status_with_elapsed(
-                "Waiting for research to complete...",
-                json_output=json_output,
-                resume_hint="notebooklm research status",
-            ):
-                poll_result = await poll_until(
-                    _fetch_status,
-                    _is_complete,
-                    timeout=float(timeout),
-                    interval=float(interval),
+            # Inject the wait spinner as the polling-loop context so the
+            # service stays I/O-free and unit-testable. SIGINT inside the
+            # spinner emits the canonical "Cancelled. Resume with: ..."
+            # envelope per :func:`emit_cancelled_and_exit`.
+            def _wait_context():
+                return status_with_elapsed(
+                    "Waiting for research to complete...",
+                    json_output=plan.json_output,
+                    resume_hint="notebooklm research status",
                 )
 
-            if poll_result.timed_out:
-                if json_output:
-                    json_output_response(
-                        {"status": "timeout", "error": f"Timed out after {timeout}s"}
-                    )
-                else:
-                    console.print(f"[yellow]Timed out after {timeout} seconds[/yellow]")
-                exit_with_code(1)
-
-            # Research completed — poll_until returned the terminal status,
-            # or raised SystemExit above for no-research / timeout cases.
-            status = poll_result.value
-            sources = status.get("sources", [])
-            query = status.get("query", "")
-
-            report = status.get("report", "")
-
-            if json_output:
-                result = {
-                    "status": "completed",
-                    "query": query,
-                    "sources_found": len(sources),
-                    "sources": sources,
-                    "report": report,
-                }
-                if import_all and sources and task_id:
-                    import_result = await import_research_sources(
-                        client,
-                        nb_id_resolved,
-                        task_id,
-                        sources,
-                        report=report,
-                        cited_only=cited_only,
-                        max_elapsed=timeout,
-                        json_output=True,
-                    )
-                    if import_result.cited_selection is not None:
-                        result["cited_only"] = True
-                        result["cited_sources_selected"] = len(import_result.sources)
-                        result["cited_only_fallback"] = import_result.cited_selection.used_fallback
-                    result["imported"] = len(import_result.imported)
-                    result["imported_sources"] = import_result.imported
-                json_output_response(result)
-            else:
-                console.print(f"[green]✓ Research completed:[/green] {query}")
-                display_research_sources(sources)
-
-                display_report(report)
-
-                if import_all and sources and task_id:
-                    import_result = await import_research_sources(
-                        client,
-                        nb_id_resolved,
-                        task_id,
-                        sources,
-                        report=report,
-                        cited_only=cited_only,
-                        max_elapsed=timeout,
-                        status_message="Importing sources...",
-                    )
-                    console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
+            result = await execute_research_wait(
+                plan,
+                client=client,
+                wait_context=_wait_context,
+            )
+            _render_wait_result(plan, result)
 
     return _run()
+
+
+def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> None:
+    """Render a :class:`ResearchWaitResult` and exit on non-success outcomes.
+
+    The handler owns all CLI I/O — text vs JSON, exit codes, "Imported N
+    sources" line — so the service can stay pure (and unit-testable without
+    a CliRunner).
+    """
+    if result.outcome == "no_research":
+        if plan.json_output:
+            json_output_response({"status": "no_research", "error": "No research running"})
+        else:
+            console.print("[red]No research running[/red]")
+        exit_with_code(1)
+
+    if result.outcome == "timeout":
+        if plan.json_output:
+            json_output_response(
+                {"status": "timeout", "error": f"Timed out after {result.timeout}s"}
+            )
+        else:
+            console.print(f"[yellow]Timed out after {result.timeout} seconds[/yellow]")
+        exit_with_code(1)
+
+    # outcome == "completed"
+    if plan.json_output:
+        payload: dict = {
+            "status": "completed",
+            "query": result.query,
+            "sources_found": result.sources_count,
+            "sources": result.sources,
+            "report": result.report,
+        }
+        import_result = result.import_result
+        if import_result is not None:
+            if import_result.cited_selection is not None:
+                payload["cited_only"] = True
+                payload["cited_sources_selected"] = len(import_result.sources)
+                payload["cited_only_fallback"] = import_result.cited_selection.used_fallback
+            payload["imported"] = len(import_result.imported)
+            payload["imported_sources"] = import_result.imported
+        json_output_response(payload)
+        return
+
+    # Text mode
+    console.print(f"[green]✓ Research completed:[/green] {result.query}")
+    display_research_sources(result.sources)
+    display_report(result.report)
+    import_result = result.import_result
+    if import_result is not None:
+        console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
