@@ -255,20 +255,35 @@ class TestDownloadUrlErrorWrapping:
 
     @pytest.mark.asyncio
     async def test_cancellation_during_write_removes_temp_file(self, mock_artifacts_api, tmp_path):
-        """Cancelled streaming writes must not leave the mkstemp temp file behind."""
+        """Cancelled streaming writes must not leave the mkstemp temp file behind.
+
+        After the single-writer-thread refactor (PR T1.M.4 — issue #?),
+        the producer's per-chunk yield point is ``asyncio.to_thread(
+        chunk_q.put, chunk)`` (back-pressure into the writer queue), not
+        a direct ``to_thread(f.write, ...)``. The test gates cancellation
+        on the first queue-put rather than the first file-write so the
+        producer is reliably parked on a cancellable await when we
+        cancel the task. The invariant under test — no leftover
+        ``mkstemp`` temp file — is unchanged.
+        """
         api = mock_artifacts_api
         output_path = tmp_path / "file.mp4"
         response = _build_mock_response(content=b"partial media payload")
         client_patch, cookies_patch = _patch_httpx_client(response)
 
         original_to_thread = asyncio.to_thread
-        write_started = asyncio.Event()
-        release_write = asyncio.Event()
+        put_started = asyncio.Event()
+        release_put = asyncio.Event()
 
         async def controlled_to_thread(func, /, *args, **kwargs):
-            if getattr(func, "__name__", "") == "write":
-                write_started.set()
-                await release_write.wait()
+            # The chunk producer awaits ``to_thread(chunk_q.put, chunk)``
+            # for each yielded chunk. We gate on that to park the
+            # producer at a known cancellable await point. Other
+            # to_thread calls (cookie load, the long-lived
+            # ``_writer_loop``, the final sentinel ``put``) pass through.
+            if getattr(func, "__name__", "") == "put" and args:
+                put_started.set()
+                await release_put.wait()
             return await original_to_thread(func, *args, **kwargs)
 
         with (
@@ -279,9 +294,9 @@ class TestDownloadUrlErrorWrapping:
             task = asyncio.create_task(
                 api._download_url("https://storage.googleapis.com/file.mp4", str(output_path))
             )
-            await asyncio.wait_for(write_started.wait(), timeout=1)
+            await asyncio.wait_for(put_started.wait(), timeout=1)
             task.cancel()
-            release_write.set()
+            release_put.set()
 
             with pytest.raises(asyncio.CancelledError):
                 await task

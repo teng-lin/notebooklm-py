@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import threading
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -120,6 +121,10 @@ def _make_sources_api() -> tuple[SourcesAPI, MagicMock]:
 
     core.operation_scope.side_effect = operation_scope
     core.record_upload_queue_wait = MagicMock()
+    # MagicMock blocks ``assert``-prefixed attribute access as a foot-gun
+    # guard; the no-op ``assert_bound_loop`` stub used by ``add_file``
+    # must therefore be installed explicitly.
+    core.assert_bound_loop = MagicMock()
     uploader = SourceUploadPipeline(
         core,
         core.kernel,
@@ -325,4 +330,79 @@ async def test_upload_file_streaming_path_fallback_does_not_block_event_loop(
         f"(expected >= {MIN_HEARTBEATS}). The synchronous f.read(65536) is "
         f"still running on the event-loop thread — wrap it with "
         f"asyncio.to_thread."
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_file_open_runs_off_loop_thread(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``add_file``'s ``open()`` + ``fstat()`` must run off the event loop.
+
+    Pre-fix the ``open()`` and ``os.fstat`` calls inside ``add_file``
+    execute as synchronous syscalls directly on the loop thread. On a
+    slow network mount that stalls every other concurrent coroutine for
+    the full ``open`` latency. The fix wraps the pair in
+    ``await asyncio.to_thread(...)``.
+
+    Methodology mirrors ``test_download_blocks_loop.py``: we monkey-patch
+    ``builtins.open`` so it captures ``threading.get_ident()`` on the
+    very first call for our test file. If the wrap is in place the
+    captured id differs from the loop thread id; a regression that
+    removes the wrap leaves them equal.
+    """
+    sources_api, _core = _make_sources_api()
+    test_file = tmp_path / "to_open.bin"
+    test_file.write_bytes(b"payload")
+
+    real_open = builtins.open
+    loop_thread_id = threading.get_ident()
+    captured: list[int] = []
+
+    def _recording_open(file, mode="r", *args, **kwargs):  # type: ignore[no-untyped-def]
+        # Only record when the open is for our test file in binary mode
+        # — log handlers, .pyc caches, etc. can also call builtins.open
+        # and would otherwise pollute the capture list.
+        try:
+            same = Path(file).resolve() == test_file.resolve()
+        except (TypeError, ValueError):
+            same = False
+        if same and "b" in mode:
+            captured.append(threading.get_ident())
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", _recording_open)
+
+    # Mock the registration RPC so we never hit the wire. Two RPC calls
+    # land before ``add_file`` returns: GET_NOTEBOOK (baseline list) and
+    # ADD_SOURCE_FILE (register). The "[[[['src_t1']]]]" shape feeds the
+    # standard SOURCE_ID walker in ``_extract_register_file_source_id``.
+    _core.rpc_call.return_value = [[[["src_t1"]]]]
+
+    mock_start_response = MagicMock()
+    mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com/session"}
+    mock_upload_response = MagicMock()
+    mock_upload_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        mock_client.post.side_effect = [mock_start_response, mock_upload_response]
+        mock_client_cls.return_value = mock_client
+
+        await sources_api.add_file("nb_t1", str(test_file))
+
+    # The first `open` on our test file is the production ``open()``
+    # inside the upload-semaphore block. Subsequent `open`s (e.g. the
+    # finalize path) are not under test here.
+    assert captured, (
+        "builtins.open was never called for the test file — the patch target "
+        "or the production code path may have changed."
+    )
+    assert captured[0] != loop_thread_id, (
+        f"add_file's open() ran on the event-loop thread (thread id {captured[0]}). "
+        "It must be wrapped in asyncio.to_thread so a slow filesystem cannot stall "
+        "concurrent tasks."
     )

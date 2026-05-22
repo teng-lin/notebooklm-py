@@ -97,8 +97,15 @@ class TestDownloadUrlsBatch:
         assert result.failed == []
 
     @pytest.mark.asyncio
-    async def test_batch_download_html_response_rejected(self, mock_artifacts_api, tmp_path):
-        """Test that HTML responses raise ArtifactDownloadError (auth expired)."""
+    async def test_batch_download_html_response_aggregated(self, mock_artifacts_api, tmp_path):
+        """HTML-payload ``ArtifactDownloadError`` is aggregated into ``failed``.
+
+        The batch surface now treats policy violations the same as
+        transport errors: they land in ``result.failed`` so siblings can
+        still complete. The single-URL ``download_url`` path still
+        raises this error to its caller — see the pinned tests in
+        ``tests/integration/test_artifacts_integration.py``.
+        """
         api, _ = mock_artifacts_api
 
         # Mock response returning HTML instead of media
@@ -121,9 +128,14 @@ class TestDownloadUrlsBatch:
                 ("https://storage.googleapis.com/file.mp4", str(tmp_path / "file.mp4")),
             ]
 
-            # HTML response should raise ArtifactDownloadError
-            with pytest.raises(ArtifactDownloadError, match="Received HTML instead of media"):
-                await api._download_urls_batch(urls_and_paths)
+            result = await api._download_urls_batch(urls_and_paths)
+
+        assert result.succeeded == []
+        assert len(result.failed) == 1
+        url, exc = result.failed[0]
+        assert url == "https://storage.googleapis.com/file.mp4"
+        assert isinstance(exc, ArtifactDownloadError)
+        assert "Received HTML instead of media" in str(exc)
 
     @pytest.mark.asyncio
     async def test_batch_download_partial_failure(self, mock_artifacts_api, tmp_path):

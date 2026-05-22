@@ -309,11 +309,20 @@ class SourceUploadPipeline:
             if not title:
                 raise ValidationError("Title cannot be empty or whitespace-only")
 
-        file_path = Path(file_path).resolve()
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        if not file_path.is_file():
-            raise ValidationError(f"Not a regular file: {file_path}")
+        # ``Path.resolve()`` / ``exists()`` / ``is_file()`` all hit the
+        # filesystem (stat / readlink syscalls). On a slow network mount
+        # or a deep symlink chain these are blocking calls — same problem
+        # class as the ``open()`` + ``fstat()`` below — so they are
+        # offloaded to a worker thread too.
+        def _resolve_and_check(raw_path: str | Path) -> Path:
+            resolved = Path(raw_path).resolve()
+            if not resolved.exists():
+                raise FileNotFoundError(f"File not found: {resolved}")
+            if not resolved.is_file():
+                raise ValidationError(f"Not a regular file: {resolved}")
+            return resolved
+
+        file_path = await asyncio.to_thread(_resolve_and_check, file_path)
 
         filename = file_path.name
         async with self._runtime.operation_scope(f"upload:{upload_index}"):
@@ -322,10 +331,27 @@ class SourceUploadPipeline:
             async with upload_sem:
                 if self._record_upload_queue_wait is not None:
                     self._record_upload_queue_wait(monotonic() - upload_wait_start)
-                file_obj = open(file_path, "rb")  # noqa: SIM115
+
+                # ``open()`` and ``fstat()`` are synchronous syscalls. For
+                # network filesystems or deep directories they can block
+                # the event loop for tens of milliseconds, stalling every
+                # other concurrent task (auth refresh, sibling uploads,
+                # the cancellation watchdog) for the duration of the
+                # syscall. Run them on a worker thread so the loop keeps
+                # ticking. ``fstat`` is paired with ``open`` in the same
+                # closure so we don't pay the round-trip cost twice.
+                def _open_and_stat(path: Path) -> tuple[IO[bytes], int]:
+                    fh = open(path, "rb")  # noqa: SIM115
+                    try:
+                        size = os.fstat(fh.fileno()).st_size
+                    except BaseException:
+                        fh.close()
+                        raise
+                    return fh, size
+
+                file_obj, file_size = await asyncio.to_thread(_open_and_stat, file_path)
                 handed_off = False
                 try:
-                    file_size = os.fstat(file_obj.fileno()).st_size
                     source_id = await register_file_source(notebook_id, filename)
                     upload_url = await start_resumable_upload(
                         notebook_id,

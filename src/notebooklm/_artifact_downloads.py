@@ -7,6 +7,7 @@ import contextlib
 import csv
 import logging
 import os
+import queue
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -32,6 +33,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleapis.com")
+
+# Bounded queue between the async chunk producer and the single writer
+# thread. Small enough to provide back-pressure (the producer awaits when
+# the writer falls behind) but large enough to keep the writer hot across
+# a brief read stall. 8 slots × 64 KiB ≈ 512 KiB of in-flight buffering.
+_DOWNLOAD_WRITER_QUEUE_SIZE = 8
 
 
 @dataclass(frozen=False)
@@ -503,7 +510,15 @@ class ArtifactDownloadService:
                         len(response.content),
                     )
 
-                except (httpx.HTTPError, ValueError) as e:
+                except (httpx.HTTPError, ValueError, ArtifactDownloadError) as e:
+                    # ``ArtifactDownloadError`` covers the policy violations
+                    # raised earlier in this block (non-HTTPS scheme,
+                    # untrusted host, 401/403, HTML payload). Aggregating
+                    # them into ``result.failed`` lets a single bad URL
+                    # fall out of the batch instead of aborting every
+                    # remaining download in the loop. The single-URL
+                    # ``download_url`` path below intentionally still
+                    # raises — only the batch surface absorbs.
                     if isinstance(e, httpx.HTTPStatusError) and e.response is not None:
                         reason = f"HTTP {e.response.status_code}"
                     else:
@@ -560,17 +575,104 @@ class ArtifactDownloadService:
                                 "Authentication may have expired. Run 'notebooklm login'.",
                             )
 
+                        # Producer/consumer split: a single dedicated
+                        # writer thread drains a bounded queue and writes
+                        # to ``temp_file``. The async chunk loop puts
+                        # bytes on the queue; ``await asyncio.to_thread(
+                        # q.put, ...)`` blocks the producer when the
+                        # queue is full, giving us back-pressure without
+                        # spawning a fresh thread call per 64 KiB chunk
+                        # (which for multi-GB downloads is thousands of
+                        # thread-pool allocations and contention).
+                        #
+                        # End-of-stream is signalled with a ``None``
+                        # sentinel. The writer surfaces filesystem errors
+                        # by re-raising from its ``to_thread`` task; the
+                        # producer detects that path by checking
+                        # ``writer_task.done()`` before pushing each
+                        # chunk so a dead writer doesn't deadlock the
+                        # producer in ``q.put``.
+                        chunk_q: queue.Queue[bytes | None] = queue.Queue(
+                            maxsize=_DOWNLOAD_WRITER_QUEUE_SIZE
+                        )
+
+                        def _writer_loop() -> None:
+                            # If the writer raises (e.g. OSError on
+                            # ``fh.write``), the bounded queue may have a
+                            # producer parked in ``q.put`` waiting for a
+                            # consumer. Without draining, that producer
+                            # hangs forever because we are the only
+                            # consumer. The ``finally`` drains pending
+                            # items via ``get_nowait`` so blocked puts
+                            # complete and the producer can observe
+                            # ``writer_task.done()`` on its next
+                            # iteration.
+                            try:
+                                with open(temp_file, "wb") as fh:
+                                    while True:
+                                        item = chunk_q.get()
+                                        if item is None:
+                                            return
+                                        fh.write(item)
+                            finally:
+                                while True:
+                                    try:
+                                        chunk_q.get_nowait()
+                                    except queue.Empty:
+                                        break
+
+                        writer_task = asyncio.create_task(asyncio.to_thread(_writer_loop))
                         total_bytes = 0
-                        with open(temp_file, "wb") as f:
+                        try:
                             async for chunk in response.aiter_bytes(chunk_size=65536):
-                                write_task = asyncio.create_task(asyncio.to_thread(f.write, chunk))
-                                try:
-                                    await asyncio.shield(write_task)
-                                except asyncio.CancelledError:
-                                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                                        await write_task
-                                    raise
+                                if writer_task.done():
+                                    # Writer died (likely OSError). Stop
+                                    # producing and surface the failure
+                                    # via the ``await writer_task`` below.
+                                    break
+                                await asyncio.to_thread(chunk_q.put, chunk)
                                 total_bytes += len(chunk)
+                            # Sentinel signals clean EOF. If we broke out
+                            # of the loop because the writer died, the
+                            # ``put`` here would block forever — guard
+                            # against that.
+                            if not writer_task.done():
+                                await asyncio.to_thread(chunk_q.put, None)
+                            await writer_task
+                        except BaseException:
+                            # On producer-side failure (network error,
+                            # cancellation, HTML payload), make sure the
+                            # writer sees a sentinel and exits — even if
+                            # the queue is currently saturated. A bare
+                            # ``put_nowait(None)`` would raise
+                            # ``queue.Full`` and leave the writer parked
+                            # in ``q.get`` forever; instead drop one item
+                            # to make room, then put the sentinel. At
+                            # most two iterations are needed: the writer
+                            # is the only consumer, so once a slot opens
+                            # nothing else refills it.
+                            while True:
+                                try:
+                                    chunk_q.put_nowait(None)
+                                    break
+                                except queue.Full:
+                                    pass
+                                try:
+                                    chunk_q.get_nowait()
+                                except queue.Empty:
+                                    # Writer drained between our put and
+                                    # get — the next put attempt will
+                                    # succeed.
+                                    pass
+                            # Wait for the writer to consume the sentinel
+                            # and release the temp-file handle before the
+                            # outer ``except`` unlinks it. ``shield``
+                            # plus ``suppress`` mirrors the original
+                            # cancellation-aware wait so a re-cancel
+                            # during cleanup doesn't drop the await.
+                            with contextlib.suppress(BaseException):
+                                await asyncio.shield(writer_task)
+                            raise
 
                         if total_bytes == 0:
                             raise ArtifactDownloadError(

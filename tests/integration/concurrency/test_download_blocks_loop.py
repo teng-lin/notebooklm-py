@@ -444,3 +444,230 @@ async def test_download_url_cookie_load_runs_off_loop_thread(
         call_site="_download_url",
         wrap_target="load_httpx_cookies",
     )
+
+
+@pytest.mark.asyncio
+async def test_download_url_uses_single_writer_thread_for_all_chunks(
+    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    tmp_path: Path,
+) -> None:
+    """``_download_url`` must drive ALL chunks through ONE writer thread.
+
+    Pre-fix the streaming loop wrapped every 64 KiB chunk in its own
+    ``asyncio.to_thread(f.write, chunk)`` call. For multi-GB downloads
+    that adds up to thousands of fresh thread-pool jobs — allocation
+    churn and contention on the default executor.
+
+    Post-fix the producer pushes chunks onto a bounded queue drained by
+    a single dedicated writer thread. We assert the property directly:
+    only ONE ``asyncio.to_thread`` call dispatches a writer body, even
+    when the stream yields many chunks.
+
+    Methodology
+    -----------
+    The fix structures the chunk loop as one ``asyncio.to_thread(
+    _writer_loop)`` (long-lived, drains a ``queue.Queue``) plus per-chunk
+    ``asyncio.to_thread(q.put, chunk)`` calls (the queue ``put`` is the
+    back-pressure await). We patch ``asyncio.to_thread`` with a recorder
+    that classifies each call:
+
+    * Calls whose first positional arg is a callable named ``_writer_loop``
+      (the closure produced inside ``_download_url``) are "writer" calls.
+    * All other calls are passthroughs (cookie load, ``queue.put``, etc.).
+
+    We require *exactly one* writer call regardless of chunk count. A
+    regression that goes back to per-chunk ``to_thread(f.write, ...)``
+    bumps the count to N.
+    """
+    api, _ = mock_artifacts_api
+    output_path = tmp_path / "many_chunks.bin"
+
+    import httpx as real_httpx
+
+    # 32 chunks of 64 KiB. Anything > ~2 demonstrates the regression
+    # signal cleanly; 32 keeps the test fast while making the
+    # per-chunk-pre-fix count visually obvious in failure output.
+    chunks = [b"x" * 65536 for _ in range(32)]
+
+    async def mock_aiter_bytes(chunk_size: int = 8192):
+        for chunk in chunks:
+            yield chunk
+
+    mock_response = MagicMock()
+    mock_response.headers = {"content-type": "video/mp4"}
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_bytes = mock_aiter_bytes
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    original_to_thread = asyncio.to_thread
+    writer_calls = 0
+
+    async def recording_to_thread(func, /, *args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal writer_calls
+        # The writer closure is defined inside ``_download_url`` so we
+        # match on the qualified name suffix. Anything else (cookie
+        # load, ``queue.Queue.put``, etc.) passes through untouched.
+        name = getattr(func, "__qualname__", "") or getattr(func, "__name__", "")
+        if name.endswith("_writer_loop"):
+            writer_calls += 1
+        return await original_to_thread(func, *args, **kwargs)
+
+    with (
+        patch.object(real_httpx, "AsyncClient", return_value=mock_client),
+        patch("notebooklm._artifacts.load_httpx_cookies", return_value=MagicMock()),
+        patch("notebooklm._artifact_downloads.asyncio.to_thread", new=recording_to_thread),
+    ):
+        result = await api._download_url(
+            "https://storage.googleapis.com/many_chunks.bin", str(output_path)
+        )
+
+    assert result == str(output_path)
+    assert output_path.exists()
+    assert output_path.stat().st_size == sum(len(c) for c in chunks), (
+        "The temp-file → final-file atomic replace must preserve all bytes."
+    )
+    assert writer_calls == 1, (
+        f"_download_url dispatched {writer_calls} writer thread jobs for a "
+        f"{len(chunks)}-chunk download. The fix requires exactly ONE long-lived "
+        "writer thread fed via a bounded queue, not a fresh asyncio.to_thread "
+        "per chunk."
+    )
+
+
+@pytest.mark.asyncio
+async def test_download_url_writer_failure_does_not_deadlock_producer(
+    mock_artifacts_api: tuple[ArtifactsAPI, MagicMock],
+    tmp_path: Path,
+) -> None:
+    """A failing writer thread must not deadlock the producer.
+
+    Regression: with a bounded queue, a producer parked in ``q.put``
+    on a full queue hangs forever if the writer raises mid-stream
+    (the worker thread holding the put only releases when a consumer
+    takes, and we are the only consumer). The fix has the writer's
+    ``finally`` drain the queue so blocked puts can complete and the
+    producer can observe ``writer_task.done()`` on the next iteration.
+
+    Determinism strategy — engineer the race so the queue is GUARANTEED
+    full when the writer dies:
+
+    1. Patch ``builtins.open`` so the writer's handle defers the
+       OSError until a ``threading.Event`` is set. This holds the
+       writer at its first ``fh.write`` indefinitely, letting the
+       producer fill the queue.
+    2. The producer yields many chunks. Each ``q.put`` succeeds until
+       the bounded queue (size 8) is full; the next put parks on a
+       worker thread.
+    3. From the test we wait until the queue is observed full, then
+       set the event. The writer's first write raises OSError; with
+       the fix, the writer's ``finally`` drains the queue and the
+       parked producer wakes; without the fix, the parked producer
+       hangs and ``asyncio.wait_for`` times out.
+    """
+    import builtins  # local import keeps the module's import list lean
+    import threading
+
+    import httpx as real_httpx
+
+    api, _ = mock_artifacts_api
+    output_path = tmp_path / "doomed.bin"
+
+    # ``aiter_bytes`` yields chunks indefinitely so the queue can keep
+    # being filled regardless of how many slots the writer has cleared.
+    async def mock_aiter_bytes(chunk_size: int = 8192):
+        idx = 0
+        while True:
+            yield b"x" * 65536
+            idx += 1
+            # Yield to the loop so the producer doesn't spin without
+            # giving the writer thread CPU time.
+            await asyncio.sleep(0)
+
+    mock_response = MagicMock()
+    mock_response.headers = {"content-type": "video/mp4"}
+    mock_response.raise_for_status = MagicMock()
+    mock_response.aiter_bytes = mock_aiter_bytes
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    real_open = builtins.open
+    write_blocked = threading.Event()
+    release_writer = threading.Event()
+
+    class _DeferredExplodingHandle:
+        """File handle whose first ``write`` blocks until released, then raises."""
+
+        def write(self, data: bytes) -> int:
+            write_blocked.set()
+            release_writer.wait(timeout=5.0)
+            raise OSError("simulated disk full")
+
+        def close(self) -> None:  # noqa: D401
+            pass
+
+        def __enter__(self) -> _DeferredExplodingHandle:
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+            self.close()
+
+    def _patched_open(file, mode="r", *args, **kwargs):  # type: ignore[no-untyped-def]
+        try:
+            target = Path(file).resolve()
+            same_dir = target.parent == tmp_path.resolve()
+        except (TypeError, ValueError):
+            same_dir = False
+        if same_dir and "w" in mode and "b" in mode:
+            return _DeferredExplodingHandle()
+        return real_open(file, mode, *args, **kwargs)
+
+    async def _release_writer_after_queue_fills() -> None:
+        # Wait until the writer thread has entered its (blocked)
+        # ``write`` call. That guarantees one chunk has been
+        # dequeued, AND the writer is no longer consuming. By the
+        # time the producer's next ``q.put`` parks, we know the
+        # queue is full.
+        await asyncio.to_thread(write_blocked.wait, 2.0)
+        # Give the producer time to fill the queue and park.
+        await asyncio.sleep(0.2)
+        # Now release the writer — its ``write`` raises OSError.
+        # The post-fix ``finally`` block must drain the queue so the
+        # parked producer can wake.
+        release_writer.set()
+
+    with (
+        patch.object(real_httpx, "AsyncClient", return_value=mock_client),
+        patch("notebooklm._artifacts.load_httpx_cookies", return_value=MagicMock()),
+        patch.object(builtins, "open", new=_patched_open),
+    ):
+        download_coro = api._download_url(
+            "https://storage.googleapis.com/doomed.bin", str(output_path)
+        )
+        release_coro = _release_writer_after_queue_fills()
+        # Run both concurrently. Pre-fix the download hangs in
+        # ``q.put`` forever and ``wait_for`` fires before either coro
+        # makes progress. Post-fix the writer's ``finally`` drains the
+        # queue, the producer unblocks, ``await writer_task`` raises
+        # OSError, the outer ``except`` cleans up the temp file, and
+        # the OSError propagates to the test.
+        with pytest.raises(OSError, match="simulated disk full"):
+            await asyncio.wait_for(
+                asyncio.gather(download_coro, release_coro),
+                timeout=5.0,
+            )
+
+    # Final file must NOT exist (atomic replace never ran).
+    assert not output_path.exists()
+    # Temp file must NOT be left behind.
+    assert list(tmp_path.glob("doomed.bin.*.tmp")) == []
