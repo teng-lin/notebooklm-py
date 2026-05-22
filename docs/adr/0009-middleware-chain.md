@@ -200,7 +200,6 @@ Per-position rationale:
 | Key | Type | Set by | Read by |
 |---|---|---|---|
 | `rpc_method` | `RPCMethod \| None` | `Session.rpc_call` | metrics, tracing |
-| `operation_variant` | `str \| None` | `Session.rpc_call` | `AuthRefreshMiddleware` (passes back to `resolve_effective_disable_internal_retries` on retry) |
 | `disable_internal_retries` | `bool` | `Session.rpc_call` (post-resolution from `_idempotency.resolve_effective_disable_internal_retries`) | `RetryMiddleware` |
 | `build_request` | `BuildRequest` | `Session.rpc_call` / `Session.transport_post` | chain leaf (adapter into `AuthedTransport.perform_authed_post`) |
 | `log_label` | `str` | `Session.rpc_call` / `Session.transport_post` | chain leaf, `DrainMiddleware`, `TracingMiddleware` |
@@ -210,6 +209,14 @@ Per-position rationale:
 Middlewares are forbidden from inventing new keys without an ADR update.
 The dict is mutable by reference (deliberately, per master plan
 §"Per-request behavior") but read-mostly in practice.
+
+> **Note on `operation_variant`.** Idempotency policy is resolved
+> **before chain entry** in `RpcExecutor.execute()` via
+> `_idempotency.resolve_effective_disable_internal_retries(...)`; the
+> resolved boolean is what flows through the chain as
+> `disable_internal_retries`. The chain itself never needs the
+> per-request `operation_variant` selector, so it is intentionally
+> absent from this vocabulary.
 
 ### AuthRefreshMiddleware constructor signature (Tier-13 target, NOT shipped in Tier-12)
 

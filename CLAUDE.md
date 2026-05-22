@@ -95,7 +95,7 @@ RPC Layer (rpc/)
 | `_session_auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
 | `_session_lifecycle.py` | `ClientLifecycle` — loop-affinity guard + keepalive task |
 | `_rpc_executor.py` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols |
-| `_authed_transport.py` | Authed POST path, retry loops, `_AuthedTransportHost` Protocol |
+| `_authed_transport.py` | Authed POST leaf raising `TransportRateLimited` / `TransportServerError` / `TransportAuthExpired` for `RetryMiddleware` (in `_middleware_retry.py`) to act on; hosts the `_AuthedTransportHost` Protocol. |
 | `_conversation_cache.py` | Per-instance LRU conversation cache for `ChatAPI` |
 | `_polling_registry.py` | Pending-poll registry for long-running artifact generations |
 | `_cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
@@ -130,7 +130,7 @@ RPC Layer (rpc/)
 | `_middleware_chain.py` | Constructs the middleware chain in the canonical ADR-009 order |
 | `_middleware*.py` | Modular middleware implementations (drain, metrics, semaphore, retry, auth, error injection, tracing) |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — flat re-exports from `_auth/*` seams (Superseded by [arch-d1-auth-side](https://github.com/teng-lin/notebooklm-py/pull/834) (#834); `_AuthFacadeModule` retired; tests patch the canonical home in `_auth.<module>` directly) |
+| `auth.py` | Authentication facade and host for retained surface. Still owns `AuthTokens`, `load_auth_from_storage()`, and the `_validate_required_cookies()` write-through that propagates `auth.py`-level policy rebindings into `_auth.cookie_policy` (and mirrors `_SECONDARY_BINDING_WARNED` back). Tests still pin `notebooklm.auth.<name>` monkeypatch behavior (see `tests/unit/test_public_shims.py`); `_AuthFacadeModule` itself was retired in [arch-d1-auth-side](https://github.com/teng-lin/notebooklm-py/pull/834) (#834), but the flat re-export goal in ADR-003 is **deferred** — full retirement of `AuthTokens` / `load_auth_from_storage` to `_auth/` has not happened. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/headers.py` | HTTP header construction |
@@ -143,14 +143,14 @@ RPC Layer (rpc/)
 src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── client.py                    # NotebookLMClient
-├── auth.py                      # Authentication facade — flat re-exports from _auth/* (Superseded by arch-d1-auth-side (#834))
+├── auth.py                      # Authentication facade hosting `AuthTokens`, `load_auth_from_storage()`, and `_validate_required_cookies()` write-through into `_auth.cookie_policy` (ADR-003 flat re-export goal deferred; `_AuthFacadeModule` retired in #834)
 ├── types.py                     # Dataclasses
 ├── _session.py                  # Concrete Session orchestration (NotebookLMClient internals)
 ├── _kernel.py                   # Concrete Kernel transport core
 ├── _session_config.py           # DEFAULT_* knobs + module-level constants
 ├── _session_helpers.py          # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
 ├── _error_injection.py          # Synthetic-error env-var resolver + startup guard
-├── _authed_transport.py         # Authed POST path + retry loops
+├── _authed_transport.py         # Authed POST leaf — raises TransportRateLimited / TransportServerError / TransportAuthExpired for RetryMiddleware (_middleware_retry.py) to act on
 ├── _rpc_executor.py             # RPC dispatch executor
 ├── _session_auth.py             # AuthRefreshCoordinator (refresh task + auth-snapshot lock)
 ├── _client_metrics.py           # Telemetry / metrics seam
@@ -196,7 +196,7 @@ src/notebooklm/
 │   ├── cookies.py               # Cookie maps + _update_cookie_input
 │   ├── cookie_policy.py         # Domain allowlist and cookie policy
 │   ├── account.py               # Account profile + multi-account switching
-│   ├── session.py               # Session-level dataclasses
+│   ├── session.py               # Auth-session refresh implementation (`RefreshAuthCore` Protocol + `refresh_auth_session()`)
 │   ├── storage.py               # Profile/state persistence on disk
 │   ├── keepalive.py             # Cookie keepalive + __Secure-1PSIDTS rotation
 │   ├── psidts_recovery.py       # Inline PSIDTS recovery for cold-start (issue #865)

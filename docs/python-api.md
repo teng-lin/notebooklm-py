@@ -251,7 +251,7 @@ except NonIdempotentRetryError:
     ...
 ```
 
-`client.sources.add_file(...)` and `client.sources.add_drive(...)` are not yet covered by the probe-then-retry wrapper — a transport failure during these calls may produce a duplicate source on retry. Tracked as a separate fix.
+`client.sources.add_file(...)` and `client.sources.add_drive(...)` are now also covered by the probe-then-create wrapper: the create RPC runs with `disable_internal_retries=True` and, on transport failure, the wrapper probes the server-side source list (via `idempotent_create`) before deciding whether to retry — so transient failures no longer produce duplicate sources. See `_source_add.py` (`SourceAddService.add_drive`) and `_source_upload.py` (`SourceUploadPipeline.register_file_source`) for the implementation.
 
 ---
 
@@ -551,9 +551,14 @@ floor checks). All raise `ValueError`:
 
 ## Internal module map
 
-`Session` (in `src/notebooklm/_session.py`) is the orchestrator that owns
-the `httpx.AsyncClient`, glues the authed transport to RPC dispatch, and
-holds the `AuthTokens` for the running session. The supporting state
+Kernel owns the `httpx.AsyncClient`; Session constructs and exposes the
+Kernel. Per the [ADR-010](adr/0010-session-kernel-split.md) split,
+`Kernel.__init__` in `src/notebooklm/_kernel.py` constructs the
+`httpx.AsyncClient` and is responsible for closing it on `aclose()`;
+`Session` (in `src/notebooklm/_session.py`) is the orchestrator that
+constructs a `Kernel`, exposes it via `get_http_client()` delegation,
+glues the authed transport to RPC dispatch, and holds the `AuthTokens`
+for the running session. The supporting state
 (metrics, drain bookkeeping, request-id counter, transport plumbing,
 conversation cache, etc.) is split across single-responsibility session
 and kernel collaborator modules such as `notebooklm._authed_transport`,
@@ -565,7 +570,8 @@ historical `notebooklm._core` compatibility shim was removed in v0.5.0.
 
 | Module | Owns | Notes |
 |---|---|---|
-| `_session` | Concrete `Session` orchestrator; HTTP client lifecycle. | Concrete implementation. |
+| `_session` | Concrete `Session` orchestrator. Constructs and exposes a `Kernel`; the `httpx.AsyncClient` lifecycle is owned by `Kernel`. | Concrete implementation. |
+| `_kernel` | Concrete `Kernel` transport core; owns the `httpx.AsyncClient` (constructed in `Kernel.__init__`, closed in `Kernel.aclose()`) and the cookie jar. | Pure transport surface (see `Kernel` Protocol in `_session_contracts`). |
 | `_session_config` | Module-level constants: `DEFAULT_TIMEOUT`, `DEFAULT_KEEPALIVE_MIN_INTERVAL`, `DEFAULT_MAX_CONCURRENT_RPCS`, `DEFAULT_MAX_CONCURRENT_UPLOADS`, `CORE_LOGGER_NAME`, `normalize_max_concurrent_uploads`. | Pure constants; importable without side effects. |
 | `_session_helpers` | `is_auth_error`, `AUTH_ERROR_PATTERNS`, `_resolve_keepalive_interval`. | Cross-seam pure helpers; behaviour-bearing (and therefore unit-tested). |
 | `_error_injection` | `ERROR_INJECT_ENV_VAR`, `_get_error_injection_mode`, `_refuse_synthetic_error_outside_test_context`. | Env-var resolver + startup guard for the synthetic-error harness. |
@@ -578,7 +584,7 @@ historical `notebooklm._core` compatibility shim was removed in v0.5.0.
 | `_polling_registry` | Pending-poll registry shared by long-running artifact generations. | Used by artifacts and the legacy `Session._pending_polls` compatibility bridge. |
 | `_reqid_counter` | `ReqidCounter`: monotonic `_reqid` for the chat backend, lazy `asyncio.Lock` for concurrent `ChatAPI.ask` callers. | Baseline `_value=100000`, default `step=100000` — both are chat-API contract values; do not change. |
 | `_rpc_executor` | RPC dispatch executor; exposes `DecodeResponse` and `RpcOwner` Protocols so callers can be unit-tested against a stub. | `Session.rpc_call` delegates here. |
-| `_authed_transport` | Authed HTTP POST path, retry loops (429 + 5xx), `_AuthedTransportHost` Protocol. | Owns `TransportAuthExpired` / `TransportRateLimited` / `TransportServerError` transport-level exceptions. |
+| `_authed_transport` | Authed HTTP POST leaf and `_AuthedTransportHost` Protocol. Raises `TransportRateLimited` / `TransportServerError` for `RetryMiddleware` (in `_middleware_retry.py`) to act on; raises `TransportAuthExpired` for `AuthRefreshMiddleware`. | Owns the `TransportAuthExpired` / `TransportRateLimited` / `TransportServerError` transport-level exceptions; retry loops (429 + 5xx) live in `RetryMiddleware`. |
 
 Feature APIs depend on narrow per-capability Protocols defined in
 `notebooklm._session_contracts` (and feature-local runtime Protocols
@@ -624,8 +630,8 @@ class NotebookLMClient:
         rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: ConnectionLimits | None = None,
-        max_concurrent_uploads: int | None = None,
-        max_concurrent_rpcs: int | None = None,
+        max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,  # 4
+        max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
     ) -> "NotebookLMClient":
@@ -638,8 +644,8 @@ class NotebookLMClient:
         rate_limit_max_retries: int = 3,
         server_error_max_retries: int = 3,
         limits: ConnectionLimits | None = None,
-        max_concurrent_uploads: int | None = None,
-        max_concurrent_rpcs: int | None = None,
+        max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,  # 4
+        max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         cookie_saver: CookieSaver | None = None,
@@ -791,7 +797,7 @@ print(url)
 | `add_url(notebook_id, url, wait=False, wait_timeout=120.0)` | `str, str, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately) |
 | `add_text(notebook_id, title, content, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, bool, float, bool` | `Source` | Add text content |
 | `add_file(notebook_id, file_path, mime_type=None, wait=False, wait_timeout=120.0, *, title=None, on_progress=None)` | `str, str \| Path, str \| None, bool, float, *, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is **deprecated** and ignored (server infers from filename); passing non-`None` emits `DeprecationWarning` and is scheduled for removal in v0.6.0. `title` (keyword-only) sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
-| `add_drive(notebook_id, file_id, title, mime_type=None, wait=False, wait_timeout=120.0)` | `str, str, str, str \| None, bool, float` | `Source` | Add Google Drive doc |
+| `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` and `wait_timeout` are keyword-only. |
 | `rename(notebook_id, source_id, new_title)` | `str, str, str` | `Source` | Rename source |
 | `refresh(notebook_id, source_id)` | `str, str` | `bool` | Refresh URL/Drive source |
 | `check_freshness(notebook_id, source_id)` | `str, str` | `bool` | Check if source needs refresh |

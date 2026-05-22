@@ -12,7 +12,7 @@ the time of this ADR, `src/notebooklm/` contains 13 public-named modules
 (`auth.py`, `client.py`, `config.py`, `exceptions.py`, `io.py`, `log.py`,
 `migration.py`, `notebooklm_cli.py`, `paths.py`, `research.py`,
 `types.py`, `urls.py`, `utils.py`) and roughly 50 underscore-prefixed
-seam modules (`_core.py`, `_session.py`, `_kernel.py`,
+seam modules (`_session.py`, `_kernel.py`,
 `_session_contracts.py`, `_session_*`, `_authed_transport.py`,
 `_rpc_executor.py`, `_artifacts.py`, `_artifact_*.py`, `_chat.py`,
 `_chat_*.py`, `_middleware_*.py`, the `_auth/` subpackage, etc.).
@@ -123,7 +123,6 @@ but internal contents) MUST be added to this list before merging.
 ```text
 src/notebooklm/
 ├── _session.py                  # Session concrete orchestrator
-├── _core.py                     # legacy compatibility shim
 ├── _session_contracts.py        # Session/Kernel Protocols (Tier-13)
 ├── _kernel.py                   # Kernel concrete (Tier-13)
 ├── _session_*.py                # session helpers/config/lifecycle/auth

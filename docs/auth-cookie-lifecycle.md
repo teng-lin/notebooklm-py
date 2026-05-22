@@ -1562,9 +1562,20 @@ the parent process, and a per-loop / per-resolved-storage-path asyncio
 lock registry (`_get_refresh_lock`, mirroring the keepalive
 `_get_poke_lock` pattern) combined with `_REFRESH_GENERATIONS` guarded
 by `_REFRESH_STATE_LOCK` (a sync `threading.Lock`) ensures that a fan-out
-of N concurrent failing requests — even across event loops or worker
-threads sharing the same storage path — triggers exactly one refresh,
-not N.
+of N concurrent failing requests triggers **exactly one refresh per
+loop**, and **at-most-twice across loops** sharing the same storage path
+— not N. The cross-loop guarantee is best-effort coalescing: two loops
+can both capture the same `_REFRESH_GENERATIONS` value and pass the
+`should_run_refresh` check before either bumps it, so a worst-case race
+between two loops can run the refresh command twice. The contract is
+encoded by `tests/unit/test_refresh_lock_registry.py` as
+`1 <= run_count <= 2`. Cross-loop client reuse is unsupported anyway
+per [ADR-004](adr/0004-loop-affinity-contract.md) (one
+`NotebookLMClient` per event loop), so this race is only reachable when
+two independently-constructed clients in different loops share a
+storage path; filesystem-level locking on the storage path was
+considered and deferred (Windows-compat + stale-lock complexity for a
+worst-case "auth flow runs twice" outcome).
 
 This is **orthogonal** to L1–L3:
 

@@ -2,22 +2,40 @@
 
 ## Status
 
-Superseded by `arch-d1-auth-side` (D1 PR-2).
+Partially completed — flat re-export goal deferred.
 
-The write-through facade (`_AuthFacadeModule` + the 5 `_AUTH_*_FACADE_NAMES` /
-`_REFRESH_DEP_MIRROR_NAMES` / `_KEEPALIVE_DEP_MIRROR_NAMES` mirror tables)
-was deleted from `src/notebooklm/auth.py` in D1 PR-2. The remediation
-moved test-side mirroring into a small `tests/_fixtures/auth_seam.py`
-helper (`patch_auth_seam(monkeypatch, name, value)`), which walked the
-known `_auth/*` seam modules and patched every one that already bound
-the name. **That helper was itself retired in the post-v0.5.0 audit
-cleanup** (`docs/test-suite-audit.md` §3): the ~50 call sites migrated
-to targeted `monkeypatch.setattr(<canonical module>, name, value)`
-against the consumer-side import, and the fixture was deleted. New
-tests should prefer constructor injection via
-`tests._fixtures.make_fake_core` (ADR-007); where module-level seam
-state (file locks, refresh-retry registries) makes injection awkward,
-patch the canonical home directly.
+The write-through facade mechanism (`_AuthFacadeModule` + the 5
+`_AUTH_*_FACADE_NAMES` / `_REFRESH_DEP_MIRROR_NAMES` /
+`_KEEPALIVE_DEP_MIRROR_NAMES` mirror tables) was deleted from
+`src/notebooklm/auth.py` in D1 PR-2 ([arch-d1-auth-side / #834](https://github.com/teng-lin/notebooklm-py/pull/834)).
+The remediation moved test-side mirroring into a small
+`tests/_fixtures/auth_seam.py` helper (`patch_auth_seam(monkeypatch, name, value)`),
+which walked the known `_auth/*` seam modules and patched every one that
+already bound the name. **That helper was itself retired in the post-v0.5.0
+audit cleanup** (`docs/test-suite-audit.md` §3): the ~50 call sites migrated
+to targeted `monkeypatch.setattr(<canonical module>, name, value)` against the
+consumer-side import, and the fixture was deleted. New tests should prefer
+constructor injection via `tests._fixtures.make_fake_core` (ADR-007); where
+module-level seam state (file locks, refresh-retry registries) makes
+injection awkward, patch the canonical home directly.
+
+**Deferred.** The original D1 plan also called for `auth.py` to be reduced
+to a flat re-export module — i.e. moving `AuthTokens`,
+`load_auth_from_storage()`, and the `_validate_required_cookies()` write-through
+into `_auth/*` and leaving `auth.py` as a thin facade. That second half was
+not shipped. At HEAD, `auth.py` still owns `AuthTokens` (`src/notebooklm/auth.py`,
+symbol `AuthTokens`), still owns the active load/recovery logic
+(`load_auth_from_storage()`), and still installs
+`_validate_required_cookies()` into `_auth.cookies` to propagate
+`auth.py`-level policy rebindings into `_auth.cookie_policy` (and mirror
+`_SECONDARY_BINDING_WARNED` back). Tests still pin
+`notebooklm.auth.<name>` monkeypatch behavior
+(`tests/unit/test_public_shims.py`).
+
+CLAUDE.md and this ADR are pinned to that current reality. Completing the
+retirement (moving `AuthTokens` / `load_auth_from_storage` to `_auth/` and
+demoting `auth.py` to flat re-exports) remains the long-term direction but
+is not scheduled.
 
 The rest of this ADR is preserved as the historical record of why the
 facade existed at all.
@@ -87,7 +105,7 @@ The mechanism is *Accepted* today because:
 - The `_REFRESH_DEP_MIRROR_NAMES` / `_KEEPALIVE_DEP_MIRROR_NAMES` cross-module mirror sets encode an even subtler invariant — names that are owned by one seam but aliased into another at import time. A reader has to trace the `from … import …` chains to verify the mirror is complete.
 - The whole apparatus exists to make tests pass under a pattern (`monkeypatch.setattr("notebooklm.auth.X", …)`) that the audit (`.sisyphus/plans/arch-biggest-problem-audit.md`, disease D1) wants to retire entirely.
 
-The retirement path was completed in the D1 auth-side PR ([#834](https://github.com/teng-lin/notebooklm-py/pull/834)): the monolithic `tests/unit/test_auth.py` was split into concern-aligned files (`test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.), monkeypatches were migrated to constructor injection, `_AuthFacadeModule` was deleted, and `auth.py` was reduced to a flat re-export module.
+The retirement path was **partially completed** in the D1 auth-side PR ([#834](https://github.com/teng-lin/notebooklm-py/pull/834)): the monolithic `tests/unit/test_auth.py` was split into concern-aligned files (`test_auth_storage.py`, `test_auth_account.py`, `test_auth_refresh.py` etc.), monkeypatches were migrated to constructor injection, and `_AuthFacadeModule` itself was deleted. The second half — reducing `auth.py` to a flat re-export module — is **deferred**: at HEAD, `auth.py` still owns `AuthTokens`, `load_auth_from_storage()`, and a `_validate_required_cookies()` policy write-through (see the **Status** block above for the current contract).
 
 ## Alternatives considered
 

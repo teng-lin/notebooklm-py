@@ -21,7 +21,7 @@ The contract is enforced at two layers:
 - `src/notebooklm/_loop_affinity.py` exposes `assert_bound_loop(bound_loop)` which compares the current loop to the captured one and raises `RuntimeError` with an actionable diagnostic if they differ.
 - `src/notebooklm/_session_lifecycle.py::ClientLifecycle.open()` captures the loop with `asyncio.get_running_loop()` and exposes it as `get_bound_loop()`. Every authed POST path forwards the captured loop into `assert_bound_loop()` before touching any loop-bound primitive.
 
-`SessionCapabilities.bound_loop` (`_capabilities.py:248-274`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call.
+`Session.bound_loop()` (`src/notebooklm/_session.py`, symbol `bound_loop`) defensively returns `None` when `_lifecycle` is missing or returns a non-loop value, so `MagicMock`-backed test fixtures fall through to the silent no-op path instead of misclassifying a mock as a cross-loop call. The capability-Protocol surface that feature APIs depend on lives in `src/notebooklm/_session_contracts.py` (symbols `AuthMetadata`, `Kernel`, `RpcCaller`, `LoopGuard`, `OperationScopeProvider`, `AsyncWorkRuntime`); per ADR-013 the broad `SessionCapabilities` adapter and its `_capabilities.py` home were retired in favor of these narrow shared Protocols plus feature-local runtimes.
 
 ## Decision
 
@@ -46,7 +46,7 @@ The contract is enforced via `assert_bound_loop()` (raises `RuntimeError`) rathe
 **Unwanted:**
 
 - Callers that *want* multi-loop / multi-thread reuse must construct multiple clients. For test code this is mildly verbose; for production code this is the right design (each loop owns its own connection pool) so the tax is paid in tests only.
-- The loop-affinity bridge in `_capabilities.py:248-274` has to defensively handle `MagicMock`-shaped fixtures. The defensive code is small but it is a reminder that the contract is enforced via Protocol forwarding, not via a hard constructor invariant.
+- The loop-affinity bridge on `Session.bound_loop()` (in `_session.py`) has to defensively handle `MagicMock`-shaped fixtures. The defensive code is small but it is a reminder that the contract is enforced via Protocol forwarding through the capability surface in `_session_contracts.py`, not via a hard constructor invariant.
 - The contract is *advisory* to multi-process callers. Processes do not share Python objects, so the contract is trivially satisfied across fork/spawn boundaries — but the diagnostic message says "loop", not "loop or process", so a reader of an error report has to know that processes are out of scope.
 
 ## Alternatives considered

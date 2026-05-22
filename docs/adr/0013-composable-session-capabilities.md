@@ -25,27 +25,29 @@ ADR-010 (Tier 13 PR 13.1) pinned a deliberately narrow feature-facing
 converge on one semantic orchestration contract, while transport stayed
 isolated and Artifacts received a dedicated drain-hook seam.
 
-That narrow contract did not hold. Today, at
-`src/notebooklm/_session_contracts.py:50`, the broad `Session` protocol
-exposes **eight members**:
+That narrow contract did not hold. At the time this ADR was written, the
+broad `Session` Protocol in `src/notebooklm/_session_contracts.py` had
+grown to **eight members**:
 
-1. `auth` (`AuthMetadata` property; `_session_contracts.py:54`)
-2. `kernel` (`Kernel` property; `_session_contracts.py:57`)
-3. `rpc_call(...)` (`_session_contracts.py:59`)
-4. `transport_post(...)` (`_session_contracts.py:71`)
-5. `next_reqid(...)` (`_session_contracts.py:79`)
-6. `assert_bound_loop()` (`_session_contracts.py:81`)
-7. `operation_scope(...)` (`_session_contracts.py:83`)
-8. `register_drain_hook(...)` (`_session_contracts.py:85`)
+1. `auth` (an `AuthMetadata` property)
+2. `kernel` (a `Kernel` property)
+3. `rpc_call(...)`
+4. `transport_post(...)`
+5. `next_reqid(...)`
+6. `assert_bound_loop()`
+7. `operation_scope(...)`
+8. `register_drain_hook(...)`
 
-The five-member intent of ADR-010 is gone. `auth` and `kernel` were
+The five-member intent of ADR-010 was gone. `auth` and `kernel` had been
 promoted as members for upload-flow convenience; `register_drain_hook`
-was added to the general contract despite the standalone
-`DrainHookRegistration` Protocol at `_session_contracts.py:92` covering
-the same shape — leaving two redundant protocols carrying the same
-single-member surface. `transport_post` and `next_reqid` are used by
-exactly one feature (chat), but every feature that types against
-`Session` is now coupled to them.
+had been added to the general contract despite a standalone
+`DrainHookRegistration` Protocol covering the same shape — leaving two
+redundant protocols carrying the same single-member surface.
+`transport_post` and `next_reqid` were used by exactly one feature
+(chat), but every feature that typed against `Session` was coupled to
+them. (Post-this-ADR, Phase 7 deleted the broad `Session` Protocol
+entirely; the current `_session_contracts.py` exposes only the four
+shared capability Protocols below plus `AuthMetadata` and `Kernel`.)
 
 Re-reading the codebase against ADR-010's original constraint, the audit
 identified two categories of capability:
@@ -102,9 +104,9 @@ runtimes. Concretely:
    `LoopGuard + OperationScopeProvider`). The promotion criterion is
    **shared by ≥2 features**. No capability is promoted on speculation.
 
-2. **Retain `AuthMetadata` (`_session_contracts.py:24`) and `Kernel`
-   (`_session_contracts.py:34`)** as standalone Protocols in
-   `_session_contracts.py` — they are **NOT** members of any
+2. **Retain `AuthMetadata` and `Kernel`** (both in
+   `_session_contracts.py`, symbols `AuthMetadata` and `Kernel`) as
+   standalone Protocols — they are **NOT** members of any
    feature-facing Session Protocol. Only `SourceUploadPipeline`
    consumes them, but the upload pipeline still depends on Session-owned
    objects (the authenticated account snapshot and the transport
@@ -185,17 +187,17 @@ runtimes. Concretely:
   the new keyword-only collaborator arguments. The migration steps in
   `docs/refactor-history.md` pair each feature retyping with its same-commit
   test fixture update so the build stays green.
-- The `_core.py` compatibility shim was removed in Phase 4 ([#889](https://github.com/teng-lin/notebooklm-py/pull/889)); see `tests/unit/test_public_shims.py:1166` for the removal pin.
+- The `_core.py` compatibility shim was removed in Phase 4 ([#889](https://github.com/teng-lin/notebooklm-py/pull/889)); see `tests/unit/test_public_shims.py` (search for `Tier-10 PR-A re-export identity pins for ``notebooklm._core`` were deleted`) for the removal pin.
 - Two `RpcCaller` Protocols coexist briefly: the shared *object*
-  protocol in `_session_contracts.py` (used by every feature API) and a
-  pre-existing local *callable* protocol in `_source_upload.py:43-56`
-  (used as the `register_file_source(rpc_call=...)` callback at
-  `_source_upload.py:345`). They are structurally distinct (one is an
-  object with an `rpc_call` method; the other is a callable). To avoid
-  the name collision, the local callable protocol is **renamed** to
-  `RpcCallback` in the same commit that introduces the shared
-  `RpcCaller`. The local protocol is not deleted because the callback
-  shape is a real seam the upload pipeline depends on.
+  protocol in `_session_contracts.py` (symbol `RpcCaller`, used by every
+  feature API) and a pre-existing local *callable* protocol in
+  `_source_upload.py` (symbol `RpcCallback`, used as the
+  `register_file_source(rpc_call=...)` callback). They are structurally
+  distinct (one is an object with an `rpc_call` method; the other is a
+  callable). To avoid the name collision, the local callable protocol is
+  **renamed** to `RpcCallback` in the same commit that introduces the
+  shared `RpcCaller`. The local protocol is not deleted because the
+  callback shape is a real seam the upload pipeline depends on.
 - This ADR exceeds the 250-line soft cap by user direction; the hard
   cap remains 500 lines. The expanded length is load-bearing: the
   decision shipping in this PR is the simultaneous adoption of three
@@ -222,13 +224,14 @@ lands.
 ## Alternatives considered
 
 1. **Keep the broad `Session` contract and let it continue to grow.**
-   Rejected. The drift evidence is already visible at
-   `_session_contracts.py:50`: ADR-010 specified five members, and the
-   current contract has eight. Without an explicit promotion criterion
-   (shared by ≥2 features), every future single-consumer capability is
-   a candidate for promotion, and the contract is one PR away from
-   nine members. The "narrow Session" intent of ADR-010 is not
-   recoverable by exhortation; it requires a structural rule.
+   Rejected. At ADR-write time the drift was already visible in
+   `_session_contracts.py`'s broad `Session` Protocol: ADR-010 specified
+   five members, and the contract had grown to eight. Without an
+   explicit promotion criterion (shared by ≥2 features), every future
+   single-consumer capability is a candidate for promotion, and the
+   contract is one PR away from nine members. The "narrow Session"
+   intent of ADR-010 is not recoverable by exhortation; it requires a
+   structural rule.
 
 2. **Per-sub-client narrow Protocols only, no feature-local runtimes**
    (the post-D2 replacement from the ADR-002 lineage). Rejected.
@@ -245,8 +248,8 @@ lands.
    on speculation is exactly the drift pattern this ADR fights:
    `auth`/`kernel`/`register_drain_hook` were promoted to the broad
    `Session` for "convenience" without a second-consumer trigger, and
-   the result is the eight-member contract documented in
-   `_session_contracts.py:50`. The promotion criterion in Decision §1
+   the result was the eight-member contract enumerated in the Context
+   section above. The promotion criterion in Decision §1
    (shared by ≥2 features) exists precisely to block this path. If a
    future feature genuinely needs chat's transport slice, the
    capability is promoted at that point with the second consumer as
