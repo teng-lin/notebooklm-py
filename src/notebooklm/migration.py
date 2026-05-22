@@ -24,6 +24,17 @@ from .paths import get_config_path, get_home_dir
 
 logger = logging.getLogger(__name__)
 
+# Public surface (ADR-012). Underscore-prefixed constants such as
+# ``_MIGRATION_LOCK``, ``_MIGRATION_MARKER``, and ``_MIGRATION_LOCK_TIMEOUT``
+# remain importable / monkeypatch-able for tests via direct attribute
+# lookup; ``__all__`` only governs ``from notebooklm.migration import *``
+# and documents the intended public API.
+__all__ = [
+    "MigrationLockTimeoutError",
+    "ensure_profiles_dir",
+    "migrate_to_profiles",
+]
+
 _MIGRATION_MARKER = ".migration_complete"
 _MIGRATION_LOCK = ".migration.lock"
 _MIGRATION_LOCK_TIMEOUT = 30.0

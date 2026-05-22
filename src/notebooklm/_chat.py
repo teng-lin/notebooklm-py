@@ -48,10 +48,17 @@ def _extract_next_turn_content(next_turn: Any) -> str | None:
 
     The ``khqZz`` (``GET_CONVERSATION_TURNS``) response packs each AI answer
     as ``turn[4][0][0]`` — three nested wrappers around the answer text. This
-    helper delegates the inner-most descent to :func:`safe_index` so soft-mode
-    shape drift (``NOTEBOOKLM_STRICT_DECODE`` unset) logs a structured warning
-    and returns ``None`` instead of raising; strict-decode mode still lets
-    :func:`safe_index` raise ``UnknownRPCMethodError`` so callers fail fast.
+    helper delegates the inner-most descent to :func:`safe_index`, which
+    consults the strict-decode policy defined in :mod:`notebooklm._env`
+    (``is_strict_decode_enabled``). Strict-decode is the default when
+    ``NOTEBOOKLM_STRICT_DECODE`` is unset (or set to ``"1" / "true" / "True"``):
+    descent failures raise :class:`~notebooklm.exceptions.UnknownRPCMethodError`
+    so callers fail fast on Google-side shape drift. Setting
+    ``NOTEBOOKLM_STRICT_DECODE=0`` (or any other non-truthy value) opts back
+    into legacy soft-mode behavior — :func:`safe_index` logs a structured
+    warning and returns ``None`` instead of raising. See ADR-011
+    (``docs/adr/0011-schema-validation-policy.md``) for the rationale and
+    the opt-out retirement timeline.
 
     Args:
         next_turn: The candidate answer turn (a ``turn[2] == 2`` row from the

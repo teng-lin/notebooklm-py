@@ -113,7 +113,13 @@ from .cli import (
 )
 from .cli.grouped import SectionedGroup
 
-# Import helpers needed for backward compatibility with tests
+# Public surface (ADR-012). ``main`` is the ``[project.scripts]`` entry
+# point and ``src/notebooklm/__main__.py`` shim; ``cli`` is the root
+# ``click.Group`` imported by tests to drive ``CliRunner`` invocations.
+# The underscore-prefixed helpers in this module (``_reconfigure_output_stream``,
+# ``_configure_windows_runtime``) stay importable for tests but are not part
+# of the documented public API.
+__all__ = ["cli", "main"]
 
 
 # =============================================================================
