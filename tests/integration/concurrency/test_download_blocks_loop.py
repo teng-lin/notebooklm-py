@@ -467,20 +467,28 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
 
     Methodology
     -----------
-    We patch ``threading.Thread`` with a recorder that classifies each
-    instantiation:
+    Two layers of evidence:
 
-    * Threads whose ``target`` is a callable named ``_writer_loop``
-      (the closure produced inside ``_download_url``) are "writer"
-      threads.
-    * All other threads (rare on this path) are passthroughs.
+    1. Patch ``threading.Thread`` with a recorder that counts
+       instantiations whose ``target`` is the ``_writer_loop`` closure.
+       Exactly one writer thread must be instantiated.
 
-    We require *exactly one* writer thread per download regardless of
-    chunk count. A regression that goes back to per-chunk
-    ``to_thread(f.write, ...)`` bumps the count to N.
+    2. Patch ``builtins.open`` on the temp-file path so the returned
+       handle records ``threading.get_ident()`` for every ``write()``
+       call. All recorded ids must be identical AND must match the
+       writer thread's ``ident``. CodeRabbit nitpick on PR #981: thread
+       construction alone doesn't prove every chunk was written on
+       that thread; recording the call site closes that gap.
+
+    A regression that goes back to per-chunk ``to_thread(f.write, ...)``
+    fails layer 1 (thread count > 1) AND layer 2 (writes happen across
+    multiple thread idents).
     """
     api, _ = mock_artifacts_api
     output_path = tmp_path / "many_chunks.bin"
+
+    import builtins
+    import threading as real_threading
 
     import httpx as real_httpx
 
@@ -505,24 +513,65 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    import threading as real_threading
-
     original_thread_cls = real_threading.Thread
+    real_open = builtins.open
     writer_threads = 0
+    writer_thread_idents: list[int] = []
+    write_thread_ids: list[int] = []
 
     class _RecordingThread(original_thread_cls):  # type: ignore[misc, valid-type]
         def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
             nonlocal writer_threads
             target = kwargs.get("target") or (args[1] if len(args) > 1 else None)
             name = getattr(target, "__qualname__", "") or getattr(target, "__name__", "")
-            if name.endswith("_writer_loop"):
+            self._is_writer_loop_thread = name.endswith("_writer_loop")
+            if self._is_writer_loop_thread:
                 writer_threads += 1
             super().__init__(*args, **kwargs)
+
+        def start(self) -> None:
+            super().start()
+            # ``ident`` is only valid after ``start()``. Capture it
+            # here so the test can compare it against the per-write
+            # thread ids recorded by ``_RecordingFile``.
+            if self._is_writer_loop_thread:
+                writer_thread_idents.append(self.ident)  # type: ignore[arg-type]
+
+    class _RecordingFile:
+        """Forwards every attribute to the real handle but instruments
+        ``write`` to record the calling thread's ident."""
+
+        def __init__(self, fh) -> None:  # type: ignore[no-untyped-def]
+            self._fh = fh
+
+        def write(self, data: bytes) -> int:
+            write_thread_ids.append(real_threading.get_ident())
+            return self._fh.write(data)
+
+        def __enter__(self) -> _RecordingFile:
+            return self
+
+        def __exit__(self, *exc) -> None:  # type: ignore[no-untyped-def]
+            self._fh.close()
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(self._fh, name)
+
+    def _patched_open(file, mode="r", *args, **kwargs):  # type: ignore[no-untyped-def]
+        try:
+            target_path = Path(file).resolve()
+            in_tmp_dir = target_path.parent == tmp_path.resolve()
+        except (TypeError, ValueError):
+            in_tmp_dir = False
+        if in_tmp_dir and "w" in mode and "b" in mode:
+            return _RecordingFile(real_open(file, mode, *args, **kwargs))
+        return real_open(file, mode, *args, **kwargs)
 
     with (
         patch.object(real_httpx, "AsyncClient", return_value=mock_client),
         patch("notebooklm._artifacts.load_httpx_cookies", return_value=MagicMock()),
         patch("notebooklm._artifact_downloads.threading.Thread", new=_RecordingThread),
+        patch.object(builtins, "open", new=_patched_open),
     ):
         result = await api._download_url(
             "https://storage.googleapis.com/many_chunks.bin", str(output_path)
@@ -537,6 +586,26 @@ async def test_download_url_uses_single_writer_thread_for_all_chunks(
         f"_download_url created {writer_threads} writer threads for a "
         f"{len(chunks)}-chunk download. The fix requires exactly ONE long-lived "
         "writer thread fed via a bounded queue, not a fresh thread per chunk."
+    )
+    # Layer 2: prove every chunk was written on the same single thread,
+    # and that thread is the dedicated writer.
+    assert len(write_thread_ids) == len(chunks), (
+        f"recorded {len(write_thread_ids)} writes for a {len(chunks)}-chunk "
+        "download — production code must call ``fh.write`` exactly once per "
+        "chunk on the writer thread."
+    )
+    distinct_write_idents = set(write_thread_ids)
+    assert len(distinct_write_idents) == 1, (
+        f"chunks were written across {len(distinct_write_idents)} distinct "
+        f"threads ({sorted(distinct_write_idents)}). A regression that mixes "
+        "the dedicated writer with per-chunk ``to_thread(f.write, ...)`` calls "
+        "would surface here."
+    )
+    assert writer_thread_idents, "writer thread ident was not captured"
+    assert distinct_write_idents == {writer_thread_idents[0]}, (
+        f"writes happened on thread {distinct_write_idents.pop()} but the "
+        f"dedicated _writer_loop thread had ident {writer_thread_idents[0]}. "
+        "Writes must run on the writer thread, not a sibling executor slot."
     )
 
 

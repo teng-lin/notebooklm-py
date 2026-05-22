@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import csv
 import logging
 import os
@@ -40,6 +39,39 @@ _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleap
 # the writer falls behind) but large enough to keep the writer hot across
 # a brief read stall. 8 slots × 64 KiB ≈ 512 KiB of in-flight buffering.
 _DOWNLOAD_WRITER_QUEUE_SIZE = 8
+
+
+async def _await_writer_exit(writer_thread: threading.Thread) -> None:
+    """Wait for a download writer thread to actually exit.
+
+    Plain ``await asyncio.to_thread(thread.join)`` is unsafe under
+    cancellation: if our awaiting task is cancelled, the await raises
+    ``CancelledError`` and we unwind even though the underlying
+    ``thread.join`` is still blocked on the thread. The thread keeps
+    running, which means the outer cleanup (``temp_file.unlink``)
+    races with the writer's still-open file handle.
+
+    ``asyncio.shield`` alone doesn't fix this: it keeps the *inner*
+    join task alive across cancellation, but the *await* still raises
+    ``CancelledError`` and we unwind anyway. The fix is a shield-loop
+    that keeps re-awaiting the same shielded join task until it
+    actually completes. Repeated cancellations only delay our
+    re-raise, never the writer's exit.
+
+    Addresses the CodeRabbit MAJOR finding on PR #981.
+    """
+    join_task = asyncio.ensure_future(asyncio.to_thread(writer_thread.join))
+    while not join_task.done():
+        try:
+            await asyncio.shield(join_task)
+        except BaseException:
+            # Outer task was cancelled (or some other exception
+            # propagated into our await). The shielded join keeps
+            # running; loop and re-await. We deliberately swallow
+            # the cancellation here so the join can complete —
+            # the original exception is preserved on the calling
+            # frame's stack and re-raised after we return.
+            pass
 
 
 @dataclass(frozen=False)
@@ -690,7 +722,12 @@ class ArtifactDownloadService:
                             # Join surfaces any exception the writer
                             # captured. ``to_thread(.join)`` is needed
                             # because ``Thread.join`` is sync-blocking.
-                            await asyncio.to_thread(writer_thread.join)
+                            # ``_await_writer_exit`` shield-loops until
+                            # the writer actually exits so the outer
+                            # cleanup never races with the still-open
+                            # file handle (CodeRabbit MAJOR finding on
+                            # PR #981).
+                            await _await_writer_exit(writer_thread)
                             if writer_error:
                                 raise writer_error[0]
                         except BaseException:
@@ -718,8 +755,21 @@ class ArtifactDownloadService:
                                     # get — the next put attempt will
                                     # succeed.
                                     pass
-                            with contextlib.suppress(BaseException):
-                                await asyncio.to_thread(writer_thread.join)
+                            # MUST wait for the writer to actually exit
+                            # before unwinding: the outer ``except``
+                            # unlinks ``temp_file``, which would race
+                            # with the writer's still-open file handle
+                            # otherwise. A plain
+                            # ``contextlib.suppress(BaseException) +
+                            # await to_thread(.join)`` does NOT suffice
+                            # — the await itself can be re-cancelled and
+                            # unwind before the writer finishes. The
+                            # shield-loop in ``_await_writer_exit``
+                            # keeps re-awaiting the same shielded join
+                            # task across repeated cancellations until
+                            # the writer thread is actually dead.
+                            # CodeRabbit MAJOR finding on PR #981.
+                            await _await_writer_exit(writer_thread)
                             raise
 
                         if total_bytes == 0:
