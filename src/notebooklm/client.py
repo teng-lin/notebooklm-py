@@ -470,12 +470,17 @@ class NotebookLMClient:
                 # original CancelledError surfaces unchanged.
                 try:
                     await asyncio.shield(self._session.close())
-                except BaseException:
-                    # Swallow ANY exception from the shielded close
-                    # (close errors, or a re-cancel propagated through
-                    # the shield await) so the original CancelledError
-                    # below is the one that reaches the caller. The
-                    # inner shielded Task continues to run regardless.
+                except (Exception, asyncio.CancelledError):
+                    # Swallow regular close failures and any re-cancel
+                    # propagated through the shield await so the
+                    # original CancelledError below is the one that
+                    # reaches the caller. The inner shielded Task
+                    # continues to run regardless.
+                    # NOTE: deliberately NOT catching ``BaseException`` —
+                    # ``KeyboardInterrupt`` and ``SystemExit`` are
+                    # process-exit signals that must propagate unchanged
+                    # (per CodeRabbit feedback on PR #950, comment
+                    # 3285205066).
                     pass
                 raise
             # Any other exception from drain (e.g. ``ValueError`` for a
