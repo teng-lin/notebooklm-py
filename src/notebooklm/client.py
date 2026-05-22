@@ -427,13 +427,21 @@ class NotebookLMClient:
         - **Normal-success and drain-timeout paths**: on return,
           ``is_connected is False`` and the underlying
           ``httpx.AsyncClient`` is closed synchronously.
-        - **Cancel-during-drain path**: ``CancelledError`` is re-raised
-          immediately, but the shielded ``Session.close()`` Task
-          continues running in the background and closes the transport
-          to completion. Callers needing a synchronous teardown signal
-          on the cancel path can ``await asyncio.sleep(0)`` (or poll
-          ``is_connected``) after observing the cancel — the inner
-          Task is already scheduled at the point the cancel surfaces.
+        - **Cancel-during-drain path** (single cancellation): the
+          shielded ``Session.close()`` runs to completion synchronously
+          before ``CancelledError`` is re-raised — Python does not
+          re-raise ``CancelledError`` to the same task without an
+          explicit re-cancel, so the await on the shielded Task
+          blocks normally. On return, ``is_connected is False`` and
+          the transport is closed.
+        - **Cancel-during-drain path** (re-cancellation while awaiting
+          the shielded close): the shielded ``Session.close()`` Task is
+          isolated from the second cancel by ``asyncio.shield`` and
+          continues running in the background; the second cancel
+          surfaces in the awaiter, is suppressed, and the *original*
+          ``CancelledError`` is re-raised. ``is_connected`` settles to
+          ``False`` once the background Task lands (callers can
+          ``await asyncio.sleep(0)`` or poll to observe it).
 
         There is no path that leaves a live transport behind.
         """
@@ -451,18 +459,23 @@ class NotebookLMClient:
                 # the caller's task is cancelled while drain() is
                 # waiting (e.g. ``asyncio.wait_for`` deadline, manual
                 # ``task.cancel()``), we MUST still tear down the
-                # transport before letting the cancel propagate.
-                # ``asyncio.shield`` schedules ``Session.close()`` as a
-                # Task that survives the outer cancellation — the
-                # await here re-raises CancelledError to us, but the
-                # inner Task keeps running and drives ``Kernel.aclose()``
-                # to completion.
+                # transport before letting the cancel propagate. On a
+                # single cancellation this shielded await runs to
+                # completion synchronously (Python does not re-raise
+                # CancelledError without an explicit re-cancel). If a
+                # SECOND cancel arrives while we're parked here,
+                # ``asyncio.shield`` isolates the inner Session.close()
+                # Task so it continues in the background; the second
+                # cancel hits the awaiter and is swallowed below so the
+                # original CancelledError surfaces unchanged.
                 try:
                     await asyncio.shield(self._session.close())
                 except BaseException:
-                    # Swallow any error (including the CancelledError
-                    # propagated through the shield await) so the
-                    # original CancelledError surfaces unchanged below.
+                    # Swallow ANY exception from the shielded close
+                    # (close errors, or a re-cancel propagated through
+                    # the shield await) so the original CancelledError
+                    # below is the one that reaches the caller. The
+                    # inner shielded Task continues to run regardless.
                     pass
                 raise
             # Any other exception from drain (e.g. ``ValueError`` for a
