@@ -62,34 +62,53 @@ def char_runner() -> CliRunner:
 
 @pytest.fixture
 def char_context_file(tmp_path):
-    """Provide a temporary context file path with full session_cmd patching.
+    """Provide a temporary context file path with full ``get_context_path`` patching.
 
-    Patches every binding of ``get_context_path`` the CLI surface uses.
-    ``cli/services/session_context.py`` reads through ``_paths_module``
-    (per rev-1 CodeRabbit feedback on #962), so the module-level
-    ``notebooklm.paths.get_context_path`` patch covers the service layer
-    in a single hit; the per-module patches preserve compatibility with
-    the legacy direct-symbol bindings in ``cli/{helpers,context,resolve,session_cmd}.py``.
+    Patches every binding of ``get_context_path`` the CLI surface uses,
+    including the new P3.T3 service-layer site
+    ``cli.services.session_context.get_context_path`` so ``read_status``
+    reads from the test tmp file rather than the real
+    ``~/.notebooklm/context.json``.
     """
     context_file = tmp_path / "context.json"
     with (
-        patch("notebooklm.paths.get_context_path", return_value=context_file),
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
         patch("notebooklm.cli.session_cmd.get_context_path", return_value=context_file),
+        patch(
+            "notebooklm.cli.services.session_context.get_context_path",
+            return_value=context_file,
+        ),
     ):
         yield context_file
 
 
 @pytest.fixture
 def char_storage_file(tmp_path, monkeypatch):
-    """Provide a storage_state.json path and patch get_storage_path to return it."""
+    """Provide a storage_state.json path and patch get_storage_path to return it.
+
+    Patches every storage-path resolution seam used by the auth commands:
+    the canonical ``notebooklm.paths.get_storage_path`` source, the
+    session_cmd legacy binding, and the P3.T3 service-layer bindings.
+    """
     storage_file = tmp_path / "storage_state.json"
-    # Patch every storage-path resolution seam used by the auth commands.
     with (
-        patch("notebooklm.cli.session_cmd.get_storage_path", return_value=storage_file),
         patch("notebooklm.paths.get_storage_path", return_value=storage_file),
+        patch("notebooklm.cli.session_cmd.get_storage_path", return_value=storage_file),
+        patch(
+            "notebooklm.cli.services.auth_source.get_storage_path",
+            return_value=storage_file,
+        ),
+        patch(
+            "notebooklm.cli.services.session_context.get_storage_path",
+            return_value=storage_file,
+            create=True,
+        ),
+        patch(
+            "notebooklm.cli.services.playwright_login.get_storage_path",
+            return_value=storage_file,
+        ),
     ):
         yield storage_file
 
@@ -320,7 +339,7 @@ class TestStatusCharacterization:
         }
 
     def test_status_paths_json(self, char_runner, char_context_file):
-        with patch("notebooklm.cli.session_cmd.get_path_info") as mock_path_info:
+        with patch("notebooklm.cli.services.session_context.get_path_info") as mock_path_info:
             mock_path_info.return_value = {
                 "home_dir": "/tmp/.notebooklm",
                 "home_source": "default",

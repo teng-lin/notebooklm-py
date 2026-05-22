@@ -560,6 +560,14 @@ def test_auth_runtime_imports_only_runtime_facade_collaborators() -> None:
         if isinstance(node, ast.ImportFrom)
         and (node.module or "").startswith("notebooklm.cli.services")
     }
+    # Also catch absolute ``import notebooklm.cli.services.X`` forms
+    # (rev-2 CodeRabbit feedback on #962 — without this branch a bare
+    # ``import`` would silently bypass the layering guard).
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith("notebooklm.cli.services"):
+                    service_imports.add(alias.name)
     # Also catch relative imports of the form ``from .services.X import ...``
     for node in ast.walk(tree):
         if (

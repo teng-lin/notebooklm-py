@@ -44,21 +44,22 @@ def _resolve_auth_storage_path(
 ) -> Path | str | None:
     """Resolve storage unless auth is supplied directly by environment.
 
-    Thin wrapper over :meth:`AuthSource.resolve` kept for ``ctx.obj``
-    caching compatibility (callers see the same return shape they did
-    before P3.T3). ``--storage`` overrides everything; otherwise the
-    env-var fast path returns ``None``; finally the profile-resolved
-    storage file is returned.
+    Preserves the legacy return shape (the input ``storage_path`` is passed
+    through verbatim — Path stays Path, str stays str) so callers that have
+    historically passed a bare string (e.g. ``ctx.obj["storage_path"]``
+    when set directly by tests) continue to receive the same value. The
+    precedence logic itself delegates to :class:`AuthSource` so the gate
+    is consolidated.
     """
-    storage_override: Path | None
-    if storage_path is None:
-        storage_override = None
-    elif isinstance(storage_path, Path):
-        storage_override = storage_path
-    else:
-        storage_override = Path(storage_path)
-    auth = AuthSource.from_components(storage_override=storage_override, profile=profile)
-    return auth.resolve()
+    if storage_path is not None:
+        # ``--storage`` override beats every other source — return the
+        # caller's value verbatim (no Path coercion).
+        return storage_path
+    if has_env_auth_json():
+        return None
+    from ..paths import get_storage_path
+
+    return get_storage_path(profile=profile)
 
 
 def _resolved_auth_storage_path(ctx) -> Path | str | None:

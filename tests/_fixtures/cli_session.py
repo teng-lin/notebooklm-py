@@ -114,6 +114,27 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
     session_target = f"notebooklm.cli.session_cmd.{name}"
     submodule_targets = _services_login_submodule_targets(name)
 
+    # P3.T3 service modules also re-import external helpers (notably
+    # ``get_storage_path`` / ``get_browser_profile_dir`` in
+    # ``services.playwright_login`` and ``services.session_context``).
+    # Fan the patch out to those bindings too so a single
+    # ``patch_session_login_dual("get_storage_path", ...)`` call covers
+    # every call site without requiring per-test patches.
+    p3t3_modules = (
+        "notebooklm.cli.services.playwright_login",
+        "notebooklm.cli.services.session_context",
+        "notebooklm.cli.services.auth_diagnostics",
+        "notebooklm.cli.services.auth_source",
+    )
+    p3t3_targets: list[str] = []
+    for mod_name in p3t3_modules:
+        try:
+            mod = importlib.import_module(mod_name)
+        except ImportError:
+            continue
+        if name in vars(mod):
+            p3t3_targets.append(f"{mod_name}.{name}")
+
     with ExitStack() as stack:
         primary = stack.enter_context(patch(services_target, **patch_kwargs))
         # Patch session-side with the SAME mock so call counts aggregate.
@@ -125,5 +146,8 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
         # …) — patching only the package re-export would silently no-op for
         # calls originating inside those submodules.
         for target in submodule_targets:
+            stack.enter_context(patch(target, new=primary))
+        # P3.T3 service-module bindings (rev-1 CodeRabbit cleanup on #962).
+        for target in p3t3_targets:
             stack.enter_context(patch(target, new=primary))
         yield primary

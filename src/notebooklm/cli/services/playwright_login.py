@@ -40,16 +40,37 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-# Import the module rather than the symbols so test fixtures patching
-# ``notebooklm.paths.get_storage_path`` / ``...get_browser_profile_dir``
-# are honoured from the service layer (rev-1 CodeRabbit feedback class
-# on #962). Same applies to the ``resolve_profile`` lazy import inside
-# :func:`run_playwright_login`.
-from ... import paths as _paths_module
 from ...config import get_base_host, get_base_url
 from ...io import atomic_write_json
+from ...paths import get_browser_profile_dir, get_storage_path
 from ..error_handler import exit_with_code
 from ..rendering import console
+
+
+# Resolve path helpers via a test-aware precedence chain so both
+# ``patch("notebooklm.cli.session_cmd.<sym>", ...)`` AND
+# ``patch("notebooklm.cli.services.playwright_login.<sym>", ...)``
+# intercept the service-layer call (rev-1 CodeRabbit feedback on #962).
+# Precedence: service module's own binding if patched, then session_cmd's
+# binding if patched, then the default (= canonical ``notebooklm.paths.<sym>``).
+def _resolve_paths_helper(name: str, default):
+    from ... import paths as _paths_module
+
+    canonical = getattr(_paths_module, name, default)
+    import sys as _sys
+
+    service_mod = _sys.modules.get(__name__)
+    if service_mod is not None:
+        local = getattr(service_mod, name, default)
+        if local is not canonical:
+            return local
+    session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
+    if session_cmd is not None:
+        from_session = getattr(session_cmd, name, canonical)
+        if from_session is not canonical:
+            return from_session
+    return default
+
 
 if TYPE_CHECKING:
     from playwright.sync_api import BrowserContext, Page
@@ -354,13 +375,18 @@ def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -
     then creates both parent directories with platform-aware permissions.
     Returns ``(storage_path, browser_profile)``.
     """
+    # Resolve through ``session_cmd`` to honour legacy test patches.
+    _get_storage_path = _resolve_paths_helper("get_storage_path", get_storage_path)
+    _get_browser_profile_dir = _resolve_paths_helper(
+        "get_browser_profile_dir", get_browser_profile_dir
+    )
     if storage:
         storage_path = Path(storage)
     elif profile:
-        storage_path = _paths_module.get_storage_path(profile=profile)
+        storage_path = _get_storage_path(profile=profile)
     else:
-        storage_path = _paths_module.get_storage_path()
-    browser_profile = _paths_module.get_browser_profile_dir()
+        storage_path = _get_storage_path()
+    browser_profile = _get_browser_profile_dir()
 
     if fresh and browser_profile.exists():
         try:
@@ -449,10 +475,24 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
 
     # Pre-flight check: verify Chromium browser is installed (system Chrome
     # and Edge are checked at launch time by Playwright's channel routing).
+    # Resolve via ``session_cmd`` so legacy tests that patch
+    # ``notebooklm.cli.session_cmd._ensure_chromium_installed`` still
+    # intercept the call (the symbol is re-exported there with an
+    # underscore prefix).
     if browser == "chromium":
-        ensure_chromium_installed()
+        import sys as _sys
 
-    profile_name = _paths_module.resolve_profile()
+        session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
+        _ensure = (
+            getattr(session_cmd, "_ensure_chromium_installed", ensure_chromium_installed)
+            if session_cmd is not None
+            else ensure_chromium_installed
+        )
+        _ensure()
+
+    from ...paths import resolve_profile
+
+    profile_name = resolve_profile()
     channel_info = CHANNEL_BROWSERS.get(browser)
     browser_label = channel_info[0] if channel_info else "Chromium"
     console.print(f"[dim]Profile: {profile_name}[/dim]")

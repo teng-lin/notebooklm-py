@@ -30,17 +30,48 @@ from typing import TYPE_CHECKING, Any
 
 from rich.table import Table
 
-# Import the module rather than the symbols so test fixtures patching
-# ``notebooklm.paths.get_context_path`` / ``...get_path_info`` are honoured
-# from the service layer (rev-1 CodeRabbit feedback on #962). Same applies
-# to the lazy ``get_storage_path`` import inside :func:`resolve_logout_storage_path`.
-from ... import paths as _paths_module
+from ...paths import get_browser_profile_dir, get_context_path, get_path_info
 from ..context import clear_context, get_current_notebook
 from ..error_handler import exit_with_code
 from ..rendering import console, json_output_response
 from .auth_source import AUTH_JSON_ENV_NAME, AuthSource, has_env_auth_json
 
+
+# Resolve path helpers through whichever site has been patched, so both
+# the legacy ``patch("notebooklm.cli.session_cmd.<sym>", ...)`` surface
+# AND the post-P3.T3 ``patch("notebooklm.cli.services.session_context.<sym>", ...)``
+# surface intercept the service-layer call (rev-1 CodeRabbit feedback on
+# #962). Precedence:
+#
+#   1. The service module's own attribute if it has been patched away
+#      from the canonical ``notebooklm.paths`` binding.
+#   2. ``notebooklm.cli.session_cmd.<sym>`` if it has been patched away
+#      from the canonical binding.
+#   3. The default (= canonical ``notebooklm.paths.<sym>``).
+def _resolve_paths_helper(name: str, default):
+    """Resolve a paths-helper symbol via the test-aware precedence chain."""
+    import sys as _sys
+
+    from ... import paths as _paths_module
+
+    canonical = getattr(_paths_module, name, default)
+    # Prefer the service module's local binding if a test patched it.
+    service_mod = _sys.modules.get(__name__)
+    if service_mod is not None:
+        local = getattr(service_mod, name, default)
+        if local is not canonical:
+            return local
+    # Fall back to ``session_cmd``'s binding if a test patched it.
+    session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
+    if session_cmd is not None:
+        from_session = getattr(session_cmd, name, canonical)
+        if from_session is not canonical:
+            return from_session
+    return default
+
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     import click
 
     from ...client import NotebookLMClient
@@ -68,7 +99,11 @@ class UseNotebookResult:
 
 
 async def verify_and_set_notebook(
-    client: NotebookLMClient, partial_id: str, *, json_output: bool
+    client: NotebookLMClient,
+    partial_id: str,
+    *,
+    json_output: bool,
+    resolver: Callable[..., Awaitable[str]] | None = None,
 ) -> UseNotebookResult:
     """Verify a (possibly partial) notebook id by hitting the server, then return it.
 
@@ -90,13 +125,24 @@ async def verify_and_set_notebook(
         client: An opened :class:`NotebookLMClient` (caller owns the
             ``async with`` lifecycle).
         partial_id: The id-or-prefix the user passed to ``notebooklm use``.
-        json_output: Forwarded to :func:`resolve_notebook_id` so its
-            "Matched: ..." partial-id diagnostic routes to stderr in
-            JSON mode and stdout stays pure parseable JSON.
+        json_output: Forwarded to ``resolver`` so its "Matched: ..."
+            partial-id diagnostic routes to stderr in JSON mode and
+            stdout stays pure parseable JSON.
+        resolver: Injected partial-id resolver. Defaults to
+            :func:`notebooklm.cli.resolve.resolve_notebook_id`. The handler
+            in :mod:`notebooklm.cli.session_cmd` passes its locally-bound
+            ``resolve_notebook_id`` so the legacy
+            ``patch("notebooklm.cli.session_cmd.resolve_notebook_id", ...)``
+            test seam keeps working.
     """
-    from ..resolve import resolve_notebook_id
+    if resolver is None:
+        from ..resolve import resolve_notebook_id
 
-    resolved_id = await resolve_notebook_id(client, partial_id, json_output=json_output)
+        _resolver: Callable[..., Awaitable[str]] = resolve_notebook_id
+    else:
+        _resolver = resolver
+
+    resolved_id = await _resolver(client, partial_id, json_output=json_output)
     nb = await client.notebooks.get(resolved_id)
     return UseNotebookResult(notebook=nb, resolved_id=resolved_id)
 
@@ -155,12 +201,18 @@ def read_status(ctx: click.Context | None, *, show_paths: bool = False) -> Statu
     """
     auth = AuthSource.from_click_context(ctx)
     storage_override = auth.storage_override
-    context_file = _paths_module.get_context_path(storage_path=storage_override)
+    # Route the lookups through ``session_cmd`` so tests that patch
+    # ``notebooklm.cli.session_cmd.get_context_path`` /
+    # ``notebooklm.cli.session_cmd.get_path_info`` keep working
+    # byte-for-byte. The local imports above are the default fallbacks.
+    _get_context_path = _resolve_paths_helper("get_context_path", get_context_path)
+    _get_path_info = _resolve_paths_helper("get_path_info", get_path_info)
+    context_file = _get_context_path(storage_path=storage_override)
     notebook_id = get_current_notebook()
 
     paths: dict[str, Any] | None = None
     if show_paths:
-        paths = _paths_module.get_path_info(storage_path=storage_override)
+        paths = _get_path_info(storage_path=storage_override)
 
     if notebook_id is None:
         return StatusReport(
@@ -211,13 +263,14 @@ def resolve_logout_storage_path(ctx: click.Context | None) -> Path:
     prints if the unlink fails.
     """
     # Avoid the env-var fast path: ``auth logout`` always operates on a
-    # concrete on-disk file (or no-ops when the profile has none). Use
-    # the module-level ``_paths_module`` so test fixtures patching
-    # ``notebooklm.paths.get_storage_path`` reach this call site.
+    # concrete on-disk file (or no-ops when the profile has none).
     auth = AuthSource.from_click_context(ctx)
     if auth.storage_override is not None:
         return auth.storage_override
-    return _paths_module.get_storage_path(profile=auth.profile)
+    from ...paths import get_storage_path as _default_get_storage_path
+
+    _get_storage_path = _resolve_paths_helper("get_storage_path", _default_get_storage_path)
+    return _get_storage_path(profile=auth.profile)
 
 
 def warn_env_auth_remains_after_logout() -> bool:
@@ -364,7 +417,10 @@ def run_logout(ctx: click.Context | None) -> None:
         )
 
     storage_path = resolve_logout_storage_path(ctx)
-    browser_profile = _paths_module.get_browser_profile_dir()
+    _get_browser_profile_dir = _resolve_paths_helper(
+        "get_browser_profile_dir", get_browser_profile_dir
+    )
+    browser_profile = _get_browser_profile_dir()
 
     removed_any = False
 
@@ -401,12 +457,21 @@ def run_logout(ctx: click.Context | None) -> None:
             )
             exit_with_code(1)
 
+    # In the natural call path ``clear_context`` is self-contained
+    # (``_clear_context_file`` in ``cli/context.py`` catches every OSError
+    # and returns ``"unavailable"`` literally), but tests in
+    # ``test_auth_subcommands.py::TestAuthLogoutCommand`` patch the symbol
+    # with ``side_effect=OSError(...)`` to assert the diagnostic UX. The
+    # ``try/except`` is therefore reachable via the test surface and must
+    # stay — claude[bot]'s rev-1 nitpick on #962 was incorrect for this
+    # site (the function is patched on the service module's namespace, not
+    # called through the real implementation).
     try:
         if clear_context(clear_account=True):
             removed_any = True
     except OSError as exc:
         storage_override = AuthSource.from_click_context(ctx).storage_override
-        context_file = _paths_module.get_context_path(storage_path=storage_override)
+        context_file = get_context_path(storage_path=storage_override)
         logger.error("Failed to remove context file %s: %s", context_file, exc)
         console.print(
             f"[red]Cannot remove context file: {exc}[/red]\n"

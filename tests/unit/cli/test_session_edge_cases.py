@@ -91,8 +91,11 @@ class TestSessionEdgeCases:
         # Write invalid JSON but with notebook_id in helpers
         mock_context_file.write_text("{ invalid json }")
 
-        # Mock get_current_notebook to return an ID (simulating partial read)
-        with patch("notebooklm.cli.session_cmd.get_current_notebook") as mock_get_nb:
+        # Mock get_current_notebook to return an ID (simulating partial read).
+        # ``read_status`` in the P3.T3 service layer imports
+        # ``get_current_notebook`` from ``cli.context`` directly, so the
+        # patch target follows the new call site.
+        with patch("notebooklm.cli.services.session_context.get_current_notebook") as mock_get_nb:
             mock_get_nb.return_value = "nb_corrupted"
 
             result = runner.invoke(cli, ["status", "--json"])

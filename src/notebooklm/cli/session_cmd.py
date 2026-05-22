@@ -47,7 +47,11 @@ from ..paths import (  # noqa: F401 — get_browser_profile_dir / get_path_info 
     get_storage_path,
 )
 from .auth_runtime import handle_auth_error, run_client_workflow
-from .context import clear_context, set_current_notebook
+from .context import (
+    clear_context,
+    get_current_notebook,  # noqa: F401 — preserved patch surface
+    set_current_notebook,
+)
 from .error_handler import _output_error, exit_with_code, handle_errors
 from .rendering import console, json_output_response
 from .resolve import resolve_notebook_id  # noqa: F401 — preserved patch surface
@@ -94,13 +98,25 @@ from .services.playwright_login import (
     run_playwright_login,
 )
 from .services.playwright_login import (
+    connection_error_help as _connection_error_help,  # noqa: F401 — patch surface
+)
+from .services.playwright_login import (
     ensure_chromium_installed as _ensure_chromium_installed,  # noqa: F401 — patch surface
 )
 from .services.playwright_login import (
     filter_storage_state_cookies_by_domain_policy as _filter_storage_state_cookies_by_domain_policy,  # noqa: F401 — patch surface
 )
 from .services.playwright_login import (
+    is_navigation_interrupted_error as _is_navigation_interrupted_error,  # noqa: F401 — patch surface
+)
+from .services.playwright_login import (
     prepare_login_paths as _prepare_login_paths,
+)
+from .services.playwright_login import (
+    recover_page as _recover_page,  # noqa: F401 — patch surface
+)
+from .services.playwright_login import (
+    url_matches_base_host as _url_matches_base_host,  # noqa: F401 — patch surface
 )
 from .services.playwright_login import (
     validate_login_flag_conflicts as _validate_login_flag_conflicts,
@@ -393,7 +409,16 @@ def register_session_commands(cli):
             return
 
         async def _get(client: NotebookLMClient) -> UseNotebookResult:
-            return await verify_and_set_notebook(client, notebook_id, json_output=json_output)
+            # Pass the locally-bound ``resolve_notebook_id`` so legacy tests
+            # patching ``notebooklm.cli.session_cmd.resolve_notebook_id`` still
+            # intercept the call. The service module would otherwise import
+            # the symbol from ``cli.resolve`` directly and bypass the patch.
+            return await verify_and_set_notebook(
+                client,
+                notebook_id,
+                json_output=json_output,
+                resolver=resolve_notebook_id,
+            )
 
         def _handle_use_verification_error(exc: Exception):
             if isinstance(exc, click.ClickException):

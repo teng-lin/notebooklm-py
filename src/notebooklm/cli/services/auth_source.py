@@ -49,6 +49,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ...paths import get_storage_path
+
 if TYPE_CHECKING:
     import click
 
@@ -148,13 +150,7 @@ class AuthSource:
         if self.has_env_auth:
             return None
 
-        # Lazy module import keeps this resolver free of the heavy paths
-        # layer for tests that only need the precedence shape AND ensures
-        # test fixtures patching ``notebooklm.paths.get_storage_path`` are
-        # honoured by this call site (rev-1 CodeRabbit feedback class on #962).
-        from ... import paths as _paths_module
-
-        return _paths_module.get_storage_path(profile=self.profile)
+        return get_storage_path(profile=self.profile)
 
     def storage_path_for_diagnostics(self) -> Path:
         """Return a concrete path for ``auth check`` / ``status`` diagnostics.
@@ -170,11 +166,9 @@ class AuthSource:
         an absolute resolved path, so no extra ``expanduser`` / ``resolve``
         is needed here (rev-1 CodeRabbit nitpick fix on #962).
         """
-        from ... import paths as _paths_module
-
         if self.storage_override is not None:
             return self.storage_override
-        return _paths_module.get_storage_path(profile=self.profile)
+        return get_storage_path(profile=self.profile)
 
 
 def auth_source_from_ctx(ctx: click.Context | None) -> AuthSource:

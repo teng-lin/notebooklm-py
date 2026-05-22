@@ -1133,7 +1133,7 @@ class TestAuthLogoutCommand:
                 return_value=browser_dir,
             ),
             patch(
-                "notebooklm.cli.session_cmd.clear_context",
+                "notebooklm.cli.services.session_context.clear_context",
                 side_effect=OSError("file in use"),
             ),
         ):
