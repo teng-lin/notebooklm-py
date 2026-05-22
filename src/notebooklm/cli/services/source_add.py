@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from ...types import Source
 from ...urls import is_youtube_url
+
+if TYPE_CHECKING:
+    import click
+
+    from ...client import NotebookLMClient
 
 SourceAddType = Literal["url", "text", "file", "youtube"]
 
@@ -162,3 +168,66 @@ async def add_source(
     # Do not forward the deprecated mime_type flag: the CLI emits the user
     # warning, while add_file() would also emit a library-level warning.
     return await sources.add_file(notebook_id, str(plan.upload_path), title=plan.title)
+
+
+@dataclass(frozen=True)
+class SourceAddExecutionPlan:
+    """Click-shaped inputs for ``execute_source_add``.
+
+    Distinct from :class:`SourceAddPlan` (which captures the detected source
+    type + warnings produced by :func:`build_source_add_plan`). This wraps
+    the resolved-notebook id + the prepared add-plan so the executor has a
+    single argument matching the other ``cli/services/source_*`` pairs.
+    """
+
+    notebook_id: str
+    plan: SourceAddPlan
+    json_output: bool
+
+
+async def execute_source_add(
+    client: NotebookLMClient,
+    plan: SourceAddExecutionPlan,
+    *,
+    ctx: click.Context | None = None,
+) -> None:
+    """Run the ``source add`` workflow with spinner + JSON / text rendering.
+
+    P1.T2 bug 5: ``rich.console.Console.status`` is a SYNCHRONOUS context
+    manager. The pre-fix shape ``with console.status(...): return _run()``
+    exited the spinner as soon as ``_run()`` returned the coroutine — BEFORE
+    ``with_client`` awaited it — so the spinner was effectively invisible
+    during the actual upload. The ``with`` block here lives inside the
+    awaited coroutine so the spinner spans the real I/O. JSON mode still
+    suppresses the spinner so stdout stays pure JSON.
+    """
+    # Local imports keep this service module free of CLI-only top-level deps
+    # so importing it does not pull in click for non-CLI consumers.
+    from ..rendering import cli_print, console, json_output_response
+
+    spinner = (
+        contextlib.nullcontext()
+        if plan.json_output
+        else console.status(f"Adding {plan.plan.detected_type} source...")
+    )
+    with spinner:
+        src = await add_source(
+            client.sources,
+            notebook_id=plan.notebook_id,
+            plan=plan.plan,
+        )
+
+    if plan.json_output:
+        json_output_response(
+            {
+                "source": {
+                    "id": src.id,
+                    "title": src.title,
+                    "type": str(src.kind),
+                    "url": src.url,
+                }
+            }
+        )
+        return
+
+    cli_print(f"[green]Added source:[/green] {src.id}", ctx=ctx)
