@@ -43,12 +43,6 @@ from .services.generate import (
 
 DEFAULT_LANGUAGE = "en"
 
-# Re-export markers kept for backward-compatibility with tests that patch
-# these names on this module (e.g. ``patch.object(generate_module,
-# "json_error_response", ...)``). They are otherwise read by
-# ``_output_mind_map_result`` below.
-_ = (NotebookLMClient, console, json_error_response, json_output_response, get_language)
-
 
 def resolve_language(language: str | None) -> str:
     """Resolve language from CLI flag, NOTEBOOKLM_HL env, config, or default.

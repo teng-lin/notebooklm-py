@@ -881,14 +881,6 @@ async def execute_generation(
     )
 
 
-# ---------------------------------------------------------------------------
-# Re-exported helpers for tests / callers
-# ---------------------------------------------------------------------------
-
-# ``status_with_elapsed`` previously used "Generating mind map..." literal —
-# keep it inline above. Mind-map spinner is the only path that needs it; for
-# the standard wait spinner, ``handle_generation_result`` owns its own.
-
 __all__ = [
     "GenerationKind",
     "GenerationPlan",
