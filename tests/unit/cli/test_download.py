@@ -400,18 +400,28 @@ class TestDownloadFlags:
 
 class TestDownloadJsonOutputUnicode:
     def test_download_json_output_preserves_unicode(self, runner, mock_auth):
-        """`download <type> --json` should emit CJK / emoji as real UTF-8, not \\uXXXX."""
+        """`download <type> --json` should emit CJK / emoji as real UTF-8, not \\uXXXX.
+
+        Patch target updated for P3.T2: the per-leaf generic helper was
+        extracted to ``cli/services/download.py::execute_download``. The
+        Click handler still calls it via ``services.download.execute_download``
+        — patching there short-circuits the entire async download pipeline
+        the same way patching ``_download_artifacts_generic`` did before.
+        """
         fake_result = {
             "artifact_id": "audio_123",
             "title": "中文音频 🎧",
             "output_path": "音频.mp3",
         }
 
-        async def fake_download_generic(*args, **kwargs):
+        async def fake_execute_download(*args, **kwargs):
             return fake_result
 
         with (
-            patch.object(download_module, "_download_artifacts_generic", fake_download_generic),
+            patch(
+                "notebooklm.cli.download_cmd.execute_download",
+                fake_execute_download,
+            ),
             patch(
                 "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
             ) as mock_fetch,

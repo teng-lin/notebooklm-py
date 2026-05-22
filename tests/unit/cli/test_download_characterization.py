@@ -419,9 +419,7 @@ def test_partial_failure_under_all(
 
 
 @pytest.mark.parametrize("spec", _LEAF_COMMANDS, ids=_ids)
-def test_dry_run_single(
-    spec: _CmdSpec, runner: CliRunner, mock_auth: Any, tmp_path: Path
-) -> None:
+def test_dry_run_single(spec: _CmdSpec, runner: CliRunner, mock_auth: Any, tmp_path: Path) -> None:
     """``--dry-run`` reports the planned output_path without calling
     ``download_<kind>``."""
     output_file = tmp_path / f"out{spec.extension}"
@@ -462,9 +460,7 @@ def test_dry_run_single(
 
 
 @pytest.mark.parametrize("spec", _LEAF_COMMANDS, ids=_ids)
-def test_happy_all_path(
-    spec: _CmdSpec, runner: CliRunner, mock_auth: Any, tmp_path: Path
-) -> None:
+def test_happy_all_path(spec: _CmdSpec, runner: CliRunner, mock_auth: Any, tmp_path: Path) -> None:
     """``--all`` happy path: every artifact downloaded; exit 0; envelope
     omits the ``error`` key."""
     output_dir = tmp_path / "out"
@@ -566,7 +562,5 @@ def test_all_leaf_commands_registered(runner: CliRunner) -> None:
     result = runner.invoke(cli, ["download", "--help"])
     assert result.exit_code == 0
     for spec in _LEAF_COMMANDS:
-        assert spec.name in result.output, (
-            f"{spec.name} missing from `download --help` output"
-        )
+        assert spec.name in result.output, f"{spec.name} missing from `download --help` output"
     assert "cinematic-video" in result.output
