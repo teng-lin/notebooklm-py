@@ -36,38 +36,67 @@ from ..error_handler import exit_with_code
 from ..rendering import console, json_output_response
 from .auth_source import AUTH_JSON_ENV_NAME, AuthSource, has_env_auth_json
 
+# Capture the original function references at module-import time. The
+# ``_resolve_paths_helper`` precedence chain compares each lookup
+# against these (not against the live ``notebooklm.paths`` attribute or
+# the module-level names — both of which can be patched by tests). This
+# way "this site is the patched version" is decided unambiguously.
+_ORIGINAL_GET_BROWSER_PROFILE_DIR = get_browser_profile_dir
+_ORIGINAL_GET_CONTEXT_PATH = get_context_path
+_ORIGINAL_GET_PATH_INFO = get_path_info
 
-# Resolve path helpers through whichever site has been patched, so both
-# the legacy ``patch("notebooklm.cli.session_cmd.<sym>", ...)`` surface
-# AND the post-P3.T3 ``patch("notebooklm.cli.services.session_context.<sym>", ...)``
-# surface intercept the service-layer call (rev-1 CodeRabbit feedback on
-# #962). Precedence:
+
+def _capture_original_get_storage_path():
+    """Capture ``get_storage_path`` at import time without importing it eagerly.
+
+    The eager import would pull all of ``notebooklm.paths`` into this
+    service module's namespace, which complicates the
+    ``_resolve_paths_helper`` precedence (the module-level binding
+    would then participate in the patch detection). Keep the import
+    function-local and stash the captured reference here.
+    """
+    from ...paths import get_storage_path
+
+    return get_storage_path
+
+
+_ORIGINAL_GET_STORAGE_PATH = _capture_original_get_storage_path()
+del _capture_original_get_storage_path
+
+
+# Resolve path helpers via a test-aware precedence chain so patches at
+# ``notebooklm.cli.session_cmd.<sym>``,
+# ``notebooklm.cli.services.session_context.<sym>``, AND
+# ``notebooklm.paths.<sym>`` all intercept the service-layer call.
 #
-#   1. The service module's own attribute if it has been patched away
-#      from the canonical ``notebooklm.paths`` binding.
-#   2. ``notebooklm.cli.session_cmd.<sym>`` if it has been patched away
-#      from the canonical binding.
-#   3. The default (= canonical ``notebooklm.paths.<sym>``).
+# ``default`` is the import-time function reference closed over by the
+# caller. Comparisons go against ``default`` (NOT against the live
+# ``notebooklm.paths`` attribute) so a patch at the canonical source does
+# not falsely flag a stale local binding as "patched" — rev-3 CodeRabbit
+# feedback on #962.
+#
+# Precedence:
+#   1. The service module's own attribute if patched.
+#   2. ``session_cmd``'s binding if patched.
+#   3. Live ``notebooklm.paths`` value (which may itself be patched).
 def _resolve_paths_helper(name: str, default):
     """Resolve a paths-helper symbol via the test-aware precedence chain."""
     import sys as _sys
 
     from ... import paths as _paths_module
 
-    canonical = getattr(_paths_module, name, default)
-    # Prefer the service module's local binding if a test patched it.
     service_mod = _sys.modules.get(__name__)
     if service_mod is not None:
         local = getattr(service_mod, name, default)
-        if local is not canonical:
+        if local is not default:
             return local
-    # Fall back to ``session_cmd``'s binding if a test patched it.
     session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
     if session_cmd is not None:
-        from_session = getattr(session_cmd, name, canonical)
-        if from_session is not canonical:
+        from_session = getattr(session_cmd, name, default)
+        if from_session is not default:
             return from_session
-    return default
+    return getattr(_paths_module, name, default)
+
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -204,9 +233,12 @@ def read_status(ctx: click.Context | None, *, show_paths: bool = False) -> Statu
     # Route the lookups through ``session_cmd`` so tests that patch
     # ``notebooklm.cli.session_cmd.get_context_path`` /
     # ``notebooklm.cli.session_cmd.get_path_info`` keep working
-    # byte-for-byte. The local imports above are the default fallbacks.
-    _get_context_path = _resolve_paths_helper("get_context_path", get_context_path)
-    _get_path_info = _resolve_paths_helper("get_path_info", get_path_info)
+    # byte-for-byte. ``_ORIGINAL_*`` (captured at module-import time
+    # below) are the "default" references — passing the module-level
+    # names directly would re-read them at call time, defeating the
+    # patched-vs-not test inside ``_resolve_paths_helper``.
+    _get_context_path = _resolve_paths_helper("get_context_path", _ORIGINAL_GET_CONTEXT_PATH)
+    _get_path_info = _resolve_paths_helper("get_path_info", _ORIGINAL_GET_PATH_INFO)
     context_file = _get_context_path(storage_path=storage_override)
     notebook_id = get_current_notebook()
 
@@ -267,9 +299,10 @@ def resolve_logout_storage_path(ctx: click.Context | None) -> Path:
     auth = AuthSource.from_click_context(ctx)
     if auth.storage_override is not None:
         return auth.storage_override
-    from ...paths import get_storage_path as _default_get_storage_path
-
-    _get_storage_path = _resolve_paths_helper("get_storage_path", _default_get_storage_path)
+    # Module-level ``_ORIGINAL_GET_STORAGE_PATH`` is defined below the
+    # imports (set once at import time) so the patched-vs-default check
+    # in ``_resolve_paths_helper`` works correctly.
+    _get_storage_path = _resolve_paths_helper("get_storage_path", _ORIGINAL_GET_STORAGE_PATH)
     return _get_storage_path(profile=auth.profile)
 
 
@@ -418,7 +451,7 @@ def run_logout(ctx: click.Context | None) -> None:
 
     storage_path = resolve_logout_storage_path(ctx)
     _get_browser_profile_dir = _resolve_paths_helper(
-        "get_browser_profile_dir", get_browser_profile_dir
+        "get_browser_profile_dir", _ORIGINAL_GET_BROWSER_PROFILE_DIR
     )
     browser_profile = _get_browser_profile_dir()
 

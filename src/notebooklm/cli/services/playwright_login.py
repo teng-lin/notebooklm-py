@@ -46,30 +46,45 @@ from ...paths import get_browser_profile_dir, get_storage_path
 from ..error_handler import exit_with_code
 from ..rendering import console
 
+# Capture the original function references at module-import time so the
+# ``_resolve_paths_helper`` precedence chain can compare each lookup
+# against the never-changing original (not the live module-level
+# binding, which may itself be patched by tests).
+_ORIGINAL_GET_BROWSER_PROFILE_DIR = get_browser_profile_dir
+_ORIGINAL_GET_STORAGE_PATH = get_storage_path
 
-# Resolve path helpers via a test-aware precedence chain so both
-# ``patch("notebooklm.cli.session_cmd.<sym>", ...)`` AND
-# ``patch("notebooklm.cli.services.playwright_login.<sym>", ...)``
-# intercept the service-layer call (rev-1 CodeRabbit feedback on #962).
-# Precedence: service module's own binding if patched, then session_cmd's
-# binding if patched, then the default (= canonical ``notebooklm.paths.<sym>``).
+
+# Resolve path helpers via a test-aware precedence chain so patches at
+# ``notebooklm.cli.session_cmd.<sym>``,
+# ``notebooklm.cli.services.playwright_login.<sym>``, AND
+# ``notebooklm.paths.<sym>`` all intercept the service-layer call.
+#
+# ``default`` is the import-time function reference closed over by the
+# caller (the symbol imported at module-load time). Comparisons go
+# against ``default`` (NOT against the live ``notebooklm.paths`` attribute)
+# so a patch at the canonical source does not falsely flag a stale local
+# binding as "patched" — rev-3 CodeRabbit feedback on #962.
+#
+# Precedence:
+#   1. Service module's own binding if patched.
+#   2. ``session_cmd``'s binding if patched.
+#   3. Live ``notebooklm.paths`` value (which may itself be patched).
 def _resolve_paths_helper(name: str, default):
-    from ... import paths as _paths_module
-
-    canonical = getattr(_paths_module, name, default)
     import sys as _sys
+
+    from ... import paths as _paths_module
 
     service_mod = _sys.modules.get(__name__)
     if service_mod is not None:
         local = getattr(service_mod, name, default)
-        if local is not canonical:
+        if local is not default:
             return local
     session_cmd = _sys.modules.get("notebooklm.cli.session_cmd")
     if session_cmd is not None:
-        from_session = getattr(session_cmd, name, canonical)
-        if from_session is not canonical:
+        from_session = getattr(session_cmd, name, default)
+        if from_session is not default:
             return from_session
-    return default
+    return getattr(_paths_module, name, default)
 
 
 if TYPE_CHECKING:
@@ -375,10 +390,13 @@ def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -
     then creates both parent directories with platform-aware permissions.
     Returns ``(storage_path, browser_profile)``.
     """
-    # Resolve through ``session_cmd`` to honour legacy test patches.
-    _get_storage_path = _resolve_paths_helper("get_storage_path", get_storage_path)
+    # Resolve through the test-aware precedence chain so patches at
+    # ``session_cmd``, ``services.playwright_login``, or
+    # ``notebooklm.paths`` all reach this call site. The ``_ORIGINAL_*``
+    # constants captured at import time are the never-changing references.
+    _get_storage_path = _resolve_paths_helper("get_storage_path", _ORIGINAL_GET_STORAGE_PATH)
     _get_browser_profile_dir = _resolve_paths_helper(
-        "get_browser_profile_dir", get_browser_profile_dir
+        "get_browser_profile_dir", _ORIGINAL_GET_BROWSER_PROFILE_DIR
     )
     if storage:
         storage_path = Path(storage)
