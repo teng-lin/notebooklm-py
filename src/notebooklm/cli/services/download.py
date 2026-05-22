@@ -88,10 +88,19 @@ class DownloadTypeSpec:
         format_kwarg: Keyword argument name to forward the chosen format
             value to ``client.artifacts.download_<x>`` (e.g. ``"output_format"``).
             Empty when the format choice only mutates the local filename.
+        format_param_name: Click parameter name for ``--format``. Defaults to
+            ``"output_format"`` (used by quiz/flashcards); slide-deck overrides
+            to ``"slide_format"`` for legacy compatibility with its historical
+            kwarg name.
         forward_format_only_if_set: When ``True`` (slide-deck), forward the
             format kwarg ONLY when the user explicitly picked the non-default
             value (matches the historical "partial only for pptx" wiring).
             When ``False`` (quiz/flashcards) always forward.
+
+    Note on ``format_extension_map``: ``frozen=True`` only freezes the
+    *reference* — the dict contents remain mutable at runtime. The registry
+    spec rows are module-level constants and not expected to be mutated;
+    callers must treat the map as read-only by convention.
     """
 
     name: str
@@ -106,6 +115,7 @@ class DownloadTypeSpec:
     format_help: str = ""
     format_extension_map: dict[str, str] = field(default_factory=dict)
     format_kwarg: str = ""
+    format_param_name: str = "output_format"
     forward_format_only_if_set: bool = False
 
 
@@ -162,6 +172,11 @@ class DownloadPlan:
     force: bool
     no_clobber: bool
     format_choice: str = ""
+    # Captured at plan-build time so the executor doesn't have to re-derive
+    # it; ``Path.cwd()`` at executor time would be wrong if the caller
+    # changed directories between ``build_download_plan`` and the awaited
+    # ``execute_download``. Defaults to the build-time cwd.
+    cwd: Path = field(default_factory=Path.cwd)
 
 
 def _resolve_format_extension(
@@ -241,17 +256,15 @@ def build_download_plan(
 
     nb_id = require_notebook(args.get("notebook_id"))
 
-    # Format-choice extraction. slide-deck uses ``slide_format`` for the
-    # Click param name (historical, kept by the spec); quiz/flashcards use
-    # ``output_format``. Generic leaves have neither.
+    # Format-choice extraction. The Click param name is data-driven via
+    # ``spec.format_param_name`` (default ``"output_format"``, slide-deck
+    # overrides to ``"slide_format"``). Leaves with no ``--format`` flag have
+    # empty ``format_choices``.
     format_choice = ""
     if config.format_choices:
-        if config.name == "slide-deck":
-            format_choice = args.get("slide_format", config.format_default) or config.format_default
-        else:
-            format_choice = (
-                args.get("output_format", config.format_default) or config.format_default
-            )
+        format_choice = (
+            args.get(config.format_param_name, config.format_default) or config.format_default
+        )
 
     sink = warn_sink if warn_sink is not None else (lambda msg: click.echo(msg, err=True))
     file_extension = _resolve_format_extension(
@@ -276,6 +289,7 @@ def build_download_plan(
         force=bool(args.get("force", False)),
         no_clobber=bool(args.get("no_clobber", False)),
         format_choice=format_choice,
+        cwd=cwd if cwd is not None else Path.cwd(),
     )
 
 
@@ -489,7 +503,6 @@ async def _execute_download_single(
     type_artifacts: list[ArtifactDict],
     nb_id_resolved: str,
     download_fn: _DownloadFn,
-    cwd: Path,
 ) -> dict[str, Any]:
     """Execute the single-artifact branch: select → dry-run | conflict | download."""
     try:
@@ -514,7 +527,7 @@ async def _execute_download_single(
             plan.file_extension,
             set(),
         )
-        final_path = cwd / safe_name
+        final_path = plan.cwd / safe_name
     else:
         final_path = Path(plan.output_path)
 
@@ -530,10 +543,15 @@ async def _execute_download_single(
             "output_path": str(final_path),
         }
 
-    resolved_path, skip_error = _resolve_conflict(
+    resolved_path, _skip_info = _resolve_conflict(
         final_path, force=plan.force, no_clobber=plan.no_clobber
     )
-    if skip_error or resolved_path is None:
+    if resolved_path is None:
+        # Preserve the legacy "File exists: <path>" error text byte-for-byte;
+        # ``_skip_info`` carries the structured skip envelope used by the
+        # ``--all`` path but the single-file caller's contract is the
+        # plain-string error key, kept stable for scripts parsing ``--json``
+        # envelopes since pre-extraction.
         return {
             "error": f"File exists: {final_path}",
             "artifact": selected,
@@ -564,7 +582,6 @@ async def execute_download(
     plan: DownloadPlan,
     facade: _DownloadFacade,
     *,
-    cwd: Path | None = None,
     text_progress_sink: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the validated plan against the live (or mocked) client facade.
@@ -574,12 +591,12 @@ async def execute_download(
     don't change the contract, they just centralise the dispatch.
 
     Args:
-        plan: Output of :func:`build_download_plan`.
+        plan: Output of :func:`build_download_plan`. The plan carries
+            ``cwd`` captured at build time; the executor uses it to derive
+            the single-artifact output path when the user didn't supply one.
         facade: A live :class:`~notebooklm.NotebookLMClient` (or any object
             exposing ``client.artifacts`` with ``.list`` and
             ``.download_<spec.download_attr>``).
-        cwd: Working directory used to derive the single-artifact output
-            path when the user didn't supply one. Defaults to ``Path.cwd()``.
         text_progress_sink: Callback invoked once per artifact in the
             ``--all`` text-mode path. ``None`` (default) skips the progress
             line; the live Click handler injects ``console.print``.
@@ -613,5 +630,4 @@ async def execute_download(
         type_artifacts,
         nb_id_resolved,
         download_fn,
-        cwd or Path.cwd(),
     )

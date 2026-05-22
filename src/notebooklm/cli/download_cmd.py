@@ -137,7 +137,6 @@ def _run_artifact_download(ctx: click.Context, spec: DownloadTypeSpec, **kwargs:
         return await execute_download(
             plan,
             client,
-            cwd=Path.cwd(),
             text_progress_sink=console.print,
         )
 

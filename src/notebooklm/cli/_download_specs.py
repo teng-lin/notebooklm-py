@@ -97,6 +97,11 @@ DOWNLOAD_SPECS: list[DownloadTypeSpec] = [
         format_help="Download format: pdf (default) or pptx",
         format_extension_map={"pdf": ".pdf", "pptx": ".pptx"},
         format_kwarg="output_format",
+        # Click param name is the legacy ``slide_format`` (not ``output_format``)
+        # because the original hand-written leaf used that variable name. Kept
+        # to avoid churning ``download_cmd.py`` kwargs flowing through the
+        # factory.
+        format_param_name="slide_format",
         # Slide-deck historically only bound output_format when the user
         # picked pptx — keep that wiring so the underlying API call is
         # identical to the pre-refactor flow.
@@ -105,7 +110,7 @@ DOWNLOAD_SPECS: list[DownloadTypeSpec] = [
         help_examples=_stock_examples(
             "slide-deck",
             ".pdf",
-            "./slides",
+            "./slide-decks",
             extra=("    # Download as PPTX\n    notebooklm download slide-deck --format pptx"),
         ),
     ),
