@@ -41,7 +41,11 @@ _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleap
 _DOWNLOAD_WRITER_QUEUE_SIZE = 8
 
 
-async def _await_writer_exit(writer_thread: threading.Thread) -> None:
+async def _await_writer_exit(
+    writer_thread: threading.Thread,
+    *,
+    re_raise_cancel: bool = False,
+) -> None:
     """Wait for a download writer thread to actually exit.
 
     Plain ``await asyncio.to_thread(thread.join)`` is unsafe under
@@ -58,20 +62,39 @@ async def _await_writer_exit(writer_thread: threading.Thread) -> None:
     actually completes. Repeated cancellations only delay our
     re-raise, never the writer's exit.
 
-    Addresses the CodeRabbit MAJOR finding on PR #981.
+    Cancellation handling:
+
+    * Only ``asyncio.CancelledError`` is caught inside the loop — any
+      other exception from the shielded join (currently none in
+      practice, since ``Thread.join`` doesn't raise) propagates
+      immediately so we don't accidentally hide a real bug.
+    * The most recent ``CancelledError`` (if any) is preserved.
+    * If ``re_raise_cancel=True``, the helper re-raises that
+      ``CancelledError`` after the writer has fully exited. Callers
+      on the success path want this so an in-flight cancellation
+      isn't lost when the writer happens to finish first. Callers on
+      a cleanup-path (the producer's ``except`` block, which already
+      has an exception to re-raise) leave it at the default
+      ``False`` so we don't mask the original error with a second
+      cancellation.
+
+    Addresses the CodeRabbit MAJOR findings on PR #981 — both the
+    original join-vs-unlink race AND the follow-up finding that the
+    initial fix silently absorbed task cancellation.
     """
     join_task = asyncio.ensure_future(asyncio.to_thread(writer_thread.join))
+    cancelled_error: asyncio.CancelledError | None = None
     while not join_task.done():
         try:
             await asyncio.shield(join_task)
-        except BaseException:
-            # Outer task was cancelled (or some other exception
-            # propagated into our await). The shielded join keeps
-            # running; loop and re-await. We deliberately swallow
-            # the cancellation here so the join can complete —
-            # the original exception is preserved on the calling
-            # frame's stack and re-raised after we return.
-            pass
+        except asyncio.CancelledError as exc:
+            # Outer task was cancelled. The shielded join keeps
+            # running; loop and re-await so the writer can still
+            # exit cleanly before we return.
+            cancelled_error = exc
+
+    if cancelled_error is not None and re_raise_cancel:
+        raise cancelled_error
 
 
 @dataclass(frozen=False)
@@ -720,14 +743,16 @@ class ArtifactDownloadService:
                                 except queue.Full:
                                     await asyncio.to_thread(chunk_q.put, None)
                             # Join surfaces any exception the writer
-                            # captured. ``to_thread(.join)`` is needed
-                            # because ``Thread.join`` is sync-blocking.
-                            # ``_await_writer_exit`` shield-loops until
-                            # the writer actually exits so the outer
-                            # cleanup never races with the still-open
-                            # file handle (CodeRabbit MAJOR finding on
-                            # PR #981).
-                            await _await_writer_exit(writer_thread)
+                            # captured. ``_await_writer_exit`` shield-
+                            # loops until the writer actually exits so
+                            # the outer cleanup never races with the
+                            # still-open file handle. ``re_raise_cancel
+                            # =True`` ensures a cancellation that
+                            # arrived while we were waiting for the
+                            # writer isn't lost when the writer happens
+                            # to finish first — CodeRabbit MAJOR
+                            # findings on PR #981.
+                            await _await_writer_exit(writer_thread, re_raise_cancel=True)
                             if writer_error:
                                 raise writer_error[0]
                         except BaseException:
