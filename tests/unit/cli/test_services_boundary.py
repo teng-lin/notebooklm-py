@@ -85,8 +85,17 @@ def _runtime_imports(path: pathlib.Path) -> Iterator[tuple[str, int]]:
         if isinstance(node, ast.ImportFrom):
             # ``from ..rendering import X`` → level=2, module="rendering".
             # ``from ..rendering.sub import X`` → level=2, module="rendering.sub".
-            target = f"{'.' * (node.level or 0)}{node.module or ''}"
-            yield (target, node.lineno)
+            # ``from .. import rendering`` → level=2, module=None — the
+            # forbidden sibling is named in ``node.names`` instead, so we
+            # synthesize one target per alias to keep the boundary check
+            # symmetric with the ``from ..rendering import X`` form.
+            level = node.level or 0
+            if node.module is None and level > 0:
+                for alias in node.names:
+                    yield (f"{'.' * level}{alias.name}", node.lineno)
+            else:
+                target = f"{'.' * level}{node.module or ''}"
+                yield (target, node.lineno)
             return
         for child in ast.iter_child_nodes(node):
             yield from _walk(child, inside_type_checking=inside_type_checking)
@@ -136,6 +145,20 @@ def test_guard_helper_detects_a_known_violation(tmp_path):
     bad.write_text("from __future__ import annotations\nimport click\n")
     violations = _boundary_violations(bad)
     assert any("click" in v for v in violations), violations
+
+
+def test_guard_helper_detects_from_parent_import_sibling(tmp_path):
+    """``from .. import rendering`` must trip the guard.
+
+    Without the ``node.module is None`` branch in ``_runtime_imports``, the
+    alias-only form silently passes — even though it carries the same runtime
+    dependency on ``cli.rendering`` as ``from ..rendering import X``. CodeRabbit
+    flagged this in PR #961 review.
+    """
+    bad = tmp_path / "fake_service_alias_form.py"
+    bad.write_text("from __future__ import annotations\nfrom .. import rendering\n")
+    violations = _boundary_violations(bad)
+    assert any("rendering" in v for v in violations), violations
 
 
 def test_guard_helper_allows_type_checking_imports(tmp_path):

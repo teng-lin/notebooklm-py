@@ -67,9 +67,13 @@ class ListRender(Generic[T]):
     - ``json_envelope`` is populated only in JSON mode (None otherwise).
     - ``empty_message`` is populated only in text mode when items is empty AND
       the spec supplied an ``empty_message`` (None otherwise).
-    - ``columns`` / ``rows`` / ``column_options`` are populated whenever the
-      caller may want to render a Rich table (always in text mode, even when
-      empty).
+    - ``columns`` / ``rows`` / ``column_options`` are populated in standard
+      table mode (text mode with at least one item, or no ``empty_message``
+      to substitute).
+    - In empty-state text mode (``empty_message`` set on an empty result),
+      the table payload fields remain at their dataclass defaults (empty
+      ``columns`` / ``rows`` / ``column_options``) and the renderer prints
+      only the placeholder message.
     - ``no_truncate`` mirrors the caller's preference so the renderer can pick
       the Rich overflow style.
     """

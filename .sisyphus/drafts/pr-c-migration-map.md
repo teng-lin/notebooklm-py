@@ -97,7 +97,7 @@ The PR satisfies the master-plan gates as follows:
 
 After this PR merges, `cli/services/login/` still contains 102 boundary leaks across 10 submodules:
 
-```
+```shell
 $ rg -n 'from \.\.rendering|from \.\.error_handler|from \.\.runtime|console\.|json_output_response|output_error|exit_with_code|run_async|emit_cancelled_and_exit|click\.' src/notebooklm/cli/services/login/ | wc -l
 102
 ```
