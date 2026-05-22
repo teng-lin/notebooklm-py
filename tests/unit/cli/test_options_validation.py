@@ -142,3 +142,148 @@ class TestLimitRange:
         collapsed = " ".join(result.output.split())
         assert "0 = show no rows" in collapsed
         assert "Omit for unlimited" in collapsed
+
+
+# ---------------------------------------------------------------------------
+# alias_command (P3.T6b) — Click command-alias builder
+# ---------------------------------------------------------------------------
+#
+# ``alias_command`` lives in ``cli/options.py`` because ``cli/helpers.py`` is
+# constrained to a compatibility-facade surface (see
+# ``tests/unit/test_cli_boundary.py``). These tests use direct construction
+# (no monkeypatching, per task spec) — they build a tiny throwaway group +
+# source command and verify static and runtime properties via Click's
+# ``CliRunner``. The cinematic-video aliases on the real ``generate`` and
+# ``download`` groups are covered by the existing characterization tests
+# (``tests/unit/cli/test_download_characterization.py``,
+# ``tests/unit/cli/test_generate.py``) — those would have regressed if the
+# helper's contract had drifted.
+
+
+class TestAliasCommand:
+    def test_alias_command_registers_under_new_name(self) -> None:
+        """The alias appears in the group's command registry under ``name``."""
+        import click
+
+        from notebooklm.cli.options import alias_command
+
+        @click.group()
+        def grp() -> None:
+            """Test group."""
+
+        @grp.command("orig")
+        def orig() -> None:
+            """Original command."""
+            click.echo("orig-called")
+
+        alias = alias_command(grp, orig, name="alias", help="Alias of orig.")
+
+        assert "alias" in grp.commands
+        assert grp.commands["alias"] is alias
+        assert alias.name == "alias"
+
+    def test_alias_command_overrides_help_text(self) -> None:
+        """The alias renders the override help, not the source command's help."""
+        import click
+
+        from notebooklm.cli.options import alias_command
+
+        @click.group()
+        def grp() -> None:
+            """Group."""
+
+        @grp.command("orig", help="Original help text.")
+        def orig() -> None:
+            click.echo("ok")
+
+        alias_command(grp, orig, name="alias", help="Alias help text.")
+
+        runner = CliRunner()
+        result = runner.invoke(grp, ["alias", "--help"])
+        assert result.exit_code == 0
+        assert "Alias help text." in result.output
+        assert "Original help text." not in result.output
+
+    def test_alias_command_shares_callback_and_params(self) -> None:
+        """Invoking the alias runs the source command's callback with its params."""
+        import click
+
+        from notebooklm.cli.options import alias_command
+
+        captured: dict[str, object] = {}
+
+        @click.group()
+        def grp() -> None:
+            """Group."""
+
+        @grp.command("orig")
+        @click.option("--count", type=int, default=1)
+        @click.argument("target")
+        def orig(count: int, target: str) -> None:
+            captured["count"] = count
+            captured["target"] = target
+            click.echo(f"{target}x{count}")
+
+        alias_command(grp, orig, name="alias", help="Alias.")
+
+        runner = CliRunner()
+
+        # Source command still works.
+        captured.clear()
+        result = runner.invoke(grp, ["orig", "--count", "3", "foo"])
+        assert result.exit_code == 0, result.output
+        assert captured == {"count": 3, "target": "foo"}
+        assert "foox3" in result.output
+
+        # Alias runs the same callback with the same params.
+        captured.clear()
+        result = runner.invoke(grp, ["alias", "--count", "5", "bar"])
+        assert result.exit_code == 0, result.output
+        assert captured == {"count": 5, "target": "bar"}
+        assert "barx5" in result.output
+
+    def test_alias_command_params_list_is_copied(self) -> None:
+        """Mutating the source command's params after aliasing does not leak in.
+
+        The alias holds its own list (``list(source_command.params)``) so a
+        later ``source_command.params.append(...)`` cannot retroactively
+        change the alias's accepted flags. The ``Parameter`` instances inside
+        are still shared by reference — that's the desired alias contract.
+        """
+        import click
+
+        from notebooklm.cli.options import alias_command
+
+        @click.group()
+        def grp() -> None:
+            """Group."""
+
+        @grp.command("orig")
+        @click.option("--flag-a", is_flag=True)
+        def orig(flag_a: bool) -> None:
+            click.echo("ok")
+
+        alias = alias_command(grp, orig, name="alias", help="Alias.")
+
+        alias_param_count_before = len(alias.params)
+        orig.params.append(click.Option(["--injected"], is_flag=True))
+
+        assert len(alias.params) == alias_param_count_before
+
+    def test_alias_command_returns_registered_command(self) -> None:
+        """The helper returns the same ``click.Command`` it just registered."""
+        import click
+
+        from notebooklm.cli.options import alias_command
+
+        @click.group()
+        def grp() -> None:
+            """Group."""
+
+        @grp.command("orig")
+        def orig() -> None:
+            pass
+
+        alias = alias_command(grp, orig, name="alias", help="Alias.")
+        assert isinstance(alias, click.Command)
+        assert alias is grp.commands["alias"]
