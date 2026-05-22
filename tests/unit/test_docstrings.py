@@ -71,25 +71,34 @@ def test_from_storage_examples_prefer_canonical_idiom(relpath: str) -> None:
     v1.0). Docstrings should advertise the new canonical idiom
     ``async with NotebookLMClient.from_storage(...) as client:``.
 
-    Exception: docstrings that explicitly call themselves out as the
-    migration reference (the same docstring block contains the word
-    ``Legacy`` or ``deprecated``) may show the old form once.
+    Exception: a single example line is exempt if it (or one of the
+    two immediately preceding lines, to allow ``Legacy:`` / ``# Legacy
+    form (deprecated)`` style headers) explicitly calls itself out as
+    the migration reference. The exemption is line-scoped — not
+    docstring-scoped — so a stray ``async with await from_storage()``
+    elsewhere in the same docstring still trips the guard.
     """
     path = _repo_root() / relpath
     tree = ast.parse(path.read_text())
 
     offenders: list[tuple[str, int, str]] = []
     for node, doc in _iter_docstrings(tree):
-        doc_lower = doc.lower()
-        # If the docstring as a whole calls itself out as the deprecation /
-        # migration reference, allow the legacy example shape to appear in
-        # it. Every other docstring must use the canonical idiom.
-        is_deprecation_reference = "legacy" in doc_lower or "deprecated" in doc_lower
-        if is_deprecation_reference:
-            continue
-        for idx, line in enumerate(doc.splitlines(), start=1):
-            if "from_storage(" in line and "async with await" in line:
-                offenders.append((getattr(node, "name", "<module>"), idx, line.strip()))
+        lines = doc.splitlines()
+        for idx, line in enumerate(lines, start=1):
+            if "from_storage(" not in line or "async with await" not in line:
+                continue
+            # Check this line and the two lines immediately above it for
+            # an explicit "Legacy" / "deprecated" marker. The two-line
+            # window matches the common pattern where a header line like
+            # "Legacy (deprecated, removed in v1.0):" precedes the
+            # example block on its own line (possibly followed by a
+            # blank line).
+            window_start = max(0, idx - 3)  # idx is 1-based; window is the line plus two above
+            window = lines[window_start:idx]
+            window_text = "\n".join(window).lower()
+            if "legacy" in window_text or "deprecated" in window_text:
+                continue
+            offenders.append((getattr(node, "name", "<module>"), idx, line.strip()))
 
     assert not offenders, (
         f"{relpath}: found deprecated `async with await ...from_storage(...)` "

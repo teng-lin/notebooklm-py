@@ -748,9 +748,16 @@ class _FromStorageContext:
     async def _build(self) -> NotebookLMClient:
         """Load auth and instantiate the client (no session open).
 
-        Idempotent: subsequent calls return the cached instance so awaiting
-        the wrapper and then entering it as a context manager — or vice
-        versa — never re-runs the auth load.
+        Idempotent on success: subsequent calls return the cached
+        instance so awaiting the wrapper and then entering it as a
+        context manager — or vice versa — never re-runs the auth load.
+
+        Partial failure: if ``AuthTokens.from_storage(...)`` succeeds
+        but the ``NotebookLMClient(...)`` constructor raises, the cache
+        stays unset and a retry re-runs the auth load. That's
+        intentional — the constructor only raises on programmer error
+        (cross-validated kwargs) so the extra I/O on retry is
+        acceptable.
         """
         if self._client is not None:
             return self._client
