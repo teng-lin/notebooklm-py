@@ -56,6 +56,8 @@ Examples:
 - `ArtifactPollingService.wait_for_completion` — loops `poll_status` until the
   artifact is terminal or `timeout` elapses.
 - `ArtifactsAPI.wait_for_completion` — public facade over the service loop.
+- `ResearchAPI.wait_for_completion` — loops `poll` until research is terminal,
+  pinning a discovered `task_id` between iterations.
 - `SourcePoller.wait_for_sources` (and `SourcesAPI.wait_for_sources`) — batch
   wait across N source IDs with a shared deadline.
 - `RetryMiddleware._wait_for_rate_limit` / `_wait_for_server_error` — private

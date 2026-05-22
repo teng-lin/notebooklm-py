@@ -213,6 +213,24 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
             console.print(f"[yellow]Timed out after {result.timeout} seconds[/yellow]")
         exit_with_code(1)
 
+    if result.outcome == "failed":
+        if plan.json_output:
+            failed_payload: dict[str, Any] = {"status": "failed", "error": "Research failed"}
+            if result.query:
+                failed_payload["query"] = result.query
+            if result.sources:
+                failed_payload["sources"] = result.sources
+                failed_payload["sources_found"] = result.sources_count
+            if result.report:
+                failed_payload["report"] = result.report
+            json_output_response(failed_payload)
+        else:
+            if result.query:
+                console.print(f"[red]Research failed:[/red] {result.query}")
+            else:
+                console.print("[red]Research failed[/red]")
+        exit_with_code(1)
+
     # outcome == "completed"
     if plan.json_output:
         payload: dict[str, Any] = {

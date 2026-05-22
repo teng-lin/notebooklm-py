@@ -13,6 +13,7 @@ that exposes a ``--json`` flag so future regressions surface immediately.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Generator
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -154,6 +155,35 @@ def _make_client(extra_setup=None) -> MagicMock:
     client.artifacts.suggest_reports = AsyncMock(return_value=[])
     client.notes.list = AsyncMock(return_value=_stub_notes())
     client.research.poll = AsyncMock(return_value={"status": "no_research"})
+
+    async def wait_for_research_completion(
+        notebook_id: str,
+        task_id: str | None = None,
+        *,
+        timeout: float = 1800,
+        interval: float = 5,
+    ) -> dict:
+        if timeout < 0:
+            raise ValueError("timeout must be non-negative")
+        if interval <= 0:
+            raise ValueError("interval must be positive")
+        pinned_task_id = task_id
+        attempts = max(1, math.ceil(timeout / interval) + 1)
+        status = {"status": "no_research"}
+        for _ in range(attempts):
+            status = await client.research.poll(notebook_id, task_id=pinned_task_id)
+            if pinned_task_id is None:
+                discovered_task_id = status.get("task_id")
+                if isinstance(discovered_task_id, str) and discovered_task_id:
+                    pinned_task_id = discovered_task_id
+            status_val = status.get("status")
+            if status_val in ("completed", "failed"):
+                return status
+            if status_val == "no_research" and pinned_task_id is None:
+                return status
+        raise TimeoutError(f"Research task {pinned_task_id or 'unknown'} timed out")
+
+    client.research.wait_for_completion = AsyncMock(side_effect=wait_for_research_completion)
     client.sharing.get_status = AsyncMock(return_value=_stub_share_status())
     client.chat.get_conversation_id = AsyncMock(return_value=None)
     client.chat.get_history = AsyncMock(return_value=[])

@@ -748,7 +748,7 @@ repeat across pipeline invocations), set `NOTEBOOKLM_QUIET_DEPRECATIONS=1`
 
 Perform AI-powered research and add discovered sources to the notebook.
 
-> **Python equivalent:** [`client.research.start(nb_id, query, source="web", mode="deep")`](python-api.md#researchapi-clientresearch) followed by `client.research.poll(...)` / `client.research.import_sources(...)`.
+> **Python equivalent:** [`client.research.start(nb_id, query, source="web", mode="deep")`](python-api.md#researchapi-clientresearch) followed by `client.research.wait_for_completion(...)` / `client.research.import_sources(...)`.
 
 ```bash
 notebooklm source add-research [query] [OPTIONS]
@@ -820,7 +820,7 @@ notebooklm research status --json
 
 Wait for research to complete (blocking).
 
-> **Python equivalent:** loop on [`client.research.poll(nb_id)`](python-api.md#researchapi-clientresearch) until the returned status is terminal, then optionally call `client.research.import_sources(...)` (matches the CLI's `--import-all` / `--cited-only` behavior).
+> **Python equivalent:** [`client.research.wait_for_completion(nb_id)`](python-api.md#researchapi-clientresearch), then optionally call `client.research.import_sources(...)` (matches the CLI's `--import-all` / `--cited-only` behavior).
 
 ```bash
 notebooklm research wait [OPTIONS]

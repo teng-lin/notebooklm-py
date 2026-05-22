@@ -160,6 +160,26 @@ class TestResearchWait:
         assert result.exit_code == 1
         assert "No research running" in result.output
 
+    def test_wait_failed(self, runner, mock_auth, mock_fetch_tokens):
+        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.research.poll = AsyncMock(
+                return_value={
+                    "status": "failed",
+                    "task_id": "task_123",
+                    "query": "AI research",
+                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                    "report": "# Partial",
+                }
+            )
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123"])
+
+        assert result.exit_code == 1
+        assert "Research failed" in result.output
+        assert "AI research" in result.output
+
     def test_wait_timeout(self, runner, mock_auth, mock_fetch_tokens):
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
             mock_client = create_mock_client()
@@ -364,6 +384,30 @@ class TestResearchWait:
         data = json.loads(result.output)
         assert data["status"] == "no_research"
         assert "error" in data
+
+    def test_wait_json_failed(self, runner, mock_auth, mock_fetch_tokens):
+        with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:
+            mock_client = create_mock_client()
+            mock_client.research.poll = AsyncMock(
+                return_value={
+                    "status": "failed",
+                    "task_id": "task_123",
+                    "query": "AI research",
+                    "sources": [{"title": "Source 1", "url": "http://example.com"}],
+                    "report": "# Partial",
+                }
+            )
+            mock_client_cls.return_value = mock_client
+
+            result = runner.invoke(cli, ["research", "wait", "-n", "nb_123", "--json"])
+
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert data["status"] == "failed"
+        assert data["error"] == "Research failed"
+        assert data["query"] == "AI research"
+        assert data["sources_found"] == 1
+        assert data["report"] == "# Partial"
 
     def test_wait_json_timeout(self, runner, mock_auth, mock_fetch_tokens):
         with patch("notebooklm.cli.research_cmd.NotebookLMClient") as mock_client_cls:

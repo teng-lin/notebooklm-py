@@ -1223,6 +1223,7 @@ if result.references:
 |--------|------------|---------|-------------|
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `dict \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `dict` | Check research status |
+| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
 
 **Method Signatures:**
@@ -1244,7 +1245,7 @@ async def poll(notebook_id: str, task_id: str | None = None) -> dict:
     """
     Returns a dict for the selected research task. If task_id is None, selects the latest research task and raises/emits an ambiguity warning if multiple tasks are in-flight. Top-level keys:
       - task_id:   str       — task/report identifier
-      - status:    str       — "completed" | "in_progress" | "no_research"
+      - status:    str       — "completed" | "failed" | "in_progress" | "no_research"
       - query:     str       — original research query
       - sources:   list[dict]
       - summary:   str       — summary text when present
@@ -1257,6 +1258,25 @@ async def poll(notebook_id: str, task_id: str | None = None) -> dict:
       - result_type:        int — 1=web, 2=drive, 5=deep-research report entry
       - research_task_id:   str — task/report ID that produced this source
       - report_markdown:    str — deep-research report markdown (for type-5 entries)
+    """
+
+async def wait_for_completion(
+    notebook_id: str,
+    task_id: str | None = None,
+    *,
+    timeout: float = 1800,
+    interval: float = 5,
+) -> dict:
+    """
+    Loops on poll() until research returns "completed" / "failed" or the
+    timeout expires. "no_research" returns immediately only before a task_id
+    is known; when a task_id is supplied or discovered, transient
+    "no_research" polls are retried. Once a concrete task_id is returned,
+    later polls reuse it as the discriminator so concurrent research tasks in
+    the same notebook cannot cross-wire results.
+
+    Returns: final poll() dict.
+    Raises: TimeoutError on timeout; ValueError for invalid timeout/interval.
     """
 
 async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) -> list[dict]:
@@ -1293,13 +1313,13 @@ task_id = result["task_id"]
 # poll resolves to the intended task. Without it, poll() returns the
 # "latest task" and emits an ambiguity warning when multiple are in flight.
 
-# Poll until complete (always pass task_id for unambiguous targeting)
-import asyncio
-while True:
-    status = await client.research.poll(nb_id, task_id=task_id)
-    if status["status"] == "completed":
-        break
-    await asyncio.sleep(10)
+# Wait until complete (always pass task_id for unambiguous targeting)
+status = await client.research.wait_for_completion(
+    nb_id,
+    task_id=task_id,
+    timeout=1800,
+    interval=5,
+)
 
 # Import discovered sources (using the same task_id discriminator)
 imported = await client.research.import_sources(nb_id, task_id, status["sources"][:5])

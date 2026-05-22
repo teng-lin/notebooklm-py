@@ -163,22 +163,22 @@ async def test_source_fulltext_json_output_writes_file_and_emits_metadata(
 
 
 @pytest.mark.asyncio
-async def test_source_add_research_pins_task_id_and_imports(
+async def test_source_add_research_waits_with_started_task_id_and_imports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     imported = SimpleNamespace(imported=["src_1"])
     import_research_sources = AsyncMock(return_value=imported)
     monkeypatch.setattr(source_research, "import_research_sources", import_research_sources)
-    monkeypatch.setattr(source_research.asyncio, "sleep", AsyncMock())
     monkeypatch.setattr(source_research.console, "print", lambda *args, **kwargs: None)
     monkeypatch.setattr(source_research, "display_research_sources", lambda sources: None)
     monkeypatch.setattr(source_research, "display_report", lambda report, json_hint=False: None)
     client = SimpleNamespace(
         research=SimpleNamespace(
             start=AsyncMock(return_value={"task_id": "task_123"}),
-            poll=AsyncMock(
+            wait_for_completion=AsyncMock(
                 return_value={
                     "status": "completed",
+                    "task_id": "task_123",
                     "sources": [{"title": "Result"}],
                     "report": "Report",
                 }
@@ -201,7 +201,12 @@ async def test_source_add_research_pins_task_id_and_imports(
     )
 
     client.research.start.assert_awaited_once_with("nb_1", "topic", "web", "deep")
-    client.research.poll.assert_awaited_once_with("nb_1", task_id="task_123")
+    client.research.wait_for_completion.assert_awaited_once_with(
+        "nb_1",
+        task_id="task_123",
+        timeout=30.0,
+        interval=5.0,
+    )
     import_research_sources.assert_awaited_once_with(
         client,
         "nb_1",
@@ -213,23 +218,106 @@ async def test_source_add_research_pins_task_id_and_imports(
     )
 
 
+@pytest.mark.parametrize("status", ["failed", "timeout"])
 @pytest.mark.asyncio
-async def test_source_add_research_ceil_poll_budget_covers_timeout(
+async def test_source_add_research_failed_or_timeout_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    printed: list[str] = []
+
+    def fake_exit_with_code(code: int) -> None:
+        raise SystemExit(code)
+
+    monkeypatch.setattr(
+        source_research.console, "print", lambda message, *_, **__: printed.append(message)
+    )
+    monkeypatch.setattr(source_research, "exit_with_code", fake_exit_with_code)
+    client = SimpleNamespace(
+        research=SimpleNamespace(
+            start=AsyncMock(return_value={"task_id": "task_123"}),
+            wait_for_completion=AsyncMock(return_value={"status": status, "task_id": "task_123"}),
+        )
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        await execute_source_add_research(
+            client,
+            SourceAddResearchPlan(
+                notebook_id="nb_1",
+                query="topic",
+                search_source="web",
+                mode="deep",
+                import_all=False,
+                cited_only=False,
+                no_wait=False,
+                timeout=30,
+            ),
+        )
+
+    assert exc_info.value.code == 1
+    expected = "Research failed" if status == "failed" else "Research timed out"
+    assert any(expected in line for line in printed)
+
+
+@pytest.mark.asyncio
+async def test_source_add_research_unknown_status_exits_nonzero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sleep = AsyncMock()
-    monkeypatch.setattr(source_research.asyncio, "sleep", sleep)
+    printed: list[str] = []
+
+    def fake_exit_with_code(code: int) -> None:
+        raise SystemExit(code)
+
+    monkeypatch.setattr(
+        source_research.console, "print", lambda message, *_, **__: printed.append(message)
+    )
+    monkeypatch.setattr(source_research, "exit_with_code", fake_exit_with_code)
+    client = SimpleNamespace(
+        research=SimpleNamespace(
+            start=AsyncMock(return_value={"task_id": "task_123"}),
+            wait_for_completion=AsyncMock(
+                return_value={"status": "cancelled", "task_id": "task_123"}
+            ),
+        )
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        await execute_source_add_research(
+            client,
+            SourceAddResearchPlan(
+                notebook_id="nb_1",
+                query="topic",
+                search_source="web",
+                mode="deep",
+                import_all=False,
+                cited_only=False,
+                no_wait=False,
+                timeout=30,
+            ),
+        )
+
+    assert exc_info.value.code == 1
+    assert any("Status: cancelled" in line for line in printed)
+
+
+@pytest.mark.asyncio
+async def test_source_add_research_delegates_timeout_budget_to_research_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(source_research.console, "print", lambda *args, **kwargs: None)
     monkeypatch.setattr(source_research, "display_research_sources", lambda sources: None)
     monkeypatch.setattr(source_research, "display_report", lambda report, json_hint=False: None)
     client = SimpleNamespace(
         research=SimpleNamespace(
             start=AsyncMock(return_value={"task_id": "task_123"}),
-            poll=AsyncMock(
-                side_effect=[
-                    {"status": "in_progress"},
-                    {"status": "completed", "sources": [], "report": ""},
-                ]
+            wait_for_completion=AsyncMock(
+                return_value={
+                    "status": "completed",
+                    "task_id": "task_123",
+                    "sources": [],
+                    "report": "",
+                }
             ),
         )
     )
@@ -248,9 +336,12 @@ async def test_source_add_research_ceil_poll_budget_covers_timeout(
         ),
     )
 
-    assert client.research.poll.await_count == 2
-    client.research.poll.assert_any_await("nb_1", task_id="task_123")
-    sleep.assert_awaited_once_with(5)
+    client.research.wait_for_completion.assert_awaited_once_with(
+        "nb_1",
+        task_id="task_123",
+        timeout=6.0,
+        interval=5.0,
+    )
 
 
 @pytest.mark.asyncio

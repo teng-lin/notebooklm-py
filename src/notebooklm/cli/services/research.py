@@ -1,9 +1,9 @@
 """Service layer for ``research wait`` (ADR-008 Click-to-service extraction).
 
 The CLI ``research wait`` command was a 130-line Click handler that mixed
-plan construction (parsing flags + validation), polling-loop orchestration
-(with task-id pinning per P1.T2), and I/O rendering (spinner + text/JSON
-output + exit codes). This module owns the plan + orchestration; the Click
+plan construction (parsing flags + validation), wait orchestration, and I/O
+rendering (spinner + text/JSON output + exit codes). This module owns the plan
+and orchestration; the Click
 handler in ``cli/research_cmd.py`` owns the rendering and exit-code
 decisions.
 
@@ -12,7 +12,7 @@ Contract
 
 * :class:`ResearchWaitPlan` — frozen dataclass of user inputs.
 * :class:`ResearchWaitResult` — discriminated result returned to the handler
-  (``outcome`` ∈ ``{"no_research", "timeout", "completed"}``).
+  (``outcome`` ∈ ``{"no_research", "timeout", "failed", "completed"}``).
 * :func:`execute_research_wait` — async orchestrator. Pure with respect to
   CLI I/O: it never calls ``console.print``, ``click.echo``, or
   ``exit_with_code``. It MAY call the injected ``import_sources`` callable
@@ -22,12 +22,9 @@ Contract
 Task-id pinning (P1.T2)
 -----------------------
 
-The first poll that returns a ``task_id`` pins it; subsequent polls pass
-``task_id=<pinned>`` so a concurrent research task started mid-wait cannot
-substitute its sources or report into this wait. Preserved verbatim from
-the pre-extraction handler — the characterization test
-``TestTaskIdPinning::test_task_id_pinned_after_first_discovery`` is the
-regression guard.
+The protocol-level pinning invariant lives in
+``ResearchAPI.wait_for_completion``. This service delegates the wait loop to
+the Python API so CLI and library callers share the same cross-wire guard.
 """
 
 from __future__ import annotations
@@ -35,13 +32,12 @@ from __future__ import annotations
 import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from ..research_import import ResearchImportResult, import_research_sources
 from ..resolve import resolve_notebook_id
-from .polling import poll_until
 
-ResearchWaitOutcome = Literal["no_research", "timeout", "completed"]
+ResearchWaitOutcome = Literal["no_research", "timeout", "failed", "completed"]
 
 
 @dataclass(frozen=True)
@@ -66,7 +62,7 @@ class ResearchWaitResult:
     """Discriminated outcome of a ``research wait`` invocation.
 
     The handler picks the rendering path off ``outcome``; non-success
-    outcomes (``no_research``, ``timeout``) are converted into the
+    outcomes (``no_research``, ``timeout``, ``failed``) are converted into the
     appropriate ``exit_with_code(1)`` by the handler. ``completed`` returns
     exit-code 0 regardless of whether ``import_result`` is populated.
     """
@@ -105,7 +101,7 @@ async def execute_research_wait(
     resolve_id: ResolveNotebookIdFn = resolve_notebook_id,
     import_sources: ImportResearchSourcesFn = import_research_sources,
 ) -> ResearchWaitResult:
-    """Resolve, poll-with-pinned-task-id, and optionally import.
+    """Resolve, wait for completion, and optionally import.
 
     Args:
         plan: User inputs validated by the Click handler.
@@ -124,13 +120,12 @@ async def execute_research_wait(
 
     Returns:
         A :class:`ResearchWaitResult` whose ``outcome`` discriminates the
-        three terminal states. The service NEVER raises ``SystemExit`` and
+        terminal states. The service NEVER raises ``SystemExit`` and
         NEVER prints — the handler decides exit codes and rendering.
 
     Notes:
-        * Task-id pinning (P1.T2) — once the first poll returns a
-          ``task_id``, subsequent polls pin to it via the ``task_id=``
-          discriminator on ``client.research.poll``.
+        * Task-id pinning is handled by
+          ``client.research.wait_for_completion``.
         * Import is only invoked when ``plan.import_all`` is true AND the
           completed status has sources AND a ``task_id`` was discovered.
           (The third guard preserves the pre-extraction handler's behavior
@@ -139,36 +134,24 @@ async def execute_research_wait(
     """
     nb_id_resolved = await resolve_id(client, plan.notebook_id, json_output=plan.json_output)
 
-    # Closure-captured pinned task_id. Once set, every subsequent poll
-    # passes it as the discriminator — this is the P1.T2 fix.
-    task_id: str | None = None
-
-    async def _fetch_status() -> dict[str, Any]:
-        nonlocal task_id
-        current_status = await client.research.poll(nb_id_resolved, task_id=task_id)
-        if task_id is None:
-            task_id = current_status.get("task_id")
-        return current_status
-
-    def _is_terminal(current_status: dict[str, Any]) -> bool:
-        status_val = current_status.get("status", "unknown")
-        # Both ``no_research`` and ``completed`` terminate the poll loop;
-        # the handler distinguishes them by ``outcome``. (Pre-extraction,
-        # ``no_research`` exited inside the fetch closure via
-        # ``exit_with_code`` — this version returns the value up and lets
-        # the handler render + exit.)
-        return status_val in ("no_research", "completed")
-
     async with wait_context():
-        poll_result = await poll_until(
-            _fetch_status,
-            _is_terminal,
-            timeout=float(plan.timeout),
-            interval=float(plan.interval),
-        )
+        try:
+            status = await client.research.wait_for_completion(
+                nb_id_resolved,
+                timeout=float(plan.timeout),
+                interval=float(plan.interval),
+            )
+        except TimeoutError:
+            return ResearchWaitResult(
+                outcome="timeout",
+                notebook_id=nb_id_resolved,
+                timeout=plan.timeout,
+            )
+
+    raw_task_id = status.get("task_id")
+    task_id = raw_task_id if isinstance(raw_task_id, str) else None
 
     def _terminal(outcome: ResearchWaitOutcome, **extra: Any) -> ResearchWaitResult:
-        """Build a terminal result with the common notebook/timeout/task_id fields."""
         return ResearchWaitResult(
             outcome=outcome,
             notebook_id=nb_id_resolved,
@@ -177,22 +160,31 @@ async def execute_research_wait(
             **extra,
         )
 
-    # Check timeout before inspecting status — keeps control flow readable
-    # (claude[bot] #5: avoid signalling that status_val matters on the
-    # timeout branch).
-    if poll_result.timed_out:
-        return _terminal("timeout")
+    def _as_str(value: Any) -> str:
+        return value if isinstance(value, str) else ""
 
-    status = poll_result.value
-    status_val = status.get("status", "unknown")
+    def _as_sources(value: Any) -> list[dict[str, Any]]:
+        return cast(list[dict[str, Any]], value) if isinstance(value, list) else []
+
+    status_val = _as_str(status.get("status")) or "unknown"
+    query = _as_str(status.get("query"))
+    sources = _as_sources(status.get("sources"))
+    report = _as_str(status.get("report"))
 
     if status_val == "no_research":
         return _terminal("no_research")
+    if status_val == "failed":
+        return _terminal(
+            "failed",
+            query=query,
+            sources=sources,
+            report=report,
+        )
 
-    # status_val == "completed"
-    sources = status.get("sources", [])
-    query = status.get("query", "")
-    report = status.get("report", "")
+    # wait_for_completion only returns completed/no_research/failed; keep a
+    # narrow fallback so future terminal statuses cannot be rendered as success.
+    if status_val != "completed":
+        return _terminal("failed", query=query, sources=sources, report=report)
 
     import_result: ResearchImportResult | None = None
     if plan.import_all and sources and task_id:

@@ -494,7 +494,7 @@ class ResearchAPI:
             Dictionary representing the parsed research task for the
             notebook. Includes:
             - ``task_id``: task/report identifier for the selected task
-            - ``status``: ``in_progress``, ``completed``, or ``no_research``
+            - ``status``: ``in_progress``, ``completed``, ``failed``, or ``no_research``
             - ``query``: original research query text
             - ``sources``: parsed source dictionaries for the selected task
             - ``summary``: summary text when present
@@ -604,10 +604,17 @@ class ResearchAPI:
                     if report and parsed_source is not None:
                         parsed_source["report_markdown"] = report
 
-            # NOTE: Research status codes differ from artifact status codes
-            # Research: 1=in_progress, 2=completed, 6=completed (deep research)
+            # NOTE: Research status codes differ from artifact status codes.
+            # Research: 1=in_progress, 2=completed, 6=completed (deep research).
+            # Unknown non-null codes are treated as terminal failures so wait
+            # loops don't spin until timeout after the backend rejects a task.
             # Artifacts: 1=in_progress, 2=pending, 3=completed
-            status = "completed" if status_code in (2, 6) else "in_progress"
+            if status_code in (2, 6):
+                status = "completed"
+            elif status_code == 1 or status_code is None:
+                status = "in_progress"
+            else:
+                status = "failed"
 
             parsed_tasks.append(
                 {
@@ -652,6 +659,74 @@ class ResearchAPI:
             }
 
         return {"status": "no_research", "tasks": []}
+
+    async def wait_for_completion(
+        self,
+        notebook_id: str,
+        task_id: str | None = None,
+        *,
+        timeout: float = 1800,
+        interval: float = 5,
+    ) -> dict[str, Any]:
+        """Poll until research reaches a terminal state or times out.
+
+        When the first poll returns a concrete ``task_id``, subsequent polls
+        pass it back through :meth:`poll` as the discriminator. This prevents a
+        later concurrent research task in the same notebook from substituting
+        its sources/report into this wait loop.
+
+        Args:
+            notebook_id: The notebook ID.
+            task_id: Optional research task discriminator. Pass the value
+                returned by :meth:`start` when available.
+            timeout: Maximum seconds to wait.
+            interval: Seconds between status checks.
+
+        Returns:
+            The final :meth:`poll` result for ``completed`` or ``failed``
+            statuses. ``no_research`` is returned immediately only when no
+            task id is known; for a known/pinned task it can be a transient
+            live-API state before the task appears in ``POLL_RESEARCH``.
+
+        Raises:
+            TimeoutError: If research does not reach a terminal status before
+                ``timeout`` elapses.
+            ValueError: If ``timeout`` is negative or ``interval`` is not
+                positive.
+        """
+        if timeout < 0:
+            raise ValueError("timeout must be non-negative")
+        if interval <= 0:
+            raise ValueError("interval must be positive")
+
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        pinned_task_id = task_id
+
+        while True:
+            status = await self.poll(notebook_id, task_id=pinned_task_id)
+            if pinned_task_id is None:
+                discovered_task_id = status.get("task_id")
+                if isinstance(discovered_task_id, str) and discovered_task_id:
+                    pinned_task_id = discovered_task_id
+
+            status_val = status.get("status", "unknown")
+            if status_val in ("completed", "failed"):
+                return status
+            if status_val == "no_research" and pinned_task_id is None:
+                return status
+
+            elapsed = loop.time() - start
+            if elapsed >= timeout:
+                task_label = pinned_task_id or "unknown"
+                raise TimeoutError(
+                    f"Research task {task_label} timed out after {timeout}s "
+                    f"(last status: {status_val})"
+                )
+
+            sleep_for = min(interval, timeout - elapsed)
+            if sleep_for > 0:
+                await asyncio.sleep(sleep_for)
 
     async def import_sources(
         self,
