@@ -72,7 +72,14 @@ async def _build_client_for_test() -> NotebookLMClient:
     if _vcr_record_mode:
         # ``from_storage`` performs a live homepage GET. Keep this OUT of the
         # cassette context so the recording captures only the refresh path.
-        return await NotebookLMClient.from_storage()
+        # We use the legacy await form here because we need a built-but-
+        # unentered client (the test opens it manually later). Suppress
+        # the DeprecationWarning since the legacy form is intentional.
+        import warnings as _warnings
+
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("ignore", DeprecationWarning)
+            return await NotebookLMClient.from_storage()
 
     synthetic_auth = AuthTokens(
         cookies={

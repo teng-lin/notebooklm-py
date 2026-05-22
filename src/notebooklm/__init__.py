@@ -3,7 +3,7 @@
 Example usage:
     from notebooklm import NotebookLMClient
 
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         notebooks = await client.notebooks.list()
         await client.sources.add_url(notebook_id, "https://example.com")
         result = await client.chat.ask(notebook_id, "What is this about?")

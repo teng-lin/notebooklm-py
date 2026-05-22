@@ -113,7 +113,8 @@ class TestFromStorage:
             content=html.encode(),
         )
 
-        client = await NotebookLMClient.from_storage(str(storage_file))
+        with pytest.warns(DeprecationWarning, match="removed in v1.0"):
+            client = await NotebookLMClient.from_storage(str(storage_file))
 
         assert client.auth.cookies[("SID", ".google.com", "/")] == "test_sid"
         assert client.auth.csrf_token == "csrf_token_abc"
@@ -122,8 +123,13 @@ class TestFromStorage:
     @pytest.mark.asyncio
     async def test_from_storage_file_not_found(self, tmp_path):
         """Test raises error when storage file doesn't exist."""
+        # `from_storage` is now sync; the wrapper triggers auth load lazily
+        # on first use (await or __aenter__). Either path surfaces the
+        # FileNotFoundError. Use `async with` to avoid the legacy
+        # DeprecationWarning.
         with pytest.raises(FileNotFoundError):
-            await NotebookLMClient.from_storage(str(tmp_path / "nonexistent.json"))
+            async with NotebookLMClient.from_storage(str(tmp_path / "nonexistent.json")):
+                pass
 
     @pytest.mark.asyncio
     async def test_from_storage_with_default_path(
@@ -164,7 +170,8 @@ class TestFromStorage:
         )
 
         try:
-            client = await NotebookLMClient.from_storage()
+            with pytest.warns(DeprecationWarning, match="removed in v1.0"):
+                client = await NotebookLMClient.from_storage()
             assert client.auth.cookies[("SID", ".google.com", "/")] == "default_sid"
         finally:
             if real_storage_mtime is None:

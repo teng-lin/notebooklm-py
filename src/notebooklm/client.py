@@ -4,7 +4,7 @@ This module provides the NotebookLMClient class, a modern async client
 for interacting with Google NotebookLM using undocumented RPC APIs.
 
 Example:
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # List notebooks
         notebooks = await client.notebooks.list()
 
@@ -26,7 +26,7 @@ import dataclasses
 import logging
 import os
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
@@ -83,8 +83,8 @@ class NotebookLMClient:
     - sharing: Manage notebook sharing and permissions
 
     Usage:
-        # Create from saved authentication
-        async with await NotebookLMClient.from_storage() as client:
+        # Create from saved authentication (canonical idiom)
+        async with NotebookLMClient.from_storage() as client:
             notebooks = await client.notebooks.list()
 
         # Create from AuthTokens directly
@@ -585,7 +585,7 @@ class NotebookLMClient:
         return self._session.is_open
 
     @classmethod
-    async def from_storage(
+    def from_storage(
         cls,
         path: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
@@ -599,11 +599,20 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-    ) -> NotebookLMClient:
+    ) -> _FromStorageContext:
         """Create a client from Playwright storage state file.
 
         This is the recommended way to create a client for programmatic use.
         Handles all authentication setup automatically.
+
+        The returned object supports two usage patterns:
+
+        - **Canonical (recommended):** use as an async context manager — no
+          ``await`` on ``from_storage`` itself. The auth load and session open
+          happen on ``__aenter__``.
+        - **Legacy (deprecated, removed in v1.0):** await the call to obtain a
+          built-but-unentered ``NotebookLMClient``. Awaiting emits a
+          ``DeprecationWarning`` pointing at the v1.0 removal.
 
         Args:
             path: Path to storage_state.json. If provided, takes precedence over profile.
@@ -647,33 +656,32 @@ class NotebookLMClient:
                 logical RPC succeeds or fails.
 
         Returns:
-            NotebookLMClient instance (not yet connected).
+            ``_FromStorageContext`` — an awaitable async-context-manager
+            wrapper. ``await``-ing it (legacy path) returns a
+            ``NotebookLMClient`` instance. ``async with``-ing it (canonical
+            path) yields a ``NotebookLMClient`` that is already connected.
 
         Example:
-            async with await NotebookLMClient.from_storage() as client:
+            # Canonical idiom — no `await` on `from_storage`.
+            async with NotebookLMClient.from_storage() as client:
                 notebooks = await client.notebooks.list()
 
             # Use a specific profile
-            async with await NotebookLMClient.from_storage(profile="work") as client:
+            async with NotebookLMClient.from_storage(profile="work") as client:
                 notebooks = await client.notebooks.list()
 
             # Long-lived client with periodic keepalive (e.g. an agent worker)
-            async with await NotebookLMClient.from_storage(keepalive=600) as client:
+            async with NotebookLMClient.from_storage(keepalive=600) as client:
                 ...
-        """
-        storage_path = Path(path) if path else None
-        auth = await AuthTokens.from_storage(storage_path, profile=profile)
-        # Always resolve the storage path so downstream cookie loading
-        # (e.g. artifact downloads) uses the correct file, whether the
-        # caller provided an explicit path, a named profile, or neither.
-        if storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
-            from .paths import get_storage_path
 
-            storage_path = get_storage_path(profile)
-        return cls(
-            auth,
+            # Legacy form (deprecated, removed in v1.0):
+            # async with await NotebookLMClient.from_storage() as client: ...
+        """
+        return _FromStorageContext(
+            cls,
+            path=path,
             timeout=timeout,
-            storage_path=storage_path,
+            profile=profile,
             keepalive=keepalive,
             keepalive_min_interval=keepalive_min_interval,
             rate_limit_max_retries=rate_limit_max_retries,
@@ -698,3 +706,119 @@ class NotebookLMClient:
             ValueError: If token extraction fails (page structure may have changed).
         """
         return await refresh_auth_session(self._session)
+
+
+class _FromStorageContext:
+    """Awaitable async-context-manager wrapper for ``NotebookLMClient.from_storage``.
+
+    Supports two usage patterns so users get a friendly fix-it path off the
+    historical ``async with await`` double-keyword trap:
+
+    Canonical (recommended):
+        async with NotebookLMClient.from_storage(...) as client:
+            ...
+
+    Legacy (deprecated, removed in v1.0):
+        async with await NotebookLMClient.from_storage(...) as client:
+            ...
+        # or:
+        client = await NotebookLMClient.from_storage(...)
+
+    The legacy ``__await__`` path emits a ``DeprecationWarning`` naming the
+    v1.0 removal so existing call sites have a clear migration target. The
+    new ``__aenter__`` path emits no warning.
+
+    Auth load and storage-path resolution are deferred until the first use
+    (``__aenter__`` or ``__await__``) — constructing the wrapper itself does
+    no I/O.
+    """
+
+    __slots__ = ("_cls", "_kwargs", "_client", "_owns_close")
+
+    def __init__(
+        self,
+        cls: type[NotebookLMClient],
+        **kwargs: Any,
+    ) -> None:
+        self._cls = cls
+        self._kwargs = kwargs
+        self._client: NotebookLMClient | None = None
+        self._owns_close = False
+
+    async def _build(self) -> NotebookLMClient:
+        """Load auth and instantiate the client (no session open).
+
+        Idempotent: subsequent calls return the cached instance so awaiting
+        the wrapper and then entering it as a context manager — or vice
+        versa — never re-runs the auth load.
+        """
+        if self._client is not None:
+            return self._client
+
+        kwargs = self._kwargs
+        path = kwargs["path"]
+        profile = kwargs["profile"]
+
+        storage_path = Path(path) if path else None
+        auth = await AuthTokens.from_storage(storage_path, profile=profile)
+        # Always resolve the storage path so downstream cookie loading
+        # (e.g. artifact downloads) uses the correct file, whether the
+        # caller provided an explicit path, a named profile, or neither.
+        if storage_path is None and not os.environ.get("NOTEBOOKLM_AUTH_JSON"):
+            from .paths import get_storage_path
+
+            storage_path = get_storage_path(profile)
+
+        self._client = self._cls(
+            auth,
+            timeout=kwargs["timeout"],
+            storage_path=storage_path,
+            keepalive=kwargs["keepalive"],
+            keepalive_min_interval=kwargs["keepalive_min_interval"],
+            rate_limit_max_retries=kwargs["rate_limit_max_retries"],
+            server_error_max_retries=kwargs["server_error_max_retries"],
+            limits=kwargs["limits"],
+            max_concurrent_uploads=kwargs["max_concurrent_uploads"],
+            max_concurrent_rpcs=kwargs["max_concurrent_rpcs"],
+            upload_timeout=kwargs["upload_timeout"],
+            on_rpc_event=kwargs["on_rpc_event"],
+        )
+        return self._client
+
+    def __await__(self) -> Generator[Any, None, NotebookLMClient]:
+        """Legacy await path — returns a built-but-unentered client.
+
+        Emits ``DeprecationWarning`` (removed in v1.0). Prefer the
+        ``async with NotebookLMClient.from_storage(...) as client:`` idiom.
+        """
+        warnings.warn(
+            "Awaiting NotebookLMClient.from_storage(...) is deprecated; use "
+            "`async with NotebookLMClient.from_storage(...) as client:` "
+            "instead. The await form will be removed in v1.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._build().__await__()
+
+    async def __aenter__(self) -> NotebookLMClient:
+        """Canonical path — build the client and enter its session."""
+        client = await self._build()
+        await client.__aenter__()
+        self._owns_close = True
+        return client
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Tear down the client we opened in ``__aenter__``.
+
+        Only closes when ``__aenter__`` ran successfully — re-entering via the
+        legacy ``async with await ...`` path opens the client through
+        ``NotebookLMClient.__aenter__`` directly, so ``_FromStorageContext``
+        is not in that chain and never tries to close someone else's client.
+        """
+        if self._owns_close and self._client is not None:
+            await self._client.__aexit__(exc_type, exc_val, exc_tb)

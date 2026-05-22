@@ -135,7 +135,7 @@ class NotebooksAPI:
     notebooks, as well as getting AI-generated descriptions.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             notebooks = await client.notebooks.list()
             new_nb = await client.notebooks.create("My Research")
             await client.notebooks.rename(new_nb.id, "Better Title")

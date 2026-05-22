@@ -17,7 +17,7 @@ from notebooklm import NotebookLMClient
 
 async def main():
     # Create client from saved authentication
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # List notebooks
         notebooks = await client.notebooks.list()
         print(f"Found {len(notebooks)} notebooks")
@@ -66,11 +66,17 @@ If we ever provide thread-safety, it will be a versioned, opt-in API change. Do 
 The client must be used as an async context manager to properly manage HTTP connections:
 
 ```python
-# Correct - uses context manager
+# Canonical idiom (v0.5.0+) - no `await` on `from_storage`.
+async with NotebookLMClient.from_storage() as client:
+    ...
+
+# Legacy idiom (deprecated, removed in v1.0) - works but emits
+# DeprecationWarning. Drop the `await` to migrate.
 async with await NotebookLMClient.from_storage() as client:
     ...
 
-# Also correct - manual management
+# Manual management - still works; the await emits DeprecationWarning.
+# Migrate to `async with NotebookLMClient.from_storage()` instead.
 client = await NotebookLMClient.from_storage()
 await client.__aenter__()
 try:
@@ -84,12 +90,15 @@ finally:
 The client requires valid Google session cookies obtained via browser login:
 
 ```python
-# From storage file (recommended)
-client = await NotebookLMClient.from_storage()
-client = await NotebookLMClient.from_storage("/path/to/storage_state.json")
+# From storage file (recommended) — use as an async context manager:
+async with NotebookLMClient.from_storage() as client:
+    ...
+async with NotebookLMClient.from_storage("/path/to/storage_state.json") as client:
+    ...
 
 # From a named profile
-client = await NotebookLMClient.from_storage(profile="work")
+async with NotebookLMClient.from_storage(profile="work") as client:
+    ...
 
 # From AuthTokens directly
 from notebooklm import AuthTokens
@@ -100,7 +109,7 @@ auth = AuthTokens(
 )
 client = NotebookLMClient(auth)
 
-# AuthTokens also supports profiles (from_storage is async)
+# AuthTokens also supports profiles (AuthTokens.from_storage is async)
 auth = await AuthTokens.from_storage(profile="work")
 ```
 
@@ -135,7 +144,7 @@ with open(storage_path, "w") as f:
 if os.name != "nt":
     os.chmod(storage_path, 0o600)
 
-async with await NotebookLMClient.from_storage(storage_path) as client:
+async with NotebookLMClient.from_storage(storage_path) as client:
     notebooks = await client.notebooks.list()
 ```
 
@@ -187,7 +196,7 @@ import os
 os.environ["NOTEBOOKLM_AUTH_JSON"] = '{"cookies": [...]}'
 
 # Client automatically uses the env var
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     notebooks = await client.notebooks.list()
 ```
 
@@ -220,7 +229,7 @@ When an RPC call fails with an auth error (HTTP 401/403 or auth-related message)
 **Manual Refresh:** For proactive refresh (e.g., before a long-running operation):
 
 ```python
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     # Manually refresh CSRF token and session ID
     await client.refresh_auth()
 ```
@@ -386,7 +395,7 @@ from notebooklm import NotebookLMClient
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         app.state.notebooklm = client
         yield
     # client.close() happens via __aexit__
@@ -485,7 +494,7 @@ from notebooklm import NotebookLMClient, correlation_id
 
 events = []
 
-async with await NotebookLMClient.from_storage(on_rpc_event=events.append) as client:
+async with NotebookLMClient.from_storage(on_rpc_event=events.append) as client:
     with correlation_id("batch-import-42"):
         await client.notebooks.list()
 
@@ -622,7 +631,7 @@ class NotebookLMClient:
     is_connected: bool         # Connection state
 
     @classmethod
-    async def from_storage(
+    def from_storage(
         cls, path: str | None = None, timeout: float = 30.0,
         profile: str | None = None,
         keepalive: float | None = None,
@@ -634,7 +643,11 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-    ) -> "NotebookLMClient":
+    ) -> "_FromStorageContext":
+        # Returns an awaitable async-context-manager wrapper. Use as
+        # `async with NotebookLMClient.from_storage(...) as client:`.
+        # Awaiting it directly (legacy) emits DeprecationWarning;
+        # removed in v1.0.
 
     def __init__(
         self, auth: AuthTokens, timeout: float = 30.0,
@@ -716,13 +729,13 @@ for the full layered story.
 from notebooklm import ConnectionLimits, NotebookLMClient
 
 # Default ``rate_limit_max_retries=3`` is on; widen the pool for a heavy worker
-async with await NotebookLMClient.from_storage(
+async with NotebookLMClient.from_storage(
     limits=ConnectionLimits(max_connections=200, max_keepalive_connections=100),
 ) as client:
     ...
 
 # Opt out of automatic 429 retries (e.g. for a bespoke back-off layer)
-async with await NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
+async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
     ...
 ```
 
@@ -2037,7 +2050,7 @@ For undocumented features, you can make raw RPC calls:
 ```python
 from notebooklm.rpc import RPCMethod
 
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     # Each RPCMethod member has its own params shape (a nested list) and
     # source_path; mirror the higher-level APIs when in doubt.
     result = await client.rpc_call(

@@ -17,7 +17,7 @@ class SharingAPI:
     including public link access and user-specific sharing.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             # Get current status
             status = await client.sharing.get_status(notebook_id)
 

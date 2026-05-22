@@ -122,7 +122,7 @@ class ChatAPI:
     conversation history with follow-up support.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             # Ask a question
             result = await client.chat.ask(notebook_id, "What is X?")
             print(result.answer)

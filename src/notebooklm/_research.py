@@ -274,7 +274,7 @@ class ResearchAPI:
     importing discovered sources into notebooks.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             # Start research
             task = await client.research.start(notebook_id, "quantum computing")
 

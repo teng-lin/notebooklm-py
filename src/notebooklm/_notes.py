@@ -54,7 +54,7 @@ class NotesAPI:
     Notes support operations like export to Docs/Sheets and conversion to sources.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             # Create and update notes
             note = await client.notes.create(notebook_id, "My Note", "Content here")
             await client.notes.update(notebook_id, note.id, "Updated content", "New Title")
