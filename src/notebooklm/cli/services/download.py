@@ -184,6 +184,8 @@ def _resolve_format_extension(
     output_path: str | None,
     format_choice: str,
     warn_sink: Callable[[str], None],
+    *,
+    download_all: bool = False,
 ) -> str:
     """Compute the effective extension given the spec + user's ``--format``.
 
@@ -197,14 +199,18 @@ def _resolve_format_extension(
     - leaves with no ``--format`` flag → ``spec.extension`` unchanged.
 
     ``warn_sink`` is the per-call adapter (``click.echo`` with ``err=True``
-    in the live path; configurable for testability).
+    in the live path; configurable for testability). The mismatch warning
+    is suppressed when ``download_all`` is true because the user-supplied
+    path then names a destination *directory* (not a file), so an extension
+    check is meaningless and the warning would be a false positive.
     """
     if not spec.format_choices:
         return spec.extension
     effective_ext = spec.format_extension_map.get(format_choice, spec.extension)
-    # Only warn when the user actually supplied an output path whose extension
-    # doesn't match the chosen --format. Mirrors the legacy behavior verbatim.
-    if output_path and not output_path.endswith(effective_ext):
+    # Only warn when the user supplied an output path whose extension doesn't
+    # match the chosen --format AND we're in single-file mode (--all uses the
+    # path as a directory destination, not a target filename).
+    if output_path and not download_all and not output_path.endswith(effective_ext):
         warn_sink(
             f"Warning: output path '{output_path}' does not end with "
             f"'{effective_ext}' but --format {format_choice} was requested."
@@ -272,6 +278,7 @@ def build_download_plan(
         output_path=args.get("output_path"),
         format_choice=format_choice,
         warn_sink=sink,
+        download_all=bool(args.get("download_all", False)),
     )
 
     return DownloadPlan(
@@ -379,8 +386,15 @@ async def _execute_download_all(
     The text-mode progress lines (``Downloading 1/N: <title>``) are routed
     through ``text_progress_sink`` so the live Click handler can render them
     via ``console.print`` while tests can inject a no-op.
+
+    Relative output paths (both the user-supplied ``plan.output_path`` and
+    the spec's ``default_dir`` fallback like ``"./audio"``) are resolved
+    against ``plan.cwd`` — the directory the user invoked the CLI from —
+    not the process cwd at executor-await time. Absolute paths pass through
+    unchanged.
     """
-    output_dir = Path(plan.output_path) if plan.output_path else Path(plan.spec.default_dir)
+    raw = Path(plan.output_path) if plan.output_path else Path(plan.spec.default_dir)
+    output_dir = raw if raw.is_absolute() else plan.cwd / raw
 
     # --name filter (case-insensitive substring) applied before previewing.
     if plan.name:
@@ -529,7 +543,11 @@ async def _execute_download_single(
         )
         final_path = plan.cwd / safe_name
     else:
-        final_path = Path(plan.output_path)
+        # Resolve relative paths against plan.cwd so the build-time directory
+        # wins over the process cwd at executor-await time. Absolute paths
+        # pass through unchanged.
+        raw = Path(plan.output_path)
+        final_path = raw if raw.is_absolute() else plan.cwd / raw
 
     if plan.dry_run:
         return {
