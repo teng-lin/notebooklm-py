@@ -340,9 +340,9 @@ async def test_cancel_during_drain_in_close_does_not_leak_transport(
         # The regression assertions. Pre-fix both fail (is_connected
         # stays True, is_closed stays False) because the cancel skipped
         # ``self._session.close()`` entirely. Post-fix both hold because
-        # the ``finally: await asyncio.shield(self._session.close())``
-        # in ``NotebookLMClient.close()`` drives the shielded cleanup
-        # regardless of the cancel.
+        # the ``except asyncio.CancelledError:`` branch in
+        # ``NotebookLMClient.close()`` drives ``asyncio.shield(self._session.close())``
+        # before re-raising the cancel.
         assert not client.is_connected, (
             "transport leaked: cancel during drain() left client.is_connected "
             "= True — NotebookLMClient.close() abandoned cleanup before "
