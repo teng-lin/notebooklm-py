@@ -38,8 +38,9 @@ Examples:
 - `ArtifactPollingService.poll_status` — single RPC list + scan for one task ID.
 - `ArtifactsAPI.poll_status` — public single-shot facade over the service.
 - `ResearchAPI.poll` — single status read for a research plan.
-- `artifact_poll` (CLI command) — one shot, then exit; pair with `--wait` flags
-  to opt into a loop.
+- `artifact_poll` (CLI command) — one shot, then exit. Use the separate
+  `artifact wait` command for the blocking / looping variant; `artifact poll`
+  itself has no `--wait` flag.
 
 > **Test name:** "if I call this twice in a row without a sleep, does that make
 > sense?" If yes → it's a `poll_X`.
@@ -138,7 +139,7 @@ new code picks the right shape.
 | Name | Defined in | Protocol shape | Used by |
 |---|---|---|---|
 | `NextCall` | `_middleware.py` | **type alias**, not a class: `Callable[[RpcRequest], Awaitable[RpcResponse]]` | Every `Middleware.__call__` — the "call the next link" function passed into around-style middlewares |
-| `RpcCall` | `_source_listing.py` (and `_source_content.py`) | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceLister`, `SourceContentService` — feature services that take the RPC entrypoint positionally at construction time |
+| `RpcCall` | `_source_listing.py` (and `_source_content.py`) | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceLister`, `SourceContentRenderer` — feature services that take the RPC entrypoint positionally at construction time |
 | `RpcCallback` | `_source_upload.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | `SourceUploadPipeline.register_file_source` — RPC entrypoint passed as a **keyword argument** at call time |
 | `ShareRpc` | `_sharing_manager.py` | **Callable** Protocol: `async def __call__(method, params, ...)` | Legacy share-link manager — name signals the narrow ad-hoc use site |
 | `RpcCaller` | `_session_contracts.py` | **Object** Protocol: `async def rpc_call(method, params, ...)` (i.e. `obj.rpc_call(...)`) | The canonical shared capability Protocol for pure-RPC feature APIs (`NotesAPI`, `SettingsAPI`, etc.) |
