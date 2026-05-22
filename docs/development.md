@@ -174,6 +174,13 @@ The architecture tests encode the current layer contract:
 
 **Why async?** Google's API can be slow. Async enables concurrent operations and non-blocking downloads.
 
+**Naming conventions.** See [`docs/conventions.md`](./conventions.md) for the
+canonical tiebreakers on waiting/polling verbs (`poll_X` / `wait_for_X` /
+`wait_until_X` / `await_X` / `_wait_for_X`), RPC-callable Protocol names
+(`NextCall` / `RpcCall` / `RpcCallback` / `ShareRpc` / `RpcCaller`), and
+metrics method verbs (`record_X` vs `emit_X`). New code should pick names
+from those catalogues rather than introducing parallel patterns.
+
 ### Adding New Features
 
 **New RPC Method:**
