@@ -64,7 +64,6 @@ PR sequence.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
@@ -73,6 +72,7 @@ from ._authed_transport import TransportRateLimited, TransportServerError, parse
 from ._backoff import compute_backoff_delay
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._session_config import CORE_LOGGER_NAME
+from ._session_helpers import resolve_sleep
 
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
@@ -135,19 +135,12 @@ class RetryMiddleware:
         # the int form.
         self._rate_limit_max = rate_limit_max_retries
         self._server_error_max = server_error_max_retries
-        # ``None`` defers resolution to call time so a test that
-        # ``monkeypatch.setattr("asyncio.sleep", ...)`` (or anywhere
-        # asyncio.sleep is exposed) observes the fake. Capturing
-        # ``asyncio.sleep`` at construction would freeze the binding to
-        # whatever was imported when the middleware was instantiated,
-        # silently bypassing later monkeypatches.
+        # Late-binding rationale lives on ``_session_helpers.resolve_sleep``;
+        # see that helper for why we resolve at call time instead of capturing
+        # the callable at construction.
         self._sleep = sleep
         self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
         self._metrics = metrics
-
-    def _resolve_sleep(self) -> Callable[[float], Awaitable[object]]:
-        """Return the call-time sleep function — fake-or-real."""
-        return self._sleep if self._sleep is not None else asyncio.sleep
 
     def _resolve_rate_limit_max(self) -> int:
         v = self._rate_limit_max
@@ -251,7 +244,7 @@ class RetryMiddleware:
             attempt + 1,
             rate_limit_max,
         )
-        await self._resolve_sleep()(sleep_seconds)
+        await resolve_sleep(self._sleep)(sleep_seconds)
 
     async def _wait_for_server_error(
         self,
@@ -287,7 +280,7 @@ class RetryMiddleware:
             attempt + 1,
             server_error_max,
         )
-        await self._resolve_sleep()(backoff)
+        await resolve_sleep(self._sleep)(backoff)
 
 
 __all__ = ["RetryMiddleware"]

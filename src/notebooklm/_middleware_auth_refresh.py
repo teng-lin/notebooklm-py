@@ -69,7 +69,6 @@ PR sequence.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
@@ -79,6 +78,7 @@ import httpx
 from ._authed_transport import TransportAuthExpired
 from ._middleware import NextCall, RpcRequest, RpcResponse
 from ._session_config import CORE_LOGGER_NAME
+from ._session_helpers import resolve_sleep
 
 if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
@@ -118,8 +118,8 @@ class AuthRefreshMiddleware:
       attr on the live client still takes effect (matches the live-binding
       contract preserved for retry budgets in PR 12.7).
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
-      resolved at call time). Same lazy-resolve pattern as
-      :class:`RetryMiddleware`.
+      resolved at call time via :func:`_session_helpers.resolve_sleep` —
+      the same shared helper :class:`RetryMiddleware` uses).
     - ``logger``: structured logger for the "auth error detected" /
       "refresh successful" / "refresh failed" info / warning lines.
       Defaults to the project-canonical ``notebooklm._core`` logger so
@@ -144,13 +144,10 @@ class AuthRefreshMiddleware:
         self._is_auth_error = is_auth_error
         self._refresh_callback_enabled = refresh_callback_enabled
         self._refresh_retry_delay = refresh_retry_delay
-        # See ``RetryMiddleware._resolve_sleep`` for the lazy-binding rationale.
+        # Late-binding rationale lives on ``_session_helpers.resolve_sleep``.
         self._sleep = sleep
         self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
         self._metrics = metrics
-
-    def _resolve_sleep(self) -> Callable[[float], Awaitable[object]]:
-        return self._sleep if self._sleep is not None else asyncio.sleep
 
     async def __call__(
         self,
@@ -223,7 +220,7 @@ class AuthRefreshMiddleware:
 
             delay = self._refresh_retry_delay()
             if delay > 0:
-                await self._resolve_sleep()(delay)
+                await resolve_sleep(self._sleep)(delay)
             self._logger.info("Token refresh successful, retrying %s", log_label)
             if self._metrics is not None:
                 self._metrics.increment(rpc_auth_retries=1)

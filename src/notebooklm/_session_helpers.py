@@ -16,9 +16,12 @@ __all__ = [
     "AUTH_ERROR_PATTERNS",
     "_resolve_keepalive_interval",
     "is_auth_error",
+    "resolve_sleep",
 ]
 
+import asyncio
 import math
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -58,6 +61,26 @@ def _resolve_keepalive_interval(keepalive: float | None, min_interval: float) ->
     if not (math.isfinite(keepalive) and keepalive > 0):
         raise ValueError(f"keepalive must be None or a positive finite number, got {keepalive!r}")
     return max(keepalive, min_interval)
+
+
+def resolve_sleep(
+    injected: Callable[[float], Awaitable[object]] | None,
+) -> Callable[[float], Awaitable[object]]:
+    """Return the call-time sleep function — injected fake-or-real ``asyncio.sleep``.
+
+    Used by ``RetryMiddleware`` and ``AuthRefreshMiddleware`` to honor a
+    constructor-time fake while still resolving the real ``asyncio.sleep`` at
+    call time. Resolving via the ``asyncio`` module global on each call (rather
+    than capturing the callable at construction) is what preserves test
+    late-binding: a ``monkeypatch.setattr('asyncio.sleep', ...)`` (which mutates
+    the singleton ``asyncio`` module's ``sleep`` attribute) is observed by every
+    caller that hits this helper, because ``asyncio.sleep`` is re-read from the
+    module's ``__dict__`` on every invocation of ``resolve_sleep``. Capturing
+    ``asyncio.sleep`` at module-import or middleware-construction time would
+    freeze the binding to whatever was imported then and silently bypass later
+    monkeypatches — that's the bug this helper exists to prevent.
+    """
+    return injected if injected is not None else asyncio.sleep
 
 
 def is_auth_error(error: Exception) -> bool:
