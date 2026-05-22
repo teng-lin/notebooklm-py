@@ -42,7 +42,7 @@ class TestLoginMultiAccount:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
@@ -58,6 +58,7 @@ class TestLoginMultiAccount:
         assert result.exit_code == 0, result.output
         storage_file = target_dir / "storage_state.json"
         assert _account_exists(storage_file)
+        mock_sync.assert_called_once_with(storage_path=storage_file, profile="bob")
         assert _read_account(storage_file) == {
             "authuser": 1,
             "email": "bob@gmail.com",
@@ -132,6 +133,7 @@ class TestLoginMultiAccount:
             patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
             patch("notebooklm.paths.list_profiles", side_effect=fake_list_profiles),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -145,6 +147,16 @@ class TestLoginMultiAccount:
         bob_meta = _read_account(target_root / "bob" / "storage_state.json")
         assert alice_meta == {"authuser": 0, "email": "alice@example.com"}
         assert bob_meta == {"authuser": 1, "email": "bob@gmail.com"}
+        assert [call.kwargs for call in mock_sync.call_args_list] == [
+            {
+                "storage_path": target_root / "alice" / "storage_state.json",
+                "profile": "alice",
+            },
+            {
+                "storage_path": target_root / "bob" / "storage_state.json",
+                "profile": "bob",
+            },
+        ]
 
     def test_all_accounts_rerun_reuses_profiles_by_email(self, runner, tmp_path):
         mock_rk = _multiaccount_rookiepy_mock()

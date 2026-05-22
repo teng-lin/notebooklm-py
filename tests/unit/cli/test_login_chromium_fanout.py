@@ -138,6 +138,38 @@ class TestChromiumFanoutAuthInspect:
         assert [a["email"] for a in data["accounts"]] == ["alice@gmail.com"]
         assert data["accounts"][0]["browser_profile"] == "Default"
 
+    def test_all_profile_cookie_read_failures_surface_read_error(self, runner, tmp_path):
+        profiles, _, _ = _chromium_fanout_setup(
+            tmp_path,
+            [
+                ("Default", "Personal", []),
+                ("Profile 1", "Work", []),
+            ],
+        )
+
+        def fake_discover(browser_name):
+            return profiles if browser_name.lower() == "chrome" else []
+
+        def fake_read(profile, *, domains):
+            raise RuntimeError(f"locked {profile.directory_name}")
+
+        with (
+            patch(
+                "notebooklm.cli._chromium_profiles.discover_chromium_profiles",
+                side_effect=fake_discover,
+            ),
+            patch(
+                "notebooklm.cli._chromium_profiles.read_chromium_profile_cookies",
+                side_effect=fake_read,
+            ),
+        ):
+            result = runner.invoke(cli, ["auth", "inspect", "--browser", "chrome"])
+
+        assert result.exit_code == 1, result.output
+        assert "Could not read cookies from any chrome user-profile" in result.output
+        assert "locked Default" in result.output
+        assert "No signed-in Google accounts found" not in result.output
+
 
 class TestChromiumFanoutAllAccounts:
     """``login --browser-cookies chrome --all-accounts`` writes one profile per

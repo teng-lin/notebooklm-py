@@ -93,14 +93,16 @@ def _login_browser_cookies_single(
         _validate_profile_name(target_profile)
 
     target_storage = explicit_storage or get_storage_path(profile=target_profile)
+    storage_profile = target_profile if not explicit_storage else active_profile
 
     _write_extracted_cookies(
         per_profile_cookies[selected.browser_profile],
         storage_path=target_storage,
-        profile=target_profile if not explicit_storage else active_profile,
+        profile=storage_profile,
         authuser=selected.authuser,
         email=selected.email,
     )
+    _sync_server_language_to_config(storage_path=target_storage, profile=storage_profile)
 
 
 def _login_all_accounts_from_browser(
@@ -167,6 +169,7 @@ def _login_all_accounts_from_browser(
             authuser=account.authuser,
             email=account.email,
         )
+        _sync_server_language_to_config(storage_path=target_storage, profile=target_profile)
 
 
 def _refresh_from_browser_cookies(
@@ -195,6 +198,7 @@ def _refresh_from_browser_cookies(
         email=selected.email,
         quiet=True,
     )
+    _sync_server_language_to_config(storage_path=storage_path, profile=profile)
 
     if not quiet:
         console.print(
@@ -308,10 +312,14 @@ def _login_with_browser_cookies(
             "Cookies saved but please verify with 'notebooklm auth check --test'"
         )
 
-    _sync_server_language_to_config()
+    _sync_server_language_to_config(storage_path=storage_path, profile=profile)
 
 
-def _sync_server_language_to_config() -> None:
+def _sync_server_language_to_config(
+    *,
+    storage_path: Path | None = None,
+    profile: str | None = None,
+) -> None:
     """Fetch server language setting and persist to local config.
 
     Called after login to ensure the local config reflects the server's
@@ -322,7 +330,12 @@ def _sync_server_language_to_config() -> None:
     """
 
     async def _fetch() -> Any:
-        async with await NotebookLMClient.from_storage() as client:
+        kwargs: dict[str, Any] = {}
+        if storage_path is not None:
+            kwargs["path"] = str(storage_path)
+        if profile is not None:
+            kwargs["profile"] = profile
+        async with await NotebookLMClient.from_storage(**kwargs) as client:
             return await client.settings.get_output_language()
 
     try:

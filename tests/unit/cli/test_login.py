@@ -1104,6 +1104,31 @@ class TestLoginLanguageSync:
         # Config file should not exist
         assert not config_path.exists()
 
+    def test_sync_uses_explicit_storage_and_profile(self, tmp_path):
+        """Language sync should use the freshly written login target."""
+        from notebooklm.cli.session_cmd import _sync_server_language_to_config
+
+        config_path = tmp_path / "config.json"
+        storage_path = tmp_path / "profiles" / "work" / "storage_state.json"
+
+        with (
+            patch_session_login_dual("NotebookLMClient") as mock_client_cls,
+            patch.object(self.language_mod, "get_config_path", return_value=config_path),
+        ):
+            mock_client = create_mock_client()
+            mock_client.settings = MagicMock()
+            mock_client.settings.get_output_language = AsyncMock(return_value="fr")
+            mock_client_cls.from_storage = AsyncMock(return_value=mock_client)
+
+            _sync_server_language_to_config(storage_path=storage_path, profile="work")
+
+        mock_client_cls.from_storage.assert_awaited_once_with(
+            path=str(storage_path),
+            profile="work",
+        )
+        config = json.loads(config_path.read_text())
+        assert config["language"] == "fr"
+
     def test_sync_does_not_raise_on_error(self):
         """Language sync failure should not raise and should warn the user."""
         from notebooklm.cli.session_cmd import _sync_server_language_to_config

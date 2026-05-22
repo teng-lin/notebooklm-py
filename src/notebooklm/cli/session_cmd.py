@@ -358,7 +358,7 @@ def register_session_commands(cli):
 
             # Sync server language setting to local config so generate commands
             # respect the user's global language preference (fixes #121).
-            _sync_server_language_to_config()
+            _sync_server_language_to_config(storage_path=storage_path, profile=profile)
 
     @cli.command("use")
     @click.argument("notebook_id")

@@ -519,7 +519,7 @@ class TestLoginBrowserCookies:
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rookiepy}),
             patch_session_login_dual("get_storage_path", return_value=storage_file),
-            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -529,6 +529,7 @@ class TestLoginBrowserCookies:
             result = runner.invoke(cli, ["login", "--browser-cookies", "chrome"])
         assert result.exit_code == 0, result.output
         mock_rookiepy.chrome.assert_called_once()
+        mock_sync.assert_called_once_with(storage_path=storage_file, profile=None)
 
     def test_no_google_cookies_shows_error(self, runner, tmp_path):
         """Shows error when no Google cookies found."""
@@ -1342,13 +1343,17 @@ class TestAuthRefreshCommand:
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
             patch_session_login_dual("get_storage_path", return_value=storage),
             patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
                 return_value=("csrf_ok", "session_ok"),
             ) as mock_fetch,
         ):
-            result = runner.invoke(cli, ["auth", "refresh", "--browser-cookies", "chrome"])
+            result = runner.invoke(
+                cli,
+                ["--profile", "bob", "auth", "refresh", "--browser-cookies", "chrome"],
+            )
 
         assert result.exit_code == 0, result.output
         assert "bob@gmail.com" in result.output
@@ -1358,6 +1363,7 @@ class TestAuthRefreshCommand:
             "email": "bob@gmail.com",
         }
         mock_fetch.assert_awaited_once()
+        mock_sync.assert_called_once_with(storage_path=storage, profile="bob")
 
     def test_auth_refresh_browser_cookies_fails_when_profile_email_signed_out(
         self, runner, tmp_path
@@ -1429,6 +1435,30 @@ class TestAuthInspect:
         assert result == accounts
         mock_run_async.assert_called_once()
 
+    def test_enumerate_one_jar_network_error_non_quiet_exits_without_reraising(self):
+        from notebooklm.cli.session_cmd import _enumerate_one_jar
+
+        raw_cookies = _multiaccount_rookiepy_mock().chrome.return_value
+
+        async def fail_enumerate(*args, **kwargs):
+            raise httpx.RequestError("offline")
+
+        with (
+            patch("notebooklm.auth.enumerate_accounts", new=fail_enumerate),
+            patch(
+                "notebooklm.cli.services.login.cookie_jar.exit_with_code",
+                return_value=None,
+            ) as mock_exit,
+            patch("notebooklm.cli.services.login.cookie_jar.console") as mock_console,
+        ):
+            result = _enumerate_one_jar(raw_cookies, "chrome", browser_profile=None)
+
+        assert result == []
+        mock_exit.assert_called_once_with(1)
+        message = mock_console.print.call_args[0][0]
+        assert "network error" in message
+        assert "offline" in message
+
     def test_select_account_without_marked_default_uses_first_account(self):
         from notebooklm.auth import Account
         from notebooklm.cli.session_cmd import _select_account
@@ -1445,6 +1475,32 @@ class TestAuthInspect:
         warning_text = mock_console.print.call_args[0][0]
         assert "default account" in warning_text
         assert "alice@example.com" in warning_text
+
+    def test_select_account_empty_accounts_exits_with_user_message(self):
+        from notebooklm.cli.services.login.cookie_writes import _select_account
+
+        with (
+            patch("notebooklm.cli.services.login.cookie_writes.console") as mock_console,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _select_account([], account_email=None)
+
+        assert exc_info.value.code == 1
+        message = mock_console.print.call_args[0][0]
+        assert "No signed-in Google accounts found" in message
+
+    def test_select_refresh_account_empty_accounts_exits_with_user_message(self):
+        from notebooklm.cli.services.login.cookie_writes import _select_refresh_account
+
+        with (
+            patch("notebooklm.cli.services.login.cookie_writes.console") as mock_console,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _select_refresh_account([], {}, "chrome")
+
+        assert exc_info.value.code == 1
+        message = mock_console.print.call_args[0][0]
+        assert "No signed-in Google accounts found in chrome" in message
 
     def test_inspect_lists_accounts(self, runner):
         mock_rk = _multiaccount_rookiepy_mock()
