@@ -91,7 +91,7 @@ def get_client(ctx) -> tuple[dict, str, str]:
     resolved_storage_path = _resolved_auth_storage_path(ctx)
     typed_storage_path = cast(Path | None, resolved_storage_path)
 
-    # Load from storage (which respects NOTEBOOKLM_AUTH_JSON if resolved path is None).
+    # Load from storage (which respects env-supplied auth if resolved path is None).
     cookies = helpers.load_auth_from_storage(resolved_storage_path)
 
     from ..auth import fetch_tokens_with_domains

@@ -207,7 +207,7 @@ class StatusReport:
         context: The resolved notebook-context view (always present).
         paths: ``get_path_info(...)`` output when ``--paths`` was passed,
             else ``None``.
-        has_env_auth: ``True`` when ``NOTEBOOKLM_AUTH_JSON`` is set;
+        has_env_auth: ``True`` when env-supplied auth is active;
             used by the ``--paths`` renderer to print the inline-auth
             note.
     """
@@ -433,7 +433,7 @@ def run_logout(ctx: click.Context | None) -> None:
 
     Removes the resolved storage file, the cached browser profile, and
     the per-context cache file. Prints the env-still-active note when
-    ``NOTEBOOKLM_AUTH_JSON`` survives the logout. The order matters:
+    env-supplied auth survives the logout. The order matters:
 
     1. Storage file (the credential itself).
     2. Browser profile (the persistent SSO cache).

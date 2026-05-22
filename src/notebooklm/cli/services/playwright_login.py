@@ -355,7 +355,7 @@ def validate_login_flag_conflicts(
     """Enforce ``login`` flag mutual-exclusion rules.
 
     Emits a styled error and ``exit_with_code(1)`` on the first conflict.
-    The ``NOTEBOOKLM_AUTH_JSON`` env-var check is intentionally not handled
+    The env-supplied-auth check is intentionally not handled
     here: it is an environment vs file-auth conflict, distinct from flag
     mutual-exclusion, and stays in the ``login`` orchestrator.
     """

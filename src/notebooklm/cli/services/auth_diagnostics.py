@@ -41,7 +41,7 @@ class AuthCheckPlan:
             check will read when no env-var auth is active).
         profile: Active profile name (forwarded to the token-fetch path
             so SID/SAPISID extraction targets the right account).
-        has_env_auth: ``True`` when ``NOTEBOOKLM_AUTH_JSON`` is set;
+        has_env_auth: ``True`` when env-supplied auth is active;
             short-circuits the file-read in favor of parsing the env var.
         has_home_env: ``True`` when ``NOTEBOOKLM_HOME`` is set; used in
             the ``auth_source`` display string.
@@ -128,7 +128,7 @@ def _read_storage_state(plan: AuthCheckPlan) -> tuple[dict[str, Any] | None, str
     if plan.has_env_auth:
         # Env-var auth: read the inline JSON via the consolidated
         # :func:`read_env_auth_json` accessor so this module stays out
-        # of the ``NOTEBOOKLM_AUTH_JSON`` consolidation gate's grep.
+        # of the auth-source consolidation gate's grep.
         try:
             return json.loads(read_env_auth_json()), None
         except json.JSONDecodeError as exc:
