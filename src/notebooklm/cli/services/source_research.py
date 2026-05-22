@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from ...client import NotebookLMClient
 from ..error_handler import exit_with_code
 from ..rendering import console, display_report, display_research_sources
 from ..research_import import import_research_sources
+
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
 
 SearchSource = Literal["web", "drive"]
 SearchMode = Literal["fast", "deep"]

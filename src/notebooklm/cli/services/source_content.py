@@ -12,12 +12,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from ...client import NotebookLMClient
 from ...types import source_status_to_str
 from ..error_handler import exit_with_code, output_error
 from ..rendering import console, get_source_type_display, json_output_response
+
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
 
 FulltextFormat = Literal["text", "markdown"]
 

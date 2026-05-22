@@ -10,11 +10,14 @@ need to know how Rich tables or JSON envelopes are assembled.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from ...client import NotebookLMClient
 from ...types import Source, source_status_to_str
 from ..rendering import get_source_type_display
 from .listing import ListResult, ListSpec, run_list
+
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
 
 
 @dataclass(frozen=True)

@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import click
 
-from ...client import NotebookLMClient
 from ...types import DriveMimeType
 from ..error_handler import output_error
 from ..rendering import (
@@ -29,6 +28,9 @@ from ..rendering import (
 )
 from ..resolve import resolve_source_id, validate_id
 from .confirming_mutation import MutationPlan, run_confirmed_mutation
+
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
 
 DriveMimeChoice = Literal["google-doc", "google-slides", "google-sheets", "pdf"]
 

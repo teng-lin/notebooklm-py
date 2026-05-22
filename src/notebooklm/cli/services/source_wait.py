@@ -11,9 +11,8 @@ envelope contract.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING
 
-from ...client import NotebookLMClient
 from ...types import (
     Source,
     SourceNotFoundError,
@@ -24,7 +23,8 @@ from ..error_handler import exit_with_code
 from ..rendering import console, json_output_response
 from .polling import status_with_elapsed
 
-WaitStatus = Literal["ready", "not_found", "error", "timeout"]
+if TYPE_CHECKING:
+    from ...client import NotebookLMClient
 
 
 @dataclass(frozen=True)
