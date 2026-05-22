@@ -237,9 +237,13 @@ def test_generate_audio_failure_none_result_text(
         configure=_attach_async_return("generate_audio", None),
     )
     assert result.exit_code == 1
-    # ``output_error`` writes via ``safe_echo(err=True)``. stderr is the
-    # canonical sink; ``output`` captures stderr when stderr is unbound.
-    assert "Audio generation failed" in result.output
+    # ``output_error`` writes via ``safe_echo(err=True)``. Assert against
+    # ``result.stderr`` directly so a regression that accidentally writes
+    # the failure message to stdout (e.g. wrong ``err=`` flag) is caught.
+    # Click 8.2+ keeps ``stdout``/``stderr``/``output`` as independent
+    # streams; ``output`` is a merge and would mask the leak.
+    assert "Audio generation failed" in result.stderr
+    assert result.stdout == ""
 
 
 def test_generate_audio_rate_limit_retry_exhausted_json(
@@ -281,11 +285,15 @@ def test_generate_audio_rate_limit_retry_exhausted_text(
         configure=_attach_async_return("generate_audio", rate_limited),
     )
     assert result.exit_code == 1
-    assert result.output == (
+    # Rate-limit message + hint both go to stderr via ``output_error``
+    # (``safe_echo(err=True)``). Pin them on ``result.stderr`` so a leak
+    # to stdout would surface; ``result.stdout`` stays empty.
+    assert result.stderr == (
         "Audio generation rate limited by Google.\n"
         "Daily quota may be exceeded. Try again in 1-24 hours, "
         "or use --retry N to retry automatically.\n"
     )
+    assert result.stdout == ""
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +318,9 @@ def test_video_cinematic_rejects_style_prompt(
         ],
     )
     assert result.exit_code == 2
-    assert "--style-prompt cannot be used with cinematic video" in result.output
+    # ``click.UsageError.show()`` writes to stderr — pin the assertion
+    # there so a stdout leak would surface.
+    assert "--style-prompt cannot be used with cinematic video" in result.stderr
 
 
 def test_video_style_custom_requires_style_prompt(
@@ -319,7 +329,8 @@ def test_video_style_custom_requires_style_prompt(
     """``--style custom`` requires ``--style-prompt`` for non-cinematic video."""
     result = authed_invoke(["generate", "video", "--style", "custom", "-n", "nb_123"])
     assert result.exit_code == 2
-    assert "--style custom requires --style-prompt" in result.output
+    # ``click.UsageError.show()`` writes to stderr.
+    assert "--style custom requires --style-prompt" in result.stderr
 
 
 def test_video_style_prompt_requires_style_custom(
@@ -328,7 +339,8 @@ def test_video_style_prompt_requires_style_custom(
     """``--style-prompt`` requires ``--style custom`` for non-cinematic video."""
     result = authed_invoke(["generate", "video", "--style-prompt", "foo", "-n", "nb_123"])
     assert result.exit_code == 2
-    assert "--style-prompt requires --style custom" in result.output
+    # ``click.UsageError.show()`` writes to stderr.
+    assert "--style-prompt requires --style custom" in result.stderr
 
 
 def test_cinematic_video_alias_rejects_non_cinematic_format(
@@ -347,7 +359,8 @@ def test_cinematic_video_alias_rejects_non_cinematic_format(
         ],
     )
     assert result.exit_code == 2
-    assert "--format must be 'cinematic' for the cinematic-video subcommand" in result.output
+    # ``click.UsageError.show()`` writes to stderr.
+    assert "--format must be 'cinematic' for the cinematic-video subcommand" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -411,9 +424,12 @@ def test_report_custom_with_append_emits_warning(
         configure=_configure,
     )
     assert result.exit_code == 0, result.output
+    # ``_emit_warnings`` writes via ``click.echo(..., err=True)`` — pin
+    # the warning text on stderr so a stdout leak (which would also break
+    # the success-text snapshot below) would be caught here too.
     assert (
         "Warning: --append has no effect with --format custom. "
-        "Use the description argument instead." in result.output
+        "Use the description argument instead." in result.stderr
     )
     # Warning side-effect: append is suppressed (CLI sets it to None).
     assert captured["extra_instructions"] is None
