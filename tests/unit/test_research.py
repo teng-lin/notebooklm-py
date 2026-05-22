@@ -223,7 +223,10 @@ class TestExtractTaskId:
         # Post-PR 13.9a default is strict; pin soft mode to keep asserting
         # the warn-and-return-None contract these helpers expose.
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with caplog.at_level(logging.WARNING):
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             assert _extract_task_id([]) is None
         assert "safe_index drift" in caplog.text
 
@@ -237,7 +240,10 @@ class TestExtractTaskId:
         # invoking safe_index; the descent path under strict mode would
         # otherwise surface UnknownRPCMethodError for the inner safe_index hop.
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with caplog.at_level(logging.WARNING):
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             assert _extract_task_id(None) is None
 
 
@@ -250,7 +256,10 @@ class TestExtractTaskInfo:
 
     def test_missing_index_returns_none(self, caplog, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with caplog.at_level(logging.WARNING):
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             assert _extract_task_info(["only_id"]) is None
         assert "safe_index drift" in caplog.text
 
@@ -269,7 +278,10 @@ class TestExtractQueryText:
 
     def test_missing_query_info_returns_none(self, caplog, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with caplog.at_level(logging.WARNING):
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             # task_info[1] missing entirely
             assert _extract_query_text([None]) is None
         assert "safe_index drift" in caplog.text
@@ -294,7 +306,10 @@ class TestExtractStatusCode:
 
     def test_missing_index_returns_none(self, caplog, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with caplog.at_level(logging.WARNING):
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             assert _extract_status_code([None, ["q"], None, []]) is None
         assert "safe_index drift" in caplog.text
 
@@ -332,7 +347,10 @@ class TestExtractSourcesAndSummary:
 
     def test_missing_bundle_returns_empty(self, caplog, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
-        with caplog.at_level(logging.WARNING):
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             sources, summary = _extract_sources_and_summary([None, ["q"], None])
         assert sources == []
         assert summary is None

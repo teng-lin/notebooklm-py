@@ -59,7 +59,10 @@ def test_extract_data_table_rows_missing_inner_list(
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data = [[[[[0, 100, None, None, [6, 7]]]]]]
 
-    with caplog.at_level(logging.WARNING):
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+    ):
         result = _extract_data_table_rows(raw_data)
 
     assert result == []
@@ -76,7 +79,8 @@ def test_extract_data_table_rows_wrong_type_at_one_level(
     # Replace the third wrapper layer with a non-indexable string.
     raw_data = [[[["not-a-list", [[0, 100, None, None, [6, 7, []]]]]]]]
 
-    result = _extract_data_table_rows(raw_data)
+    with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+        result = _extract_data_table_rows(raw_data)
 
     assert result == []
 
@@ -88,7 +92,8 @@ def test_extract_data_table_rows_truncated_structure(
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     raw_data: list = [[[]]]
 
-    result = _extract_data_table_rows(raw_data)
+    with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+        result = _extract_data_table_rows(raw_data)
 
     assert result == []
 
@@ -133,7 +138,10 @@ def test_parse_data_table_raises_artifact_parse_error_on_drift(
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     truncated: list = [[[]]]  # same shape as drift test above
 
-    with pytest.raises(ArtifactParseError):
+    with (
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        pytest.raises(ArtifactParseError),
+    ):
         _parse_data_table(truncated)
 
 

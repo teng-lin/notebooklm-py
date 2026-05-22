@@ -79,7 +79,10 @@ async def test_get_summary_drift_soft_mode_returns_empty_with_warning(monkeypatc
     # result[0] is an empty list → result[0][0] raises IndexError.
     api = _make_api([[]])
 
-    with caplog.at_level(logging.WARNING, logger="notebooklm"):
+    with (
+        caplog.at_level(logging.WARNING, logger="notebooklm"),
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+    ):
         summary = await api.get_summary("nb_drift_soft")
 
     assert summary == ""

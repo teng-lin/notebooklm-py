@@ -1541,12 +1541,13 @@ class TestReviseSlide:
         httpx_mock.add_response(content=null_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.artifacts.revise_slide(
-                notebook_id="nb_123",
-                artifact_id="artifact_456",
-                slide_index=0,
-                prompt="Remove taxonomy section",
-            )
+            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+                result = await client.artifacts.revise_slide(
+                    notebook_id="nb_123",
+                    artifact_id="artifact_456",
+                    slide_index=0,
+                    prompt="Remove taxonomy section",
+                )
 
         assert result is not None
         assert result.status == "failed"
@@ -2238,7 +2239,8 @@ class TestParseGenerationResult:
         httpx_mock.add_response(content=empty_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.artifacts.generate_audio("nb_123")
+            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+                result = await client.artifacts.generate_audio("nb_123")
 
         assert result.status == "failed"
         assert result.task_id == ""
@@ -2274,7 +2276,8 @@ class TestParseGenerationResult:
         httpx_mock.add_response(content=null_response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.artifacts.generate_audio("nb_123")
+            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+                result = await client.artifacts.generate_audio("nb_123")
 
         assert result.status == "failed"
 

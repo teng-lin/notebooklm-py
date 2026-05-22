@@ -330,7 +330,8 @@ class TestParseGenerationResult:
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result(None, method_id="R7cb6c")
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            result = api._parse_generation_result(None, method_id="R7cb6c")
 
         assert result.status == "failed"
         assert result.task_id == ""
@@ -341,7 +342,8 @@ class TestParseGenerationResult:
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         api, _ = mock_artifacts_api
 
-        result = api._parse_generation_result([], method_id="R7cb6c")
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            result = api._parse_generation_result([], method_id="R7cb6c")
 
         assert result.status == "failed"
         assert result.task_id == ""
