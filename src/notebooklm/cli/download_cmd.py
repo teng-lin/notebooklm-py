@@ -33,7 +33,7 @@ from ..client import NotebookLMClient
 from ._download_specs import DOWNLOAD_SPECS, DownloadTypeSpec
 from .auth_runtime import run_client_workflow
 from .error_handler import exit_with_code
-from .options import _complete_artifacts, notebook_option
+from .options import _complete_artifacts, alias_command, notebook_option
 from .rendering import console, json_output_response
 from .services.download import build_download_plan, execute_download
 
@@ -240,15 +240,13 @@ for _spec in DOWNLOAD_SPECS:
 # 'download cinematic-video' is a thin alias re-using download_video's
 # params + callback. Kept out of the registry to make the alias contract
 # explicit in code.
-_video_cmd = download.commands["video"]
-_cinematic_video_cmd = click.Command(
+alias_command(
+    download,
+    download.commands["video"],
     name="cinematic-video",
-    callback=_video_cmd.callback,
-    params=list(_video_cmd.params),
     help=(
         "Download cinematic video overview(s) to file.\n\n"
         "Alias for 'download video' — cinematic and standard videos share\n"
         "the same artifact type."
     ),
 )
-download.add_command(_cinematic_video_cmd)

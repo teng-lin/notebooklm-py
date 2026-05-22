@@ -146,13 +146,12 @@ def wait_polling_options(
     defaults without diverging on flag name or help text.
 
     The ``--wait`` flag is intentionally NOT bundled here. It is a *trigger*
-    flag on ``generate <kind>`` (paired with ``wait_option`` /
-    ``generate_options``) and is implicit on ``artifact wait`` /
-    ``source wait`` (those subcommands ARE the wait). Bundling ``--wait``
-    here would either force-add it to commands that don't need it, or
-    interact awkwardly with ``--wait/--no-wait``'s tri-state default on
-    ``generate``. Keeping the trigger separate makes the surface uniform
-    and honest about intent.
+    flag on ``generate <kind>`` (paired with ``wait_option``) and is implicit
+    on ``artifact wait`` / ``source wait`` (those subcommands ARE the wait).
+    Bundling ``--wait`` here would either force-add it to commands that don't
+    need it, or interact awkwardly with ``--wait/--no-wait``'s tri-state
+    default on ``generate``. Keeping the trigger separate makes the surface
+    uniform and honest about intent.
 
     Args:
         default_timeout: Default value for ``--timeout`` in seconds. Each
@@ -394,14 +393,60 @@ def list_options(f: FC) -> FC:
     return f
 
 
-# Composite decorators for common patterns
+# =============================================================================
+# COMMAND ALIASING
+# =============================================================================
+#
+# ``alias_command`` lives here rather than in ``cli.helpers`` because
+# ``cli.helpers`` is constrained to a compatibility-facade surface (see
+# ``tests/unit/test_cli_boundary.py::test_helpers_remains_compatibility_facade``);
+# new implementations must own their module. ``options.py`` is the closest
+# fit: it is already the shared Click-surface utility module that command
+# modules import (for ``notebook_option``, ``json_option``, etc.), so adding
+# an alias-builder here keeps Click-surface concerns colocated without
+# inventing a one-function module.
 
 
-def standard_options(f: FC) -> FC:
-    """Apply notebook + json options (most common pattern)."""
-    return notebook_option(json_option(f))
+def alias_command(
+    group: click.Group,
+    source_command: click.Command,
+    name: str,
+    help: str,
+) -> click.Command:
+    """Register ``name`` on ``group`` as a thin alias for ``source_command``.
 
+    The alias shares the source command's callback and parameters, so flag and
+    behavior changes on the source command propagate automatically. Only the
+    visible ``name`` and ``help`` text are overridden, which is the entire
+    point of an alias: same behavior, different surface.
 
-def generate_options(f: FC) -> FC:
-    """Apply notebook + json + wait + retry options for generation commands."""
-    return notebook_option(json_option(wait_option(retry_option(f))))
+    The source command's ``params`` list is *copied*
+    (``list(source_command.params)``) so post-registration mutation on the
+    source list cannot retroactively change the alias. The
+    :class:`click.Parameter` instances inside are still shared by reference —
+    that is the desired contract for an alias and matches the previous
+    hand-written wiring for ``download cinematic-video`` and ``generate
+    cinematic-video``.
+
+    Args:
+        group: The Click group to register the alias under (e.g. ``download``
+            or ``generate``).
+        source_command: The already-built :class:`click.Command` whose
+            behavior the alias should mirror. Callers typically pass either a
+            module-level command symbol or ``group.commands["<name>"]``.
+        name: The subcommand name the alias is registered under.
+        help: The help text shown for the alias in ``--help`` output. Usually
+            states "Alias for ..." so users understand the relationship.
+
+    Returns:
+        The newly registered :class:`click.Command`, so callers can introspect
+        or further customize if needed.
+    """
+    alias = click.Command(
+        name=name,
+        callback=source_command.callback,
+        params=list(source_command.params),
+        help=help,
+    )
+    group.add_command(alias)
+    return alias

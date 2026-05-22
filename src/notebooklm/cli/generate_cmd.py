@@ -20,6 +20,7 @@ from .input import resolve_prompt
 from .language_cmd import SUPPORTED_LANGUAGES, get_language
 from .options import (
     _complete_artifacts,
+    alias_command,
     json_option,
     language_option,
     multi_source_option,
@@ -309,10 +310,10 @@ def generate_video(
 
 # Convenience alias: 'generate cinematic-video' delegates to 'generate video --format cinematic'.
 # Reuses generate_video's callback/params so changes stay in sync automatically.
-_cinematic_video_gen_cmd = click.Command(
+alias_command(
+    generate,
+    generate_video,
     name="cinematic-video",
-    callback=generate_video.callback,
-    params=list(generate_video.params),
     help=(
         "Generate cinematic video overview (AI-generated documentary footage).\n\n"
         "Alias for 'generate video --format cinematic'. Uses Veo 3 AI to create\n"
@@ -324,7 +325,6 @@ _cinematic_video_gen_cmd = click.Command(
         '  notebooklm generate cinematic-video "documentary about quantum physics"'
     ),
 )
-generate.add_command(_cinematic_video_gen_cmd)
 
 
 @generate.command("slide-deck")

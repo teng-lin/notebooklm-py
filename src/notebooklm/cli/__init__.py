@@ -65,14 +65,11 @@ from .note_cmd import note
 from .notebook_cmd import register_notebook_commands
 from .options import (
     artifact_option,
-    generate_options,
     json_option,
     # Individual option decorators
     notebook_option,
     output_option,
     source_option,
-    # Composite decorators
-    standard_options,
     wait_option,
 )
 from .profile_cmd import profile
@@ -133,8 +130,6 @@ __all__ = [
     "source_option",
     "artifact_option",
     "output_option",
-    "standard_options",
-    "generate_options",
     # Output
     "json_output_response",
     "json_error_response",
