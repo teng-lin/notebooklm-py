@@ -148,27 +148,33 @@ class AuthSource:
         if self.has_env_auth:
             return None
 
-        # Lazy import so this module stays free of the heavy paths layer
-        # for tests that only need the precedence shape.
-        from ...paths import get_storage_path
+        # Lazy module import keeps this resolver free of the heavy paths
+        # layer for tests that only need the precedence shape AND ensures
+        # test fixtures patching ``notebooklm.paths.get_storage_path`` are
+        # honoured by this call site (rev-1 CodeRabbit feedback class on #962).
+        from ... import paths as _paths_module
 
-        return get_storage_path(profile=self.profile)
+        return _paths_module.get_storage_path(profile=self.profile)
 
     def storage_path_for_diagnostics(self) -> Path:
         """Return a concrete path for ``auth check`` / ``status`` diagnostics.
 
         Unlike :meth:`resolve`, this never returns ``None`` — when the
         env var supplies inline auth, the profile's nominal
-        ``storage_state.json`` path is returned (with an absolute, fully
-        resolved form). Callers use the path to render
-        "Storage file: <path>" in error messages and the auth-check
+        ``storage_state.json`` path is returned. Callers use the path to
+        render "Storage file: <path>" in error messages and the auth-check
         table; the actual read is gated by :attr:`has_env_auth`.
+
+        ``storage_override`` is already canonicalised by
+        :meth:`from_click_context` and ``get_storage_path`` already returns
+        an absolute resolved path, so no extra ``expanduser`` / ``resolve``
+        is needed here (rev-1 CodeRabbit nitpick fix on #962).
         """
-        from ...paths import get_storage_path
+        from ... import paths as _paths_module
 
         if self.storage_override is not None:
-            return Path(self.storage_override).expanduser().resolve()
-        return Path(get_storage_path(profile=self.profile)).expanduser().resolve()
+            return self.storage_override
+        return _paths_module.get_storage_path(profile=self.profile)
 
 
 def auth_source_from_ctx(ctx: click.Context | None) -> AuthSource:

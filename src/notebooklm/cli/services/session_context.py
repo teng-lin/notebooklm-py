@@ -30,7 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 from rich.table import Table
 
-from ...paths import get_browser_profile_dir, get_context_path, get_path_info
+# Import the module rather than the symbols so test fixtures patching
+# ``notebooklm.paths.get_context_path`` / ``...get_path_info`` are honoured
+# from the service layer (rev-1 CodeRabbit feedback on #962). Same applies
+# to the lazy ``get_storage_path`` import inside :func:`resolve_logout_storage_path`.
+from ... import paths as _paths_module
 from ..context import clear_context, get_current_notebook
 from ..error_handler import exit_with_code
 from ..rendering import console, json_output_response
@@ -151,12 +155,12 @@ def read_status(ctx: click.Context | None, *, show_paths: bool = False) -> Statu
     """
     auth = AuthSource.from_click_context(ctx)
     storage_override = auth.storage_override
-    context_file = get_context_path(storage_path=storage_override)
+    context_file = _paths_module.get_context_path(storage_path=storage_override)
     notebook_id = get_current_notebook()
 
     paths: dict[str, Any] | None = None
     if show_paths:
-        paths = get_path_info(storage_path=storage_override)
+        paths = _paths_module.get_path_info(storage_path=storage_override)
 
     if notebook_id is None:
         return StatusReport(
@@ -207,13 +211,13 @@ def resolve_logout_storage_path(ctx: click.Context | None) -> Path:
     prints if the unlink fails.
     """
     # Avoid the env-var fast path: ``auth logout`` always operates on a
-    # concrete on-disk file (or no-ops when the profile has none).
+    # concrete on-disk file (or no-ops when the profile has none). Use
+    # the module-level ``_paths_module`` so test fixtures patching
+    # ``notebooklm.paths.get_storage_path`` reach this call site.
     auth = AuthSource.from_click_context(ctx)
     if auth.storage_override is not None:
         return auth.storage_override
-    from ...paths import get_storage_path
-
-    return get_storage_path(profile=auth.profile)
+    return _paths_module.get_storage_path(profile=auth.profile)
 
 
 def warn_env_auth_remains_after_logout() -> bool:
@@ -360,7 +364,7 @@ def run_logout(ctx: click.Context | None) -> None:
         )
 
     storage_path = resolve_logout_storage_path(ctx)
-    browser_profile = get_browser_profile_dir()
+    browser_profile = _paths_module.get_browser_profile_dir()
 
     removed_any = False
 
@@ -402,7 +406,7 @@ def run_logout(ctx: click.Context | None) -> None:
             removed_any = True
     except OSError as exc:
         storage_override = AuthSource.from_click_context(ctx).storage_override
-        context_file = get_context_path(storage_path=storage_override)
+        context_file = _paths_module.get_context_path(storage_path=storage_override)
         logger.error("Failed to remove context file %s: %s", context_file, exc)
         console.print(
             f"[red]Cannot remove context file: {exc}[/red]\n"

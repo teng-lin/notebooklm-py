@@ -40,9 +40,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+# Import the module rather than the symbols so test fixtures patching
+# ``notebooklm.paths.get_storage_path`` / ``...get_browser_profile_dir``
+# are honoured from the service layer (rev-1 CodeRabbit feedback class
+# on #962). Same applies to the ``resolve_profile`` lazy import inside
+# :func:`run_playwright_login`.
+from ... import paths as _paths_module
 from ...config import get_base_host, get_base_url
 from ...io import atomic_write_json
-from ...paths import get_browser_profile_dir, get_storage_path
 from ..error_handler import exit_with_code
 from ..rendering import console
 
@@ -188,12 +193,20 @@ def ensure_chromium_installed() -> None:
     Runs ``playwright install --dry-run chromium`` to detect a missing browser,
     then auto-installs. Silently proceeds on any error so Playwright handles
     them during launch.
+
+    Both subprocess calls are bounded by timeouts so a network-stalled
+    Playwright CLI cannot hang ``notebooklm login`` indefinitely (rev-1
+    CodeRabbit feedback on #962): 30 s for the dry-run probe, 300 s for
+    the install. ``TimeoutExpired`` is treated as a pre-flight failure —
+    the warning surfaces and login continues; Playwright will surface the
+    real error during browser launch.
     """
     try:
         result = subprocess.run(
             [sys.executable, "-m", "playwright", "install", "--dry-run", "chromium"],
             capture_output=True,
             text=True,
+            timeout=30,
         )
         stdout_lower = result.stdout.lower()
         if "chromium" not in stdout_lower or "will download" not in stdout_lower:
@@ -204,6 +217,7 @@ def ensure_chromium_installed() -> None:
             [sys.executable, "-m", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
+            timeout=300,
         )
         if install_result.returncode != 0:
             console.print(
@@ -214,6 +228,13 @@ def ensure_chromium_installed() -> None:
         console.print("[green]Chromium installed successfully.[/green]\n")
     except SystemExit:
         raise
+    except subprocess.TimeoutExpired as exc:
+        # Network stall during download or a hung subprocess; surface the
+        # diagnostic and let Playwright handle the real launch error.
+        console.print(
+            f"[dim]Warning: Chromium pre-flight check timed out after "
+            f"{exc.timeout}s. Proceeding anyway.[/dim]"
+        )
     except Exception as e:
         # FileNotFoundError: playwright CLI not found but sync_playwright imported
         # Other exceptions: dry-run check failed — let Playwright handle it during launch.
@@ -336,10 +357,10 @@ def prepare_login_paths(profile: str | None, storage: str | None, fresh: bool) -
     if storage:
         storage_path = Path(storage)
     elif profile:
-        storage_path = get_storage_path(profile=profile)
+        storage_path = _paths_module.get_storage_path(profile=profile)
     else:
-        storage_path = get_storage_path()
-    browser_profile = get_browser_profile_dir()
+        storage_path = _paths_module.get_storage_path()
+    browser_profile = _paths_module.get_browser_profile_dir()
 
     if fresh and browser_profile.exists():
         try:
@@ -431,9 +452,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
     if browser == "chromium":
         ensure_chromium_installed()
 
-    from ...paths import resolve_profile
-
-    profile_name = resolve_profile()
+    profile_name = _paths_module.resolve_profile()
     channel_info = CHANNEL_BROWSERS.get(browser)
     browser_label = channel_info[0] if channel_info else "Chromium"
     console.print(f"[dim]Profile: {profile_name}[/dim]")

@@ -278,14 +278,21 @@ def patch_main_cli_client():
 
 @pytest.fixture
 def mock_context_file(tmp_path):
-    """Provide a temporary context file for testing context commands."""
+    """Provide a temporary context file for testing context commands.
+
+    Patches every current context-path seam: helpers (passes the resolver
+    explicitly), context.py + resolve.py (call-time lookups after the
+    helper split), session_cmd.py (legacy direct binding), AND the
+    canonical module-level binding at ``notebooklm.paths.get_context_path``
+    so the P3.T3 service layer (``cli/services/session_context.py``, which
+    reads through ``_paths_module``) is honoured. Without the
+    ``notebooklm.paths.*`` patch, the service-layer call falls back to
+    the real ``~/.notebooklm/context.json`` even when every per-module
+    binding is patched (rev-1 CodeRabbit feedback on #962).
+    """
     context_file = tmp_path / "context.json"
-    # Patch every current context-path seam: helpers (passes the resolver
-    # explicitly), context.py + resolve.py (call-time lookups after the
-    # helper split), and session.py (used by ``notebooklm status`` to read
-    # the persisted context payload directly — without this patch, the
-    # status command falls back to the real ``~/.notebooklm/context.json``).
     with (
+        patch("notebooklm.paths.get_context_path", return_value=context_file),
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),

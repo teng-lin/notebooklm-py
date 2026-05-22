@@ -62,9 +62,18 @@ def char_runner() -> CliRunner:
 
 @pytest.fixture
 def char_context_file(tmp_path):
-    """Provide a temporary context file path with full session_cmd patching."""
+    """Provide a temporary context file path with full session_cmd patching.
+
+    Patches every binding of ``get_context_path`` the CLI surface uses.
+    ``cli/services/session_context.py`` reads through ``_paths_module``
+    (per rev-1 CodeRabbit feedback on #962), so the module-level
+    ``notebooklm.paths.get_context_path`` patch covers the service layer
+    in a single hit; the per-module patches preserve compatibility with
+    the legacy direct-symbol bindings in ``cli/{helpers,context,resolve,session_cmd}.py``.
+    """
     context_file = tmp_path / "context.json"
     with (
+        patch("notebooklm.paths.get_context_path", return_value=context_file),
         patch("notebooklm.cli.helpers.get_context_path", return_value=context_file),
         patch("notebooklm.cli.context.get_context_path", return_value=context_file),
         patch("notebooklm.cli.resolve.get_context_path", return_value=context_file),
