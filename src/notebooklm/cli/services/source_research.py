@@ -82,12 +82,13 @@ async def execute_source_add_research(
         )
         return
 
-    # Poll budget mirrors ``research wait --timeout``: total seconds
-    # divided by the 5 s interval. The legacy hardcoded 60-iteration cap
-    # stranded deep research (#315) because the import branch below is
-    # gated on ``status == "completed"``.
+    # Poll budget mirrors ``research wait --timeout``: cover the full total
+    # seconds budget at the fixed 5 s cadence. The legacy hardcoded
+    # 60-iteration cap stranded deep research (#315) because the import
+    # branch below is gated on ``status == "completed"``.
     status: dict | None = None
-    for _ in range(max(1, plan.timeout // _POLL_INTERVAL_S)):
+    max_polls = max(1, (plan.timeout + _POLL_INTERVAL_S - 1) // _POLL_INTERVAL_S)
+    for _ in range(max_polls):
         status = await client.research.poll(plan.notebook_id, task_id=task_id)
         if status.get("status") == "completed":
             break

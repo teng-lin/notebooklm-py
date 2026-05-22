@@ -214,6 +214,46 @@ async def test_source_add_research_pins_task_id_and_imports(
 
 
 @pytest.mark.asyncio
+async def test_source_add_research_ceil_poll_budget_covers_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleep = AsyncMock()
+    monkeypatch.setattr(source_research.asyncio, "sleep", sleep)
+    monkeypatch.setattr(source_research.console, "print", lambda *args, **kwargs: None)
+    monkeypatch.setattr(source_research, "display_research_sources", lambda sources: None)
+    monkeypatch.setattr(source_research, "display_report", lambda report, json_hint=False: None)
+    client = SimpleNamespace(
+        research=SimpleNamespace(
+            start=AsyncMock(return_value={"task_id": "task_123"}),
+            poll=AsyncMock(
+                side_effect=[
+                    {"status": "in_progress"},
+                    {"status": "completed", "sources": [], "report": ""},
+                ]
+            ),
+        )
+    )
+
+    await execute_source_add_research(
+        client,
+        SourceAddResearchPlan(
+            notebook_id="nb_1",
+            query="topic",
+            search_source="web",
+            mode="fast",
+            import_all=False,
+            cited_only=False,
+            no_wait=False,
+            timeout=6,
+        ),
+    )
+
+    assert client.research.poll.await_count == 2
+    client.research.poll.assert_any_await("nb_1", task_id="task_123")
+    sleep.assert_awaited_once_with(5)
+
+
+@pytest.mark.asyncio
 async def test_source_wait_timeout_maps_to_json_envelope_and_exit_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
