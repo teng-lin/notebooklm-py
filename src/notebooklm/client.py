@@ -21,6 +21,7 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import logging
 import os
@@ -403,24 +404,87 @@ class NotebookLMClient:
         relying on fire-and-forget close semantics (e.g. via
         ``__aexit__``) will now block briefly on the drain step; pass
         ``drain=False`` explicitly to restore the old behavior.
+
+        Cancellation-safety contract (audit finding I12):
+
+        If the caller's task is cancelled while ``close(drain=True)`` is
+        still waiting on ``drain()`` (e.g. ``asyncio.wait_for`` deadline,
+        manual ``task.cancel()``), the underlying transport is STILL torn
+        down before the cancellation propagates. The drain await
+        explicitly catches ``CancelledError`` and schedules
+        ``Session.close()`` through ``asyncio.shield`` — the shield wraps
+        the inner close in a ``Task`` that survives the outer
+        cancellation, so the ``Kernel.aclose()`` it drives runs to
+        completion in the background. On the normal-success and
+        ``TimeoutError`` paths the same shielded close call runs inline.
+        ``ValueError`` (and any other unexpected exception) from
+        ``drain()`` propagates without an implicit close, matching the
+        pre-I12 caller-error semantics asserted by
+        ``test_close_with_invalid_drain_does_not_close_transport``.
+
+        Practical guarantee:
+
+        - **Normal-success and drain-timeout paths**: on return,
+          ``is_connected is False`` and the underlying
+          ``httpx.AsyncClient`` is closed synchronously.
+        - **Cancel-during-drain path**: ``CancelledError`` is re-raised
+          immediately, but the shielded ``Session.close()`` Task
+          continues running in the background and closes the transport
+          to completion. Callers needing a synchronous teardown signal
+          on the cancel path can ``await asyncio.sleep(0)`` (or poll
+          ``is_connected``) after observing the cancel — the inner
+          Task is already scheduled at the point the cancel surfaces.
+
+        There is no path that leaves a live transport behind.
         """
         if drain:
+            drain_timeout_exc: TimeoutError | None = None
             try:
                 await self.drain(timeout=drain_timeout)
-            except TimeoutError as drain_exc:
+            except TimeoutError as exc:
+                # Drain deadline missed. Hold onto the exception and
+                # fall through to the shielded close below so callers
+                # see both the timeout signal AND a torn-down transport.
+                drain_timeout_exc = exc
+            except asyncio.CancelledError:
+                # Cancellation-safety contract (audit finding I12): if
+                # the caller's task is cancelled while drain() is
+                # waiting (e.g. ``asyncio.wait_for`` deadline, manual
+                # ``task.cancel()``), we MUST still tear down the
+                # transport before letting the cancel propagate.
+                # ``asyncio.shield`` schedules ``Session.close()`` as a
+                # Task that survives the outer cancellation — the
+                # await here re-raises CancelledError to us, but the
+                # inner Task keeps running and drives ``Kernel.aclose()``
+                # to completion.
                 try:
-                    await self._session.close()
-                except Exception as close_exc:
+                    await asyncio.shield(self._session.close())
+                except BaseException:
+                    # Swallow any error (including the CancelledError
+                    # propagated through the shield await) so the
+                    # original CancelledError surfaces unchanged below.
+                    pass
+                raise
+            # Any other exception from drain (e.g. ``ValueError`` for a
+            # caller-provided invalid deadline) propagates here without
+            # an implicit close — matches pre-I12 caller-error semantics
+            # asserted by
+            # ``test_close_with_invalid_drain_does_not_close_transport``.
+
+            try:
+                await asyncio.shield(self._session.close())
+            except Exception as close_exc:
+                if drain_timeout_exc is not None:
                     logger.warning(
-                        "Suppressing close() error after drain timeout to preserve timeout "
-                        "signal: %s",
+                        "Suppressing close() error after drain timeout to "
+                        "preserve timeout signal: %s",
                         close_exc,
                     )
-                    raise drain_exc from close_exc
+                    raise drain_timeout_exc from close_exc
                 raise
-            else:
-                await self._session.close()
-                return
+            if drain_timeout_exc is not None:
+                raise drain_timeout_exc
+            return
         await self._session.close()
 
     def metrics_snapshot(self) -> ClientMetricsSnapshot:

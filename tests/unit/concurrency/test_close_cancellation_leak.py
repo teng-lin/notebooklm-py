@@ -234,3 +234,135 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
         # Release the patched hang so any still-pending keepalive task
         # can exit cleanly before pytest-asyncio's loop teardown runs.
         hang_event.set()
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_drain_in_close_does_not_leak_transport(
+    keepalive_auth: AuthTokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancel arriving DURING ``client.close(drain=True)``'s drain must not leak.
+
+    Sibling test to ``test_close_during_keepalive_cancel_does_not_leak_transport``
+    above. That test covers the shielded inner-close path (cancel lands
+    *inside* ``aclose`` while ``Session.close`` is already running). This
+    test covers the **outer-wrapper** path (cancel lands while
+    ``NotebookLMClient.close()`` is still awaiting ``self.drain(...)``,
+    i.e. BEFORE ``self._session.close()`` is reached). Audit finding I12
+    (``architecture-audit.md``) flagged that the public wrapper at
+    ``client.py:close()`` awaits ``self.drain(...)`` *before* calling
+    ``self._session.close()`` with no protection; if the caller task is
+    cancelled while drain is parked on an in-flight operation,
+    ``CancelledError`` propagates out of ``close()`` and the shielded
+    ``Session.close()`` / ``Kernel.aclose()`` never runs — leaking the
+    live ``httpx.AsyncClient``.
+
+    Repro setup:
+
+    - Open the client.
+    - Capture ``http_client_ref`` BEFORE the cancel (successful close
+      nulls the kernel's transport attribute).
+    - Monkeypatch ``client._session.drain`` to park on an unset
+      ``asyncio.Event`` so drain() blocks indefinitely; the only exit is
+      the ``CancelledError`` injected by the outer ``wait_for`` deadline.
+    - Drive ``close(drain=True)`` through ``asyncio.wait_for(timeout=0.1)``
+      so the cancel reliably lands while ``drain`` is parked.
+
+    Expected invariant (regression assertion):
+
+    - After the cancel, ``client.is_connected`` must be ``False`` AND
+      ``http_client_ref.is_closed`` must be ``True`` — proving the outer
+      wrapper drove ``Session.close()`` to completion despite the cancel
+      that fired mid-drain. Pre-fix this assertion fails: cancel exits
+      ``NotebookLMClient.close()`` before ``self._session.close()`` is
+      reached and the transport stays open.
+    """
+    client = NotebookLMClient(keepalive_auth)
+    await client.__aenter__()
+    # Track whether close() managed to enter the failing-test side branch
+    # cleanly; if the worktree finally is reached without close having
+    # been started, ``aexit_failed`` stays False and we let the regular
+    # __aexit__ run in the finally.
+    aexit_succeeded = False
+    try:
+        # Capture the transport ref BEFORE the cancel — successful close
+        # nulls ``_kernel.http_client``, so we'd lose the handle.
+        http_client_ref = client._session._kernel.get_http_client()
+        assert http_client_ref is not None, "open() must have installed a transport"
+
+        # Park ``drain`` on an unset event. The only way out is the
+        # ``CancelledError`` that the outer ``wait_for`` injects when
+        # its 0.1 s deadline fires. This reproduces the production case
+        # where ``drain()`` is awaiting an in-flight operation that
+        # outlives the caller's cancel.
+        drain_entered = asyncio.Event()
+        hang_event = asyncio.Event()
+
+        async def _hanging_drain(*_args: object, **_kwargs: object) -> None:
+            drain_entered.set()
+            await hang_event.wait()
+
+        monkeypatch.setattr(client._session, "drain", _hanging_drain)
+
+        # Drive ``close(drain=True)`` through a short ``wait_for`` so a
+        # cancel lands while ``drain`` is parked. The cancel propagates
+        # out of ``wait_for`` as ``TimeoutError``; pre-fix it also
+        # exits ``NotebookLMClient.close()`` before reaching
+        # ``self._session.close()``, leaking the transport.
+        with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+            await asyncio.wait_for(
+                client.close(drain=True),
+                timeout=0.1,
+            )
+
+        # Confirm the cancel actually landed mid-drain (test invariant).
+        # If drain_entered never fired, the cancel arrived before we
+        # reached the drain await and the test wouldn't be exercising
+        # the outer-wrapper bug.
+        assert drain_entered.is_set(), (
+            "test invariant: ``drain`` must have been entered before the "
+            "outer wait_for cancel fired; otherwise the cancel didn't land "
+            "during drain and the bug surface isn't being exercised"
+        )
+
+        # Release the patched drain hang so any pending shielded close
+        # task (post-fix) can make progress; pre-fix this is a no-op
+        # because close() already abandoned.
+        hang_event.set()
+
+        # Bounded poll: the shielded ``Session.close()`` runs as a
+        # background task; give it up to ~1 s to complete on slow CI.
+        for _ in range(100):
+            if not client.is_connected and http_client_ref.is_closed:
+                break
+            await asyncio.sleep(0.01)
+
+        # The regression assertions. Pre-fix both fail (is_connected
+        # stays True, is_closed stays False) because the cancel skipped
+        # ``self._session.close()`` entirely. Post-fix both hold because
+        # the ``finally: await asyncio.shield(self._session.close())``
+        # in ``NotebookLMClient.close()`` drives the shielded cleanup
+        # regardless of the cancel.
+        assert not client.is_connected, (
+            "transport leaked: cancel during drain() left client.is_connected "
+            "= True — NotebookLMClient.close() abandoned cleanup before "
+            "self._session.close() was reached (audit finding I12)"
+        )
+        assert http_client_ref.is_closed, (
+            "transport leaked: cancel during drain() left the httpx "
+            "AsyncClient open — NotebookLMClient.close() abandoned cleanup "
+            "before Session.close()/Kernel.aclose() were reached (audit "
+            "finding I12)"
+        )
+        aexit_succeeded = True
+    finally:
+        # If the test path above did not drive close() to completion
+        # (e.g. an assertion fired before the post-cancel poll), make a
+        # best-effort cleanup so pytest-asyncio's loop teardown doesn't
+        # surface a "transport not closed" warning. The drain monkeypatch
+        # is auto-reverted by pytest.MonkeyPatch on test exit.
+        if not aexit_succeeded:
+            try:
+                await client.close(drain=False)
+            except Exception:
+                pass
