@@ -2104,9 +2104,14 @@ async def with_rate_limit_retry(
     initial_delay: float = 60.0,
     max_delay: float = 300.0,
     multiplier: float = 2.0,
+    sleep: Callable[[float], Awaitable[Any]] | None = None,
+    on_retry: Callable[[RateLimitRetryEvent], object | Awaitable[object]] | None = None,
 ) -> GenerationStatus | None:
     """Run an artifact-generation callable with rate-limit retry."""
 ```
+
+`sleep` lets tests or schedulers provide their own async wait function.
+`on_retry` receives a `RateLimitRetryEvent` before each retry sleep.
 
 Example:
 ```python

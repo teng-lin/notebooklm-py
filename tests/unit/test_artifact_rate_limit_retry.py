@@ -1,5 +1,6 @@
 """Unit tests for public artifact-generation rate-limit retry helpers."""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -35,6 +36,11 @@ class TestCalculateBackoffDelay:
     def test_custom_multiplier(self) -> None:
         assert calculate_backoff_delay(1, initial_delay=10.0, multiplier=3.0) == 30.0
 
+    @pytest.mark.parametrize("attempt", [-1, 1.5, True])
+    def test_rejects_invalid_attempt(self, attempt: Any) -> None:
+        with pytest.raises(ValueError, match="attempt must be a non-negative integer"):
+            calculate_backoff_delay(attempt)
+
 
 class TestWithRateLimitRetry:
     @pytest.mark.asyncio
@@ -67,7 +73,6 @@ class TestWithRateLimitRetry:
         assert events == [
             RateLimitRetryEvent(
                 result=rate_limited,
-                attempt_number=1,
                 next_attempt_number=2,
                 total_attempts=4,
                 retry_number=1,

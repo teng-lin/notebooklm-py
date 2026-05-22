@@ -26,10 +26,14 @@ _RetrySleep = Callable[[float], Awaitable[Any]]
 
 @dataclass(frozen=True)
 class RateLimitRetryEvent:
-    """Details passed to ``with_rate_limit_retry`` retry callbacks."""
+    """Details passed to ``with_rate_limit_retry`` retry callbacks.
+
+    ``retry_number`` is the 1-based retry being scheduled.
+    ``next_attempt_number`` is the 1-based generation attempt after the
+    callback and sleep complete.
+    """
 
     result: GenerationStatus
-    attempt_number: int
     next_attempt_number: int
     total_attempts: int
     retry_number: int
@@ -51,6 +55,9 @@ def calculate_backoff_delay(
     ``attempt`` is zero-indexed, so ``attempt=0`` yields ``initial_delay``.
     The delay grows by ``multiplier`` until capped at ``max_delay``.
     """
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 0:
+        raise ValueError("attempt must be a non-negative integer")
+
     delay = initial_delay * (multiplier**attempt)
     return min(delay, max_delay)
 
@@ -99,7 +106,8 @@ async def with_rate_limit_retry(
 
     sleep_func = asyncio.sleep if sleep is None else sleep
 
-    for attempt in range(max_retries + 1):
+    attempt = 0
+    while True:
         result = await generate_fn()
 
         if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
@@ -117,7 +125,6 @@ async def with_rate_limit_retry(
         if on_retry is not None:
             event = RateLimitRetryEvent(
                 result=result,
-                attempt_number=attempt + 1,
                 next_attempt_number=attempt + 2,
                 total_attempts=max_retries + 1,
                 retry_number=attempt + 1,
@@ -128,8 +135,7 @@ async def with_rate_limit_retry(
             if inspect.isawaitable(callback_result):
                 await callback_result
         await sleep_func(delay)
-
-    return None
+        attempt += 1
 
 
 __all__ = [
