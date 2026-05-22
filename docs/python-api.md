@@ -1077,6 +1077,20 @@ status = await client.artifacts.generate_quiz(
 )
 ```
 
+**Rate-limit retry for generation:**
+
+```python
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_audio(
+        notebook_id,
+        instructions="focus on the counterarguments",
+    ),
+    max_retries=3,
+)
+```
+
 **Waiting for Completion:**
 
 ```python
@@ -2016,20 +2030,15 @@ async with await NotebookLMClient.from_storage() as client:
 
 Google rate limits aggressive API usage:
 
-```python
-import asyncio
-from notebooklm import RPCError
+For artifact-generation methods, use the shared generation retry helper:
 
-async def safe_create_notebooks(client, titles):
-    for title in titles:
-        try:
-            await client.notebooks.create(title)
-        except RPCError:
-            # Wait and retry on rate limit
-            await asyncio.sleep(10)
-            await client.notebooks.create(title)
-        # Add delay between operations
-        await asyncio.sleep(2)
+```python
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_audio(notebook_id),
+    max_retries=3,
+)
 ```
 
 ### Streaming Chat Responses
@@ -2078,6 +2087,35 @@ passage = await resolve_chat_reference_passage(
     client, notebook_id, first_ref, context_chars=150
 )
 print(f"Context: {passage}")
+```
+
+### Artifact Generation Helpers
+
+These helpers live in `notebooklm.artifacts` and can be used with any
+artifact-generation callable that returns `GenerationStatus`.
+
+#### `notebooklm.artifacts.with_rate_limit_retry`
+
+```python
+async def with_rate_limit_retry(
+    generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
+    *,
+    max_retries: int,
+    initial_delay: float = 60.0,
+    max_delay: float = 300.0,
+    multiplier: float = 2.0,
+) -> GenerationStatus | None:
+    """Run an artifact-generation callable with rate-limit retry."""
+```
+
+Example:
+```python
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_video(notebook_id),
+    max_retries=3,
+)
 ```
 
 ### Research Extraction and Citation Filtering
