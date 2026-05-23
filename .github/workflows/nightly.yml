@@ -119,7 +119,21 @@ jobs:
       # (same as the contributor workflow in docs/installation.md). Extras
       # cover the full E2E surface: `browser` = playwright, `dev` = pytest +
       # plugins, `markdown` = markdownify (used by source-conversion tests).
-      run: uv sync --frozen --extra browser --extra dev --extra markdown
+      #
+      # The `markdown` extra was added on `main` (v0.5.0); the older
+      # `develop` branch pre-dates it and does not define `markdown` in
+      # its pyproject.toml. Scheduled workflow runs always load this file
+      # from the default branch (`main`) and then check out the resolved
+      # target branch above — so the install step has to cope with both
+      # pyproject layouts under one workflow file. Probe the checked-out
+      # tree and only request the extra when it's defined.
+      shell: bash
+      run: |
+        EXTRAS=(--extra browser --extra dev)
+        if grep -qE '^markdown\s*=' pyproject.toml; then
+          EXTRAS+=(--extra markdown)
+        fi
+        uv sync --frozen "${EXTRAS[@]}"
 
     - name: Get Playwright version
       id: playwright-version
