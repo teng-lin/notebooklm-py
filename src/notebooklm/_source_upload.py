@@ -216,6 +216,7 @@ QueueWaitRecorder = Callable[[float], None]
 _MEDIA_CONTENT_TYPE_PREFIXES = ("audio/", "video/")
 _MEDIA_APPLICATION_CONTENT_TYPES = frozenset(
     {
+        "application/mp4",
         "application/ogg",
         "application/x-matroska",
     }

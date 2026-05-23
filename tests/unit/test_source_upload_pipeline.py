@@ -144,6 +144,7 @@ def test_extract_register_file_source_id_skips_large_string_candidates() -> None
         ("audio/mpeg", (10, 0, None)),
         ("Audio/MPEG", (10, 0, None)),
         ("audio/mpeg; codecs=mp3", (10, 0, None)),
+        ("application/mp4", (10, 0, None)),
         ("application/ogg", (10, 0, None)),
         ("application/x-matroska", (10, 0, None)),
         ("application/pdf", ()),
