@@ -7,8 +7,7 @@ exercised separately by ``tests/unit/cli/test_research*.py``.
 
 The service is intentionally I/O-free: it never calls ``console.print``,
 ``click.echo``, or ``exit_with_code``. The Click handler owns rendering and
-exit codes; the service owns the polling loop, the P1.T2 task-id pinning,
-and the (optional) import call.
+exit codes; the service owns wait orchestration and the optional import call.
 """
 
 from __future__ import annotations
@@ -33,15 +32,15 @@ from notebooklm.cli.services.research import (
 
 
 class _FakeResearchAPI:
-    """Records poll calls; returns canned values."""
+    """Records wait calls; returns canned values."""
 
     def __init__(self, *, side_effect: Any) -> None:
-        self.poll = AsyncMock(side_effect=side_effect)
+        self.wait_for_completion = AsyncMock(side_effect=side_effect)
 
 
 class _FakeClient:
-    def __init__(self, *, poll_side_effect: Any) -> None:
-        self.research = _FakeResearchAPI(side_effect=poll_side_effect)
+    def __init__(self, *, wait_side_effect: Any) -> None:
+        self.research = _FakeResearchAPI(side_effect=wait_side_effect)
 
 
 async def _fake_resolve(client, notebook_id, *, json_output: bool = False) -> str:  # noqa: ARG001
@@ -65,9 +64,9 @@ def base_plan() -> ResearchWaitPlan:
 
 @pytest.mark.asyncio
 async def test_completed_returns_outcome_with_sources(base_plan):
-    """First poll completes; service returns completed result without import."""
+    """A completed wait result is rendered into the service result."""
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -89,11 +88,11 @@ async def test_completed_returns_outcome_with_sources(base_plan):
     assert result.sources_count == 1
     assert result.report == "REPORT"
     assert result.import_result is None  # import_all=False default
-    # Exactly one poll call; task_id=None on the first poll.
-    assert client.research.poll.await_count == 1
-    first_call = client.research.poll.await_args_list[0]
-    assert first_call.args == ("nb_123",)
-    assert first_call.kwargs == {"task_id": None}
+    client.research.wait_for_completion.assert_awaited_once_with(
+        "nb_123",
+        timeout=5.0,
+        interval=1.0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -102,24 +101,10 @@ async def test_completed_returns_outcome_with_sources(base_plan):
 
 
 @pytest.mark.asyncio
-async def test_timeout_returns_outcome_without_completion(monkeypatch):
-    """A persistent in_progress status produces outcome='timeout'."""
-    # Eliminate real sleep so the timeout fires on the first interval boundary.
-    from notebooklm.cli.services import polling
-
-    clock = {"t": 0.0}
-
-    async def fake_sleep(delay: float) -> None:
-        clock["t"] += delay
-
-    monkeypatch.setattr(polling.time, "monotonic", lambda: clock["t"])
-    monkeypatch.setattr(polling.asyncio, "sleep", fake_sleep)
-
-    async def _poll(nb_id, *, task_id=None):  # noqa: ARG001
-        return {"status": "in_progress", "query": "AI"}
-
+async def test_timeout_returns_outcome_without_completion():
+    """A library timeout is mapped to outcome='timeout'."""
     plan = ResearchWaitPlan(notebook_id="nb_123", timeout=1, interval=1)
-    client = _FakeClient(poll_side_effect=_poll)
+    client = _FakeClient(wait_side_effect=TimeoutError("timed out"))
 
     result = await execute_research_wait(plan, client=client, resolve_id=_fake_resolve)
 
@@ -135,8 +120,8 @@ async def test_timeout_returns_outcome_without_completion(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_no_research_returns_outcome_without_exit(base_plan):
-    """no_research is a terminal poll value; service returns it (no SystemExit)."""
-    client = _FakeClient(poll_side_effect=[{"status": "no_research"}])
+    """no_research is a terminal wait value; service returns it (no SystemExit)."""
+    client = _FakeClient(wait_side_effect=[{"status": "no_research"}])
 
     # The service must NOT raise SystemExit — that's the handler's job.
     result = await execute_research_wait(base_plan, client=client, resolve_id=_fake_resolve)
@@ -147,57 +132,110 @@ async def test_no_research_returns_outcome_without_exit(base_plan):
     assert result.import_result is None
 
 
+@pytest.mark.asyncio
+async def test_failed_returns_outcome_without_import(base_plan):
+    """failed is terminal and must not fall through to completed/import behavior."""
+    client = _FakeClient(
+        wait_side_effect=[
+            {
+                "status": "failed",
+                "task_id": "task_failed",
+                "query": "AI research",
+                "sources": [{"title": "S", "url": "http://example.com"}],
+                "report": "Partial report",
+            }
+        ]
+    )
+    import_mock = AsyncMock()
+
+    result = await execute_research_wait(
+        base_plan,
+        client=client,
+        resolve_id=_fake_resolve,
+        import_sources=import_mock,
+    )
+
+    assert result.outcome == "failed"
+    assert result.task_id == "task_failed"
+    assert result.query == "AI research"
+    assert result.sources == [{"title": "S", "url": "http://example.com"}]
+    assert result.report == "Partial report"
+    assert result.import_result is None
+    import_mock.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_outcome"),
+    [
+        ("failed", "failed"),
+        ("completed", "completed"),
+        ("cancelled", "failed"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_terminal_payload_fields_are_normalized(
+    base_plan,
+    status: str,
+    expected_outcome: str,
+):
+    """Malformed wait payload fields are coerced before CLI rendering."""
+    client = _FakeClient(
+        wait_side_effect=[
+            {
+                "status": status,
+                "task_id": "task_abc",
+                "query": 123,
+                "sources": None,
+                "report": ["not", "a", "string"],
+            }
+        ]
+    )
+
+    result = await execute_research_wait(base_plan, client=client, resolve_id=_fake_resolve)
+
+    assert result.outcome == expected_outcome
+    assert result.query == ""
+    assert result.sources == []
+    assert result.sources_count == 0
+    assert result.report == ""
+
+
 # ---------------------------------------------------------------------------
-# P1.T2 task-id pinning regression — service-layer test
+# Library wait delegation
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_task_id_pinned_after_first_discovery(monkeypatch):
-    """The first non-empty task_id pins every subsequent poll's discriminator.
-
-    Service-layer mirror of the CLI characterization test
-    ``TestTaskIdPinning::test_task_id_pinned_after_first_discovery``. This
-    test does NOT use the Click runner — it asserts directly on
-    ``client.research.poll.await_args_list``.
-    """
-    polls = [
-        {"status": "in_progress", "task_id": "task_pinned", "query": "AI"},
-        {
-            "status": "completed",
-            "task_id": "task_pinned",
-            "query": "AI",
-            "sources": [{"title": "S", "url": "http://example.com"}],
-            "report": "R",
-        },
-    ]
-    client = _FakeClient(poll_side_effect=polls)
+async def test_wait_delegates_timeout_and_interval_to_library():
+    """The service passes CLI wait budget values into the Python API."""
+    client = _FakeClient(
+        wait_side_effect=[
+            {
+                "status": "completed",
+                "task_id": "task_pinned",
+                "query": "AI",
+                "sources": [{"title": "S", "url": "http://example.com"}],
+                "report": "R",
+            }
+        ]
+    )
     plan = ResearchWaitPlan(notebook_id="nb_123", timeout=10, interval=1)
-
-    # No-op sleep so the inter-poll wait doesn't slow the test.
-    from notebooklm.cli.services import polling
-
-    async def _no_sleep(delay):  # noqa: ARG001
-        return None
-
-    monkeypatch.setattr(polling.asyncio, "sleep", _no_sleep)
 
     result = await execute_research_wait(plan, client=client, resolve_id=_fake_resolve)
 
     assert result.outcome == "completed"
-    calls = client.research.poll.await_args_list
-    assert len(calls) == 2
-    # First call: task_id=None (nothing pinned yet).
-    assert calls[0].kwargs.get("task_id") is None
-    # Second call: pinned to the value from the first poll.
-    assert calls[1].kwargs.get("task_id") == "task_pinned"
+    client.research.wait_for_completion.assert_awaited_once_with(
+        "nb_123",
+        timeout=10.0,
+        interval=1.0,
+    )
 
 
 @pytest.mark.asyncio
-async def test_task_id_never_set_when_polls_never_return_one():
-    """If poll responses never include a task_id, the discriminator stays None."""
+async def test_task_id_never_set_when_wait_result_has_none():
+    """If wait result has no task_id, the importer guard stays off."""
     client = _FakeClient(
-        poll_side_effect=[{"status": "completed", "query": "X", "sources": [], "report": ""}]
+        wait_side_effect=[{"status": "completed", "query": "X", "sources": [], "report": ""}]
     )
     plan = ResearchWaitPlan(notebook_id="nb_123", timeout=5, interval=1)
 
@@ -205,8 +243,7 @@ async def test_task_id_never_set_when_polls_never_return_one():
 
     assert result.outcome == "completed"
     assert result.task_id is None
-    # The single poll call passed task_id=None.
-    assert client.research.poll.await_args_list[0].kwargs.get("task_id") is None
+    client.research.wait_for_completion.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +261,7 @@ async def test_import_all_invokes_importer_with_pinned_task_id():
         import_all=True,
     )
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -275,7 +312,7 @@ async def test_import_all_passes_json_output_flag():
         json_output=True,
     )
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -315,7 +352,7 @@ async def test_import_all_skipped_when_no_task_id():
         import_all=True,
     )
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "query": "AI",
@@ -349,7 +386,7 @@ async def test_import_all_skipped_when_no_sources():
         import_all=True,
     )
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -384,7 +421,7 @@ async def test_import_all_passes_cited_only_flag():
         cited_only=True,
     )
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -419,7 +456,7 @@ async def test_import_all_passes_cited_only_flag():
 
 @pytest.mark.asyncio
 async def test_wait_context_is_entered_and_exited(base_plan):
-    """The handler-injected wait_context wraps the poll loop."""
+    """The handler-injected wait_context wraps the library wait call."""
     enter_count = {"n": 0}
     exit_count = {"n": 0}
 
@@ -432,7 +469,7 @@ async def test_wait_context_is_entered_and_exited(base_plan):
             exit_count["n"] += 1
 
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -458,7 +495,7 @@ async def test_wait_context_is_entered_and_exited(base_plan):
 async def test_default_wait_context_is_noop(base_plan):
     """The default null context lets the service run without any spinner."""
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",
@@ -478,7 +515,7 @@ async def test_default_wait_context_is_noop(base_plan):
 async def test_wait_context_exits_before_import_runs():
     """Spinner-vs-import ordering: import MUST run after the wait context exits.
 
-    The pre-extraction handler kept the wait spinner open ONLY around the poll
+    The pre-extraction handler kept the wait spinner open ONLY around the wait
     loop, and called the importer (which has its own spinner) after the wait
     spinner closed. This ordering matters because two live Rich spinners
     overlap badly; verifying it directly guards the most subtle refactor risk
@@ -513,7 +550,7 @@ async def test_wait_context_exits_before_import_runs():
         import_all=True,
     )
     client = _FakeClient(
-        poll_side_effect=[
+        wait_side_effect=[
             {
                 "status": "completed",
                 "task_id": "task_abc",

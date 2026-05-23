@@ -109,10 +109,10 @@ class TestMindMaps:
 
 @pytest.mark.e2e
 @requires_auth
-class TestCreateFromChat:
+class TestSaveAnswerAsNote:
     """Test saving chat answers as citation-rich notes (issue #660).
 
-    These tests exercise the full ask → create_from_chat path against
+    These tests exercise the full ask → save_answer_as_note path against
     the live NotebookLM service. The note's creation success is
     automated; the per-citation hover-anchor rendering is a MANUAL
     verification step — open the resulting note in the web UI, hover a
@@ -121,7 +121,7 @@ class TestCreateFromChat:
     """
 
     @pytest.mark.asyncio
-    async def test_create_from_chat_preserves_citations(self, client, temp_notebook):
+    async def test_save_answer_as_note_preserves_citations(self, client, temp_notebook):
         """Ask a citation-bearing question, save as note, verify creation.
 
         Uses ``temp_notebook`` so the test cleans up after itself even
@@ -134,11 +134,11 @@ class TestCreateFromChat:
         )
         if not result.references:
             pytest.skip(
-                "Live answer had no citations; create_from_chat requires "
+                "Live answer had no citations; save_answer_as_note requires "
                 "non-empty references. Temp notebook may need sources."
             )
 
-        note = await client.notes.create_from_chat(
+        note = await client.chat.save_answer_as_note(
             temp_notebook.id,
             result,
             title=f"E2E #660 hover-anchor test {result.conversation_id[:8]}",

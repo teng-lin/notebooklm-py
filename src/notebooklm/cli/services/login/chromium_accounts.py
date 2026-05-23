@@ -114,6 +114,8 @@ def _enumerate_chromium_profiles_fanout(
     from ....auth import Account
 
     per_profile_cookies: dict[str | None, list[dict[str, Any]]] = {}
+    read_failures: list[tuple[str, Exception]] = []
+    successful_reads = 0
     seen_emails: dict[str, str] = {}  # email -> winning browser_profile
     aggregated: list[Account] = []
     global_default_assigned = False
@@ -136,6 +138,7 @@ def _enumerate_chromium_profiles_fanout(
         except (OSError, RuntimeError) as e:
             # One profile failing (e.g. a locked DB) shouldn't kill discovery
             # of the others. Surface a per-profile note and continue.
+            read_failures.append((profile.human_name, e))
             if verbose:
                 console.print(
                     f"  [yellow]skipping {browser_name} profile "
@@ -143,6 +146,7 @@ def _enumerate_chromium_profiles_fanout(
                 )
             continue
 
+        successful_reads += 1
         try:
             accounts = _enumerate_one_jar(
                 raw,
@@ -199,11 +203,19 @@ def _enumerate_chromium_profiles_fanout(
             )
 
     if not aggregated:
-        console.print(
-            f"[red]No signed-in Google accounts found across {len(profiles)} "
-            f"{browser_name} user-profiles.[/red]\n"
-            "Sign in to a Google account in your browser and try again."
-        )
+        if successful_reads == 0 and read_failures:
+            first_profile, first_error = read_failures[0]
+            console.print(
+                f"[red]Could not read cookies from any {browser_name} user-profile.[/red]\n"
+                f"First error ({first_profile}): {first_error}\n"
+                "Close the browser or unlock its cookie store, then try again."
+            )
+        else:
+            console.print(
+                f"[red]No signed-in Google accounts found across {len(profiles)} "
+                f"{browser_name} user-profiles.[/red]\n"
+                "Sign in to a Google account in your browser and try again."
+            )
         exit_with_code(1)
 
     return per_profile_cookies, aggregated

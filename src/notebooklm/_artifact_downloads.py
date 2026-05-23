@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import csv
 import logging
 import os
+import queue
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -32,6 +33,68 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TRUSTED_DOWNLOAD_DOMAINS = (".google.com", ".googleusercontent.com", ".googleapis.com")
+
+# Bounded queue between the async chunk producer and the single writer
+# thread. Small enough to provide back-pressure (the producer awaits when
+# the writer falls behind) but large enough to keep the writer hot across
+# a brief read stall. 8 slots × 64 KiB ≈ 512 KiB of in-flight buffering.
+_DOWNLOAD_WRITER_QUEUE_SIZE = 8
+
+
+async def _await_writer_exit(
+    writer_thread: threading.Thread,
+    *,
+    re_raise_cancel: bool = False,
+) -> None:
+    """Wait for a download writer thread to actually exit.
+
+    Plain ``await asyncio.to_thread(thread.join)`` is unsafe under
+    cancellation: if our awaiting task is cancelled, the await raises
+    ``CancelledError`` and we unwind even though the underlying
+    ``thread.join`` is still blocked on the thread. The thread keeps
+    running, which means the outer cleanup (``temp_file.unlink``)
+    races with the writer's still-open file handle.
+
+    ``asyncio.shield`` alone doesn't fix this: it keeps the *inner*
+    join task alive across cancellation, but the *await* still raises
+    ``CancelledError`` and we unwind anyway. The fix is a shield-loop
+    that keeps re-awaiting the same shielded join task until it
+    actually completes. Repeated cancellations only delay our
+    re-raise, never the writer's exit.
+
+    Cancellation handling:
+
+    * Only ``asyncio.CancelledError`` is caught inside the loop — any
+      other exception from the shielded join (currently none in
+      practice, since ``Thread.join`` doesn't raise) propagates
+      immediately so we don't accidentally hide a real bug.
+    * The most recent ``CancelledError`` (if any) is preserved.
+    * If ``re_raise_cancel=True``, the helper re-raises that
+      ``CancelledError`` after the writer has fully exited. Callers
+      on the success path want this so an in-flight cancellation
+      isn't lost when the writer happens to finish first. Callers on
+      a cleanup-path (the producer's ``except`` block, which already
+      has an exception to re-raise) leave it at the default
+      ``False`` so we don't mask the original error with a second
+      cancellation.
+
+    Addresses the CodeRabbit MAJOR findings on PR #981 — both the
+    original join-vs-unlink race AND the follow-up finding that the
+    initial fix silently absorbed task cancellation.
+    """
+    join_task = asyncio.ensure_future(asyncio.to_thread(writer_thread.join))
+    cancelled_error: asyncio.CancelledError | None = None
+    while not join_task.done():
+        try:
+            await asyncio.shield(join_task)
+        except asyncio.CancelledError as exc:
+            # Outer task was cancelled. The shielded join keeps
+            # running; loop and re-await so the writer can still
+            # exit cleanly before we return.
+            cancelled_error = exc
+
+    if cancelled_error is not None and re_raise_cancel:
+        raise cancelled_error
 
 
 @dataclass(frozen=False)
@@ -503,7 +566,15 @@ class ArtifactDownloadService:
                         len(response.content),
                     )
 
-                except (httpx.HTTPError, ValueError) as e:
+                except (httpx.HTTPError, ValueError, ArtifactDownloadError) as e:
+                    # ``ArtifactDownloadError`` covers the policy violations
+                    # raised earlier in this block (non-HTTPS scheme,
+                    # untrusted host, 401/403, HTML payload). Aggregating
+                    # them into ``result.failed`` lets a single bad URL
+                    # fall out of the batch instead of aborting every
+                    # remaining download in the loop. The single-URL
+                    # ``download_url`` path below intentionally still
+                    # raises — only the batch surface absorbs.
                     if isinstance(e, httpx.HTTPStatusError) and e.response is not None:
                         reason = f"HTTP {e.response.status_code}"
                     else:
@@ -560,17 +631,171 @@ class ArtifactDownloadService:
                                 "Authentication may have expired. Run 'notebooklm login'.",
                             )
 
+                        # Producer/consumer split: a single dedicated
+                        # writer thread drains a bounded queue and writes
+                        # to ``temp_file``. Compared to the legacy
+                        # per-chunk ``asyncio.to_thread(f.write, chunk)``,
+                        # this avoids thousands of thread-pool allocations
+                        # for multi-GB downloads.
+                        #
+                        # The writer runs on a dedicated ``threading.Thread``
+                        # rather than ``asyncio.to_thread`` so it does NOT
+                        # tie up a slot in asyncio's default executor pool.
+                        # With many concurrent downloads, default-executor
+                        # saturation by long-lived writers (each blocking
+                        # on ``chunk_q.get()``) could deadlock producers
+                        # trying to ``put`` via ``to_thread`` — addresses
+                        # the gemini-code-assist HIGH-severity finding on
+                        # the original PR.
+                        #
+                        # Producer puts use ``put_nowait`` first and only
+                        # fall back to ``to_thread(put, ...)`` when the
+                        # queue is full, minimizing default-executor
+                        # pressure during normal flow.
+                        #
+                        # End-of-stream is signalled with a ``None``
+                        # sentinel. Writer-side failures are surfaced via
+                        # ``writer_error`` and an early ``writer_failed``
+                        # ``threading.Event`` so the producer can short-
+                        # circuit BEFORE the writer's drain completes,
+                        # avoiding wasted network reads — addresses the
+                        # gemini-code-assist MEDIUM-severity finding.
+                        chunk_q: queue.Queue[bytes | None] = queue.Queue(
+                            maxsize=_DOWNLOAD_WRITER_QUEUE_SIZE
+                        )
+                        writer_failed = threading.Event()
+                        writer_error: list[BaseException] = []
+
+                        def _writer_loop() -> None:
+                            # If the writer raises (e.g. OSError on
+                            # ``fh.write``), the bounded queue may have a
+                            # producer parked in ``q.put`` waiting for a
+                            # consumer. Without draining, that producer
+                            # hangs forever because we are the only
+                            # consumer. The ``finally`` drains pending
+                            # items via ``get_nowait`` so blocked puts
+                            # complete and the producer can observe the
+                            # failure signal on its next iteration.
+                            #
+                            # ``writer_failed`` is set in the ``except``
+                            # BEFORE the drain so the producer's
+                            # short-circuit check fires as early as
+                            # possible — the drain itself can run for a
+                            # few milliseconds clearing the queue, during
+                            # which the producer would otherwise read and
+                            # discard network bytes pointlessly.
+                            try:
+                                with open(temp_file, "wb") as fh:
+                                    while True:
+                                        item = chunk_q.get()
+                                        if item is None:
+                                            return
+                                        fh.write(item)
+                            except BaseException as exc:
+                                # Capture-and-don't-reraise: the producer
+                                # surfaces the exception via
+                                # ``writer_error[0]`` after joining.
+                                # Re-raising here would only land in the
+                                # thread's bootstrap as
+                                # ``PytestUnhandledThreadExceptionWarning``
+                                # / sys.unraisablehook noise without
+                                # carrying any new information.
+                                writer_error.append(exc)
+                                writer_failed.set()
+                            finally:
+                                while True:
+                                    try:
+                                        chunk_q.get_nowait()
+                                    except queue.Empty:
+                                        break
+
+                        writer_thread = threading.Thread(
+                            target=_writer_loop,
+                            name=f"artifact-dl-writer-{temp_file.name}",
+                            daemon=True,
+                        )
+                        writer_thread.start()
                         total_bytes = 0
-                        with open(temp_file, "wb") as f:
+                        try:
                             async for chunk in response.aiter_bytes(chunk_size=65536):
-                                write_task = asyncio.create_task(asyncio.to_thread(f.write, chunk))
+                                if writer_failed.is_set():
+                                    # Writer raised mid-stream. Stop
+                                    # reading — further network bytes
+                                    # would just be discarded by the
+                                    # drain. The original error is
+                                    # re-raised via ``writer_error[0]``
+                                    # below.
+                                    break
+                                # ``put_nowait`` avoids a ``to_thread``
+                                # round-trip when the queue has space
+                                # (the common case under balanced flow);
+                                # fall back to ``to_thread`` only when
+                                # the queue is full so the loop suspends
+                                # cleanly under back-pressure.
                                 try:
-                                    await asyncio.shield(write_task)
-                                except asyncio.CancelledError:
-                                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                                        await write_task
-                                    raise
+                                    chunk_q.put_nowait(chunk)
+                                except queue.Full:
+                                    await asyncio.to_thread(chunk_q.put, chunk)
                                 total_bytes += len(chunk)
+                            if not writer_failed.is_set():
+                                try:
+                                    chunk_q.put_nowait(None)
+                                except queue.Full:
+                                    await asyncio.to_thread(chunk_q.put, None)
+                            # Join surfaces any exception the writer
+                            # captured. ``_await_writer_exit`` shield-
+                            # loops until the writer actually exits so
+                            # the outer cleanup never races with the
+                            # still-open file handle. ``re_raise_cancel
+                            # =True`` ensures a cancellation that
+                            # arrived while we were waiting for the
+                            # writer isn't lost when the writer happens
+                            # to finish first — CodeRabbit MAJOR
+                            # findings on PR #981.
+                            await _await_writer_exit(writer_thread, re_raise_cancel=True)
+                            if writer_error:
+                                raise writer_error[0]
+                        except BaseException:
+                            # On producer-side failure (network error,
+                            # cancellation, HTML payload), make sure the
+                            # writer sees a sentinel and exits — even if
+                            # the queue is currently saturated. A bare
+                            # ``put_nowait(None)`` would raise
+                            # ``queue.Full`` and leave the writer parked
+                            # in ``q.get`` forever; instead drop one item
+                            # to make room, then put the sentinel. At
+                            # most two iterations are needed: the writer
+                            # is the only consumer, so once a slot opens
+                            # nothing else refills it.
+                            while True:
+                                try:
+                                    chunk_q.put_nowait(None)
+                                    break
+                                except queue.Full:
+                                    pass
+                                try:
+                                    chunk_q.get_nowait()
+                                except queue.Empty:
+                                    # Writer drained between our put and
+                                    # get — the next put attempt will
+                                    # succeed.
+                                    pass
+                            # MUST wait for the writer to actually exit
+                            # before unwinding: the outer ``except``
+                            # unlinks ``temp_file``, which would race
+                            # with the writer's still-open file handle
+                            # otherwise. A plain
+                            # ``contextlib.suppress(BaseException) +
+                            # await to_thread(.join)`` does NOT suffice
+                            # — the await itself can be re-cancelled and
+                            # unwind before the writer finishes. The
+                            # shield-loop in ``_await_writer_exit``
+                            # keeps re-awaiting the same shielded join
+                            # task across repeated cancellations until
+                            # the writer thread is actually dead.
+                            # CodeRabbit MAJOR finding on PR #981.
+                            await _await_writer_exit(writer_thread)
+                            raise
 
                         if total_bytes == 0:
                             raise ArtifactDownloadError(

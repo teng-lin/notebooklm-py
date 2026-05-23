@@ -132,7 +132,7 @@ class SettingsAPI:
     Provides methods for managing global user settings like output language.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             lang = await client.settings.get_output_language()
             await client.settings.set_output_language("zh_Hans")
     """

@@ -301,7 +301,8 @@ class TestPollEdgeCases:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.research.poll("nb_123")
+            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+                result = await client.research.poll("nb_123")
 
         assert result["status"] == "no_research"
 
@@ -601,7 +602,8 @@ class TestPollEdgeCases:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.research.poll("nb_123")
+            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+                result = await client.research.poll("nb_123")
 
         assert result["status"] == "no_research"
 

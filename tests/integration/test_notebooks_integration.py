@@ -598,7 +598,8 @@ class TestNotebookEdgeCases:
         httpx_mock.add_response(content=response.encode())
 
         async with NotebookLMClient(auth_tokens) as client:
-            result = await client.notebooks.get_summary("nb_123")
+            with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+                result = await client.notebooks.get_summary("nb_123")
 
         assert result == ""
 

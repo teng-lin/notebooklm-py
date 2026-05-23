@@ -278,7 +278,7 @@ class ArtifactsAPI:
     Reports, Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 
     Usage:
-        async with await NotebookLMClient.from_storage() as client:
+        async with NotebookLMClient.from_storage() as client:
             # Generate
             status = await client.artifacts.generate_audio(notebook_id)
             await client.artifacts.wait_for_completion(notebook_id, status.task_id)

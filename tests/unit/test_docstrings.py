@@ -1,14 +1,22 @@
 """Guards against `from_storage` docstring drift.
 
-`NotebookLMClient.from_storage` is an async classmethod, so a correct
-example must use ``async with await NotebookLMClient.from_storage(...)``.
-A bare ``async with NotebookLMClient.from_storage(...)`` raises
-``TypeError`` at runtime because the coroutine itself is not an async
-context manager. This test parses the module/class docstrings in the
-public package and asserts every example snippet stays well-formed.
+`NotebookLMClient.from_storage` returns an awaitable async-context-manager
+wrapper. The canonical idiom is bare ``async with
+NotebookLMClient.from_storage(...) as client:`` — no ``await``. The
+legacy ``async with await NotebookLMClient.from_storage(...)`` form
+still works (it emits ``DeprecationWarning``; removed in v1.0) and is
+the only form we permit in docstrings that explicitly call themselves
+out as the migration reference.
+
+For all other docstring example snippets, the parse-validity check below
+is enough to keep things honest. The historical "must have `await`"
+assertion is gone — that was correct under the old async-coroutine
+``from_storage`` and is now exactly what we discourage.
 
 Module docstrings in ``client.py`` and ``__init__.py`` historically
-had this bug; this test exists so the bug cannot re-enter via copy-paste.
+had the inverse bug (bare ``async with`` against a coroutine); this
+test exists so future drift in either direction breaks a test instead
+of silently shipping a broken example.
 """
 
 from __future__ import annotations
@@ -55,26 +63,47 @@ def _iter_docstrings(tree: ast.AST):
 
 
 @pytest.mark.parametrize("relpath", DOCSTRING_TARGETS)
-def test_from_storage_examples_use_await(relpath: str) -> None:
-    """No docstring example may show `async with` + `from_storage()` without `await`.
+def test_from_storage_examples_prefer_canonical_idiom(relpath: str) -> None:
+    """Docstring examples must not advertise the deprecated `await` form.
 
-    The whole point of the audit: ``from_storage`` is async, so anything
-    that opens it as an async context manager must await it first.
+    ``async with await NotebookLMClient.from_storage(...) as client:``
+    still works in v0.5.0+ but emits ``DeprecationWarning`` (removed in
+    v1.0). Docstrings should advertise the new canonical idiom
+    ``async with NotebookLMClient.from_storage(...) as client:``.
+
+    Exception: a single example line is exempt if it (or one of the
+    two immediately preceding lines, to allow ``Legacy:`` / ``# Legacy
+    form (deprecated)`` style headers) explicitly calls itself out as
+    the migration reference. The exemption is line-scoped — not
+    docstring-scoped — so a stray ``async with await from_storage()``
+    elsewhere in the same docstring still trips the guard.
     """
     path = _repo_root() / relpath
     tree = ast.parse(path.read_text())
 
     offenders: list[tuple[str, int, str]] = []
     for node, doc in _iter_docstrings(tree):
-        # ``node.lineno`` for a module is 1; for class/function it's the
-        # def line. Either is good enough to point a human at the bug.
-        for idx, line in enumerate(doc.splitlines(), start=1):
-            if "from_storage(" in line and "async with" in line and "await" not in line:
-                offenders.append((getattr(node, "name", "<module>"), idx, line.strip()))
+        lines = doc.splitlines()
+        for idx, line in enumerate(lines, start=1):
+            if "from_storage(" not in line or "async with await" not in line:
+                continue
+            # Check this line and the two lines immediately above it for
+            # an explicit "Legacy" / "deprecated" marker. The two-line
+            # window matches the common pattern where a header line like
+            # "Legacy (deprecated, removed in v1.0):" precedes the
+            # example block on its own line (possibly followed by a
+            # blank line).
+            window_start = max(0, idx - 3)  # idx is 1-based; window is the line plus two above
+            window = lines[window_start:idx]
+            window_text = "\n".join(window).lower()
+            if "legacy" in window_text or "deprecated" in window_text:
+                continue
+            offenders.append((getattr(node, "name", "<module>"), idx, line.strip()))
 
     assert not offenders, (
-        f"{relpath}: found `async with ...from_storage(...)` example(s) "
-        f"missing `await`: {offenders}"
+        f"{relpath}: found deprecated `async with await ...from_storage(...)` "
+        f"example(s); use the canonical `async with NotebookLMClient.from_storage(...)` "
+        f"form instead: {offenders}"
     )
 
 
@@ -94,6 +123,18 @@ def test_docstring_example_lines_parse(relpath: str) -> None:
             line = raw.strip()
             if "from_storage(" not in line:
                 continue
+            # Skip pure-comment lines (e.g. an inline migration reference
+            # like ``# async with await NotebookLMClient.from_storage(...) ...``).
+            # The comment text isn't a parseable statement and isn't meant
+            # to be runnable code.
+            if line.startswith("#"):
+                continue
+            # Skip lines that are prose with embedded rst-quoted code
+            # (e.g. "Prefer ``async with from_storage(...) as client:`` idiom.").
+            # These aren't standalone code examples — they reference the
+            # idiom in running text.
+            if line.startswith("``") or "``" in line.split("from_storage(", 1)[0]:
+                continue
             # Wrap the line inside an ``async def`` so constructs like
             # ``async with X as y:`` (only legal inside an async function)
             # parse. If the line is itself a compound-statement header
@@ -112,14 +153,14 @@ def test_docstring_example_lines_parse(relpath: str) -> None:
 async def test_from_storage_smoke_constructs_client(tmp_path: Path, httpx_mock: HTTPXMock) -> None:
     """Smoke test: the documented example shape actually returns a client.
 
-    Mirrors what the module/class docstrings advertise:
+    Mirrors what the module/class docstrings advertise (canonical idiom):
 
-        async with await NotebookLMClient.from_storage(path=...) as client:
+        async with NotebookLMClient.from_storage(path=...) as client:
             ...
 
-    We stop short of entering the context manager — we just assert that
-    awaiting ``from_storage`` returns a ``NotebookLMClient`` instance.
-    That is enough to prove the example shape compiles and runs.
+    We assert that ``async with`` on the wrapper yields a connected
+    ``NotebookLMClient`` instance — proves the example shape compiles
+    and runs end-to-end.
     """
     storage_file = tmp_path / "storage_state.json"
     storage_state = {
@@ -137,17 +178,17 @@ async def test_from_storage_smoke_constructs_client(tmp_path: Path, httpx_mock: 
     storage_file.write_text(json.dumps(storage_state))
 
     # ``from_storage`` performs a token fetch against notebooklm.google.com
-    # during construction; serve a minimal stub so the call resolves
-    # without touching the network.
+    # during the wrapper's lazy ``_build``; serve a minimal stub so the
+    # call resolves without touching the network.
     html = '"SNlM0e":"smoke_csrf" "FdrFJe":"smoke_session"'
     httpx_mock.add_response(
         url="https://notebooklm.google.com/",
         content=html.encode(),
     )
 
-    client = await NotebookLMClient.from_storage(path=str(storage_file))
+    async with NotebookLMClient.from_storage(path=str(storage_file)) as client:
+        assert isinstance(client, NotebookLMClient)
+        assert client.is_connected is True
 
-    assert isinstance(client, NotebookLMClient)
-    # Sanity: the client should not be connected yet — from_storage just
-    # constructs it. Entering the async-with would call __aenter__.
+    # After exiting the context manager, the client is closed.
     assert client.is_connected is False

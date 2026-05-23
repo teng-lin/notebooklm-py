@@ -7,6 +7,7 @@ helpers live in ``_session_helpers.py``; the proxy-block-aware
 """
 
 import json
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,6 +16,22 @@ from _fixtures import patch_session_login_dual
 from notebooklm.notebooklm_cli import cli
 
 from .conftest import create_mock_client
+
+
+def _make_from_storage_cm(client):
+    """Wrap ``client`` in an async context manager.
+
+    ``NotebookLMClient.from_storage`` returns ``_FromStorageContext``
+    (an awaitable async-context-manager). Tests that mock
+    ``from_storage`` need a stand-in that supports ``async with``;
+    this helper builds one from a plain mock client.
+    """
+
+    @asynccontextmanager
+    async def _cm():
+        yield client
+
+    return _cm()
 
 
 class TestLoginUrlValidation:
@@ -1076,7 +1093,13 @@ class TestLoginLanguageSync:
             mock_client = create_mock_client()
             mock_client.settings = MagicMock()
             mock_client.settings.get_output_language = AsyncMock(return_value="zh_Hans")
-            mock_client_cls.from_storage = AsyncMock(return_value=mock_client)
+            # `from_storage` is now sync and returns a `_FromStorageContext`
+            # (an async context manager). We mock it as a sync MagicMock
+            # whose return value is an async-context-manager wrapping the
+            # mock client.
+            mock_client_cls.from_storage = MagicMock(
+                return_value=_make_from_storage_cm(mock_client)
+            )
 
             _sync_server_language_to_config()
 
@@ -1097,12 +1120,42 @@ class TestLoginLanguageSync:
             mock_client = create_mock_client()
             mock_client.settings = MagicMock()
             mock_client.settings.get_output_language = AsyncMock(return_value=None)
-            mock_client_cls.from_storage = AsyncMock(return_value=mock_client)
+            mock_client_cls.from_storage = MagicMock(
+                return_value=_make_from_storage_cm(mock_client)
+            )
 
             _sync_server_language_to_config()
 
         # Config file should not exist
         assert not config_path.exists()
+
+    def test_sync_uses_explicit_storage_and_profile(self, tmp_path):
+        """Language sync should use the freshly written login target."""
+        from notebooklm.cli.session_cmd import _sync_server_language_to_config
+
+        config_path = tmp_path / "config.json"
+        storage_path = tmp_path / "profiles" / "work" / "storage_state.json"
+
+        with (
+            patch_session_login_dual("NotebookLMClient") as mock_client_cls,
+            patch.object(self.language_mod, "get_config_path", return_value=config_path),
+        ):
+            mock_client = create_mock_client()
+            mock_client.settings = MagicMock()
+            mock_client.settings.get_output_language = AsyncMock(return_value="fr")
+            mock_client_cls.from_storage = MagicMock(
+                return_value=_make_from_storage_cm(mock_client)
+            )
+
+            _sync_server_language_to_config(storage_path=storage_path, profile="work")
+
+        # `from_storage` is now sync; assert the call shape directly.
+        mock_client_cls.from_storage.assert_called_once_with(
+            path=str(storage_path),
+            profile="work",
+        )
+        config = json.loads(config_path.read_text())
+        assert config["language"] == "fr"
 
     def test_sync_does_not_raise_on_error(self):
         """Language sync failure should not raise and should warn the user."""
@@ -1112,7 +1165,8 @@ class TestLoginLanguageSync:
             patch_session_login_dual("NotebookLMClient") as mock_client_cls,
             patch_session_login_dual("console") as mock_console,
         ):
-            mock_client_cls.from_storage = AsyncMock(side_effect=Exception("Network error"))
+            # Raise from the sync `from_storage` call itself.
+            mock_client_cls.from_storage = MagicMock(side_effect=Exception("Network error"))
 
             # Should not raise
             _sync_server_language_to_config()

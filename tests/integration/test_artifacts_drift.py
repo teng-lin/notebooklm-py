@@ -103,9 +103,10 @@ class TestParseGenerationResultSoftDrift:
         # contract this class pins requires an explicit `"0"` opt-out.
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
-        status = artifacts_api._parse_generation_result(
-            None, method_id=RPCMethod.CREATE_ARTIFACT.value
-        )
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            status = artifacts_api._parse_generation_result(
+                None, method_id=RPCMethod.CREATE_ARTIFACT.value
+            )
 
         assert status.status == "failed"
         assert status.task_id == ""
@@ -114,9 +115,10 @@ class TestParseGenerationResultSoftDrift:
     def test_empty_list_returns_failed(self, artifacts_api, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
-        status = artifacts_api._parse_generation_result(
-            [], method_id=RPCMethod.CREATE_ARTIFACT.value
-        )
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            status = artifacts_api._parse_generation_result(
+                [], method_id=RPCMethod.CREATE_ARTIFACT.value
+            )
 
         assert status.status == "failed"
         assert status.task_id == ""
@@ -126,9 +128,10 @@ class TestParseGenerationResultSoftDrift:
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
         # Inner list missing both task_id and status_code positions.
-        status = artifacts_api._parse_generation_result(
-            [[]], method_id=RPCMethod.REVISE_SLIDE.value
-        )
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            status = artifacts_api._parse_generation_result(
+                [[]], method_id=RPCMethod.REVISE_SLIDE.value
+            )
 
         assert status.status == "failed"
         assert status.task_id == ""
@@ -142,9 +145,10 @@ class TestParseGenerationResultSoftDrift:
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
 
         # task_id present, status_code position absent.
-        status = artifacts_api._parse_generation_result(
-            [["task_short"]], method_id=RPCMethod.CREATE_ARTIFACT.value
-        )
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            status = artifacts_api._parse_generation_result(
+                [["task_short"]], method_id=RPCMethod.CREATE_ARTIFACT.value
+            )
 
         assert status.task_id == "task_short"
         assert status.status == "pending"

@@ -73,6 +73,72 @@ def test_overwrites_existing_file(tmp_path: Path) -> None:
     assert json.loads(target.read_text(encoding="utf-8")) == {"new": True}
 
 
+@pytest.mark.parametrize(
+    "winerror",
+    [
+        pytest.param(5, id="ERROR_ACCESS_DENIED"),
+        pytest.param(32, id="ERROR_SHARING_VIOLATION"),
+    ],
+)
+def test_windows_replace_transient_error_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, winerror: int
+) -> None:
+    """Windows can transiently deny a replace racing on the same target."""
+    target = tmp_path / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    real_replace = mod.os.replace
+    calls = 0
+
+    def flaky_replace(src: str | Path, dst: str | Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            err = PermissionError(13, "Access is denied", str(src), str(dst))
+            err.winerror = winerror
+            raise err
+        real_replace(src, dst)
+
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    monkeypatch.setattr(mod.os, "replace", flaky_replace)
+
+    atomic_write_json(target, {"retried": True})
+
+    assert calls == 2
+    assert json.loads(target.read_text(encoding="utf-8")) == {"retried": True}
+
+
+def test_windows_replace_retries_exhausted_raises_and_cleans_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "state.json"
+
+    import notebooklm._atomic_io as mod
+
+    calls = 0
+    sleeps: list[float] = []
+
+    def blocked_replace(src: str | Path, dst: str | Path) -> None:
+        nonlocal calls
+        calls += 1
+        err = PermissionError(13, "Access is denied", str(src), str(dst))
+        err.winerror = 5
+        raise err
+
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    monkeypatch.setattr(mod.os, "replace", blocked_replace)
+    monkeypatch.setattr(mod.time, "sleep", sleeps.append)
+
+    with pytest.raises(PermissionError):
+        atomic_write_json(target, {"never": "committed"})
+
+    assert calls == mod._WINDOWS_REPLACE_MAX_ATTEMPTS
+    assert len(sleeps) == mod._WINDOWS_REPLACE_MAX_ATTEMPTS - 1
+    leaked = list(tmp_path.glob(f".{target.name}.*.tmp"))
+    assert not leaked, f"leaked temp files: {leaked}"
+
+
 def test_concurrent_writers_never_corrupt(tmp_path: Path) -> None:
     """Two threads racing on the same path must always leave a valid JSON
     file matching one of the writers' payloads (no partial / interleaved bytes).
@@ -82,11 +148,15 @@ def test_concurrent_writers_never_corrupt(tmp_path: Path) -> None:
     payload_b = {"who": "B", "filler": "b" * 256}
 
     barrier = threading.Barrier(2)
+    errors: list[BaseException] = []
 
     def write(payload: dict) -> None:
-        barrier.wait()
-        for _ in range(50):
-            atomic_write_json(target, payload)
+        try:
+            barrier.wait()
+            for _ in range(50):
+                atomic_write_json(target, payload)
+        except BaseException as exc:
+            errors.append(exc)
 
     threads = [
         threading.Thread(target=write, args=(payload_a,)),
@@ -96,6 +166,8 @@ def test_concurrent_writers_never_corrupt(tmp_path: Path) -> None:
         t.start()
     for t in threads:
         t.join()
+
+    assert not errors, f"writer thread errors: {errors!r}"
 
     # Final state: file exists, parses as JSON, matches one of the payloads.
     raw = target.read_text(encoding="utf-8")

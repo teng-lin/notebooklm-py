@@ -255,33 +255,51 @@ class TestDownloadUrlErrorWrapping:
 
     @pytest.mark.asyncio
     async def test_cancellation_during_write_removes_temp_file(self, mock_artifacts_api, tmp_path):
-        """Cancelled streaming writes must not leave the mkstemp temp file behind."""
+        """Cancelled streaming writes must not leave the mkstemp temp file behind.
+
+        After the review-fix refactor (PR #981 r2: gemini findings), the
+        producer uses ``put_nowait`` whenever the bounded queue has
+        space, falling back to ``to_thread(put, ...)`` only under back-
+        pressure. For small payloads that fit in the queue, no
+        ``to_thread(put)`` call fires — so the test cannot gate on it.
+        Instead we gate on the producer's ``aiter_bytes`` await, which
+        is the canonical async-cancellable yield point inside the chunk
+        loop. The invariant under test — no leftover ``mkstemp`` temp
+        file after cancellation — is unchanged.
+        """
         api = mock_artifacts_api
         output_path = tmp_path / "file.mp4"
+
+        chunk_yielded = asyncio.Event()
+        allow_finish = asyncio.Event()
+
+        async def mock_aiter_bytes(chunk_size: int = 8192):
+            # Yield one real chunk so the producer enters the chunk
+            # loop body and pushes a chunk onto the queue, then park
+            # at a cancellable ``await`` so the test can deliver
+            # ``task.cancel()`` while the producer is mid-stream.
+            yield b"partial media payload"
+            chunk_yielded.set()
+            await allow_finish.wait()
+
         response = _build_mock_response(content=b"partial media payload")
+        response.aiter_bytes = mock_aiter_bytes
         client_patch, cookies_patch = _patch_httpx_client(response)
 
-        original_to_thread = asyncio.to_thread
-        write_started = asyncio.Event()
-        release_write = asyncio.Event()
-
-        async def controlled_to_thread(func, /, *args, **kwargs):
-            if getattr(func, "__name__", "") == "write":
-                write_started.set()
-                await release_write.wait()
-            return await original_to_thread(func, *args, **kwargs)
-
-        with (
-            client_patch,
-            cookies_patch,
-            patch("notebooklm._artifact_downloads.asyncio.to_thread", controlled_to_thread),
-        ):
+        with client_patch, cookies_patch:
             task = asyncio.create_task(
                 api._download_url("https://storage.googleapis.com/file.mp4", str(output_path))
             )
-            await asyncio.wait_for(write_started.wait(), timeout=1)
+            # Wait until the producer has yielded once and is parked
+            # on ``allow_finish.wait()`` inside the mocked
+            # ``aiter_bytes``.
+            await asyncio.wait_for(chunk_yielded.wait(), timeout=2)
             task.cancel()
-            release_write.set()
+            # Release the mock so the cancel-propagation path unwinds
+            # cleanly. Without this the awaited Event would briefly
+            # delay the cancellation visitor; asyncio still cancels,
+            # but the release makes the unwind deterministic.
+            allow_finish.set()
 
             with pytest.raises(asyncio.CancelledError):
                 await task

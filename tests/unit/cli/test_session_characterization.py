@@ -148,7 +148,10 @@ class TestLoginCharacterization:
         mock_run.assert_called_once()
         kwargs = mock_run.call_args.kwargs
         assert kwargs["browser"] == "chrome"
-        mock_sync.assert_called_once()
+        mock_sync.assert_called_once_with(
+            storage_path=tmp_path / "storage_state.json",
+            profile=None,
+        )
         # The "Authentication saved to:" footer is the characterization signal
         assert "Authentication saved to:" in result.output
 

@@ -92,6 +92,23 @@ class TestClientContextManager:
 
 
 class TestFromStorage:
+    @staticmethod
+    def _auth(storage_path):
+        return AuthTokens(
+            cookies={
+                ("SID", ".google.com", "/"): "test_sid",
+                ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
+            },
+            csrf_token="test_csrf",
+            session_id="test_session",
+            storage_path=storage_path,
+        )
+
+    class CapturingClient(NotebookLMClient):
+        def __init__(self, auth, **kwargs):
+            self.captured_auth = auth
+            self.captured_kwargs = kwargs
+
     @pytest.mark.asyncio
     async def test_from_storage_success(self, tmp_path, httpx_mock: HTTPXMock):
         """Test creating client from storage file."""
@@ -113,7 +130,8 @@ class TestFromStorage:
             content=html.encode(),
         )
 
-        client = await NotebookLMClient.from_storage(str(storage_file))
+        with pytest.warns(DeprecationWarning, match="removed in v1.0"):
+            client = await NotebookLMClient.from_storage(str(storage_file))
 
         assert client.auth.cookies[("SID", ".google.com", "/")] == "test_sid"
         assert client.auth.csrf_token == "csrf_token_abc"
@@ -122,8 +140,13 @@ class TestFromStorage:
     @pytest.mark.asyncio
     async def test_from_storage_file_not_found(self, tmp_path):
         """Test raises error when storage file doesn't exist."""
+        # `from_storage` is now sync; the wrapper triggers auth load lazily
+        # on first use (await or __aenter__). Either path surfaces the
+        # FileNotFoundError. Use `async with` to avoid the legacy
+        # DeprecationWarning.
         with pytest.raises(FileNotFoundError):
-            await NotebookLMClient.from_storage(str(tmp_path / "nonexistent.json"))
+            async with NotebookLMClient.from_storage(str(tmp_path / "nonexistent.json")):
+                pass
 
     @pytest.mark.asyncio
     async def test_from_storage_with_default_path(
@@ -164,13 +187,90 @@ class TestFromStorage:
         )
 
         try:
-            client = await NotebookLMClient.from_storage()
+            with pytest.warns(DeprecationWarning, match="removed in v1.0"):
+                client = await NotebookLMClient.from_storage()
             assert client.auth.cookies[("SID", ".google.com", "/")] == "default_sid"
         finally:
             if real_storage_mtime is None:
                 assert not real_storage_path.exists()
             else:
                 assert real_storage_path.stat().st_mtime_ns == real_storage_mtime
+
+    @pytest.mark.asyncio
+    async def test_from_storage_uses_auth_storage_path_for_explicit_path(
+        self, tmp_path, monkeypatch
+    ):
+        """Explicit paths keep the AuthTokens storage path unchanged."""
+        import notebooklm.paths as paths_mod
+
+        monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+        explicit_path = tmp_path / "storage_state.json"
+        calls = []
+
+        async def fake_from_storage(path=None, profile=None):
+            calls.append((path, profile))
+            return self._auth(path)
+
+        def fail_get_storage_path(*args, **kwargs):
+            raise AssertionError("from_storage should use auth.storage_path")
+
+        monkeypatch.setattr(AuthTokens, "from_storage", staticmethod(fake_from_storage))
+        monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
+
+        client = await self.CapturingClient.from_storage(str(explicit_path))._build()
+
+        assert calls == [(explicit_path, None)]
+        assert client.captured_auth.storage_path == explicit_path
+        assert client.captured_kwargs["storage_path"] == explicit_path
+
+    @pytest.mark.asyncio
+    async def test_from_storage_uses_auth_storage_path_for_profile(self, tmp_path, monkeypatch):
+        """Profile resolution is owned by AuthTokens.from_storage."""
+        import notebooklm.paths as paths_mod
+
+        monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+        profile_storage_path = tmp_path / "profiles" / "work" / "storage_state.json"
+        calls = []
+
+        async def fake_from_storage(path=None, profile=None):
+            calls.append((path, profile))
+            return self._auth(profile_storage_path)
+
+        def fail_get_storage_path(*args, **kwargs):
+            raise AssertionError("from_storage should not re-resolve profile storage")
+
+        monkeypatch.setattr(AuthTokens, "from_storage", staticmethod(fake_from_storage))
+        monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
+
+        client = await self.CapturingClient.from_storage(profile="work")._build()
+
+        assert calls == [(None, "work")]
+        assert client.captured_auth.storage_path == profile_storage_path
+        assert client.captured_kwargs["storage_path"] == profile_storage_path
+
+    @pytest.mark.asyncio
+    async def test_from_storage_preserves_none_storage_path_for_auth_json(self, monkeypatch):
+        """Inline auth JSON remains fileless."""
+        import notebooklm.paths as paths_mod
+
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies": []}')
+        calls = []
+
+        async def fake_from_storage(path=None, profile=None):
+            calls.append((path, profile))
+            return self._auth(None)
+
+        def fail_get_storage_path(*args, **kwargs):
+            raise AssertionError("from_storage should not resolve file paths for auth JSON")
+
+        monkeypatch.setattr(AuthTokens, "from_storage", staticmethod(fake_from_storage))
+        monkeypatch.setattr(paths_mod, "get_storage_path", fail_get_storage_path)
+
+        client = await self.CapturingClient.from_storage()._build()
+
+        assert calls == [(None, None)]
+        assert client.captured_auth.storage_path is None
+        assert client.captured_kwargs["storage_path"] is None
 
 
 # =============================================================================

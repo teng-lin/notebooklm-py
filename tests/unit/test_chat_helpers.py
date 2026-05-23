@@ -47,7 +47,10 @@ def test_extract_next_turn_content_missing_inner_list(
     monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
     next_turn = [None, None, 2, None, []]
 
-    with caplog.at_level(logging.WARNING):
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+    ):
         result = _extract_next_turn_content(next_turn)
 
     assert result is None
@@ -70,7 +73,10 @@ def test_extract_next_turn_content_wrong_type_at_level(
     # non-string non-list scalar to force the safe_index drift path.
     next_turn = [None, None, 2, None, [42]]
 
-    with caplog.at_level(logging.WARNING):
+    with (
+        caplog.at_level(logging.WARNING),
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+    ):
         result = _extract_next_turn_content(next_turn)
 
     assert result is None
@@ -112,6 +118,7 @@ def test_parse_turns_to_qa_pairs_drift_yields_empty_answer(
         ]
     ]
 
-    result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
+    with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+        result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
 
     assert result == [("Question?", "")]

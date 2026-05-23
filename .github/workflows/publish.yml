@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-and-test:
     name: Build wheel and run release smoke
@@ -39,7 +43,7 @@ jobs:
     - name: Install build tools
       run: |
         python -m pip install --upgrade pip
-        pip install build
+        python -m pip install build==1.5.0
 
     - name: Build package
       run: |
@@ -55,11 +59,13 @@ jobs:
       # touched the runner. Smoke install/test below still runs against
       # `dist/` for behavior validation but can no longer influence what
       # the publish job receives.
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # @ v7
       with:
-        name: python-distribution
+        name: notebooklm-py-dist
         path: dist/
         if-no-files-found: error
+        # One-day retention is intentional: publish consumes this artifact
+        # immediately. See issue #829 for the recovery trade-off.
         retention-days: 1
 
     - name: Install built wheel + canonical contributor extras in a clean venv
@@ -100,9 +106,9 @@ jobs:
 
     steps:
     - name: Download distribution artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # @ v7
       with:
-        name: python-distribution
+        name: notebooklm-py-dist
         path: dist/
 
     - name: Publish to PyPI

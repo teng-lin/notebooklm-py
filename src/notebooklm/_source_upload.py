@@ -71,6 +71,9 @@ class RpcCallback(Protocol):
     ) -> Any: ...
 
 
+GetSourceLimit = Callable[[], Awaitable[int | None]]
+
+
 class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     """Runtime capabilities required by source upload.
 
@@ -85,6 +88,63 @@ class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
     ``operation_scope`` or lazily allocating the per-loop upload semaphore.
     Mirrors the ``ChatRuntime`` / ``ArtifactsRuntime`` pattern.
     """
+
+
+_INVALID_ARGUMENT_RPC_CODE = 3
+_SOURCE_LIMIT_HINT_FLOOR = 50
+_TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
+
+
+async def _build_invalid_argument_source_limit_hint(
+    *,
+    source_count: int | None,
+    get_source_limit: GetSourceLimit | None,
+    logger: Any,
+) -> str:
+    """Build a best-effort hint for ADD_SOURCE_FILE status code 3 failures."""
+    source_limit: int | None = None
+    if get_source_limit is not None:
+        try:
+            source_limit = await get_source_limit()
+        except Exception:  # noqa: BLE001 - hint lookup must not mask the upload error.
+            logger.debug(
+                "register_file_source: source-limit lookup failed; continuing without limit hint",
+                exc_info=True,
+            )
+
+    if source_limit is not None and source_limit <= 0:
+        source_limit = None
+
+    if source_count is not None and source_limit is not None:
+        if source_count >= source_limit:
+            return (
+                f" Notebook currently has {source_count}/{source_limit} sources, "
+                "so this likely means the notebook has reached its tier-specific "
+                "per-notebook source limit. Delete sources or try a fresh notebook, "
+                "then retry."
+            )
+        return (
+            f" Notebook currently has {source_count}/{source_limit} sources, below "
+            "the advertised account limit. If the file is valid, try the same add "
+            "in a fresh notebook to distinguish file rejection from notebook state."
+        )
+
+    if source_count is not None and source_count >= _SOURCE_LIMIT_HINT_FLOOR:
+        return (
+            f" Notebook currently has {source_count} sources; status code 3 can "
+            "indicate the notebook is at or near the tier-specific per-notebook "
+            f"source limit ({_TIER_SOURCE_LIMITS_SUMMARY}). Delete sources or "
+            "try a fresh notebook, then retry."
+        )
+
+    if source_limit is not None:
+        return (
+            f" Advertised source limit for this tier is {source_limit}; compare "
+            "it with this notebook's source count. Status code 3 can indicate a "
+            "per-notebook source-limit rejection."
+        )
+
+    return ""
 
 
 class RegisterFileSource(Protocol):
@@ -327,11 +387,20 @@ class SourceUploadPipeline:
             if not title:
                 raise ValidationError("Title cannot be empty or whitespace-only")
 
-        file_path = Path(file_path).resolve()
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
-        if not file_path.is_file():
-            raise ValidationError(f"Not a regular file: {file_path}")
+        # ``Path.resolve()`` / ``exists()`` / ``is_file()`` all hit the
+        # filesystem (stat / readlink syscalls). On a slow network mount
+        # or a deep symlink chain these are blocking calls — same problem
+        # class as the ``open()`` + ``fstat()`` below — so they are
+        # offloaded to a worker thread too.
+        def _resolve_and_check(raw_path: str | Path) -> Path:
+            resolved = Path(raw_path).resolve()
+            if not resolved.exists():
+                raise FileNotFoundError(f"File not found: {resolved}")
+            if not resolved.is_file():
+                raise ValidationError(f"Not a regular file: {resolved}")
+            return resolved
+
+        file_path = await asyncio.to_thread(_resolve_and_check, file_path)
 
         filename = file_path.name
         content_type = _resolve_upload_content_type(file_path, mime_type)
@@ -342,10 +411,27 @@ class SourceUploadPipeline:
             async with upload_sem:
                 if self._record_upload_queue_wait is not None:
                     self._record_upload_queue_wait(monotonic() - upload_wait_start)
-                file_obj = open(file_path, "rb")  # noqa: SIM115
+
+                # ``open()`` and ``fstat()`` are synchronous syscalls. For
+                # network filesystems or deep directories they can block
+                # the event loop for tens of milliseconds, stalling every
+                # other concurrent task (auth refresh, sibling uploads,
+                # the cancellation watchdog) for the duration of the
+                # syscall. Run them on a worker thread so the loop keeps
+                # ticking. ``fstat`` is paired with ``open`` in the same
+                # closure so we don't pay the round-trip cost twice.
+                def _open_and_stat(path: Path) -> tuple[IO[bytes], int]:
+                    fh = open(path, "rb")  # noqa: SIM115
+                    try:
+                        size = os.fstat(fh.fileno()).st_size
+                    except BaseException:
+                        fh.close()
+                        raise
+                    return fh, size
+
+                file_obj, file_size = await asyncio.to_thread(_open_and_stat, file_path)
                 handed_off = False
                 try:
-                    file_size = os.fstat(file_obj.fileno()).st_size
                     source_id = await register_file_source(notebook_id, filename)
                     upload_url = await start_resumable_upload(
                         notebook_id,
@@ -411,6 +497,7 @@ class SourceUploadPipeline:
         *,
         list_sources: ListSources,
         logger: Any,
+        get_source_limit: GetSourceLimit | None = None,
         rpc_call: RpcCallback | None = None,
     ) -> str:
         """Register a file source intent and get SOURCE_ID.
@@ -454,14 +541,18 @@ class SourceUploadPipeline:
         # same-name source would otherwise direct the subsequent upload
         # stream to the wrong source.
         baseline_ids: set[str] | None
+        baseline_source_count: int | None
         try:
-            baseline_ids = {source.id for source in await list_sources(notebook_id)}
+            baseline_sources = await list_sources(notebook_id)
+            baseline_ids = {source.id for source in baseline_sources}
+            baseline_source_count = len(baseline_sources)
         except Exception:
             logger.debug(
                 "register_file_source: baseline list() failed; baseline unavailable",
                 exc_info=True,
             )
             baseline_ids = None
+            baseline_source_count = None
 
         async def _probe() -> str | None:
             try:
@@ -522,10 +613,17 @@ class SourceUploadPipeline:
                 # can catch them and run the probe before retrying.
                 raise
             except RPCError as exc:
+                hint = ""
+                if getattr(exc, "rpc_code", None) == _INVALID_ARGUMENT_RPC_CODE:
+                    hint = await _build_invalid_argument_source_limit_hint(
+                        source_count=baseline_source_count,
+                        get_source_limit=get_source_limit,
+                        logger=logger,
+                    )
                 raise SourceAddError(
                     filename,
                     cause=exc,
-                    message=f"Failed to register file source for {filename}: {exc}",
+                    message=f"Failed to register file source for {filename}: {exc}{hint}",
                 ) from exc
 
             source_id = _extract_register_file_source_id(result, filename)

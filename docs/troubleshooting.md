@@ -381,21 +381,31 @@ notebooklm generate video --retry 5   # Works with most generate commands
 **Python:**
 ```python
 import asyncio
+from notebooklm import RPCError
+from notebooklm.artifacts import with_rate_limit_retry
 
 # Add delays between intensive operations
 for url in urls:
     await client.sources.add_url(nb_id, url)
     await asyncio.sleep(2)  # 2 second delay
 
-# Use exponential backoff on failures
-async def retry_with_backoff(coro, max_retries=3):
-    for attempt in range(max_retries):
+# Use the shared generation retry policy when starting artifacts
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_audio(nb_id),
+    max_retries=3,
+)
+
+# For non-artifact RPC calls, retry by passing a fresh callable each attempt
+async def retry_rpc_call(make_call, max_retries=3):
+    for attempt in range(max_retries + 1):
         try:
-            return await coro
+            return await make_call()
         except RPCError:
-            wait = 2 ** attempt  # 1, 2, 4 seconds
-            await asyncio.sleep(wait)
-    raise Exception("Max retries exceeded")
+            if attempt >= max_retries:
+                raise
+            await asyncio.sleep(2**attempt)
+
+notebook = await retry_rpc_call(lambda: client.notebooks.create("Research Notes"))
 ```
 
 ### Starting a brand-new conversation (resolves the older issue #659 workaround)

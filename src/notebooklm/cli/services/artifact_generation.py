@@ -1,9 +1,9 @@
 """CLI-internal services for artifact generation commands."""
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from ... import artifacts as artifact_retry
 from ...client import NotebookLMClient
 from ...types import GenerationStatus
 from ..error_handler import output_error
@@ -11,9 +11,12 @@ from ..rendering import console, json_output_response
 from .polling import status_with_elapsed
 
 # Retry constants
-RETRY_INITIAL_DELAY = 60.0  # seconds
-RETRY_MAX_DELAY = 300.0  # 5 minutes
-RETRY_BACKOFF_MULTIPLIER = 2.0
+RETRY_INITIAL_DELAY = artifact_retry.RATE_LIMIT_RETRY_INITIAL_DELAY
+RETRY_MAX_DELAY = artifact_retry.RATE_LIMIT_RETRY_MAX_DELAY
+RETRY_BACKOFF_MULTIPLIER = artifact_retry.RATE_LIMIT_RETRY_BACKOFF_MULTIPLIER
+
+# Compatibility export for callers that imported the old CLI-local helper.
+calculate_backoff_delay = artifact_retry.calculate_backoff_delay
 
 
 # Typical-duration hints for the spinner status line.
@@ -49,27 +52,6 @@ def _format_status_message(artifact_type: str, elapsed: float | None = None) -> 
     return f"{base} [{int(elapsed)}s elapsed]"
 
 
-def calculate_backoff_delay(
-    attempt: int,
-    initial_delay: float = RETRY_INITIAL_DELAY,
-    max_delay: float = RETRY_MAX_DELAY,
-    multiplier: float = RETRY_BACKOFF_MULTIPLIER,
-) -> float:
-    """Calculate exponential backoff delay for a retry attempt.
-
-    Args:
-        attempt: The current attempt number (0-indexed).
-        initial_delay: Initial delay in seconds.
-        max_delay: Maximum delay cap in seconds.
-        multiplier: Backoff multiplier.
-
-    Returns:
-        Delay in seconds for this attempt.
-    """
-    delay = initial_delay * (multiplier**attempt)
-    return min(delay, max_delay)
-
-
 async def generate_with_retry(
     generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
     max_retries: int,
@@ -90,28 +72,20 @@ async def generate_with_retry(
     Returns:
         GenerationStatus or None if generation failed.
     """
-    for attempt in range(max_retries + 1):
-        result = await generate_fn()
 
-        # Return immediately if not rate limited (success or other failure)
-        if not isinstance(result, GenerationStatus) or not result.is_rate_limited:
-            return result
-
-        # Rate limited with no retries left
-        if attempt >= max_retries:
-            return result
-
-        # Wait before retry
-        delay = calculate_backoff_delay(attempt)
+    def _show_retry(event: artifact_retry.RateLimitRetryEvent) -> None:
         if not json_output:
             console.print(
                 f"[yellow]{artifact_type.title()} rate limited. "
-                f"Retrying in {int(delay)}s (attempt {attempt + 2}/{max_retries + 1})...[/yellow]"
+                f"Retrying in {int(event.delay)}s "
+                f"(attempt {event.next_attempt_number}/{event.total_attempts})...[/yellow]"
             )
-        await asyncio.sleep(delay)
 
-    # Unreachable, but satisfies type checker
-    return None
+    return await artifact_retry.with_rate_limit_retry(
+        generate_fn,
+        max_retries=max_retries,
+        on_retry=_show_retry,
+    )
 
 
 async def handle_generation_result(

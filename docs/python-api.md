@@ -17,7 +17,7 @@ from notebooklm import NotebookLMClient
 
 async def main():
     # Create client from saved authentication
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         # List notebooks
         notebooks = await client.notebooks.list()
         print(f"Found {len(notebooks)} notebooks")
@@ -66,11 +66,17 @@ If we ever provide thread-safety, it will be a versioned, opt-in API change. Do 
 The client must be used as an async context manager to properly manage HTTP connections:
 
 ```python
-# Correct - uses context manager
+# Canonical idiom (v0.5.0+) - no `await` on `from_storage`.
+async with NotebookLMClient.from_storage() as client:
+    ...
+
+# Legacy idiom (deprecated, removed in v1.0) - works but emits
+# DeprecationWarning. Drop the `await` to migrate.
 async with await NotebookLMClient.from_storage() as client:
     ...
 
-# Also correct - manual management
+# Manual management - still works; the await emits DeprecationWarning.
+# Migrate to `async with NotebookLMClient.from_storage()` instead.
 client = await NotebookLMClient.from_storage()
 await client.__aenter__()
 try:
@@ -84,12 +90,15 @@ finally:
 The client requires valid Google session cookies obtained via browser login:
 
 ```python
-# From storage file (recommended)
-client = await NotebookLMClient.from_storage()
-client = await NotebookLMClient.from_storage("/path/to/storage_state.json")
+# From storage file (recommended) — use as an async context manager:
+async with NotebookLMClient.from_storage() as client:
+    ...
+async with NotebookLMClient.from_storage("/path/to/storage_state.json") as client:
+    ...
 
 # From a named profile
-client = await NotebookLMClient.from_storage(profile="work")
+async with NotebookLMClient.from_storage(profile="work") as client:
+    ...
 
 # From AuthTokens directly
 from notebooklm import AuthTokens
@@ -100,7 +109,7 @@ auth = AuthTokens(
 )
 client = NotebookLMClient(auth)
 
-# AuthTokens also supports profiles (from_storage is async)
+# AuthTokens also supports profiles (AuthTokens.from_storage is async)
 auth = await AuthTokens.from_storage(profile="work")
 ```
 
@@ -135,7 +144,7 @@ with open(storage_path, "w") as f:
 if os.name != "nt":
     os.chmod(storage_path, 0o600)
 
-async with await NotebookLMClient.from_storage(storage_path) as client:
+async with NotebookLMClient.from_storage(storage_path) as client:
     notebooks = await client.notebooks.list()
 ```
 
@@ -187,7 +196,7 @@ import os
 os.environ["NOTEBOOKLM_AUTH_JSON"] = '{"cookies": [...]}'
 
 # Client automatically uses the env var
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     notebooks = await client.notebooks.list()
 ```
 
@@ -220,7 +229,7 @@ When an RPC call fails with an auth error (HTTP 401/403 or auth-related message)
 **Manual Refresh:** For proactive refresh (e.g., before a long-running operation):
 
 ```python
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     # Manually refresh CSRF token and session ID
     await client.refresh_auth()
 ```
@@ -386,7 +395,7 @@ from notebooklm import NotebookLMClient
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with await NotebookLMClient.from_storage() as client:
+    async with NotebookLMClient.from_storage() as client:
         app.state.notebooklm = client
         yield
     # client.close() happens via __aexit__
@@ -485,7 +494,7 @@ from notebooklm import NotebookLMClient, correlation_id
 
 events = []
 
-async with await NotebookLMClient.from_storage(on_rpc_event=events.append) as client:
+async with NotebookLMClient.from_storage(on_rpc_event=events.append) as client:
     with correlation_id("batch-import-42"):
         await client.notebooks.list()
 
@@ -622,7 +631,7 @@ class NotebookLMClient:
     is_connected: bool         # Connection state
 
     @classmethod
-    async def from_storage(
+    def from_storage(
         cls, path: str | None = None, timeout: float = 30.0,
         profile: str | None = None,
         keepalive: float | None = None,
@@ -634,7 +643,11 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-    ) -> "NotebookLMClient":
+    ) -> "_FromStorageContext":
+        # Returns an awaitable async-context-manager wrapper. Use as
+        # `async with NotebookLMClient.from_storage(...) as client:`.
+        # Awaiting it directly (legacy) emits DeprecationWarning;
+        # removed in v1.0.
 
     def __init__(
         self, auth: AuthTokens, timeout: float = 30.0,
@@ -716,13 +729,13 @@ for the full layered story.
 from notebooklm import ConnectionLimits, NotebookLMClient
 
 # Default ``rate_limit_max_retries=3`` is on; widen the pool for a heavy worker
-async with await NotebookLMClient.from_storage(
+async with NotebookLMClient.from_storage(
     limits=ConnectionLimits(max_connections=200, max_keepalive_connections=100),
 ) as client:
     ...
 
 # Opt out of automatic 429 retries (e.g. for a bespoke back-off layer)
-async with await NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
+async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
     ...
 ```
 
@@ -1077,6 +1090,20 @@ status = await client.artifacts.generate_quiz(
 )
 ```
 
+**Rate-limit retry for generation:**
+
+```python
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_audio(
+        notebook_id,
+        instructions="focus on the counterarguments",
+    ),
+    max_retries=3,
+)
+```
+
 **Waiting for Completion:**
 
 ```python
@@ -1209,6 +1236,7 @@ if result.references:
 |--------|------------|---------|-------------|
 | `start(notebook_id, query, source, mode)` | `str, str, str="web", str="fast"` | `dict \| None` | Start research (mode: "fast" or "deep"); raises `ValidationError` on invalid source/mode |
 | `poll(notebook_id, task_id=None)` | `str, str \| None = None` | `dict` | Check research status |
+| `wait_for_completion(notebook_id, task_id=None, *, timeout=1800, interval=5)` | `str, str \| None, float, float` | `dict` | Wait for research to complete, pinning the discovered task ID between polls |
 | `import_sources(notebook_id, task_id, sources)` | `str, str, list` | `list[dict]` | Import findings |
 
 **Method Signatures:**
@@ -1230,7 +1258,7 @@ async def poll(notebook_id: str, task_id: str | None = None) -> dict:
     """
     Returns a dict for the selected research task. If task_id is None, selects the latest research task and raises/emits an ambiguity warning if multiple tasks are in-flight. Top-level keys:
       - task_id:   str       — task/report identifier
-      - status:    str       — "completed" | "in_progress" | "no_research"
+      - status:    str       — "completed" | "failed" | "in_progress" | "no_research"
       - query:     str       — original research query
       - sources:   list[dict]
       - summary:   str       — summary text when present
@@ -1243,6 +1271,25 @@ async def poll(notebook_id: str, task_id: str | None = None) -> dict:
       - result_type:        int — 1=web, 2=drive, 5=deep-research report entry
       - research_task_id:   str — task/report ID that produced this source
       - report_markdown:    str — deep-research report markdown (for type-5 entries)
+    """
+
+async def wait_for_completion(
+    notebook_id: str,
+    task_id: str | None = None,
+    *,
+    timeout: float = 1800,
+    interval: float = 5,
+) -> dict:
+    """
+    Loops on poll() until research returns "completed" / "failed" or the
+    timeout expires. "no_research" returns immediately only before a task_id
+    is known; when a task_id is supplied or discovered, transient
+    "no_research" polls are retried. Once a concrete task_id is returned,
+    later polls reuse it as the discriminator so concurrent research tasks in
+    the same notebook cannot cross-wire results.
+
+    Returns: final poll() dict.
+    Raises: TimeoutError on timeout; ValueError for invalid timeout/interval.
     """
 
 async def import_sources(notebook_id: str, task_id: str, sources: list[dict]) -> list[dict]:
@@ -1279,13 +1326,13 @@ task_id = result["task_id"]
 # poll resolves to the intended task. Without it, poll() returns the
 # "latest task" and emits an ambiguity warning when multiple are in flight.
 
-# Poll until complete (always pass task_id for unambiguous targeting)
-import asyncio
-while True:
-    status = await client.research.poll(nb_id, task_id=task_id)
-    if status["status"] == "completed":
-        break
-    await asyncio.sleep(10)
+# Wait until complete (always pass task_id for unambiguous targeting)
+status = await client.research.wait_for_completion(
+    nb_id,
+    task_id=task_id,
+    timeout=1800,
+    interval=5,
+)
 
 # Import discovered sources (using the same task_id discriminator)
 imported = await client.research.import_sources(nb_id, task_id, status["sources"][:5])
@@ -2003,7 +2050,7 @@ For undocumented features, you can make raw RPC calls:
 ```python
 from notebooklm.rpc import RPCMethod
 
-async with await NotebookLMClient.from_storage() as client:
+async with NotebookLMClient.from_storage() as client:
     # Each RPCMethod member has its own params shape (a nested list) and
     # source_path; mirror the higher-level APIs when in doubt.
     result = await client.rpc_call(
@@ -2016,20 +2063,15 @@ async with await NotebookLMClient.from_storage() as client:
 
 Google rate limits aggressive API usage:
 
-```python
-import asyncio
-from notebooklm import RPCError
+For artifact-generation methods, use the shared generation retry helper:
 
-async def safe_create_notebooks(client, titles):
-    for title in titles:
-        try:
-            await client.notebooks.create(title)
-        except RPCError:
-            # Wait and retry on rate limit
-            await asyncio.sleep(10)
-            await client.notebooks.create(title)
-        # Add delay between operations
-        await asyncio.sleep(2)
+```python
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_audio(notebook_id),
+    max_retries=3,
+)
 ```
 
 ### Streaming Chat Responses
@@ -2078,6 +2120,40 @@ passage = await resolve_chat_reference_passage(
     client, notebook_id, first_ref, context_chars=150
 )
 print(f"Context: {passage}")
+```
+
+### Artifact Generation Helpers
+
+These helpers live in `notebooklm.artifacts` and can be used with any
+artifact-generation callable that returns `GenerationStatus`.
+
+#### `notebooklm.artifacts.with_rate_limit_retry`
+
+```python
+async def with_rate_limit_retry(
+    generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
+    *,
+    max_retries: int,
+    initial_delay: float = 60.0,
+    max_delay: float = 300.0,
+    multiplier: float = 2.0,
+    sleep: Callable[[float], Awaitable[Any]] | None = None,
+    on_retry: Callable[[RateLimitRetryEvent], object | Awaitable[object]] | None = None,
+) -> GenerationStatus | None:
+    """Run an artifact-generation callable with rate-limit retry."""
+```
+
+`sleep` lets tests or schedulers provide their own async wait function.
+`on_retry` receives a `RateLimitRetryEvent` before each retry sleep.
+
+Example:
+```python
+from notebooklm.artifacts import with_rate_limit_retry
+
+status = await with_rate_limit_retry(
+    lambda: client.artifacts.generate_video(notebook_id),
+    max_retries=3,
+)
 ```
 
 ### Research Extraction and Citation Filtering

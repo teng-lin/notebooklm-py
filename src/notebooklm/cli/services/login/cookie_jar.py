@@ -137,13 +137,14 @@ def _enumerate_one_jar(
         # a network failure means EVERY profile probe will fail the same
         # way, so we must surface the transport error rather than let the
         # fan-out caller collapse it into a soft per-profile skip.
-        if not quiet:
-            console.print(
-                f"[red]Account discovery failed (network error):[/red] {e}\n"
-                "Check your internet connection and try again."
-            )
-            exit_with_code(1)
-        raise
+        if quiet:
+            raise
+        console.print(
+            f"[red]Account discovery failed (network error):[/red] {e}\n"
+            "Check your internet connection and try again."
+        )
+        exit_with_code(1)
+        return []
 
     if browser_profile is None:
         return list(accounts)

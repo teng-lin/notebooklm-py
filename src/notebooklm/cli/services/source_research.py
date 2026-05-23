@@ -1,16 +1,14 @@
-"""Service for ``source add-research`` — research start + poll + import.
+"""Service for ``source add-research`` — research start + wait + import.
 
-Owns the polling loop (task-id-pinned per P1.T2 bug 6) and the optional
-``--import-all`` step. Stays in service-layer territory: imports the
-rendering helpers + ``import_research_sources`` directly rather than
-threading display callbacks through the executor — the resulting code
-matches the pre-extraction Click handler line-for-line so the
-characterization-test snapshots survive byte-for-byte.
+Owns research start orchestration and the optional ``--import-all`` step.
+The protocol-level wait loop and task-id pinning live in
+``ResearchAPI.wait_for_completion``. Stays in service-layer territory:
+imports the rendering helpers + ``import_research_sources`` directly rather than
+threading display callbacks through the executor.
 """
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -29,7 +27,6 @@ SearchMode = Literal["fast", "deep"]
 # handler. ``timeout`` is divided by this value to compute the per-task
 # iteration budget; see :func:`execute_source_add_research`.
 _POLL_INTERVAL_S = 5
-_NO_RESEARCH_GRACE_POLLS = 3
 
 
 @dataclass(frozen=True)
@@ -53,12 +50,14 @@ async def execute_source_add_research(
 
     Exit-code contract (matches the pre-extraction handler):
         * 0 — research started + completed (or ``--no-wait`` returned early).
-        * 1 — research failed to start (``no_research`` from the server).
+        * 1 — research failed to start (``research.start`` returned empty, or
+          the wait API reports no active research before a task is known).
 
-    The polling loop is pinned to the ``task_id`` returned by
-    ``research.start`` so a second research task started mid-wait (e.g.
-    concurrent caller, web UI, or retry) cannot cross-wire its sources
-    into this task's import branch (P1.T2 bug 6).
+    The wait call passes the task discriminator returned by ``research.start``
+    so a second research task started mid-wait (e.g. concurrent caller, web UI,
+    or retry) cannot cross-wire its sources into this task's import branch.
+    Deep research uses the returned ``report_id`` for polling/import because
+    ``START_DEEP_RESEARCH`` slot 0 is not stable for those follow-up RPCs.
     """
     console.print(f"[yellow]Starting {plan.mode} research on {plan.search_source}...[/yellow]")
     result = await client.research.start(
@@ -90,33 +89,19 @@ async def execute_source_add_research(
         )
         return
 
-    # Poll budget mirrors ``research wait --timeout``: total seconds
-    # divided by the 5 s interval. The legacy hardcoded 60-iteration cap
-    # stranded deep research (#315) because the import branch below is
-    # gated on ``status == "completed"``.
-    status: dict | None = None
-    no_research_polls = 0
-    for _ in range(max(1, plan.timeout // _POLL_INTERVAL_S)):
-        status = await client.research.poll(plan.notebook_id, task_id=task_id)
-        if status.get("status") == "completed":
-            break
-        elif status.get("status") == "no_research":
-            no_research_polls += 1
-            if no_research_polls <= _NO_RESEARCH_GRACE_POLLS:
-                await asyncio.sleep(_POLL_INTERVAL_S)
-                continue
-            console.print("[red]Research failed to start[/red]")
-            exit_with_code(1)
-        else:
-            no_research_polls = 0
-            task_id = status.get("task_id") or task_id
-        await asyncio.sleep(_POLL_INTERVAL_S)
-    else:
+    try:
+        status = await client.research.wait_for_completion(
+            plan.notebook_id,
+            task_id=task_id,
+            timeout=float(plan.timeout),
+            interval=float(_POLL_INTERVAL_S),
+        )
+    except TimeoutError:
         status = {"status": "timeout"}
 
-    assert status is not None  # for mypy — loop above always assigns
+    status_val = status.get("status", "unknown")
 
-    if status.get("status") == "completed":
+    if status_val == "completed":
         sources = status.get("sources", [])
         console.print()
         display_research_sources(sources)
@@ -134,8 +119,16 @@ async def execute_source_add_research(
                 max_elapsed=plan.timeout,
             )
             console.print(f"[green]Imported {len(import_result.imported)} sources[/green]")
+    elif status_val == "no_research":
+        console.print("[red]Research failed to start[/red]")
+        exit_with_code(1)
+    elif status_val in ("failed", "timeout"):
+        message = "Research timed out" if status_val == "timeout" else "Research failed"
+        console.print(f"[red]{message}[/red]")
+        exit_with_code(1)
     else:
-        console.print(f"[yellow]Status: {status.get('status', 'unknown')}[/yellow]")
+        console.print(f"[yellow]Status: {status_val}[/yellow]")
+        exit_with_code(1)
 
 
 __all__ = ["SourceAddResearchPlan", "execute_source_add_research"]

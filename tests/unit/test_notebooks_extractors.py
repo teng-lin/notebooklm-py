@@ -36,7 +36,10 @@ class TestExtractSummary:
         # outer[0] is an empty list — outer[0][0] would IndexError.
         outer: list = [[], [[["Q", "P"]]]]
 
-        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+        with (
+            caplog.at_level(logging.WARNING, logger="notebooklm"),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             result = _extract_summary(outer)
 
         assert result == ""
@@ -61,7 +64,10 @@ class TestExtractSummary:
         # outer[0] is an int — outer[0][0] raises TypeError.
         outer = [42, [[["Q", "P"]]]]
 
-        with caplog.at_level(logging.WARNING, logger="notebooklm"):
+        with (
+            caplog.at_level(logging.WARNING, logger="notebooklm"),
+            pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+        ):
             result = _extract_summary(outer)
 
         assert result == ""

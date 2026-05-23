@@ -139,7 +139,8 @@ class TestParseTurnsToQaPairs:
                 [None, None, 2, None, []],  # empty nested list
             ]
         ]
-        result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
+        with pytest.warns(DeprecationWarning, match="safe_index soft-mode"):
+            result = ChatAPI._parse_turns_to_qa_pairs(turns_data)
         assert result == [("Question?", "")]
 
     def test_answer_with_none_text(self):

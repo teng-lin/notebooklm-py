@@ -165,8 +165,19 @@ async def test_download_batch_logs_warning_per_failure(mock_artifacts_api, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_html_response_still_raises(mock_artifacts_api, tmp_path):
-    """ArtifactDownloadError (security signal) propagates — NOT swallowed into failed."""
+async def test_html_response_aggregated_into_failed(mock_artifacts_api, tmp_path):
+    """``ArtifactDownloadError`` raised for an HTML payload is aggregated.
+
+    Pre-fix the batch loop only caught ``(httpx.HTTPError, ValueError)``
+    so an HTML-instead-of-media response (e.g. an auth-expired
+    redirect) aborted the entire batch. Post-fix the policy
+    ``ArtifactDownloadError`` lands in ``result.failed`` alongside any
+    sibling successes — single bad URL no longer drops the rest of
+    the batch. The single-download path (``download_url``) still
+    raises this error; see
+    ``tests/integration/test_artifacts_integration.py``'s download-URL
+    contract tests for that surface.
+    """
     from notebooklm._artifacts import ArtifactDownloadError
 
     api, _ = mock_artifacts_api
@@ -176,26 +187,35 @@ async def test_html_response_still_raises(mock_artifacts_api, tmp_path):
     with _patched_httpx_client(None) as mock_client:
         mock_client.get = AsyncMock(return_value=html_response)
 
-        with pytest.raises(ArtifactDownloadError):
-            await api._download_urls_batch(
-                [(f"{TRUSTED_URL_PREFIX}file.mp4", str(tmp_path / "file.mp4"))]
-            )
+        result = await api._download_urls_batch(
+            [(f"{TRUSTED_URL_PREFIX}file.mp4", str(tmp_path / "file.mp4"))]
+        )
+
+    assert result.succeeded == []
+    assert len(result.failed) == 1
+    failed_url, failed_exc = result.failed[0]
+    assert failed_url == f"{TRUSTED_URL_PREFIX}file.mp4"
+    assert isinstance(failed_exc, ArtifactDownloadError)
 
 
 @pytest.mark.asyncio
-async def test_untrusted_domain_still_raises(mock_artifacts_api, tmp_path):
-    """Untrusted-domain ArtifactDownloadError propagates."""
+async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_path):
+    """Untrusted-domain ``ArtifactDownloadError`` lands in ``failed``, not raised."""
     from notebooklm._artifacts import ArtifactDownloadError
 
     api, _ = mock_artifacts_api
 
-    with (
-        patch("notebooklm._artifacts.load_httpx_cookies", return_value={}),
-        pytest.raises(ArtifactDownloadError, match="Untrusted"),
-    ):
-        await api._download_urls_batch(
+    with patch("notebooklm._artifacts.load_httpx_cookies", return_value={}):
+        result = await api._download_urls_batch(
             [("https://evil.example.com/file.mp4", str(tmp_path / "x.mp4"))]
         )
+
+    assert result.succeeded == []
+    assert len(result.failed) == 1
+    failed_url, failed_exc = result.failed[0]
+    assert failed_url == "https://evil.example.com/file.mp4"
+    assert isinstance(failed_exc, ArtifactDownloadError)
+    assert "Untrusted" in str(failed_exc)
 
 
 @pytest.mark.asyncio
@@ -233,6 +253,43 @@ async def test_download_warning_log_does_not_leak_url_via_exception_str(
     joined = " ".join(warning_messages)
     assert "LEAKY" not in joined, f"capability token leaked: {joined!r}"
     assert "HTTP 503" in joined
+
+
+@pytest.mark.asyncio
+async def test_download_batch_isolates_bad_url_from_good_one(mock_artifacts_api, tmp_path):
+    """A policy violation on one URL must not abort sibling downloads.
+
+    Mixed batch: one untrusted-domain URL (raises ``ArtifactDownloadError``
+    inside the per-URL try-block) and one trusted-domain URL (succeeds).
+    Pre-fix the policy error escapes the batch loop and the good URL is
+    never attempted. Post-fix the policy error lands in ``failed`` while
+    the good URL still completes — caller can pick up the partial result
+    and retry just the failure.
+    """
+    from notebooklm._artifacts import ArtifactDownloadError
+
+    api, _ = mock_artifacts_api
+    bad_url = "https://untrusted.example/x.mp4"
+    good_url = f"{TRUSTED_URL_PREFIX}y.mp4"
+    bad_path = tmp_path / "x.mp4"
+    good_path = tmp_path / "y.mp4"
+
+    # The good URL's GET should succeed. The bad URL never reaches GET
+    # because the trusted-domain check raises before the HTTP call.
+    success = _mock_response(b"payload bytes")
+    with _patched_httpx_client([success]):
+        result = await api._download_urls_batch(
+            [(bad_url, str(bad_path)), (good_url, str(good_path))]
+        )
+
+    # Good URL completed.
+    assert result.succeeded == [str(good_path)]
+    # Bad URL ended up in failed with an ArtifactDownloadError, NOT propagated.
+    assert len(result.failed) == 1
+    failed_url, failed_exc = result.failed[0]
+    assert failed_url == bad_url
+    assert isinstance(failed_exc, ArtifactDownloadError)
+    assert result.partial
 
 
 def test_no_docs_callers():

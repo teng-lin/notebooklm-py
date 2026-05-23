@@ -28,6 +28,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,48 @@ from typing import Any
 from filelock import FileLock
 
 logger = logging.getLogger(__name__)
+
+_WINDOWS_REPLACE_TRANSIENT_WINERRORS = {
+    5,  # ERROR_ACCESS_DENIED
+    32,  # ERROR_SHARING_VIOLATION
+}
+_WINDOWS_REPLACE_MAX_ATTEMPTS = 10
+_WINDOWS_REPLACE_INITIAL_DELAY_SECONDS = 0.001
+_WINDOWS_REPLACE_MAX_DELAY_SECONDS = 0.05
+
+
+def _is_retryable_windows_replace_error(exc: PermissionError) -> bool:
+    if sys.platform != "win32":
+        return False
+    winerror = getattr(exc, "winerror", None)
+    return winerror in _WINDOWS_REPLACE_TRANSIENT_WINERRORS
+
+
+def _replace_json_file(temp_path: Path, path: Path) -> None:
+    """Replace ``path`` with ``temp_path``, retrying transient Windows races."""
+    delay = _WINDOWS_REPLACE_INITIAL_DELAY_SECONDS
+    for attempt in range(_WINDOWS_REPLACE_MAX_ATTEMPTS):
+        try:
+            os.replace(temp_path, path)
+            return
+        except PermissionError as exc:
+            if (
+                not _is_retryable_windows_replace_error(exc)
+                or attempt == _WINDOWS_REPLACE_MAX_ATTEMPTS - 1
+            ):
+                raise
+            # Windows can transiently deny concurrent replaces of the same
+            # destination. The temp file remains the source for a safe retry.
+            logger.debug(
+                "Transient Windows replace error %s on attempt %d/%d for %s; retrying in %.3fs",
+                getattr(exc, "winerror", None),
+                attempt + 1,
+                _WINDOWS_REPLACE_MAX_ATTEMPTS,
+                path,
+                delay,
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, _WINDOWS_REPLACE_MAX_DELAY_SECONDS)
 
 
 def atomic_write_json(path: Path, data: Any, *, mode: int = 0o600) -> None:
@@ -48,7 +91,8 @@ def atomic_write_json(path: Path, data: Any, *, mode: int = 0o600) -> None:
     2. ``chmod`` the temp file to ``mode`` (default ``0o600`` — cookies are
        secrets). Skipped on Windows where POSIX permissions are a no-op and
        can confuse ACLs.
-    3. ``os.replace`` the temp file onto ``path`` (atomic on POSIX and Windows).
+    3. ``os.replace`` the temp file onto ``path`` (atomic on POSIX and Windows),
+       with bounded retries for transient Windows replace races.
     4. On any failure: unlink the temp file and re-raise.
 
     The caller decides whether to log/swallow the exception.
@@ -73,7 +117,7 @@ def atomic_write_json(path: Path, data: Any, *, mode: int = 0o600) -> None:
         if sys.platform != "win32":
             # chmod is a no-op on Windows (and can confuse ACLs)
             os.chmod(temp_path, mode)
-        os.replace(temp_path, path)
+        _replace_json_file(temp_path, path)
     except Exception:
         if temp_path is not None:
             try:

@@ -98,7 +98,10 @@ def test_qa_pairs_warns_on_unguarded_shape(caplog, monkeypatch):
     ]
 
     chat = ChatAPI.__new__(ChatAPI)
-    with caplog.at_level(logging.WARNING, logger="notebooklm"):
+    with (
+        caplog.at_level(logging.WARNING, logger="notebooklm"),
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+    ):
         # Direct call to the private parser
         pairs = chat._parse_turns_to_qa_pairs(turns_data)  # type: ignore[arg-type]
 
@@ -138,7 +141,10 @@ async def test_summary_warns_on_indexerror_drift(caplog, monkeypatch):
     mock_core.rpc_call = AsyncMock(return_value=[[]])
     api._rpc = mock_core
 
-    with caplog.at_level(logging.WARNING, logger="notebooklm"):
+    with (
+        caplog.at_level(logging.WARNING, logger="notebooklm"),
+        pytest.warns(DeprecationWarning, match="safe_index soft-mode"),
+    ):
         summary = await api.get_summary("nb_summary")
 
     assert summary == ""

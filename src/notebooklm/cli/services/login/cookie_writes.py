@@ -45,6 +45,13 @@ def _select_account(
     Email is the user-facing selector because it is stable across browser
     account reordering. Without an email, select the browser's default account.
     """
+    if not accounts:
+        console.print(
+            "[red]No signed-in Google accounts found.[/red]\n"
+            "Sign in to a Google account in your browser and try again."
+        )
+        exit_with_code(1)
+
     if account_email:
         requested = account_email.strip().casefold()
         for account in accounts:
@@ -76,6 +83,13 @@ def _select_refresh_account(
     internal fallback index. If the browser's account order changed, email wins
     and the caller rewrites the cached index.
     """
+    if not accounts:
+        console.print(
+            f"[red]No signed-in Google accounts found in {browser_name}.[/red]\n"
+            "Sign in to a Google account in your browser and try again."
+        )
+        exit_with_code(1)
+
     expected_email = metadata.get("email")
     if isinstance(expected_email, str) and expected_email.strip():
         normalized = expected_email.strip().casefold()
