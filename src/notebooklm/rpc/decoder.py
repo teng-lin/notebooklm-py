@@ -415,6 +415,26 @@ def _contains_user_displayable_error(obj: Any) -> bool:
     return False
 
 
+def _extract_user_displayable_status(error_info: Any) -> tuple[int, str] | None:
+    """Extract the leading gRPC status from a UserDisplayableError block."""
+    if not isinstance(error_info, list) or not error_info:
+        return None
+    code = error_info[0]
+    if type(code) is not int or code not in _GRPC_STATUS_MESSAGES:
+        return None
+    return code, _GRPC_STATUS_MESSAGES[code]
+
+
+def _user_displayable_error_message(error_info: Any) -> str:
+    """Build a non-sensitive diagnostic for a user-displayable rejection."""
+    message = "API rate limit or quota exceeded. Please wait before retrying."
+    status = _extract_user_displayable_status(error_info)
+    if status is None:
+        return message
+    code, label = status
+    return f"{message} Upstream status code {code} ({label})."
+
+
 def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
     """Extract result data for a specific RPC ID from chunks."""
     source = "decoder.extract_rpc_result"
@@ -467,7 +487,7 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
                     error_info = safe_index(item, 5, method_id=rpc_id, source=source)
                     if error_info is not None and _contains_user_displayable_error(error_info):
                         raise RateLimitError(
-                            "API rate limit or quota exceeded. Please wait before retrying.",
+                            _user_displayable_error_message(error_info),
                             method_id=rpc_id,
                             rpc_code="USER_DISPLAYABLE_ERROR",
                         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -564,6 +565,41 @@ async def test_decode_shape_error_json_decode_wrapped() -> None:
 
     assert "Failed to decode response for LIST_NOTEBOOKS" in str(raised.value)
     assert raised.value.__cause__ is decoder_exc
+
+
+@pytest.mark.asyncio
+async def test_rpc_error_log_includes_class_code_and_retry_after(caplog) -> None:
+    """Decode-time RPCError logs carry enough non-sensitive CI diagnostics."""
+    owner = _Owner()
+
+    def decode(_: str, __: str, *, allow_null: bool = False) -> Any:
+        raise RateLimitError(
+            "quota",
+            method_id=RPCMethod.START_DEEP_RESEARCH.value,
+            rpc_code="USER_DISPLAYABLE_ERROR",
+            retry_after=30,
+        )
+
+    with (
+        caplog.at_level(logging.ERROR, logger="notebooklm._rpc_executor"),
+        pytest.raises(RateLimitError),
+    ):
+        await _executor(owner, decode_response_late_bound=decode).execute(
+            RPCMethod.START_DEEP_RESEARCH,
+            [],
+            "/",
+            False,
+            False,
+        )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "RPC START_DEEP_RESEARCH failed" in message
+        and "RateLimitError" in message
+        and "rpc_code=USER_DISPLAYABLE_ERROR" in message
+        and "retry_after=30" in message
+        for message in messages
+    )
 
 
 @pytest.mark.parametrize(

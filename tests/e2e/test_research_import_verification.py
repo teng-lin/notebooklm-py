@@ -17,6 +17,8 @@ import asyncio
 
 import pytest
 
+from notebooklm.exceptions import RateLimitError
+
 from .conftest import POLL_INTERVAL, requires_auth
 
 
@@ -135,12 +137,15 @@ class TestResearchImportVerification:
         initial_sources = await client.sources.list(temp_notebook.id)
         initial_count = len(initial_sources)
 
-        start_result = await client.research.start(
-            temp_notebook.id,
-            query="distributed systems consensus algorithms overview",
-            source="web",
-            mode="deep",
-        )
+        try:
+            start_result = await client.research.start(
+                temp_notebook.id,
+                query="distributed systems consensus algorithms overview",
+                source="web",
+                mode="deep",
+            )
+        except RateLimitError as e:
+            pytest.skip(f"START_DEEP_RESEARCH rate limited by NotebookLM: {e}")
         assert start_result is not None, "Failed to start deep research"
         start_task_id = start_result.get("task_id")
         assert start_task_id is not None, "start_result missing task_id"

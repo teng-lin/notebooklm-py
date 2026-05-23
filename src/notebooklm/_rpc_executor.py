@@ -334,7 +334,18 @@ class RpcExecutor:
                 )
                 return refreshed
 
-            logger.error("RPC %s failed after %.3fs", method.name, elapsed)
+            error_details = [type(exc).__name__]
+            if exc.rpc_code is not None:
+                error_details.append(f"rpc_code={exc.rpc_code}")
+            retry_after = getattr(exc, "retry_after", None)
+            if retry_after is not None:
+                error_details.append(f"retry_after={retry_after}")
+            logger.error(
+                "RPC %s failed after %.3fs: %s",
+                method.name,
+                elapsed,
+                " ".join(error_details),
+            )
             raise
         except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
             # Narrow on purpose: only genuine shape-drift exceptions (bad

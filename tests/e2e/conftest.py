@@ -1,5 +1,6 @@
 """E2E test fixtures and configuration."""
 
+import hashlib
 import logging
 import os
 import sys
@@ -52,6 +53,29 @@ def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
             raise
 
     client.chat.ask = _ask_with_skip
+
+
+def _emit_auth_route_diagnostic(auth_tokens: AuthTokens) -> None:
+    """Emit non-secret auth-routing context for CI debugging."""
+    source = (
+        "NOTEBOOKLM_AUTH_JSON"
+        if auth_tokens.storage_path is None and os.environ.get("NOTEBOOKLM_AUTH_JSON")
+        else "storage_state"
+    )
+    email_hash = "none"
+    if auth_tokens.account_email:
+        email_hash = hashlib.sha256(auth_tokens.account_email.lower().encode()).hexdigest()[:12]
+    message = (
+        "E2E auth route: "
+        f"source={source} "
+        f"storage_path={'none' if auth_tokens.storage_path is None else 'file'} "
+        f"authuser={auth_tokens.authuser} "
+        f"account_email_hash={email_hash}"
+    )
+    if os.environ.get("GITHUB_ACTIONS"):
+        print(f"::notice::{message}")
+    else:
+        logging.info(message)
 
 
 # =============================================================================
@@ -307,7 +331,9 @@ def auth_tokens() -> AuthTokens:
     """Load domain-preserving auth tokens from storage (session-scoped)."""
     import asyncio
 
-    return asyncio.run(AuthTokens.from_storage())
+    tokens = asyncio.run(AuthTokens.from_storage())
+    _emit_auth_route_diagnostic(tokens)
+    return tokens
 
 
 @pytest.fixture
