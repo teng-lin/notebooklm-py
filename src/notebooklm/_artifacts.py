@@ -265,7 +265,7 @@ class _ArtifactsServiceMethods(Protocol):
         notebook_id: str,
         report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         custom_prompt: str | None = None,
         extra_instructions: str | None = None,
     ) -> GenerationStatus: ...
@@ -429,7 +429,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
         audio_format: AudioFormat | None = None,
         audio_length: AudioLength | None = None,
@@ -448,7 +448,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
         video_format: VideoFormat | None = None,
         video_style: VideoStyle | None = None,
@@ -469,7 +469,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a Cinematic Video Overview."""
@@ -485,7 +485,7 @@ class ArtifactsAPI:
         notebook_id: str,
         report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         custom_prompt: str | None = None,
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
@@ -503,7 +503,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         extra_instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a study guide report."""
@@ -552,7 +552,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
         orientation: InfographicOrientation | None = None,
         detail_level: InfographicDetail | None = None,
@@ -573,7 +573,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
         slide_format: SlideDeckFormat | None = None,
         slide_length: SlideDeckLength | None = None,
@@ -607,7 +607,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
     ) -> GenerationStatus:
         """Generate a data table."""
@@ -622,7 +622,7 @@ class ArtifactsAPI:
         self,
         notebook_id: str,
         source_ids: builtins.list[str] | None = None,
-        language: str | None = None,
+        language: str | None = "en",
         instructions: str | None = None,
     ) -> dict[str, Any]:
         """Generate an interactive mind map."""

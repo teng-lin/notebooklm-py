@@ -108,9 +108,10 @@ def get_default_language() -> str:
 
     * The ``hl`` URL query parameter on every batchexecute RPC call
       (``_core._build_url`` and ``_chat.ask``).
-    * The default ``language`` argument of the language-aware
-      ``ArtifactsAPI.generate_*`` methods, which embed the code into the
-      RPC payload.
+    * Language-aware ``ArtifactsAPI.generate_*`` calls when callers pass
+      ``language=None`` to opt in to environment/default resolution. Omitting
+      ``language`` in the public Python API keeps the historical ``"en"``
+      artifact-language default.
     """
     raw = os.environ.get("NOTEBOOKLM_HL", "") or ""
     return raw.strip() or "en"

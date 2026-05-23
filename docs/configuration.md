@@ -268,9 +268,11 @@ parsing.
 ### NOTEBOOKLM_HL
 
 Sets the default interface/output language used by the client. The value is
-passed as the `hl` query parameter on every batchexecute RPC call and is the
-fallback language for the `generate audio|video|slide-deck|infographic|
-data-table|mind-map|report` commands and their `ArtifactsAPI` equivalents:
+passed as the `hl` query parameter on every batchexecute RPC call and is used by
+the `generate audio|video|slide-deck|infographic|data-table|mind-map|report`
+commands. In the Python API, omitted `language` on `ArtifactsAPI.generate_*`
+keeps the historical `"en"` artifact default; pass `language=None` to opt in to
+this `NOTEBOOKLM_HL` resolver.
 
 ```bash
 export NOTEBOOKLM_HL=ja

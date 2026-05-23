@@ -1039,6 +1039,11 @@ result = await client.artifacts.export(
 
 **Generation Methods:**
 
+When `language` is omitted, artifact generation defaults to `"en"` (the
+historical default). Pass `language=None` to read `NOTEBOOKLM_HL` and fall back
+to `"en"` if unset, or pass a concrete code such as `language="ko"` to force
+that language.
+
 ```python
 from notebooklm import (
     AudioFormat,

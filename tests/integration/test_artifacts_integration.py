@@ -2735,15 +2735,17 @@ def _register_generate_responses(method_name: str, httpx_mock, build_rpc_respons
     return -1  # last (and only) request carries the language
 
 
-class TestGenerateUsesNotebookLMHL:
-    """The 9 language-aware generate_* methods must honor NOTEBOOKLM_HL when
-    the caller does not pass an explicit language argument, and the explicit
-    argument must still win when both are present.
+class TestGenerateLanguageCompatibility:
+    """Language-aware generate_* methods preserve the public API default.
+
+    Omitting ``language`` keeps the historical Python API default of English.
+    Passing ``language=None`` opts in to the environment/default resolver in the
+    private generation service, and a concrete language still wins.
     """
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("method_name", _LANGUAGE_AWARE_GENERATORS)
-    async def test_generate_uses_env_language_when_none(
+    async def test_generate_omitted_language_defaults_to_english(
         self,
         method_name,
         auth_tokens,
@@ -2751,7 +2753,7 @@ class TestGenerateUsesNotebookLMHL:
         build_rpc_response,
         monkeypatch,
     ):
-        """NOTEBOOKLM_HL=ja, no language arg -> outgoing RPC carries 'ja'."""
+        """NOTEBOOKLM_HL=ja, no language arg -> outgoing RPC still carries 'en'."""
         monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
 
         request_index = _register_generate_responses(method_name, httpx_mock, build_rpc_response)
@@ -2761,8 +2763,29 @@ class TestGenerateUsesNotebookLMHL:
             await method(notebook_id="nb_123", source_ids=["src_001"])
 
         body = _decoded_request_body(httpx_mock.get_requests()[request_index])
-        # The language code is embedded as a quoted JSON string inside the
-        # nested params list. Assert presence/absence.
+        assert '"en"' in body
+        assert '"ja"' not in body
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method_name", _LANGUAGE_AWARE_GENERATORS)
+    async def test_generate_explicit_none_uses_env_language(
+        self,
+        method_name,
+        auth_tokens,
+        httpx_mock: HTTPXMock,
+        build_rpc_response,
+        monkeypatch,
+    ):
+        """NOTEBOOKLM_HL=ja, language=None -> outgoing RPC carries 'ja'."""
+        monkeypatch.setenv("NOTEBOOKLM_HL", "ja")
+
+        request_index = _register_generate_responses(method_name, httpx_mock, build_rpc_response)
+
+        async with NotebookLMClient(auth_tokens) as client:
+            method = getattr(client.artifacts, method_name)
+            await method(notebook_id="nb_123", source_ids=["src_001"], language=None)
+
+        body = _decoded_request_body(httpx_mock.get_requests()[request_index])
         assert '"ja"' in body
         assert '"en"' not in body
 
