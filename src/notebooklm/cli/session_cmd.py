@@ -144,7 +144,7 @@ async def fetch_tokens_with_domains(*args: Any, **kwargs: Any) -> Any:
 
 def _is_valid_account_metadata(metadata: dict[str, Any]) -> bool:
     raw_authuser = metadata.get("authuser")
-    if not isinstance(raw_authuser, int) or raw_authuser < 0:
+    if type(raw_authuser) is not int or raw_authuser < 0:
         return False
     raw_email = metadata.get("email")
     if raw_email is None:

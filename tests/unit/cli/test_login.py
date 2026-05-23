@@ -894,7 +894,10 @@ class TestLoginCommand:
             "email": "alice@example.com",
         }
 
-    def test_auth_refresh_repairs_malformed_playwright_account_metadata(self, runner, tmp_path):
+    @pytest.mark.parametrize("authuser", ["1", True])
+    def test_auth_refresh_repairs_malformed_playwright_account_metadata(
+        self, runner, tmp_path, authuser
+    ):
         """Non-empty but malformed metadata must not block Playwright repair."""
         from notebooklm.auth import Account
 
@@ -902,7 +905,7 @@ class TestLoginCommand:
         original_state = _required_cookie_state()
         original_state["notebooklm"] = {
             "version": 1,
-            "account": {"authuser": "1", "email": "wrong@example.com"},
+            "account": {"authuser": authuser, "email": "wrong@example.com"},
         }
         storage_file.write_text(json.dumps(original_state), encoding="utf-8")
 
