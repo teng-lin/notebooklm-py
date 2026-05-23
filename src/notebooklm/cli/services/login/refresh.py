@@ -26,8 +26,6 @@ import click
 import httpx
 
 from ....auth import (
-    convert_rookiepy_cookies_to_storage_state,
-    extract_cookies_from_storage,
     fetch_tokens_with_domains,
     read_account_metadata,
 )
@@ -278,16 +276,25 @@ def _login_with_browser_cookies(
         include_domains: Optional ``--include-domains`` label set forwarded
             to :func:`_read_browser_cookies`.
     """
+    from ....auth import missing_cookies_hint, validate_with_recovery
+
     raw_cookies = _read_browser_cookies(browser_name, include_domains=include_domains)
 
-    storage_state = convert_rookiepy_cookies_to_storage_state(raw_cookies)
-    try:
-        extract_cookies_from_storage(storage_state)  # validates SID is present
-    except ValueError as e:
+    # ``validate_with_recovery`` mutates ``raw_cookies`` in place if the
+    # in-memory ``RotateCookies`` recovery succeeds (issue #990), so the
+    # ``storage_state`` returned here already includes the rotated PSIDTS.
+    storage_state, validation_error = validate_with_recovery(raw_cookies)
+    if validation_error is not None:
+        cookie_names = {
+            entry.get("name", "")
+            for entry in storage_state.get("cookies", [])
+            if isinstance(entry, dict)
+        }
+        hint = missing_cookies_hint(cookie_names, browser_label=browser_name)
         console.print(
             "[red]No valid Google authentication cookies found.[/red]\n"
-            f"{e}\n\n"
-            "Make sure you are logged into Google in your browser."
+            f"{validation_error}\n\n"
+            f"{hint}"
         )
         exit_with_code(1)
 

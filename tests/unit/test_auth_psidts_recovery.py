@@ -373,6 +373,222 @@ class TestBuildHttpxCookiesFromStorageIntegration:
             build_httpx_cookies_from_storage(storage_path)
 
 
+class TestInMemoryRecovery:
+    """In-memory recovery for the browser-extraction path (issue #990).
+
+    Mirrors the file-based ``_recover_psidts_inline`` contract: same precondition
+    gate, same failure modes return ``False`` without raising, but operates on
+    a rookiepy cookie list in memory instead of a storage_state file. No file
+    lock / throttle because the extraction path is a single one-shot CLI run.
+    """
+
+    # Rookiepy uses snake_case field names; mirror that shape here so the
+    # in-memory recovery exercises the real format produced by rookiepy.load().
+    # ``expires`` omitted = session cookie; an explicit ``int`` would be epoch
+    # seconds — small values like 9999 land in 1970 and get filtered as expired
+    # before reaching the wire.
+    @staticmethod
+    def _rookiepy_recoverable() -> list[dict]:
+        return [
+            {
+                "name": "SID",
+                "value": "test_sid",
+                "domain": ".google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": False,
+            },
+            {
+                "name": "APISID",
+                "value": "test_apisid",
+                "domain": ".google.com",
+                "path": "/",
+                "secure": False,
+                "http_only": False,
+            },
+            {
+                "name": "SAPISID",
+                "value": "test_sapisid",
+                "domain": ".google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            },
+        ]
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_recovers_psidts_and_mutates_list_in_place(self, httpx_mock: HTTPXMock):
+        cookies = self._rookiepy_recoverable()
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is True
+
+        names = {c["name"] for c in cookies}
+        assert "__Secure-1PSIDTS" in names
+        psidts = next(c for c in cookies if c["name"] == "__Secure-1PSIDTS")
+        assert psidts["value"] == "fresh_psidts_value"
+        assert psidts["domain"] == ".google.com"
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_post_carries_existing_cookies(self, httpx_mock: HTTPXMock):
+        cookies = self._rookiepy_recoverable()
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        psidts_recovery.recover_psidts_in_memory(cookies)
+
+        requests = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]
+        assert len(requests) == 1
+        header = requests[0].headers.get("cookie", "")
+        assert "SID=test_sid" in header
+        assert "APISID=test_apisid" in header
+        assert "SAPISID=test_sapisid" in header
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_no_sid_returns_false_without_post(self, httpx_mock: HTTPXMock):
+        cookies = [c for c in self._rookiepy_recoverable() if c["name"] != "SID"]
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_psidts_already_present_returns_false_without_post(self, httpx_mock: HTTPXMock):
+        cookies = self._rookiepy_recoverable() + [
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "already_there",
+                "domain": ".google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            }
+        ]
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_missing_secondary_binding_returns_false_without_post(self, httpx_mock: HTTPXMock):
+        cookies = [
+            c for c in self._rookiepy_recoverable() if c["name"] not in {"APISID", "SAPISID"}
+        ]
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_osid_satisfies_secondary_binding(self, httpx_mock: HTTPXMock):
+        cookies = [
+            {
+                "name": "SID",
+                "value": "test_sid",
+                "domain": ".google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": False,
+            },
+            {
+                "name": "OSID",
+                "value": "test_osid",
+                "domain": "notebooklm.google.com",
+                "path": "/",
+                "secure": True,
+                "http_only": True,
+            },
+        ]
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is True
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_4xx_response_returns_false(self, httpx_mock: HTTPXMock):
+        cookies = self._rookiepy_recoverable()
+        httpx_mock.add_response(url=_ROTATE_URL_RE, status_code=401)
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert "__Secure-1PSIDTS" not in {c["name"] for c in cookies}
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_200_without_psidts_returns_false(self, httpx_mock: HTTPXMock):
+        cookies = self._rookiepy_recoverable()
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response(include_psidts=False))
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+        assert "__Secure-1PSIDTS" not in {c["name"] for c in cookies}
+
+    @pytest.mark.no_default_keepalive_mock
+    def test_network_error_returns_false(self, httpx_mock: HTTPXMock):
+        cookies = self._rookiepy_recoverable()
+        httpx_mock.add_exception(httpx.ConnectError("simulated network failure"))
+
+        assert psidts_recovery.recover_psidts_in_memory(cookies) is False
+
+    @pytest.mark.no_default_keepalive_mock
+    def testvalidate_with_recovery_heals_partial_jar(self, httpx_mock: HTTPXMock):
+        """End-to-end: validate-with-recovery returns (storage_state, None) after rotation."""
+        cookies = self._rookiepy_recoverable()
+        httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
+
+        storage_state, error = psidts_recovery.validate_with_recovery(cookies)
+
+        assert error is None
+        names = {c["name"] for c in storage_state["cookies"]}
+        assert "__Secure-1PSIDTS" in names
+        # Caller's list is also healed (so downstream persistence picks it up).
+        assert "__Secure-1PSIDTS" in {c["name"] for c in cookies}
+
+    @pytest.mark.no_default_keepalive_mock
+    def testvalidate_with_recovery_returns_error_on_unrecoverable(self, httpx_mock: HTTPXMock):
+        """When recovery declines, the original ValueError is surfaced."""
+        # No SID → recovery declines → original ValueError propagates.
+        cookies = [c for c in self._rookiepy_recoverable() if c["name"] != "SID"]
+
+        storage_state, error = psidts_recovery.validate_with_recovery(cookies)
+
+        assert error is not None
+        assert "SID" in str(error)
+        # No POST fired (recovery preconditions failed early).
+        assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
+        # storage_state still reflects the (incomplete) extraction attempt.
+        assert isinstance(storage_state, dict)
+
+
+class TestMissingCookiesHint:
+    """Diagnostic helper that branches on which cookies are missing (issue #990)."""
+
+    def test_no_sid_suggests_signing_in(self):
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        hint = missing_cookies_hint(set(), browser_label="chrome")
+        assert "not signed in" in hint
+        assert "chrome" in hint
+
+    def test_missing_psidts_with_binding_suggests_rotation_or_visit(self):
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        hint = missing_cookies_hint({"SID", "APISID", "SAPISID"}, browser_label="firefox")
+        assert "__Secure-1PSIDTS" in hint
+        assert "notebooklm.google.com" in hint
+        assert "firefox" in hint
+
+    def test_missing_psidts_and_binding_suggests_visit(self):
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        hint = missing_cookies_hint({"SID"}, browser_label="chrome")
+        assert "notebooklm.google.com" in hint
+        assert ("OSID" in hint) or ("binding" in hint.lower())
+
+    def test_missing_binding_only_suggests_visit(self):
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        # SID + PSIDTS present, but no secondary binding.
+        hint = missing_cookies_hint({"SID", "__Secure-1PSIDTS"}, browser_label="chrome")
+        assert "notebooklm.google.com" in hint
+        assert "binding" in hint.lower() or "OSID" in hint
+
+    def test_default_browser_label_when_unspecified(self):
+        from notebooklm._auth.cookie_policy import missing_cookies_hint
+
+        hint = missing_cookies_hint(set())
+        assert "your browser" in hint
+
+
 class TestEdgeCases:
     """Hardening tests for the precondition gate and post-POST persistence."""
 

@@ -23,9 +23,9 @@ from typing import Any
 import httpx
 
 from ....auth import (
-    convert_rookiepy_cookies_to_storage_state,
-    extract_cookies_from_storage,
     fetch_tokens_with_domains,
+    missing_cookies_hint,
+    validate_with_recovery,
 )
 from ....io import atomic_write_json
 from ...error_handler import exit_with_code
@@ -135,14 +135,18 @@ def _write_extracted_cookies(
     Bypasses :func:`_read_browser_cookies` because the caller already has the
     cookies in hand (e.g. ``--all-accounts`` reads once and writes N profiles).
     """
-    storage_state = convert_rookiepy_cookies_to_storage_state(raw_cookies)
-    try:
-        extract_cookies_from_storage(storage_state)
-    except ValueError as e:
+    storage_state, validation_error = validate_with_recovery(raw_cookies)
+    if validation_error is not None:
+        cookie_names = {
+            entry.get("name", "")
+            for entry in storage_state.get("cookies", [])
+            if isinstance(entry, dict)
+        }
+        hint = missing_cookies_hint(cookie_names)
         console.print(
             "[red]No valid Google authentication cookies found.[/red]\n"
-            f"{e}\n\n"
-            "Make sure you are logged into Google in your browser."
+            f"{validation_error}\n\n"
+            f"{hint}"
         )
         exit_with_code(1)
 

@@ -148,6 +148,7 @@ __all__ = [
     "load_auth_from_storage",
     "load_httpx_cookies",
     "MINIMUM_REQUIRED_COOKIES",
+    "missing_cookies_hint",
     "normalize_cookie_map",
     "NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV",
     "NOTEBOOKLM_REFRESH_CMD_ENV",
@@ -155,9 +156,11 @@ __all__ = [
     "OPTIONAL_COOKIE_DOMAINS",
     "OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
     "read_account_metadata",
+    "recover_psidts_in_memory",
     "REQUIRED_COOKIE_DOMAINS",
     "save_cookies_to_storage",
     "snapshot_cookie_jar",
+    "validate_with_recovery",
     "write_account_metadata",
 ]
 
@@ -557,6 +560,19 @@ _rotate_cookies = _auth_keepalive._rotate_cookies
 # behavior. Tests that need to substitute the recovery body should patch
 # ``notebooklm._auth.psidts_recovery._recover_psidts_inline``.
 _recover_psidts_inline = _auth_psidts_recovery._recover_psidts_inline
+# In-memory variant for the browser-cookies extraction path (issue #990).
+# Public because CLI services (which must not import underscore-prefixed names
+# from notebooklm public modules) need access. Mutates the caller's rookiepy
+# cookie list in place; no file lock / throttle.
+recover_psidts_in_memory = _auth_psidts_recovery.recover_psidts_in_memory
+# Validate-with-recovery convenience: convert + validate rookiepy cookies and
+# transparently retry through ``recover_psidts_in_memory`` on the recoverable
+# PSIDTS-missing case (issue #990). Used by the CLI browser-extraction paths.
+validate_with_recovery = _auth_psidts_recovery.validate_with_recovery
+# Missing-cookies diagnostic hint (issue #990). Inspects which Tier-1/Tier-2
+# cookies are missing and returns a scenario-specific recovery message that
+# the CLI uses in place of the generic "Make sure you are logged in" tail.
+missing_cookies_hint = _cookie_policy.missing_cookies_hint
 # Rotation sentinel path lives in ``_auth.paths``; the keepalive module also
 # aliases it locally. Re-exported here for white-box callers that resolve it
 # against ``notebooklm.auth``.

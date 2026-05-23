@@ -31,10 +31,12 @@ for this fix.
 
 from __future__ import annotations
 
+import http.cookiejar
 import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -329,3 +331,189 @@ def _attempt_rotation(storage_path: Path, cookie_entries: list[dict]) -> bool:
         storage_path,
     )
     return True
+
+
+def _rookiepy_entry_to_cookie(entry: dict[str, Any]) -> http.cookiejar.Cookie:
+    """Build an ``http.cookiejar.Cookie`` from a rookiepy cookie dict.
+
+    Rookiepy returns cookies with snake_case field names (``http_only``); the
+    Playwright storage_state mirror (:func:`notebooklm._auth.cookies._storage_entry_to_cookie`)
+    uses camelCase (``httpOnly``). We need a parallel converter so the
+    in-memory recovery path can build an ``httpx.Cookies`` jar straight from
+    the rookiepy list — without first round-tripping through
+    ``convert_rookiepy_cookies_to_storage_state`` (which would silently drop
+    entries on domains we don't allowlist).
+    """
+    domain = entry.get("domain", "") or ""
+    expires = entry.get("expires")
+    expires_value = None if expires in (None, -1) else expires
+    rest: dict[str, str] = {"HttpOnly": ""} if entry.get("http_only") else {}
+    return http.cookiejar.Cookie(
+        version=0,
+        name=entry.get("name", "") or "",
+        value=entry.get("value", "") or "",
+        port=None,
+        port_specified=False,
+        domain=domain,
+        domain_specified=bool(domain),
+        domain_initial_dot=domain.startswith("."),
+        path=entry.get("path") or "/",
+        path_specified=True,
+        secure=bool(entry.get("secure", False)),
+        expires=expires_value,
+        discard=expires_value is None,
+        comment=None,
+        comment_url=None,
+        rest=rest,
+    )
+
+
+def recover_psidts_in_memory(rookiepy_cookies: list[dict[str, Any]]) -> bool:
+    """In-memory ``__Secure-1PSIDTS`` recovery for the browser-extraction path.
+
+    Variant of :func:`_recover_psidts_inline` for the CLI ``--browser-cookies``
+    flows (``_enumerate_one_jar``, ``_write_extracted_cookies``) that operate
+    on rookiepy cookie lists before any persistence. The file-based recovery
+    is unreachable here because nothing has been written to disk yet — the
+    cookies live only in the caller's in-memory list.
+
+    Preconditions match the file-based recovery (see
+    :func:`_recover_psidts_inline`):
+
+    1. ``SID`` present.
+    2. ``__Secure-1PSIDTS`` absent.
+    3. Secondary binding intact (``OSID``, or ``APISID + SAPISID``).
+
+    On success, mutates ``rookiepy_cookies`` to append the rotated
+    ``__Secure-1PSIDTS`` (and ``__Secure-3PSIDTS``) entries in rookiepy's
+    snake_case format. Downstream
+    :func:`notebooklm._auth.cookies.convert_rookiepy_cookies_to_storage_state`
+    picks them up on re-conversion.
+
+    No file lock and no in-process throttle: the browser-extraction path is a
+    one-shot CLI invocation that runs before any persistence. Concurrent CLI
+    processes would each be operating on their own in-memory list — the
+    cross-process flock in the file-based recovery exists to coordinate
+    writes to a shared ``storage_state.json``, which doesn't apply here.
+
+    Returns ``True`` if the rotation succeeded and the in-memory list now
+    contains ``__Secure-1PSIDTS``; ``False`` otherwise.
+    """
+    cookie_names: set[str] = {
+        name
+        for entry in rookiepy_cookies
+        if isinstance(entry, dict)
+        and isinstance(name := entry.get("name"), str)
+        and name
+        and entry.get("value")
+    }
+
+    if "SID" not in cookie_names:
+        logger.debug("In-memory PSIDTS recovery skipped: SID missing")
+        return False
+    if _PSIDTS_COOKIE in cookie_names:
+        return False
+    if not _has_valid_secondary_binding(cookie_names):
+        logger.debug(
+            "In-memory PSIDTS recovery skipped: secondary binding incomplete "
+            "(need OSID, or both APISID and SAPISID)"
+        )
+        return False
+
+    jar = httpx.Cookies()
+    for entry in rookiepy_cookies:
+        if not isinstance(entry, dict):
+            continue
+        if not entry.get("name") or not entry.get("value"):
+            continue
+        if not _is_allowed_auth_domain(entry.get("domain", "")):
+            continue
+        jar.jar.set_cookie(_rookiepy_entry_to_cookie(entry))
+
+    try:
+        with httpx.Client(
+            cookies=jar,
+            follow_redirects=True,
+            timeout=_KEEPALIVE_POKE_TIMEOUT,
+        ) as client:
+            response = client.post(
+                _keepalive.KEEPALIVE_ROTATE_URL,
+                headers=_KEEPALIVE_ROTATE_HEADERS,
+                content=_KEEPALIVE_ROTATE_BODY,
+            )
+            response.raise_for_status()
+            rotated_cookies = list(client.cookies.jar)
+    except httpx.HTTPError as exc:
+        logger.debug("In-memory PSIDTS recovery POST failed (non-fatal): %s", exc)
+        return False
+
+    psidts_present = any(c.name == _PSIDTS_COOKIE for c in rotated_cookies)
+    if not psidts_present:
+        logger.debug(
+            "In-memory PSIDTS recovery: RotateCookies returned 2xx but did not "
+            "include %s — Google may be withholding the rotation",
+            _PSIDTS_COOKIE,
+        )
+        return False
+
+    for cookie in rotated_cookies:
+        if cookie.name not in {_PSIDTS_COOKIE, "__Secure-3PSIDTS"}:
+            continue
+        if not cookie.value or not cookie.domain:
+            continue
+        rookiepy_cookies.append(
+            {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain,
+                "path": cookie.path or "/",
+                "expires": cookie.expires,
+                "secure": True,
+                "http_only": True,
+            }
+        )
+
+    logger.info(
+        "Recovered %s via in-memory RotateCookies POST (browser-cookies extraction)",
+        _PSIDTS_COOKIE,
+    )
+    return True
+
+
+def validate_with_recovery(
+    rookiepy_cookies: list[dict[str, Any]],
+) -> tuple[dict[str, Any], ValueError | None]:
+    """Convert + validate rookiepy cookies, attempting recovery on failure.
+
+    Shared helper for the two CLI browser-extraction entry points
+    (:func:`notebooklm.cli.services.login.cookie_jar._enumerate_one_jar` and
+    :func:`notebooklm.cli.services.login.cookie_writes._write_extracted_cookies`).
+    Wraps :func:`notebooklm._auth.cookies.convert_rookiepy_cookies_to_storage_state`
+    plus :func:`notebooklm._auth.cookies.extract_cookies_from_storage` with one
+    retry through :func:`recover_psidts_in_memory` (issue #990). When the
+    recovery preconditions hold (SID present, PSIDTS absent, secondary
+    binding intact), the rotated cookies are appended to ``rookiepy_cookies``
+    in place so downstream persistence picks them up.
+
+    Lives in the auth subpackage rather than the CLI login package so both
+    CLI call sites can route through ``notebooklm.auth`` without adding a
+    new sibling-import edge to the login-package DAG.
+
+    Returns:
+        ``(storage_state, error)``. When ``error`` is ``None`` the validation
+        succeeded (possibly after recovery); when not, ``error`` is the final
+        ``ValueError`` and ``storage_state`` is the latest extraction attempt.
+    """
+    storage_state = _auth_cookies.convert_rookiepy_cookies_to_storage_state(rookiepy_cookies)
+    try:
+        _auth_cookies.extract_cookies_from_storage(storage_state)
+        return storage_state, None
+    except ValueError as initial:
+        if not recover_psidts_in_memory(rookiepy_cookies):
+            return storage_state, initial
+        storage_state = _auth_cookies.convert_rookiepy_cookies_to_storage_state(rookiepy_cookies)
+        try:
+            _auth_cookies.extract_cookies_from_storage(storage_state)
+            return storage_state, None
+        except ValueError as final:
+            return storage_state, final
