@@ -118,6 +118,7 @@ class TestResearchImportVerification:
             f"new sources appear in notebook after waiting."
         )
 
+    @pytest.mark.timeout(2400)
     @pytest.mark.asyncio
     async def test_deep_research_import_count_matches(self, client, temp_notebook):
         """Regression for #315: deep research import actually adds sources.
