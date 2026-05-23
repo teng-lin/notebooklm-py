@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   # Determine which branch to test
@@ -58,6 +57,9 @@ jobs:
     needs: resolve-branch
     if: needs.resolve-branch.outputs.is_standard == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     concurrency:
       group: rpc-health-${{ needs.resolve-branch.outputs.branch }}
       cancel-in-progress: true
