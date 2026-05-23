@@ -494,7 +494,7 @@ class TestStartResumableUpload:
             mock_client_cls.return_value = mock_client
 
             result = await sources_api._start_resumable_upload(
-                "nb_123", "test.pdf", 1024, "src_456"
+                "nb_123", "test.pdf", 1024, "src_456", "application/pdf"
             )
 
         assert result == "https://upload.example.com/session123"
@@ -512,13 +512,16 @@ class TestStartResumableUpload:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            await sources_api._start_resumable_upload("nb_123", "test.pdf", 2048, "src_789")
+            await sources_api._start_resumable_upload(
+                "nb_123", "test.pdf", 2048, "src_789", "application/pdf"
+            )
 
             call_kwargs = mock_client.post.call_args[1]
             headers = call_kwargs["headers"]
 
             assert headers["x-goog-upload-command"] == "start"
             assert headers["x-goog-upload-header-content-length"] == "2048"
+            assert headers["x-goog-upload-header-content-type"] == "application/pdf"
             assert headers["x-goog-upload-protocol"] == "resumable"
             # Cookie header is no longer set manually; httpx scopes cookies
             # by Domain attribute via the cookie_jar kwarg (#373).
@@ -542,7 +545,9 @@ class TestStartResumableUpload:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            await sources_api._start_resumable_upload("nb_123", "test.pdf", 2048, "src_789")
+            await sources_api._start_resumable_upload(
+                "nb_123", "test.pdf", 2048, "src_789", "application/pdf"
+            )
 
         url = mock_client.post.call_args.args[0]
         assert parse_qs(urlparse(url).query) == {"authuser": ["2"]}
@@ -565,7 +570,9 @@ class TestStartResumableUpload:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            await sources_api._start_resumable_upload("nb_123", "test.pdf", 2048, "src_789")
+            await sources_api._start_resumable_upload(
+                "nb_123", "test.pdf", 2048, "src_789", "application/pdf"
+            )
 
         url = mock_client.post.call_args.args[0]
         assert "authuser=user%2Btest%40example.com" in urlparse(url).query
@@ -590,7 +597,9 @@ class TestStartResumableUpload:
             mock_client.post.return_value = mock_response
             mock_client_cls.return_value = mock_client
 
-            await sources_api._start_resumable_upload("nb_test", "myfile.pdf", 1000, "src_abc")
+            await sources_api._start_resumable_upload(
+                "nb_test", "myfile.pdf", 1000, "src_abc", "application/pdf"
+            )
 
             call_kwargs = mock_client.post.call_args[1]
             body = json.loads(call_kwargs["content"])
@@ -617,7 +626,9 @@ class TestStartResumableUpload:
             mock_client_cls.return_value = mock_client
 
             with pytest.raises(SourceAddError, match="Failed to get upload URL"):
-                await sources_api._start_resumable_upload("nb_123", "test.pdf", 1024, "src_456")
+                await sources_api._start_resumable_upload(
+                    "nb_123", "test.pdf", 1024, "src_456", "application/pdf"
+                )
 
     @pytest.mark.asyncio
     async def test_start_resumable_upload_raises_on_http_error(self, sources_api, mock_core):
@@ -634,7 +645,9 @@ class TestStartResumableUpload:
             mock_client_cls.return_value = mock_client
 
             with pytest.raises(httpx.HTTPStatusError):
-                await sources_api._start_resumable_upload("nb_123", "test.pdf", 1024, "src_456")
+                await sources_api._start_resumable_upload(
+                    "nb_123", "test.pdf", 1024, "src_456", "application/pdf"
+                )
 
 
 # =============================================================================
@@ -891,19 +904,15 @@ class TestAddFile:
             )
 
         assert result.id == "src_pdf"
-        sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_pdf", timeout=45.0)
+        sources_api.wait_until_ready.assert_awaited_once_with(
+            "nb_123", "src_pdf", timeout=45.0, transient_error_types=()
+        )
 
     @pytest.mark.asyncio
-    async def test_add_file_mime_type_non_none_emits_deprecation_warning(
+    async def test_add_file_mime_type_non_none_sets_upload_content_type(
         self, sources_api, mock_core, tmp_path
     ):
-        """Passing a non-None ``mime_type`` to ``add_file`` emits ``DeprecationWarning``.
-
-        The argument was never wired into the resumable-upload
-        RPC payload; the server derives the MIME type from the filename
-        extension. The positional signature is preserved so this is a soft
-        deprecation rather than a removal.
-        """
+        """Passing ``mime_type`` sets the Scotty upload content-type header."""
         test_file = tmp_path / "image.png"
         test_file.write_bytes(b"\x89PNG\r\n\x1a\n")
 
@@ -920,13 +929,14 @@ class TestAddFile:
             mock_client.post.side_effect = [mock_start_response, mock_upload_response]
             mock_client_cls.return_value = mock_client
 
-            with pytest.warns(DeprecationWarning, match="mime_type") as caught:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
                 result = await sources_api.add_file("nb_123", str(test_file), mime_type="image/png")
 
-        # Deprecation is non-fatal: the upload still completes normally.
         assert result.id == "src_png"
-        assert "v0.6.0" in str(caught[0].message)
-        assert caught[0].filename.endswith("test_sources_upload.py")
+        assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
+        start_headers = mock_client.post.await_args_list[0].kwargs["headers"]
+        assert start_headers["x-goog-upload-header-content-type"] == "image/png"
 
     @pytest.mark.asyncio
     async def test_add_file_mime_type_none_does_not_warn(self, sources_api, mock_core, tmp_path):
@@ -961,6 +971,8 @@ class TestAddFile:
             f"{[str(w.message) for w in deprecation_warnings]}"
         )
         assert result.id == "src_default"
+        start_headers = mock_client.post.await_args_list[0].kwargs["headers"]
+        assert start_headers["x-goog-upload-header-content-type"] == "text/plain"
 
     @pytest.mark.asyncio
     async def test_add_file_with_custom_title_renames_after_upload(
@@ -1018,7 +1030,7 @@ class TestAddFile:
         # full wait_until_ready. wait_until_registered returns on first
         # PROCESSING/READY status so the bound stays cheap in practice.
         sources_api.wait_until_registered.assert_awaited_once_with(
-            "nb_123", "src_md", timeout=120.0
+            "nb_123", "src_md", timeout=120.0, transient_error_types=()
         )
         sources_api.wait_until_ready.assert_not_called()
 
@@ -1041,10 +1053,11 @@ class TestAddFile:
             [[[["src_md"], "Real Intended Title"]]],
         ]
 
-        async def wait_side_effect(notebook_id, source_id, *, timeout):
+        async def wait_side_effect(notebook_id, source_id, *, timeout, transient_error_types):
             assert notebook_id == "nb_123"
             assert source_id == "src_md"
             assert timeout == 120.0
+            assert transient_error_types == ()
             # Wait must happen BEFORE the rename: at this point only the
             # baseline GET_NOTEBOOK + ADD_SOURCE_FILE register RPCs have
             # fired (2 total — see register_file_source's probe-then-create
@@ -1073,7 +1086,9 @@ class TestAddFile:
             )
 
         assert result.title == "Real Intended Title"
-        sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_md", timeout=120.0)
+        sources_api.wait_until_ready.assert_awaited_once_with(
+            "nb_123", "src_md", timeout=120.0, transient_error_types=()
+        )
         # 3 RPCs in total: baseline + register + rename.
         assert mock_core.rpc_call.call_count == 3
 
@@ -1094,11 +1109,12 @@ class TestAddFile:
             [[[["src_md"], "Real Intended Title", [None, None, None, None, 8]]]],
         ]
 
-        async def wait_side_effect(notebook_id, source_id, *, timeout):
+        async def wait_side_effect(notebook_id, source_id, *, timeout, transient_error_types):
             # Narrow registration wait — wait_timeout default (120s) is forwarded
             # verbatim. wait_until_registered returns on the first non-PREPARING
             # status, so the bound stays cheap.
             assert timeout == 120.0
+            assert transient_error_types == ()
             # Wait runs BEFORE the rename: at this point only the baseline
             # GET_NOTEBOOK + ADD_SOURCE_FILE register RPCs have fired (2
             # total).
@@ -1127,7 +1143,7 @@ class TestAddFile:
 
         assert result.title == "Real Intended Title"
         sources_api.wait_until_registered.assert_awaited_once_with(
-            "nb_123", "src_md", timeout=120.0
+            "nb_123", "src_md", timeout=120.0, transient_error_types=()
         )
         sources_api.wait_until_ready.assert_not_called()
 
@@ -1176,7 +1192,7 @@ class TestAddFile:
 
         # wait_timeout is forwarded directly — no min() cap.
         sources_api.wait_until_registered.assert_awaited_once_with(
-            "nb_123", "src_audio", timeout=600.0
+            "nb_123", "src_audio", timeout=600.0, transient_error_types=(10, 0, None)
         )
         sources_api.wait_until_ready.assert_not_called()
 
@@ -1465,10 +1481,11 @@ class TestAddFile:
             RPCError("rename rpc blew up"),
         ]
 
-        async def wait_side_effect(notebook_id, source_id, *, timeout):
+        async def wait_side_effect(notebook_id, source_id, *, timeout, transient_error_types):
             assert notebook_id == "nb_123"
             assert source_id == "src_doc"
             assert timeout == 120.0
+            assert transient_error_types == ()
             # Wait runs BEFORE rename — baseline GET_NOTEBOOK + register
             # RPCs have fired (2 total), no rename yet.
             assert mock_core.rpc_call.call_count == 2
@@ -1495,7 +1512,9 @@ class TestAddFile:
             )
 
         assert result.title == "doc.txt"
-        sources_api.wait_until_ready.assert_awaited_once_with("nb_123", "src_doc", timeout=120.0)
+        sources_api.wait_until_ready.assert_awaited_once_with(
+            "nb_123", "src_doc", timeout=120.0, transient_error_types=()
+        )
 
 
 # =============================================================================

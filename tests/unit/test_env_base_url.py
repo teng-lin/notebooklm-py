@@ -115,6 +115,7 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
             "file.txt",
             12,
             "src_123",
+            "text/plain",
         )
     finally:
         await core.close()

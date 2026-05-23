@@ -40,6 +40,7 @@ class SourcePoller:
         initial_interval: float = 1.0,
         max_interval: float = 10.0,
         backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
         get_source: GetSource,
         sleep: Sleep,
         monotonic: Monotonic,
@@ -49,6 +50,9 @@ class SourcePoller:
         start = monotonic()
         interval = initial_interval
         last_status: int | None = None
+        transient_errors = (
+            _TRANSIENT_ERROR_TYPES if transient_error_types is None else transient_error_types
+        )
 
         while True:
             # Check timeout before each poll.
@@ -67,7 +71,7 @@ class SourcePoller:
                 return source
 
             if source.is_error:
-                if source._type_code not in _TRANSIENT_ERROR_TYPES:
+                if source._type_code not in transient_errors:
                     raise SourceProcessingError(source_id, source.status)
                 logger.debug(
                     "Source %s reported transient ERROR status for type %s; continuing poll",
@@ -93,6 +97,7 @@ class SourcePoller:
         initial_interval: float = 0.5,
         max_interval: float = 5.0,
         backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
         get_source: GetSource,
         sleep: Sleep,
         monotonic: Monotonic,
@@ -102,6 +107,9 @@ class SourcePoller:
         start = monotonic()
         interval = initial_interval
         last_status: int | None = None
+        transient_errors = (
+            _TRANSIENT_ERROR_TYPES if transient_error_types is None else transient_error_types
+        )
 
         while True:
             elapsed = monotonic() - start
@@ -114,7 +122,7 @@ class SourcePoller:
                 last_status = source.status
 
                 if source.is_error:
-                    if source._type_code not in _TRANSIENT_ERROR_TYPES:
+                    if source._type_code not in transient_errors:
                         raise SourceProcessingError(source_id, source.status)
                     logger.debug(
                         "Source %s reported transient ERROR status for type %s; "

@@ -29,6 +29,7 @@ SearchMode = Literal["fast", "deep"]
 # handler. ``timeout`` is divided by this value to compute the per-task
 # iteration budget; see :func:`execute_source_add_research`.
 _POLL_INTERVAL_S = 5
+_NO_RESEARCH_GRACE_POLLS = 3
 
 
 @dataclass(frozen=True)
@@ -67,8 +68,15 @@ async def execute_source_add_research(
         console.print("[red]Research failed to start[/red]")
         exit_with_code(1)
 
-    task_id = result["task_id"]
-    console.print(f"[dim]Task ID: {task_id}[/dim]")
+    start_task_id = result["task_id"]
+    # Deep research polls under the report id returned in slot 1 of the
+    # START_DEEP_RESEARCH response; the first slot is not stable for
+    # POLL_RESEARCH / IMPORT_RESEARCH.
+    task_id = result.get("report_id") if plan.mode == "deep" else start_task_id
+    task_id = task_id or start_task_id
+    console.print(f"[dim]Task ID: {start_task_id}[/dim]")
+    if task_id != start_task_id:
+        console.print(f"[dim]Poll ID: {task_id}[/dim]")
 
     # Non-blocking mode: return immediately. Research will keep running
     # server-side; until something fires IMPORT_RESEARCH the NotebookLM
@@ -87,13 +95,21 @@ async def execute_source_add_research(
     # stranded deep research (#315) because the import branch below is
     # gated on ``status == "completed"``.
     status: dict | None = None
+    no_research_polls = 0
     for _ in range(max(1, plan.timeout // _POLL_INTERVAL_S)):
         status = await client.research.poll(plan.notebook_id, task_id=task_id)
         if status.get("status") == "completed":
             break
         elif status.get("status") == "no_research":
+            no_research_polls += 1
+            if no_research_polls <= _NO_RESEARCH_GRACE_POLLS:
+                await asyncio.sleep(_POLL_INTERVAL_S)
+                continue
             console.print("[red]Research failed to start[/red]")
             exit_with_code(1)
+        else:
+            no_research_polls = 0
+            task_id = status.get("task_id") or task_id
         await asyncio.sleep(_POLL_INTERVAL_S)
     else:
         status = {"status": "timeout"}

@@ -31,7 +31,12 @@ class SourceAddFacade(Protocol):
     async def add_text(self, notebook_id: str, title: str, content: str) -> Source: ...
 
     async def add_file(
-        self, notebook_id: str, file_path: str, *, title: str | None = None
+        self,
+        notebook_id: str,
+        file_path: str,
+        mime_type: str | None = None,
+        *,
+        title: str | None = None,
     ) -> Source: ...
 
 
@@ -43,6 +48,7 @@ class SourceAddPlan:
     detected_type: SourceAddType
     title: str | None
     upload_path: Path | None
+    mime_type: str | None = None
     warnings: tuple[str, ...] = ()
 
 
@@ -105,7 +111,6 @@ def build_source_add_plan(
     title: str | None,
     mime_type: str | None,
     follow_symlinks: bool,
-    suppress_file_mime_deprecation: bool,
     validate_path: Callable[[str, bool], Path],
     looks_path_shaped: Callable[[str], bool],
 ) -> SourceAddPlan:
@@ -133,17 +138,12 @@ def build_source_add_plan(
     elif detected_type == "file":
         upload_path = validate_path(content, follow_symlinks)
 
-    if mime_type is not None and detected_type == "file" and not suppress_file_mime_deprecation:
-        warnings.append(
-            "--mime-type is unused for file sources; remove the flag "
-            "before v0.6.0 (Drive sources retain this option)."
-        )
-
     return SourceAddPlan(
         content=content,
         detected_type=detected_type,
         title=file_title,
         upload_path=upload_path,
+        mime_type=mime_type if detected_type == "file" else None,
         warnings=tuple(warnings),
     )
 
@@ -165,9 +165,12 @@ async def add_source(
     if plan.upload_path is None:
         raise SourceAddValidationError("upload_path must be set when detected_type == 'file'")
 
-    # Do not forward the deprecated mime_type flag: the CLI emits the user
-    # warning, while add_file() would also emit a library-level warning.
-    return await sources.add_file(notebook_id, str(plan.upload_path), title=plan.title)
+    return await sources.add_file(
+        notebook_id,
+        str(plan.upload_path),
+        plan.mime_type,
+        title=plan.title,
+    )
 
 
 @dataclass(frozen=True)

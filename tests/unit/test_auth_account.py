@@ -276,6 +276,45 @@ class TestAuthuserPlumbing:
     """fetch_tokens_with_domains must honor account routing in context.json."""
 
     @pytest.mark.asyncio
+    async def test_auth_tokens_from_auth_json_preserves_in_band_account(
+        self, monkeypatch, httpx_mock: HTTPXMock
+    ):
+        from notebooklm.auth import AuthTokens
+
+        monkeypatch.setenv(
+            "NOTEBOOKLM_AUTH_JSON",
+            json.dumps(
+                {
+                    "cookies": [
+                        {"name": "SID", "value": "x", "domain": ".google.com"},
+                        {"name": "HSID", "value": "x", "domain": ".google.com"},
+                        {"name": "SSID", "value": "x", "domain": ".google.com"},
+                        {"name": "APISID", "value": "x", "domain": ".google.com"},
+                        {"name": "SAPISID", "value": "x", "domain": ".google.com"},
+                        {"name": "__Secure-1PSIDTS", "value": "x", "domain": ".google.com"},
+                    ],
+                    "notebooklm": {
+                        "version": 1,
+                        "account": {"authuser": 2, "email": "bob@example.com"},
+                    },
+                }
+            ),
+        )
+
+        httpx_mock.add_response(
+            url="https://notebooklm.google.com/?authuser=bob%40example.com",
+            content=b'"SNlM0e":"csrf_env" "FdrFJe":"sess_env"',
+        )
+
+        auth = await AuthTokens.from_storage()
+
+        assert auth.storage_path is None
+        assert auth.authuser == 2
+        assert auth.account_email == "bob@example.com"
+        assert auth.csrf_token == "csrf_env"
+        assert auth.session_id == "sess_env"
+
+    @pytest.mark.asyncio
     async def test_fetch_tokens_with_domains_prefers_persisted_email(
         self, tmp_path, httpx_mock: HTTPXMock
     ):

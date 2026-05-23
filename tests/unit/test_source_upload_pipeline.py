@@ -181,7 +181,9 @@ async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
     assert runtime.finished == ["upload:0"]
     assert len(runtime.queue_waits) == 1
     register_file_source.assert_awaited_once_with("nb_123", "report.pdf")
-    start_resumable_upload.assert_awaited_once_with("nb_123", "report.pdf", 5, "src_123")
+    start_resumable_upload.assert_awaited_once_with(
+        "nb_123", "report.pdf", 5, "src_123", "application/pdf"
+    )
 
 
 @pytest.mark.asyncio
@@ -262,7 +264,9 @@ async def test_add_file_custom_title_waits_for_registration_before_rename(
     )
 
     assert source == Source(id="src_123", title="Custom", _type_code=7, url="https://source")
-    wait_until_registered.assert_awaited_once_with("nb_123", "src_123", timeout=45.0)
+    wait_until_registered.assert_awaited_once_with(
+        "nb_123", "src_123", timeout=45.0, transient_error_types=()
+    )
     rename.assert_awaited_once_with("nb_123", "src_123", "Custom")
 
 
@@ -342,10 +346,12 @@ async def test_start_resumable_upload_uses_injected_http_client() -> None:
         "report.pdf",
         12,
         "src_123",
+        "application/pdf",
     )
 
     assert upload_url == "https://upload.example.com/session"
     assert client_factory.call_args.kwargs["cookies"] is runtime.cookies
     request = client.post.await_args
     assert request.kwargs["headers"]["x-goog-upload-command"] == "start"
+    assert request.kwargs["headers"]["x-goog-upload-header-content-type"] == "application/pdf"
     assert '"SOURCE_ID": "src_123"' in request.kwargs["content"]

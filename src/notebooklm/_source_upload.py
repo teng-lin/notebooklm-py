@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import os
 import re
-import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
@@ -102,6 +102,7 @@ class StartResumableUpload(Protocol):
         filename: str,
         file_size: int,
         source_id: str,
+        content_type: str,
     ) -> str: ...
 
 
@@ -127,6 +128,8 @@ class WaitForSource(Protocol):
         notebook_id: str,
         source_id: str,
         timeout: float = 120.0,
+        *,
+        transient_error_types: tuple[int | None, ...] | None = None,
     ) -> Source: ...
 
 
@@ -149,6 +152,10 @@ class AsyncClientFactory(Protocol):
 
 ListSources = Callable[[str], Awaitable[list[Source]]]
 QueueWaitRecorder = Callable[[float], None]
+
+_MEDIA_CONTENT_TYPE_PREFIXES = ("audio/", "video/")
+_MEDIA_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
+_STRICT_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = ()
 
 
 # Audit CC6: single-loop-per-client invariant per ADR-004; not safe for multi-loop fan-out.
@@ -207,6 +214,25 @@ def _looks_like_id_string(candidate: str) -> bool:
     if any(c in candidate for c in " \t/"):
         return False
     return any(c.isdigit() or c in "-_" for c in candidate)
+
+
+def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
+    """Return the content type for the Scotty resumable-upload start request."""
+    if mime_type is not None:
+        content_type = mime_type.strip()
+        if not content_type:
+            raise ValidationError("mime_type cannot be empty or whitespace-only")
+        return content_type
+
+    guessed, _encoding = mimetypes.guess_type(file_path.name)
+    return guessed or "application/octet-stream"
+
+
+def _transient_error_types_for_upload(content_type: str) -> tuple[int | None, ...]:
+    """Return source status=ERROR transient policy for this upload."""
+    if content_type.startswith(_MEDIA_CONTENT_TYPE_PREFIXES):
+        return _MEDIA_TRANSIENT_ERROR_TYPES
+    return _STRICT_TRANSIENT_ERROR_TYPES
 
 
 class SourceUploadPipeline:
@@ -279,7 +305,6 @@ class SourceUploadPipeline:
         *,
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
-        deprecation_warning_stacklevel: int = 2,
         upload_index: int = 0,
         register_file_source: RegisterFileSource,
         start_resumable_upload: StartResumableUpload,
@@ -297,13 +322,6 @@ class SourceUploadPipeline:
         # documented ``RuntimeError`` guard fires (ADR-004).
         self._runtime.assert_bound_loop()
         logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
-        if mime_type is not None:
-            warnings.warn(
-                "mime_type parameter is unused and will be removed in v0.6.0; "
-                "rely on filename extension instead",
-                DeprecationWarning,
-                stacklevel=deprecation_warning_stacklevel,
-            )
         if title is not None:
             title = title.strip()
             if not title:
@@ -316,6 +334,8 @@ class SourceUploadPipeline:
             raise ValidationError(f"Not a regular file: {file_path}")
 
         filename = file_path.name
+        content_type = _resolve_upload_content_type(file_path, mime_type)
+        transient_error_types = _transient_error_types_for_upload(content_type)
         async with self._runtime.operation_scope(f"upload:{upload_index}"):
             upload_sem = self.get_upload_semaphore()
             upload_wait_start = monotonic()
@@ -332,6 +352,7 @@ class SourceUploadPipeline:
                         filename,
                         file_size,
                         source_id,
+                        content_type,
                     )
                     handed_off = True
                     await upload_file_streaming(
@@ -347,9 +368,19 @@ class SourceUploadPipeline:
 
         needs_title_rename = title is not None and title != filename
         if wait:
-            source = await wait_until_ready(notebook_id, source_id, timeout=wait_timeout)
+            source = await wait_until_ready(
+                notebook_id,
+                source_id,
+                timeout=wait_timeout,
+                transient_error_types=transient_error_types,
+            )
         elif needs_title_rename:
-            source = await wait_until_registered(notebook_id, source_id, timeout=wait_timeout)
+            source = await wait_until_registered(
+                notebook_id,
+                source_id,
+                timeout=wait_timeout,
+                transient_error_types=transient_error_types,
+            )
         else:
             source = Source(
                 id=source_id,
@@ -543,6 +574,7 @@ class SourceUploadPipeline:
         filename: str,
         file_size: int,
         source_id: str,
+        content_type: str,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
         auth_route = self._authuser_header()
@@ -557,6 +589,7 @@ class SourceUploadPipeline:
             "x-goog-authuser": auth_route,
             "x-goog-upload-command": "start",
             "x-goog-upload-header-content-length": str(file_size),
+            "x-goog-upload-header-content-type": content_type,
             "x-goog-upload-protocol": "resumable",
         }
 

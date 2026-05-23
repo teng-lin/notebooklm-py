@@ -157,6 +157,7 @@ class SourcesAPI:
         initial_interval: float = 1.0,
         max_interval: float = 10.0,
         backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
     ) -> Source:
         """Wait for a source to become ready.
 
@@ -194,6 +195,7 @@ class SourcesAPI:
             initial_interval=initial_interval,
             max_interval=max_interval,
             backoff_factor=backoff_factor,
+            transient_error_types=transient_error_types,
             get_source=self.get,
             sleep=asyncio.sleep,
             monotonic=monotonic,
@@ -208,6 +210,7 @@ class SourcesAPI:
         initial_interval: float = 0.5,
         max_interval: float = 5.0,
         backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
     ) -> Source:
         """Wait for a source to be registered server-side (status >= PROCESSING).
 
@@ -245,6 +248,7 @@ class SourcesAPI:
             initial_interval=initial_interval,
             max_interval=max_interval,
             backoff_factor=backoff_factor,
+            transient_error_types=transient_error_types,
             get_source=self.get,
             sleep=asyncio.sleep,
             monotonic=monotonic,
@@ -430,10 +434,9 @@ class SourcesAPI:
         Args:
             notebook_id: The notebook ID.
             file_path: Path to the file to upload.
-            mime_type: Deprecated; unused. Retained as a positional argument for
-                backward compatibility. The MIME type is inferred server-side
-                from the filename extension. Passing a non-None value emits a
-                ``DeprecationWarning``. Slated for removal in v0.6.0.
+            mime_type: Optional content type for the upload start handshake.
+                When omitted, the MIME type is inferred from the filename
+                extension. Supplying a value overrides inference.
             title: Optional display title. When provided and different from the
                 source filename, a rename is issued after upload so the source
                 appears with this title in the UI and API responses. Leading and
@@ -481,7 +484,6 @@ class SourcesAPI:
             wait_timeout=wait_timeout,
             title=title,
             on_progress=on_progress,
-            deprecation_warning_stacklevel=3,
             register_file_source=self._register_file_source,
             start_resumable_upload=self._start_resumable_upload,
             upload_file_streaming=self._upload_file_streaming,
@@ -808,6 +810,7 @@ class SourcesAPI:
         filename: str,
         file_size: int,
         source_id: str,
+        content_type: str,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
         return await self._uploader.start_resumable_upload(
@@ -815,6 +818,7 @@ class SourcesAPI:
             filename,
             file_size,
             source_id,
+            content_type,
         )
 
     async def _upload_file_streaming(

@@ -81,6 +81,7 @@ async def test_custom_upload_timeout_propagates_to_start(
                     filename=tmp_upload_file.name,
                     file_size=tmp_upload_file.stat().st_size,
                     source_id="src-test",
+                    content_type="text/plain",
                 )
 
     assert captured, "Expected at least one httpx.AsyncClient construction"
@@ -103,6 +104,7 @@ async def test_default_upload_timeout_preserves_back_compat_start(auth_tokens) -
                     filename="dummy.txt",
                     file_size=256,
                     source_id="src-test",
+                    content_type="text/plain",
                 )
 
     assert captured

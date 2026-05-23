@@ -232,9 +232,14 @@ def _read_in_band_account(storage_path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as e:
         logger.debug("in-band account read failed at %s: %s", storage_path, e)
         return {}
-    if not isinstance(data, dict):
+    return read_account_metadata_from_storage_state(data)
+
+
+def read_account_metadata_from_storage_state(storage_state: Any) -> dict[str, Any]:
+    """Read in-band account metadata from parsed Playwright storage state."""
+    if not isinstance(storage_state, dict):
         return {}
-    namespace = data.get(_STORAGE_NAMESPACE_KEY)
+    namespace = storage_state.get(_STORAGE_NAMESPACE_KEY)
     if not isinstance(namespace, dict):
         return {}
     account = namespace.get(_ACCOUNT_CONTEXT_KEY)

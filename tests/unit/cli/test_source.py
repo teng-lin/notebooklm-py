@@ -322,15 +322,8 @@ class TestSourceAdd:
 
             assert result.exit_code == 0
 
-    def test_source_add_file_with_mime_type_emits_deprecation(self, runner, mock_auth, tmp_path):
-        """``--mime-type`` on the file-source path is a no-op; warn user.
-
-        The Drive path keeps ``--mime-type`` as a live, functional option, so
-        the deprecation echo MUST be gated on ``detected_type == 'file'`` and
-        must not fire on Drive sources. ``add_file`` is called WITHOUT the
-        positional ``mime_type`` so the library-level ``DeprecationWarning``
-        does not double up the signal.
-        """
+    def test_source_add_file_with_mime_type_forwards_to_add_file(self, runner, mock_auth, tmp_path):
+        """``--mime-type`` on the file-source path controls upload content type."""
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
 
@@ -361,29 +354,16 @@ class TestSourceAdd:
                 )
 
         assert result.exit_code == 0
-        # ``click.echo(..., err=True)`` writes to stderr; Click's ``CliRunner``
-        # mixes stderr into ``result.output`` by default (``mix_stderr=True``).
-        # If the runner fixture is ever switched to ``mix_stderr=False`` this
-        # assertion would silently pass — flip to ``result.stderr`` if so.
-        assert "unused for file sources" in result.output
-        assert "v0.6.0" in result.output
-        # ``add_file`` must NOT receive the unused mime_type — passing it would
-        # also trip the library-level DeprecationWarning, doubling the noise.
+        assert "unused for file sources" not in result.output
         call_kwargs = mock_client.sources.add_file.call_args.kwargs
         call_args = mock_client.sources.add_file.call_args.args
         assert "mime_type" not in call_kwargs
-        # Positional args: (notebook_id, file_path). The third positional slot
-        # is the deprecated mime_type; the CLI must not fill it.
-        assert len(call_args) == 2
+        assert call_args == ("nb_123", str(test_file.resolve()), "application/pdf")
 
     def test_source_add_file_mime_type_suppressed_by_env(
         self, runner, mock_auth, tmp_path, monkeypatch
     ):
-        """``NOTEBOOKLM_QUIET_DEPRECATIONS=1`` suppresses the file-source notice.
-
-        Keeps CI logs clean for projects that have already migrated off the
-        flag but cannot drop it from a shared invocation overnight.
-        """
+        """Legacy deprecation-suppression env does not disable live MIME forwarding."""
         test_file = tmp_path / "test.pdf"
         test_file.write_bytes(b"fake pdf content")
         monkeypatch.setenv("NOTEBOOKLM_QUIET_DEPRECATIONS", "1")
@@ -416,6 +396,8 @@ class TestSourceAdd:
 
         assert result.exit_code == 0
         assert "unused for file sources" not in result.output
+        call_args = mock_client.sources.add_file.call_args.args
+        assert call_args == ("nb_123", str(test_file.resolve()), "application/pdf")
 
     def test_source_add_json_output(self, runner, mock_auth):
         with patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls:
@@ -1310,6 +1292,81 @@ class TestSourceAddResearch:
         assert "Imported 1 sources" in result.output
         mock_import.assert_awaited_once()
         assert mock_client.research.poll.await_count == 71
+
+    def test_add_research_tolerates_initial_no_research_after_start(self, runner, mock_auth):
+        """NotebookLM can briefly return no_research immediately after START_RESEARCH."""
+        poll_responses = [
+            {"status": "no_research", "tasks": []},
+            {"status": "in_progress", "task_id": "task_lag", "sources": []},
+            {"status": "completed", "task_id": "task_lag", "sources": [], "report": ""},
+        ]
+
+        with (
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
+            patch.object(source_module.asyncio, "sleep", AsyncMock()),
+        ):
+            mock_client = create_mock_client()
+            mock_client.research.start = AsyncMock(return_value={"task_id": "task_lag"})
+            mock_client.research.poll = AsyncMock(side_effect=poll_responses)
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    ["source", "add-research", "topic", "-n", "nb_123"],
+                )
+
+        assert result.exit_code == 0, result.output
+        assert mock_client.research.poll.await_count == 3
+
+    def test_add_research_deep_polls_with_report_id(self, runner, mock_auth):
+        """Deep research's poll/import discriminator is START_DEEP_RESEARCH report_id."""
+        with (
+            patch("notebooklm.cli.source_cmd.NotebookLMClient") as mock_client_cls,
+            patch.object(
+                research_import_module, "import_with_retry", new_callable=AsyncMock
+            ) as mock_import,
+        ):
+            mock_client = create_mock_client()
+            mock_client.research.start = AsyncMock(
+                return_value={"task_id": "start_task", "report_id": "report_task"}
+            )
+            mock_client.research.poll = AsyncMock(
+                return_value={
+                    "status": "completed",
+                    "task_id": "report_task",
+                    "sources": [{"title": "S", "url": "http://example.com"}],
+                    "report": "",
+                }
+            )
+            mock_import.return_value = [{"id": "src_report", "title": "S"}]
+            mock_client_cls.return_value = mock_client
+
+            with patch(
+                "notebooklm.auth.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch:
+                mock_fetch.return_value = ("csrf", "session")
+                result = runner.invoke(
+                    cli,
+                    [
+                        "source",
+                        "add-research",
+                        "topic",
+                        "--mode",
+                        "deep",
+                        "--import-all",
+                        "-n",
+                        "nb_123",
+                    ],
+                )
+
+        assert result.exit_code == 0, result.output
+        mock_client.research.poll.assert_awaited_once_with("nb_123", task_id="report_task")
+        mock_import.assert_awaited_once()
+        assert mock_import.await_args.args[2] == "report_task"
 
 
 # =============================================================================

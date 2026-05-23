@@ -17,7 +17,6 @@ below (it is what ``notebooklm source --help`` shows).
 """
 
 import asyncio  # noqa: F401 — re-exported for P1.T2 regression tests that patch source_cmd.asyncio.sleep
-import os
 from pathlib import Path
 
 import click
@@ -170,14 +169,9 @@ def source_list(ctx, notebook_id, json_output, limit, no_truncate, client_auth):
     help="Source type (auto-detected if not specified)",
 )
 @click.option("--title", help="Custom title for text and uploaded-file sources")
-# DEPRECATION-REMOVAL v0.6.0: see services/source_add.py for the rationale.
 @click.option(
     "--mime-type",
-    help=(
-        "[Deprecated] MIME type for file sources — unused; the server "
-        "derives MIME from the filename extension. Drive sources retain "
-        "this option (see ``source add-drive``)."
-    ),
+    help="MIME type for uploaded file sources. Overrides filename-extension inference.",
 )
 @click.option(
     "--timeout",
@@ -233,7 +227,6 @@ def source_add(
         title=title,
         mime_type=mime_type,
         follow_symlinks=follow_symlinks,
-        suppress_file_mime_deprecation=os.environ.get("NOTEBOOKLM_QUIET_DEPRECATIONS") == "1",
         validate_path=_validate_upload_path,
         looks_path_shaped=_looks_like_path,
     )
