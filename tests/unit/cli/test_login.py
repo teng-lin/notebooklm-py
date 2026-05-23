@@ -34,6 +34,26 @@ def _make_from_storage_cm(client):
     return _cm()
 
 
+def _required_cookie_state() -> dict:
+    return {
+        "cookies": [
+            {"name": "SID", "value": "sid", "domain": ".google.com", "path": "/"},
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "psidts",
+                "domain": ".google.com",
+                "path": "/",
+            },
+        ],
+        "origins": [{"origin": "https://notebooklm.google.com", "localStorage": []}],
+    }
+
+
+def _storage_account(storage_file):
+    data = json.loads(storage_file.read_text())
+    return data.get("notebooklm", {}).get("account")
+
+
 class TestLoginUrlValidation:
     def test_url_matches_default_base_host(self, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
@@ -645,6 +665,261 @@ class TestLoginCommand:
 
         assert result.exit_code == 0
         assert "Authentication saved" in result.output
+
+    @pytest.mark.requires_playwright
+    def test_playwright_login_writes_single_account_metadata(self, runner, tmp_path):
+        """Playwright login records account metadata when discovery has one account."""
+        from notebooklm.auth import Account
+
+        storage_file = tmp_path / "storage.json"
+        browser_dir = tmp_path / "profile"
+
+        async def _enum(*args, **kwargs):
+            return [Account(authuser=0, email="alice@example.com", is_default=True)]
+
+        with (
+            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch("playwright.sync_api.sync_playwright") as mock_pw,
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch(
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+                return_value=browser_dir,
+            ),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+        ):
+            mock_context = MagicMock()
+            mock_page = MagicMock()
+            mock_page.url = "https://notebooklm.google.com/"
+            mock_page.content.return_value = "<html></html>"
+            mock_context.pages = [mock_page]
+            mock_context.storage_state.return_value = _required_cookie_state()
+            mock_launch = (
+                mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
+            )
+            mock_launch.return_value = mock_context
+
+            result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0, result.output
+        assert _storage_account(storage_file) == {
+            "authuser": 0,
+            "email": "alice@example.com",
+        }
+
+    @pytest.mark.requires_playwright
+    def test_playwright_login_writes_account_matched_by_page_email(self, runner, tmp_path):
+        """When multiple accounts are visible, the current page email selects the route."""
+        from notebooklm.auth import Account
+
+        storage_file = tmp_path / "storage.json"
+        browser_dir = tmp_path / "profile"
+
+        async def _enum(*args, **kwargs):
+            return [
+                Account(authuser=0, email="alice@example.com", is_default=True),
+                Account(authuser=1, email="bob@example.com", is_default=False),
+            ]
+
+        with (
+            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch("playwright.sync_api.sync_playwright") as mock_pw,
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch(
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+                return_value=browser_dir,
+            ),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+        ):
+            mock_context = MagicMock()
+            mock_page = MagicMock()
+            mock_page.url = "https://notebooklm.google.com/"
+            mock_page.content.return_value = '<script>"bob@example.com"</script>'
+            mock_context.pages = [mock_page]
+            mock_context.storage_state.return_value = _required_cookie_state()
+            mock_launch = (
+                mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
+            )
+            mock_launch.return_value = mock_context
+
+            result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0, result.output
+        assert _storage_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@example.com",
+        }
+
+    @pytest.mark.requires_playwright
+    def test_playwright_login_uses_recovered_page_email_for_metadata(self, runner, tmp_path):
+        """If cookie-forcing recovers a page, stale pre-recovery HTML is ignored."""
+        from playwright.sync_api import Error as PlaywrightError
+
+        from notebooklm.auth import Account
+
+        storage_file = tmp_path / "storage.json"
+        browser_dir = tmp_path / "profile"
+
+        async def _enum(*args, **kwargs):
+            return [
+                Account(authuser=0, email="alice@example.com", is_default=True),
+                Account(authuser=1, email="bob@example.com", is_default=False),
+            ]
+
+        with (
+            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch("playwright.sync_api.sync_playwright") as mock_pw,
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch(
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+                return_value=browser_dir,
+            ),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+        ):
+            mock_context = MagicMock()
+            mock_page_stale = MagicMock()
+            mock_page_stale.url = "https://notebooklm.google.com/"
+            mock_page_stale.content.return_value = '<script>"alice@example.com"</script>'
+            goto_count = 0
+
+            def stale_goto(url, **kwargs):
+                nonlocal goto_count
+                goto_count += 1
+                if goto_count == 1:
+                    return None
+                raise PlaywrightError("Page.goto: Target page, context or browser has been closed")
+
+            mock_page_stale.goto.side_effect = stale_goto
+            mock_page_recovered = MagicMock()
+            mock_page_recovered.url = "https://notebooklm.google.com/"
+            mock_page_recovered.content.return_value = '<script>"bob@example.com"</script>'
+            mock_context.pages = [mock_page_stale]
+            mock_context.new_page.return_value = mock_page_recovered
+            mock_context.storage_state.return_value = _required_cookie_state()
+            mock_launch = (
+                mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
+            )
+            mock_launch.return_value = mock_context
+
+            result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0, result.output
+        assert _storage_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@example.com",
+        }
+
+    @pytest.mark.requires_playwright
+    def test_playwright_login_clears_metadata_when_account_ambiguous(self, runner, tmp_path):
+        """Multiple discovered accounts without a page email must not pick silently."""
+        from notebooklm.auth import Account
+
+        storage_file = tmp_path / "storage.json"
+        context_file = tmp_path / "context.json"
+        context_file.write_text(
+            json.dumps(
+                {
+                    "notebook_id": "nb_existing",
+                    "account": {"authuser": 1, "email": "old@example.com"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        browser_dir = tmp_path / "profile"
+
+        async def _enum(*args, **kwargs):
+            return [
+                Account(authuser=0, email="alice@example.com", is_default=True),
+                Account(authuser=1, email="bob@example.com", is_default=False),
+            ]
+
+        with (
+            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch("playwright.sync_api.sync_playwright") as mock_pw,
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch(
+                "notebooklm.cli.session_cmd.get_browser_profile_dir",
+                return_value=browser_dir,
+            ),
+            patch("notebooklm.cli.session_cmd._sync_server_language_to_config"),
+            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+        ):
+            mock_context = MagicMock()
+            mock_page = MagicMock()
+            mock_page.url = "https://notebooklm.google.com/"
+            mock_page.content.return_value = "<html></html>"
+            mock_context.pages = [mock_page]
+            mock_context.storage_state.return_value = _required_cookie_state()
+            mock_launch = (
+                mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
+            )
+            mock_launch.return_value = mock_context
+
+            result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0, result.output
+        assert _storage_account(storage_file) is None
+        assert json.loads(context_file.read_text()) == {"notebook_id": "nb_existing"}
+        assert "account metadata was not written" in result.output
+
+    def test_auth_refresh_repairs_missing_playwright_account_metadata(self, runner, tmp_path):
+        """File-backed auth refresh can migrate a Playwright state missing metadata."""
+        from notebooklm.auth import Account
+
+        storage_file = tmp_path / "storage.json"
+        original_state = _required_cookie_state()
+        storage_file.write_text(json.dumps(original_state), encoding="utf-8")
+
+        async def _enum(*args, **kwargs):
+            return [Account(authuser=0, email="alice@example.com", is_default=True)]
+
+        with (
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch(
+                "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh"])
+
+        assert result.exit_code == 0, result.output
+        repaired_state = json.loads(storage_file.read_text())
+        assert repaired_state["cookies"] == original_state["cookies"]
+        assert repaired_state["origins"] == original_state["origins"]
+        assert repaired_state["notebooklm"]["account"] == {
+            "authuser": 0,
+            "email": "alice@example.com",
+        }
+
+    def test_auth_refresh_skips_repair_when_account_metadata_exists(self, runner, tmp_path):
+        """Existing account metadata is an explicit binding; keepalive must not replace it."""
+        storage_file = tmp_path / "storage.json"
+        state = _required_cookie_state()
+        state["notebooklm"] = {
+            "version": 1,
+            "account": {"authuser": 1, "email": "bob@example.com"},
+        }
+        storage_file.write_text(json.dumps(state), encoding="utf-8")
+
+        with (
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch(
+                "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+            patch("notebooklm.cli.session_cmd._repair_playwright_account_metadata") as mock_repair,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh"])
+
+        assert result.exit_code == 0, result.output
+        mock_repair.assert_not_called()
+        assert _storage_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@example.com",
+        }
 
     @pytest.mark.requires_playwright
     def test_playwright_login_clears_stale_account_metadata(self, runner, tmp_path):

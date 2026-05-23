@@ -40,11 +40,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import httpx
+
 from ...config import get_base_host, get_base_url
 from ...io import atomic_write_json
 from ...paths import get_browser_profile_dir, get_storage_path
 from ..error_handler import exit_with_code
 from ..rendering import console
+from ..runtime import run_async
 
 # Capture the original function references at module-import time so the
 # ``_resolve_paths_helper`` precedence chain can compare each lookup
@@ -114,6 +117,10 @@ BROWSER_CLOSED_HELP = (
     "Try:\n"
     "  1. Run: notebooklm login --fresh\n"
     "  2. Or run: notebooklm auth logout && notebooklm login"
+)
+ACCOUNT_METADATA_REMEDIATION = (
+    "Run [cyan]notebooklm auth inspect --browser chrome -v[/cyan] "
+    "or [cyan]notebooklm login --browser-cookies chrome --account EMAIL[/cyan]."
 )
 
 # Browsers launched via Playwright's ``channel`` parameter (system-installed,
@@ -192,6 +199,109 @@ def filter_storage_state_cookies_by_domain_policy(
         "cookies": filtered_cookies,
         "origins": list(state.get("origins", [])),
     }
+
+
+# ---------------------------------------------------------------------------
+# Playwright account metadata repair
+# ---------------------------------------------------------------------------
+
+
+def _select_playwright_account(
+    accounts: list[Any],
+    *,
+    active_email: str | None,
+) -> tuple[Any | None, str | None]:
+    """Select the account Playwright just logged into, or return an ambiguity reason."""
+    if active_email:
+        normalized = active_email.casefold()
+        matches = [
+            account
+            for account in accounts
+            if isinstance(getattr(account, "email", None), str)
+            and account.email.casefold() == normalized
+        ]
+        if len(matches) == 1:
+            return matches[0], None
+        if matches:
+            return None, f"multiple discovered accounts matched {active_email}"
+        return None, f"current NotebookLM page email {active_email} was not discovered"
+
+    if len(accounts) == 1:
+        return accounts[0], None
+    if accounts:
+        return (
+            None,
+            "multiple Google accounts were discovered but the active page email was unavailable",
+        )
+    return None, "no Google accounts were discovered"
+
+
+def repair_playwright_account_metadata(
+    storage_path: Path,
+    *,
+    page_html: str | None = None,
+    quiet: bool = False,
+) -> bool:
+    """Populate ``notebooklm.account`` from Playwright storage when unambiguous.
+
+    This is used immediately after interactive Playwright login and by
+    file-backed ``auth refresh`` as a repair path for older Playwright-created
+    storage states. Ambiguous multi-account states are deliberately left
+    unbound after clearing any stale metadata.
+
+    Returns:
+        ``True`` when metadata was written, ``False`` when it was cleared or
+        left absent.
+    """
+    from ...auth import (
+        build_httpx_cookies_from_storage,
+        clear_account_metadata,
+        enumerate_accounts,
+        extract_email_from_html,
+        write_account_metadata,
+    )
+
+    active_email = extract_email_from_html(page_html) if isinstance(page_html, str) else None
+    try:
+        if not quiet:
+            console.print("[dim]Identifying Google account...[/dim]")
+        jar = build_httpx_cookies_from_storage(storage_path)
+        accounts = run_async(enumerate_accounts(jar))
+        selected, reason = _select_playwright_account(accounts, active_email=active_email)
+        if selected is None:
+            clear_account_metadata(storage_path)
+            if not quiet:
+                console.print(
+                    "[yellow]Warning: account metadata was not written; "
+                    f"{reason}. {ACCOUNT_METADATA_REMEDIATION}[/yellow]"
+                )
+            return False
+        write_account_metadata(
+            storage_path,
+            authuser=selected.authuser,
+            email=selected.email,
+        )
+    except (OSError, ValueError, RuntimeError, httpx.HTTPError) as exc:
+        try:
+            clear_account_metadata(storage_path)
+        except Exception as clear_exc:
+            logger.warning(
+                "Failed to clear stale account metadata for %s: %s",
+                storage_path,
+                clear_exc,
+            )
+        if not quiet:
+            console.print(
+                "[yellow]Warning: account metadata was not written. "
+                "NotebookLM auth still saved, but multi-account routing may "
+                "fall back to authuser=0. "
+                f"{ACCOUNT_METADATA_REMEDIATION} Details: {exc}[/yellow]"
+            )
+        return False
+
+    if not quiet:
+        console.print(f"[green]Account:[/green] {selected.email}")
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +579,8 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
     selected, opens a persistent context, retries navigation on transient
     connection errors, waits for login completion, pins ``.google.com``
     cookies, applies the cookie-domain allowlist filter (P1-17), atomically
-    writes ``storage_state.json``, and clears stale account metadata.
+    writes ``storage_state.json``, and writes account metadata when the active
+    Google account can be identified safely.
     """
     browser = plan.browser
     browser_profile = plan.browser_profile
@@ -507,6 +618,14 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
             else ensure_chromium_installed
         )
         _ensure()
+
+    def _capture_page_html(page: Any) -> str | None:
+        try:
+            content = page.content()
+        except PlaywrightError as exc:
+            logger.debug("Could not read Playwright page content for account metadata: %s", exc)
+            return None
+        return content if isinstance(content, str) else None
 
     from ...paths import resolve_profile
 
@@ -619,10 +738,13 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                     raise
                 console.print("[green]Login detected.[/green]")
 
+            active_page_html = _capture_page_html(page)
+
             # Force .google.com cookies for regional users (e.g. UK lands on
             # .google.co.uk). Use "commit" to resolve once response headers
             # (including Set-Cookie) are processed, before any client-side
             # JS redirect can interrupt. See #214.
+            recovered_during_cookie_forcing = False
             for url in [GOOGLE_ACCOUNTS_URL, f"{get_base_url()}/"]:
                 try:
                     page.goto(url, wait_until="commit")
@@ -631,6 +753,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                     if TARGET_CLOSED_ERROR in error_str:
                         # Page was destroyed (e.g. user switched accounts) -- get fresh page
                         page = recover_page(context, console)
+                        recovered_during_cookie_forcing = True
                         try:
                             page.goto(url, wait_until="commit")
                         except PlaywrightError as inner_exc:
@@ -656,6 +779,9 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                 )
                 exit_with_code(1)
 
+            if recovered_during_cookie_forcing:
+                active_page_html = _capture_page_html(page)
+
             # Atomic write with chmod 0o600 — Playwright's path= argument
             # writes directly (non-atomic + world-readable window).
             #
@@ -670,16 +796,7 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                 dict(playwright_state), include_domains=include_domains
             )
             atomic_write_json(storage_path, filtered_state)
-            from ...auth import clear_account_metadata
-
-            try:
-                clear_account_metadata(storage_path)
-            except OSError as exc:
-                logger.warning(
-                    "Failed to clear stale account metadata for %s: %s",
-                    storage_path,
-                    exc,
-                )
+            repair_playwright_account_metadata(storage_path, page_html=active_page_html)
 
         except Exception as e:
             # Handle browser launch errors specially (context will be None if launch failed)
@@ -727,6 +844,7 @@ __all__ = [
     "is_navigation_interrupted_error",
     "prepare_login_paths",
     "recover_page",
+    "repair_playwright_account_metadata",
     "run_playwright_login",
     "url_matches_base_host",
     "validate_login_flag_conflicts",

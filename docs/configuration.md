@@ -58,7 +58,14 @@ Contains the authentication data extracted from your browser session:
     },
     ...
   ],
-  "origins": []
+  "origins": [],
+  "notebooklm": {
+    "version": 1,
+    "account": {
+      "authuser": 0,
+      "email": "you@example.com"
+    }
+  }
 }
 ```
 
@@ -69,6 +76,16 @@ Contains the authentication data extracted from your browser session:
 
 In practice: extract the full cookie set via `notebooklm login` and don't try to subset it. Partial extractions (a known failure mode of browser-cookies tooling under Chrome 127+ App-Bound Encryption) are the leading suspect for "auth expires immediately" reports — see [#371](https://github.com/teng-lin/notebooklm-py/issues/371).
 
+The optional `notebooklm.account` block records the Google account route for
+multi-account sessions. New `notebooklm login` runs write it when the active
+account can be discovered safely. Older Playwright-created files can be repaired
+with `notebooklm auth refresh` when the storage state maps to one visible
+account; if several accounts are visible, use
+`notebooklm login --browser-cookies <browser> --account EMAIL` to bind the
+intended account explicitly. `auth refresh` only repairs absent metadata; if
+metadata exists but points at the wrong account, re-bind explicitly with the
+browser-cookie login path.
+
 **Override location:**
 ```bash
 notebooklm --storage /path/to/storage_state.json list
@@ -76,19 +93,14 @@ notebooklm --storage /path/to/storage_state.json list
 
 ### Context File (`context.json`)
 
-Stores the current CLI context (active notebook plus optional metadata)
-and the multi-account routing payload used by `auth`:
+Stores the current CLI context, such as the active notebook:
 
 ```json
 {
   "notebook_id": "abc123def456",
   "title": "Quarterly review notes",
   "is_owner": true,
-  "created_at": "2026-05-01T17:43:21Z",
-  "account": {
-    "authuser": 0,
-    "email": "you@example.com"
-  }
+  "created_at": "2026-05-01T17:43:21Z"
 }
 ```
 
@@ -96,7 +108,6 @@ Field summary:
 
 - `notebook_id` — currently selected notebook, written by `notebooklm use` and read by every command that takes `-n/--notebook`.
 - `title`, `is_owner`, `created_at` — optional notebook metadata captured at selection time so `status` / display commands don't need an extra round-trip. Omitted when the CLI didn't have the values to write (see `src/notebooklm/cli/helpers.py:623-651`).
-- `account` — preserved across `notebooklm use` / `notebooklm clear` (only `notebooklm auth logout` removes it). Records `authuser` (Google account index, default `0`) and optional `email` so the client routes batchexecute requests to the same account that minted the cookies (see `src/notebooklm/auth.py:1168-1283`).
 
 This file is managed automatically by `notebooklm use`, `notebooklm clear`, and the `auth` commands.
 
@@ -454,13 +465,10 @@ they are NOT the same file:
   see `paths.get_context_path`). Two `--storage` invocations against different
   files cannot see each other's selected notebook, and neither pollutes the
   default profile context.
-- **Account-routing metadata** (the `account` object — `authuser` index and
-  optional `email`) lives at a *sibling* file `context.json` next to the
-  storage file (`storage_path.with_name("context.json")`, see
-  `auth._account_context_path`). The split is deliberate: account metadata is
-  shared across CLI tooling that resolves the storage file by directory
-  (e.g., interactive `auth check`) while notebook context belongs to the
-  specific storage payload.
+- **Account-routing metadata** (the `notebooklm.account` object — `authuser`
+  index and optional `email`) lives in-band inside the selected
+  `storage_state.json`. This keeps copied files and `NOTEBOOKLM_AUTH_JSON`
+  secrets bound to the same Google account route as the original profile.
 
 Run `notebooklm --storage <path> status --paths` to see exactly which
 context file is being used for notebook selection.
@@ -509,8 +517,9 @@ jobs:
 ### Obtaining the Secret Value
 
 1. Run `notebooklm login` locally
-2. Copy the contents of `~/.notebooklm/profiles/default/storage_state.json` (the canonical write location; the legacy `~/.notebooklm/storage_state.json` is only read as a fallback)
-3. Add as a GitHub repository secret named `NOTEBOOKLM_AUTH_JSON` (see [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci) for trailing-newline + ephemeral-runner refresh notes)
+2. If the file was created by an older Playwright login and lacks `notebooklm.account`, run `notebooklm auth refresh` to repair single-account states or re-login with `notebooklm login --browser-cookies <browser> --account EMAIL` for multi-account states
+3. Copy the contents of `~/.notebooklm/profiles/default/storage_state.json` (the canonical write location; the legacy `~/.notebooklm/storage_state.json` is only read as a fallback)
+4. Add as a GitHub repository secret named `NOTEBOOKLM_AUTH_JSON` (see [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci) for trailing-newline + ephemeral-runner refresh notes)
 
 ### Alternative: File-Based Auth
 

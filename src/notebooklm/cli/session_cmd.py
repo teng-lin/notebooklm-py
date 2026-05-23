@@ -116,6 +116,9 @@ from .services.playwright_login import (
     recover_page as _recover_page,  # noqa: F401 — patch surface
 )
 from .services.playwright_login import (
+    repair_playwright_account_metadata as _repair_playwright_account_metadata,
+)
+from .services.playwright_login import (
     url_matches_base_host as _url_matches_base_host,  # noqa: F401 — patch surface
 )
 from .services.playwright_login import (
@@ -710,6 +713,11 @@ def register_session_commands(cli):
                 return
 
             run_async(fetch_tokens_with_domains(storage_path, profile))
+
+            from ..auth import read_account_metadata
+
+            if storage_path.exists() and not read_account_metadata(storage_path):
+                _repair_playwright_account_metadata(storage_path, quiet=quiet)
 
             if not quiet:
                 console.print(f"[green]ok[/green] refreshed: {storage_path}")
