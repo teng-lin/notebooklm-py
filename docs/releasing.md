@@ -1,7 +1,7 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-05-17
+**Last Updated:** 2026-05-23
 
 Checklist for releasing a new version of `notebooklm-py`.
 
@@ -28,7 +28,7 @@ Release Plan for vX.Y.Z:
 4. Commit changes
 5. ⏸️ CONFIRM: Create PR to main?
 6. Wait for CI to pass on PR
-7. Run E2E tests on release branch
+7. Run E2E and RPC health checks on release branch
 8. ⏸️ CONFIRM: Publish to TestPyPI?
 9. Verify TestPyPI package
 10. Merge PR to main
@@ -183,12 +183,22 @@ Proceed with release preparation?
 ### E2E Tests on Release Branch
 
 - [ ] Go to **Actions** → **Nightly E2E**
-- [ ] Click **Run workflow**, select the `release/vX.Y.Z` branch
+- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
 - [ ] Wait for E2E tests to pass
 - [ ] If E2E tests fail:
   1. Fix issues in the release worktree
   2. Commit and push
   3. Re-run E2E tests
+
+### RPC Health Check on Release Branch
+
+- [ ] Go to **Actions** → **RPC Health Check**
+- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
+- [ ] Wait for RPC health check to pass
+- [ ] If RPC health check fails:
+  1. Fix issues in the release worktree
+  2. Commit and push
+  3. Re-run RPC health check
 
 ---
 

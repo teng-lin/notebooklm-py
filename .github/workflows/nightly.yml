@@ -4,8 +4,6 @@ on:
   schedule:
     # Main branch: 6 AM UTC (10 PM PST / 1 AM EST)
     - cron: '0 6 * * *'
-    # Develop branch: 11 AM UTC (3 AM PST / 6 AM EST) - 5 hours later
-    - cron: '0 11 * * *'
   workflow_dispatch:
     inputs:
       test_filter:
@@ -37,18 +35,13 @@ jobs:
         # is set automatically by the runner.
         env:
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_SCHEDULE: ${{ github.event.schedule }}
           CUSTOM_BRANCH: ${{ inputs.custom_branch }}
           REF_NAME: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           if [ "$EVENT_NAME" = "schedule" ]; then
-            # Scheduled: determine from cron expression
-            if [ "$EVENT_SCHEDULE" = "0 6 * * *" ]; then
-              echo "branch=main" >> "$GITHUB_OUTPUT"
-            else
-              echo "branch=develop" >> "$GITHUB_OUTPUT"
-            fi
-            echo "is_standard=true" >> "$GITHUB_OUTPUT"
+            # Scheduled runs test main only. Release branches are manual.
+            TARGET="main"
           else
             # Manual: use custom_branch if set, otherwise use triggering branch
             if [ -n "$CUSTOM_BRANCH" ]; then
@@ -56,26 +49,30 @@ jobs:
             else
               TARGET="$REF_NAME"
             fi
-            echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
-            # Check if it's main or develop
-            if [ "$TARGET" = "main" ] || [ "$TARGET" = "develop" ]; then
-              echo "is_standard=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "is_standard=false" >> "$GITHUB_OUTPUT"
-            fi
           fi
-          echo "Resolved branch: $(grep branch= "$GITHUB_OUTPUT" | cut -d= -f2)"
+          echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
+          # Check if it's main or a release branch
+          case "$TARGET" in
+            main|release/*)
+              echo "is_standard=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "is_standard=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+          echo "Resolved branch: $TARGET"
 
   # Run E2E tests on the resolved branch
   e2e:
     name: E2E Tests (${{ needs.resolve-branch.outputs.branch }}/${{ matrix.os }})
     needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
     runs-on: ${{ matrix.os }}
     # Secret-bearing job. Two-layer gating:
     #
     # 1. ``needs.resolve-branch.outputs.is_standard`` — set by the upstream
-    #    ``resolve-branch`` job. Only ``main`` and ``develop`` (or scheduled
-    #    cron triggers, which resolve to one of those) flip this to ``true``;
+    #    ``resolve-branch`` job. Only ``main`` and ``release/*`` branches
+    #    (or scheduled cron triggers, which resolve to one of those) flip this to ``true``;
     #    any other branch keeps it ``false`` and the secret-using steps below
     #    skip outright (no secret values land in the runner env).
     # 2. ``environment: protected-readonly`` (workflow_dispatch only) —
@@ -151,7 +148,7 @@ jobs:
 
     - name: Run E2E tests
       id: e2e
-      # Hard gate: only standard branches (main/develop, or scheduled cron
+      # Hard gate: only standard branches (main/release/*, or scheduled cron
       # runs which resolve to one of those) expose credentials. Any other
       # branch — including ad-hoc workflow_dispatch on a feature branch —
       # gets ``is_standard == 'false'`` from resolve-branch and skips here
