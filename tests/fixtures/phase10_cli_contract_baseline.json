@@ -6420,7 +6420,7 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Name to give the new profile when extracting a non-default account. Defaults to the account email's local-part. Only valid with --browser-cookies.",
+          "help": "Write a targeted --account browser-cookie login to this named profile instead of the active profile. Only valid with --browser-cookies.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,

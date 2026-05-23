@@ -19,31 +19,51 @@ from ._session_helpers import (
 )
 
 
+def _write_account_metadata(storage_file, *, authuser, email):
+    from notebooklm.auth import write_account_metadata
+
+    write_account_metadata(storage_file, authuser=authuser, email=email)
+
+
+def _profile_storage_path(target_root):
+    def fake_get_storage_path(profile=None):
+        return target_root / (profile or "default") / "storage_state.json"
+
+    return fake_get_storage_path
+
+
+def _account_enum(accounts=None):
+    account_specs = accounts or [
+        (0, "alice@example.com", True),
+        (1, "bob@gmail.com", False),
+    ]
+
+    async def _enum(*args, **kwargs):
+        from notebooklm.auth import Account
+
+        return [
+            Account(authuser=authuser, email=email, is_default=is_default)
+            for authuser, email, is_default in account_specs
+        ]
+
+    return _enum
+
+
 class TestLoginMultiAccount:
     """--account / --profile-name / --all-accounts on `notebooklm login --browser-cookies`."""
 
-    def test_account_writes_account_metadata(self, runner, tmp_path):
+    def test_account_writes_default_profile_by_default(self, runner, tmp_path):
         mock_rk = _multiaccount_rookiepy_mock()
-
-        async def _enum(*args, **kwargs):
-            from notebooklm.auth import Account
-
-            return [
-                Account(authuser=0, email="alice@example.com", is_default=True),
-                Account(authuser=1, email="bob@gmail.com", is_default=False),
-            ]
-
-        # Layout: tmp_path/profiles/bob/storage_state.json and context.json.
-        target_dir = tmp_path / "profiles" / "bob"
-
-        def fake_get_storage_path(profile=None):
-            return target_dir / "storage_state.json"
+        target_root = tmp_path / "profiles"
 
         with (
             patch.dict("sys.modules", {"rookiepy": mock_rk}),
-            patch_session_login_dual("get_storage_path", side_effect=fake_get_storage_path),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
             patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
-            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
             patch_session_login_dual(
                 "fetch_tokens_with_domains",
                 new_callable=AsyncMock,
@@ -56,9 +76,307 @@ class TestLoginMultiAccount:
             )
 
         assert result.exit_code == 0, result.output
-        storage_file = target_dir / "storage_state.json"
+        storage_file = target_root / "default" / "storage_state.json"
         assert _account_exists(storage_file)
+        assert not (target_root / "bob").exists()
+        mock_sync.assert_called_once_with(storage_path=storage_file, profile=None)
+        assert _read_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@gmail.com",
+        }
+
+    def test_account_honors_global_profile(self, runner, tmp_path):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "--profile",
+                    "work",
+                    "login",
+                    "--browser-cookies",
+                    "chrome",
+                    "--account",
+                    "bob@gmail.com",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        storage_file = target_root / "work" / "storage_state.json"
+        assert _account_exists(storage_file)
+        mock_sync.assert_called_once_with(storage_path=storage_file, profile="work")
+        assert _read_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@gmail.com",
+        }
+
+    def test_account_profile_name_still_writes_named_profile(self, runner, tmp_path):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "login",
+                    "--browser-cookies",
+                    "chrome",
+                    "--account",
+                    "bob@gmail.com",
+                    "--profile-name",
+                    "bob",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        storage_file = target_root / "bob" / "storage_state.json"
+        assert _account_exists(storage_file)
+        assert not (target_root / "default" / "storage_state.json").exists()
         mock_sync.assert_called_once_with(storage_path=storage_file, profile="bob")
+        assert _read_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@gmail.com",
+        }
+
+    def test_account_storage_bypasses_profile_targeting(self, runner, tmp_path):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target = tmp_path / "custom-storage.json"
+        _write_account_metadata(target, authuser=0, email="alice@example.com")
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch("click.confirm") as mock_confirm,
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual("_sync_server_language_to_config") as mock_sync,
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "login",
+                    "--browser-cookies",
+                    "chrome",
+                    "--account",
+                    "bob@gmail.com",
+                    "--storage",
+                    str(target),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_confirm.assert_not_called()
+        mock_sync.assert_called_once_with(storage_path=target, profile=None)
+        assert _read_account(target) == {
+            "authuser": 1,
+            "email": "bob@gmail.com",
+        }
+
+    def test_account_same_existing_profile_account_does_not_prompt(self, runner, tmp_path):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+        storage_file = target_root / "default" / "storage_state.json"
+        _write_account_metadata(storage_file, authuser=1, email="bob@gmail.com")
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch("click.confirm") as mock_confirm,
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch(
+                "notebooklm.auth.enumerate_accounts",
+                new=_account_enum([(1, "bob@gmail.com", False)]),
+            ),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["login", "--browser-cookies", "chrome", "--account", "bob@gmail.com"],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_confirm.assert_not_called()
+        assert _read_account(storage_file) == {
+            "authuser": 1,
+            "email": "bob@gmail.com",
+        }
+
+    def test_account_different_existing_profile_account_aborts_without_confirm(
+        self, runner, tmp_path
+    ):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+        storage_file = target_root / "default" / "storage_state.json"
+        _write_account_metadata(storage_file, authuser=0, email="alice@example.com")
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["login", "--browser-cookies", "chrome", "--account", "bob@gmail.com"],
+                input="\n",
+            )
+
+        assert result.exit_code != 0
+        assert "already has auth for alice@example.com" in result.output
+        assert "not overwriting with bob@gmail.com" in result.output
+        assert _read_account(storage_file) == {
+            "authuser": 0,
+            "email": "alice@example.com",
+        }
+
+    def test_account_existing_profile_without_metadata_aborts_without_confirm(
+        self, runner, tmp_path
+    ):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+        storage_file = target_root / "default" / "storage_state.json"
+        storage_file.parent.mkdir(parents=True)
+        storage_file.write_text(json.dumps({"cookies": [], "origins": []}))
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["login", "--browser-cookies", "chrome", "--account", "bob@gmail.com"],
+                input="\n",
+            )
+
+        assert result.exit_code != 0
+        assert "saved auth without account metadata" in result.output
+        assert "not overwriting" in result.output
+        assert "bob@gmail.com" in result.output
+        assert _read_account(storage_file) == {}
+
+    def test_account_profile_name_existing_different_account_aborts_without_confirm(
+        self, runner, tmp_path
+    ):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+        storage_file = target_root / "work" / "storage_state.json"
+        _write_account_metadata(storage_file, authuser=0, email="alice@example.com")
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "login",
+                    "--browser-cookies",
+                    "chrome",
+                    "--account",
+                    "bob@gmail.com",
+                    "--profile-name",
+                    "work",
+                ],
+                input="\n",
+            )
+
+        assert result.exit_code != 0
+        assert "profile 'work' already has auth for alice@example.com" in result.output
+        assert _read_account(storage_file) == {
+            "authuser": 0,
+            "email": "alice@example.com",
+        }
+
+    def test_account_different_existing_profile_account_overwrites_after_confirm(
+        self, runner, tmp_path
+    ):
+        mock_rk = _multiaccount_rookiepy_mock()
+        target_root = tmp_path / "profiles"
+        storage_file = target_root / "default" / "storage_state.json"
+        _write_account_metadata(storage_file, authuser=0, email="alice@example.com")
+
+        with (
+            patch.dict("sys.modules", {"rookiepy": mock_rk}),
+            patch_session_login_dual(
+                "get_storage_path",
+                side_effect=_profile_storage_path(target_root),
+            ),
+            patch("notebooklm.auth.enumerate_accounts", new=_account_enum()),
+            patch_session_login_dual(
+                "fetch_tokens_with_domains",
+                new_callable=AsyncMock,
+                return_value=("csrf", "sess"),
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["login", "--browser-cookies", "chrome", "--account", "bob@gmail.com"],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0, result.output
         assert _read_account(storage_file) == {
             "authuser": 1,
             "email": "bob@gmail.com",

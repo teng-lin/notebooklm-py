@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import click
 import httpx
 
 from ....auth import (
@@ -64,9 +65,8 @@ def _login_browser_cookies_single(
 
     - ``--storage`` wins outright.
     - ``--profile-name`` selects a sibling profile under the home dir.
-    - ``--account`` defaults the new profile to the email's local-part
-      when the user did not pass ``--profile-name``.
-    - Otherwise we write to the active profile (existing behavior).
+    - Otherwise we write to the active profile, even when ``--account`` selects
+      a non-default browser account.
     """
     explicit_storage = Path(storage) if storage else None
 
@@ -81,19 +81,27 @@ def _login_browser_cookies_single(
         )
         return
 
-    # Path 2: targeted extraction. We need the email to derive a profile name
-    # when --profile-name is omitted.
+    # Path 2: targeted extraction. Select the requested browser account, then
+    # write it to an explicit destination or to the active profile.
     per_profile_cookies, accounts = _enumerate_browser_accounts(
         browser_cookies, include_domains=include_domains
     )
     selected = _select_account(accounts, account_email=account_email)
 
-    target_profile = profile_name or email_to_profile_name(selected.email)
+    target_profile: str | None
     if profile_name is not None:
-        _validate_profile_name(target_profile)
+        target_profile = _validate_profile_name(profile_name)
+    else:
+        target_profile = active_profile
 
     target_storage = explicit_storage or get_storage_path(profile=target_profile)
     storage_profile = target_profile if not explicit_storage else active_profile
+    if explicit_storage is None:
+        _confirm_profile_account_overwrite(
+            target_storage,
+            profile=storage_profile,
+            selected_email=selected.email,
+        )
 
     _write_extracted_cookies(
         per_profile_cookies[selected.browser_profile],
@@ -103,6 +111,42 @@ def _login_browser_cookies_single(
         email=selected.email,
     )
     _sync_server_language_to_config(storage_path=target_storage, profile=storage_profile)
+
+
+def _confirm_profile_account_overwrite(
+    storage_path: Path,
+    *,
+    profile: str | None,
+    selected_email: str,
+) -> None:
+    """Prompt before replacing a profile bound to a different Google account."""
+    metadata = read_account_metadata(storage_path)
+    existing_email = metadata.get("email")
+    if isinstance(existing_email, str) and existing_email.strip():
+        existing_email = existing_email.strip()
+    elif storage_path.exists():
+        existing_email = None
+    else:
+        return
+    if existing_email is not None and existing_email.casefold() == selected_email.casefold():
+        return
+
+    target = f"profile '{profile}'" if profile else f"profile at {storage_path.parent}"
+    conflict = (
+        f"auth for {existing_email}"
+        if existing_email is not None
+        else "saved auth without account metadata"
+    )
+    if click.confirm(
+        f"{target} already has {conflict}. Overwrite it with {selected_email}?",
+        default=False,
+    ):
+        return
+
+    console.print(
+        f"[red]Aborted:[/red] {target} still has {conflict}; not overwriting with {selected_email}."
+    )
+    exit_with_code(1)
 
 
 def _login_all_accounts_from_browser(

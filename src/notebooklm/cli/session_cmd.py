@@ -245,9 +245,8 @@ def register_session_commands(cli):
         "profile_name",
         default=None,
         help=(
-            "Name to give the new profile when extracting a non-default account. "
-            "Defaults to the account email's local-part. Only valid with "
-            "--browser-cookies."
+            "Write a targeted --account browser-cookie login to this named profile "
+            "instead of the active profile. Only valid with --browser-cookies."
         ),
     )
     @click.option(
