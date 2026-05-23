@@ -953,10 +953,8 @@ class TestAddEpubFileSource:
         )
 
         async with NotebookLMClient(auth_tokens) as client:
-            # ``mime_type`` is deprecated for ``add_file``; the upload
-            # pipeline derives the MIME type from the filename extension. The
-            # legacy call site is preserved-by-omission here to avoid leaking
-            # a DeprecationWarning into the integration suite.
+            # Omit an explicit MIME type here so the upload pipeline exercises
+            # filename-extension inference for EPUB files.
             source = await client.sources.add_file(
                 "nb_123",
                 test_epub,
@@ -1691,7 +1689,9 @@ class TestAddFileWait:
                         ) as mock_wait:
                             result = await client.sources.add_file("nb_123", test_file, wait=True)
 
-        mock_wait.assert_called_once_with("nb_123", "file_src_001", timeout=120.0)
+        mock_wait.assert_called_once_with(
+            "nb_123", "file_src_001", timeout=120.0, transient_error_types=()
+        )
         assert result.id == "file_src_001"
 
 

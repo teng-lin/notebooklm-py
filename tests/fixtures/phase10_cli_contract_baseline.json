@@ -8156,7 +8156,7 @@
           "default": "Sentinel.UNSET",
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "[Deprecated] MIME type for file sources \u2014 unused; the server derives MIME from the filename extension. Drive sources retain this option (see ``source add-drive``).",
+          "help": "MIME type for uploaded file sources. Overrides filename-extension inference.",
           "is_flag": false,
           "kind": "option",
           "multiple": false,
