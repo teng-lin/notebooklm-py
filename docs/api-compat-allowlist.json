@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "extra_public_names": {
+    "notebooklm": [
+      "configure_logging",
+      "DEFAULT_STORAGE_PATH"
+    ]
+  },
+  "allowed_breaks": [
+    {
+      "code": "removed-export",
+      "object": "notebooklm.DEFAULT_STORAGE_PATH",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is notebooklm.paths.get_storage_path()."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.StudioContentType",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is notebooklm.ArtifactType."
+    },
+    {
+      "code": "removed-export",
+      "object": "notebooklm.rpc.StudioContentType",
+      "reason": "v0.3-era raw-code alias removal completed in v0.5.0; replacement is notebooklm.ArtifactType for public code."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.Artifact.artifact_type",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is Artifact.kind."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.Artifact.variant",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacements are Artifact.kind, Artifact.is_quiz, and Artifact.is_flashcards."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.Source.source_type",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is Source.kind."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.SourceFulltext.source_type",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is SourceFulltext.kind."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.Artifact.artifact_type",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is Artifact.kind."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.Artifact.variant",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacements are Artifact.kind, Artifact.is_quiz, and Artifact.is_flashcards."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.Source.source_type",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is Source.kind."
+    },
+    {
+      "code": "removed-member",
+      "object": "notebooklm.types.SourceFulltext.source_type",
+      "reason": "v0.3-era deprecation completed in v0.5.0; replacement is SourceFulltext.kind."
+    }
+  ]
+}

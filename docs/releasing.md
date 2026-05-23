@@ -1,7 +1,7 @@
 # Release Checklist
 
 **Status:** Active
-**Last Updated:** 2026-05-17
+**Last Updated:** 2026-05-23
 
 Checklist for releasing a new version of `notebooklm-py`.
 
@@ -13,6 +13,8 @@ Checklist for releasing a new version of `notebooklm-py`.
 > 3. **Explicit confirmation required** for: creating PR, publishing to TestPyPI, creating tags, pushing tags
 > 4. **"ok" is not confirmation** - restate what you're about to do and wait for explicit "yes"
 > 5. **TestPyPI is mandatory** - it catches packaging issues that tests cannot detect
+> 6. **Public API compatibility audit is mandatory** - do not publish while
+>    `scripts/audit_public_api_compat.py` reports unapproved breaks
 
 ---
 
@@ -24,18 +26,19 @@ Before starting, present this summary to the user:
 Release Plan for vX.Y.Z:
 1. Create release worktree (`release/vX.Y.Z` branch)
 2. Update pyproject.toml and CHANGELOG.md
-3. Run pre-commit checks (ruff, mypy, pytest)
-4. Commit changes
-5. ⏸️ CONFIRM: Create PR to main?
-6. Wait for CI to pass on PR
-7. Run E2E tests on release branch
-8. ⏸️ CONFIRM: Publish to TestPyPI?
-9. Verify TestPyPI package
-10. Merge PR to main
-11. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
-12. Wait for PyPI publish
-13. Create GitHub release
-14. Clean up worktree
+3. Run public API compatibility audit
+4. Run pre-commit checks (ruff, mypy, pytest)
+5. Commit changes
+6. ⏸️ CONFIRM: Create PR to main?
+7. Wait for CI to pass on PR
+8. Run E2E tests on release branch
+9. ⏸️ CONFIRM: Publish to TestPyPI?
+10. Verify TestPyPI package
+11. Merge PR to main
+12. ⏸️ CONFIRM: Create and push tag vX.Y.Z?
+13. Wait for PyPI publish
+14. Create GitHub release
+15. Clean up worktree
 
 Proceed with release preparation?
 ```
@@ -105,6 +108,43 @@ Proceed with release preparation?
   version = "X.Y.Z"
   ```
 
+### Public API Compatibility Gate
+
+- [ ] Run the cross-release public API audit before committing release changes:
+  ```bash
+  uv run python scripts/audit_public_api_compat.py
+  ```
+- [ ] Read every reported break. The audit compares this checkout with the
+  latest reachable release tag (override with `--baseline-ref vX.Y.Z` only when
+  auditing against a specific previous release).
+- [ ] If the audit reports an unapproved break, prefer a compatibility shim or
+  restored alias. Do **not** proceed to packaging while unapproved breaks remain.
+- [ ] If a break is intentional and allowed by the stability policy, update all
+  of these in the same PR:
+  - `docs/stability.md` and `docs/deprecations.md` when the change is a
+    deprecation removal or newly deprecated surface
+  - `CHANGELOG.md` with the migration path
+  - `docs/api-compat-allowlist.json` with the exact `code`, `object`, and a
+    reviewer-readable reason; use its `extra_public_names` section only for
+    documented names that are intentionally public but not listed in
+    `__all__`
+- [ ] Re-run the audit. The acceptable release state is either no breaks or
+  only reviewed allowlisted breaks printed by the script.
+- [ ] If CLI commands, flags, arguments, help text, or env-var bindings changed,
+  also run the CLI contract baseline:
+  ```bash
+  uv run pytest tests/unit/cli/test_phase10_cli_contract.py
+  ```
+
+The allowlist is not a bypass for accidental breakage. It is a paper trail for
+intentional removals already permitted by `docs/stability.md`, such as a
+completed deprecation cycle. Public enum members exposed through documented
+imports, including `notebooklm.rpc.RPCMethod`, count as API surface. So do
+documented client namespace methods under `NotebookLMClient.notebooks`,
+`sources`, `artifacts`, `chat`, `research`, `notes`, `settings`, and
+`sharing`. Function signatures include positional/keyword compatibility and
+default values; changing a default is a public behavior change.
+
 ### Changelog
 
 - [ ] Get commits since last release:
@@ -142,6 +182,7 @@ Proceed with release preparation?
   ```bash
   uv run python scripts/check_ci_install_parity.py
   uv run python scripts/check_claude_md_freshness.py
+  uv run python scripts/audit_public_api_compat.py
   ```
 - [ ] Fix any issues before proceeding
 
