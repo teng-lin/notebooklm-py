@@ -559,19 +559,23 @@ class TestMissingCookiesHint:
         assert "not signed in" in hint
         assert "chrome" in hint
 
+    # NOTE: We assert on non-URL hint phrases rather than the
+    # ``https://notebooklm.google.com`` literal so CodeQL's
+    # ``py/incomplete-url-substring-sanitization`` rule doesn't flag these
+    # checks (the hint itself contains the canonical URL).
     def test_missing_psidts_with_binding_suggests_rotation_or_visit(self):
         from notebooklm._auth.cookie_policy import missing_cookies_hint
 
         hint = missing_cookies_hint({"SID", "APISID", "SAPISID"}, browser_label="firefox")
         assert "__Secure-1PSIDTS" in hint
-        assert "https://notebooklm.google.com" in hint
+        assert "RotateCookies recovery" in hint
         assert "firefox" in hint
 
     def test_missing_psidts_and_binding_suggests_visit(self):
         from notebooklm._auth.cookie_policy import missing_cookies_hint
 
         hint = missing_cookies_hint({"SID"}, browser_label="chrome")
-        assert "https://notebooklm.google.com" in hint
+        assert "reload the page" in hint
         assert ("OSID" in hint) or ("binding" in hint.lower())
 
     def test_missing_binding_only_suggests_visit(self):
@@ -579,7 +583,7 @@ class TestMissingCookiesHint:
 
         # SID + PSIDTS present, but no secondary binding.
         hint = missing_cookies_hint({"SID", "__Secure-1PSIDTS"}, browser_label="chrome")
-        assert "https://notebooklm.google.com" in hint
+        assert "reload the page" in hint
         assert "binding" in hint.lower() or "OSID" in hint
 
     def test_default_browser_label_when_unspecified(self):
