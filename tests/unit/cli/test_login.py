@@ -894,6 +894,40 @@ class TestLoginCommand:
             "email": "alice@example.com",
         }
 
+    def test_auth_refresh_repairs_malformed_playwright_account_metadata(self, runner, tmp_path):
+        """Non-empty but malformed metadata must not block Playwright repair."""
+        from notebooklm.auth import Account
+
+        storage_file = tmp_path / "storage.json"
+        original_state = _required_cookie_state()
+        original_state["notebooklm"] = {
+            "version": 1,
+            "account": {"authuser": "1", "email": "wrong@example.com"},
+        }
+        storage_file.write_text(json.dumps(original_state), encoding="utf-8")
+
+        async def _enum(*args, **kwargs):
+            return [Account(authuser=0, email="alice@example.com", is_default=True)]
+
+        with (
+            patch_session_login_dual("get_storage_path", return_value=storage_file),
+            patch("notebooklm.auth.enumerate_accounts", new=_enum),
+            patch(
+                "notebooklm.cli.session_cmd.fetch_tokens_with_domains", new_callable=AsyncMock
+            ) as mock_fetch,
+        ):
+            mock_fetch.return_value = ("csrf_ok", "session_ok")
+            result = runner.invoke(cli, ["auth", "refresh"])
+
+        assert result.exit_code == 0, result.output
+        repaired_state = json.loads(storage_file.read_text())
+        assert repaired_state["cookies"] == original_state["cookies"]
+        assert repaired_state["origins"] == original_state["origins"]
+        assert repaired_state["notebooklm"]["account"] == {
+            "authuser": 0,
+            "email": "alice@example.com",
+        }
+
     def test_auth_refresh_skips_repair_when_account_metadata_exists(self, runner, tmp_path):
         """Existing account metadata is an explicit binding; keepalive must not replace it."""
         storage_file = tmp_path / "storage.json"

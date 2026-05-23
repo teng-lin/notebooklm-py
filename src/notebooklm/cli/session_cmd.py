@@ -142,6 +142,16 @@ async def fetch_tokens_with_domains(*args: Any, **kwargs: Any) -> Any:
     return await auth_fetch_tokens_with_domains(*args, **kwargs)
 
 
+def _is_valid_account_metadata(metadata: dict[str, Any]) -> bool:
+    raw_authuser = metadata.get("authuser")
+    if not isinstance(raw_authuser, int) or raw_authuser < 0:
+        return False
+    raw_email = metadata.get("email")
+    if raw_email is None:
+        return True
+    return isinstance(raw_email, str) and bool(raw_email.strip())
+
+
 # Legacy thin alias kept for the small set of session-cmd-internal helpers
 # below. The Playwright login flow now lives in
 # :mod:`notebooklm.cli.services.playwright_login`; this thunk preserves the
@@ -716,8 +726,10 @@ def register_session_commands(cli):
 
             from ..auth import read_account_metadata
 
-            if storage_path.exists() and not read_account_metadata(storage_path):
-                _repair_playwright_account_metadata(storage_path, quiet=quiet)
+            if storage_path.exists():
+                metadata = read_account_metadata(storage_path)
+                if not _is_valid_account_metadata(metadata):
+                    _repair_playwright_account_metadata(storage_path, quiet=quiet)
 
             if not quiet:
                 console.print(f"[green]ok[/green] refreshed: {storage_path}")
