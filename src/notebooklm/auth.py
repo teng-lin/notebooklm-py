@@ -329,9 +329,9 @@ class AuthTokens:
         if path is None and (profile is not None or "NOTEBOOKLM_AUTH_JSON" not in os.environ):
             path = get_storage_path(profile=profile)
 
-        authuser = get_authuser_for_storage(path)
-        account_email = get_account_email_for_storage(path)
         if path is None:
+            authuser = 0
+            account_email = None
             account_metadata = _auth_account.read_account_metadata_from_storage_state(
                 _load_storage_state(path)
             )
@@ -341,6 +341,9 @@ class AuthTokens:
                 authuser = raw_authuser
             if isinstance(raw_email, str) and raw_email.strip():
                 account_email = raw_email.strip()
+        else:
+            authuser = get_authuser_for_storage(path)
+            account_email = get_account_email_for_storage(path)
         # Build the cookie jar via the lossless loader so path/secure/httpOnly
         # survive into the live jar. The earlier
         # extract_cookies_with_domains -> build_cookie_jar pipeline only carried
