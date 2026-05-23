@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from notebooklm._source_upload import SourceUploadPipeline, _extract_register_file_source_id
+from notebooklm._source_upload import (
+    SourceUploadPipeline,
+    _extract_register_file_source_id,
+    _transient_error_types_for_upload,
+)
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source, SourceAddError
 
@@ -132,6 +136,23 @@ def test_extract_register_file_source_id_skips_large_string_candidates() -> None
     long_payload = " " + ("x" * 2000) + " "
 
     assert _extract_register_file_source_id([long_payload, "src_123"], "report.pdf") == "src_123"
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        ("audio/mpeg", (10, 0, None)),
+        ("Audio/MPEG", (10, 0, None)),
+        ("audio/mpeg; codecs=mp3", (10, 0, None)),
+        ("application/ogg", (10, 0, None)),
+        ("application/x-matroska", (10, 0, None)),
+        ("application/pdf", ()),
+    ],
+)
+def test_transient_error_types_for_upload_classifies_media_content_types(
+    content_type: str, expected: tuple[int | None, ...]
+) -> None:
+    assert _transient_error_types_for_upload(content_type) == expected
 
 
 @pytest.mark.asyncio

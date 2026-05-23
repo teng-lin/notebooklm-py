@@ -214,6 +214,12 @@ ListSources = Callable[[str], Awaitable[list[Source]]]
 QueueWaitRecorder = Callable[[float], None]
 
 _MEDIA_CONTENT_TYPE_PREFIXES = ("audio/", "video/")
+_MEDIA_APPLICATION_CONTENT_TYPES = frozenset(
+    {
+        "application/ogg",
+        "application/x-matroska",
+    }
+)
 _MEDIA_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = (10, 0, None)
 _STRICT_TRANSIENT_ERROR_TYPES: tuple[int | None, ...] = ()
 
@@ -290,7 +296,11 @@ def _resolve_upload_content_type(file_path: Path, mime_type: str | None) -> str:
 
 def _transient_error_types_for_upload(content_type: str) -> tuple[int | None, ...]:
     """Return source status=ERROR transient policy for this upload."""
-    if content_type.startswith(_MEDIA_CONTENT_TYPE_PREFIXES):
+    normalized = content_type.split(";", 1)[0].strip().lower()
+    if (
+        normalized.startswith(_MEDIA_CONTENT_TYPE_PREFIXES)
+        or normalized in _MEDIA_APPLICATION_CONTENT_TYPES
+    ):
         return _MEDIA_TRANSIENT_ERROR_TYPES
     return _STRICT_TRANSIENT_ERROR_TYPES
 
