@@ -520,7 +520,7 @@ class TestInMemoryRecovery:
         assert psidts_recovery.recover_psidts_in_memory(cookies) is False
 
     @pytest.mark.no_default_keepalive_mock
-    def testvalidate_with_recovery_heals_partial_jar(self, httpx_mock: HTTPXMock):
+    def test_validate_with_recovery_heals_partial_jar(self, httpx_mock: HTTPXMock):
         """End-to-end: validate-with-recovery returns (storage_state, None) after rotation."""
         cookies = self._rookiepy_recoverable()
         httpx_mock.add_response(url=_ROTATE_URL_RE, **_make_psidts_response())
@@ -534,7 +534,7 @@ class TestInMemoryRecovery:
         assert "__Secure-1PSIDTS" in {c["name"] for c in cookies}
 
     @pytest.mark.no_default_keepalive_mock
-    def testvalidate_with_recovery_returns_error_on_unrecoverable(self, httpx_mock: HTTPXMock):
+    def test_validate_with_recovery_returns_error_on_unrecoverable(self, httpx_mock: HTTPXMock):
         """When recovery declines, the original ValueError is surfaced."""
         # No SID → recovery declines → original ValueError propagates.
         cookies = [c for c in self._rookiepy_recoverable() if c["name"] != "SID"]

@@ -26,8 +26,11 @@ import click
 import httpx
 
 from ....auth import (
+    cookie_names_from_storage,
     fetch_tokens_with_domains,
+    missing_cookies_hint,
     read_account_metadata,
+    validate_with_recovery,
 )
 from ....client import NotebookLMClient
 from ....io import atomic_write_json
@@ -276,12 +279,6 @@ def _login_with_browser_cookies(
         include_domains: Optional ``--include-domains`` label set forwarded
             to :func:`_read_browser_cookies`.
     """
-    from ....auth import (
-        cookie_names_from_storage,
-        missing_cookies_hint,
-        validate_with_recovery,
-    )
-
     raw_cookies = _read_browser_cookies(browser_name, include_domains=include_domains)
 
     # ``validate_with_recovery`` mutates ``raw_cookies`` in place if the

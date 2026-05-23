@@ -15,10 +15,15 @@ def cookie_names_from_storage(storage_state: Mapping[str, Any]) -> set[str]:
     Centralizes the ``{entry["name"] for entry in storage_state["cookies"]}``
     pattern that the CLI extraction paths use to feed
     :func:`missing_cookies_hint` after a failed extraction. Defensive against
-    non-dict entries (rookiepy can return malformed rows) and missing keys.
+    non-dict entries (rookiepy can return malformed rows), missing keys, and
+    ``None`` / empty-string names (so the returned set never contains ``""``).
     """
     cookies = storage_state.get("cookies", [])
-    return {entry.get("name", "") for entry in cookies if isinstance(entry, dict)}
+    return {
+        name
+        for entry in cookies
+        if isinstance(entry, dict) and isinstance(name := entry.get("name"), str) and name
+    }
 
 
 # Tier 1: cookies whose absence Google rejects deterministically.

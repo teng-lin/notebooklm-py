@@ -485,9 +485,10 @@ def validate_with_recovery(
 ) -> tuple[dict[str, Any], ValueError | None]:
     """Convert + validate rookiepy cookies, attempting recovery on failure.
 
-    Shared helper for the two CLI browser-extraction entry points
-    (:func:`notebooklm.cli.services.login.cookie_jar._enumerate_one_jar` and
-    :func:`notebooklm.cli.services.login.cookie_writes._write_extracted_cookies`).
+    Shared helper for the three CLI browser-extraction entry points:
+    :func:`notebooklm.cli.services.login.cookie_jar._enumerate_one_jar`,
+    :func:`notebooklm.cli.services.login.cookie_writes._write_extracted_cookies`,
+    and :func:`notebooklm.cli.services.login.refresh._login_with_browser_cookies`.
     Wraps :func:`notebooklm._auth.cookies.convert_rookiepy_cookies_to_storage_state`
     plus :func:`notebooklm._auth.cookies.extract_cookies_from_storage` with one
     retry through :func:`recover_psidts_in_memory` (issue #990). When the
