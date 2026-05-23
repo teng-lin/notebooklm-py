@@ -33,10 +33,14 @@ def _profile_storage_path(target_root):
 
 
 def _account_enum(accounts=None):
-    account_specs = accounts or [
-        (0, "alice@example.com", True),
-        (1, "bob@gmail.com", False),
-    ]
+    account_specs = (
+        accounts
+        if accounts is not None
+        else [
+            (0, "alice@example.com", True),
+            (1, "bob@gmail.com", False),
+        ]
+    )
 
     async def _enum(*args, **kwargs):
         from notebooklm.auth import Account
