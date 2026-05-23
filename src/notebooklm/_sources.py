@@ -3,10 +3,11 @@
 import asyncio
 import builtins
 import logging
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
-from typing import IO, Any, Literal
+from typing import IO, Any, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -30,9 +31,60 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
+class _SignatureDefault:
+    def __init__(self, display: str) -> None:
+        self._display = display
+
+    def __repr__(self) -> str:
+        return self._display
+
+
+_DEFAULT_WAIT: Any = _SignatureDefault("False")
+_DEFAULT_WAIT_TIMEOUT: Any = _SignatureDefault("120.0")
 _SOURCE_ID_UUID_PATTERN = _source_upload._SOURCE_ID_UUID_PATTERN
 _extract_register_file_source_id = _source_upload._extract_register_file_source_id
 _looks_like_id_string = _source_upload._looks_like_id_string
+
+
+def _resolve_legacy_wait_args(
+    method_name: str,
+    legacy_wait_args: tuple[Any, ...],
+    *,
+    wait: Any,
+    wait_timeout: Any,
+) -> tuple[bool, float]:
+    """Accept legacy positional wait args for one deprecation window."""
+    if len(legacy_wait_args) > 2:
+        raise TypeError(
+            f"{method_name}() takes at most 2 positional wait arguments "
+            f"but {len(legacy_wait_args)} were given"
+        )
+
+    if legacy_wait_args:
+        if wait is not _DEFAULT_WAIT:
+            raise TypeError(f"{method_name}() got multiple values for argument 'wait'")
+        if len(legacy_wait_args) == 2 and wait_timeout is not _DEFAULT_WAIT_TIMEOUT:
+            raise TypeError(f"{method_name}() got multiple values for argument 'wait_timeout'")
+
+        warnings.warn(
+            f"Passing wait/wait_timeout positionally to {method_name} is deprecated; "
+            "use wait=<value> and wait_timeout=<value> as keyword arguments. "
+            "Positional wait arguments will be removed in v0.6.0.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+        wait = legacy_wait_args[0]
+
+        if len(legacy_wait_args) == 2:
+            wait_timeout = legacy_wait_args[1]
+
+    if wait is _DEFAULT_WAIT:
+        wait = False
+    if wait_timeout is _DEFAULT_WAIT_TIMEOUT:
+        wait_timeout = 120.0
+
+    return cast(bool, wait), cast(float, wait_timeout)
 
 
 class SourcesAPI:
@@ -301,9 +353,9 @@ class SourcesAPI:
         self,
         notebook_id: str,
         url: str,
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
+        *legacy_wait_args: Any,
+        wait: Any = _DEFAULT_WAIT,
+        wait_timeout: Any = _DEFAULT_WAIT_TIMEOUT,
     ) -> Source:
         """Add a URL source to a notebook.
 
@@ -327,6 +379,12 @@ class SourcesAPI:
             # ... add more sources ...
             await client.sources.wait_for_sources(nb_id, [s.id for s in sources])
         """
+        wait, wait_timeout = _resolve_legacy_wait_args(
+            "SourcesAPI.add_url",
+            legacy_wait_args,
+            wait=wait,
+            wait_timeout=wait_timeout,
+        )
         return await self._adder.add_url(
             notebook_id,
             url,
@@ -346,9 +404,9 @@ class SourcesAPI:
         notebook_id: str,
         title: str,
         content: str,
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
+        *legacy_wait_args: Any,
+        wait: Any = _DEFAULT_WAIT,
+        wait_timeout: Any = _DEFAULT_WAIT_TIMEOUT,
         idempotent: bool = False,
     ) -> Source:
         """Add a text source (copied text) to a notebook.
@@ -382,6 +440,12 @@ class SourcesAPI:
         Raises:
             NonIdempotentRetryError: When ``idempotent=True``.
         """
+        wait, wait_timeout = _resolve_legacy_wait_args(
+            "SourcesAPI.add_text",
+            legacy_wait_args,
+            wait=wait,
+            wait_timeout=wait_timeout,
+        )
         return await self._adder.add_text(
             notebook_id,
             title,
@@ -399,9 +463,9 @@ class SourcesAPI:
         notebook_id: str,
         file_path: str | Path,
         mime_type: str | None = None,
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
+        *legacy_wait_args: Any,
+        wait: Any = _DEFAULT_WAIT,
+        wait_timeout: Any = _DEFAULT_WAIT_TIMEOUT,
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
@@ -477,6 +541,12 @@ class SourcesAPI:
             - EPUB: application/epub+zip
             - Word: application/vnd.openxmlformats-officedocument.wordprocessingml.document
         """
+        wait, wait_timeout = _resolve_legacy_wait_args(
+            "SourcesAPI.add_file",
+            legacy_wait_args,
+            wait=wait,
+            wait_timeout=wait_timeout,
+        )
         return await self._uploader.add_file(
             notebook_id,
             file_path,
@@ -500,9 +570,9 @@ class SourcesAPI:
         file_id: str,
         title: str,
         mime_type: str = "application/vnd.google-apps.document",
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
+        *legacy_wait_args: Any,
+        wait: Any = _DEFAULT_WAIT,
+        wait_timeout: Any = _DEFAULT_WAIT_TIMEOUT,
     ) -> Source:
         """Add a Google Drive document as a source.
 
@@ -532,6 +602,12 @@ class SourcesAPI:
                 wait=True,  # Wait for processing
             )
         """
+        wait, wait_timeout = _resolve_legacy_wait_args(
+            "SourcesAPI.add_drive",
+            legacy_wait_args,
+            wait=wait,
+            wait_timeout=wait_timeout,
+        )
         return await self._adder.add_drive(
             notebook_id,
             file_id,

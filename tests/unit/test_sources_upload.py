@@ -152,6 +152,81 @@ def _assert_async_client_uses_live_cookies(mock_client_cls, mock_core) -> None:
     assert mock_client_cls.call_args.kwargs["cookies"] is not mock_core.auth.cookie_jar
 
 
+class TestLegacyPositionalWaitArgs:
+    """Compatibility tests for v0.4.x positional wait/wait_timeout calls."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("method_name", "args"),
+        [
+            ("add_url", ("nb_123", "https://example.com/article")),
+            ("add_text", ("nb_123", "Title", "Body")),
+            ("add_file", ("nb_123", "document.pdf", None)),
+            (
+                "add_drive",
+                (
+                    "nb_123",
+                    "drive_file_id",
+                    "Drive Doc",
+                    "application/vnd.google-apps.document",
+                ),
+            ),
+        ],
+    )
+    async def test_legacy_positional_wait_args_warn_and_forward(
+        self, sources_api, method_name, args
+    ):
+        target = sources_api._uploader if method_name == "add_file" else sources_api._adder
+        patched = AsyncMock(return_value=Source(id="src_123", title="Source"))
+        setattr(target, method_name, patched)
+
+        method = getattr(sources_api, method_name)
+        with pytest.warns(
+            DeprecationWarning,
+            match=r"Passing wait/wait_timeout positionally to SourcesAPI\.",
+        ):
+            result = await method(*args, True, 45.0)
+
+        assert result.id == "src_123"
+        patched.assert_awaited_once()
+        assert patched.call_args.kwargs["wait"] is True
+        assert patched.call_args.kwargs["wait_timeout"] == 45.0
+
+    @pytest.mark.asyncio
+    async def test_legacy_single_positional_wait_keeps_default_timeout(self, sources_api):
+        patched = AsyncMock(return_value=Source(id="src_123", title="Source"))
+        sources_api._adder.add_url = patched
+
+        with pytest.warns(DeprecationWarning, match="wait/wait_timeout"):
+            await sources_api.add_url("nb_123", "https://example.com/article", True)
+
+        assert patched.call_args.kwargs["wait"] is True
+        assert patched.call_args.kwargs["wait_timeout"] == 120.0
+
+    @pytest.mark.asyncio
+    async def test_duplicate_wait_positional_and_keyword_raises_type_error(self, sources_api):
+        with pytest.raises(TypeError, match="multiple values for argument 'wait'"):
+            await sources_api.add_url("nb_123", "https://example.com/article", True, wait=False)
+
+    @pytest.mark.asyncio
+    async def test_duplicate_wait_timeout_positional_and_keyword_raises_type_error(
+        self, sources_api
+    ):
+        with pytest.raises(TypeError, match="multiple values for argument 'wait_timeout'"):
+            await sources_api.add_url(
+                "nb_123",
+                "https://example.com/article",
+                True,
+                45.0,
+                wait_timeout=60.0,
+            )
+
+    @pytest.mark.asyncio
+    async def test_too_many_legacy_wait_args_raises_type_error(self, sources_api):
+        with pytest.raises(TypeError, match="at most 2 positional wait arguments"):
+            await sources_api.add_url("nb_123", "https://example.com/article", True, 45.0, "extra")
+
+
 # =============================================================================
 # _extract_youtube_video_id() tests
 # =============================================================================
