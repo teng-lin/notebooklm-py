@@ -68,6 +68,14 @@ def _replace_json_file(temp_path: Path, path: Path) -> None:
                 raise
             # Windows can transiently deny concurrent replaces of the same
             # destination. The temp file remains the source for a safe retry.
+            logger.debug(
+                "Transient Windows replace error %s on attempt %d/%d for %s; retrying in %.3fs",
+                getattr(exc, "winerror", None),
+                attempt + 1,
+                _WINDOWS_REPLACE_MAX_ATTEMPTS,
+                path,
+                delay,
+            )
             time.sleep(delay)
             delay = min(delay * 2, _WINDOWS_REPLACE_MAX_DELAY_SECONDS)
 
