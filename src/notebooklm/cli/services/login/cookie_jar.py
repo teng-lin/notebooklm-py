@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ....auth import (
+    cookie_names_from_storage,
     missing_cookies_hint,
     validate_with_recovery,
 )
@@ -105,11 +106,7 @@ def _enumerate_one_jar(
     storage_state, validation_error = validate_with_recovery(raw_cookies)
     if validation_error is not None:
         if not quiet:
-            cookie_names = {
-                entry.get("name", "")
-                for entry in storage_state.get("cookies", [])
-                if isinstance(entry, dict)
-            }
+            cookie_names = cookie_names_from_storage(storage_state)
             hint = missing_cookies_hint(cookie_names, browser_label=browser_name)
             console.print(
                 "[red]No valid Google authentication cookies found.[/red]\n"

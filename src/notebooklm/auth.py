@@ -127,6 +127,7 @@ __all__ = [
     "build_httpx_cookies_from_storage",
     "clear_account_metadata",
     "convert_rookiepy_cookies_to_storage_state",
+    "cookie_names_from_storage",
     "CookieSaveResult",
     "CookieSnapshot",
     "CookieSnapshotKey",
@@ -573,6 +574,9 @@ validate_with_recovery = _auth_psidts_recovery.validate_with_recovery
 # cookies are missing and returns a scenario-specific recovery message that
 # the CLI uses in place of the generic "Make sure you are logged in" tail.
 missing_cookies_hint = _cookie_policy.missing_cookies_hint
+# Helper: extract cookie names from a Playwright storage_state. Shared by
+# all three CLI browser-extraction paths to feed ``missing_cookies_hint``.
+cookie_names_from_storage = _cookie_policy.cookie_names_from_storage
 # Rotation sentinel path lives in ``_auth.paths``; the keepalive module also
 # aliases it locally. Re-exported here for white-box callers that resolve it
 # against ``notebooklm.auth``.

@@ -205,7 +205,7 @@ class TestMissingCookiesDiagnostics:
             result = runner.invoke(cli, ["login", "--browser-cookies", "chrome"])
 
         assert result.exit_code == 1
-        assert "notebooklm.google.com" in result.output
+        assert "https://notebooklm.google.com" in result.output
 
         # No POST: recovery short-circuits on the secondary-binding precondition.
         assert [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))] == []
@@ -230,7 +230,7 @@ class TestMissingCookiesDiagnostics:
         assert result.exit_code == 1
         # The 4xx-recovery-failed hint mentions notebooklm.google.com so the
         # user knows the remediation step.
-        assert "notebooklm.google.com" in result.output
+        assert "https://notebooklm.google.com" in result.output
 
         # POST was attempted exactly once (and declined).
         rotate_calls = [r for r in httpx_mock.get_requests() if _ROTATE_URL_RE.match(str(r.url))]

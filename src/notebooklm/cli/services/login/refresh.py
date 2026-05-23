@@ -276,7 +276,11 @@ def _login_with_browser_cookies(
         include_domains: Optional ``--include-domains`` label set forwarded
             to :func:`_read_browser_cookies`.
     """
-    from ....auth import missing_cookies_hint, validate_with_recovery
+    from ....auth import (
+        cookie_names_from_storage,
+        missing_cookies_hint,
+        validate_with_recovery,
+    )
 
     raw_cookies = _read_browser_cookies(browser_name, include_domains=include_domains)
 
@@ -285,11 +289,7 @@ def _login_with_browser_cookies(
     # ``storage_state`` returned here already includes the rotated PSIDTS.
     storage_state, validation_error = validate_with_recovery(raw_cookies)
     if validation_error is not None:
-        cookie_names = {
-            entry.get("name", "")
-            for entry in storage_state.get("cookies", [])
-            if isinstance(entry, dict)
-        }
+        cookie_names = cookie_names_from_storage(storage_state)
         hint = missing_cookies_hint(cookie_names, browser_label=browser_name)
         console.print(
             "[red]No valid Google authentication cookies found.[/red]\n"

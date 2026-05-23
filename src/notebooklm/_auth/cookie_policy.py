@@ -3,8 +3,23 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 logger = logging.getLogger("notebooklm.auth")
+
+
+def cookie_names_from_storage(storage_state: Mapping[str, Any]) -> set[str]:
+    """Return the set of cookie names present in a Playwright storage_state.
+
+    Centralizes the ``{entry["name"] for entry in storage_state["cookies"]}``
+    pattern that the CLI extraction paths use to feed
+    :func:`missing_cookies_hint` after a failed extraction. Defensive against
+    non-dict entries (rookiepy can return malformed rows) and missing keys.
+    """
+    cookies = storage_state.get("cookies", [])
+    return {entry.get("name", "") for entry in cookies if isinstance(entry, dict)}
+
 
 # Tier 1: cookies whose absence Google rejects deterministically.
 #

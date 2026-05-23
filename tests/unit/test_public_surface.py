@@ -54,6 +54,7 @@ EXPECTED_AUTH_ALL: list[str] = [
     "build_httpx_cookies_from_storage",
     "clear_account_metadata",
     "convert_rookiepy_cookies_to_storage_state",
+    "cookie_names_from_storage",
     "CookieSaveResult",
     "CookieSnapshot",
     "CookieSnapshotKey",
