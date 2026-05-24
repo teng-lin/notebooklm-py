@@ -408,6 +408,11 @@ def _iter_types_private_helper_import_files() -> list[Path]:
     return sorted(paths)
 
 
+def _may_reference_private_types_seam(text: str) -> bool:
+    """Cheap prefilter before AST parsing the private ``notebooklm.types`` audit."""
+    return "types" in text and "_" in text
+
+
 @pytest.mark.parametrize("enum_name", _REEXPORTED_RPC_ENUMS)
 def test_rpc_enum_reexports_are_identical(enum_name: str) -> None:
     """notebooklm.types.<Enum> is the same object as notebooklm.rpc.types.<Enum>."""
@@ -523,7 +528,10 @@ def test_types_private_helper_seam_manifest_matches_first_party_imports() -> Non
 
     imported_private_names: set[str] = set()
     for path in _iter_types_private_helper_import_files():
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        if not _may_reference_private_types_seam(text):
+            continue
+        tree = ast.parse(text)
         type_module_aliases: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

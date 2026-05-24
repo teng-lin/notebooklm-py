@@ -178,8 +178,8 @@ def test_lock_does_not_block_subsequent_runs(tmp_path: Path) -> None:
 def test_held_lock_surfaces_timeout_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A held lock causes :class:`MigrationLockTimeoutError` to surface.
 
-    A separate thread holds the lock for the duration of the call under
-    test; we shrink the timeout to 1s so the test runs quickly. The
+    The test pre-acquires the lock for the duration of the call under
+    test, then uses filelock's non-blocking timeout path so the test runs quickly. The
     expected outcome is the new wrapper exception, NOT a raw
     :class:`filelock.Timeout` (callers should see a domain-specific
     error).
@@ -192,8 +192,8 @@ def test_held_lock_surfaces_timeout_error(tmp_path: Path, monkeypatch: pytest.Mo
     holder = FileLock(str(lock_path))
     holder.acquire()
 
-    # Shrink the migration timeout so the assertion runs in ~1 second.
-    monkeypatch.setattr("notebooklm.migration._MIGRATION_LOCK_TIMEOUT", 1.0, raising=True)
+    # Non-blocking acquire exercises the same wrapper branch without a real wait.
+    monkeypatch.setattr("notebooklm.migration._MIGRATION_LOCK_TIMEOUT", 0.0, raising=True)
 
     try:
         with (

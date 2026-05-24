@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+from functools import lru_cache
 
 import notebooklm.auth as auth_module
 import notebooklm.client as client_module
@@ -179,6 +180,41 @@ def test_auth_all_excludes_private_names() -> None:
     assert not private, f"underscore-prefixed names must not appear in auth.__all__: {private}"
 
 
+@lru_cache(maxsize=1)
+def _collect_external_imports_by_module() -> dict[str, frozenset[str]]:
+    """Return public names imported from ``notebooklm.<module>`` by module.
+
+    The auth/client audit tests both walk the same tree. Cache the scan so
+    adding a second audited module does not double the unit-suite cost.
+    """
+    imports_by_module: dict[str, set[str]] = {}
+    for root in _SCAN_ROOTS:
+        for path in (_REPO_ROOT / root).rglob("*.py"):
+            try:
+                tree = ast.parse(path.read_text())
+            except (SyntaxError, UnicodeDecodeError):
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                module = node.module or ""
+                module_basename: str | None = None
+                if module.startswith("notebooklm.") and module.count(".") == 1:
+                    module_basename = module.rsplit(".", 1)[1]
+                # Relative matching covers `from .auth import X` / `from ..auth`.
+                # The scan roots do not contain same-named non-notebooklm packages,
+                # so the module basename is sufficient for this audit.
+                elif node.level > 0 and module:
+                    module_basename = module
+                if module_basename is None:
+                    continue
+                for alias in node.names:
+                    if alias.name == "*" or alias.name.startswith("_"):
+                        continue
+                    imports_by_module.setdefault(module_basename, set()).add(alias.name)
+    return {module: frozenset(names) for module, names in imports_by_module.items()}
+
+
 def _collect_external_imports(module_basename: str) -> set[str]:
     """Return the set of public names imported from ``notebooklm.<module_basename>``.
 
@@ -190,30 +226,7 @@ def _collect_external_imports(module_basename: str) -> set[str]:
     Defensive on parse errors — a malformed file in the tree must not block
     this audit.
     """
-    names: set[str] = set()
-    for root in _SCAN_ROOTS:
-        for path in (_REPO_ROOT / root).rglob("*.py"):
-            try:
-                tree = ast.parse(path.read_text())
-            except (SyntaxError, UnicodeDecodeError):
-                continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ImportFrom):
-                    continue
-                module = node.module or ""
-                # Relative matching covers `from .auth import X` / `from ..auth`.
-                # The scan roots do not contain same-named non-notebooklm packages,
-                # so the module basename is sufficient for this audit.
-                resolves_to_target = module == f"notebooklm.{module_basename}" or (
-                    node.level > 0 and module == module_basename
-                )
-                if not resolves_to_target:
-                    continue
-                for alias in node.names:
-                    if alias.name == "*" or alias.name.startswith("_"):
-                        continue
-                    names.add(alias.name)
-    return names
+    return set(_collect_external_imports_by_module().get(module_basename, frozenset()))
 
 
 def test_auth_all_matches_external_imports_audit() -> None:

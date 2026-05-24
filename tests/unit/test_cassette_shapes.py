@@ -52,6 +52,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 import yaml
 
+# Prefer libyaml for the cassette-shape lint. The top-level cassette set is
+# large enough that pure-Python SafeLoader dominates unit-suite runtime.
+try:
+    from yaml import CSafeLoader as _YamlSafeLoader
+except ImportError:  # pragma: no cover - libyaml ships with PyYAML wheels
+    from yaml import SafeLoader as _YamlSafeLoader  # type: ignore[assignment]
+
 # ---------------------------------------------------------------------------
 # Cassette discovery
 # ---------------------------------------------------------------------------
@@ -350,7 +357,7 @@ def _load_cassette(path: Path) -> tuple[dict[str, Any], str]:
     # (cp1252 on Windows), which can't decode the 4-byte UTF-8 emoji
     # sequences.
     raw = path.read_text(encoding="utf-8")
-    data = yaml.safe_load(raw) or {}
+    data = yaml.load(raw, Loader=_YamlSafeLoader) or {}
     return data, raw
 
 
