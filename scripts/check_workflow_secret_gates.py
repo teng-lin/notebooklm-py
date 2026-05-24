@@ -74,14 +74,14 @@ _BENIGN_SECRETS = frozenset({"GITHUB_TOKEN"})
 _APPROVED_ENVIRONMENTS = frozenset({"protected-readonly"})
 
 # Strings that are accepted as the *value* of an ``environment:`` line.
-# Bare names must match ``_APPROVED_ENVIRONMENTS``. Expressions are
-# matched structurally: we require the expression to embed a quoted
-# literal that is itself an approved environment name. This catches the
-# project's documented conditional idiom
+# Bare names must match ``_APPROVED_ENVIRONMENTS``. Expression form
+# (``${{ ... }}``) is rejected outright — the historical conditional
+# shape
 #   ``environment: ${{ event == 'workflow_dispatch' && 'protected-readonly' || '' }}``
-# while rejecting expressions that resolve to an unconfigured environment.
+# silently broke scheduled runs once the consumed secret was env-only
+# (issue #1009), and no other expression value adds expressivity over
+# the bare ``environment: protected-readonly`` form.
 _ENV_EXPR_RE = re.compile(r"\$\{\{[^}]*\}\}")
-_QUOTED_LITERAL_RE = re.compile(r"['\"]([A-Za-z0-9_.\-]+)['\"]")
 
 # Secret reference shapes:
 #   * Dot notation:    ``${{ secrets.MY_SECRET }}`` — the canonical form

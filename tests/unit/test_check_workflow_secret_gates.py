@@ -309,9 +309,9 @@ def test_github_token_is_benign(tmp_path, monkeypatch, capsys, script):
 
 def test_empty_string_environment_does_not_count(tmp_path, monkeypatch, capsys, script):
     # Literal empty string is not a real environment association — must
-    # still fail. (The ``${{ ... || '' }}`` expression *form* passes
-    # because the conditional branch can yield a non-empty value; that's
-    # covered by ``test_environment_expression_passes`` above.)
+    # still fail. The expression form with an empty-string fallback also
+    # fails (see ``test_environment_expression_with_empty_fallback_fails``
+    # above); this test pins the bare ``environment: ''`` shape.
     _write_workflow(
         tmp_path,
         "bad_empty_env.yml",
