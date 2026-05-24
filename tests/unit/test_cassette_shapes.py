@@ -52,6 +52,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 import pytest
 import yaml
 
+pytestmark = pytest.mark.repo_lint
+
 # Prefer libyaml for the cassette-shape lint. The top-level cassette set is
 # large enough that pure-Python SafeLoader dominates unit-suite runtime.
 try:

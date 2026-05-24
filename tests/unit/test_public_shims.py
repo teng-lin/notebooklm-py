@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+pytestmark = pytest.mark.repo_lint
+
 # ---------------------------------------------------------------------------
 # Documented public import manifest (stability spec)
 #

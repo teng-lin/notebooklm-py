@@ -117,6 +117,7 @@ markers = [
     "no_keepalive_disable: opt a VCR test out of the global NOTEBOOKLM_DISABLE_KEEPALIVE_POKE=1 autouse fixture in tests/integration/conftest.py",
     "allow_no_vcr: opt a tests/integration/ test out of the integration-tree enforcement hook; use for mock-only tests that legitimately live under tests/integration/",
     "characterization: behavior-pinning unit tests that lock in current observable contracts and would be too synthetic to cassette-back",
+    "repo_lint: repo-wide audit/compat checks (cassette shapes, public surface, release gates, doc-sync, CI script audits). Slow; skip locally with `-m \"not repo_lint\"`. CI still runs them by default.",
 ]
 
 [tool.coverage.run]

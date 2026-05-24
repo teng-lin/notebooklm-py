@@ -29,8 +29,12 @@ import ast
 import pathlib
 from functools import lru_cache
 
+import pytest
+
 import notebooklm.auth as auth_module
 import notebooklm.client as client_module
+
+pytestmark = pytest.mark.repo_lint
 
 # Repository root, derived from this test file's location:
 # tests/unit/test_public_surface.py -> parents[2] == repo root.

@@ -295,6 +295,10 @@ lock sibling and the two invocations never contend.
 # Unit + integration tests (no auth needed)
 uv run pytest
 
+# Fast local loop — skip repo-wide audit / release-gate checks (~40s saved).
+# CI still runs these; the marker just lets you iterate quickly.
+uv run pytest tests/unit tests/integration -m "not repo_lint"
+
 # E2E tests (requires auth + test notebook)
 uv run pytest tests/e2e -m readonly        # Read-only tests only
 uv run pytest tests/e2e -m "not variants"  # Skip parameter variants
@@ -303,6 +307,12 @@ uv run pytest tests/e2e --include-variants # All tests including variants
 # Select a profile for E2E tests
 uv run pytest tests/e2e -m e2e --profile work
 ```
+
+The `repo_lint` marker tags cassette-shape lint, public-surface scans,
+docstring/install-doc drift guards, version-sync, and CI-script audits.
+These are valuable release/CI guardrails but cost ~30–45s locally. See
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#fast-local-loop-skip-repo-wide-audit-checks)
+for the canonical fast-loop guidance.
 
 ### Selecting a profile for E2E tests
 

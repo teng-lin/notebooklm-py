@@ -1,10 +1,14 @@
 import os
 import sys
 
+import pytest
+
 # Add project root to sys.path so we can import scripts
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from scripts.check_claude_md_freshness import _extract_paths, main
+
+pytestmark = pytest.mark.repo_lint
 
 
 def test_extract_paths():

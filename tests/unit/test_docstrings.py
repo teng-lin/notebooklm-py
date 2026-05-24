@@ -30,6 +30,8 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm.client import NotebookLMClient
 
+pytestmark = pytest.mark.repo_lint
+
 # Files whose docstrings should not contain the broken example. We parse
 # each file's AST and walk every docstring (module + class + function).
 DOCSTRING_TARGETS = [

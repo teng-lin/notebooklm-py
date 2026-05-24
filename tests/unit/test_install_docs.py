@@ -20,6 +20,8 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover -- only hit on Python 3.10
     import tomli as tomllib  # transitive via uv.lock; declared in [dev] for safety
 
+pytestmark = pytest.mark.repo_lint
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INSTALLATION_MD = REPO_ROOT / "docs" / "installation.md"
 PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"

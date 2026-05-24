@@ -23,6 +23,8 @@ from notebooklm._notes import NotesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 
+pytestmark = pytest.mark.repo_lint
+
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
 
 # Feature APIs should not reach into Session private state directly.

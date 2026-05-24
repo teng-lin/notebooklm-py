@@ -117,6 +117,25 @@ uv run pytest tests/integration
 uv run pytest tests/e2e -m e2e        # requires auth
 ```
 
+#### Fast local loop (skip repo-wide audit checks)
+
+A subset of unit tests are repo-wide audit / release-gate checks (cassette
+shape lint, public-surface scans, CI-script audits, doc-sync guards) that scan
+many files and add ~30–45s to the local `tests/unit tests/integration` loop.
+They're marked `@pytest.mark.repo_lint` so you can opt out while iterating:
+
+```bash
+# Fast feedback loop — drops repo_lint audits (~40s savings).
+uv run pytest tests/unit tests/integration -m "not repo_lint"
+
+# Run only the repo_lint audits (what you'd typically skip above).
+uv run pytest tests/unit tests/integration -m "repo_lint"
+```
+
+Run the full suite (including `repo_lint`) before pushing — CI runs everything
+by default, so `repo_lint` failures still block merge. The default
+`uv run pytest` invocation does not filter the marker out.
+
 Quick guidance:
 
 - Reach for `httpx_mock` when you need to assert on outgoing request shape (headers, body, cookies, URL) or stub a small response — put the test under `tests/unit/`.

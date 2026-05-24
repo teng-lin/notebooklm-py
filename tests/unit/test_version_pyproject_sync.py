@@ -15,7 +15,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python <3.11
     import tomli as tomllib
 
+import pytest
+
 import notebooklm
+
+pytestmark = pytest.mark.repo_lint
 
 
 def test_version_matches_pyproject() -> None:
