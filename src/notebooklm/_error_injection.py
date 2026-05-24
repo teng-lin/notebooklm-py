@@ -1,13 +1,24 @@
 """Synthetic HTTP error injection for VCR cassette playback (test-only).
 
 When ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set to ``429`` / ``5xx`` /
-``expired_csrf``, :class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`
-short-circuits each chain invocation with the synthetic response built
-by ``tests/cassette_patterns.py:build_synthetic_error_response`` so the
-client's exception-mapping branches (429 → ``RateLimitError``, 5xx →
-``ServerError``, 400-CSRF → ``AuthError``) fire end-to-end.
+``expired_csrf`` AND
+:class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`
+has been constructed with an injected ``builder`` callable (canonical:
+``tests/cassette_patterns.py:build_synthetic_error_response``), the
+middleware short-circuits each chain invocation with the synthetic
+response so the client's exception-mapping branches (429 →
+``RateLimitError``, 5xx → ``ServerError``, 400-CSRF → ``AuthError``) fire
+end-to-end.
 
-**Production behavior is unchanged when the env var is unset.** The
+**The env var is a no-op without an injected builder.** Production code
+(``MiddlewareChainBuilder`` in ``_middleware_chain.py``) instantiates
+``ErrorInjectionMiddleware()`` with no builder argument, so a leaked
+``NOTEBOOKLM_VCR_RECORD_ERRORS`` env var on a user install cannot trigger
+any synthetic substitution — the middleware passes through. Tests that
+exercise the substitution path construct the middleware directly with an
+explicit ``builder=`` argument (issue #1005).
+
+**Production behavior is also unchanged when the env var is unset.** The
 middleware delegates straight to ``next_call``; the chain leaf
 (``AuthedTransport.perform_authed_post``) runs exactly as it would
 without the middleware in the chain.
@@ -63,6 +74,15 @@ def _get_error_injection_mode() -> str | None:
     unrecognized value (we deliberately fail open rather than crash a
     cassette-recording run on a typo — the unit tests catch the typo path,
     and the VCR config validates the value separately).
+
+    Returning a non-``None`` mode does NOT by itself activate any synthetic
+    substitution: the production ``ErrorInjectionMiddleware`` is
+    constructed without a builder (see
+    :class:`notebooklm._middleware_error_injection.ErrorInjectionMiddleware`),
+    which makes the middleware a pass-through regardless of this mode.
+    Tests that exercise the substitution wire a builder explicitly. Issue
+    #1005 closes the prior dynamic-load attack surface where a leaked env
+    var would trigger an ``importlib`` walk of ``tests/cassette_patterns.py``.
 
     The valid-mode set is hardcoded here (rather than imported from
     ``tests.cassette_patterns``) so production import time never reaches into

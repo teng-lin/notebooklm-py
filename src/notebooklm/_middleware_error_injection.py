@@ -9,16 +9,28 @@ the interim 4-middleware chain ``[Drain, Metrics, ErrorInjection, Tracing]``;
 PRs 12.7–12.8 insert ``Retry`` and ``AuthRefresh`` BETWEEN ``Metrics`` and
 ``ErrorInjection`` so the ordering rationale holds at every step.
 
-Test-only path. Production behavior is unchanged when ``NOTEBOOKLM_VCR_RECORD_ERRORS``
-is unset — the middleware delegates straight to ``next_call``. When the env var
-resolves to ``"429"`` / ``"5xx"`` / ``"expired_csrf"`` (via
-:func:`_error_injection._get_error_injection_mode`), every chain invocation
-short-circuits with a synthetic :class:`httpx.Response` built by
-``tests/cassette_patterns.build_synthetic_error_response`` — the chain leaf
+Test-only path. Production behavior is unchanged when no builder is wired
+into the middleware — the constructor's default ``builder=None`` makes
+``__call__`` a pass-through even if ``NOTEBOOKLM_VCR_RECORD_ERRORS`` is set.
+Production code paths (``MiddlewareChainBuilder`` in ``_middleware_chain.py``)
+construct ``ErrorInjectionMiddleware()`` with no builder, so the substitution
+path can never fire from a production install. Tests that want the
+substitution to fire construct the middleware directly with an explicit
+``builder=`` argument (issue #1005 — replaces the previous filesystem-walking
+``_load_builder()`` that called ``importlib.util.spec_from_file_location`` on
+``tests/cassette_patterns.py`` at runtime, which broke wheel installs and
+exposed an arbitrary-code-exec path keyed off the env var).
+
+When a builder IS wired AND the env var resolves to ``"429"`` / ``"5xx"`` /
+``"expired_csrf"`` (via :func:`_error_injection._get_error_injection_mode`),
+every chain invocation short-circuits with a synthetic :class:`httpx.Response`
+built by the injected callable (canonical implementation:
+``tests/cassette_patterns.build_synthetic_error_response``) — the chain leaf
 (``_perform_authed_post``) is NOT called. The same env-var startup guard
 (:func:`_error_injection._refuse_synthetic_error_outside_test_context`)
 still fires at ``Session`` construction so a leaked deploy env never reaches
-this code path in production.
+``Session.__init__`` in production; the builder-not-wired default is the
+second line of defense closing the issue-#1005 attack surface.
 
 Tier-12 history: PR 12.6 lifted the substitution from the pre-Tier-12
 httpx transport (``_error_injection._SyntheticErrorTransport``,
@@ -28,17 +40,22 @@ middleware is now the only production substitution surface.
 
 Behavior contract:
 
-- Env var unset → ``await next_call(request)`` unchanged (pass-through).
-- Env var set, mode ``"429"`` → raise :class:`TransportRateLimited` so the
-  OUTER ``RetryMiddleware`` retries (restoring ADR-009 §"ErrorInjection
-  inside Retry — synthetic transient failures trigger retry"; codex iter-1
-  catch on PR 12.7). The raised exception carries the synthetic
-  ``Retry-After`` header so the retry honors the rate-limit timing.
-- Env var set, mode ``"5xx"`` → raise :class:`TransportServerError` so
-  ``RetryMiddleware`` retries with exponential backoff.
-- Env var set, mode ``"expired_csrf"`` (HTTP 400) → raise the raw
-  :class:`httpx.HTTPStatusError` so ``AuthRefreshMiddleware`` (outside
-  this middleware in the final chain ordering) catches it via
+- ``builder`` is ``None`` (production default) → ``await next_call(request)``
+  unchanged (pass-through), regardless of env var.
+- Env var unset → ``await next_call(request)`` unchanged (pass-through),
+  regardless of builder.
+- Env var set, builder wired, mode ``"429"`` → raise
+  :class:`TransportRateLimited` so the OUTER ``RetryMiddleware`` retries
+  (restoring ADR-009 §"ErrorInjection inside Retry — synthetic transient
+  failures trigger retry"; codex iter-1 catch on PR 12.7). The raised
+  exception carries the synthetic ``Retry-After`` header so the retry
+  honors the rate-limit timing.
+- Env var set, builder wired, mode ``"5xx"`` → raise
+  :class:`TransportServerError` so ``RetryMiddleware`` retries with
+  exponential backoff.
+- Env var set, builder wired, mode ``"expired_csrf"`` (HTTP 400) → raise
+  the raw :class:`httpx.HTTPStatusError` so ``AuthRefreshMiddleware``
+  (outside this middleware in the final chain ordering) catches it via
   ``is_auth_error`` and drives the refresh-then-retry flow. Pre-PR-12.6
   this happened naturally because the legacy ``_SyntheticErrorTransport``
   returned the synthetic 400 below httpx, the leaf's ``raise_for_status``
@@ -68,11 +85,8 @@ for the PR sequence.
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 from collections.abc import Callable
-from pathlib import Path
-from typing import cast
 
 import httpx
 
@@ -101,14 +115,36 @@ class ErrorInjectionMiddleware:
     matches the Protocol so instances are assignable into a
     ``Sequence[Middleware]``.
 
-    Holds no shared state. The lazily-loaded synthetic-response builder is
-    cached on the instance after first activation so a long-running test
-    suite doesn't pay the ``importlib`` cost per chain call.
+    Holds no shared state. The synthetic-response builder is injected by
+    the caller (default ``None``); production wiring in
+    :class:`notebooklm._middleware_chain.MiddlewareChainBuilder` never
+    passes a builder, so the substitution path stays inaccessible from
+    installed packages. Tests pass an explicit builder (typically
+    ``tests.cassette_patterns.build_synthetic_error_response``) when they
+    want the substitution to fire.
+
+    Args:
+        builder: Optional callable that maps a mode string (``"429"`` /
+            ``"5xx"`` / ``"expired_csrf"``) to a
+            ``(status_code, body, headers)`` triple used to build the
+            synthetic :class:`httpx.Response`. When ``None`` (production
+            default), ``__call__`` is a pass-through even with the env var
+            set — this closes issue #1005's attack surface (a leaked env
+            var on a user install can no longer trigger any synthetic
+            substitution, because the production chain never injects a
+            builder).
     """
 
-    def __init__(self) -> None:
-        # Cached after first ``_load_builder`` call; ``None`` means "not yet loaded".
-        self._builder: _SyntheticBuilder | None = None
+    def __init__(self, builder: _SyntheticBuilder | None = None) -> None:
+        # Production default: no builder wired → middleware is a pass-through
+        # regardless of env var state. Tests that want substitution must pass
+        # ``builder=tests.cassette_patterns.build_synthetic_error_response``
+        # (or any compatible callable) explicitly. See module docstring and
+        # issue #1005 for the rationale (the prior implementation walked the
+        # filesystem at runtime to ``importlib``-load
+        # ``tests/cassette_patterns.py``, which broke wheel installs AND
+        # exposed an arbitrary-code-exec path keyed off the env var).
+        self._builder: _SyntheticBuilder | None = builder
         # Gates the one-shot "injection enabled" log line — preserves the
         # pre-PR-12.6 ``_session_lifecycle`` log signal that operators running
         # cassette-recording flows rely on to confirm their env var was picked up.
@@ -119,7 +155,7 @@ class ErrorInjectionMiddleware:
         request: RpcRequest,
         next_call: NextCall,
     ) -> RpcResponse:
-        """Substitute a synthetic error response when the env var is set.
+        """Substitute a synthetic error response when env var AND builder are set.
 
         Reads the env var via
         :func:`_error_injection._get_error_injection_mode` at call
@@ -131,9 +167,16 @@ class ErrorInjectionMiddleware:
         :func:`monkeypatch.setattr` seam live: a value-import would freeze
         the binding at module-load time and silently dead-letter any
         function swap.
+
+        Pass-through (``await next_call(request)``) happens when EITHER
+        gate is open:
+
+        - ``mode is None`` (env var unset / empty / unknown value), OR
+        - ``self._builder is None`` (no builder injected — production
+          default per issue #1005).
         """
         mode = _error_injection._get_error_injection_mode()
-        if mode is None:
+        if mode is None or self._builder is None:
             return await next_call(request)
 
         if not self._logged_activation:
@@ -145,7 +188,7 @@ class ErrorInjectionMiddleware:
             )
             self._logged_activation = True
 
-        status_code, body, headers = self._load_builder()(mode)
+        status_code, body, headers = self._builder(mode)
         # Anchor the synthetic response to the original method/URL/body/headers
         # so callers that inspect ``response.request`` see what the leaf would
         # have sent.
@@ -204,66 +247,6 @@ class ErrorInjectionMiddleware:
         # ``HTTPStatusError`` so ``AuthRefreshMiddleware`` can drive the
         # refresh-then-retry flow.
         raise original
-
-    def _load_builder(self) -> _SyntheticBuilder:
-        """Lazy importlib-load of ``tests.cassette_patterns.build_synthetic_error_response``.
-
-        Production code must not import from ``tests/`` at module load —
-        installed-package layouts don't ship ``tests/``. The env var that
-        gates this whole path is test-only, so this import only ever runs
-        in recording / unit-test contexts where ``tests/`` is on disk
-        relative to ``src/notebooklm/``.
-
-        This was previously duplicated in the (now-deleted)
-        ``_error_injection._SyntheticErrorTransport._load_builder``;
-        PR 12.9 removed that class so the chain middleware is the single
-        source of truth for synthetic-response loading.
-        """
-        if self._builder is not None:
-            return self._builder
-        # Search candidates in order:
-        # 1. ``tests/cassette_patterns.py`` under the test-process CWD — works
-        #    for wheel-installed smoke runs that invoke pytest from a checkout
-        #    where ``notebooklm`` lives in ``site-packages`` rather than
-        #    ``src/``.
-        # 2. ``src/notebooklm/_middleware_error_injection.py``'s grandparent —
-        #    the editable-install path used by ``uv sync`` development setups.
-        candidates = [
-            Path.cwd() / "tests" / "cassette_patterns.py",
-            Path(__file__).resolve().parent.parent.parent / "tests" / "cassette_patterns.py",
-        ]
-        target = next((c for c in candidates if c.exists()), candidates[-1])
-        if not target.exists():
-            raise RuntimeError(
-                f"{ERROR_INJECT_ENV_VAR} is set but tests/cassette_patterns.py "
-                f"is not available. Tried: {[str(c) for c in candidates]}. "
-                f"This plumbing is test-only — unset {ERROR_INJECT_ENV_VAR} "
-                f"to restore normal behavior."
-            )
-        spec = importlib.util.spec_from_file_location("_notebooklm_cassette_patterns", target)
-        # NOT ``assert`` — runtime invariant must survive ``python -O``.
-        if spec is None or spec.loader is None:
-            raise RuntimeError(
-                f"Failed to load module spec for {target}. "
-                f"Unset {ERROR_INJECT_ENV_VAR} to restore normal behavior."
-            )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        builder = getattr(mod, "build_synthetic_error_response", None)
-        if builder is None:
-            # Explicit guard so a renamed/removed symbol in
-            # tests/cassette_patterns.py surfaces with the same actionable
-            # remediation as the missing-file path above — without this,
-            # ``cast`` is type-only and the failure would be a bare
-            # ``AttributeError`` on the next call to ``builder(mode)``.
-            raise RuntimeError(
-                f"tests/cassette_patterns.py at {target} does not export "
-                f"``build_synthetic_error_response`` — the synthetic-error "
-                f"plumbing is misaligned. Unset {ERROR_INJECT_ENV_VAR} to "
-                f"restore normal behavior."
-            )
-        self._builder = cast(_SyntheticBuilder, builder)
-        return self._builder
 
 
 __all__ = ["ErrorInjectionMiddleware"]

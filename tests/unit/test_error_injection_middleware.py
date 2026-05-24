@@ -5,8 +5,12 @@ and ADR-009 §"Chain ordering":
 
 - **Pass-through when env var is unset.** The middleware delegates straight
   to ``next_call``; production behavior is byte-for-byte unchanged.
+- **Pass-through when no builder is wired (issue #1005).** Even with the
+  env var set to a valid mode, the production default ``builder=None``
+  makes ``__call__`` a pass-through. Tests that exercise substitution
+  must construct the middleware with an explicit ``builder=`` argument.
 - **Raise transport exceptions for 429 / 5xx (PR 12.7).** When the env var
-  resolves to ``"429"`` the middleware raises
+  resolves to ``"429"`` AND a builder is wired, the middleware raises
   :class:`TransportRateLimited` (carrying the synthetic ``Retry-After``);
   ``"5xx"`` raises :class:`TransportServerError`. This is the contract
   that lets the OUTER ``RetryMiddleware`` retry, restoring ADR-009
@@ -20,8 +24,6 @@ and ADR-009 §"Chain ordering":
   exception) has a ``response.request`` attached whose
   ``method`` / ``url`` / ``body`` mirror the incoming
   :class:`RpcRequest`.
-- **Builder cached on the instance** so a long-running test suite pays
-  the ``importlib`` cost exactly once per middleware.
 
 The tests use a real :class:`ErrorInjectionMiddleware` instance plus the
 canonical chain fixtures (``make_request`` and a one-shot terminal stub)
@@ -29,7 +31,11 @@ rather than mocking the substitution logic. Activation is flipped via
 :func:`monkeypatch.setenv` against ``NOTEBOOKLM_VCR_RECORD_ERRORS`` so the
 production env-var resolution code path
 (:func:`notebooklm._error_injection._get_error_injection_mode`) is
-exercised end-to-end.
+exercised end-to-end. Tests that need substitution to fire pass
+``builder=build_synthetic_error_response`` from
+``tests.cassette_patterns`` explicitly into the middleware constructor —
+that's the post-#1005 wiring that replaces the previous filesystem-load
+implementation.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import make_request
+from cassette_patterns import build_synthetic_error_response
 from notebooklm._authed_transport import TransportRateLimited, TransportServerError
 from notebooklm._error_injection import ERROR_INJECT_ENV_VAR
 from notebooklm._middleware import NextCall, RpcRequest, RpcResponse, build_chain
@@ -139,7 +146,7 @@ async def test_429_mode_raises_transport_rate_limited(
     """
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "429")
     terminal, calls = _recording_terminal()
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportRateLimited) as excinfo:
@@ -159,7 +166,7 @@ async def test_429_response_carries_synthetic_request_url_and_body(
 ) -> None:
     """The synthetic ``httpx.Response.request`` mirrors the chain request."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "429")
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
 
     custom_url = "https://example.test/_/LabsTailwindUi/data/batchexecute?authuser=0"
@@ -186,7 +193,7 @@ async def test_5xx_mode_raises_transport_server_error(
     """``5xx`` mode raises :class:`TransportServerError` for ``RetryMiddleware``."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "5xx")
     terminal, calls = _recording_terminal()
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportServerError) as excinfo:
@@ -221,7 +228,7 @@ async def test_expired_csrf_mode_raises_http_status_error(
     """
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
     terminal, calls = _recording_terminal()
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(httpx.HTTPStatusError) as excinfo:
@@ -239,7 +246,7 @@ async def test_expired_csrf_response_carries_synthetic_request_url(
     """The raised HTTPStatusError wraps a synthetic ``httpx.Response`` whose
     ``.request`` mirrors the chain envelope."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "expired_csrf")
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
 
     custom_url = "https://example.test/_/LabsTailwindUi/data/batchexecute?authuser=0"
@@ -276,7 +283,7 @@ async def test_retry_outside_error_injection_retries_synthetic_429(
     async def fake_sleep(seconds: float) -> None:
         slept.append(seconds)
 
-    error_injection = ErrorInjectionMiddleware()
+    error_injection = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     retry = RetryMiddleware(
         rate_limit_max_retries=2,
         server_error_max_retries=2,
@@ -308,7 +315,7 @@ async def test_retry_outside_error_injection_retries_synthetic_5xx(
     async def fake_sleep(seconds: float) -> None:
         slept.append(seconds)
 
-    error_injection = ErrorInjectionMiddleware()
+    error_injection = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     retry = RetryMiddleware(
         rate_limit_max_retries=2,
         server_error_max_retries=1,
@@ -368,7 +375,7 @@ async def test_auth_refresh_outside_error_injection_triggers_refresh_on_expired_
         refresh_callback_enabled=lambda: True,
         refresh_retry_delay=lambda: 0.0,
     )
-    error_injection = ErrorInjectionMiddleware()
+    error_injection = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain(
         [auth_refresh, error_injection],
         _static_terminal(httpx.Response(200, content=b"unreached-because-env-is-on")),
@@ -416,7 +423,7 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
         refresh_callback_enabled=lambda: True,
         refresh_retry_delay=lambda: 0.0,
     )
-    error_injection = ErrorInjectionMiddleware()
+    error_injection = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain(
         [auth_refresh, error_injection],
         _static_terminal(httpx.Response(200, content=b"after-refresh-success")),
@@ -430,28 +437,66 @@ async def test_auth_refresh_outside_error_injection_completes_when_env_flips_off
 
 
 # ---------------------------------------------------------------------------
-# Builder caching
+# Builder injection (issue #1005)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_builder_loaded_once_across_calls(
+async def test_default_constructor_has_no_builder_and_passes_through(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_load_builder`` caches its result on the instance."""
+    """Default ``ErrorInjectionMiddleware()`` (no builder arg) is a pass-through.
+
+    Issue #1005 hardening: even with the env var set to a valid mode, a
+    middleware constructed without an injected builder must NOT short-circuit.
+    Production code (``MiddlewareChainBuilder``) constructs the middleware
+    this way, so this test pins the "leaked env var on a user install can
+    never trigger synthetic substitution" invariant.
+    """
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "429")
-    middleware = ErrorInjectionMiddleware()
-    chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
+    terminal, calls = _recording_terminal()
+    middleware = ErrorInjectionMiddleware()  # no builder → pass-through
 
     assert middleware._builder is None
-    with pytest.raises(TransportRateLimited):
-        await chain(make_request())
-    first = middleware._builder
-    assert first is not None
+    chain = build_chain([middleware], terminal)
+    response = await chain(make_request(context={"log_label": "RPC LIST_NOTEBOOKS"}))
+
+    # Leaf was reached — middleware did NOT raise / short-circuit.
+    assert len(calls) == 1
+    assert response.response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_explicit_builder_is_used_on_every_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The injected ``builder`` callable is invoked on every chain call.
+
+    Replaces the legacy ``_load_builder`` caching test: now the builder is
+    supplied at construction time so there's no lazy-load to cache. We
+    verify the SAME injected callable is what produces the synthetic
+    response on each call by counting invocations.
+    """
+    monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "429")
+    invocations: list[str] = []
+
+    def counting_builder(mode: str) -> tuple[int, bytes, dict[str, str]]:
+        invocations.append(mode)
+        return build_synthetic_error_response(mode)
+
+    middleware = ErrorInjectionMiddleware(builder=counting_builder)
+    chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"unreached")))
 
     with pytest.raises(TransportRateLimited):
         await chain(make_request())
-    assert middleware._builder is first  # same object — no re-load
+    with pytest.raises(TransportRateLimited):
+        await chain(make_request())
+
+    # Injected builder was invoked on each chain call (the synthetic
+    # response object is built fresh per call — there's no instance cache
+    # of the response itself, only the builder is held).
+    assert invocations == ["429", "429"]
+    assert middleware._builder is counting_builder
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +511,7 @@ async def test_activation_flip_between_calls_is_observed(
     """Flipping the env var between two chain calls observes both modes."""
     monkeypatch.delenv(ERROR_INJECT_ENV_VAR, raising=False)
     terminal, calls = _recording_terminal()
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], terminal)
 
     # Call 1: pass-through, leaf reached.
@@ -514,7 +559,7 @@ async def test_monkeypatch_setattr_on_get_error_injection_mode_is_live(
     monkeypatch.setattr(_eim_module, "_get_error_injection_mode", lambda: "5xx")
 
     terminal, calls = _recording_terminal()
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], terminal)
 
     with pytest.raises(TransportServerError):
@@ -530,7 +575,7 @@ async def test_activation_log_fires_once_per_instance(
 ) -> None:
     """The "synthetic-error injection enabled" log line fires exactly once."""
     monkeypatch.setenv(ERROR_INJECT_ENV_VAR, "5xx")
-    middleware = ErrorInjectionMiddleware()
+    middleware = ErrorInjectionMiddleware(builder=build_synthetic_error_response)
     chain = build_chain([middleware], _static_terminal(httpx.Response(200, content=b"x")))
 
     with caplog.at_level("INFO", logger="notebooklm._core"):
