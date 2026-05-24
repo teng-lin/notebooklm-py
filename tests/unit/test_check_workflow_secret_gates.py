@@ -105,15 +105,25 @@ def test_environment_literal_passes(tmp_path, monkeypatch, capsys, script):
     assert rc == 0
 
 
-def test_environment_expression_passes(tmp_path, monkeypatch, capsys, script):
-    # Mirrors the rpc-health.yml / nightly.yml pattern where the
-    # environment is set only for workflow_dispatch and empty for
-    # scheduled cron runs.
+def test_environment_expression_with_empty_fallback_fails(tmp_path, monkeypatch, capsys, script):
+    """The conditional shape that broke #1009 must now fail the checker.
+
+    Historically rpc-health.yml / nightly.yml used:
+
+        environment: ${{ github.event_name == 'workflow_dispatch'
+                         && 'protected-readonly' || '' }}
+
+    The empty-string fallback means "no environment association" on
+    scheduled runs, which silently broke once the consumed secret was
+    migrated env-only. The fix lifts the conditional and binds the env
+    unconditionally; this test pins that regression at the checker layer
+    so the conditional shape can never come back.
+    """
     _write_workflow(
         tmp_path,
-        "ok_env_expr.yml",
+        "bad_env_expr.yml",
         """
-        name: ok-env-expr
+        name: bad-env-expr
         on:
           workflow_dispatch:
           schedule:
@@ -122,6 +132,32 @@ def test_environment_expression_passes(tmp_path, monkeypatch, capsys, script):
           fine:
             runs-on: ubuntu-latest
             environment: ${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}
+            steps:
+            - name: use
+              env:
+                X: ${{ secrets.MY_SECRET }}
+              run: echo "$X"
+        """,
+    )
+    rc, _out, _err = _run(script, tmp_path, monkeypatch, capsys)
+    assert rc == 1
+
+
+def test_environment_unconditional_passes(tmp_path, monkeypatch, capsys, script):
+    """The corrected unconditional binding must satisfy the gate."""
+    _write_workflow(
+        tmp_path,
+        "ok_env_uncond.yml",
+        """
+        name: ok-env-uncond
+        on:
+          workflow_dispatch:
+          schedule:
+          - cron: '0 7 * * *'
+        jobs:
+          fine:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
             steps:
             - name: use
               env:

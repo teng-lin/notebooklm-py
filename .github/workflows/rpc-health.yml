@@ -97,6 +97,26 @@ jobs:
       # runtime deps — no `[browser]`/`[dev]`/`[markdown]` extras required.
       run: uv sync --frozen
 
+    # Fail-fast preflight. The script itself rejects empty
+    # NOTEBOOKLM_AUTH_JSON downstream, but checking at the workflow layer
+    # surfaces ``::error::`` annotations linked to the secret-config
+    # misconfig before the ``continue-on-error`` step swallows the exit
+    # code (issue #1009).
+    - name: Verify auth secret is present
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+          exit 1
+        fi
+        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
+          exit 1
+        fi
+
     - name: Run RPC Health Check
       id: health
       continue-on-error: true

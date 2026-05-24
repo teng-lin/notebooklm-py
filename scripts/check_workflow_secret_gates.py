@@ -182,13 +182,15 @@ def _environment_value_is_approved(value: str) -> bool:
     Accepts:
       * a bare name in ``_APPROVED_ENVIRONMENTS`` (e.g. ``protected-readonly``)
       * a quoted name (``"protected-readonly"`` / ``'protected-readonly'``)
-      * an expression value that embeds at least one quoted literal naming
-        an approved environment (e.g.
-        ``${{ event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}``)
 
-    Rejects empty strings, unknown names, and expressions whose only
-    quoted literals are unapproved/empty — those would let a misspelled
-    environment ride past the static check.
+    Rejects:
+      * empty strings, unknown names
+      * **expression values with an empty-string fallback** — the historical
+        ``${{ event == 'workflow_dispatch' && 'protected-readonly' || '' }}``
+        shape silently broke scheduled runs once the referenced secret was
+        env-only (issue #1009). The empty branch means "no environment", and
+        env-only secrets resolve to empty under that branch. Bind the
+        environment unconditionally instead.
     """
     if not value or value in ("''", '""'):
         return False
@@ -196,14 +198,13 @@ def _environment_value_is_approved(value: str) -> bool:
     stripped = value.strip().strip("'\"")
     if stripped in _APPROVED_ENVIRONMENTS:
         return True
-    # Expression form: require at least one embedded quoted literal that
-    # matches an approved environment. The expression may also contain
-    # an empty-string literal (the falsy branch of a conditional) — that
-    # alone does NOT count, hence the explicit non-empty match.
+    # Expression form: reject outright. A conditional binding with an
+    # empty fallback is the pattern that caused #1009; an expression
+    # without a fallback offers no value over the bare ``environment:
+    # protected-readonly`` form. Force the bare form so the gate is
+    # legible at a glance and impossible to falsy-branch around.
     if _ENV_EXPR_RE.search(value):
-        for m in _QUOTED_LITERAL_RE.finditer(value):
-            if m.group(1) in _APPROVED_ENVIRONMENTS:
-                return True
+        return False
     return False
 
 

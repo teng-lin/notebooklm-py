@@ -41,6 +41,24 @@ jobs:
       # (no playwright / pytest / markdownify), so no extras are needed.
       run: uv sync --frozen
 
+    # Fail-fast preflight. Without this, ``NotebookLMClient.from_storage()``
+    # below would die with a confusing "no storage" error when the secret
+    # resolves empty (issue #1009).
+    - name: Verify auth secret is present
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+          exit 1
+        fi
+        if [ -z "${NOTEBOOKLM_GENERATION_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_GENERATION_NOTEBOOK_ID resolved to empty."
+          exit 1
+        fi
+
     - name: Verify artifacts exist
       env:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}

@@ -701,6 +701,28 @@ asserts every workflow file in `.github/workflows/` satisfies at least one of
 the above gates for every `secrets.*` reference (except `secrets.GITHUB_TOKEN`,
 which is covered separately by `scripts/check_workflow_permissions.py`).
 
+The checker also **rejects the conditional `environment:` shape** outright:
+
+```yaml
+# REJECTED (silently broke #1009 once the secret was migrated env-only)
+environment: ${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}
+
+# REQUIRED — unconditional binding
+environment: protected-readonly
+```
+
+The empty-string fallback in the expression form means "no environment", so
+secrets that live only in environments resolve to empty under that branch.
+Binding the environment unconditionally is the single source of truth.
+
+Additionally, **every job that consumes `NOTEBOOKLM_AUTH_JSON` runs a
+fail-fast preflight step** (`if [ -z "$NOTEBOOKLM_AUTH_JSON" ]; then exit 1`)
+before the test/script step. Without the preflight, an empty secret would
+let pytest skip every auth-requiring test silently and the job would land
+green with 0 tests run (issue #1009). The preflight surfaces an `::error::`
+annotation linked to the secret-config misconfig so the failure is visible
+in the GitHub UI rather than hidden behind "0 passed".
+
 #### One-time GitHub Environment setup
 
 The `protected-readonly` environment must be configured in the GitHub repository

@@ -150,6 +150,26 @@ jobs:
       if: runner.os == 'Linux'
       run: uv run playwright install-deps chromium
 
+    # Fail-fast preflight. Without this, an empty NOTEBOOKLM_AUTH_JSON
+    # (env-binding misconfig, missing repo-level fallback, etc.) lets the
+    # E2E suite proceed; pytest then skips every auth-requiring test
+    # silently and the job lands green with 0 tests run (issue #1009).
+    - name: Verify auth secret is present
+      if: needs.resolve-branch.outputs.is_standard == 'true'
+      env:
+        NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
+        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      shell: bash
+      run: |
+        if [ -z "${NOTEBOOKLM_AUTH_JSON:-}" ]; then
+          echo "::error::NOTEBOOKLM_AUTH_JSON resolved to empty. Env binding or secret config is broken — see docs/development.md → Workflow secret gates."
+          exit 1
+        fi
+        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
+          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID resolved to empty."
+          exit 1
+        fi
+
     - name: Run E2E tests
       id: e2e
       # Hard gate: only standard branches (main/release/*, or scheduled cron
