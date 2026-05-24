@@ -636,6 +636,9 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
     console.print(f"[yellow]Opening {browser_label} for Google login...[/yellow]")
     console.print(f"[dim]Using persistent profile: {browser_profile}[/dim]")
 
+    account_metadata_page_html: str | None = None
+    should_repair_account_metadata = False
+
     # Use context manager to restore ProactorEventLoop for Playwright on Windows
     # (fixes #89: NotImplementedError on Windows Python 3.12)
     with windows_playwright_event_loop(), sync_playwright() as p:
@@ -796,7 +799,8 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
                 dict(playwright_state), include_domains=include_domains
             )
             atomic_write_json(storage_path, filtered_state)
-            repair_playwright_account_metadata(storage_path, page_html=active_page_html)
+            account_metadata_page_html = active_page_html
+            should_repair_account_metadata = True
 
         except Exception as e:
             # Handle browser launch errors specially (context will be None if launch failed)
@@ -828,6 +832,9 @@ def run_playwright_login(plan: PlaywrightLoginPlan) -> None:
         finally:
             if context:
                 context.close()
+
+    if should_repair_account_metadata:
+        repair_playwright_account_metadata(storage_path, page_html=account_metadata_page_html)
 
 
 __all__ = [
