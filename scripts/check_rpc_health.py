@@ -16,9 +16,12 @@ Priority order when multiple statuses are present:
 
 Transient errors that still exit 0 are limited to rate-limit signals
 (HTTP 429, gRPC ``RESOURCE_EXHAUSTED``, and the decoder's user-displayable
-``API rate limit`` / quota messages raised as ``RateLimitError``).
-Everything else is treated as a real failure so the nightly canary can
-flag silent breakage.
+``API rate limit`` / quota messages raised as ``RateLimitError``) plus
+``httpx.ReadTimeout`` against Google's RPC endpoints — those are almost
+always server-side slowness, not an RPC contract change, and they
+consistently pass on retry (see #1004). Everything else (parse failures,
+unexpected HTTP status codes, schema mismatches) is still treated as a
+real failure so the nightly canary can flag silent breakage.
 
 Environment variables:
     NOTEBOOKLM_AUTH_JSON - Playwright storage state JSON (required)
@@ -1034,31 +1037,48 @@ async def run_health_check(full_mode: bool = False) -> list[CheckResult]:
     return results
 
 
-# Substrings that mark an ERROR as a transient rate-limit signal.
-# These are the ONLY errors that count as transient — everything else
-# (timeouts, parse failures, unexpected HTTP errors) is treated as a real
-# failure so the nightly canary can flag silent breakage. Keep this list
+# Substrings that mark an ERROR as a transient signal. Keep this list
 # narrow on purpose: broadening it would mask real RPC drift.
 #
-# ``API rate limit`` catches the decoder's user-displayable messages
-# raised as ``RateLimitError`` ("API rate limit exceeded..." and
-# "API rate limit or quota exceeded..."). These reach the canary via the
-# ``except RPCError`` parse-error branch in ``test_rpc_method_with_data``
-# and were previously misclassified as non-transient.
+# Currently classified as transient:
+#   * ``HTTP 429`` and gRPC ``RESOURCE_EXHAUSTED`` — explicit rate-limit
+#     signals from the backend.
+#   * ``API rate limit`` — catches the decoder's user-displayable messages
+#     raised as ``RateLimitError`` ("API rate limit exceeded..." and
+#     "API rate limit or quota exceeded..."). These reach the canary via
+#     the ``except RPCError`` parse-error branch in
+#     ``test_rpc_method_with_data`` and were previously misclassified.
+#   * ``ReadTimeout`` — ``httpx.ReadTimeout`` against Google's RPC
+#     endpoints is almost always server-side slowness, not an RPC
+#     contract change. It consistently passes on retry (see #1004 and
+#     prior occurrences on 2026-05-20). Only the ``httpx.ReadTimeout``
+#     class name is treated as transient — ``ConnectTimeout`` /
+#     ``WriteTimeout`` / ``PoolTimeout`` stay non-transient because they
+#     point at client- or network-side problems worth surfacing.
+#
+# Everything else (other timeouts, parse failures, unexpected HTTP
+# status codes, schema mismatches) is still treated as a real failure
+# so the nightly canary can flag silent breakage.
 TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
     "HTTP 429",
     "RESOURCE_EXHAUSTED",
     "API rate limit",
+    "ReadTimeout",
 )
 
 
 def is_transient_error(error_message: str | None) -> bool:
-    """Return True if an ERROR result is a transient rate-limit signal.
+    """Return True if an ERROR result is a transient signal.
 
-    Rate-limit responses (HTTP 429, gRPC ``RESOURCE_EXHAUSTED``) are the
-    only errors classified as transient. They are expected on throttled
-    days and should not trip the canary. Anything else — timeouts, parse
-    failures, unexpected HTTP errors — is treated as a real failure.
+    Transient signals (filtered out of the auto-open path):
+      * Rate-limit responses (HTTP 429, gRPC ``RESOURCE_EXHAUSTED``,
+        decoder ``RateLimitError`` messages).
+      * ``httpx.ReadTimeout`` against Google's RPC endpoints — these
+        are server-side flakes that pass on retry (issue #1004).
+
+    Anything else — other timeouts, parse failures, unexpected HTTP
+    status codes — is treated as a real failure that warrants
+    investigation.
     """
     if not error_message:
         return False

@@ -96,6 +96,12 @@ def _result(
         # issues. Pin both phrasings (decoder.py:117 and :470).
         "Parse error: API rate limit exceeded. Please wait before retrying.",
         "Parse error: API rate limit or quota exceeded. Please wait before retrying.",
+        # ``httpx.ReadTimeout`` with an empty message stringifies to the
+        # class name (see issue #864 fallback in make_rpc_request) and is
+        # a Google-side flake that passes on retry — see #1004 and the
+        # 2026-05-20 occurrence. Classifying it as transient prevents
+        # auto-opening dup issues for single-run timeouts.
+        "ReadTimeout",
     ],
 )
 def test_transient_markers_match(message: str) -> None:
@@ -118,6 +124,22 @@ def test_non_transient_markers_do_not_match(message: str | None) -> None:
     assert is_transient_error(message) is False
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Only ``httpx.ReadTimeout`` is treated as a Google-side flake.
+        # Connect/Write/Pool timeouts point at client- or network-side
+        # problems (DNS, broken proxy, exhausted connection pool) and
+        # should keep tripping the canary so they get investigated.
+        "ConnectTimeout",
+        "WriteTimeout",
+        "PoolTimeout",
+    ],
+)
+def test_non_readtimeout_timeouts_stay_non_transient(message: str) -> None:
+    assert is_transient_error(message) is False
+
+
 # ---------------------------------------------------------------------------
 # partition_errors
 # ---------------------------------------------------------------------------
@@ -137,11 +159,21 @@ def test_partition_errors_separates_transient_from_real() -> None:
             CheckStatus.ERROR,
             error="Parse error: API rate limit or quota exceeded. Please wait before retrying.",
         ),
+        # ``httpx.ReadTimeout("")`` surfaces as the bare class name via the
+        # str-or-classname fallback in make_rpc_request (issue #864).
+        # Treated as transient per issue #1004 — a single-run Google-side
+        # timeout should not auto-open a non-transient issue.
+        _result("read_timeout", CheckStatus.ERROR, error="ReadTimeout"),
         _result("mismatch", CheckStatus.MISMATCH),
     ]
     non_transient, transient = partition_errors(results)
     assert [r.method.name for r in non_transient] == ["timeout", "parse"]
-    assert [r.method.name for r in transient] == ["rate", "quota", "ratelimit_leak"]
+    assert [r.method.name for r in transient] == [
+        "rate",
+        "quota",
+        "ratelimit_leak",
+        "read_timeout",
+    ]
 
 
 @pytest.mark.asyncio
@@ -305,13 +337,15 @@ async def test_check_method_propagates_empty_message_errors(
     assert result.error == "ReadTimeout"
 
 
-def test_is_transient_error_pins_readtimeout_as_non_transient() -> None:
+def test_is_transient_error_classifies_readtimeout_as_transient() -> None:
     # Pinned policy (see scripts/check_rpc_health.py docstring + the
-    # comment on TRANSIENT_ERROR_MARKERS): transport timeouts are
-    # treated as real failures so the canary can flag silent breakage.
-    # If this policy ever changes, update this test deliberately —
-    # don't drop it. See #864 for the discussion.
-    assert is_transient_error("ReadTimeout") is False
+    # comment on TRANSIENT_ERROR_MARKERS): ``httpx.ReadTimeout`` against
+    # Google's RPC endpoints is a server-side flake that passes on retry,
+    # so it is filtered out of the auto-open issue path (#1004). Other
+    # timeouts (Connect/Write/Pool) stay non-transient because they
+    # point at client- or network-side problems worth surfacing. If this
+    # policy ever changes, update this test deliberately — don't drop it.
+    assert is_transient_error("ReadTimeout") is True
     assert is_transient_error("ConnectTimeout") is False
     assert is_transient_error("WriteTimeout") is False
     assert is_transient_error("PoolTimeout") is False
