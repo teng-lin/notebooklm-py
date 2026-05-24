@@ -5,7 +5,7 @@ This script makes minimal API calls to exercise RPC methods and verify
 that the method IDs in rpc/types.py still match what the API returns.
 
 Exit codes:
-    0 - All RPC methods OK (or only transient rate-limit errors)
+    0 - All RPC methods OK (or only transient errors: rate-limits / ReadTimeouts)
     1 - One or more RPC methods have mismatched IDs
     2 - Authentication or infrastructure failure (not an RPC problem)
     3 - One or more RPC methods returned a non-transient ERROR
@@ -1187,7 +1187,7 @@ def print_summary(results: list[CheckResult]) -> int:
         print("       These are real failures (not rate-limit transients).")
         return 3
     if transient_errors:
-        print("RESULT: PASS - Only transient rate-limit errors observed")
+        print("RESULT: PASS - Only transient errors observed (rate-limits / ReadTimeouts)")
         print("       Review ERROR DETAILS above for affected methods.")
         return 0
     print("RESULT: PASS - All tested RPC methods OK")
