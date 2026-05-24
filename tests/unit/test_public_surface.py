@@ -212,19 +212,15 @@ def _collect_external_imports_by_module() -> dict[str, frozenset[str]]:
                     if alias.name == "*" or alias.name.startswith("_"):
                         continue
                     imports_by_module.setdefault(module_basename, set()).add(alias.name)
-    return {module: frozenset(names) for module, names in imports_by_module.items()}
+    return {name: frozenset(names) for name, names in imports_by_module.items()}
 
 
 def _collect_external_imports(module_basename: str) -> set[str]:
     """Return the set of public names imported from ``notebooklm.<module_basename>``.
 
-    Walks every ``.py`` file under ``src/``, ``tests/``, ``docs/`` and collects
-    names from any ``ImportFrom`` that resolves to ``notebooklm.<module>``
-    (absolute) or ``..<module>`` / ``.<module>`` (relative). Filters out
-    underscore-prefixed names and the bare ``*`` star-import marker.
-
-    Defensive on parse errors — a malformed file in the tree must not block
-    this audit.
+    Reads from the cached repo-wide scan in
+    :func:`_collect_external_imports_by_module`, which walks every ``.py``
+    file under ``src/``, ``tests/``, ``docs/`` once per process.
     """
     return set(_collect_external_imports_by_module().get(module_basename, frozenset()))
 
