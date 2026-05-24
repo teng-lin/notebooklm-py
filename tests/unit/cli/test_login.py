@@ -708,6 +708,76 @@ class TestLoginCommand:
         }
 
     @pytest.mark.requires_playwright
+    def test_playwright_login_repairs_metadata_after_sync_context_exits(self, tmp_path):
+        """Metadata repair must not run while Playwright's sync loop is active."""
+        from notebooklm.cli.services import playwright_login
+
+        storage_file = tmp_path / "storage.json"
+        browser_dir = tmp_path / "profile"
+        context_active = False
+        repair_calls = []
+
+        # Issue #1000: account repair calls run_async(), so it must happen
+        # after Playwright's sync context has torn down its event loop.
+        mock_context = MagicMock()
+        mock_page = MagicMock()
+        mock_page.url = "https://notebooklm.google.com/"
+        mock_page.content.return_value = "<html></html>"
+        mock_context.pages = [mock_page]
+        mock_context.storage_state.return_value = _required_cookie_state()
+        mock_playwright = MagicMock()
+        mock_playwright.chromium.launch_persistent_context.return_value = mock_context
+
+        class FakeSyncPlaywright:
+            def __enter__(self):
+                nonlocal context_active
+                context_active = True
+                return mock_playwright
+
+            def __exit__(self, exc_type, exc, tb):
+                nonlocal context_active
+                context_active = False
+                return False
+
+        def fake_sync_playwright():
+            return FakeSyncPlaywright()
+
+        def fake_repair(storage_path, *, page_html=None, quiet=False):
+            repair_calls.append(
+                {
+                    "storage_path": storage_path,
+                    "page_html": page_html,
+                    "quiet": quiet,
+                    "context_active": context_active,
+                }
+            )
+
+        with (
+            patch("notebooklm.cli.session_cmd._ensure_chromium_installed"),
+            patch("playwright.sync_api.sync_playwright", side_effect=fake_sync_playwright),
+            patch(
+                "notebooklm.cli.services.playwright_login.repair_playwright_account_metadata",
+                side_effect=fake_repair,
+            ),
+        ):
+            playwright_login.run_playwright_login(
+                playwright_login.PlaywrightLoginPlan(
+                    browser="chromium",
+                    browser_profile=browser_dir,
+                    storage_path=storage_file,
+                )
+            )
+
+        assert repair_calls == [
+            {
+                "storage_path": storage_file,
+                "page_html": "<html></html>",
+                "quiet": False,
+                "context_active": False,
+            }
+        ]
+
+    @pytest.mark.requires_playwright
     def test_playwright_login_writes_account_matched_by_page_email(self, runner, tmp_path):
         """When multiple accounts are visible, the current page email selects the route."""
         from notebooklm.auth import Account
