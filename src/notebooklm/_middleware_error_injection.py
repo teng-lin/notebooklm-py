@@ -221,14 +221,22 @@ class ErrorInjectionMiddleware:
         """
         if self._builder is not None:
             return self._builder
-        # Walk up from src/notebooklm/_middleware_error_injection.py to the
-        # repo root, then dive into tests/cassette_patterns.py.
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        target = repo_root / "tests" / "cassette_patterns.py"
+        # Search candidates in order:
+        # 1. ``tests/cassette_patterns.py`` under the test-process CWD — works
+        #    for wheel-installed smoke runs that invoke pytest from a checkout
+        #    where ``notebooklm`` lives in ``site-packages`` rather than
+        #    ``src/``.
+        # 2. ``src/notebooklm/_middleware_error_injection.py``'s grandparent —
+        #    the editable-install path used by ``uv sync`` development setups.
+        candidates = [
+            Path.cwd() / "tests" / "cassette_patterns.py",
+            Path(__file__).resolve().parent.parent.parent / "tests" / "cassette_patterns.py",
+        ]
+        target = next((c for c in candidates if c.exists()), candidates[-1])
         if not target.exists():
             raise RuntimeError(
-                f"{ERROR_INJECT_ENV_VAR} is set but "
-                f"tests/cassette_patterns.py is not available at {target}. "
+                f"{ERROR_INJECT_ENV_VAR} is set but tests/cassette_patterns.py "
+                f"is not available. Tried: {[str(c) for c in candidates]}. "
                 f"This plumbing is test-only — unset {ERROR_INJECT_ENV_VAR} "
                 f"to restore normal behavior."
             )
