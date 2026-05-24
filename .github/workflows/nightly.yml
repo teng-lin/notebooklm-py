@@ -72,17 +72,21 @@ jobs:
     #
     # 1. ``needs.resolve-branch.outputs.is_standard`` — set by the upstream
     #    ``resolve-branch`` job. Only ``main`` and ``release/*`` branches
-    #    (or scheduled cron triggers, which resolve to one of those) flip this to ``true``;
-    #    any other branch keeps it ``false`` and the secret-using steps below
-    #    skip outright (no secret values land in the runner env).
-    # 2. ``environment: protected-readonly`` (workflow_dispatch only) —
-    #    surfaces an approval prompt before secrets unlock when a human kicks
-    #    off a manual run. The expression yields an empty string on schedule
-    #    triggers so cron canary runs are unaffected. Together with (1) this
-    #    means a non-maintainer ``gh workflow run nightly.yml`` either skips
-    #    the secret steps (non-standard branch) OR pauses at the maintainer
-    #    approval gate. See docs/development.md → "Workflow secret gates".
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}
+    #    (or scheduled cron triggers, which resolve to one of those) flip
+    #    this to ``true``; any other branch keeps it ``false`` and the
+    #    secret-using steps below skip outright (no secret values land in
+    #    the runner env).
+    # 2. ``environment: protected-readonly`` (unconditional). The secrets
+    #    this job consumes (``NOTEBOOKLM_AUTH_JSON`` and friends) live only
+    #    in that environment, so the binding has to be unconditional —
+    #    issue #1009 surfaced the scheduled cron failing when the previous
+    #    conditional (``workflow_dispatch``-only) form fell back to
+    #    repo-level secrets that no longer exist. Add a ``required
+    #    reviewers`` rule on the environment if you want to block
+    #    workflow_dispatch behind manual approval; scheduled runs would
+    #    then queue too, so today this env carries no protection rules.
+    # See docs/development.md → "Workflow secret gates".
+    environment: protected-readonly
     strategy:
       fail-fast: false
       matrix:

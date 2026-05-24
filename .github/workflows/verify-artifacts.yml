@@ -14,13 +14,14 @@ jobs:
     name: Verify Artifacts
     runs-on: ubuntu-latest
     if: github.repository == 'teng-lin/notebooklm-py'
-    # Secret-bearing job. Scheduled cron runs continue unattended; only
-    # ``workflow_dispatch`` (human-initiated, potentially non-maintainer)
-    # routes through the ``protected-readonly`` GitHub Environment for
-    # approval before secrets unlock. An empty environment expression on
-    # the schedule path leaves the canary unaffected. See
-    # docs/development.md → "Workflow secret gates".
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' || '' }}
+    # Secret-bearing job. ``NOTEBOOKLM_AUTH_JSON`` and friends live only in
+    # the ``protected-readonly`` GitHub Environment (issue #1009), so the
+    # env binding is unconditional — every trigger sees the same secret
+    # values. Add a ``required reviewers`` rule on the environment if you
+    # want to block workflow_dispatch behind manual approval; scheduled
+    # runs would queue too, so the env carries no protection rules today.
+    # See docs/development.md → "Workflow secret gates".
+    environment: protected-readonly
 
     steps:
     - uses: actions/checkout@v6

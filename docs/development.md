@@ -692,7 +692,7 @@ credentials by dispatching a workflow on a feature branch:
 
 | Gate | Where | Mechanism |
 |------|-------|-----------|
-| `environment: protected-readonly` | Job-level | GitHub Environment with a required reviewer — secrets do not resolve until the maintainer approves the run. Use `${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' \|\| '' }}` to require approval only on manual dispatch while leaving scheduled cron canaries unattended. |
+| `environment: protected-readonly` | Job-level | GitHub Environment hosting the canonical secret values. Bind it **unconditionally** (`environment: protected-readonly`) so every trigger — scheduled cron and `workflow_dispatch` alike — sees the same secret. The earlier conditional form (`${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' \|\| '' }}`) silently broke scheduled crons once the secrets stopped existing at repo level (issue #1009); the same env binding is now the single source of truth. If you want to block `workflow_dispatch` behind manual approval, add a **required reviewers** rule on the environment — but be aware scheduled runs will then queue at the same gate. |
 | `needs.<job>.outputs.is_standard == 'true'` | Job/step-level `if:` | Pin secret-using jobs or steps to standard branches (`main` / `release/*` / scheduled cron). Non-standard branches skip outright — no secret values land in the runner env. |
 | `github.event.sender.login == 'teng-lin'` | Job-level `if:` | Pin webhook-triggered workflows (e.g. `claude.yml`) to a specific maintainer actor. Any other actor's trigger never reaches the secret-bearing steps. |
 
@@ -759,8 +759,10 @@ When introducing a workflow that touches `secrets.*`:
 
 1. Pick the gate shape that matches the trigger surface:
    - `workflow_dispatch` only → job-level `environment: protected-readonly`.
-   - `workflow_dispatch` + `schedule` → conditional environment expression
-     (approve manual runs, leave cron unattended).
+   - `workflow_dispatch` + `schedule` → also job-level `environment: protected-readonly`
+     (unconditional — issue #1009). Pair with an upstream `is_standard`
+     gate so a non-maintainer's feature-branch dispatch can't reach the
+     secret-bearing job at all.
    - Webhook-triggered (`issue_comment`, etc.) → job-level `if:` pinning
      `sender.login` to the maintainer.
    - Multi-branch CI (`push`, `pull_request`, nightly) → step-level `if:`
