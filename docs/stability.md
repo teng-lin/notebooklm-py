@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-05-15
+**Last Updated:** 2026-05-23
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -213,6 +213,8 @@ The following v0.3-era deprecations completed their removal cycle in v0.5.0:
 | `notebooklm.DEFAULT_STORAGE_PATH` | `notebooklm.paths.get_storage_path()` | Module-level constant replaced by helper |
 | `notebooklm.rpc.types.StudioContentType` | `ArtifactType` | Internal raw code alias removed |
 | `notebooklm.rpc.StudioContentType` | `ArtifactType` | Internal re-export removed |
+| `notebooklm.rpc.RPCMethod.DISCOVER_SOURCES` | none | Unused raw RPC enum member, not exercised by client APIs |
+| `notebooklm.rpc.RPCMethod.QUERY_ENDPOINT` | `notebooklm.rpc.get_query_url()` | Endpoint URL path moved out of the RPC method enum |
 | `notebooklm.cli.language_cmd.save_config` | `_save_config` | Private low-level write primitive only |
 
 ### Deprecated for a future major release
@@ -330,14 +332,17 @@ if artifact.is_flashcards:
 
 When Google changes their internal APIs:
 
-1. **Detection**: Automated RPC health check runs nightly (see below)
+1. **Detection**: Automated RPC health check runs nightly for `main`; release
+   branch checks run manually during release prep (see below)
 2. **Investigation**: Identify changed method IDs using browser devtools
 3. **Fix**: Update `rpc/types.py` with new method IDs
 4. **Release**: Push patch release as soon as possible
 
 ### Automated RPC Health Check
 
-A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods for ID changes.
+A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods for ID
+changes on `main`. Release branches use the same workflow through manual
+dispatch.
 
 **What it verifies:**
 - The RPC method ID we send matches the ID returned in the response envelope
@@ -357,7 +362,7 @@ A nightly GitHub Action (`rpc-health.yml`) monitors all 35+ RPC methods for ID c
 - GitHub Issue auto-created with `bug`, `rpc-breakage`, and `automated` labels
 - Report shows expected vs actual IDs and which `RPCMethod` entries need updating
 
-**Manual trigger:** `gh workflow run rpc-health.yml`
+**Manual trigger:** `gh workflow run rpc-health.yml -f custom_branch=release/vX.Y.Z`
 
 ### How to Report API Breakage
 

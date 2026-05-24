@@ -61,6 +61,61 @@
       "code": "removed-member",
       "object": "notebooklm.types.SourceFulltext.source_type",
       "reason": "v0.3-era deprecation completed in v0.5.0; replacement is SourceFulltext.kind."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_audio",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_cinematic_video",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_data_table",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_infographic",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_mind_map",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_report",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_slide_deck",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_study_guide",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "changed-signature",
+      "object": "notebooklm.NotebookLMClient.artifacts.generate_video",
+      "reason": "v0.5.0 changed omitted artifact-generation language from a hard-coded 'en' default to the runtime NOTEBOOKLM_HL/config/default resolver; pass language='en' for fixed English."
+    },
+    {
+      "code": "removed-enum-member",
+      "object": "notebooklm.rpc.RPCMethod.DISCOVER_SOURCES",
+      "reason": "v0.5.0 removed an unused raw RPC enum member that is not exercised by any client API."
+    },
+    {
+      "code": "removed-enum-member",
+      "object": "notebooklm.rpc.RPCMethod.QUERY_ENDPOINT",
+      "reason": "v0.5.0 moved the streamed-chat endpoint path out of RPCMethod because it is an endpoint URL path, not a batchexecute RPC method; use notebooklm.rpc.get_query_url()."
     }
   ]
 }

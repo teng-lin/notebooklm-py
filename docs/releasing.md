@@ -31,7 +31,7 @@ Release Plan for vX.Y.Z:
 5. Commit changes
 6. ⏸️ CONFIRM: Create PR to main?
 7. Wait for CI to pass on PR
-8. Run E2E tests on release branch
+8. Run E2E and RPC health checks on release branch
 9. ⏸️ CONFIRM: Publish to TestPyPI?
 10. Verify TestPyPI package
 11. Merge PR to main
@@ -182,6 +182,7 @@ default values; changing a default is a public behavior change.
   ```bash
   uv run python scripts/check_ci_install_parity.py
   uv run python scripts/check_claude_md_freshness.py
+  # second run confirms release edits did not introduce new API drift
   uv run python scripts/audit_public_api_compat.py
   ```
 - [ ] Fix any issues before proceeding
@@ -224,12 +225,22 @@ default values; changing a default is a public behavior change.
 ### E2E Tests on Release Branch
 
 - [ ] Go to **Actions** → **Nightly E2E**
-- [ ] Click **Run workflow**, select the `release/vX.Y.Z` branch
+- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
 - [ ] Wait for E2E tests to pass
 - [ ] If E2E tests fail:
   1. Fix issues in the release worktree
   2. Commit and push
   3. Re-run E2E tests
+
+### RPC Health Check on Release Branch
+
+- [ ] Go to **Actions** → **RPC Health Check**
+- [ ] Click **Run workflow**, set **custom_branch** to `release/vX.Y.Z`
+- [ ] Wait for RPC health check to pass
+- [ ] If RPC health check fails:
+  1. Fix issues in the release worktree
+  2. Commit and push
+  3. Re-run RPC health check
 
 ---
 

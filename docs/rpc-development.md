@@ -1,7 +1,7 @@
 # RPC Development Guide
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-23
 
 This guide covers everything about NotebookLM's RPC protocol: capturing calls, debugging issues, and implementing new methods.
 
@@ -482,8 +482,10 @@ async def validate_rpc_call(rpc_id: str, params: list, expected_action: str):
 
 ## RPC Health Check Triage Policy
 
-The `rpc-health.yml` workflow runs daily (07:00 UTC) and opens an issue on any
-detected RPC ID mismatch, auth failure, or non-transient RPC error:
+The `rpc-health.yml` workflow runs daily for `main` (07:00 UTC). Release branch
+health checks are manual via `custom_branch=release/vX.Y.Z`. The workflow opens
+an issue on any detected RPC ID mismatch, auth failure, or non-transient RPC
+error:
 
 - **RPC ID mismatch** issues (exit code 1): labeled `bug, rpc-breakage, automated`.
 - **Auth failure** issues (exit code 2): labeled `bug, automated` (no `rpc-breakage`
@@ -493,7 +495,8 @@ detected RPC ID mismatch, auth failure, or non-transient RPC error:
   the rate-limit / `RESOURCE_EXHAUSTED` filter (timeouts, parse failures,
   unexpected HTTP errors). The issue body lists the affected method IDs
   extracted from the report, so triage can start without re-running the check.
-  See `.github/workflows/rpc-health.yml:76-109` for the body-assembly step.
+  See the `Extract failing methods for ERROR issue` step in
+  `.github/workflows/rpc-health.yml` for the body-assembly logic.
 
 Routing:
 

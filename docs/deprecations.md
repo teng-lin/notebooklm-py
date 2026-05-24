@@ -14,6 +14,7 @@ the broader stability policy (semver promise, supported Python versions, the
 | Deprecated | Replacement | Since | Removal | Notes |
 |------------|-------------|-------|---------|-------|
 | `NOTEBOOKLM_STRICT_DECODE=0` soft-mode | Unset the variable (strict is the only mode) | v0.5.0 | v0.6.0 | Warning at `tests/unit/test_strict_decode_default.py:73`; rationale in `docs/stability.md` "Strict decode" + ADR-011 |
+| Positional `wait` / `wait_timeout` on `SourcesAPI.add_url`, `SourcesAPI.add_text`, `SourcesAPI.add_file`, `SourcesAPI.add_drive` | Pass `wait=...` and `wait_timeout=...` as keywords | v0.5.0 | v0.6.0 | Warning emitted by `src/notebooklm/_sources.py:_resolve_legacy_wait_args`; CLI already uses keyword arguments |
 | `SourcesAPI.add_file(mime_type=...)` | Omit `mime_type` — server infers from filename extension | v0.5.0 | v0.6.0 | Warning emitted at `src/notebooklm/_source_upload.py:287` |
 | `notebooklm source add --mime-type` (file sources) | Omit `--mime-type`; Drive-source `--mime-type` remains live | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/cli/source_cmd.py:437` |
 | `ArtifactsAPI.wait_for_completion(poll_interval=...)` | `initial_interval=...` — same cadence, clearer name | v0.5.0 | v0.6.0 | Warning at `src/notebooklm/_artifact_polling.py:154` |
@@ -25,8 +26,8 @@ the broader stability policy (semver promise, supported Python versions, the
 ## How deprecations work in this project
 
 * Every deprecated surface emits a `DeprecationWarning` from the call site
-  the user wrote (`stacklevel=2`), so the warning's `filename`/`lineno`
-  point at user code rather than at the library internals.
+  the user wrote, so the warning's `filename`/`lineno` point at user code
+  rather than at the library internals.
 * Default-shape calls remain silent. A deprecation only fires when the
   caller actually passes the deprecated argument.
 * See `docs/stability.md` "Deprecation Policy" for the broader timeline

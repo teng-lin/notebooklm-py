@@ -69,6 +69,8 @@ class Allowance:
     reason: str
 
     def matches(self, breakage: ApiBreak) -> bool:
+        # These are fnmatch globs, so "*" can cross dots. Keep release
+        # allowlists exact unless a broad match is intentional.
         return fnmatchcase(breakage.code, self.code) and fnmatchcase(
             breakage.object,
             self.object,
@@ -90,7 +92,10 @@ def latest_release_tag(repo_root: Path) -> str:
     result = _run_git(["describe", "--tags", "--abbrev=0"], repo_root)
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", errors="replace")
-        raise RuntimeError(f"could not resolve latest tag: {stderr.strip()}")
+        raise RuntimeError(
+            "could not resolve latest tag: "
+            f"{stderr.strip()}. Fetch tags/history or pass --baseline-ref explicitly."
+        )
     return result.stdout.decode("utf-8").strip()
 
 
@@ -107,7 +112,7 @@ def export_git_ref(repo_root: Path, ref: str, destination: Path) -> Path:
     source_root = destination / "baseline"
     source_root.mkdir()
     with tarfile.open(archive_path) as archive:
-        archive.extractall(source_root)
+        archive.extractall(source_root, filter="data")
     return source_root
 
 
@@ -126,9 +131,9 @@ import warnings
 ROOT = pathlib.Path(sys.argv[1]).resolve()
 EXTRA_PUBLIC_NAMES = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
 CLIENT_NAMESPACE_ATTRIBUTES = set(json.loads(sys.argv[3])) if len(sys.argv) > 3 else set()
-PKG = "notebooklm"
-EXCLUDED = {"__main__", "notebooklm_cli"}
-EXTRA_PACKAGES = ("rpc",)
+PKG = sys.argv[4]
+EXCLUDED = set(json.loads(sys.argv[5]))
+EXTRA_PACKAGES = tuple(json.loads(sys.argv[6]))
 
 
 def discover_modules() -> list[str]:
@@ -223,12 +228,14 @@ def collect_class(cls) -> dict:
                 continue
             if name in enum_member_names:
                 continue
+            if name in payload["members"]:
+                continue
             target = unwrap_member(raw)
             payload["members"][name] = {
                 "kind": member_kind(raw),
                 "signature": signature_payload(target),
             }
-    if cls.__module__ == "notebooklm.client" and cls.__name__ == "NotebookLMClient":
+    if cls.__module__ == f"{PKG}.client" and cls.__name__ == "NotebookLMClient":
         from notebooklm.auth import AuthTokens
 
         instance = cls(
@@ -339,6 +346,9 @@ def collect_manifest(
             str(source_root),
             json.dumps(extra_public_names or {}, sort_keys=True),
             json.dumps(CLIENT_NAMESPACE_ATTRIBUTES),
+            PUBLIC_PACKAGE,
+            json.dumps(sorted(EXCLUDED_TOP_LEVEL_MODULES)),
+            json.dumps(EXTRA_PUBLIC_PACKAGES),
         ],
         cwd=source_root,
         env=env,
@@ -348,8 +358,22 @@ def collect_manifest(
     )
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip()
+        if result.stdout.strip():
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                pass
+            else:
+                errors = payload.get("errors") if isinstance(payload, dict) else None
+                if isinstance(errors, list):
+                    message = "; ".join(str(error) for error in errors)
         raise RuntimeError(f"public API collection failed for {source_root}: {message}")
-    return json.loads(result.stdout)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"public API collection returned invalid JSON for {source_root}: {exc}"
+        ) from exc
 
 
 def _has_kind(params: list[dict[str, Any]], kind: str) -> bool:
@@ -380,7 +404,6 @@ def _signature_breakage(old: dict[str, Any] | None, new: dict[str, Any] | None) 
     old_by_name = {param["name"]: param for param in old_params}
     new_by_name = {param["name"]: param for param in new_params}
     new_has_var_keyword = _has_kind(new_params, "VAR_KEYWORD")
-    old_has_var_positional = _has_kind(old_params, "VAR_POSITIONAL")
     new_has_var_positional = _has_kind(new_params, "VAR_POSITIONAL")
 
     for old_param in old_params:
@@ -412,12 +435,31 @@ def _signature_breakage(old: dict[str, Any] | None, new: dict[str, Any] | None) 
 
     old_positional = [param for param in old_params if _accepts_positional(param)]
     new_positional = [param for param in new_params if _accepts_positional(param)]
-    if old_has_var_positional and not new_has_var_positional:
-        return "old signature accepted arbitrary positional arguments; new signature does not"
     if not new_has_var_positional and len(new_positional) < len(old_positional):
         return (
             f"new signature accepts only {len(new_positional)} positional argument(s); "
             f"old accepted {len(old_positional)}"
+        )
+
+    old_fixed_positional = [param for param in old_positional if param["kind"] != "VAR_POSITIONAL"]
+    new_fixed_positional = [param for param in new_positional if param["kind"] != "VAR_POSITIONAL"]
+    new_fixed_names = [param["name"] for param in new_fixed_positional]
+    for index, old_param in enumerate(old_fixed_positional):
+        if index >= len(new_fixed_positional):
+            break
+        old_name = old_param["name"]
+        new_name = new_fixed_positional[index]["name"]
+        if old_name == new_name:
+            continue
+        if old_name in new_fixed_names:
+            new_index = new_fixed_names.index(old_name)
+            return (
+                f"positional parameter {old_name!r} moved from position "
+                f"{index + 1} to {new_index + 1}"
+            )
+        return (
+            f"positional parameter {old_name!r} was replaced at position "
+            f"{index + 1} by {new_name!r}"
         )
 
     for new_param in new_params:
@@ -534,12 +576,19 @@ def compare_manifests(baseline: dict[str, Any], current: dict[str, Any]) -> list
 
 
 def load_policy(path: Path | None) -> tuple[list[Allowance], dict[str, list[str]]]:
-    if path is None or not path.exists():
+    if path is None or str(path) == "":
         return [], {}
+    if not path.exists():
+        raise RuntimeError(f"allowlist file not found: {path}")
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"invalid JSON in {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{path} must contain a JSON object")
+    schema_version = payload.get("schema_version", 1)
+    if schema_version != 1:
+        raise RuntimeError(f"{path}: unsupported schema_version {schema_version!r} (expected 1)")
     entries = payload.get("allowed_breaks", [])
     if not isinstance(entries, list):
         raise RuntimeError(f"{path} must contain an 'allowed_breaks' list")

@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-05-14
+**Last Updated:** 2026-05-23
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -650,8 +650,8 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `test.yml` | Push/PR | Unit tests, linting, type checking |
-| `nightly.yml` | Daily 6 AM UTC | E2E tests with real API |
-| `rpc-health.yml` | Daily 7 AM UTC | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) |
+| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch for `release/*` | E2E tests with real API |
+| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch for `release/*` | RPC method ID monitoring (see [stability.md](stability.md#automated-rpc-health-check)) |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch | Verify TestPyPI or PyPI install + E2E |
 | `publish.yml` | Tag push | Publish to PyPI |
@@ -662,6 +662,9 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 2. Add GitHub secrets:
    - `NOTEBOOKLM_AUTH_JSON`: Storage state JSON
    - `NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID`: Your test notebook ID
+
+Scheduled canaries target `main` only. Release canaries are manual: dispatch
+`nightly.yml` or `rpc-health.yml` with `custom_branch=release/vX.Y.Z`.
 
 ### Maintaining Secrets
 
@@ -680,7 +683,7 @@ credentials by dispatching a workflow on a feature branch:
 | Gate | Where | Mechanism |
 |------|-------|-----------|
 | `environment: protected-readonly` | Job-level | GitHub Environment with a required reviewer — secrets do not resolve until the maintainer approves the run. Use `${{ github.event_name == 'workflow_dispatch' && 'protected-readonly' \|\| '' }}` to require approval only on manual dispatch while leaving scheduled cron canaries unattended. |
-| `needs.<job>.outputs.is_standard == 'true'` | Step-level `if:` | Pin secret-using steps to standard branches (`main` / `develop` / scheduled cron). Non-standard branches skip the step outright — no secret values land in the runner env. |
+| `needs.<job>.outputs.is_standard == 'true'` | Job/step-level `if:` | Pin secret-using jobs or steps to standard branches (`main` / `release/*` / scheduled cron). Non-standard branches skip outright — no secret values land in the runner env. |
 | `github.event.sender.login == 'teng-lin'` | Job-level `if:` | Pin webhook-triggered workflows (e.g. `claude.yml`) to a specific maintainer actor. Any other actor's trigger never reaches the secret-bearing steps. |
 
 `scripts/check_workflow_secret_gates.py` (wired into the `test.yml` quality job)

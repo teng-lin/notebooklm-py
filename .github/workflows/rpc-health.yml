@@ -2,22 +2,67 @@ name: RPC Health Check
 
 on:
   schedule:
-    # Run at 7 AM UTC daily (1 hour after nightly E2E tests)
+    # Main branch: 7 AM UTC daily (1 hour after main nightly E2E tests)
     - cron: '0 7 * * *'
-  workflow_dispatch:  # Allow manual trigger
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
+    inputs:
+      custom_branch:
+        description: 'Override branch to test (leave empty to test the branch you triggered from)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
-  health-check:
-    name: RPC Health Check
+  # Determine which branch to test
+  resolve-branch:
     runs-on: ubuntu-latest
+    if: github.repository == 'teng-lin/notebooklm-py'
+    outputs:
+      branch: ${{ steps.resolve.outputs.branch }}
+      is_standard: ${{ steps.resolve.outputs.is_standard }}
+    steps:
+      - name: Resolve target branch
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CUSTOM_BRANCH: ${{ inputs.custom_branch }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            # Scheduled runs test main only. Release branches are manual.
+            TARGET="main"
+          else
+            if [ -n "$CUSTOM_BRANCH" ]; then
+              TARGET="$CUSTOM_BRANCH"
+            else
+              TARGET="$REF_NAME"
+            fi
+          fi
+          echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
+          case "$TARGET" in
+            main|release/*)
+              echo "is_standard=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "is_standard=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+          echo "Resolved branch: $TARGET"
+
+  health-check:
+    name: RPC Health Check (${{ needs.resolve-branch.outputs.branch }})
+    needs: resolve-branch
+    if: needs.resolve-branch.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: rpc-health-${{ needs.resolve-branch.outputs.branch }}
+      cancel-in-progress: true
     # Secret-bearing job. The scheduled cron canary must keep running without
     # human-in-the-loop approval (it's the whole point of the canary), but
     # `workflow_dispatch` runs are human-initiated and may originate from
@@ -30,6 +75,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        ref: ${{ needs.resolve-branch.outputs.branch }}
 
     - name: Set up Python
       uses: actions/setup-python@v6
@@ -54,7 +101,9 @@ jobs:
         NOTEBOOKLM_AUTH_JSON: ${{ secrets.NOTEBOOKLM_AUTH_JSON }}
         NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
         NOTEBOOKLM_GENERATION_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_GENERATION_NOTEBOOK_ID }}
+        TARGET_BRANCH: ${{ needs.resolve-branch.outputs.branch }}
       run: |
+        echo "Testing branch: $TARGET_BRANCH"
         set +e
         uv run python scripts/check_rpc_health.py --full 2>&1 | tee health-report.txt
         exit_code=${PIPESTATUS[0]}

@@ -72,6 +72,16 @@ def test_compare_manifests_detects_removed_export(script):
     assert breaks[0].object == "notebooklm.OldName"
 
 
+def test_compare_manifests_detects_removed_module(script):
+    baseline = {"modules": {"notebooklm.extra": {"has_all": True, "exports": {}}}}
+    current = {"modules": {}}
+
+    breaks = script.compare_manifests(baseline, current)
+
+    assert [item.code for item in breaks] == ["removed-module"]
+    assert breaks[0].object == "notebooklm.extra"
+
+
 def test_compare_manifests_detects_removed_public_member(script):
     baseline = _manifest(
         {
@@ -174,6 +184,13 @@ def test_collect_manifest_includes_representative_client_namespace_methods(scrip
     } <= set(members)
 
 
+def test_collect_manifest_preserves_defaulted_dataclass_fields(script):
+    manifest = script.collect_manifest(REPO_ROOT)
+    members = manifest["modules"]["notebooklm"]["exports"]["GenerationStatus"]["members"]
+
+    assert members["url"]["kind"] == "dataclass-field"
+
+
 def test_signature_compare_allows_optional_parameter_addition(script):
     old = _signature(_param("notebook_id"))
     new = _signature(_param("notebook_id"), _param("timeout", default=True))
@@ -205,6 +222,50 @@ def test_signature_compare_rejects_default_value_change(script):
     )
 
 
+def test_signature_compare_rejects_positional_parameter_reordering(script):
+    old = _signature(_param("notebook_id"), _param("title"), _param("content"))
+    new = _signature(_param("notebook_id"), _param("content"), _param("title"))
+
+    assert (
+        script._signature_breakage(old, new)
+        == "positional parameter 'title' moved from position 2 to 3"
+    )
+
+
+def test_signature_compare_rejects_optional_positional_insertion_before_existing_slot(script):
+    old = _signature(_param("notebook_id"), _param("content"))
+    new = _signature(
+        _param("notebook_id"),
+        _param("encoding", default=True),
+        _param("content"),
+    )
+
+    assert (
+        script._signature_breakage(old, new)
+        == "positional parameter 'content' moved from position 2 to 3"
+    )
+
+
+def test_signature_compare_rejects_removed_varargs(script):
+    old = _signature(_param("args", kind="VAR_POSITIONAL"))
+    new = _signature()
+
+    assert (
+        script._signature_breakage(old, new)
+        == "old signature accepted *args, new signature does not"
+    )
+
+
+def test_signature_compare_rejects_removed_kwargs(script):
+    old = _signature(_param("kwargs", kind="VAR_KEYWORD"))
+    new = _signature()
+
+    assert (
+        script._signature_breakage(old, new)
+        == "old signature accepted **kwargs, new signature does not"
+    )
+
+
 def test_compare_manifests_detects_enum_value_change(script):
     baseline = _manifest(
         {
@@ -230,6 +291,34 @@ def test_compare_manifests_detects_enum_value_change(script):
     breaks = script.compare_manifests(baseline, current)
 
     assert [item.code for item in breaks] == ["changed-enum-value"]
+    assert breaks[0].object == "notebooklm.SourceType.PDF"
+
+
+def test_compare_manifests_detects_removed_enum_member(script):
+    baseline = _manifest(
+        {
+            "SourceType": {
+                "kind": "enum",
+                "signature": _signature(),
+                "members": {},
+                "enum_members": {"PDF": "pdf"},
+            }
+        }
+    )
+    current = _manifest(
+        {
+            "SourceType": {
+                "kind": "enum",
+                "signature": _signature(),
+                "members": {},
+                "enum_members": {},
+            }
+        }
+    )
+
+    breaks = script.compare_manifests(baseline, current)
+
+    assert [item.code for item in breaks] == ["removed-enum-member"]
     assert breaks[0].object == "notebooklm.SourceType.PDF"
 
 
@@ -281,3 +370,26 @@ def test_load_policy_reads_allowances_and_extra_public_names(tmp_path, script):
             reason="documented removal",
         )
     ]
+
+
+def test_load_policy_rejects_missing_allowlist(tmp_path, script):
+    missing = tmp_path / "missing.json"
+
+    with pytest.raises(RuntimeError, match="allowlist file not found"):
+        script.load_policy(missing)
+
+
+def test_load_policy_rejects_unsupported_schema_version(tmp_path, script):
+    policy = tmp_path / "policy.json"
+    policy.write_text(
+        """\
+{
+  "schema_version": 2,
+  "allowed_breaks": []
+}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="unsupported schema_version"):
+        script.load_policy(policy)

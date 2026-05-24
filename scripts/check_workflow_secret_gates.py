@@ -14,7 +14,7 @@ runs that have at least one of:
 * a step-level ``if:`` guard whose expression references an ``is_standard``
   output (the convention from ``nightly.yml`` where the ``resolve-branch``
   job sets ``outputs.is_standard`` to ``true`` only for ``main`` /
-  ``develop`` / scheduled cron triggers).
+  ``release/*`` / scheduled cron triggers).
 
 ``secrets.GITHUB_TOKEN`` is *not* counted as a user-provided secret — it's
 the auto-provisioned token whose scopes are bounded by the top-level
@@ -148,7 +148,7 @@ _COMMENT_RE = re.compile(r"^\s*#")
 #
 # Tokens:
 #   * ``needs.<job>.outputs.is_standard == 'true'`` — branch-class pin
-#     (nightly.yml's ``resolve-branch`` job sets this for main/develop +
+#     (nightly.yml's ``resolve-branch`` job sets this for main/release/* +
 #     scheduled triggers).
 #   * ``github.event.sender.login == '<actor>'`` /
 #     ``github.actor == '<actor>'`` — actor pin (claude.yml's

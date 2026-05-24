@@ -22,11 +22,9 @@ from pathlib import Path
 # Workflows that intentionally rely on job-level permissions or default scopes.
 # codeql.yml: needs `security-events: write` (job-scoped is the standard).
 # publish.yml / testpypi-publish.yml: write to PyPI; permissions live at job level.
-# rpc-health.yml: opens issues on failure (already has its own permissions block).
 ALLOWLIST = {
     "codeql.yml",
     "publish.yml",
-    "rpc-health.yml",
     "testpypi-publish.yml",
 }
 
