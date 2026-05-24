@@ -171,12 +171,17 @@ class ErrorInjectionMiddleware:
         Pass-through (``await next_call(request)``) happens when EITHER
         gate is open:
 
-        - ``mode is None`` (env var unset / empty / unknown value), OR
         - ``self._builder is None`` (no builder injected — production
-          default per issue #1005).
+          default per issue #1005), OR
+        - ``mode is None`` (env var unset / empty / unknown value).
+
+        Builder is checked first to skip the env-var lookup on every RPC
+        in production (where ``self._builder`` is always ``None``).
         """
+        if self._builder is None:
+            return await next_call(request)
         mode = _error_injection._get_error_injection_mode()
-        if mode is None or self._builder is None:
+        if mode is None:
             return await next_call(request)
 
         if not self._logged_activation:
