@@ -11,38 +11,32 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
-from ._client_metrics import ClientMetrics
-from ._cookie_persistence import CookiePersistence
 from ._error_injection import _refuse_synthetic_error_outside_test_context
 from ._kernel import Kernel
 from ._loop_affinity import assert_bound_loop
 from ._middleware import (
-    Middleware,
-    NextCall,
     RpcRequest,
     RpcResponse,
-    build_chain,
     materialize_rpc_request,
 )
-from ._middleware_chain import MiddlewareChainBuilder
 from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
-from ._polling_registry import PollRegistry
 from ._reqid_counter import DEFAULT_STEP as _REQID_DEFAULT_STEP
-from ._reqid_counter import ReqidCounter
 from ._request_types import AuthSnapshot, BuildRequest
 from ._rpc_executor import RpcExecutor
-from ._session_auth import AuthRefreshCoordinator
 from ._session_config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
-    normalize_max_concurrent_uploads,
 )
-from ._session_helpers import _resolve_keepalive_interval
-from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
-from ._transport_drain import TransportDrainTracker, _TransportOperationToken
+from ._session_init import (
+    build_collaborators,
+    validate_constructor_args,
+    wire_middleware_chain,
+)
+from ._session_lifecycle import CookieRotator, CookieSaver
+from ._transport_drain import _TransportOperationToken
 from ._transport_errors import raise_mapped_post_error
 from .auth import (
     AuthTokens,
@@ -100,6 +94,34 @@ logger = logging.getLogger(__name__)
 # ``is_auth_error=…`` keyword arguments to :class:`Session` directly
 # instead of monkeypatching module attributes. See ``docs/improvement.md``
 # §4.1 for the rationale.
+
+
+def _default_decode_response() -> Callable[..., Any]:
+    """Resolve the canonical RPC response decoder used when
+    :class:`Session` is constructed without an explicit
+    ``decode_response=`` kwarg.
+
+    Imported lazily so the lookup goes through
+    ``notebooklm.rpc.decode_response`` at construction time — the
+    canonical monkeypatch surface documented in ADR-007.
+    """
+    from .rpc import decode_response
+
+    return decode_response
+
+
+def _default_is_auth_error() -> Callable[[Exception], bool]:
+    """Resolve the canonical auth-error classifier used when
+    :class:`Session` is constructed without an explicit
+    ``is_auth_error=`` kwarg.
+
+    Imported lazily so the lookup goes through
+    ``notebooklm._session_helpers.is_auth_error`` at construction
+    time — the canonical monkeypatch surface documented in ADR-007.
+    """
+    from ._session_helpers import is_auth_error
+
+    return is_auth_error
 
 
 class Session:
@@ -286,209 +308,79 @@ class Session:
         # guard is a no-op for the normal production path (env var unset)
         # and for legitimate pytest contexts (PYTEST_CURRENT_TEST set).
         _refuse_synthetic_error_outside_test_context()
-        # Lazy import to break the types.py -> _core.py cycle.
-        from .types import ConnectionLimits
-
-        self.auth = auth
-        # HTTP timeouts, connection limits, keepalive interval / storage_path,
-        # the live ``httpx.AsyncClient``, the captured ``_bound_loop``, and
-        # the keepalive background task all live on ``self._lifecycle``
-        # (constructed below alongside the other extracted helpers so the
-        # inter-helper dependency order is obvious). Access lifecycle state
-        # through ``self._lifecycle`` and the live HTTP client through
-        # ``self._kernel``.
-        _resolved_limits = limits if limits is not None else ConnectionLimits()
-        # Constructor-injected seams retained on the instance so
-        # :meth:`_get_rpc_executor` can read them when it lazily constructs
-        # the executor on first RPC. The chain builder is wired below with
-        # ``is_auth_error`` directly (the builder is built eagerly inside
-        # this ``__init__``). See ``docs/improvement.md`` §4.1 for the
-        # rationale that replaced the retired module-level decode / sleep /
-        # auth-error classifier wrappers.
-        #
-        # ``None`` (the default) resolves to a fresh module-attribute
-        # lookup at construction time — that preserves the ability for
-        # tests to ``monkeypatch.setattr("notebooklm.rpc.decode_response",
-        # …)`` / ``…("notebooklm._session.asyncio.sleep", …)`` /
-        # ``…("notebooklm._session_helpers.is_auth_error", …)`` BEFORE
-        # constructing :class:`Session` and still steer the captured
-        # callable. (Post-construction patches do NOT propagate because
-        # the seam is captured here, not re-resolved on every RPC. New
-        # tests should pass an explicit callable instead.) Lookups go
-        # through their canonical modules so the monkeypatch surface
-        # documented in ADR-007 is unchanged.
-        if decode_response is None:
-            from .rpc import decode_response as _resolved_decode_response
-
-            self._decode_response: Callable[..., Any] = _resolved_decode_response
-        else:
-            self._decode_response = decode_response
-        self._sleep: Callable[[float], Awaitable[Any]] = (
-            sleep if sleep is not None else asyncio.sleep
-        )
-        if is_auth_error is None:
-            from ._session_helpers import is_auth_error as _resolved_is_auth_error
-
-            self._is_auth_error: Callable[[Exception], bool] = _resolved_is_auth_error
-        else:
-            self._is_auth_error = is_auth_error
-        # ``_refresh_retry_delay`` stays here directly — it is read on the
-        # RPC retry path by ``RpcExecutor`` and the middleware chain and SET
-        # by integration tests against ``client._session``. The refresh
-        # callback + refresh/auth-snapshot state live on ``self._auth_coord``,
-        # constructed below alongside the other extracted helpers so the
-        # inter-helper dependency order is obvious.
-        self._refresh_retry_delay = refresh_retry_delay
-        if rate_limit_max_retries < 0:
-            raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
-        self._rate_limit_max_retries = rate_limit_max_retries
-        if server_error_max_retries < 0:
-            raise ValueError(
-                f"server_error_max_retries must be >= 0, got {server_error_max_retries}"
-            )
-        self._server_error_max_retries = server_error_max_retries
-        # Keep fail-fast validation for private Session callers, but the
-        # actual upload semaphore state is owned by ``SourceUploadPipeline``.
-        normalize_max_concurrent_uploads(max_concurrent_uploads)
-        # RPC-fanout throttle. ``None`` means "no
-        # gate" (caller has an external rate-limiter, or this is a
-        # single-shot CLI invocation). Default ``DEFAULT_MAX_CONCURRENT_RPCS``
-        # (16) sits well below the default ``ConnectionLimits.max_connections``
-        # so helper GET/POSTs outside the RPC pipeline still have pool
-        # headroom. Cross-validation with ``limits.max_connections`` is
-        # enforced one layer up at ``NotebookLMClient.__init__`` because
-        # ``Session`` synthesizes its own ``ConnectionLimits()`` when
-        # ``limits=None``, masking the relationship at this layer.
-        if max_concurrent_rpcs is None:
-            self._max_concurrent_rpcs: int | None = None
-        else:
-            if max_concurrent_rpcs < 1:
-                raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
-            self._max_concurrent_rpcs = max_concurrent_rpcs
-        # Lazily-created because ``asyncio.Semaphore()`` binds to the
-        # running loop in some Python versions. Per-instance, never
-        # module-global. When
-        # ``_max_concurrent_rpcs is None``, the accessor returns a
-        # ``contextlib.nullcontext`` instead — see ``_get_rpc_semaphore``.
-        self._rpc_semaphore: asyncio.Semaphore | None = None
-        # Observability counters + telemetry callback. ``metrics_snapshot``
-        # remains the lock-safe read path; helper-level tests that need
-        # implementation state read ``self._metrics_obj`` directly.
-        self._metrics_obj = ClientMetrics(on_rpc_event=on_rpc_event)
-        # Transport drain bookkeeping (in-flight posts, drain condition,
-        # per-task operation depth, draining flag). The helper's
-        # ``__init__`` is event-loop-agnostic; the ``asyncio.Condition`` is
-        # created lazily on first ``get_drain_condition`` call.
-        self._drain_tracker = TransportDrainTracker()
-        # Request ID counter for chat API (must be unique per request).
-        # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
-        # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
-        # Access ``self._reqid.value`` / ``self._reqid._lock`` directly.
-        # The ``on_lock_wait`` hook keeps the
-        # cumulative ``lock_wait_seconds_*`` metrics ticking inside
-        # ``self._metrics_obj`` even though the counter is now extracted.
-        self._reqid = ReqidCounter(on_lock_wait=self._record_lock_wait)
-        # Auth refresh coordination — single-flight refresh task, snapshot
-        # serialization, and cookie-jar sync. The coordinator owns
-        # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
-        # ``_auth_snapshot_lock``. Tests and internal callers that need
-        # implementation state read the coordinator directly. The live auth
-        # snapshot lock is reachable via :meth:`_get_auth_snapshot_lock`.
-        # The auth snapshot lock is intentionally distinct from
-        # ``_refresh_lock`` — mixing them would re-introduce the
-        # reentrancy ambiguity that snapshot-side serialization was added
-        # to avoid. The attribute name ``_auth_coord`` is part of the
-        # inter-helper contract for the upcoming B2/C1 extractions; do not
-        # rename.
-        self._auth_coord = AuthRefreshCoordinator(refresh_callback=refresh_callback)
-        # HTTP-client lifecycle — owns loop binding, keepalive, and close
-        # ordering while delegating the live ``httpx.AsyncClient`` to
-        # ``self._kernel``. The ``_resolve_keepalive_interval`` clamp lives
-        # in :mod:`notebooklm._session_helpers` and is imported above; we
-        # call it directly here. (The historical ``notebooklm._core``
-        # re-export was removed in v0.5.0.)
-        #
-        # Event-loop affinity guard rationale: the lifecycle captures
-        # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
-        # and the cross-loop check in ``_perform_authed_post`` does a cheap
-        # ``is`` comparison against it. Each client is per-loop — the asyncio primitives we hold
-        # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
-        # ``_rpc_semaphore``, the ``httpx.AsyncClient``
-        # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)
-        # are all bound to the loop that ``open()`` ran on; reusing them
-        # under a different loop produces hangs and ``RuntimeError`` deep
-        # in httpx instead of an actionable message at the call site.
-        #
-        # Prefer the explicit storage_path if provided (e.g.
-        # ``NotebookLMClient(storage_path=...)`` with a manually-built
-        # ``AuthTokens``), otherwise fall back to ``auth.storage_path``.
-        _resolved_storage_path: Path | None = (
-            keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
-        )
-        # ``None`` (default) resolves to a fresh name-lookup of
-        # ``httpx.AsyncClient`` on this module at construction time so
-        # tests that
-        # ``monkeypatch.setattr("notebooklm._session.httpx.AsyncClient", …)``
-        # BEFORE constructing :class:`Session` still steer the live
-        # transport build. (The resolved callable is captured into the
-        # kernel below; ``Kernel.open()`` invokes it later but does not
-        # re-resolve.) Explicit callables (production passes
-        # ``httpx.AsyncClient`` via default; tests pass a
-        # ``MockTransport``-aware factory) bypass the lookup hop entirely.
-        _resolved_async_client_factory = (
-            async_client_factory if async_client_factory is not None else httpx.AsyncClient
-        )
-        self._kernel = Kernel(async_client_factory=_resolved_async_client_factory)
-        self._lifecycle = ClientLifecycle(
+        config = validate_constructor_args(
             timeout=timeout,
             connect_timeout=connect_timeout,
-            limits=_resolved_limits,
-            keepalive_interval=_resolve_keepalive_interval(keepalive, keepalive_min_interval),
-            keepalive_storage_path=_resolved_storage_path,
-            kernel=self._kernel,
-            # Phase 2 PR 3 injectable seams. ``None`` is forwarded so the
-            # lifecycle's ``or _default_*`` resolves to the late-binding
-            # wrapper — preserving the existing ``_core`` monkeypatch
-            # surface for unchanged callers.
+            refresh_retry_delay=refresh_retry_delay,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            keepalive=keepalive,
+            keepalive_min_interval=keepalive_min_interval,
+            keepalive_storage_path=keepalive_storage_path,
+            auth_storage_path=auth.storage_path,
+            limits=limits,
+            max_concurrent_uploads=max_concurrent_uploads,
+            max_concurrent_rpcs=max_concurrent_rpcs,
+            # Seam defaults resolve against THIS module's ``asyncio`` /
+            # ``httpx`` bindings (see ``_session_init.py`` module
+            # docstring for the seam-resolution boundary).
+            decode_response=_default_decode_response()
+            if decode_response is None
+            else decode_response,
+            sleep=asyncio.sleep if sleep is None else sleep,
+            is_auth_error=_default_is_auth_error() if is_auth_error is None else is_auth_error,
+            async_client_factory=httpx.AsyncClient
+            if async_client_factory is None
+            else async_client_factory,
+        )
+
+        # Plain-attribute assignments precede ``build_collaborators``
+        # because the chain provider lambdas in
+        # :func:`wire_middleware_chain` read ``_rate_limit_max_retries``
+        # / ``_server_error_max_retries`` / ``_refresh_retry_delay``
+        # from ``self`` live (integration tests SET them
+        # post-construction).
+        self.auth = auth
+        self._decode_response: Callable[..., Any] = config.decode_response
+        self._sleep: Callable[[float], Awaitable[Any]] = config.sleep
+        self._is_auth_error: Callable[[Exception], bool] = config.is_auth_error
+        self._refresh_retry_delay = config.refresh_retry_delay
+        self._rate_limit_max_retries = config.rate_limit_max_retries
+        self._server_error_max_retries = config.server_error_max_retries
+        self._max_concurrent_rpcs: int | None = config.max_concurrent_rpcs
+        # Lazy-created per-instance — see :meth:`_get_rpc_semaphore`.
+        self._rpc_semaphore: asyncio.Semaphore | None = None
+
+        collaborators = build_collaborators(
+            config,
+            auth=auth,
+            refresh_callback=refresh_callback,
+            on_rpc_event=on_rpc_event,
             cookie_saver=cookie_saver,
             cookie_rotator=cookie_rotator,
+            record_lock_wait=self._record_lock_wait,
         )
-        # Owns the in-process save lock and open-time cookie baseline.
-        self.cookie_persistence = CookiePersistence(self.auth, _resolved_storage_path)
+        self._metrics_obj = collaborators.metrics
+        self._drain_tracker = collaborators.drain_tracker
+        self._reqid = collaborators.reqid
+        self._auth_coord = collaborators.auth_coord
+        self._kernel = collaborators.kernel
+        self._lifecycle = collaborators.lifecycle
+        self.cookie_persistence = collaborators.cookie_persistence
+        self.poll_registry = collaborators.poll_registry
         self._drain_hooks: dict[str, Callable[[], Awaitable[None]]] = {}
-        # Session-level :class:`PollRegistry` retained as a legacy attribute
-        # for historical tests. The *live* artifact-polling state is owned
-        # separately by
-        # :class:`ArtifactsAPI` (``src/notebooklm/_artifacts.py``), which
-        # constructs its own :class:`PollRegistry` and threads it into
-        # :class:`ArtifactPollingService` (``src/notebooklm/_artifact_polling.py``).
-        # This ``self.poll_registry`` is currently unused by production code;
-        # the tests in ``tests/integration/concurrency/test_artifact_poll_dedupe.py``
-        # observe it directly. Migrating those tests to
-        # ``client.artifacts._polling.poll_registry.pending`` — and dropping
-        # this attribute — is tracked as a follow-up audit.
-        self.poll_registry: PollRegistry = PollRegistry()
         self._rpc_executor: RpcExecutor | None = None
-        # ADR-009 chain construction. PR history, leaf exception shape,
-        # and ``RpcRequest.context`` contract live in
-        # ``_middleware_chain.py`` module docstring.
-        self._chain_builder = MiddlewareChainBuilder(
-            drain_tracker=self._drain_tracker,
-            metrics=self._metrics_obj,
+
+        wired = wire_middleware_chain(
+            config,
+            collaborators,
+            host=self,
+            authed_post_chain_terminal=self._authed_post_chain_terminal,
             rpc_semaphore_factory=self._get_rpc_semaphore,
-            rate_limit_max_retries_provider=lambda: self._rate_limit_max_retries,
-            server_error_max_retries_provider=lambda: self._server_error_max_retries,
-            refresh_retry_delay_provider=lambda: self._refresh_retry_delay,
-            refresh_callable=self._await_refresh,
-            auth_snapshot_provider=self._snapshot,
-            is_auth_error=self._is_auth_error,
-            refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
         )
-        self._middlewares: list[Middleware] = self._chain_builder.build()
-        self._authed_post_chain: NextCall = build_chain(
-            self._middlewares,
-            self._authed_post_chain_terminal,
-        )
+        self._chain_builder = wired.chain_builder
+        self._middlewares = wired.middlewares
+        self._authed_post_chain = wired.authed_post_chain
 
     def register_drain_hook(self, name: str, hook: Callable[[], Awaitable[None]]) -> None:
         """Register or replace a feature-owned close-time drain hook."""
