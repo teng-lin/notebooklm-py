@@ -798,16 +798,20 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
 
     tree = ast.parse((SRC_ROOT / "_artifact_downloads.py").read_text(encoding="utf-8"))
     artifact_facade_imports: list[str] = []
+    artifact_facade_modules = {"_artifacts", "notebooklm._artifacts"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             artifact_facade_imports.extend(
-                alias.name for alias in node.names if alias.name == "notebooklm._artifacts"
+                alias.name for alias in node.names if alias.name in artifact_facade_modules
             )
-        elif isinstance(node, ast.ImportFrom) and node.module in {
-            "_artifacts",
-            "notebooklm._artifacts",
-        }:
-            artifact_facade_imports.extend(f"{node.module}.{alias.name}" for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module in artifact_facade_modules:
+                artifact_facade_imports.extend(f"{module}.{alias.name}" for alias in node.names)
+            elif module in {"", "notebooklm"}:
+                artifact_facade_imports.extend(
+                    alias.name for alias in node.names if alias.name == "_artifacts"
+                )
 
     assert artifact_facade_imports == []
     assert artifacts._mind_map is mind_map

@@ -20,7 +20,7 @@ import httpx
 from ._artifact_formatters import _extract_app_data, _format_interactive_content, _parse_data_table
 from .auth import load_httpx_cookies
 from .exceptions import ValidationError
-from .rpc import ArtifactTypeCode, RPCMethod
+from .rpc import ArtifactTypeCode, RPCMethod, safe_index
 from .types import (
     Artifact,
     ArtifactDownloadError,
@@ -155,9 +155,11 @@ class ArtifactDownloadService:
         self._storage_path = storage_path
 
     async def _list_raw(self, notebook_id: str) -> list[Any]:
+        """List raw artifacts through the injected listing service."""
         return await self._listing.list_raw(notebook_id, rpc_call=self._runtime.rpc_call)
 
     async def _list_mind_maps(self, notebook_id: str) -> list[Any]:
+        """List mind-map artifacts through the injected mind-map service."""
         return await self._mind_maps.list_mind_maps(notebook_id)
 
     async def _list_artifacts(
@@ -165,6 +167,7 @@ class ArtifactDownloadService:
         notebook_id: str,
         artifact_type: ArtifactType,
     ) -> list[Artifact]:
+        """List typed artifacts using the download service's patchable seams."""
         return await self._listing.list_artifacts(
             notebook_id,
             artifact_type,
@@ -181,6 +184,7 @@ class ArtifactDownloadService:
         *,
         type_code: ArtifactTypeCode,
     ) -> Any:
+        """Select one artifact candidate using the injected listing policy."""
         return self._listing.select_artifact(
             candidates,
             artifact_id,
@@ -190,17 +194,21 @@ class ArtifactDownloadService:
         )
 
     async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
+        """Fetch interactive artifact HTML through the runtime RPC seam."""
         result = await self._runtime.rpc_call(
             RPCMethod.GET_INTERACTIVE_HTML,
             [artifact_id],
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if result and isinstance(result, list) and len(result) > 0:
-            data = result[0]
-            if isinstance(data, list) and len(data) > 9 and data[9]:
-                return data[9][0]
-        return None
+        return safe_index(
+            result,
+            0,
+            9,
+            0,
+            method_id=RPCMethod.GET_INTERACTIVE_HTML.value,
+            source="_artifact_downloads._get_artifact_content",
+        )
 
     async def download_audio(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
