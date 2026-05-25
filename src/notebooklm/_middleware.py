@@ -12,6 +12,8 @@ defines:
   style: each middleware receives the request and a ``next_call`` callable;
   it decides whether (and how) to invoke ``next_call(request)``, optionally
   observing or transforming the response.
+- :func:`materialize_rpc_request` — converts the legacy ``BuildRequest``
+  callback shape into the future populated ``RpcRequest`` envelope.
 - :func:`build_chain` — composes a ``Sequence[Middleware]`` around a terminal
   ``NextCall`` so the leftmost middleware in the sequence becomes the
   *outermost* wrapper (matches the ordering documented in ADR-009).
@@ -31,6 +33,8 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
+
+from ._request_types import AuthSnapshot, BuildRequest, materialize_build_request
 
 # ---------------------------------------------------------------------------
 # Chain envelope types.
@@ -119,6 +123,32 @@ class RpcResponse:
     ``request.context['trace_id']`` can read it back here) plus any
     response-side additions a middleware made.
     """
+
+
+def materialize_rpc_request(
+    *,
+    build_request: BuildRequest,
+    snapshot: AuthSnapshot,
+    context: dict[str, Any],
+) -> RpcRequest:
+    """Build a populated chain envelope from the legacy request callback.
+
+    This is a behavior-neutral bridge for the Tier-13 request-materialization
+    migration. ``Session`` still enters the chain with empty request fields
+    today, but the future chain leaf can use this helper to produce the
+    populated ``RpcRequest(url, headers, body)`` shape that middlewares and
+    ``Kernel.post`` should see.
+
+    ``context`` is intentionally retained by reference, matching ADR-009's
+    mutable per-request metadata contract.
+    """
+    request = materialize_build_request(build_request, snapshot)
+    return RpcRequest(
+        url=request.url,
+        headers=request.headers or {},
+        body=request.body,
+        context=context,
+    )
 
 
 # ---------------------------------------------------------------------------
