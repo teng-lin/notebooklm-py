@@ -163,66 +163,39 @@ class Source:
 
     @classmethod
     def from_api_response(cls, data: list[Any], notebook_id: str | None = None) -> Source:
-        """Parse source data from various API response formats."""
-        if not data or not isinstance(data, list):
-            raise ValueError(f"Invalid source data: {data}")
+        """Parse source data from various API response formats.
 
-        # Try deeply nested format: [[[[id], title, metadata, ...]]]
-        if isinstance(data[0], list) and len(data[0]) > 0:
-            if isinstance(data[0][0], list) and len(data[0][0]) > 0:
-                # Check if deeply nested vs medium nested
-                if isinstance(data[0][0][0], list):
-                    # Deeply nested: [[[[id], title, ...]]]
-                    entry = data[0][0]
-                    source_id = entry[0][0] if isinstance(entry[0], list) else entry[0]
-                    title = entry[1] if len(entry) > 1 else None
-                    # Fall through to the shared metadata parser below.
-                else:
-                    # Medium nested: [[['id'], 'title', ...]]
-                    entry = data[0]
-                    source_id = entry[0][0] if isinstance(entry[0], list) else entry[0]
-                    title = entry[1] if len(entry) > 1 else None
+        Multi-shape dispatch (the three wire shapes — deeply nested,
+        medium nested, flat) is centralised in
+        :meth:`notebooklm._row_adapters.SourceRow.from_unknown_shape`;
+        position knowledge for the entry layout lives on
+        :class:`SourceRow` itself. This method only translates the
+        adapter's typed properties into the :class:`Source` dataclass.
+        See ``docs/improvement.md`` §6.2 for context.
+        """
+        # Local import: ``_row_adapters`` re-imports ``_datetime_from_timestamp``
+        # from ``_types/common`` (a sibling). The dependency graph is
+        # acyclic (``_types/__init__.py`` doesn't pull in ``sources.py``),
+        # but the import is kept local to make the row-adapter dependency
+        # explicit on every call path and to keep the module's top-level
+        # import surface unchanged.
+        from .._row_adapters import SourceRow, SourceRowShape
 
-                    metadata = entry[2] if len(entry) > 2 and isinstance(entry[2], list) else None
-                    url = _extract_source_url(metadata, allow_bare_http=False)
-                    type_code = (
-                        metadata[4]
-                        if metadata is not None
-                        and len(metadata) > 4
-                        and isinstance(metadata[4], int)
-                        else None
-                    )
-                    created_at = _extract_source_created_at(metadata)
+        row = SourceRow.from_unknown_shape(data)
 
-                    return cls(
-                        id=str(source_id),
-                        title=title,
-                        url=url,
-                        _type_code=type_code,
-                        created_at=created_at,
-                    )
+        # Flat shape preserves the historical contract: ``_type_code``
+        # is always ``None`` and metadata-derived fields are not
+        # consulted (legacy ``return cls(id=..., title=..., _type_code=None)``).
+        if row.shape is SourceRowShape.FLAT:
+            return cls(id=row.id, title=row.title, _type_code=None)
 
-                metadata = entry[2] if len(entry) > 2 and isinstance(entry[2], list) else None
-                url = _extract_source_url(metadata)
-                type_code = (
-                    metadata[4]
-                    if metadata is not None and len(metadata) > 4 and isinstance(metadata[4], int)
-                    else None
-                )
-                created_at = _extract_source_created_at(metadata)
-
-                return cls(
-                    id=str(source_id),
-                    title=title,
-                    url=url,
-                    _type_code=type_code,
-                    created_at=created_at,
-                )
-
-        # Simple flat format: [id, title] or [id, title, ...]
-        source_id = data[0] if len(data) > 0 else ""
-        title = data[1] if len(data) > 1 else None
-        return cls(id=str(source_id), title=title, _type_code=None)
+        return cls(
+            id=row.id,
+            title=row.title,
+            url=row.url,
+            _type_code=row.type_code,
+            created_at=row.created_at,
+        )
 
 
 @dataclass

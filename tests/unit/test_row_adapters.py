@@ -1,13 +1,15 @@
-"""Tests for ``notebooklm._row_adapters`` (``ArtifactRow`` + ``NoteRow``).
+"""Tests for ``notebooklm._row_adapters`` (``ArtifactRow`` + ``NoteRow`` + ``SourceRow``).
 
-The adapters centralise position knowledge for the ``LIST_ARTIFACTS``
-and ``GET_NOTES_AND_MIND_MAPS`` row shapes so consumers
+The adapters centralise position knowledge for the ``LIST_ARTIFACTS``,
+``GET_NOTES_AND_MIND_MAPS``, and source row shapes so consumers
 (``Artifact.from_api_response``, ``ArtifactListingService.select_artifact``,
-``NoteService.classify_row``, ``NotesAPI._parse_note``) read named
-properties instead of open-coding ``data[2]`` / ``data[4]`` / ``data[15]``
-or ``row[1][1]`` / ``row[1][4]``. See ``docs/improvement.md`` §6.2 for
-the motivation and ``src/notebooklm/_row_adapters.py`` for the position
-contracts.
+``NoteService.classify_row``, ``NotesAPI._parse_note``,
+``Source.from_api_response``, ``SourceLister._parse_source``,
+``NotebooksAPI.get_source_ids``) read named properties instead of
+open-coding ``data[2]`` / ``data[4]`` / ``data[15]`` / ``row[1][1]`` /
+``row[1][4]`` / ``data[0][0]`` / ``metadata[4]``. See
+``docs/improvement.md`` §6.2 for the motivation and
+``src/notebooklm/_row_adapters.py`` for the position contracts.
 
 These tests cover three layers per adapter:
 
@@ -18,7 +20,8 @@ These tests cover three layers per adapter:
    defaults; deep descent goes through ``safe_index`` so strict-mode
    drift raises ``UnknownRPCMethodError``.
 3. **Predicate / domain helpers** — ``matches_type`` for artifacts,
-   ``is_deleted`` / ``is_mind_map_content`` for notes.
+   ``is_deleted`` / ``is_mind_map_content`` for notes, multi-shape
+   dispatch (``from_unknown_shape``) for sources.
 """
 
 from __future__ import annotations
@@ -27,9 +30,9 @@ import json
 
 import pytest
 
-from notebooklm._row_adapters import ArtifactRow, NoteRow
+from notebooklm._row_adapters import ArtifactRow, NoteRow, SourceRow, SourceRowShape
 from notebooklm.exceptions import UnknownRPCMethodError
-from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode
+from notebooklm.rpc.types import ArtifactStatus, ArtifactTypeCode, SourceStatus
 
 # ---------------------------------------------------------------------------
 # 1. Position-contract pin (the canary)
@@ -838,3 +841,599 @@ class TestNoteRowMethodIdField:
         the correct method."""
         row = NoteRow(["id", "body"], method_id="custom_note_rpc")
         assert row.method_id == "custom_note_rpc"
+
+
+# ===========================================================================
+# SourceRow
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# 1. Position-contract pin (the canary)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowPositionContract:
+    """If any of these assertions fail, Google has likely reshaped the wire.
+
+    The constants cover both the top-level entry layout (id envelope,
+    title, metadata, status block) AND the metadata sub-list layout
+    (timestamp, type code, url precedence chain). Changing any of these
+    is the *only* legitimate reason for one of these tests to need
+    updating — the failing diff is the audit trail.
+    """
+
+    def test_top_level_positions(self) -> None:
+        """Entry-level positions: id, title, metadata, status block."""
+        assert SourceRow._ID_POS == 0
+        assert SourceRow._TITLE_POS == 1
+        assert SourceRow._METADATA_POS == 2
+        assert SourceRow._STATUS_BLOCK_POS == 3
+        assert SourceRow._STATUS_INNER_POS == 1
+
+    def test_metadata_positions(self) -> None:
+        """Metadata-sub-list positions: bare-url, timestamp, type, yt, url."""
+        assert SourceRow._META_BARE_URL_POS == 0
+        assert SourceRow._META_TIMESTAMP_POS == 2
+        assert SourceRow._META_TYPE_POS == 4
+        assert SourceRow._META_YOUTUBE_POS == 5
+        assert SourceRow._META_URL_POS == 7
+
+    def test_id_envelope_positions(self) -> None:
+        """Id-envelope positions: plain id at [0]; drive-backed at [2][0]."""
+        assert SourceRow._ID_ENVELOPE_PLAIN_POS == 0
+        assert SourceRow._ID_ENVELOPE_DRIVE_PAYLOAD_POS == 2
+        assert SourceRow._ID_ENVELOPE_DRIVE_INNER_POS == 0
+
+    def test_all_positions_at_once(self) -> None:
+        """A single dict pin so a sweeping reshape fails with one
+        informative assertion rather than many."""
+        assert (
+            SourceRow._ID_POS,
+            SourceRow._TITLE_POS,
+            SourceRow._METADATA_POS,
+            SourceRow._STATUS_BLOCK_POS,
+            SourceRow._STATUS_INNER_POS,
+            SourceRow._META_BARE_URL_POS,
+            SourceRow._META_TIMESTAMP_POS,
+            SourceRow._META_TYPE_POS,
+            SourceRow._META_YOUTUBE_POS,
+            SourceRow._META_URL_POS,
+            SourceRow._ID_ENVELOPE_PLAIN_POS,
+            SourceRow._ID_ENVELOPE_DRIVE_PAYLOAD_POS,
+            SourceRow._ID_ENVELOPE_DRIVE_INNER_POS,
+        ) == (0, 1, 2, 3, 1, 0, 2, 4, 5, 7, 0, 2, 0)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _metadata(
+    *,
+    timestamp: int | float | None = 1_700_000_000,
+    type_code: int | None = 5,
+    canonical_url: str | None = "https://example.com/canonical",
+    youtube_url: str | None = None,
+    bare_url: str | None = None,
+) -> list:
+    """Build a metadata sub-list matching the documented layout.
+
+    Mirrors ``Source.from_api_response`` test fixtures so the positions
+    here stay in lockstep with the production code.
+    """
+    md: list = [bare_url, None]
+    md.append([timestamp] if timestamp is not None else None)
+    md.append(None)
+    md.append(type_code)
+    if youtube_url is not None:
+        md.append([youtube_url, "ytid", "channel"])
+    else:
+        md.append(None)
+    md.append(None)
+    if canonical_url is not None:
+        md.append([canonical_url])
+    else:
+        md.append(None)
+    return md
+
+
+def _entry(
+    *,
+    source_id: str = "src_test",
+    title: str | None = "Source Title",
+    drive_backed: bool = False,
+    plain_id_string: bool = False,
+    status_code: int | None = None,
+    metadata: list | None = None,
+) -> list:
+    """Build a medium-nested entry: ``[[id], title, metadata, [None, status]]``."""
+    if plain_id_string:
+        id_envelope: object = source_id
+    elif drive_backed:
+        id_envelope = [None, True, [source_id]]
+    else:
+        id_envelope = [source_id]
+    entry: list = [id_envelope, title]
+    if metadata is None:
+        entry.append(_metadata())
+    else:
+        entry.append(metadata)
+    if status_code is not None:
+        entry.append([None, status_code])
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# 2. Shape-dispatch normalization
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowShapeDispatch:
+    """``SourceRow.from_unknown_shape`` normalizes all three wire shapes."""
+
+    def test_deeply_nested_shape(self) -> None:
+        """``[[[[id], title, metadata, ...]]]`` → DEEPLY_NESTED.
+
+        Honors ``url_allow_bare_http=True`` because the deeply-nested
+        ``ADD_SOURCE`` shape historically allowed a bare URL at
+        ``metadata[0]`` as a fallback. The internal ``_raw`` points at
+        the unwrapped entry so :attr:`id` reads cleanly.
+        """
+        data = [[[["id_deep"], "Deep", _metadata(canonical_url="https://deep.example/")]]]
+        row = SourceRow.from_unknown_shape(data)
+        assert row.shape is SourceRowShape.DEEPLY_NESTED
+        assert row.url_allow_bare_http is True
+        assert row.id == "id_deep"
+        assert row.title == "Deep"
+        assert row.url == "https://deep.example/"
+
+    def test_medium_nested_shape(self) -> None:
+        """``[[[id], title, metadata, ...]]`` → MEDIUM_NESTED."""
+        data = [[["id_med"], "Med", _metadata(canonical_url="https://med.example/")]]
+        row = SourceRow.from_unknown_shape(data)
+        assert row.shape is SourceRowShape.MEDIUM_NESTED
+        assert row.url_allow_bare_http is False
+        assert row.id == "id_med"
+        assert row.title == "Med"
+        assert row.url == "https://med.example/"
+
+    def test_flat_shape(self) -> None:
+        """``[id, title]`` → FLAT; metadata-dependent props degrade."""
+        row = SourceRow.from_unknown_shape(["id_flat", "Flat"])
+        assert row.shape is SourceRowShape.FLAT
+        assert row.url_allow_bare_http is False
+        assert row.id == "id_flat"
+        assert row.title == "Flat"
+        # Flat rows have no metadata block, so url/type/timestamp are absent.
+        assert row.metadata is None
+        assert row.url is None
+        assert row.type_code is None
+        assert row.created_at_raw is None
+
+    def test_empty_data_raises_value_error(self) -> None:
+        """Empty/non-list data fails fast (mirrors legacy ``Source.from_api_response``)."""
+        with pytest.raises(ValueError, match="Invalid source data"):
+            SourceRow.from_unknown_shape([])
+
+    def test_non_list_data_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="Invalid source data"):
+            SourceRow.from_unknown_shape("not a list")  # type: ignore[arg-type]
+
+    def test_from_entry_records_entry_shape(self) -> None:
+        """Pre-extracted entries get ``shape=ENTRY``; ``url_allow_bare_http`` stays False.
+
+        This is the path used by ``SourceLister._parse_source`` and
+        ``NotebooksAPI.get_source_ids`` after they walk the response
+        envelope themselves.
+        """
+        entry = _entry(source_id="entry_id", title="Entry")
+        row = SourceRow.from_entry(entry)
+        assert row.shape is SourceRowShape.ENTRY
+        assert row.url_allow_bare_http is False
+        assert row.id == "entry_id"
+        assert row.title == "Entry"
+
+    def test_dispatch_method_id_override(self) -> None:
+        """Explicit ``method_id`` propagates to the wrapped row."""
+        row = SourceRow.from_unknown_shape(
+            [[["id"], "T", _metadata()]],
+            method_id="my_custom_method",
+        )
+        assert row.method_id == "my_custom_method"
+
+    def test_dispatch_default_method_id_is_get_notebook(self) -> None:
+        """Default ``method_id`` is ``GET_NOTEBOOK`` for source-list diagnostics."""
+        row = SourceRow.from_unknown_shape([[["id"], "T", _metadata()]])
+        # GET_NOTEBOOK == "rLM1Ne"
+        assert row.method_id == "rLM1Ne"
+
+
+# ---------------------------------------------------------------------------
+# 3. Id-envelope decoding (drive-backed + edge cases)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowId:
+    """:attr:`SourceRow.id` handles three id-envelope variants."""
+
+    def test_typical_wrapped_id(self) -> None:
+        """``[[id], title, ...]`` is the common case."""
+        row = SourceRow.from_entry(_entry(source_id="typical"))
+        assert row.id == "typical"
+        assert row.has_id is True
+
+    def test_drive_backed_id_at_index_2(self) -> None:
+        """Drive-backed entries nest the id as ``[None, True, [id]]``."""
+        row = SourceRow.from_entry(_entry(source_id="drv42", drive_backed=True))
+        assert row.id == "drv42"
+        assert row.has_id is True
+
+    def test_bare_string_id(self) -> None:
+        """Some flat-shaped rows put the id directly at ``self._raw[0]``."""
+        row = SourceRow(_raw=["bare_id", "T"])
+        assert row.id == "bare_id"
+        assert row.has_id is True
+
+    def test_empty_id_envelope_returns_empty(self) -> None:
+        """``[[], title, ...]`` — id envelope is an empty list."""
+        row = SourceRow(_raw=[[], "T"])
+        assert row.id == ""
+        assert row.has_id is False
+
+    def test_missing_id_position_returns_empty(self) -> None:
+        """``self._raw == []`` — no id envelope at all."""
+        row = SourceRow(_raw=[])
+        assert row.id == ""
+        assert row.has_id is False
+
+    def test_drive_backed_with_empty_inner_returns_empty(self) -> None:
+        """``[None, True, []]`` — drive payload is empty."""
+        row = SourceRow(_raw=[[None, True, []], "T"])
+        assert row.id == ""
+        assert row.has_id is False
+
+    def test_drive_backed_with_inner_none_returns_empty(self) -> None:
+        """``[None, True, [None]]`` — drive inner element is ``None``.
+
+        Both :attr:`id` and :attr:`has_id` must return falsy values so
+        :class:`notebooklm._source_listing.SourceLister` skips the row
+        (matching legacy ``_extract_source_id`` which returned ``None``
+        from ``raw_id[2][0] is None``).
+        """
+        row = SourceRow(_raw=[[None, True, [None]], "T"])
+        assert row.id == ""
+        assert row.has_id is False
+
+    def test_integer_id_is_stringified(self) -> None:
+        """Defensive: non-string ids stringify (mirrors ``Source(id=str(src_id))``)."""
+        row = SourceRow(_raw=[[12345], "T"])
+        assert row.id == "12345"
+
+
+# ---------------------------------------------------------------------------
+# 4. URL precedence (metadata[7] > metadata[5] > metadata[0])
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowUrlPrecedence:
+    """:attr:`SourceRow.url` precedence matches legacy ``_extract_source_url``."""
+
+    def test_canonical_url_at_metadata_7(self) -> None:
+        row = SourceRow.from_entry(
+            _entry(
+                metadata=_metadata(
+                    canonical_url="https://canonical.example/",
+                    youtube_url="https://youtube.example/v",
+                )
+            )
+        )
+        # [7] wins over [5].
+        assert row.url == "https://canonical.example/"
+
+    def test_youtube_url_at_metadata_5_when_7_absent(self) -> None:
+        row = SourceRow.from_entry(
+            _entry(
+                metadata=_metadata(
+                    canonical_url=None,
+                    youtube_url="https://youtube.example/v",
+                )
+            )
+        )
+        assert row.url == "https://youtube.example/v"
+
+    def test_youtube_block_first_element_non_string_skipped(self) -> None:
+        """``metadata[5][0]`` must be a string to be honored."""
+        md = _metadata(canonical_url=None)
+        md[SourceRow._META_YOUTUBE_POS] = [42, "ytid"]
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.url is None
+
+    def test_bare_url_at_metadata_0_ignored_when_allow_bare_http_false(self) -> None:
+        """ENTRY / MEDIUM_NESTED shapes never honor ``metadata[0]`` —
+        unrelated content can live there."""
+        row = SourceRow.from_entry(
+            _entry(
+                metadata=_metadata(
+                    canonical_url=None,
+                    youtube_url=None,
+                    bare_url="https://bare.example/",
+                )
+            )
+        )
+        assert row.url is None
+
+    def test_bare_url_at_metadata_0_honored_for_deeply_nested(self) -> None:
+        """Only the deeply-nested ``ADD_SOURCE`` shape lets a bare
+        ``http(s)://...`` at ``metadata[0]`` act as the URL."""
+        md = _metadata(canonical_url=None, youtube_url=None, bare_url="https://bare.example/")
+        data = [[[["id"], "T", md]]]
+        row = SourceRow.from_unknown_shape(data)
+        assert row.shape is SourceRowShape.DEEPLY_NESTED
+        assert row.url == "https://bare.example/"
+
+    def test_bare_url_non_http_ignored_even_when_allowed(self) -> None:
+        """``metadata[0]`` is only honored when it starts with ``http``."""
+        md = _metadata(canonical_url=None, youtube_url=None, bare_url="ftp://bare.example/")
+        data = [[[["id"], "T", md]]]
+        row = SourceRow.from_unknown_shape(data)
+        assert row.url is None
+
+    def test_url_returns_none_when_metadata_absent(self) -> None:
+        row = SourceRow(_raw=[["id"], "T"])
+        assert row.url is None
+
+    def test_url_returns_none_when_all_slots_empty(self) -> None:
+        md = _metadata(canonical_url=None, youtube_url=None)
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.url is None
+
+
+# ---------------------------------------------------------------------------
+# 5. type_code and metadata access
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowTypeCodeAndMetadata:
+    def test_type_code_from_metadata_4(self) -> None:
+        row = SourceRow.from_entry(_entry(metadata=_metadata(type_code=9)))
+        assert row.type_code == 9
+
+    def test_type_code_none_when_metadata_too_short(self) -> None:
+        """Metadata shorter than 5 elements → ``type_code`` is ``None``."""
+        row = SourceRow.from_entry(_entry(metadata=[None, None, [1700000000], None]))
+        assert row.type_code is None
+
+    def test_type_code_none_when_not_int(self) -> None:
+        md = _metadata()
+        md[SourceRow._META_TYPE_POS] = "not_an_int"
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.type_code is None
+
+    def test_type_code_none_when_metadata_absent(self) -> None:
+        row = SourceRow(_raw=[["id"], "T"])
+        assert row.type_code is None
+
+    def test_metadata_returns_list_when_present(self) -> None:
+        md = _metadata()
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.metadata is md  # adapter doesn't copy
+
+    def test_metadata_returns_none_when_non_list(self) -> None:
+        row = SourceRow(_raw=[["id"], "T", "not_a_list"])
+        assert row.metadata is None
+
+
+# ---------------------------------------------------------------------------
+# 6. Timestamp descent (delegated to safe_index for the deep step)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowTimestamp:
+    def test_created_at_raw_returns_int(self) -> None:
+        row = SourceRow.from_entry(_entry(metadata=_metadata(timestamp=1_700_000_000)))
+        assert row.created_at_raw == 1_700_000_000
+
+    def test_created_at_converts_to_datetime(self) -> None:
+        row = SourceRow.from_entry(_entry(metadata=_metadata(timestamp=1_700_000_000)))
+        assert row.created_at is not None
+        assert row.created_at.timestamp() == 1_700_000_000
+
+    def test_missing_timestamp_block_returns_none(self) -> None:
+        row = SourceRow.from_entry(_entry(metadata=_metadata(timestamp=None)))
+        assert row.created_at_raw is None
+        assert row.created_at is None
+
+    def test_empty_timestamp_block_returns_none_in_both_modes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``metadata[2] = []`` is an accepted soft edge-case (mirrors
+        :class:`ArtifactRow` timestamp handling)."""
+        md = _metadata()
+        md[SourceRow._META_TIMESTAMP_POS] = []
+        row = SourceRow.from_entry(_entry(metadata=md))
+
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+        assert row.created_at_raw is None  # no exception in strict mode
+
+    def test_non_list_timestamp_block_returns_none(self) -> None:
+        md = _metadata()
+        md[SourceRow._META_TIMESTAMP_POS] = "not_a_list"
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.created_at_raw is None
+
+    def test_metadata_absent_returns_none(self) -> None:
+        row = SourceRow(_raw=[["id"], "T"])
+        assert row.created_at_raw is None
+
+    def test_metadata_too_short_for_timestamp_returns_none(self) -> None:
+        row = SourceRow.from_entry(_entry(metadata=[None, None]))
+        assert row.created_at_raw is None
+
+    def test_non_numeric_timestamp_returns_none(self) -> None:
+        md = _metadata()
+        md[SourceRow._META_TIMESTAMP_POS] = ["not_numeric"]
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.created_at_raw is None
+
+
+# ---------------------------------------------------------------------------
+# 7. Status decoding (used by SourceLister)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowStatus:
+    """:attr:`SourceRow.status` mirrors legacy ``SourceLister._extract_status``."""
+
+    def test_status_ready_when_status_block_absent(self) -> None:
+        row = SourceRow.from_entry(_entry(status_code=None))
+        assert row.status == SourceStatus.READY
+
+    def test_status_processing(self) -> None:
+        row = SourceRow.from_entry(_entry(status_code=SourceStatus.PROCESSING))
+        assert row.status == SourceStatus.PROCESSING
+
+    def test_status_error(self) -> None:
+        row = SourceRow.from_entry(_entry(status_code=SourceStatus.ERROR))
+        assert row.status == SourceStatus.ERROR
+
+    def test_status_preparing(self) -> None:
+        row = SourceRow.from_entry(_entry(status_code=SourceStatus.PREPARING))
+        assert row.status == SourceStatus.PREPARING
+
+    def test_unknown_status_falls_back_to_ready(self) -> None:
+        """Status codes outside the known enum coerce to READY."""
+        row = SourceRow.from_entry(_entry(status_code=999))
+        assert row.status == SourceStatus.READY
+
+    def test_non_list_status_block_falls_back_to_ready(self) -> None:
+        entry = _entry()
+        entry.append("not_a_list")  # status block at position 3
+        row = SourceRow.from_entry(entry)
+        assert row.status == SourceStatus.READY
+
+    def test_short_status_block_falls_back_to_ready(self) -> None:
+        entry = _entry()
+        entry.append([None])  # status block too short — no [1]
+        row = SourceRow.from_entry(entry)
+        assert row.status == SourceStatus.READY
+
+
+# ---------------------------------------------------------------------------
+# 8. Schema-drift edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowSchemaDrift:
+    """Short / malformed rows degrade to sensible defaults."""
+
+    def test_empty_row_yields_safe_defaults(self) -> None:
+        row = SourceRow(_raw=[])
+        assert row.id == ""
+        assert row.title is None
+        assert row.metadata is None
+        assert row.type_code is None
+        assert row.url is None
+        assert row.created_at_raw is None
+        assert row.status == SourceStatus.READY
+
+    def test_id_only_row(self) -> None:
+        row = SourceRow(_raw=[["only_id"]])
+        assert row.id == "only_id"
+        assert row.title is None  # title is None (not ""), preserving legacy
+        assert row.metadata is None
+
+    def test_title_position_can_be_none(self) -> None:
+        row = SourceRow(_raw=[["id"], None])
+        assert row.title is None
+
+    def test_metadata_with_only_url_block(self) -> None:
+        """Minimal metadata: only enough length to carry ``[7]``."""
+        md: list = [None] * 8
+        md[SourceRow._META_URL_POS] = ["https://only-url.example/"]
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.url == "https://only-url.example/"
+        assert row.type_code is None
+        assert row.created_at_raw is None
+
+
+# ---------------------------------------------------------------------------
+# 9. Strict-mode behaviour on deep drift
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowStrictMode:
+    """``method_id`` plumbing and strict-mode behavior for deep descents.
+
+    Unlike :class:`ArtifactRow.variant` (which walks a two-step
+    ``[9][1][0]`` descent and CAN trigger strict-mode raises when
+    ``[9][1]`` is missing), :attr:`SourceRow.created_at_raw` walks only
+    a single ``metadata[2][0]`` step gated by an outer "non-empty list"
+    guard. That guard short-circuits the two scenarios safe_index would
+    raise on (empty / non-list timestamp block), so in practice the
+    safe_index call here is a forward-compatible placeholder: it
+    propagates ``method_id`` for diagnostics today and is the migration
+    point if Google ever deepens the timestamp block to require
+    ``[0][0]``-style descent.
+    """
+
+    def test_method_id_default_is_get_notebook(self) -> None:
+        """The default ``method_id`` matches the most-common caller (GET_NOTEBOOK)."""
+        row = SourceRow.from_entry(_entry())
+        assert row.method_id == "rLM1Ne"  # RPCMethod.GET_NOTEBOOK
+
+    def test_method_id_propagates_through_constructor(self) -> None:
+        row = SourceRow.from_entry(_entry(), method_id="my_custom")
+        assert row.method_id == "my_custom"
+
+    def test_method_id_propagates_through_unknown_shape(self) -> None:
+        row = SourceRow.from_unknown_shape(
+            [[["id"], "T", _metadata()]],
+            method_id="my_custom",
+        )
+        assert row.method_id == "my_custom"
+
+    def test_non_numeric_timestamp_returns_none_in_strict_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Even in strict mode, a non-numeric value at ``metadata[2][0]``
+        degrades to ``None`` rather than raising — the type-guard at the
+        property boundary is the legitimate filter, not drift."""
+        monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
+        md = _metadata()
+        md[SourceRow._META_TIMESTAMP_POS] = [{"unexpected": "shape"}]
+        row = SourceRow.from_entry(_entry(metadata=md))
+        assert row.created_at_raw is None
+
+
+# ---------------------------------------------------------------------------
+# 10. Immutability
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRowImmutability:
+    """The adapter is frozen so the wrapped row can't be swapped out."""
+
+    def test_cannot_assign_to_raw(self) -> None:
+        row = SourceRow(_raw=[])
+        with pytest.raises(AttributeError):
+            row._raw = [1, 2, 3]  # type: ignore[misc]
+
+    def test_does_not_mutate_wrapped_row(self) -> None:
+        raw = _entry()
+        snapshot = list(raw)
+        row = SourceRow.from_entry(raw)
+
+        # Touch every property.
+        _ = row.id
+        _ = row.title
+        _ = row.metadata
+        _ = row.type_code
+        _ = row.url
+        _ = row.created_at_raw
+        _ = row.created_at
+        _ = row.status
+        _ = row.has_id
+
+        assert raw == snapshot

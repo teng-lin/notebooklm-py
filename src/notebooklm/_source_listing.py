@@ -7,9 +7,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from ._row_adapters import SourceRow
 from .rpc import RPCError, RPCMethod
-from .rpc.types import SourceStatus
-from .types import Source, _extract_source_created_at, _extract_source_url
+from .types import Source
 
 # Keep source-list warnings on the historical logger so existing log filters
 # continue to see the same channel after the service extraction.
@@ -127,72 +127,28 @@ class SourceLister:
         if not isinstance(src, builtins.list) or len(src) == 0:
             return None
 
-        src_id = SourceLister._extract_source_id(src)
-        if src_id is None:
+        # GET_NOTEBOOK source-list entries arrive in the "entry" layout
+        # (``[[id], title, metadata, status_block, ...]`` after the
+        # envelope walk above) so we hand them directly to
+        # ``SourceRow.from_entry`` and let the adapter handle all
+        # positional knowledge — id-envelope variants (plain, drive-
+        # backed), metadata url precedence, status decoding, etc.
+        row = SourceRow.from_entry(src, method_id=RPCMethod.GET_NOTEBOOK.value)
+        if not row.has_id:
             logger.warning(
                 "SourcesAPI.list: Skipping source with unexpected id shape: %s",
                 repr(src)[:500],
             )
             return None
 
-        title = src[1] if len(src) > 1 else None
-        metadata = src[2] if len(src) > 2 else None
-
-        # GET_NOTEBOOK source entries use the same medium-nested metadata
-        # shape as Source.from_api_response. In this shape metadata[0] can
-        # pack unrelated data, so only the shared [7] > [5] precedence applies.
-        url = _extract_source_url(metadata, allow_bare_http=False)
-        created_at = _extract_source_created_at(metadata)
-        status = SourceLister._extract_status(src)
-        type_code = SourceLister._extract_type_code(metadata)
-
         return Source(
-            id=str(src_id),
-            title=title,
-            url=url,
-            _type_code=type_code,
-            created_at=created_at,
-            status=status,
+            id=row.id,
+            title=row.title,
+            url=row.url,
+            _type_code=row.type_code,
+            created_at=row.created_at,
+            status=row.status,
         )
-
-    @staticmethod
-    def _extract_source_id(src: builtins.list[Any]) -> object | None:
-        raw_id = src[0]
-        if not isinstance(raw_id, builtins.list):
-            return raw_id
-        if raw_id and raw_id[0] is not None:
-            return raw_id[0]
-        # Drive-backed entries can nest the source id inside the id envelope:
-        # [None, true, [source_id]]. Keep this local to source-list parsing so
-        # the public Source model remains a shape-preserving value object.
-        if len(raw_id) > 2 and isinstance(raw_id[2], builtins.list) and raw_id[2]:
-            return raw_id[2][0]
-        return None
-
-    @staticmethod
-    def _extract_status(src: builtins.list[Any]) -> SourceStatus:
-        if len(src) <= 3 or not isinstance(src[3], builtins.list) or len(src[3]) <= 1:
-            return SourceStatus.READY
-
-        status_code = src[3][1]
-        if status_code in (
-            SourceStatus.PROCESSING,
-            SourceStatus.READY,
-            SourceStatus.ERROR,
-            SourceStatus.PREPARING,
-        ):
-            return status_code
-        return SourceStatus.READY
-
-    @staticmethod
-    def _extract_type_code(metadata: Any) -> int | None:
-        if (
-            isinstance(metadata, builtins.list)
-            and len(metadata) > 4
-            and isinstance(metadata[4], int)
-        ):
-            return metadata[4]
-        return None
 
 
 __all__ = ["SourceLister"]
