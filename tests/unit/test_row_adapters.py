@@ -730,6 +730,28 @@ class TestNoteRowIsMindMapContent:
     def test_empty_string_not_mind_map(self) -> None:
         assert NoteRow.is_mind_map_content("") is False
 
+    def test_plain_text_with_children_substring_not_mind_map(self) -> None:
+        """The ``startswith("{")`` guard prevents false positives on
+        plain note bodies that happen to contain the substring
+        ``"children":`` verbatim — gemini review feedback on #1028.
+        Without the guard a user-typed note like ``My "children": Alice``
+        would be misclassified as a mind map and silently filtered out
+        of :meth:`NotesAPI.list`."""
+        assert (
+            NoteRow.is_mind_map_content('My "children": Alice and Bob') is False
+        )
+
+    def test_plain_text_with_nodes_substring_not_mind_map(self) -> None:
+        assert (
+            NoteRow.is_mind_map_content('Graph "nodes": twelve in total') is False
+        )
+
+    def test_json_array_with_children_key_not_mind_map(self) -> None:
+        """Mind-map payloads are always JSON *objects*, never arrays.
+        A JSON array starting with ``[`` is rejected even if it
+        contains the discriminator substring."""
+        assert NoteRow.is_mind_map_content('[{"children": []}]') is False
+
 
 class TestNoteRowIsMindMap:
     """The instance-property convenience wrapper around

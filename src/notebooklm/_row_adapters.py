@@ -464,7 +464,7 @@ class NoteRow:
     def is_mind_map_content(content: str | None) -> bool:
         """Return whether ``content`` is a serialised mind-map payload.
 
-        Mind maps are JSON blobs that always contain either a
+        Mind maps are JSON object blobs that always contain either a
         ``"children":`` or ``"nodes":`` key at the top level. We match
         on the substring rather than parsing the JSON because (a) the
         payloads can be large and we run this check on every row in a
@@ -472,9 +472,19 @@ class NoteRow:
         stable across every cassette captured to date — it's the same
         predicate the wire decoder uses.
 
+        The ``startswith("{")`` guard avoids false positives on plain
+        text notes that happen to contain the substring ``"children":``
+        verbatim (e.g. a note body like ``My "children": Alice, Bob``).
+        Production mind-map payloads are always JSON objects, never
+        arrays / strings / etc., so requiring the leading ``{`` is a
+        zero-cost reduction in false-positive surface — gemini review
+        feedback on #1028.
+
         Exposed as a ``@staticmethod`` so callers that already have a
         content string in hand (e.g. ``NoteService.classify_row``
         threading through the cached ``content`` value) can classify
         without constructing a fresh :class:`NoteRow`.
         """
-        return bool(content and ('"children":' in content or '"nodes":' in content))
+        if not content or not content.startswith("{"):
+            return False
+        return '"children":' in content or '"nodes":' in content
