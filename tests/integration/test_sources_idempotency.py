@@ -402,13 +402,13 @@ async def test_register_file_source_probe_short_circuits_when_first_response_los
         # exercises only the ADD_SOURCE_FILE register step's idempotency.
         with (
             patch.object(
-                client.sources,
-                "_start_resumable_upload",
+                client.sources._uploader,
+                "start_resumable_upload",
                 AsyncMock(return_value="https://upload.example/scotty"),
             ),
             patch.object(
-                client.sources,
-                "_upload_file_streaming",
+                client.sources._uploader,
+                "upload_file_streaming",
                 AsyncMock(return_value=None),
             ),
         ):
@@ -480,13 +480,13 @@ async def test_register_file_source_does_not_match_pre_existing_filename(
     try:
         with (
             patch.object(
-                client.sources,
-                "_start_resumable_upload",
+                client.sources._uploader,
+                "start_resumable_upload",
                 AsyncMock(return_value="https://upload.example/scotty"),
             ),
             patch.object(
-                client.sources,
-                "_upload_file_streaming",
+                client.sources._uploader,
+                "upload_file_streaming",
                 AsyncMock(return_value=None),
             ),
             pytest.raises(ServerError),
@@ -557,13 +557,13 @@ async def test_register_file_source_baseline_unavailable_raises_on_ambiguity(
     try:
         with (
             patch.object(
-                client.sources,
-                "_start_resumable_upload",
+                client.sources._uploader,
+                "start_resumable_upload",
                 AsyncMock(return_value="https://upload.example/scotty"),
             ),
             patch.object(
-                client.sources,
-                "_upload_file_streaming",
+                client.sources._uploader,
+                "upload_file_streaming",
                 AsyncMock(return_value=None),
             ),
             pytest.raises(NotebookLMError, match="baseline snapshot was unavailable"),

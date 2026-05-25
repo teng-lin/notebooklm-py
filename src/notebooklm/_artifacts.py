@@ -6,18 +6,16 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 """
 
 import builtins
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-# ``_mind_map`` is re-exported as ``_artifacts._mind_map`` so legacy
-# patch seams (``test_init_order.test_phase7_artifact_mind_map_patch_seams_are_current``)
-# can still resolve the module via the artifacts facade. The runtime
-# code path in this module talks to the injected
-# ``NoteBackedMindMapService`` / ``NoteService`` instances; the bare
-# module re-export is for monkeypatch convenience only.
+# ``_mind_map`` is re-exported as ``_artifacts._mind_map`` so legacy patch
+# seams can still resolve the module via the artifacts facade. The runtime code
+# path in this module talks to the injected ``NoteBackedMindMapService`` /
+# ``NoteService`` instances; the bare module re-export is for monkeypatch
+# convenience only.
 from . import (
     _artifact_formatters,
     _artifact_polling,
@@ -31,7 +29,6 @@ from ._note_service import NoteService
 from ._notebook_metadata import NotebookSourceIdProvider
 from ._polling_registry import PollRegistry
 from ._session_contracts import AsyncWorkRuntime, RpcCaller
-from .auth import load_httpx_cookies
 from .rpc import (
     ArtifactTypeCode,
     AudioFormat,
@@ -64,18 +61,16 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 
-# Private compatibility exports. Tests and downstream code patch these names
-# through ``notebooklm._artifacts`` even though download implementation now
-# lives in ``_artifact_downloads``.
-_DOWNLOAD_COMPAT_EXPORTS = (
+# Private compatibility exports that remain intentionally available through
+# ``notebooklm._artifacts``. Downloads no longer patch through this module, but
+# a few whitebox tests and downstream users still import these private names.
+_ARTIFACT_COMPAT_EXPORTS = (
     DownloadResult,
     ArtifactDownloadError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
     _extract_artifact_url,
-    json,
-    load_httpx_cookies,
 )
 
 
@@ -162,61 +157,16 @@ class ArtifactsRuntime(RpcCaller, AsyncWorkRuntime, DrainHookRegistration, Proto
 
 
 class _ArtifactsServiceMethods(Protocol):
-    """Narrow ``ArtifactsAPI`` **method-call** surface that helper services depend on.
+    """Narrow ``ArtifactsAPI`` method-call surface used by artifact downloads.
 
-    Artifact service helpers (:class:`ArtifactDownloadService` and
-    :class:`ArtifactGenerationService`) accept an ``ArtifactsAPI`` instance
-    via constructor injection (the ``methods=`` kw-arg) for back-references
-    into selection / RPC / formatting flows. The helpers type that argument
-    as ``_ArtifactsServiceMethods`` rather than the full concrete
-    ``ArtifactsAPI`` — pinning the dependency surface to a documented
-    subset and supporting the AST guard pinned by
-    ``test_artifact_services_have_no_facade_reach_in`` in
-    ``tests/unit/test_init_order.py``.
+    ``ArtifactDownloadService`` accepts an ``ArtifactsAPI`` instance via
+    constructor injection (the ``methods=`` kw-arg) for listing, selection,
+    download, and interactive-formatting flows. The helper types that
+    argument as ``_ArtifactsServiceMethods`` rather than the full concrete
+    ``ArtifactsAPI`` so the private collaboration surface stays explicit.
 
-    The migration that introduced this Protocol shipped in three PRs:
-
-      * `#891 <https://github.com/teng-lin/notebooklm-py/pull/891>`_ (T1)
-        introduced the Protocol declaration.
-      * `#896 <https://github.com/teng-lin/notebooklm-py/pull/896>`_ (T2)
-        migrated ``ArtifactDownloadService`` to constructor injection.
-      * `#910 <https://github.com/teng-lin/notebooklm-py/pull/910>`_ (T3)
-        migrated ``ArtifactGenerationService`` and closed the reverse
-        facade-into-service reach by promoting the service-side
-        ``_call_generate`` / ``_parse_generation_result`` methods.
-
-    Both helpers are now fully migrated; no further migration PRs in this
-    series are pending.
-
-    **Scope (intentionally narrow).** This Protocol covers method calls
-    only. The four *collaborator objects* the helpers depend on —
-    ``_notebooks`` (``NotebookSourceIdProvider``), ``_runtime``
-    (``ArtifactsRuntime``), ``_note_service`` (``NoteService``), and
-    ``_mind_maps`` (``NoteBackedMindMapService``) — are deliberately
-    **not** declared here. They were eliminated as reach-throughs by
-    injecting each collaborator as a separate constructor argument on the
-    helper service (mirroring how :class:`ArtifactsAPI.__init__` already
-    takes them), rather than by widening this Protocol. The reach-in
-    guard catches any residual ``api._notebooks`` / ``api._runtime`` /
-    ``api._note_service`` / ``api._mind_maps`` access as a violation, so
-    any future re-introduction of a coupling here would have to do
-    constructor injection rather than smuggle the dependency through a
-    wider Protocol.
-
-    The underscore-prefixed members are deliberate: this Protocol describes
-    a private collaboration contract between ``ArtifactsAPI`` and its own
-    helper services. ``RpcOwner`` in :mod:`notebooklm._rpc_executor`
-    (see ``docs/architecture.md`` § RpcExecutor) is the established
-    precedent — a Protocol that declares the underscore-prefixed methods
-    a sibling collaborator legitimately calls. See also
-    :class:`DrainHookRegistration` above for the local docstring pattern.
-
-    The three public members (``list_quizzes``, ``list_flashcards``,
-    ``generate_report``) are not new contract — they preserve the documented
-    monkeypatch seam ``ArtifactsAPI.generate_report`` referenced from
-    ``_artifact_generation.py`` (search for "Preserve the historical facade
-    seam") and the two ``list_*`` shapes used by interactive-artifact
-    formatting.
+    Generation no longer depends on this facade-shaped method bag; it owns
+    its RPC call and parser paths directly inside ``ArtifactGenerationService``.
     """
 
     async def _list_raw(self, notebook_id: str) -> builtins.list[Any]: ...
@@ -244,31 +194,9 @@ class _ArtifactsServiceMethods(Protocol):
         is_quiz: bool,
     ) -> str: ...
 
-    async def _call_generate(
-        self, notebook_id: str, params: builtins.list[Any]
-    ) -> GenerationStatus: ...
-
-    def _parse_generation_result(
-        self,
-        result: Any,
-        *,
-        method_id: str,
-        source: str = "_parse_generation_result",
-    ) -> GenerationStatus: ...
-
     async def list_quizzes(self, notebook_id: str) -> builtins.list[Artifact]: ...
 
     async def list_flashcards(self, notebook_id: str) -> builtins.list[Artifact]: ...
-
-    async def generate_report(
-        self,
-        notebook_id: str,
-        report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        custom_prompt: str | None = None,
-        extra_instructions: str | None = None,
-    ) -> GenerationStatus: ...
 
 
 class ArtifactsAPI:
@@ -329,7 +257,6 @@ class ArtifactsAPI:
         self._listing = ArtifactListingService()
         self._generation = ArtifactGenerationService(
             runtime=self._runtime,
-            methods=self,
             notebooks=self._notebooks,
             note_service=self._note_service,
         )

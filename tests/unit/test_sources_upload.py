@@ -959,7 +959,7 @@ class TestAddFile:
         test_file.write_bytes(b"fake pdf content")
 
         mock_core.rpc_call.return_value = [[[["src_pdf"]]]]
-        sources_api.wait_until_ready = AsyncMock(
+        sources_api._uploader.wait_until_ready = AsyncMock(
             return_value=MagicMock(id="src_pdf", title="report.pdf")
         )
 
@@ -979,7 +979,7 @@ class TestAddFile:
             )
 
         assert result.id == "src_pdf"
-        sources_api.wait_until_ready.assert_awaited_once_with(
+        sources_api._uploader.wait_until_ready.assert_awaited_once_with(
             "nb_123", "src_pdf", timeout=45.0, transient_error_types=()
         )
 
@@ -1075,10 +1075,10 @@ class TestAddFile:
         # The forced pre-rename registration wait is mocked — we don't want
         # this test to depend on the polling implementation. It returns the
         # registered source so add_file then issues the rename RPC.
-        sources_api.wait_until_registered = AsyncMock(
+        sources_api._uploader.wait_until_registered = AsyncMock(
             return_value=Source(id="src_md", title="boring-filename.md", _type_code=8)
         )
-        sources_api.wait_until_ready = AsyncMock()
+        sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1104,10 +1104,10 @@ class TestAddFile:
         # Narrow wait uses the caller's wait_timeout (default 120s) — not the
         # full wait_until_ready. wait_until_registered returns on first
         # PROCESSING/READY status so the bound stays cheap in practice.
-        sources_api.wait_until_registered.assert_awaited_once_with(
+        sources_api._uploader.wait_until_registered.assert_awaited_once_with(
             "nb_123", "src_md", timeout=120.0, transient_error_types=()
         )
-        sources_api.wait_until_ready.assert_not_called()
+        sources_api._uploader.wait_until_ready.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_file_with_custom_title_renames_after_wait(
@@ -1140,7 +1140,7 @@ class TestAddFile:
             assert mock_core.rpc_call.call_count == 2
             return Source(id=source_id, title="boring-filename.md", _type_code=8)
 
-        sources_api.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
+        sources_api._uploader.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1161,7 +1161,7 @@ class TestAddFile:
             )
 
         assert result.title == "Real Intended Title"
-        sources_api.wait_until_ready.assert_awaited_once_with(
+        sources_api._uploader.wait_until_ready.assert_awaited_once_with(
             "nb_123", "src_md", timeout=120.0, transient_error_types=()
         )
         # 3 RPCs in total: baseline + register + rename.
@@ -1196,8 +1196,8 @@ class TestAddFile:
             assert mock_core.rpc_call.call_count == 2
             return Source(id=source_id, title="boring-filename.md", _type_code=8)
 
-        sources_api.wait_until_registered = AsyncMock(side_effect=wait_side_effect)
-        sources_api.wait_until_ready = AsyncMock()
+        sources_api._uploader.wait_until_registered = AsyncMock(side_effect=wait_side_effect)
+        sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1217,10 +1217,10 @@ class TestAddFile:
             )
 
         assert result.title == "Real Intended Title"
-        sources_api.wait_until_registered.assert_awaited_once_with(
+        sources_api._uploader.wait_until_registered.assert_awaited_once_with(
             "nb_123", "src_md", timeout=120.0, transient_error_types=()
         )
-        sources_api.wait_until_ready.assert_not_called()
+        sources_api._uploader.wait_until_ready.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_file_with_title_forwards_wait_timeout(
@@ -1242,10 +1242,10 @@ class TestAddFile:
             [[[["src_audio"], "Episode 1", [None, None, None, None, 10]]]],
         ]
 
-        sources_api.wait_until_registered = AsyncMock(
+        sources_api._uploader.wait_until_registered = AsyncMock(
             return_value=Source(id="src_audio", title="podcast.mp3", _type_code=10)
         )
-        sources_api.wait_until_ready = AsyncMock()
+        sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1266,10 +1266,10 @@ class TestAddFile:
             )
 
         # wait_timeout is forwarded directly — no min() cap.
-        sources_api.wait_until_registered.assert_awaited_once_with(
+        sources_api._uploader.wait_until_registered.assert_awaited_once_with(
             "nb_123", "src_audio", timeout=600.0, transient_error_types=(10, 0, None)
         )
-        sources_api.wait_until_ready.assert_not_called()
+        sources_api._uploader.wait_until_ready.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_file_no_title_no_wait_does_not_wait(self, sources_api, mock_core, tmp_path):
@@ -1280,7 +1280,7 @@ class TestAddFile:
         test_file.write_bytes(b"fake pdf content")
 
         mock_core.rpc_call.return_value = [[[["src_pdf"]]]]
-        sources_api.wait_until_ready = AsyncMock()
+        sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1297,7 +1297,7 @@ class TestAddFile:
 
         assert result.id == "src_pdf"
         assert result.title == "test.pdf"
-        sources_api.wait_until_ready.assert_not_called()
+        sources_api._uploader.wait_until_ready.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_file_no_title_no_wait_returns_processing_status(
@@ -1313,7 +1313,7 @@ class TestAddFile:
         test_file.write_bytes(b"fake pdf content")
 
         mock_core.rpc_call.return_value = [[[["src_pdf"]]]]
-        sources_api.wait_until_ready = AsyncMock()
+        sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1406,7 +1406,7 @@ class TestAddFile:
             [[[["src_doc"]]]],
             rename_error,
         ]
-        sources_api.wait_until_registered = AsyncMock(
+        sources_api._uploader.wait_until_registered = AsyncMock(
             return_value=Source(id="src_doc", title="doc.txt", _type_code=4)
         )
 
@@ -1462,7 +1462,7 @@ class TestAddFile:
             [[[["src_audio"]]]],
             None,  # Triggers rename()'s Source(id=source_id, title=new_title) fallback
         ]
-        sources_api.wait_until_registered = AsyncMock(
+        sources_api._uploader.wait_until_registered = AsyncMock(
             return_value=Source(
                 id="src_audio",
                 title="podcast.mp3",
@@ -1512,10 +1512,10 @@ class TestAddFile:
             [[[["src_audio"], "My Title", [None, None, None, None, 10]]]],
         ]
 
-        sources_api.wait_until_registered = AsyncMock(
+        sources_api._uploader.wait_until_registered = AsyncMock(
             return_value=Source(id="src_audio", title="long-audio.mp3", _type_code=10)
         )
-        sources_api.wait_until_ready = AsyncMock()
+        sources_api._uploader.wait_until_ready = AsyncMock()
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1536,9 +1536,9 @@ class TestAddFile:
             )
 
         # Narrow wait was used...
-        sources_api.wait_until_registered.assert_awaited_once()
+        sources_api._uploader.wait_until_registered.assert_awaited_once()
         # ...and the full wait was NOT.
-        sources_api.wait_until_ready.assert_not_called()
+        sources_api._uploader.wait_until_ready.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_file_rename_failure_still_waits(self, sources_api, mock_core, tmp_path):
@@ -1566,7 +1566,7 @@ class TestAddFile:
             assert mock_core.rpc_call.call_count == 2
             return Source(id=source_id, title="doc.txt", _type_code=4)
 
-        sources_api.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
+        sources_api._uploader.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
 
         mock_start_response = MagicMock()
         mock_start_response.headers = {"x-goog-upload-url": "https://upload.example.com"}
@@ -1587,7 +1587,7 @@ class TestAddFile:
             )
 
         assert result.title == "doc.txt"
-        sources_api.wait_until_ready.assert_awaited_once_with(
+        sources_api._uploader.wait_until_ready.assert_awaited_once_with(
             "nb_123", "src_doc", timeout=120.0, transient_error_types=()
         )
 

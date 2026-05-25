@@ -1665,24 +1665,24 @@ class TestAddFileWait:
 
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.sources,
-                "_register_file_source",
+                client.sources._uploader,
+                "register_file_source",
                 new_callable=AsyncMock,
                 return_value="file_src_001",
             ):
                 with patch.object(
-                    client.sources,
-                    "_start_resumable_upload",
+                    client.sources._uploader,
+                    "start_resumable_upload",
                     new_callable=AsyncMock,
                     return_value="https://upload.example.com/upload_id=abc",
                 ):
                     with patch.object(
-                        client.sources,
-                        "_upload_file_streaming",
+                        client.sources._uploader,
+                        "upload_file_streaming",
                         new_callable=AsyncMock,
                     ):
                         with patch.object(
-                            client.sources,
+                            client.sources._uploader,
                             "wait_until_ready",
                             new_callable=AsyncMock,
                             return_value=ready_source,

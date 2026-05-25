@@ -166,7 +166,8 @@ async def test_upload_semaphore_is_owned_per_pipeline() -> None:
 
 
 @pytest.mark.asyncio
-async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
+async def test_add_file_uses_pipeline_steps_and_finishes_transport(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
     file_path = tmp_path / "report.pdf"
@@ -184,16 +185,16 @@ async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
         assert kwargs["total_bytes"] == 5
         file_obj.close()
 
+    monkeypatch.setattr(service, "register_file_source", register_file_source)
+    monkeypatch.setattr(service, "start_resumable_upload", start_resumable_upload)
+    monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
+    monkeypatch.setattr(service, "wait_until_ready", AsyncMock())
+    monkeypatch.setattr(service, "wait_until_registered", AsyncMock())
+    monkeypatch.setattr(service, "rename", AsyncMock())
+
     source = await service.add_file(
         "nb_123",
         file_path,
-        register_file_source=register_file_source,
-        start_resumable_upload=start_resumable_upload,
-        upload_file_streaming=upload_file_streaming,
-        wait_until_ready=AsyncMock(),
-        wait_until_registered=AsyncMock(),
-        rename=AsyncMock(),
-        logger=MagicMock(),
     )
 
     assert source.id == "src_123"
@@ -209,7 +210,9 @@ async def test_add_file_uses_late_bound_hooks_and_finishes_transport(
 
 
 @pytest.mark.asyncio
-async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -> None:
+async def test_add_file_operation_scope_wraps_sources_semaphore_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     first_file = tmp_path / "first.pdf"
     second_file = tmp_path / "second.pdf"
     first_file.write_bytes(b"first")
@@ -225,17 +228,24 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -
             await release_first_streaming.wait()
         file_obj.close()
 
+    register_file_source = AsyncMock(
+        side_effect=lambda _notebook_id, filename: f"src_{filename.removesuffix('.pdf')}"
+    )
+    monkeypatch.setattr(service, "register_file_source", register_file_source)
+    monkeypatch.setattr(
+        service,
+        "start_resumable_upload",
+        AsyncMock(return_value="https://upload.example.com/session"),
+    )
+    monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
+    monkeypatch.setattr(service, "wait_until_ready", AsyncMock())
+    monkeypatch.setattr(service, "wait_until_registered", AsyncMock())
+    monkeypatch.setattr(service, "rename", AsyncMock())
+
     async def add(path):
         return await service.add_file(
             "nb_123",
             path,
-            register_file_source=AsyncMock(return_value=f"src_{path.stem}"),
-            start_resumable_upload=AsyncMock(return_value="https://upload.example.com/session"),
-            upload_file_streaming=upload_file_streaming,
-            wait_until_ready=AsyncMock(),
-            wait_until_registered=AsyncMock(),
-            rename=AsyncMock(),
-            logger=MagicMock(),
         )
 
     first_task = asyncio.create_task(add(first_file))
@@ -257,6 +267,7 @@ async def test_add_file_operation_scope_wraps_sources_semaphore_wait(tmp_path) -
 
 @pytest.mark.asyncio
 async def test_add_file_custom_title_waits_for_registration_before_rename(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
     file_path = tmp_path / "report.pdf"
@@ -271,18 +282,22 @@ async def test_add_file_custom_title_waits_for_registration_before_rename(
     async def upload_file_streaming(_upload_url, file_obj, **_kwargs):
         file_obj.close()
 
+    monkeypatch.setattr(service, "register_file_source", AsyncMock(return_value="src_123"))
+    monkeypatch.setattr(
+        service,
+        "start_resumable_upload",
+        AsyncMock(return_value="https://upload.example.com/session"),
+    )
+    monkeypatch.setattr(service, "upload_file_streaming", upload_file_streaming)
+    monkeypatch.setattr(service, "wait_until_ready", AsyncMock())
+    monkeypatch.setattr(service, "wait_until_registered", wait_until_registered)
+    monkeypatch.setattr(service, "rename", rename)
+
     source = await service.add_file(
         "nb_123",
         file_path,
         title="  Custom  ",
         wait_timeout=45.0,
-        register_file_source=AsyncMock(return_value="src_123"),
-        start_resumable_upload=AsyncMock(return_value="https://upload.example.com/session"),
-        upload_file_streaming=upload_file_streaming,
-        wait_until_ready=AsyncMock(),
-        wait_until_registered=wait_until_registered,
-        rename=rename,
-        logger=MagicMock(),
     )
 
     assert source == Source(id="src_123", title="Custom", _type_code=7, url="https://source")
@@ -360,6 +375,37 @@ async def test_register_file_source_status3_includes_source_limit_context(
     assert "tier-specific" in message
     assert "per-notebook source limit" in message
     assert "fresh notebook" in message
+    get_source_limit.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_register_file_source_uses_configured_source_limit_lookup(
+    service: SourceUploadPipeline,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rpc_error = RPCError(
+        "RPC o4cbdc returned null result with status code 3 (Invalid argument).",
+        method_id="o4cbdc",
+        rpc_code=3,
+    )
+    rpc = RecordingRpc(rpc_error)
+    existing_sources = [
+        Source(id=f"source_{index}", title=f"Source {index}") for index in range(56)
+    ]
+    list_sources = AsyncMock(return_value=existing_sources)
+    get_source_limit = AsyncMock(return_value=50)
+    monkeypatch.setattr(service, "list_sources", list_sources)
+    service.configure_source_limit_lookup(get_source_limit)
+
+    with pytest.raises(SourceAddError) as exc_info:
+        await service.register_file_source(
+            "nb_123",
+            "report.pdf",
+            rpc_call=rpc,
+        )
+
+    assert "56/50 sources" in str(exc_info.value)
+    list_sources.assert_awaited_once_with("nb_123")
     get_source_limit.assert_awaited_once_with()
 
 

@@ -95,7 +95,7 @@ def _patch_httpx_client(
 
     return (
         patch.object(httpx, "AsyncClient", return_value=mock_client),
-        patch("notebooklm._artifacts.load_httpx_cookies", return_value=MagicMock()),
+        patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value=MagicMock()),
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -29,6 +30,8 @@ from ._session_contracts import (
     OperationScopeProvider,
     RpcCaller,
 )
+from ._source_listing import SourceLister
+from ._source_polling import SourcePoller
 from .auth import authuser_query, format_authuser_value
 from .exceptions import (
     AuthError,
@@ -93,6 +96,9 @@ class UploadRuntime(RpcCaller, OperationScopeProvider, LoopGuard, Protocol):
 _INVALID_ARGUMENT_RPC_CODE = 3
 _SOURCE_LIMIT_HINT_FLOOR = 50
 _TIER_SOURCE_LIMITS_SUMMARY = "50/100/300/600"
+# Preserve the historical ``notebooklm._sources`` log channel after moving
+# upload choreography into this module.
+module_logger = logging.getLogger("notebooklm").getChild("_sources")
 
 
 async def _build_invalid_argument_source_limit_hint(
@@ -145,58 +151,6 @@ async def _build_invalid_argument_source_limit_hint(
         )
 
     return ""
-
-
-class RegisterFileSource(Protocol):
-    """Late-bound facade hook for file-source registration."""
-
-    async def __call__(self, notebook_id: str, filename: str) -> str: ...
-
-
-class StartResumableUpload(Protocol):
-    """Late-bound facade hook for upload-session start."""
-
-    async def __call__(
-        self,
-        notebook_id: str,
-        filename: str,
-        file_size: int,
-        source_id: str,
-        content_type: str,
-    ) -> str: ...
-
-
-class UploadFileStreaming(Protocol):
-    """Late-bound facade hook for streaming upload finalize."""
-
-    async def __call__(
-        self,
-        upload_url: str,
-        file_obj: IO[bytes] | Path,
-        *,
-        filename: str | None = None,
-        on_progress: Callable[[int, int], object] | None = None,
-        total_bytes: int | None = None,
-    ) -> None: ...
-
-
-class WaitForSource(Protocol):
-    """Wait helper used after upload registration."""
-
-    async def __call__(
-        self,
-        notebook_id: str,
-        source_id: str,
-        timeout: float = 120.0,
-        *,
-        transient_error_types: tuple[int | None, ...] | None = None,
-    ) -> Source: ...
-
-
-class RenameSource(Protocol):
-    """Source rename callback shape."""
-
-    async def __call__(self, notebook_id: str, source_id: str, new_title: str) -> Source: ...
 
 
 class AsyncClientFactory(Protocol):
@@ -319,6 +273,7 @@ class SourceUploadPipeline:
         *,
         record_upload_queue_wait: QueueWaitRecorder | None = None,
         async_client_factory: AsyncClientFactory | None = None,
+        get_source_limit: GetSourceLimit | None = None,
     ):
         self._runtime = runtime
         self._kernel = kernel
@@ -328,6 +283,13 @@ class SourceUploadPipeline:
         self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
+        self._lister = SourceLister(self._runtime.rpc_call)
+        self._poller = SourcePoller()
+        self._get_source_limit = get_source_limit
+
+    def configure_source_limit_lookup(self, get_source_limit: GetSourceLimit | None) -> None:
+        """Set the optional source-limit lookup used in registration hints."""
+        self._get_source_limit = get_source_limit
 
     def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
         """Return the configured upload timeout, or ``default`` if unset."""
@@ -377,13 +339,6 @@ class SourceUploadPipeline:
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
         upload_index: int = 0,
-        register_file_source: RegisterFileSource,
-        start_resumable_upload: StartResumableUpload,
-        upload_file_streaming: UploadFileStreaming,
-        wait_until_ready: WaitForSource,
-        wait_until_registered: WaitForSource,
-        rename: RenameSource,
-        logger: Any,
     ) -> Source:
         """Add a file source to a notebook using resumable upload."""
         # Audit C1: catch cross-loop add_file *before* touching
@@ -392,7 +347,7 @@ class SourceUploadPipeline:
         # otherwise attach a primitive to the wrong loop before the
         # documented ``RuntimeError`` guard fires (ADR-004).
         self._runtime.assert_bound_loop()
-        logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
+        module_logger.debug("Adding file source to notebook %s: %s", notebook_id, file_path)
         if title is not None:
             title = title.strip()
             if not title:
@@ -443,8 +398,8 @@ class SourceUploadPipeline:
                 file_obj, file_size = await asyncio.to_thread(_open_and_stat, file_path)
                 handed_off = False
                 try:
-                    source_id = await register_file_source(notebook_id, filename)
-                    upload_url = await start_resumable_upload(
+                    source_id = await self.register_file_source(notebook_id, filename)
+                    upload_url = await self.start_resumable_upload(
                         notebook_id,
                         filename,
                         file_size,
@@ -452,7 +407,7 @@ class SourceUploadPipeline:
                         content_type,
                     )
                     handed_off = True
-                    await upload_file_streaming(
+                    await self.upload_file_streaming(
                         upload_url,
                         file_obj,
                         filename=filename,
@@ -465,14 +420,14 @@ class SourceUploadPipeline:
 
         needs_title_rename = title is not None and title != filename
         if wait:
-            source = await wait_until_ready(
+            source = await self.wait_until_ready(
                 notebook_id,
                 source_id,
                 timeout=wait_timeout,
                 transient_error_types=transient_error_types,
             )
         elif needs_title_rename:
-            source = await wait_until_registered(
+            source = await self.wait_until_registered(
                 notebook_id,
                 source_id,
                 timeout=wait_timeout,
@@ -489,10 +444,10 @@ class SourceUploadPipeline:
         if needs_title_rename:
             try:
                 assert title is not None
-                renamed = await rename(notebook_id, source_id, title)
+                renamed = await self.rename(notebook_id, source_id, title)
                 source = replace(source, title=renamed.title or title)
             except (RPCError, NetworkError):
-                logger.warning(
+                module_logger.warning(
                     "Source %s uploaded but rename to %r failed",
                     source_id,
                     title,
@@ -506,8 +461,8 @@ class SourceUploadPipeline:
         notebook_id: str,
         filename: str,
         *,
-        list_sources: ListSources,
-        logger: Any,
+        list_sources: ListSources | None = None,
+        logger: Any | None = None,
         get_source_limit: GetSourceLimit | None = None,
         rpc_call: RpcCallback | None = None,
     ) -> str:
@@ -536,7 +491,14 @@ class SourceUploadPipeline:
             [2],
             [1, None, None, None, None, None, None, None, None, None, [1]],
         ]
-        rpc_call = rpc_call or self._runtime.rpc_call
+        if rpc_call is None:
+            rpc_call = self._runtime.rpc_call
+        if list_sources is None:
+            list_sources = self.list_sources
+        if logger is None:
+            logger = module_logger
+        if get_source_limit is None:
+            get_source_limit = self._get_source_limit
 
         # Capture baseline source IDs before the first create attempt so the
         # probe can distinguish "this upload landed" from "a same-named source
@@ -677,6 +639,80 @@ class SourceUploadPipeline:
             label=f"sources.register_file_source[{filename}]",
         )
 
+    async def list_sources(self, notebook_id: str) -> list[Source]:
+        """List notebook sources for upload idempotency and polling."""
+        return await self._lister.list(notebook_id)
+
+    async def get_source(self, notebook_id: str, source_id: str) -> Source | None:
+        """Get a source row by ID using the upload pipeline's lister."""
+        return await self._lister.get(
+            notebook_id,
+            source_id,
+            list_sources=self.list_sources,
+        )
+
+    async def wait_until_ready(
+        self,
+        notebook_id: str,
+        source_id: str,
+        timeout: float = 120.0,
+        initial_interval: float = 1.0,
+        max_interval: float = 10.0,
+        backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
+    ) -> Source:
+        """Wait for a source to become ready after upload."""
+        return await self._poller.wait_until_ready(
+            notebook_id,
+            source_id,
+            timeout=timeout,
+            initial_interval=initial_interval,
+            max_interval=max_interval,
+            backoff_factor=backoff_factor,
+            transient_error_types=transient_error_types,
+            get_source=self.get_source,
+            sleep=asyncio.sleep,
+            monotonic=monotonic,
+            logger=module_logger,
+        )
+
+    async def wait_until_registered(
+        self,
+        notebook_id: str,
+        source_id: str,
+        timeout: float = 30.0,
+        initial_interval: float = 0.5,
+        max_interval: float = 5.0,
+        backoff_factor: float = 1.5,
+        transient_error_types: tuple[int | None, ...] | None = None,
+    ) -> Source:
+        """Wait until an uploaded source is registered server-side."""
+        return await self._poller.wait_until_registered(
+            notebook_id,
+            source_id,
+            timeout=timeout,
+            initial_interval=initial_interval,
+            max_interval=max_interval,
+            backoff_factor=backoff_factor,
+            transient_error_types=transient_error_types,
+            get_source=self.get_source,
+            sleep=asyncio.sleep,
+            monotonic=monotonic,
+            logger=module_logger,
+        )
+
+    async def rename(self, notebook_id: str, source_id: str, new_title: str) -> Source:
+        """Rename an uploaded source."""
+        module_logger.debug("Renaming source %s to: %s", source_id, new_title)
+        params = [None, [source_id], [[[new_title]]]]
+        result = await self._runtime.rpc_call(
+            RPCMethod.UPDATE_SOURCE,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+        return Source.from_api_response(result) if result else Source(id=source_id, title=new_title)
+
     async def start_resumable_upload(
         self,
         notebook_id: str,
@@ -733,9 +769,11 @@ class SourceUploadPipeline:
         filename: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
         total_bytes: int | None = None,
-        logger: Any,
+        logger: Any | None = None,
     ) -> None:
         """Stream upload file content to the resumable upload URL."""
+        if logger is None:
+            logger = module_logger
         path_fallback: Path | None = file_obj if isinstance(file_obj, Path) else None
         close_wired = False
         try:

@@ -781,24 +781,26 @@ def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> N
     assert isinstance(api._lister, SourceLister)
 
 
-def test_phase7_artifact_mind_map_patch_seams_are_current() -> None:
-    """Final artifact services must still resolve mind-map seams via ``_artifacts``.
+def test_phase7_artifact_download_patch_seams_are_current() -> None:
+    """Artifact downloads must use canonical helpers, not facade module lookup.
 
     Phase 5 (refactor-history.md Migration Plan steps 6-7) moves the mind-map
     create/list/extract paths off the ``_mind_map`` module-level seams
     and onto the injected ``NoteService`` + ``NoteBackedMindMapService``
-    instances. The ``_artifact_generation`` module no longer needs an
-    ``_artifact_seams()`` hop at all (only the JSON/cookie seams remain
-    in ``_artifact_downloads``), so we check the downloads-side seam
-    still resolves and the generation module exposes the ``NoteService``
-    attribute the new wiring depends on.
+    instances. Downloads should now import their canonical helpers directly
+    rather than resolving through ``notebooklm._artifacts`` at runtime.
     """
     import notebooklm._artifact_downloads as artifact_downloads
+    import notebooklm._artifact_formatters as artifact_formatters
     import notebooklm._artifacts as artifacts
     import notebooklm._mind_map as mind_map
+    import notebooklm.auth as auth
 
     assert artifacts._mind_map is mind_map
-    assert artifact_downloads._artifact_seams()._mind_map is mind_map
+    assert not hasattr(artifact_downloads, "_artifact_seams")
+    assert artifact_downloads.load_httpx_cookies is auth.load_httpx_cookies
+    assert artifact_downloads._extract_app_data is artifact_formatters._extract_app_data
+    assert artifact_downloads._parse_data_table is artifact_formatters._parse_data_table
 
 
 def test_notebooks_api_has_no_hidden_sources_api_runtime_dependency() -> None:

@@ -214,7 +214,7 @@ def test_chat_ask_guards_against_cross_loop_call() -> None:
         other_loop.close()
 
 
-def test_add_file_guards_against_cross_loop_call() -> None:
+def test_add_file_guards_against_cross_loop_call(monkeypatch: pytest.MonkeyPatch) -> None:
     """``SourceUploadPipeline.add_file`` must raise on cross-loop misuse.
 
     Regression guard for audit finding C1: previously the upload pipeline
@@ -242,21 +242,17 @@ def test_add_file_guards_against_cross_loop_call() -> None:
     # Construct the pipeline outside any running loop — its ``__init__`` is
     # event-loop-agnostic; the cross-loop guard fires inside ``add_file``.
     pipeline = SourceUploadPipeline(runtime, kernel, auth)
-
-    async def _unused(*_a: Any, **_kw: Any) -> Any:  # pragma: no cover - guard fires first
-        raise AssertionError("upload collaborator should not run on cross-loop call")
+    register_file_source = MagicMock(side_effect=AssertionError("register should not run"))
+    start_resumable_upload = MagicMock(side_effect=AssertionError("start should not run"))
+    upload_file_streaming = MagicMock(side_effect=AssertionError("stream should not run"))
+    monkeypatch.setattr(pipeline, "register_file_source", register_file_source)
+    monkeypatch.setattr(pipeline, "start_resumable_upload", start_resumable_upload)
+    monkeypatch.setattr(pipeline, "upload_file_streaming", upload_file_streaming)
 
     async def inner() -> None:
         await pipeline.add_file(
             "nb-id",
             "/nonexistent/path/should-never-be-touched.pdf",
-            register_file_source=_unused,
-            start_resumable_upload=_unused,
-            upload_file_streaming=_unused,
-            wait_until_ready=_unused,
-            wait_until_registered=_unused,
-            rename=_unused,
-            logger=MagicMock(),
         )
 
     with pytest.raises(RuntimeError, match="different event loop"):
@@ -265,8 +261,12 @@ def test_add_file_guards_against_cross_loop_call() -> None:
     # Confirm the cross-loop guard fired *before* any collaborator was
     # touched. Three independent witnesses to the contract: the guard
     # was called once, ``operation_scope`` (the loop-bound async-context
-    # manager the audit specifically calls out) was never entered, and
-    # the lazy upload semaphore was never allocated.
+    # manager the audit specifically calls out) was never entered, upload
+    # collaborators were never touched, and the lazy upload semaphore was
+    # never allocated.
     runtime.assert_bound_loop.assert_called_once()
     runtime.operation_scope.assert_not_called()
+    register_file_source.assert_not_called()
+    start_resumable_upload.assert_not_called()
+    upload_file_streaming.assert_not_called()
     assert pipeline._upload_semaphore is None

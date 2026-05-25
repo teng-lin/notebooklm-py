@@ -1060,7 +1060,7 @@ class TestArtifactErrorPaths:
         httpx_mock.add_response(content=b"pptx-content")
 
         output = str(tmp_path / "slides.pptx")
-        with patch("notebooklm._artifacts.load_httpx_cookies", return_value=MagicMock()):
+        with patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value=MagicMock()):
             async with NotebookLMClient(auth_tokens) as client:
                 result = await client.artifacts.download_slide_deck(
                     "nb_123", output, output_format="pptx"

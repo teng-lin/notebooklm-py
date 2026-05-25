@@ -147,18 +147,18 @@ async def test_add_file_holds_validated_fd_across_swap(
     async with NotebookLMClient(auth_tokens) as client:
         with (
             patch.object(
-                client.sources,
-                "_register_file_source",
+                client.sources._uploader,
+                "register_file_source",
                 side_effect=stub_register,
             ),
             patch.object(
-                client.sources,
-                "_start_resumable_upload",
+                client.sources._uploader,
+                "start_resumable_upload",
                 side_effect=stub_start_upload,
             ),
             patch.object(
-                client.sources,
-                "_upload_file_streaming",
+                client.sources._uploader,
+                "upload_file_streaming",
                 side_effect=stub_streaming,
             ),
         ):
@@ -284,18 +284,18 @@ async def test_add_file_bounds_concurrent_open_fds(
     async with NotebookLMClient(auth_tokens, max_concurrent_uploads=max_uploads) as client:
         with (
             patch.object(
-                client.sources,
-                "_register_file_source",
+                client.sources._uploader,
+                "register_file_source",
                 side_effect=stub_register,
             ),
             patch.object(
-                client.sources,
-                "_start_resumable_upload",
+                client.sources._uploader,
+                "start_resumable_upload",
                 side_effect=stub_start,
             ),
             patch.object(
-                client.sources,
-                "_upload_file_streaming",
+                client.sources._uploader,
+                "upload_file_streaming",
                 side_effect=stub_streaming,
             ),
             patch.object(builtins, "open", counting_open),
@@ -365,8 +365,8 @@ async def test_add_file_missing_path_raises_clear_error(
 
     async with NotebookLMClient(auth_tokens) as client:
         with patch.object(
-            client.sources,
-            "_register_file_source",
+            client.sources._uploader,
+            "register_file_source",
             side_effect=stub_register,
         ):
             with pytest.raises(FileNotFoundError):
@@ -426,9 +426,15 @@ async def test_add_file_transfers_fd_ownership_to_streaming_helper(
 
     async with NotebookLMClient(auth_tokens) as client:
         with (
-            patch.object(client.sources, "_register_file_source", side_effect=stub_register),
-            patch.object(client.sources, "_start_resumable_upload", side_effect=stub_start),
-            patch.object(client.sources, "_upload_file_streaming", side_effect=stub_streaming),
+            patch.object(
+                client.sources._uploader, "register_file_source", side_effect=stub_register
+            ),
+            patch.object(
+                client.sources._uploader, "start_resumable_upload", side_effect=stub_start
+            ),
+            patch.object(
+                client.sources._uploader, "upload_file_streaming", side_effect=stub_streaming
+            ),
         ):
             await client.sources.add_file("nb_123", file_path)
 
@@ -487,7 +493,9 @@ async def test_add_file_closes_fd_when_registration_fails(
     async with NotebookLMClient(auth_tokens) as client:
         with (
             patch.object(builtins, "open", capturing_open),
-            patch.object(client.sources, "_register_file_source", side_effect=failing_register),
+            patch.object(
+                client.sources._uploader, "register_file_source", side_effect=failing_register
+            ),
         ):
             with pytest.raises(_RegistrationError):
                 await client.sources.add_file("nb_123", file_path)

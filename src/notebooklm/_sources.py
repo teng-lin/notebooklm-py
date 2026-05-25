@@ -149,6 +149,7 @@ class SourcesAPI:
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
         self._uploader = uploader
+        self._uploader.configure_source_limit_lookup(self._get_source_limit)
 
     async def _rpc_call(
         self,
@@ -555,13 +556,6 @@ class SourcesAPI:
             wait_timeout=wait_timeout,
             title=title,
             on_progress=on_progress,
-            register_file_source=self._register_file_source,
-            start_resumable_upload=self._start_resumable_upload,
-            upload_file_streaming=self._upload_file_streaming,
-            wait_until_ready=self.wait_until_ready,
-            wait_until_registered=self.wait_until_registered,
-            rename=self.rename,
-            logger=logger,
         )
 
     async def add_drive(
@@ -877,9 +871,6 @@ class SourcesAPI:
         return await self._uploader.register_file_source(
             notebook_id,
             filename,
-            list_sources=self.list,
-            get_source_limit=self._get_source_limit,
-            logger=logger,
         )
 
     async def _get_source_limit(self) -> int | None:

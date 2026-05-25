@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import json
 import logging
 import os
 import queue
-import sys
 import tempfile
 import threading
 from dataclasses import dataclass, field
@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ._artifact_formatters import _extract_app_data, _parse_data_table
+from .auth import load_httpx_cookies
 from .exceptions import ValidationError
 from .rpc import ArtifactTypeCode
 from .types import (
@@ -24,6 +26,7 @@ from .types import (
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    _extract_artifact_url,
 )
 
 if TYPE_CHECKING:
@@ -121,21 +124,8 @@ class DownloadResult:
         return bool(self.succeeded) and bool(self.failed)
 
 
-def _artifact_seams() -> Any:
-    """Return the facade module that legacy tests patch.
-
-    Download code deliberately resolves selected dependencies through
-    ``notebooklm._artifacts`` at call time so existing private monkeypatch
-    targets keep working after the extraction.
-    """
-    try:
-        return sys.modules["notebooklm._artifacts"]
-    except KeyError as e:
-        raise RuntimeError("notebooklm._artifacts must be imported before downloads run") from e
-
-
 def _load_httpx_cookies(storage_path: Any) -> Any:
-    return _artifact_seams().load_httpx_cookies(path=storage_path)
+    return load_httpx_cookies(path=storage_path)
 
 
 def _is_trusted_download_host(netloc: str) -> bool:
@@ -174,7 +164,7 @@ class ArtifactDownloadService:
             type_code=ArtifactTypeCode.AUDIO,
         )
 
-        url = _artifact_seams()._extract_artifact_url(audio_art, ArtifactTypeCode.AUDIO.value)
+        url = _extract_artifact_url(audio_art, ArtifactTypeCode.AUDIO.value)
         if not url:
             raise ArtifactParseError(
                 "audio",
@@ -202,7 +192,7 @@ class ArtifactDownloadService:
             type_code=ArtifactTypeCode.VIDEO,
         )
 
-        url = _artifact_seams()._extract_artifact_url(video_art, ArtifactTypeCode.VIDEO.value)
+        url = _extract_artifact_url(video_art, ArtifactTypeCode.VIDEO.value)
         if not url:
             raise ArtifactParseError(
                 "video_artifact",
@@ -228,9 +218,7 @@ class ArtifactDownloadService:
         )
 
         try:
-            url = _artifact_seams()._extract_artifact_url(
-                info_art, ArtifactTypeCode.INFOGRAPHIC.value
-            )
+            url = _extract_artifact_url(info_art, ArtifactTypeCode.INFOGRAPHIC.value)
             if not url:
                 raise ArtifactParseError("infographic", details="Could not find metadata")
             return await methods._download_url(url, output_path)
@@ -337,10 +325,9 @@ class ArtifactDownloadService:
         if not html_content:
             raise ArtifactDownloadError(artifact_type, details="Failed to fetch content")
 
-        json_module = _artifact_seams().json
         try:
-            app_data = _artifact_seams()._extract_app_data(html_content)
-        except (ValueError, json_module.JSONDecodeError) as e:
+            app_data = _extract_app_data(html_content)
+        except (ValueError, json.JSONDecodeError) as e:
             raise ArtifactParseError(
                 artifact_type, details=f"Failed to parse content: {e}", cause=e
             ) from e
@@ -422,25 +409,24 @@ class ArtifactDownloadService:
         else:
             mind_map = mind_maps[0]
 
-        json_module = _artifact_seams().json
         try:
             json_string = mind_maps_service.extract_content(mind_map)
             if json_string is None:
                 raise ArtifactParseError("mind_map_content", details="Invalid structure")
 
-            json_data = json_module.loads(json_string)
+            json_data = json.loads(json_string)
 
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)
 
             def _write_json() -> None:
                 with output.open("w", encoding="utf-8") as f:
-                    _artifact_seams().json.dump(json_data, f, indent=2, ensure_ascii=False)
+                    json.dump(json_data, f, indent=2, ensure_ascii=False)
 
             await asyncio.to_thread(_write_json)
             return str(output)
 
-        except (IndexError, TypeError, json_module.JSONDecodeError) as e:
+        except (IndexError, TypeError, json.JSONDecodeError) as e:
             raise ArtifactParseError(
                 "mind_map", details=f"Failed to parse structure: {e}", cause=e
             ) from e
@@ -467,7 +453,7 @@ class ArtifactDownloadService:
 
         try:
             raw_data = table_art[18]
-            headers, rows = _artifact_seams()._parse_data_table(raw_data)
+            headers, rows = _parse_data_table(raw_data)
 
             output = Path(output_path)
             output.parent.mkdir(parents=True, exist_ok=True)

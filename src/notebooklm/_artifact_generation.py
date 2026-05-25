@@ -31,7 +31,7 @@ from .rpc import (
 from .types import GenerationStatus, ReportSuggestion
 
 if TYPE_CHECKING:
-    from ._artifacts import ArtifactsRuntime, _ArtifactsServiceMethods
+    from ._artifacts import ArtifactsRuntime
     from ._note_service import NoteService
     from ._notebook_metadata import NotebookSourceIdProvider
 
@@ -45,12 +45,10 @@ class ArtifactGenerationService:
         self,
         *,
         runtime: ArtifactsRuntime,
-        methods: _ArtifactsServiceMethods,
         notebooks: NotebookSourceIdProvider,
         note_service: NoteService,
     ) -> None:
         self._runtime = runtime
-        self._methods = methods
         self._notebooks = notebooks
         self._note_service = note_service
 
@@ -99,7 +97,7 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_video(
         self,
@@ -161,7 +159,7 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_cinematic_video(
         self,
@@ -204,7 +202,7 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_report(
         self,
@@ -289,7 +287,7 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_study_guide(
         self,
@@ -301,9 +299,7 @@ class ArtifactGenerationService:
         """Generate a study guide report."""
         if language is None:
             language = get_default_language()
-        # Preserve the historical facade seam for callers/tests that patch
-        # ArtifactsAPI.generate_report.
-        return await self._methods.generate_report(
+        return await self.generate_report(
             notebook_id,
             report_format=ReportFormat.STUDY_GUIDE,
             source_ids=source_ids,
@@ -355,7 +351,7 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_flashcards(
         self,
@@ -400,7 +396,7 @@ class ArtifactGenerationService:
                 ],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_infographic(
         self,
@@ -444,7 +440,7 @@ class ArtifactGenerationService:
                 [[instructions, language, None, orientation_code, detail_code, style_code]],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_slide_deck(
         self,
@@ -488,7 +484,7 @@ class ArtifactGenerationService:
                 [[instructions, language, format_code, length_code]],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def revise_slide(
         self,
@@ -524,11 +520,7 @@ class ArtifactGenerationService:
             raise
         if result is None:
             logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
-        # Call through the facade so patches on ArtifactsAPI._parse_generation_result
-        # remain effective after extraction.
-        return self._methods._parse_generation_result(
-            result, method_id=RPCMethod.REVISE_SLIDE.value
-        )
+        return self.parse_generation_result(result, method_id=RPCMethod.REVISE_SLIDE.value)
 
     async def generate_data_table(
         self,
@@ -570,7 +562,7 @@ class ArtifactGenerationService:
                 [None, [instructions, language]],
             ],
         ]
-        return await self._methods._call_generate(notebook_id, params)
+        return await self.call_generate(notebook_id, params)
 
     async def generate_mind_map(
         self,
@@ -708,11 +700,7 @@ class ArtifactGenerationService:
                     error_code=str(e.rpc_code) if e.rpc_code is not None else None,
                 )
             raise
-        # Call through the facade so patches on ArtifactsAPI._parse_generation_result
-        # remain effective after extraction.
-        return self._methods._parse_generation_result(
-            result, method_id=RPCMethod.CREATE_ARTIFACT.value
-        )
+        return self.parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
 
     def parse_generation_result(
         self,

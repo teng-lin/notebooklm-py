@@ -57,14 +57,13 @@ def test_failed_preserves_url_and_exception():
 
 
 def test_artifacts_module_preserves_download_patch_targets():
-    """Private compatibility names remain available through _artifacts."""
+    """Public download result remains available without facade patch targets."""
     import notebooklm._artifacts as artifacts_module
 
     assert artifacts_module.DownloadResult is DownloadResult
     assert artifacts_module.ArtifactDownloadError is not None
-    assert artifacts_module.load_httpx_cookies is not None
     assert artifacts_module._mind_map is not None
-    assert artifacts_module.json.dump is not None
+    assert not hasattr(artifacts_module, "load_httpx_cookies")
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +106,7 @@ def _patched_httpx_client(get_behavior: Any) -> Iterator[AsyncMock]:
     Yields the inner mock_client for further customization if needed.
     """
     with (
-        patch("notebooklm._artifacts.load_httpx_cookies", return_value={}),
+        patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value={}),
         patch("httpx.AsyncClient") as mock_client_cls,
     ):
         mock_client = AsyncMock()
@@ -205,7 +204,7 @@ async def test_untrusted_domain_aggregated_into_failed(mock_artifacts_api, tmp_p
 
     api, _ = mock_artifacts_api
 
-    with patch("notebooklm._artifacts.load_httpx_cookies", return_value={}):
+    with patch("notebooklm._artifact_downloads.load_httpx_cookies", return_value={}):
         result = await api._download_urls_batch(
             [("https://evil.example.com/file.mp4", str(tmp_path / "x.mp4"))]
         )

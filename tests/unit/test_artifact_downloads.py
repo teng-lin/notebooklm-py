@@ -465,7 +465,9 @@ class TestDownloadUrl:
             mock_cookies = MagicMock()
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-                patch("notebooklm._artifacts.load_httpx_cookies", return_value=mock_cookies),
+                patch(
+                    "notebooklm._artifact_downloads.load_httpx_cookies", return_value=mock_cookies
+                ),
             ):
                 result = await api._download_url(
                     "https://storage.googleapis.com/file.mp4", output_path
@@ -506,7 +508,9 @@ class TestDownloadUrl:
             mock_cookies = MagicMock()
             with (
                 patch.object(real_httpx, "AsyncClient", return_value=mock_client),
-                patch("notebooklm._artifacts.load_httpx_cookies", return_value=mock_cookies),
+                patch(
+                    "notebooklm._artifact_downloads.load_httpx_cookies", return_value=mock_cookies
+                ),
                 pytest.raises(ArtifactDownloadError, match="0 bytes"),
             ):
                 await api._download_url("https://storage.googleapis.com/file.mp4", output_path)
@@ -814,7 +818,7 @@ class TestStoragePathEncapsulation:
             raise _StopAfterCapture
 
         with (
-            patch("notebooklm._artifacts.load_httpx_cookies", new=recording),
+            patch("notebooklm._artifact_downloads.load_httpx_cookies", new=recording),
             pytest.raises(_StopAfterCapture),
         ):
             await service.download_url(
@@ -840,7 +844,7 @@ class TestStoragePathEncapsulation:
             captured.append(path)
             return {}
 
-        with patch("notebooklm._artifacts.load_httpx_cookies", new=recording):
+        with patch("notebooklm._artifact_downloads.load_httpx_cookies", new=recording):
             await service.download_urls_batch([])
 
         assert captured == [sentinel]

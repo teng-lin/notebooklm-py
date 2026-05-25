@@ -34,7 +34,7 @@ def _stub_storage_cookies(monkeypatch: pytest.MonkeyPatch) -> None:
     empty dict.
     """
     monkeypatch.setattr(
-        "notebooklm._artifacts.load_httpx_cookies",
+        "notebooklm._artifact_downloads.load_httpx_cookies",
         lambda path=None: {},
     )
 
