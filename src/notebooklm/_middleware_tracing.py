@@ -1,8 +1,7 @@
 """TracingMiddleware — innermost middleware in the Tier-12 chain.
 
 Per ADR-009 §"Chain ordering" and master plan §2, ``TracingMiddleware`` is
-the **innermost** wrapper around the transport leaf (``Kernel.post`` after
-PR 13.2, ``AuthedTransport.perform_authed_post`` until then). It logs one
+the **innermost** wrapper around the ``Kernel.post`` transport leaf. It logs one
 "starting" record before invoking ``next_call`` and one "completed"
 (success) or "failed" (exception) record after, capturing per-attempt
 HTTP-level visibility — including retry attempts, which is why it sits

@@ -13,8 +13,9 @@ Three names live here:
   ``AuthRefreshMiddleware`` callbacks.
 - :data:`BuildRequest` — sync callable that maps an ``AuthSnapshot`` to a
   ``(url, body, headers)`` tuple ready for the transport. The chain leaf reads
-  the callable from ``RpcRequest.context["build_request"]`` and invokes it
-  inside ``AuthedTransport.perform_authed_post``.
+  the materialized ``RpcRequest`` fields directly; the callable remains in
+  ``RpcRequest.context["build_request"]`` so auth refresh and terminal
+  freshness checks can rebuild the envelope from a new snapshot.
 - :class:`BuildRequestResult` — the *named* dataclass form of the same
   ``(url, body, headers)`` triple, introduced for PR 12.8's
   ``AuthRefreshMiddleware.build_request_factory`` callback. The dataclass

@@ -1,13 +1,13 @@
 """Snapshot-invariant for the shared POST helper.
 
 httpx merges the cookie jar into the outgoing ``httpx.Request`` synchronously
-in ``build_request()``, before any ``await``. ``_perform_authed_post`` reads
-the auth snapshot (via ``self._snapshot()``) and assembles ``(url, body,
-headers)`` via ``build_request(snapshot)`` synchronously before
-``await client.post(...)``. Therefore, within a single retry iteration the
+when ``Kernel.post`` opens the stream. ``_perform_authed_post`` materializes a
+``RpcRequest`` from an auth snapshot before the middleware chain, and the
+``Kernel.post`` terminal refreshes that envelope if auth changed while the
+request waited in the chain. Therefore, within a single terminal attempt the
 entire ``(csrf, session_id, cookies)`` snapshot is atomic from a concurrent
-coroutine standpoint: no other task can mutate state between read and the
-wire.
+coroutine standpoint: no other task can mutate state between the terminal
+freshness check and the wire.
 
 The POST was extracted out of ``_rpc_call_impl`` into
 ``_perform_authed_post`` so chat can share the same transport pipeline.
@@ -27,14 +27,13 @@ The auth-snapshot lock hardened the invariant by:
   refresh's write to ``self.auth.session_id`` slip into the URL between
   snapshot capture and request build.
 
-This file *locks* the invariant in three ways:
+This file *locks* the invariant in four ways:
 
-1. ``test_perform_authed_post_has_no_await_before_post_per_iteration`` —
-   static AST guard against an ``await`` inside the retry loop's try
-   body of ``_perform_authed_post`` that precedes the iteration's
-   ``client.post(...)`` call. The ``await self._snapshot()`` lives
-   *before* the try block (so the lock acquisition itself isn't a
-   regression).
+1. ``test_kernel_post_terminal_has_no_await_before_post_per_attempt`` —
+   static AST guard against an ``await`` inside the terminal's ``try`` body
+   before ``Kernel.post``. The freshness check lives before the try block
+   and is guarded separately so the lock acquisition itself is not a
+   regression.
 
 2. ``test_build_url_does_not_read_self_auth`` — static AST guard
    against any ``self.auth.<field>`` attribute access in
@@ -47,6 +46,13 @@ This file *locks* the invariant in three ways:
    an in-flight ``rpc_call`` (both orderings) and asserts the captured
    ``httpx.Request`` is never observed with mixed-generation (csrf,
    session_id, cookies) state.
+
+4. ``test_auth_refresh_rebuild_has_no_await_after_snapshot_capture`` —
+   static guard on the auth-refresh retry rebuild: once the post-refresh
+   snapshot has been captured, pairing ``context["auth_snapshot"]`` with
+   the rebuilt envelope must remain synchronous. The terminal still owns
+   the final before-wire freshness check because inner middlewares may
+   await after this rebuild.
 """
 
 from __future__ import annotations
@@ -63,8 +69,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm._authed_transport import AuthedTransport
+from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
+from notebooklm._session import Session
 from notebooklm._session_auth import AuthRefreshCoordinator
 from notebooklm.rpc import RPCMethod
 
@@ -83,32 +90,16 @@ make_core = _unit_conftest.make_core
 EVENT_TIMEOUT_S = 5.0
 
 
-def test_perform_authed_post_has_no_await_before_post_per_iteration():
-    """No ``await`` may sit lexically inside the ``try:`` block before the
-    ``client.post(...)`` call in ``_perform_authed_post``.
+def test_kernel_post_terminal_has_no_await_before_post_per_attempt():
+    """No ``await`` may sit inside the terminal ``try`` before ``Kernel.post``.
 
-    The leaf begins with ``snapshot = await self._snapshot()`` + a
-    synchronous ``build_request(snapshot)`` — both immediately *before*
-    the try block. The try body's first statement is the actual POST. If
-    anyone introduces an ``await`` between ``build_request`` and the POST
-    (or any new await inside the try body's prologue), a concurrent
-    ``refresh_auth`` could update the httpx cookie jar between the
-    snapshot read and the wire, producing a mismatched-generation
-    request on the cookie axis (the ``_auth_snapshot_lock`` covers
-    csrf/sid coherence; cookies still rely on this no-await rule).
-
-    Tier-12 PRs 12.7 / 12.8 lifted retry / auth-refresh out of the leaf
-    into ``RetryMiddleware`` and ``AuthRefreshMiddleware``. After PR
-    12.8 the leaf no longer has a ``while`` retry loop — it makes
-    exactly one attempt per chain invocation. Each chain-level retry
-    (driven by ``RetryMiddleware`` / ``AuthRefreshMiddleware``) re-enters
-    the leaf and re-runs ``_snapshot`` → ``build_request`` → POST. PR
-    12.9 moved the semaphore acquire OUT of the leaf entirely (it now
-    lives in ``SemaphoreMiddleware`` at chain position 2), so the leaf
-    is a pure POST-with-try block — the guard walks the ``try`` block
-    at the top of the function body.
+    The terminal first refreshes the envelope if auth changed while the
+    request waited behind middlewares, then enters a small ``try`` whose first
+    await is the actual ``Kernel.post`` send. An await in that try prologue
+    would let a concurrent refresh change the cookie jar between request
+    rebuild and wire send.
     """
-    src = textwrap.dedent(inspect.getsource(AuthedTransport.perform_authed_post))
+    src = textwrap.dedent(inspect.getsource(Session._authed_post_chain_terminal))
     tree = ast.parse(src)
     func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
 
@@ -135,7 +126,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     found_try = _find_first_try(func)
     assert found_try is not None, (
         "Could not locate the ``try:`` block guarding the POST in "
-        "AuthedTransport.perform_authed_post. Update this guard to match."
+        "Session._authed_post_chain_terminal. Update this guard to match."
     )
 
     def is_post_await(node):
@@ -145,7 +136,8 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
         - ``await client.post(...)`` (pre-streaming),
         - ``await stream_post_with_size_cap(...)`` (the helper performs the
           streaming POST internally, so it's the same conceptual POST site for
-          the purposes of this concurrency invariant).
+          the purposes of this concurrency invariant),
+        - ``await self._kernel.post(...)`` (current terminal shape).
         """
         if not isinstance(node, ast.Await):
             return False
@@ -191,7 +183,7 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
     post_await_position = min(post_await_positions, default=None)
     assert post_await_position is not None, (
         "Could not locate `await ...post(...)` in the try body of "
-        "AuthedTransport.perform_authed_post. If the call site was refactored (e.g. to "
+        "Session._authed_post_chain_terminal. If the call site was refactored (e.g. to "
         "``client.request(...)``), update this guard to match — the "
         "invariant is 'no await between snapshot read and the POST per "
         "iteration', not specifically the `.post` attribute."
@@ -203,11 +195,80 @@ def test_perform_authed_post_has_no_await_before_post_per_iteration():
         if isinstance(n, ast.Await) and (n.lineno, n.col_offset) < post_await_position
     ]
     assert not earlier_awaits, (
-        f"AuthedTransport.perform_authed_post gained an await before the per-iteration POST "
+        f"Session._authed_post_chain_terminal gained an await before the per-attempt POST "
         f"at {post_await_position}: "
         f"{[(n.lineno, ast.dump(n)) for n in earlier_awaits]}. "
         "This breaks the snapshot-invariant — auth state could be mutated "
         "between the snapshot read and the actual send."
+    )
+
+
+def test_terminal_freshness_check_has_no_await_after_materialization():
+    """Freshness rebuild must not yield after materializing a new envelope."""
+    src = textwrap.dedent(inspect.getsource(Session._refresh_request_for_current_auth))
+    tree = ast.parse(src)
+    func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
+
+    materialize_positions = [
+        (n.lineno, n.col_offset)
+        for n in ast.walk(func)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "materialize_rpc_request"
+    ]
+    assert materialize_positions, "Could not locate materialize_rpc_request in freshness check"
+    materialize_position = min(materialize_positions)
+    later_awaits = [
+        n
+        for n in ast.walk(func)
+        if isinstance(n, ast.Await) and (n.lineno, n.col_offset) > materialize_position
+    ]
+    assert later_awaits == [], (
+        "Session._refresh_request_for_current_auth must not await after "
+        "materialize_rpc_request; that would let auth/cookies move between "
+        "request rebuild and Kernel.post."
+    )
+
+
+def test_auth_refresh_rebuild_has_no_await_after_snapshot_capture():
+    """Auth-refresh retry rebuild pairs fresh snapshot and envelope atomically."""
+    src = textwrap.dedent(inspect.getsource(AuthRefreshMiddleware._rebuild_request_after_refresh))
+    tree = ast.parse(src)
+    func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
+
+    snapshot_awaits = [
+        (n.lineno, n.col_offset)
+        for n in ast.walk(func)
+        if isinstance(n, ast.Await)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Attribute)
+        and n.value.func.attr == "_snapshot_provider"
+    ]
+    assert snapshot_awaits, "Could not locate await self._snapshot_provider()"
+    snapshot_position = min(snapshot_awaits)
+
+    materialize_positions = [
+        (n.lineno, n.col_offset)
+        for n in ast.walk(func)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "materialize_rpc_request"
+    ]
+    assert materialize_positions, "Could not locate materialize_rpc_request in refresh rebuild"
+    assert snapshot_position < min(materialize_positions), (
+        "AuthRefreshMiddleware._rebuild_request_after_refresh must capture "
+        "the fresh snapshot before rebuilding the retry envelope."
+    )
+
+    later_awaits = [
+        n
+        for n in ast.walk(func)
+        if isinstance(n, ast.Await) and (n.lineno, n.col_offset) > snapshot_position
+    ]
+    assert later_awaits == [], (
+        "AuthRefreshMiddleware._rebuild_request_after_refresh must not await "
+        "after capturing the fresh snapshot; context['auth_snapshot'] and the "
+        "rebuilt RpcRequest must stay paired until the terminal freshness check."
     )
 
 

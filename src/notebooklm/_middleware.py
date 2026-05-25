@@ -20,11 +20,9 @@ defines:
 
 Production ``Session`` wiring composes these envelopes through the current
 middleware stack. During the request-materialization migration, the chain
-enters with populated ``RpcRequest(url, headers, body)`` fields while the
-terminal still adapts through ``AuthedTransport.perform_authed_post``. A
-later terminal rewrite can consume the same envelope directly through
-``Kernel.post``. See ``docs/adr/0009-middleware-chain.md`` for the
-load-bearing decisions.
+enters with populated ``RpcRequest(url, headers, body)`` fields and the
+terminal consumes that envelope directly through ``Kernel.post``. See
+``docs/adr/0009-middleware-chain.md`` for the load-bearing decisions.
 """
 
 from __future__ import annotations
@@ -46,10 +44,9 @@ from ._request_types import AuthSnapshot, BuildRequest, materialize_build_reques
 class RpcRequest:
     """HTTP-shape request envelope passed through the middleware chain.
 
-    The chain wraps ``Kernel.post`` (or, until PR 13.2 renames the seam,
-    ``AuthedTransport.perform_authed_post``). Every middleware sees an
-    already-encoded HTTP request — encoding lives *above* the chain in
-    ``Session.rpc_call``. RPC-level metadata that middlewares need (rpc
+    The chain wraps ``Kernel.post``. Every middleware sees an already-encoded
+    HTTP request — encoding lives *above* the chain in ``Session.rpc_call``.
+    RPC-level metadata that middlewares need (rpc
     method id, idempotency, operation variant, log labels, build-request
     callback, etc.) travels through :attr:`context`.
 
@@ -112,10 +109,10 @@ class RpcResponse:
     response: httpx.Response
     """The buffered :class:`httpx.Response` from the transport leaf.
 
-    Identical in shape to what ``AuthedTransport.perform_authed_post``
-    returns today (see ``_authed_transport.stream_post_with_size_cap``):
-    fully-buffered body, headers stripped of ``content-encoding`` /
-    ``content-length`` so ``.text`` / ``.content`` work synchronously.
+    Identical in shape to what ``Kernel.post`` returns via
+    ``_authed_transport.stream_post_with_size_cap``: fully-buffered body,
+    headers stripped of ``content-encoding`` / ``content-length`` so
+    ``.text`` / ``.content`` work synchronously.
     """
 
     context: dict[str, Any] = field(default_factory=dict)
