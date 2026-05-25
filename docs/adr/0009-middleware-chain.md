@@ -208,7 +208,7 @@ Per-position rationale:
 | `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor.execute`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware` |
 | `build_request` | `BuildRequest` | `Session._perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `Session._authed_post_chain_terminal` (via `_refresh_request_for_current_auth`) |
 | `log_label` | `str` | `Session._perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `Session._authed_post_chain_terminal` |
-| `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialised envelope so middlewares never observe a torn `(snapshot, request)` pair |
+| `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialized envelope so middlewares never observe a torn `(snapshot, request)` pair |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh, **before** the retry leg) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry on the post-refresh leg cannot drive a second refresh on a fresh 401) |
 | `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_QUEUE_WAIT_CONTEXT_KEY` in `_middleware_semaphore.py`) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
 
@@ -236,9 +236,9 @@ drift. The corresponding consequence summary lives under the "Unwanted"
 list in §"Consequences" below; this section is the authoritative
 rationale.
 
-Rationale (decision crystallised in the arc-1 architecture-deepening
+Rationale (decision crystallized in the arc-1 architecture-deepening
 review and flagged on the demotion list as
-`[arc-1-formalized-as-deferred-permanent]` — formalised here rather
+`[arc-1-formalized-as-deferred-permanent]` — formalized here rather
 than deferred to a future arc):
 
 - The typed-envelope migration that arrived with PR #1018 (`b856e01`)
