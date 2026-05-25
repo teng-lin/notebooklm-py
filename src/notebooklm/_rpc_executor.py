@@ -111,7 +111,7 @@ class RpcExecutor:
         self,
         owner: RpcOwner,
         *,
-        decode_response_late_bound: DecodeResponse,
+        decode_response: DecodeResponse,
         is_auth_error: Callable[[Exception], bool],
         sleep: Callable[[float], Awaitable[Any]],
         timeout_provider: Callable[[], float],
@@ -119,7 +119,7 @@ class RpcExecutor:
         refresh_retry_delay_provider: Callable[[], float],
     ):
         self._owner = owner
-        self._decode_response = decode_response_late_bound
+        self._decode_response = decode_response
         self._is_auth_error = is_auth_error
         self._sleep = sleep
         self._timeout_provider = timeout_provider

@@ -303,14 +303,26 @@ class TestRPCCallAuthRetry:
 
             mock_post = AsyncMock(return_value=success_response)
             install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
-            with patch(
-                "notebooklm.rpc.decode_response",
-                side_effect=[
+
+            # Override the constructor-injected decode-response seam BEFORE
+            # the first RPC fires so the lazily-built ``RpcExecutor`` picks
+            # up the stub. See ``docs/improvement.md`` §4.1.
+            decode_responses = iter(
+                [
                     RPCError("authentication expired"),
                     ["result_data"],
-                ],
-            ):
-                result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+                ]
+            )
+
+            def fake_decode(*_a, **_kw):
+                value = next(decode_responses)
+                if isinstance(value, BaseException):
+                    raise value
+                return value
+
+            core._decode_response = fake_decode
+
+            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
             assert result == ["result_data"]
             refresh_callback.assert_called_once()

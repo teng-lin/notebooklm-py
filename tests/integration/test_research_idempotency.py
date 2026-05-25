@@ -37,6 +37,7 @@ import json
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient, ServerError
 from notebooklm._idempotency import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.rpc import RPCMethod
@@ -69,11 +70,14 @@ def _make_client_with_transport(
         auth_tokens,
         server_error_max_retries=server_error_max_retries,
     )
-    client._session._kernel.http_client = httpx.AsyncClient(
-        transport=transport,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
+    install_http_client_for_test(
+        client._session._kernel,
+        httpx.AsyncClient(
+            transport=transport,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            },
+        ),
     )
     return client
 

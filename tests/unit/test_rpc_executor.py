@@ -119,7 +119,7 @@ class _Owner:
 def _executor(
     owner: _Owner,
     *,
-    decode_response_late_bound: Callable[..., Any] | None = None,
+    decode_response: Callable[..., Any] | None = None,
     is_auth_error: Callable[[Exception], bool] | None = None,
     sleep: Callable[[float], Awaitable[Any]] | None = None,
 ) -> RpcExecutor:
@@ -131,7 +131,7 @@ def _executor(
 
     return RpcExecutor(
         owner,
-        decode_response_late_bound=decode_response_late_bound or _decode,
+        decode_response=decode_response or _decode,
         is_auth_error=is_auth_error or (lambda exc: False),
         sleep=sleep or _no_sleep,
         # Session-shrink PR 3 narrowed :class:`RpcOwner` and added
@@ -230,8 +230,25 @@ async def test_client_rpc_executor_wrappers_delegate_to_rpc_executor(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_core_decode_response_monkeypatch_after_executor_construction(monkeypatch) -> None:
-    core = Session(_auth_tokens())
+async def test_constructor_injected_decode_response_drives_executor(monkeypatch) -> None:
+    """Pin that the constructor-injected ``decode_response`` reaches the executor.
+
+    The legacy module-level ``_decode_response_late_bound`` wrapper used to
+    re-import ``notebooklm.rpc.decode_response`` on every call, so a
+    ``monkeypatch.setattr("notebooklm.rpc.decode_response", …)`` after the
+    executor was already constructed still affected the live decode path.
+    The constructor-DI seam (``Session(..., decode_response=…)``) intentionally
+    captures the callable at construction time — see
+    ``docs/improvement.md`` §4.1. This test asserts the new contract: the
+    injected callable reaches :class:`RpcExecutor` end-to-end.
+    """
+    decode_calls: list[dict[str, Any]] = []
+
+    def fake_decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> dict[str, Any]:
+        decode_calls.append({"raw": raw, "rpc_id": rpc_id, "allow_null": allow_null})
+        return {"decoded": rpc_id}
+
+    core = Session(_auth_tokens(), decode_response=fake_decode)
     executor = core._get_rpc_executor()
 
     async def fake_perform_authed_post(
@@ -243,14 +260,7 @@ async def test_core_decode_response_monkeypatch_after_executor_construction(monk
     ) -> httpx.Response:
         return _ok_response("wire")
 
-    decode_calls: list[dict[str, Any]] = []
-
-    def fake_decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> dict[str, Any]:
-        decode_calls.append({"raw": raw, "rpc_id": rpc_id, "allow_null": allow_null})
-        return {"decoded": rpc_id}
-
     monkeypatch.setattr(core, "_perform_authed_post", fake_perform_authed_post)
-    monkeypatch.setattr("notebooklm.rpc.decode_response", fake_decode)
 
     result = await core._rpc_call_impl(
         RPCMethod.LIST_NOTEBOOKS,
@@ -281,7 +291,7 @@ async def test_execute_threads_override_source_allow_null_and_retry_flag(monkeyp
         decode_calls.append({"raw": raw, "rpc_id": rpc_id, "allow_null": allow_null})
         return {"ok": True}
 
-    result = await _executor(owner, decode_response_late_bound=decode).execute(
+    result = await _executor(owner, decode_response=decode).execute(
         RPCMethod.LIST_NOTEBOOKS,
         [["param"]],
         "/notebook/abc",
@@ -325,7 +335,7 @@ async def test_decode_time_auth_retry_uses_injected_collaborators() -> None:
 
     result = await _executor(
         owner,
-        decode_response_late_bound=decode,
+        decode_response=decode,
         is_auth_error=is_auth_error,
         sleep=sleep,
     ).execute(
@@ -367,7 +377,7 @@ async def test_decode_time_auth_retry_preserves_none_result() -> None:
 
     result = await _executor(
         owner,
-        decode_response_late_bound=decode,
+        decode_response=decode,
         is_auth_error=lambda exc: True,
     ).execute(
         RPCMethod.LIST_NOTEBOOKS,
@@ -384,18 +394,35 @@ async def test_decode_time_auth_retry_preserves_none_result() -> None:
 
 
 @pytest.mark.asyncio
-async def test_core_sleep_monkeypatch_after_executor_construction(monkeypatch) -> None:
+async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
+    """Pin that the constructor-injected ``sleep`` reaches the executor.
+
+    The legacy module-level ``_sleep_late_bound`` wrapper used to re-import
+    ``asyncio.sleep`` on every call, so a
+    ``monkeypatch.setattr("notebooklm._session.asyncio.sleep", …)`` after the
+    executor was already constructed still affected the live sleep path.
+    The constructor-DI seam (``Session(..., sleep=…)``) intentionally captures
+    the callable at construction time — see ``docs/improvement.md`` §4.1.
+    This test asserts the new contract: the injected callable reaches
+    :class:`RpcExecutor`'s refresh-and-retry delay.
+    """
+
     async def refresh_callback() -> AuthTokens:
         return _auth_tokens()
+
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
 
     core = Session(
         _auth_tokens(),
         refresh_callback=refresh_callback,
         refresh_retry_delay=0.5,
+        sleep=fake_sleep,
     )
     executor = core._get_rpc_executor()
     refresh_calls = 0
-    sleep_calls: list[float] = []
 
     async def fake_await_refresh() -> None:
         nonlocal refresh_calls
@@ -420,12 +447,8 @@ async def test_core_sleep_monkeypatch_after_executor_construction(monkeypatch) -
         assert operation_variant is None
         return {"ok": True}
 
-    async def fake_sleep(seconds: float) -> None:
-        sleep_calls.append(seconds)
-
     monkeypatch.setattr(core, "_await_refresh", fake_await_refresh)
     monkeypatch.setattr(core, "rpc_call", fake_rpc_call)
-    monkeypatch.setattr("notebooklm._session.asyncio.sleep", fake_sleep)
 
     result = await core._try_refresh_and_retry(
         RPCMethod.LIST_NOTEBOOKS,
@@ -527,7 +550,7 @@ async def test_decode_shape_error_wrapped(
         raise decoder_exc
 
     with pytest.raises(RPCError) as raised:
-        await _executor(owner, decode_response_late_bound=decode).execute(
+        await _executor(owner, decode_response=decode).execute(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
@@ -555,7 +578,7 @@ async def test_decode_shape_error_json_decode_wrapped() -> None:
         raise decoder_exc
 
     with pytest.raises(RPCError) as raised:
-        await _executor(owner, decode_response_late_bound=decode).execute(
+        await _executor(owner, decode_response=decode).execute(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
@@ -584,7 +607,7 @@ async def test_rpc_error_log_includes_class_code_and_retry_after(caplog) -> None
         caplog.at_level(logging.ERROR, logger="notebooklm._rpc_executor"),
         pytest.raises(RateLimitError),
     ):
-        await _executor(owner, decode_response_late_bound=decode).execute(
+        await _executor(owner, decode_response=decode).execute(
             RPCMethod.START_DEEP_RESEARCH,
             [],
             "/",
@@ -634,7 +657,7 @@ async def test_decode_code_bug_propagates(
         raise decoder_exc
 
     with pytest.raises(type(decoder_exc)) as raised:
-        await _executor(owner, decode_response_late_bound=decode).execute(
+        await _executor(owner, decode_response=decode).execute(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",

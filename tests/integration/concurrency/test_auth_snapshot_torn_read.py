@@ -51,6 +51,7 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -222,10 +223,13 @@ async def test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out():
         # we can observe outgoing requests post-cookie-merge.
         prior_cookies = core._kernel.get_http_client().cookies
         await core._kernel.get_http_client().aclose()
-        core._kernel.http_client = httpx.AsyncClient(
-            cookies=prior_cookies,
-            transport=transport,
-            timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+        install_http_client_for_test(
+            core._kernel,
+            httpx.AsyncClient(
+                cookies=prior_cookies,
+                transport=transport,
+                timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+            ),
         )
 
         # Force ``_auth_snapshot_lock`` to exist BEFORE the gather so the

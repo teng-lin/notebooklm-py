@@ -35,6 +35,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._session_auth import AuthRefreshCoordinator
 from notebooklm._session_lifecycle import ClientLifecycle
@@ -110,7 +111,7 @@ async def test_close_cancels_in_flight_refresh_task() -> None:
     # real AsyncClient so close()'s aclose runs. Easiest: build it inline
     # since ClientLifecycle.open expects to read an httpx client mode from
     # _core which we can't easily stub here.
-    lifecycle._http_client = httpx.AsyncClient(transport=transport)
+    install_http_client_for_test(lifecycle._kernel, httpx.AsyncClient(transport=transport))
     lifecycle._bound_loop = asyncio.get_running_loop()
 
     # Park a long-sleeping task on the auth coordinator — models a refresh
@@ -156,7 +157,7 @@ async def test_close_with_no_refresh_task_is_a_noop_on_that_path() -> None:
     lifecycle = _make_lifecycle()
     host = _StubHost()
     transport = httpx.MockTransport(lambda req: httpx.Response(200))
-    lifecycle._http_client = httpx.AsyncClient(transport=transport)
+    install_http_client_for_test(lifecycle._kernel, httpx.AsyncClient(transport=transport))
     lifecycle._bound_loop = asyncio.get_running_loop()
 
     assert host._auth_coord._refresh_task is None
@@ -177,7 +178,7 @@ async def test_close_with_completed_refresh_task_does_not_recancel() -> None:
     lifecycle = _make_lifecycle()
     host = _StubHost()
     transport = httpx.MockTransport(lambda req: httpx.Response(200))
-    lifecycle._http_client = httpx.AsyncClient(transport=transport)
+    install_http_client_for_test(lifecycle._kernel, httpx.AsyncClient(transport=transport))
     lifecycle._bound_loop = asyncio.get_running_loop()
 
     async def _quick_refresh() -> str:

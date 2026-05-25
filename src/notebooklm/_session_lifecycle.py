@@ -249,11 +249,16 @@ class ClientLifecycle:
 
     @property
     def _http_client(self) -> httpx.AsyncClient | None:
+        # Read-only forwarder over the concrete kernel's live client. The
+        # corresponding setter was retired alongside ``Kernel.http_client``'s
+        # setter: production never mutated this attribute (open() builds the
+        # client through the kernel's injected ``async_client_factory``;
+        # close() nulls it via :meth:`Kernel.aclose`). Tests that need to
+        # install a stand-in client should use the constructor-time
+        # ``async_client_factory`` injection on :class:`Session` (preferred)
+        # or the ``install_http_client_for_test`` helper in
+        # ``tests/_fixtures/kernel_test_helpers.py``.
         return self._kernel.http_client
-
-    @_http_client.setter
-    def _http_client(self, value: httpx.AsyncClient | None) -> None:
-        self._kernel.http_client = value
 
     # ------------------------------------------------------------------
     # State accessors

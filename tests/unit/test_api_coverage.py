@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc.types import (
@@ -53,7 +54,7 @@ class TestConfigureChat:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._kernel.http_client = MagicMock()
+        install_http_client_for_test(client._session._kernel, MagicMock())
         client._session.rpc_call = AsyncMock(return_value=None)
         return client
 
@@ -123,7 +124,7 @@ class TestGetSourceGuide:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._kernel.http_client = MagicMock()
+        install_http_client_for_test(client._session._kernel, MagicMock())
         return client
 
     @pytest.mark.asyncio
@@ -170,7 +171,7 @@ class TestGetSuggestedReportFormats:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._kernel.http_client = MagicMock()
+        install_http_client_for_test(client._session._kernel, MagicMock())
         return client
 
     @pytest.mark.asyncio
@@ -207,7 +208,7 @@ class TestAddSourceDrive:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._kernel.http_client = MagicMock()
+        install_http_client_for_test(client._session._kernel, MagicMock())
         client._session.rpc_call = AsyncMock(return_value=[["source_id_123"]])
         return client
 
@@ -247,7 +248,7 @@ class TestGetNotebookDescription:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._kernel.http_client = MagicMock()
+        install_http_client_for_test(client._session._kernel, MagicMock())
         return client
 
     @pytest.mark.asyncio
@@ -286,7 +287,7 @@ class TestPayloadFixes:
             session_id="test_session",
         )
         client = NotebookLMClient(auth)
-        client._session._kernel.http_client = MagicMock()
+        install_http_client_for_test(client._session._kernel, MagicMock())
         client._session.rpc_call = AsyncMock(return_value=True)
         return client
 

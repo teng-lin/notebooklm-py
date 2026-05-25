@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._auth.session import refresh_auth_session
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
@@ -213,13 +214,13 @@ async def test_refresh_auth_session_persists_through_client_core_save_cookies(
         cookies=auth.cookie_jar,
         follow_redirects=True,
     )
-    core._kernel.http_client = http_client
+    install_http_client_for_test(core._kernel, http_client)
     core.cookie_persistence.capture_open_snapshot(http_client.cookies)
     try:
         await refresh_auth_session(core)
     finally:
         await http_client.aclose()
-        core._kernel.http_client = None
+        install_http_client_for_test(core._kernel, None)
 
     assert len(calls) == 1
     path, return_result, original_snapshot = calls[0]

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import (
     ClientMetricsSnapshot,
     NotebookLMClient,
@@ -44,8 +45,18 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     event with the expected fields.
     """
     events: list[RpcTelemetryEvent] = []
-    core = Session(auth_tokens, on_rpc_event=events.append)
-    core._kernel.http_client = AsyncMock(spec=httpx.AsyncClient)
+
+    # Inject the decoder at construction time (Session DI seam — see
+    # ``docs/improvement.md`` §4.1). The real decoder requires a wire
+    # payload that matches the method's RPC ID; constructing one makes
+    # the test brittle to RPC-ID changes. Stubbing keeps the test focused
+    # on observability semantics (counters + events + correlation) rather
+    # than wire-format details.
+    def fake_decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> dict:
+        return {"ok": True}
+
+    core = Session(auth_tokens, on_rpc_event=events.append, decode_response=fake_decode)
+    install_http_client_for_test(core._kernel, AsyncMock(spec=httpx.AsyncClient))
     seen_request_ids: list[str | None] = []
 
     # Mock the chain LEAF (innermost wrapper around
@@ -72,18 +83,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
 
     core._authed_post_chain = build_chain(core._middlewares, fake_terminal)
 
-    # Patch the decoder to a no-network stub. The real decoder requires a
-    # wire payload that matches the method's RPC ID; constructing one
-    # makes the test brittle to RPC-ID changes. Stubbing keeps the test
-    # focused on observability semantics (counters + events + correlation)
-    # rather than wire-format details.
-    def fake_decode(raw: str, rpc_id: str, *, allow_null: bool = False) -> dict:
-        return {"ok": True}
-
-    with (
-        patch("notebooklm.rpc.decode_response", fake_decode),
-        correlation_id("batch-42"),
-    ):
+    with correlation_id("batch-42"):
         result = await core.rpc_call(RPCMethod.GET_NOTEBOOK, ["nb_123"])
 
     assert result == {"ok": True}

@@ -92,50 +92,14 @@ logger = logging.getLogger(__name__)
 # (not the delegates here).
 
 
-def _decode_response_late_bound(raw: str, rpc_id: str, *, allow_null: bool = False) -> Any:
-    # Phase 2 PR 5 (``.sisyphus/plans/refactor-completion-plan.md``):
-    # imports ``decode_response`` from the canonical :mod:`notebooklm.rpc`
-    # surface rather than the legacy ``notebooklm._core`` compatibility
-    # shim. Tests that patched ``notebooklm._core.decode_response`` are
-    # re-targeted to ``notebooklm.rpc.decode_response`` in the same
-    # commit so the live RPC decode path stays patchable end-to-end.
-    from .rpc import decode_response
-
-    return decode_response(raw, rpc_id, allow_null=allow_null)
-
-
-def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
-    """Late-bound ``asyncio.sleep`` for tests that patch the module seam.
-
-    Tests patch ``notebooklm._session.asyncio.sleep`` (this module is
-    where the symbol is referenced) — e.g. ``test_authed_post_pipeline.py``
-    and ``test_rpc_executor.py``. Patching the ``asyncio.sleep``
-    attribute on the module singleton affects this function regardless
-    of whether the ``import asyncio`` lives at module top or inside the
-    body, because both forms resolve through the same ``asyncio`` module
-    object; the function-body import is kept for symmetry with the
-    other late-bound seams in this module.
-    """
-    import asyncio
-
-    return asyncio.sleep(seconds)
-
-
-def _live_is_auth_error(exc: Exception) -> bool:
-    """Resolve ``is_auth_error`` against the canonical seam at call time.
-
-    Python function-body name lookup hits the module ``__dict__`` on each
-    call, so a ``monkeypatch.setattr("notebooklm._session_helpers.is_auth_error", ...)``
-    swap is observed immediately. Used by every chain seed site that
-    wires ``AuthRefreshMiddleware`` and by ``RpcExecutor`` so the
-    project-wide test idiom of patching the symbol on the canonical
-    module stays live without each seed site re-implementing the lambda.
-    The historical ``notebooklm._core`` indirection was removed in
-    v0.5.0 when the ``_core`` compatibility shim was deleted.
-    """
-    from ._session_helpers import is_auth_error
-
-    return is_auth_error(exc)
+# Three previously module-level test seams (one each for RPC response
+# decoding, the awaitable used by retry/backoff loops, and the
+# authentication-error classifier) were retired in favour of
+# constructor-injected callables on :class:`Session`. Tests that need to
+# substitute behaviour pass ``decode_response=…``, ``sleep=…``, or
+# ``is_auth_error=…`` keyword arguments to :class:`Session` directly
+# instead of monkeypatching module attributes. See ``docs/improvement.md``
+# §4.1 for the rationale.
 
 
 class Session:
@@ -169,6 +133,11 @@ class Session:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
+        *,
+        decode_response: Callable[..., Any] | None = None,
+        sleep: Callable[[float], Awaitable[Any]] | None = None,
+        is_auth_error: Callable[[Exception], bool] | None = None,
+        async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
     ):
         """Initialize the core client.
 
@@ -262,6 +231,45 @@ class Session:
                 resolves to :func:`_default_cookie_rotator`, which late-binds
                 to ``notebooklm._auth.keepalive._rotate_cookies``. Must be
                 async — it is awaited from :meth:`ClientLifecycle._keepalive_loop`.
+            decode_response: Override for the canonical RPC response
+                decoder. ``None`` (default) resolves to
+                :func:`notebooklm.rpc.decode_response` via the
+                module-level imported binding at construction time —
+                tests that ``monkeypatch.setattr("notebooklm.rpc.decode_response",
+                fake)`` BEFORE constructing :class:`Session` still steer
+                the captured callable. Replaces the retired module-level
+                decode wrapper, which performed the lookup on every call;
+                tests that need to swap the decoder AFTER construction
+                should pass an explicit callable here or assign
+                ``session._decode_response = fake`` before the first RPC.
+                See ``docs/improvement.md`` §4.1.
+            sleep: Override for the awaitable used by retry/backoff loops.
+                ``None`` (default) resolves to :func:`asyncio.sleep` via
+                the module-level binding at construction time. Replaces
+                the retired module-level sleep wrapper — tests can pass
+                ``sleep=fake_sleep`` directly or
+                ``monkeypatch.setattr("notebooklm._session.asyncio.sleep",
+                fake_sleep)`` BEFORE constructing :class:`Session`.
+            is_auth_error: Override for the authentication-error classifier
+                used by the chain's ``AuthRefreshMiddleware`` and by
+                :class:`RpcExecutor`'s decode-time refresh path. ``None``
+                (default) resolves to
+                :func:`notebooklm._session_helpers.is_auth_error` via the
+                module-level imported binding at construction time.
+                Replaces the retired module-level classifier wrapper.
+            async_client_factory: Override for the live ``httpx.AsyncClient``
+                factory used by :meth:`Kernel.open` to build the live
+                transport. ``None`` (default) resolves to
+                :class:`httpx.AsyncClient` via a module-level name lookup
+                at call time, so tests that
+                ``monkeypatch.setattr("notebooklm._session.httpx.AsyncClient",
+                fake)`` before constructing the client still steer the
+                live transport build. Pass an explicit callable to install
+                a mock transport (e.g. via ``httpx.MockTransport``) without
+                going through the late-bind hop. The retired
+                ``Kernel.http_client`` setter previously absorbed that
+                post-construction mutation. See ``docs/improvement.md``
+                §4.2.
 
         Raises:
             ValueError: If ``keepalive`` or ``keepalive_min_interval`` is not a
@@ -290,6 +298,40 @@ class Session:
         # through ``self._lifecycle`` and the live HTTP client through
         # ``self._kernel``.
         _resolved_limits = limits if limits is not None else ConnectionLimits()
+        # Constructor-injected seams retained on the instance so
+        # :meth:`_get_rpc_executor` can read them when it lazily constructs
+        # the executor on first RPC. The chain builder is wired below with
+        # ``is_auth_error`` directly (the builder is built eagerly inside
+        # this ``__init__``). See ``docs/improvement.md`` §4.1 for the
+        # rationale that replaced the retired module-level decode / sleep /
+        # auth-error classifier wrappers.
+        #
+        # ``None`` (the default) resolves to a fresh module-attribute
+        # lookup at construction time — that preserves the ability for
+        # tests to ``monkeypatch.setattr("notebooklm.rpc.decode_response",
+        # …)`` / ``…("notebooklm._session.asyncio.sleep", …)`` /
+        # ``…("notebooklm._session_helpers.is_auth_error", …)`` BEFORE
+        # constructing :class:`Session` and still steer the captured
+        # callable. (Post-construction patches do NOT propagate because
+        # the seam is captured here, not re-resolved on every RPC. New
+        # tests should pass an explicit callable instead.) Lookups go
+        # through their canonical modules so the monkeypatch surface
+        # documented in ADR-007 is unchanged.
+        if decode_response is None:
+            from .rpc import decode_response as _resolved_decode_response
+
+            self._decode_response: Callable[..., Any] = _resolved_decode_response
+        else:
+            self._decode_response = decode_response
+        self._sleep: Callable[[float], Awaitable[Any]] = (
+            sleep if sleep is not None else asyncio.sleep
+        )
+        if is_auth_error is None:
+            from ._session_helpers import is_auth_error as _resolved_is_auth_error
+
+            self._is_auth_error: Callable[[Exception], bool] = _resolved_is_auth_error
+        else:
+            self._is_auth_error = is_auth_error
         # ``_refresh_retry_delay`` stays here directly — it is read on the
         # RPC retry path by ``RpcExecutor`` and the middleware chain and SET
         # by integration tests against ``client._session``. The refresh
@@ -383,7 +425,17 @@ class Session:
         _resolved_storage_path: Path | None = (
             keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
         )
-        self._kernel = Kernel(async_client_factory=httpx.AsyncClient)
+        # ``None`` (default) resolves to a name-lookup of ``httpx.AsyncClient``
+        # on this module at call time so tests that
+        # ``monkeypatch.setattr("notebooklm._session.httpx.AsyncClient", …)``
+        # before invoking the constructor still steer the live transport
+        # build. Explicit callables (production passes ``httpx.AsyncClient``
+        # via default; tests pass a ``MockTransport``-aware factory) bypass
+        # the lookup hop entirely.
+        _resolved_async_client_factory = (
+            async_client_factory if async_client_factory is not None else httpx.AsyncClient
+        )
+        self._kernel = Kernel(async_client_factory=_resolved_async_client_factory)
         self._lifecycle = ClientLifecycle(
             timeout=timeout,
             connect_timeout=connect_timeout,
@@ -426,7 +478,7 @@ class Session:
             refresh_retry_delay_provider=lambda: self._refresh_retry_delay,
             refresh_callable=self._await_refresh,
             auth_snapshot_provider=self._snapshot,
-            is_auth_error=_live_is_auth_error,
+            is_auth_error=self._is_auth_error,
             refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
         )
         self._middlewares: list[Middleware] = self._chain_builder.build()
@@ -583,19 +635,19 @@ class Session:
     def _get_rpc_executor(self) -> RpcExecutor:
         """Return the RPC execution collaborator, lazily initialized.
 
-        The adapters resolve through this module at call time so existing
-        monkeypatches of ``notebooklm.rpc.decode_response``,
-        ``notebooklm._session_helpers.is_auth_error``, and
-        ``notebooklm._session.asyncio.sleep`` keep affecting live RPC
-        behavior after the collaborator has been constructed.
+        The decode/sleep/is-auth-error callables are the constructor-injected
+        seams (``Session(..., decode_response=…, sleep=…, is_auth_error=…)``).
+        Tests substitute behaviour at construction time rather than via
+        ``monkeypatch.setattr`` on module attributes; see
+        ``docs/improvement.md`` §4.1 for the migration rationale.
         """
         executor = getattr(self, "_rpc_executor", None)
         if executor is None:
             executor = RpcExecutor(
                 self,
-                decode_response_late_bound=_decode_response_late_bound,
-                is_auth_error=_live_is_auth_error,
-                sleep=_sleep_late_bound,
+                decode_response=self._decode_response,
+                is_auth_error=self._is_auth_error,
+                sleep=self._sleep,
                 timeout_provider=lambda: self._lifecycle._timeout,
                 refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
                 refresh_retry_delay_provider=lambda: self._refresh_retry_delay,

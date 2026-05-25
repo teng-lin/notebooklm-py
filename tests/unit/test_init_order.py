@@ -561,6 +561,123 @@ def test_lifted_core_modules_are_retired() -> None:
     assert sorted(path.name for path in SRC_ROOT.glob("_core_*.py")) == []
 
 
+# ---------------------------------------------------------------------------
+# Constructor-DI seams (``docs/improvement.md`` §4.1 + §4.2)
+#
+# These pin tests guard the post-refactor wiring shape so a future
+# refactor cannot silently re-introduce the retired module-level
+# late-binding wrappers (``_decode_response_late_bound``,
+# ``_sleep_late_bound``, ``_live_is_auth_error``) or the retired
+# ``Kernel.http_client`` setter.
+# ---------------------------------------------------------------------------
+
+
+def test_session_exposes_constructor_di_seams_for_decode_sleep_auth_factory() -> None:
+    """``Session.__init__`` MUST expose the four constructor-DI seams.
+
+    The seams replace the retired module-level late-binding wrappers
+    (see ``docs/improvement.md`` §4.1) and the retired
+    ``Kernel.http_client`` setter (§4.2). Each must be keyword-only and
+    default to ``None`` so the body can resolve the canonical seam via
+    a fresh module-attribute lookup at construction time (preserving
+    pre-construction monkeypatch propagation).
+    """
+    import inspect
+
+    from notebooklm._session import Session
+
+    sig = inspect.signature(Session.__init__)
+    for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):
+        assert name in sig.parameters, f"Session.__init__ must expose constructor-DI kwarg {name!r}"
+        param = sig.parameters[name]
+        assert param.kind == inspect.Parameter.KEYWORD_ONLY, (
+            f"{name!r} must be keyword-only; got {param.kind!r}"
+        )
+        assert param.default is None, (
+            f"{name!r} must default to None (None-sentinel + fresh module "
+            f"lookup); got default {param.default!r}"
+        )
+
+
+def test_session_retired_late_bound_wrappers_are_gone() -> None:
+    """The three module-level late-binding wrappers MUST stay deleted.
+
+    See ``docs/improvement.md`` §4.1. The constructor-DI seams above
+    (``decode_response`` / ``sleep`` / ``is_auth_error``) replaced them;
+    re-adding the wrappers would re-introduce the test-shaped production
+    code the refactor removed.
+    """
+    import notebooklm._session as session_mod
+
+    for symbol in (
+        "_decode_response_late_bound",
+        "_sleep_late_bound",
+        "_live_is_auth_error",
+    ):
+        assert not hasattr(session_mod, symbol), (
+            f"notebooklm._session.{symbol} must stay deleted (see docs/improvement.md §4.1)"
+        )
+
+
+def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
+    """Constructor-injected seams MUST reach the executor and chain builder.
+
+    The chain builder's ``is_auth_error`` and the lazily-built
+    ``RpcExecutor`` (``decode_response``, ``is_auth_error``, ``sleep``)
+    all read from the ``self._decode_response`` / ``self._sleep`` /
+    ``self._is_auth_error`` attributes captured at construction time.
+    Explicit callables passed to ``Session.__init__`` MUST reach the
+    executor end-to-end.
+    """
+    from notebooklm._session import Session
+    from notebooklm.auth import AuthTokens
+
+    auth = AuthTokens(
+        cookies={"SID": "x"},
+        csrf_token="csrf",
+        session_id="sid",
+    )
+
+    def custom_decode(*_a, **_kw):
+        return ["custom"]
+
+    async def custom_sleep(_seconds):
+        return None
+
+    def custom_is_auth_error(_exc):
+        return True
+
+    core = Session(
+        auth,
+        decode_response=custom_decode,
+        sleep=custom_sleep,
+        is_auth_error=custom_is_auth_error,
+    )
+
+    assert core._decode_response is custom_decode
+    assert core._sleep is custom_sleep
+    assert core._is_auth_error is custom_is_auth_error
+
+    # The lazily-constructed RpcExecutor reads from these attributes.
+    executor = core._get_rpc_executor()
+    assert executor._decode_response is custom_decode
+    assert executor._sleep is custom_sleep
+    assert executor._is_auth_error is custom_is_auth_error
+
+
+def test_kernel_http_client_is_read_only_property() -> None:
+    """``Kernel.http_client`` MUST have no setter (``docs/improvement.md`` §4.2)."""
+    from notebooklm._kernel import Kernel
+
+    descriptor = Kernel.__dict__["http_client"]
+    assert isinstance(descriptor, property)
+    assert descriptor.fset is None, (
+        "Kernel.http_client must remain read-only; the retired setter was a "
+        "test-injection seam that constructor-time async_client_factory "
+        "injection now replaces (see docs/improvement.md §4.2)."
+    )
+
+
 def _is_type_checking_guard(node: ast.AST) -> bool:
     return (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
         isinstance(node, ast.Attribute)

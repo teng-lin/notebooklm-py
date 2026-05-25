@@ -547,7 +547,7 @@ def _build_rpc_executor() -> Any:
 
     executor = RpcExecutor(
         owner,
-        decode_response_late_bound=_decode,
+        decode_response=_decode,
         is_auth_error=_is_auth_error,
         sleep=_sleep,
         # Session-shrink PR 3: providers replace direct owner-attr reads

@@ -2,12 +2,13 @@
 
 import asyncio
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from conftest import install_post_as_stream
 from notebooklm._session import Session
 from notebooklm._session_helpers import is_auth_error
@@ -638,7 +639,15 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        def fake_decode(*args, **kwargs):
+            return ["result"]
+
+        core = Session(
+            auth,
+            refresh_callback=mock_refresh,
+            refresh_retry_delay=0,
+            decode_response=fake_decode,
+        )
 
         call_count = [0]
 
@@ -655,13 +664,12 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
-        with patch("notebooklm.rpc.decode_response", return_value=["result"]):
-            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once"
         assert call_count[0] == 2, "RPC should be called twice (original + retry)"
@@ -682,20 +690,6 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
-
-        # Mock HTTP client - always succeeds
-        async def mock_post(*args, **kwargs):
-            response = MagicMock()
-            response.text = "mock response"
-            response.raise_for_status = MagicMock()
-            return response
-
-        core._kernel.http_client = MagicMock()
-        core._kernel.get_http_client().post = mock_post
-        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
-        core._kernel.get_http_client().headers = {"Cookie": "old"}
-
         decode_call_count = [0]
 
         def mock_decode(*args, **kwargs):
@@ -705,8 +699,26 @@ class TestRpcCallAutoRetry:
                 raise RPCError("Authentication expired", method_id="wXbhsf")
             return ["result"]
 
-        with patch("notebooklm.rpc.decode_response", side_effect=mock_decode):
-            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        core = Session(
+            auth,
+            refresh_callback=mock_refresh,
+            refresh_retry_delay=0,
+            decode_response=mock_decode,
+        )
+
+        # Mock HTTP client - always succeeds
+        async def mock_post(*args, **kwargs):
+            response = MagicMock()
+            response.text = "mock response"
+            response.raise_for_status = MagicMock()
+            return response
+
+        install_http_client_for_test(core._kernel, MagicMock())
+        core._kernel.get_http_client().post = mock_post
+        install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
+        core._kernel.get_http_client().headers = {"Cookie": "old"}
+
+        result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once"
         assert decode_call_count[0] == 2, "decode should be called twice (original + retry)"
@@ -731,7 +743,7 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
@@ -766,7 +778,7 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
@@ -812,7 +824,7 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(500, request=request)
             raise httpx.HTTPStatusError("Server Error", request=request, response=response)
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
@@ -841,7 +853,7 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(401, request=request)
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
@@ -868,7 +880,12 @@ class TestRpcCallAutoRetry:
             await asyncio.sleep(0.05)  # Simulate slow refresh
             return auth
 
-        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(
+            auth,
+            refresh_callback=mock_refresh,
+            refresh_retry_delay=0,
+            decode_response=lambda *a, **kw: ["result"],
+        )
 
         call_count = [0]
 
@@ -885,18 +902,17 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
-        with patch("notebooklm.rpc.decode_response", return_value=["result"]):
-            # Start two concurrent calls
-            await asyncio.gather(
-                core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
-                core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
-                return_exceptions=True,
-            )
+        # Start two concurrent calls
+        await asyncio.gather(
+            core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
+            core.rpc_call(RPCMethod.LIST_NOTEBOOKS, []),
+            return_exceptions=True,
+        )
 
         # With shared task pattern, refresh should be called exactly once
         # (second caller waits on the same task instead of starting a new refresh)
@@ -924,7 +940,12 @@ class TestRpcCallAutoRetry:
             refresh_called.append(True)
             return auth
 
-        core = Session(auth, refresh_callback=mock_refresh, refresh_retry_delay=0)
+        core = Session(
+            auth,
+            refresh_callback=mock_refresh,
+            refresh_retry_delay=0,
+            decode_response=lambda *a, **kw: ["result"],
+        )
 
         call_count = [0]
 
@@ -941,13 +962,12 @@ class TestRpcCallAutoRetry:
             response.raise_for_status = MagicMock()
             return response
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
         core._kernel.get_http_client().headers = {"Cookie": "old"}
 
-        with patch("notebooklm.rpc.decode_response", return_value=["result"]):
-            result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
+        result = await core.rpc_call(RPCMethod.LIST_NOTEBOOKS, [])
 
         assert len(refresh_called) == 1, "refresh_callback should be called once on 400"
         assert call_count[0] == 2, "RPC should be called twice (original + retry)"
@@ -977,7 +997,7 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(400, request=request)
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 
@@ -1013,7 +1033,7 @@ class TestRpcCallAutoRetry:
             response = httpx.Response(400, request=request)
             raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
 
-        core._kernel.http_client = MagicMock()
+        install_http_client_for_test(core._kernel, MagicMock())
         core._kernel.get_http_client().post = mock_post
         install_post_as_stream(None, core._kernel.get_http_client(), mock_post)
 

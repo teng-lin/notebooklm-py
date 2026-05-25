@@ -33,6 +33,7 @@ from urllib.parse import parse_qs, unquote
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
@@ -151,11 +152,14 @@ def _make_client(transport: httpx.AsyncBaseTransport, auth_tokens) -> NotebookLM
     POSTs route through the mock instead of opening a real socket.
     """
     client = NotebookLMClient(auth_tokens)
-    client._session._kernel.http_client = httpx.AsyncClient(
-        transport=transport,
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
+    install_http_client_for_test(
+        client._session._kernel,
+        httpx.AsyncClient(
+            transport=transport,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            },
+        ),
     )
     return client
 

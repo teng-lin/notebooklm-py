@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 
@@ -155,10 +156,13 @@ async def make_core(refresh_callback=None, transport=None, refresh_retry_delay=0
         # closed AsyncClient is brittle across httpx versions.
         prior_cookies = core._kernel.get_http_client().cookies
         await core._kernel.get_http_client().aclose()
-        core._kernel.http_client = httpx.AsyncClient(
-            cookies=prior_cookies,
-            transport=transport,
-            timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+        install_http_client_for_test(
+            core._kernel,
+            httpx.AsyncClient(
+                cookies=prior_cookies,
+                transport=transport,
+                timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+            ),
         )
     try:
         yield core

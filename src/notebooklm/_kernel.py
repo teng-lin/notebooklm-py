@@ -30,13 +30,20 @@ class Kernel:
 
     @property
     def http_client(self) -> httpx.AsyncClient | None:
-        """Return the live HTTP client, or ``None`` when closed."""
-        return self._http_client
+        """Return the live HTTP client, or ``None`` when closed.
 
-    @http_client.setter
-    def http_client(self, value: httpx.AsyncClient | None) -> None:
-        # Test-injection seam for fixtures that swap the live transport.
-        self._http_client = value
+        The property is read-only by design. Production code mutates the
+        underlying client only through :meth:`open` (which constructs the
+        live client via the injected ``async_client_factory``) and
+        :meth:`aclose` (which nulls it on teardown). Tests that need to
+        substitute the live transport at construction time should inject
+        an ``async_client_factory`` into :class:`notebooklm._session.Session`
+        (the factory is forwarded into this kernel's ``__init__``); tests
+        that need to swap the live client AFTER ``open()`` should use the
+        dedicated test helper at
+        ``tests/_fixtures/kernel_test_helpers.py``.
+        """
+        return self._http_client
 
     @property
     def cookies(self) -> httpx.Cookies:

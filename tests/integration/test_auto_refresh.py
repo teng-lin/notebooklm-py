@@ -1,7 +1,7 @@
 """Integration tests for automatic token refresh."""
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -79,12 +79,16 @@ class TestAutoRefreshIntegration:
             response.raise_for_status = MagicMock()
             return response
 
+        # Override the constructor-injected decode-response seam BEFORE the
+        # first RPC fires so the lazily-built ``RpcExecutor`` picks up the
+        # stub. The previous ``patch("notebooklm.rpc.decode_response", …)``
+        # idiom relied on the retired module-level late-binding wrapper;
+        # see ``docs/improvement.md`` §4.1.
+        client._session._decode_response = lambda *a, **kw: [[["nb1"], ["Notebook 1"]]]
+
         async with client:
             install_post_as_stream(None, client._session._kernel.get_http_client(), mock_post)
-
-            with patch("notebooklm.rpc.decode_response") as mock_decode:
-                mock_decode.return_value = [[["nb1"], ["Notebook 1"]]]
-                await client.notebooks.list()
+            await client.notebooks.list()
 
         assert len(refresh_calls) == 1, "Should have refreshed once"
         assert call_count[0] == 2, "Should have retried once"
@@ -126,11 +130,14 @@ class TestAutoRefreshIntegration:
                 raise RPCError("Authentication expired")
             return [[["nb1"], ["Notebook 1"]]]
 
+        # Override the constructor-injected decode-response seam BEFORE the
+        # first RPC fires so the lazily-built ``RpcExecutor`` picks up the
+        # stub. See ``docs/improvement.md`` §4.1.
+        client._session._decode_response = mock_decode
+
         async with client:
             install_post_as_stream(None, client._session._kernel.get_http_client(), mock_post)
-
-            with patch("notebooklm.rpc.decode_response", side_effect=mock_decode):
-                await client.notebooks.list()
+            await client.notebooks.list()
 
         assert len(refresh_calls) == 1, "Should have refreshed once"
         assert decode_count[0] == 2, "Should have retried once"
@@ -165,14 +172,16 @@ class TestAutoRefreshIntegration:
             response.raise_for_status = MagicMock()
             return response
 
+        # Override the constructor-injected decode-response seam BEFORE the
+        # first RPC fires so the lazily-built ``RpcExecutor`` picks up the
+        # stub. See ``docs/improvement.md`` §4.1.
+        client._session._decode_response = lambda *a, **kw: []
+
         async with client:
             install_post_as_stream(None, client._session._kernel.get_http_client(), mock_post)
 
             start_time = asyncio.get_event_loop().time()
-
-            with patch("notebooklm.rpc.decode_response", return_value=[]):
-                await client.notebooks.list()
-
+            await client.notebooks.list()
             elapsed = asyncio.get_event_loop().time() - start_time
 
         # Should have taken at least the delay time

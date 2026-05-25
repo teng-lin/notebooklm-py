@@ -49,6 +49,7 @@ import asyncio
 import httpx
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm._session import Session
 from notebooklm.auth import AuthTokens
 from notebooklm.rpc import RPCMethod
@@ -90,10 +91,13 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Sessi
     assert core._kernel.http_client is not None
     prior_cookies = core._kernel.get_http_client().cookies
     await core._kernel.get_http_client().aclose()
-    core._kernel.http_client = httpx.AsyncClient(
-        cookies=prior_cookies,
-        transport=transport,
-        timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+    install_http_client_for_test(
+        core._kernel,
+        httpx.AsyncClient(
+            cookies=prior_cookies,
+            transport=transport,
+            timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+        ),
     )
     return core
 
@@ -163,7 +167,7 @@ def test_cross_loop_use_raises_actionable_runtime_error(
         # primitives bound to loop A.
         if core._kernel.http_client is not None:
             await core._kernel.get_http_client().aclose()
-            core._kernel.http_client = None
+            install_http_client_for_test(core._kernel, None)
 
     asyncio.run(call_under_loop_b())
 
@@ -222,10 +226,13 @@ async def test_bound_loop_captured_on_open(
         assert core._kernel.http_client is not None
         prior_cookies = core._kernel.get_http_client().cookies
         await core._kernel.get_http_client().aclose()
-        core._kernel.http_client = httpx.AsyncClient(
-            cookies=prior_cookies,
-            transport=mock_transport_concurrent,
-            timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+        install_http_client_for_test(
+            core._kernel,
+            httpx.AsyncClient(
+                cookies=prior_cookies,
+                transport=mock_transport_concurrent,
+                timeout=httpx.Timeout(connect=1.0, read=5.0, write=5.0, pool=1.0),
+            ),
         )
     finally:
         await core.close()

@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
+from _fixtures.kernel_test_helpers import install_http_client_for_test
 from notebooklm import NotebookLMClient
 
 # mock-based __aexit__ arbitration tests; no HTTP, no cassette.
@@ -43,7 +44,7 @@ def _stub_open(monkeypatch: pytest.MonkeyPatch) -> None:
         # Lazy import keeps the test file dep-free at module load.
         import httpx
 
-        self._kernel.http_client = httpx.AsyncClient()
+        install_http_client_for_test(self._kernel, httpx.AsyncClient())
 
     monkeypatch.setattr("notebooklm._session.Session.open", _stub_open)
 
