@@ -257,4 +257,5 @@ __all__ = [
     "RpcRequest",
     "RpcResponse",
     "build_chain",
+    "materialize_rpc_request",
 ]
