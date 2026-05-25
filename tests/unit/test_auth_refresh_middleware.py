@@ -23,7 +23,7 @@ and ADR-009 §"Chain ordering":
   on the host still takes effect (matches the RetryMiddleware idiom).
 - **Log shape preservation** — "auth error detected, attempting token
   refresh" / "Token refresh failed: X" / "Token refresh successful,
-  retrying Y" match the legacy ``AuthedTransport`` messages bit-for-bit
+  retrying Y" match the legacy transport messages bit-for-bit
   so log-grep alerts keep matching.
 - **Metrics increment** — ``rpc_auth_retries`` incremented exactly once
   per successful refresh.
@@ -506,7 +506,7 @@ async def test_metrics_not_incremented_on_refresh_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_log_shape_on_successful_refresh(caplog: pytest.LogCaptureFixture) -> None:
-    """Log messages match the legacy ``AuthedTransport`` shape verbatim."""
+    """Log messages match the legacy transport shape verbatim."""
     boom = _auth_error()
     terminal, _calls = _scripted_terminal([boom, httpx.Response(200, content=b"ok")])
 

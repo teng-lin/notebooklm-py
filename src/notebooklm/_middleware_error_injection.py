@@ -58,24 +58,22 @@ Behavior contract:
   (outside this middleware in the final chain ordering) catches it via
   ``is_auth_error`` and drives the refresh-then-retry flow. Pre-PR-12.6
   this happened naturally because the legacy ``_SyntheticErrorTransport``
-  returned the synthetic 400 below httpx, the leaf's ``raise_for_status``
-  lifted it into an ``HTTPStatusError``, and the leaf's auth-refresh
-  branch handled it. PR 12.8 restores that end-to-end (codex iter-1
-  catch on PR 12.8).
+  returned the synthetic 400 below httpx, and ``raise_for_status`` lifted
+  it into an ``HTTPStatusError``. PR 12.8 restores that end-to-end via
+  ``AuthRefreshMiddleware`` (codex iter-1 catch on PR 12.8).
 
 All raised exceptions wrap a synthetic :class:`httpx.Response` anchored to
 ``request.url`` / ``request.headers`` / ``request.body`` so callers
 inspecting ``response.request`` see what the leaf would have sent.
 
 Restored retry semantics: pre-PR-12.6 the httpx-layer
-:class:`_SyntheticErrorTransport` fired on *every* batchexecute POST,
-including the ones ``AuthedTransport.perform_authed_post`` re-issued from
-its internal retry loop. PR 12.6 lifted the middleware above the leaf,
-which broke that. PR 12.7 added ``RetryMiddleware`` OUTSIDE this
-middleware AND has this middleware raise the proper transport exceptions
-for 429/5xx so the outer retry actually fires. Each retry re-enters this
-middleware, which re-raises — matching the pre-PR-12.6 "every retry
-re-fires the synthetic error" behavior bit-for-bit.
+:class:`_SyntheticErrorTransport` fired on *every* batchexecute POST.
+PR 12.6 lifted the middleware above the leaf, which broke that. PR 12.7
+added ``RetryMiddleware`` OUTSIDE this middleware AND has this middleware
+raise the proper transport exceptions for 429/5xx so the outer retry
+actually fires. Each retry re-enters this middleware, which re-raises —
+matching the pre-PR-12.6 "every retry re-fires the synthetic error"
+behavior bit-for-bit.
 
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
 ``src/notebooklm/_error_injection.py`` for the env-var / startup-guard
@@ -221,9 +219,8 @@ class ErrorInjectionMiddleware:
         #   refreshes, retries once (PR 12.8). Pre-PR-12.6 this happened
         #   naturally because the legacy ``_SyntheticErrorTransport``
         #   returned the synthetic response below httpx and
-        #   ``AuthedTransport``'s ``raise_for_status()`` lifted it into
-        #   an ``HTTPStatusError`` that the leaf's auth-refresh branch
-        #   then handled. Returning a plain ``RpcResponse`` here would
+        #   ``raise_for_status()`` lifted it into an ``HTTPStatusError``.
+        #   Returning a plain ``RpcResponse`` here would
         #   skip ``AuthRefreshMiddleware`` entirely (codex iter-1 catch
         #   on PR 12.7 (429/5xx) + PR 12.8 (400)).
         log_label = request.context.get("log_label", "<unknown-chain-call>")

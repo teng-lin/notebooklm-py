@@ -11,10 +11,12 @@ landed without production wiring. PR 12.2 wired an empty chain into
 concern into a dedicated middleware. **PR 12.9 closes the tier** — the
 seven-middleware chain `[Drain, Metrics, Semaphore, Retry, AuthRefresh,
 ErrorInjection, Tracing]` is fully wired, the leaf
-(`AuthedTransport.perform_authed_post`) is a pure POST, and the
-underscore-prefixed compatibility aliases were removed. The chain ordering, the `RpcRequest.context` key vocabulary, and
-the Protocol shape pinned below are the load-bearing contract going
-forward into Tier 13.
+is a pure POST, and the underscore-prefixed compatibility aliases were
+removed. A later architecture cleanup retired the interim authed-transport
+Adapter; the current terminal is `Session._authed_post_chain_terminal →
+Kernel.post`. The chain ordering, the `RpcRequest.context` key
+vocabulary, and the Protocol shape pinned below are the load-bearing
+contract.
 
 Two implementation realities diverged from the original PR-12.1 pin and
 are documented in the "PR 12.9 close-out notes" section at the bottom of
@@ -25,8 +27,8 @@ this ADR:
 2. The RPC concurrency semaphore wraps the chain dispatch (not the leaf),
    restoring pre-Tier-12 "one slot per logical RPC" semantics.
 
-Tier 13 (`Kernel.post` terminal) will revisit (1) — the closure callbacks
-remain pinned as the target shape for the chain-leaf rewrite.
+The `Kernel.post` terminal revisit for (1) has landed; closure callbacks
+remain pinned as the target shape for future chain-terminal rewrites.
 
 The signatures pinned in this ADR (especially the `AuthRefreshMiddleware`
 constructor, §"AuthRefreshMiddleware constructor signature") are
@@ -52,25 +54,23 @@ substitution path going forward.
 | Concern | Pre-Tier-12 | Post-Tier-12 (PR 12.9 → today) |
 |---|---|---|
 | In-flight drain tracking | `TransportDrainTracker.begin/end` around the call (`_transport_drain.py`) | `DrainMiddleware` (chain pos 0) |
-| Metrics emission | `ClientMetrics.on_rpc_event` callbacks woven through `AuthedTransport` (`_client_metrics.py`) | `MetricsMiddleware` (chain pos 1) |
-| RPC concurrency gate | `asyncio.Semaphore` inside `AuthedTransport.perform_authed_post` | `SemaphoreMiddleware` (chain pos 2) |
-| Retry on 5xx / 429 | inline loops inside `AuthedTransport.perform_authed_post` | `RetryMiddleware` (chain pos 3) |
-| Auth refresh on 401 | inline branch inside `AuthedTransport.perform_authed_post` (`_session_auth.py`) | `AuthRefreshMiddleware` (chain pos 4) |
+| Metrics emission | `ClientMetrics.on_rpc_event` callbacks woven through the legacy transport POST loop (`_client_metrics.py`) | `MetricsMiddleware` (chain pos 1) |
+| RPC concurrency gate | `asyncio.Semaphore` inside the legacy transport POST loop | `SemaphoreMiddleware` (chain pos 2) |
+| Retry on 5xx / 429 | inline loops inside the legacy transport POST loop | `RetryMiddleware` (chain pos 3) |
+| Auth refresh on 401 | inline branch inside the legacy transport POST loop (`_session_auth.py`) | `AuthRefreshMiddleware` (chain pos 4) |
 | Synthetic error injection (tests) | `_SyntheticErrorTransport` wraps the httpx client (`_error_injection.py`) — DELETED PR 12.9 | `ErrorInjectionMiddleware` (chain pos 5) |
 | Per-attempt tracing/logging | scattered `logger.debug` calls inside the retry loop | `TracingMiddleware` (chain pos 6) |
 
-Adding a seventh concern (e.g. an idempotency-routing wrapper for retry
-safety, ADR-005) requires touching `AuthedTransport.perform_authed_post`
-directly. Each concern's state holder
-(`TransportDrainTracker` / `ClientMetrics` / etc.) is also threaded into
-`AuthedTransport` as constructor arguments or `_AuthedTransportHost`
-attributes, which means: (a) a new concern grows the host Protocol, and
-(b) every change to one concern risks regressing the others because they
-share a function body.
+Before the chain extraction, adding another concern (e.g. an
+idempotency-routing wrapper for retry safety, ADR-005) required touching
+the transport POST loop directly. Each concern's state holder
+(`TransportDrainTracker` / `ClientMetrics` / etc.) was also threaded into
+that leaf, which meant: (a) a new concern grew the host Interface, and
+(b) every change to one concern risked regressing the others because they
+shared a function body.
 
 The greenfield design in `docs/architecture-evolution.md` §3.4 proposes
-lifting each concern into a composable middleware, leaving
-`AuthedTransport.perform_authed_post` (and, post-PR 13.2, `Kernel.post`)
+lifting each concern into a composable middleware, leaving `Kernel.post`
 as a pure-transport function. The chain is the composition substrate.
 
 Five details that shaped this ADR (the others are in the master plan):
@@ -137,8 +137,7 @@ The chain is composed in this exact order (outermost → innermost):
 Drain → Metrics → Semaphore → Retry → AuthRefresh → ErrorInjection → Tracing → terminal
 ```
 
-Where `terminal` is `Kernel.post` after PR 13.2, and
-`AuthedTransport.perform_authed_post` until then.
+Where `terminal` is `Session._authed_post_chain_terminal → Kernel.post`.
 
 The leftmost middleware in the sequence becomes the outermost wrapper.
 `build_chain` enforces this ordering by composing in reverse (last
@@ -176,8 +175,8 @@ Per-position rationale:
   `AuthRefreshMiddleware`. Nesting prevents infinite-loop duplication
   (each layer has its own guard). Putting them in the other order would
   let an auth-refresh-then-success-then-5xx sequence cause a retry that
-  re-triggers the refresh, which is a bug the current `AuthedTransport`
-  also guards against with a per-attempt flag.
+  re-triggers the refresh, which the legacy transport loop also guarded
+  against with a per-attempt flag.
 - **AuthRefresh outside ErrorInjection.** Test-injected 401s exercise the
   refresh path realistically — a test that injects a 401 expects the
   refresh middleware to run, not for the injection to short-circuit
@@ -193,7 +192,7 @@ Per-position rationale:
 - **Tracing innermost.** Tracing logs every actual HTTP attempt, including
   retried ones. Putting Tracing outside Retry would log only one entry
   per logical call regardless of retries, losing the per-attempt
-  visibility the original `AuthedTransport` debug logging provided.
+  visibility the original transport debug logging provided.
 
 ### `RpcRequest.context` keys (the chain's metadata vocabulary)
 
@@ -201,7 +200,7 @@ Per-position rationale:
 |---|---|---|---|
 | `rpc_method` | `RPCMethod \| None` | `Session.rpc_call` | metrics, tracing |
 | `disable_internal_retries` | `bool` | `Session.rpc_call` (post-resolution from `_idempotency.resolve_effective_disable_internal_retries`) | `RetryMiddleware` |
-| `build_request` | `BuildRequest` | `Session.rpc_call` / `Session.transport_post` | chain leaf (adapter into `AuthedTransport.perform_authed_post`) |
+| `build_request` | `BuildRequest` | `Session.rpc_call` / `Session.transport_post` | chain terminal (`Session._authed_post_chain_terminal`) |
 | `log_label` | `str` | `Session.rpc_call` / `Session.transport_post` | chain leaf, `DrainMiddleware`, `TracingMiddleware` |
 | `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry doesn't drive a second refresh on a fresh 401) |
 | `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait`) |
@@ -289,8 +288,8 @@ Pinned details:
   (snapshot-derived auth: CSRF token, session id, X-Goog-AuthUser, etc.).
   `BuildRequestResult.headers` is an *overlay*: when non-`None`, the
   middleware merges it on top of the base via `dict.update`. This mirrors
-  today's `_authed_transport.py:282` semantics where the `headers` slot in
-  the `_BuildRequest` tuple represents per-request extras (e.g. an
+  the current `materialize_rpc_request(...)` semantics where the `headers`
+  slot in the `BuildRequest` tuple represents per-request extras (e.g. an
   explicit `Content-Type` for an upload variant) that win over the
   snapshot defaults. Most call sites today pass `None` here, in which
   case the base headers from `rebuild_headers` are used unchanged.
@@ -311,21 +310,21 @@ of the two callbacks, the retry semantics, the types) is fixed here.
 
 **Wanted:**
 
-- `AuthedTransport.perform_authed_post` shrinks to a pure POST after
+- The transport POST path shrinks to a pure `Kernel.post` terminal after
   PRs 12.4 (metrics out), 12.5 (drain out), 12.7 (retry out), 12.8 (auth
-  refresh out). PR 12.9 verifies the post-extraction leaf has no
+  refresh out), and the later Adapter retirement. The terminal has no
   middleware concerns left.
 - Each cross-cutting concern becomes independently testable: build a
-  chain with just `[FakeRetry()]` around a `FakeAuthedPost`, drive a
-  failing request, assert the retry happened. No more "the metrics
-  callback fires on the third nested call inside `AuthedTransport` if
-  the 429 branch …" tests.
+  chain with just `[FakeRetry()]` around a terminal stub, drive a failing
+  request, assert the retry happened. No more "the metrics callback fires
+  on the third nested call inside the transport loop if the 429 branch …"
+  tests.
 - Adding a new concern is a new middleware class plus an entry in the
-  chain ordering — no `AuthedTransport` surgery, no growth of
-  `_AuthedTransportHost`.
+  chain ordering — no transport-leaf surgery, no growth of a host
+  Protocol.
 - The chain ordering becomes a single line of code (`[Drain, Metrics,
-  Retry, AuthRefresh, ErrorInjection, Tracing]`) instead of an implicit
-  invariant scattered across `_authed_transport.py:243`-`379`.
+  Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]`) instead of an
+  implicit invariant scattered across one transport function.
 
 **Unwanted:**
 
@@ -346,10 +345,9 @@ of the two callbacks, the retry semantics, the types) is fixed here.
   "deny all requests" canary) get the capability for free. The lint
   policy is to grep the production middleware modules for "without
   calling `next_call`" patterns at review time.
-- Six small middleware files replace six branches in one large
-  `AuthedTransport` function. Total LOC roughly equal; navigation
-  improves (one concern per file) but the call path becomes longer in
-  the stack trace.
+- Six small middleware files replace six branches in one large transport
+  function. Total LOC roughly equal; navigation improves (one concern per
+  file) but the call path becomes longer in the stack trace.
 
 ## Alternatives considered
 
@@ -469,10 +467,9 @@ PR 12.8 shipped a simpler `AuthRefreshMiddleware` that catches
 `httpx.HTTPStatusError`, drives the coalesced refresh via
 `AuthRefreshCoordinator.await_refresh`, marks
 `request.context["auth_refreshed"] = True`, and re-invokes `next_call`
-**with the same `RpcRequest`** — the leaf
-(`AuthedTransport.perform_authed_post`) re-reads the now-refreshed
-`AuthSnapshot` from the coordinator and rebuilds headers/url/body inside
-the leaf, exactly as it did pre-Tier-12.
+**with the same `RpcRequest`** — the terminal re-reads the now-refreshed
+`AuthSnapshot` from the coordinator and rebuilds headers/url/body before
+calling `Kernel.post`, preserving the pre-Tier-12 semantics.
 
 Why deferred: lifting `rebuild_headers` and `build_request_factory` into
 chain-level closures requires the leaf to become a pure POST that accepts

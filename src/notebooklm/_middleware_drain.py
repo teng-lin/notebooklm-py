@@ -1,11 +1,11 @@
 """DrainMiddleware — in-flight transport-operation tracker for the Tier-12 chain.
 
 Per ADR-009 §"Chain ordering" and master plan §2, ``DrainMiddleware`` sits at
-the OUTERMOST position of the final Tier-12 chain ``[Drain, Metrics, Retry,
-AuthRefresh, ErrorInjection, Tracing]``. PR 12.5 ships it as the first entry
-of the three-middleware chain ``[Drain, Metrics, Tracing]``; PRs 12.6–12.8
-insert the remaining middlewares BETWEEN ``Drain`` and ``Metrics`` (Retry,
-AuthRefresh, ErrorInjection) so Drain stays outermost.
+the OUTERMOST position of the final Tier-12 chain
+``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+PR 12.5 ships it as the first entry of the three-middleware chain
+``[Drain, Metrics, Tracing]``; PRs 12.6–12.9 insert the remaining
+middlewares inside ``Metrics`` while keeping Drain outermost.
 
 Pure observer of the transport leg with bookkeeping side-effects: brackets
 ``next_call`` with calls to :meth:`TransportDrainTracker.begin_transport_post`

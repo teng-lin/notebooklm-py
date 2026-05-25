@@ -161,7 +161,7 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # ``ClientLifecycle.save_cookies`` sources it). The new patch
         # target is still a string-target into the ``notebooklm.*``
         # namespace, so the file lands on the allowlist with the rest of
-        # the stdlib-seam patchers (``test_authed_transport.py``,
+        # the stdlib-seam patchers (``test_authed_post_pipeline.py``,
         # ``test_rpc_executor.py``, ``test_side_effects_idempotency.py``,
         # …) until ADR-007's pattern is extended to stdlib seams.
         "tests/unit/test_cookie_persistence.py",
@@ -171,7 +171,7 @@ _ALLOWLIST: frozenset[str] = frozenset(
         # (_auth.storage / _auth.keepalive / _error_injection) when the
         # ``_core`` compatibility shim was deleted.
         "tests/unit/test_rpc_executor.py",
-        "tests/unit/test_authed_transport.py",
+        "tests/unit/test_authed_post_pipeline.py",
         "tests/unit/test_download_url.py",
         "tests/unit/test_firefox_containers.py",
         # P3.T1 generate-extraction service tests stub the CLI resolver

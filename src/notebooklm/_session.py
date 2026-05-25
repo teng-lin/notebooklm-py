@@ -11,12 +11,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
-from ._authed_transport import (
-    AuthedTransport,
-    AuthSnapshot,
-    BuildRequest,
-    _raise_mapped_post_error,
-)
+from ._authed_transport import AuthSnapshot, BuildRequest
 from ._client_metrics import ClientMetrics
 from ._cookie_persistence import CookiePersistence
 from ._error_injection import _refuse_synthetic_error_outside_test_context
@@ -48,6 +43,7 @@ from ._session_config import (
 from ._session_helpers import _resolve_keepalive_interval
 from ._session_lifecycle import ClientLifecycle, CookieRotator, CookieSaver
 from ._transport_drain import TransportDrainTracker, _TransportOperationToken
+from ._transport_errors import raise_mapped_post_error
 from .auth import (
     AuthTokens,
 )
@@ -60,26 +56,22 @@ from .auth import (
 from .types import ClientMetricsSnapshot, RpcTelemetryEvent
 
 if TYPE_CHECKING:
-    from ._authed_transport import _AuthedTransportHost
     from ._rpc_executor import RpcOwner
     from .types import ConnectionLimits
 
     def _assert_session_satisfies_protocols(s: "Session") -> None:
-        """Compile-time guard: :class:`Session` MUST satisfy the narrowed
-        :class:`RpcOwner` and :class:`_AuthedTransportHost` Protocols.
+        """Compile-time guard: :class:`Session` MUST satisfy ``RpcOwner``.
 
-        Session-shrink PR 3 narrowed both Protocols by removing
+        Session-shrink PR 3 narrowed the Protocol by removing
         ``_timeout``, ``_refresh_callback``, ``_refresh_retry_delay``,
         ``_http_client``, and ``_bound_loop`` declarations. Some of those
         compatibility bridges have since been retired; what this assertion
-        guarantees is that the narrowed Protocol shape — only ``_kernel`` +
-        methods for :class:`RpcOwner`, only ``_kernel`` + ``_snapshot()`` for
-        :class:`_AuthedTransportHost` — is satisfied by :class:`Session`.
-        mypy verifies this during ``mypy src/notebooklm``; the function is a
-        no-op at runtime (gated by ``TYPE_CHECKING``).
+        guarantees is that the narrowed :class:`RpcOwner` shape is satisfied
+        by :class:`Session`. mypy verifies this during
+        ``mypy src/notebooklm``; the function is a no-op at runtime (gated by
+        ``TYPE_CHECKING``).
         """
         _owner: RpcOwner = s
-        _host: _AuthedTransportHost = s
 
 
 from .rpc import RPCMethod
@@ -116,7 +108,7 @@ def _sleep_late_bound(seconds: float) -> Awaitable[Any]:
     """Late-bound ``asyncio.sleep`` for tests that patch the module seam.
 
     Tests patch ``notebooklm._session.asyncio.sleep`` (this module is
-    where the symbol is referenced) — e.g. ``test_authed_transport.py``
+    where the symbol is referenced) — e.g. ``test_authed_post_pipeline.py``
     and ``test_rpc_executor.py``. Patching the ``asyncio.sleep``
     attribute on the module singleton affects this function regardless
     of whether the ``import asyncio`` lives at module top or inside the
@@ -299,7 +291,7 @@ class Session:
         # ``self._kernel``.
         _resolved_limits = limits if limits is not None else ConnectionLimits()
         # ``_refresh_retry_delay`` stays here directly — it is read on the
-        # RPC retry path by ``RpcExecutor`` and ``AuthedTransport`` and SET
+        # RPC retry path by ``RpcExecutor`` and the middleware chain and SET
         # by integration tests against ``client._session``. The refresh
         # callback + refresh/auth-snapshot state live on ``self._auth_coord``,
         # constructed below alongside the other extracted helpers so the
@@ -377,9 +369,7 @@ class Session:
         # Event-loop affinity guard rationale: the lifecycle captures
         # ``asyncio.get_running_loop()`` in ``_bound_loop`` at ``open()`` time
         # and the cross-loop check in ``_perform_authed_post`` does a cheap
-        # ``is`` comparison against it. (Session-shrink PR 3 lifted this
-        # check up out of :class:`AuthedTransport` and into
-        # ``Session._perform_authed_post``.) Each client is per-loop — the asyncio primitives we hold
+        # ``is`` comparison against it. Each client is per-loop — the asyncio primitives we hold
         # (``_reqid_lock``, ``_refresh_lock``, ``_auth_snapshot_lock``,
         # ``_rpc_semaphore``, the ``httpx.AsyncClient``
         # pool, in-flight tasks like ``_refresh_task`` / ``_keepalive_task``)
@@ -423,7 +413,6 @@ class Session:
         # ``client.artifacts._polling.poll_registry.pending`` — and dropping
         # this attribute — is tracked as a follow-up audit.
         self.poll_registry: PollRegistry = PollRegistry()
-        self._authed_transport: AuthedTransport | None = None
         self._rpc_executor: RpcExecutor | None = None
         # ADR-009 chain construction. PR history, leaf exception shape,
         # and ``RpcRequest.context`` contract live in
@@ -591,28 +580,6 @@ class Session:
             self._rpc_semaphore = asyncio.Semaphore(self._max_concurrent_rpcs)
         return self._rpc_semaphore
 
-    def _get_authed_transport(self) -> AuthedTransport:
-        """Return the authenticated transport collaborator, lazily initialized.
-
-        The adapters intentionally resolve through this module at call time so
-        existing tests and private callers that monkeypatch
-        ``notebooklm._session_helpers.is_auth_error`` or
-        ``notebooklm._session.asyncio.sleep`` still affect live transport
-        behavior after the collaborator has been constructed. Backoff
-        jitter routes through ``notebooklm._backoff``, which in turn calls
-        ``random.uniform`` on the shared module.
-        ``tests/unit/test_authed_transport.py`` relies on monkeypatching
-        ``notebooklm._session.random.uniform`` to reach that jitter path;
-        keep the otherwise-unused module import so the path stays
-        available. Attribute patches on the singleton ``random`` module
-        are visible to all importers.
-        """
-        transport = getattr(self, "_authed_transport", None)
-        if transport is None:
-            transport = AuthedTransport(self, logger=logger)
-            self._authed_transport = transport
-        return transport
-
     def _get_rpc_executor(self) -> RpcExecutor:
         """Return the RPC execution collaborator, lazily initialized.
 
@@ -681,9 +648,9 @@ class Session:
         3. Saves cookies one last time through ``save_cookies``.
         4. Calls ``aclose()`` under :func:`asyncio.shield` so cancellation
            arriving mid-close cannot leak the underlying httpx transport.
-        5. Nulls out ``_kernel._http_client``, ``_authed_transport`` and
-           ``_rpc_executor`` so a follow-up :meth:`open` rebuilds the
-           transport collaborators against the new ``httpx.AsyncClient``.
+        5. Nulls out ``_kernel._http_client`` and ``_rpc_executor`` so a
+           follow-up :meth:`open` rebuilds transport collaborators against
+           the new ``httpx.AsyncClient``.
         """
         await self._lifecycle.close(self)
 
@@ -752,14 +719,9 @@ class Session:
         → four scalar reads → return) but routes the lock-wait metric
         through ``host._metrics_obj`` directly rather than via the
         ``_record_lock_wait`` facade. Whole-request atomicity for
-        ``(csrf, sid, cookies)`` on the wire still depends on the terminal's
-        no-await invariant in :meth:`AuthedTransport.perform_authed_post` (see
-        the related AST guard in
-        ``tests/unit/test_concurrency_refresh_race.py``). During the
-        request-envelope migration, :meth:`_perform_authed_post` also takes a
-        pre-chain snapshot for middleware-visible materialization; the legacy
-        terminal re-snapshots before the actual POST and discards the cached
-        tuple if auth changed while the call was queued.
+        ``(csrf, sid, cookies)`` on the wire depends on the terminal's
+        freshness check and no-await invariant; the related AST guards live in
+        ``tests/unit/test_concurrency_refresh_race.py``.
         """
         return await self._auth_coord.snapshot(self)
 
@@ -826,10 +788,10 @@ class Session:
         """Chain leaf — sends the populated ``RpcRequest`` via ``Kernel.post``.
 
         The chain Interface now carries the actual HTTP request. The terminal
-        Adapter reads ``RpcRequest.url`` / ``headers`` / ``body`` directly,
-        maps raw ``Kernel.post`` errors into the transport exception shapes
-        consumed by Retry/AuthRefresh middleware, and wraps the returned
-        :class:`httpx.Response` in :class:`RpcResponse`.
+        The terminal reads ``RpcRequest.url`` / ``headers`` / ``body``
+        directly, maps raw ``Kernel.post`` errors into the transport
+        exception shapes consumed by Retry/AuthRefresh middleware, and wraps
+        the returned :class:`httpx.Response` in :class:`RpcResponse`.
         """
         request = await self._refresh_request_for_current_auth(request)
         context = request.context
@@ -842,7 +804,7 @@ class Session:
                 body=request.body,
             )
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            _raise_mapped_post_error(
+            raise_mapped_post_error(
                 log_label=log_label,
                 exc=exc,
                 start=start,
@@ -883,10 +845,9 @@ class Session:
         the request. ``context["build_request"]`` remains as the bounded
         rebuild recipe for auth-refresh and pre-terminal freshness checks.
         """
-        # Event-loop affinity guard. Session-shrink PR 3 lifted this OUT of
-        # ``AuthedTransport.perform_authed_post`` (where it ran once per
-        # leaf attempt) and up to here, so the check fires once per chain
-        # invocation. ``assert_bound_loop`` is a no-op when ``bound_loop``
+        # Event-loop affinity guard. The check lives here so it fires once
+        # per chain invocation rather than once per leaf attempt.
+        # ``assert_bound_loop`` is a no-op when ``bound_loop``
         # is ``None`` (pre-open / fresh fixture); it raises only when the
         # currently-running loop differs from the one captured at
         # ``open()``-time.
@@ -919,9 +880,7 @@ class Session:
             result = await self._authed_post_chain(request)
             return result.response
         finally:
-            # Record queue wait even if the chain raised — pre-Tier-12
-            # ``AuthedTransport.perform_authed_post`` recorded the wait
-            # immediately after semaphore acquisition, so a failed chain
+            # Record queue wait even if the chain raised. A failed chain
             # (RetryMiddleware budget exhaustion, AuthRefreshMiddleware
             # refresh failure, etc.) MUST still surface the queue-wait
             # latency. ``SemaphoreMiddleware`` writes the duration to

@@ -10,7 +10,7 @@ These tests verify:
 
 1. The middleware satisfies the :class:`Middleware` Protocol shape and
    wires through the chain (smoke test via the shared
-   :func:`chain_calls_through_to_authed_post` fixture).
+   :func:`chain_calls_through_to_terminal` fixture).
 2. Two log records are emitted around a successful call: one BEFORE
    ``next_call`` ("starting"), one AFTER ("completed" with
    ``status_code`` and ``duration_ms``).
@@ -47,8 +47,8 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``; ``_fixtures.chain`` is the canonical
 # import path documented in ``tests/_fixtures/__init__.py``.
 from _fixtures.chain import (
-    FakeAuthedPost,
-    chain_calls_through_to_authed_post,
+    FakeChainTerminal,
+    chain_calls_through_to_terminal,
     make_request,
 )
 from notebooklm._middleware import (
@@ -81,16 +81,16 @@ def test_tracing_middleware_satisfies_protocol() -> None:
 
 
 def test_tracing_middleware_calls_through_to_transport() -> None:
-    """Chain of ``[TracingMiddleware()]`` reaches ``FakeAuthedPost`` exactly once.
+    """Chain of ``[TracingMiddleware()]`` reaches the terminal exactly once.
 
-    Uses the shared :func:`chain_calls_through_to_authed_post` fixture from
+    Uses the shared :func:`chain_calls_through_to_terminal` fixture from
     ``tests/_fixtures/chain.py`` — the canonical wire-up smoke test for
     every middleware PR per ADR-009 §"Per-position rationale" and master
     plan line 105.
     """
-    transport = FakeAuthedPost()
-    assert chain_calls_through_to_authed_post(transport, [TracingMiddleware()])
-    assert transport.call_count == 1
+    terminal = FakeChainTerminal()
+    assert chain_calls_through_to_terminal(terminal, [TracingMiddleware()])
+    assert terminal.call_count == 1
 
 
 # ---------------------------------------------------------------------------

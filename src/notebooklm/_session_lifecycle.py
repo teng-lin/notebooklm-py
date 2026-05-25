@@ -7,8 +7,8 @@ Owns the session-side open/close ordering that historically lived inline on
 * ``_http_client`` — compatibility property backed by the concrete Kernel's
   live ``httpx.AsyncClient`` (or ``None`` when closed).
 * ``_bound_loop`` — the event loop ``open()`` ran on; the cross-loop affinity
-  guard in :meth:`Session._perform_authed_post` (via
-  :class:`AuthedTransport`) compares against this captured reference.
+  guard in :meth:`Session._perform_authed_post` compares against this captured
+  reference.
 * ``_keepalive_task`` — the optional background task that pokes
   ``accounts.google.com/RotateCookies`` while the client is open.
 * ``_keepalive_interval`` / ``_keepalive_storage_path`` — keepalive
@@ -84,7 +84,6 @@ from ._session_config import CORE_LOGGER_NAME
 from .auth import AuthTokens
 
 if TYPE_CHECKING:
-    from ._authed_transport import AuthedTransport
     from ._client_metrics import ClientMetrics
     from ._cookie_persistence import CookiePersistence
     from ._reqid_counter import ReqidCounter
@@ -179,10 +178,9 @@ class _LifecycleHost(Protocol):
     at close-time. ``cookie_persistence`` mirrors today's public attribute
     name on ``Session``; ``_drain_hooks``, ``_metrics_obj``,
     ``_drain_tracker``, and ``_auth_coord`` are helper handles.
-    ``_authed_transport`` and ``_rpc_executor`` are nulled out by
-    :meth:`ClientLifecycle.close` so a follow-up ``open()`` rebuilds them
-    against the new ``httpx.AsyncClient`` (avoids stale closures over the
-    previous client).
+    ``_rpc_executor`` is nulled out by :meth:`ClientLifecycle.close` so a
+    follow-up ``open()`` rebuilds it against the new ``httpx.AsyncClient``
+    state.
     """
 
     auth: AuthTokens
@@ -192,7 +190,6 @@ class _LifecycleHost(Protocol):
     _reqid: ReqidCounter
     cookie_persistence: CookiePersistence
     _drain_hooks: dict[str, Callable[[], Awaitable[None]]]
-    _authed_transport: AuthedTransport | None
     _rpc_executor: RpcExecutor | None
 
 
@@ -385,10 +382,8 @@ class ClientLifecycle:
         so a single misbehaving hook can't block the rest of the close
         sequence.
 
-        Nulls out ``host._authed_transport`` and ``host._rpc_executor`` so a
-        follow-up :meth:`open` rebuilds the transport collaborators against
-        the new ``httpx.AsyncClient`` (the old ones close over the previous
-        client and would issue requests against the torn-down pool).
+        Nulls out ``host._rpc_executor`` so a follow-up :meth:`open` rebuilds
+        it against the current transport state.
         """
         try:
             # Stop the keepalive task before tearing down the HTTP client so
@@ -439,11 +434,8 @@ class ClientLifecycle:
                     # return False correctly.
                     await asyncio.shield(self._kernel.aclose())
                 finally:
-                    # Null out the transport collaborators so a follow-up
-                    # ``open()`` rebuilds them against the new
-                    # ``httpx.AsyncClient`` (the old ones close over the
-                    # previous client).
-                    host._authed_transport = None
+                    # Null out the RPC collaborator so a follow-up ``open()``
+                    # rebuilds it against the current transport state.
                     host._rpc_executor = None
 
     # ------------------------------------------------------------------

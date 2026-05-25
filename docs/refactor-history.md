@@ -147,7 +147,7 @@ not change, only their home module did.
 | `notebooklm._core.CookiePersistence` | `notebooklm._cookie_persistence.CookiePersistence` | Same. |
 | `notebooklm._core.ClientLifecycle` | `notebooklm._session_lifecycle.ClientLifecycle` | Same. |
 | `notebooklm._core.RpcExecutor` | `notebooklm._rpc_executor.RpcExecutor` | Same. |
-| `notebooklm._core.AuthedTransport` | `notebooklm._authed_transport.AuthedTransport` | Same. |
+| `notebooklm._core` authed transport helpers | `notebooklm._authed_transport` + `notebooklm._transport_errors` | The interim authed-transport Adapter was later retired; request types/exceptions/streaming helpers remain in `_authed_transport`, and terminal error mapping lives in `_transport_errors`. |
 
 #### New modules introduced by Tier 12 / 13
 
@@ -165,7 +165,8 @@ These modules did not exist before Tier 12 began:
 | `notebooklm._middleware_retry` | Tier 12 PR 12.7 — 429 / 5xx retry middleware. |
 | `notebooklm._middleware_auth_refresh` | Tier 12 PR 12.8 — auth-refresh-on-401 middleware. |
 | `notebooklm._middleware_semaphore` | Tier 12 PR 12.9 — global RPC concurrency cap. |
-| `notebooklm._chat_transport` | Chat-domain consumer-side error mapping over `AuthedTransport`. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
+| `notebooklm._chat_transport` | Chat-domain consumer-side error mapping over the shared authed POST pipeline. Replaces the chat-side wrapper that previously lived on `_core.rpc_call`. |
+| `notebooklm._transport_errors` | Terminal `Kernel.post` error mapping into transport exceptions consumed by retry/auth middleware. |
 | `notebooklm._request_types` | Shared dataclasses + type aliases for authed-POST request construction. Re-exports `AuthSnapshot` and `BuildRequest` from `_authed_transport`, plus the `BuildRequestResult` dataclass. |
 
 #### Deleted symbols and changed defaults

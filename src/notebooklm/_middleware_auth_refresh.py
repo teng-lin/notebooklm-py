@@ -32,8 +32,8 @@ that key on the transport exception type still see a coherent shape.
 Matches the pre-PR-12.8 leaf-side ``TransportAuthExpired`` raise.
 
 Pre-refresh sleep: when ``refresh_retry_delay > 0`` the middleware sleeps
-that duration AFTER the successful refresh and BEFORE the retry. Matches
-the legacy ``AuthedTransport`` behavior so a cassette that recorded the
+that duration AFTER the successful refresh and BEFORE the retry. This
+preserves the historical transport behavior so a cassette that recorded the
 post-refresh delay replays the same timing.
 
 Request-materialization transition: ``Session`` now enters the chain with

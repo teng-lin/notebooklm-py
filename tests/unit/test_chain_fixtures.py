@@ -1,18 +1,4 @@
-"""Unit tests for the ``tests/_fixtures/chain.py`` test substrate.
-
-Exercises the three helpers that PR 12.1 lands so every subsequent
-middleware PR (12.3–12.8) has a uniform test substrate:
-
-- ``FakeAuthedPost`` — programmable stub matching
-  ``AuthedTransport.perform_authed_post``.
-- ``make_request`` — factory for ``RpcRequest`` with benign defaults.
-- ``chain_calls_through_to_authed_post`` — assertion helper that builds a
-  chain over a ``FakeAuthedPost`` terminal and reports whether the
-  transport was reached.
-
-These tests verify the fixtures themselves so middleware-extraction PRs
-can trust the substrate without re-discovering its shape.
-"""
+"""Unit tests for the ``tests/_fixtures/chain.py`` test substrate."""
 
 from __future__ import annotations
 
@@ -25,8 +11,8 @@ import pytest
 # pytest puts ``tests/`` on ``sys.path``, so ``_fixtures.chain`` is the
 # canonical import path for these helpers.
 from _fixtures.chain import (
-    FakeAuthedPost,
-    chain_calls_through_to_authed_post,
+    FakeChainTerminal,
+    chain_calls_through_to_terminal,
     make_request,
 )
 from notebooklm._middleware import (
@@ -71,42 +57,34 @@ def test_make_request_context_is_independent_per_call() -> None:
 
 
 # ---------------------------------------------------------------------------
-# FakeAuthedPost
+# FakeChainTerminal
 # ---------------------------------------------------------------------------
 
 
-def test_fake_authed_post_records_calls() -> None:
-    transport = FakeAuthedPost()
+def test_fake_chain_terminal_records_calls() -> None:
+    terminal = FakeChainTerminal()
 
-    async def driver() -> httpx.Response:
-        return await transport.perform_authed_post(
-            build_request=lambda snap: ("https://x", b"", None),
-            log_label="my-label",
-            disable_internal_retries=True,
-        )
+    request = make_request(context={"log_label": "my-label"})
+
+    async def driver() -> RpcResponse:
+        return await terminal(request)
 
     resp = asyncio.run(driver())
-    assert resp.status_code == 200
-    assert transport.was_called is True
-    assert transport.call_count == 1
-    assert transport.calls[0]["log_label"] == "my-label"
-    assert transport.calls[0]["disable_internal_retries"] is True
+    assert resp.response.status_code == 200
+    assert terminal.was_called is True
+    assert terminal.call_count == 1
+    assert terminal.calls[0]["request"] is request
+    assert terminal.calls[0]["context"] is request.context
 
 
-def test_fake_authed_post_default_response_is_fresh_each_call() -> None:
+def test_fake_chain_terminal_default_response_is_fresh_each_call() -> None:
     """Default 200/empty response is constructed per call (not shared)."""
-    transport = FakeAuthedPost()
+    terminal = FakeChainTerminal()
 
     async def driver() -> tuple[httpx.Response, httpx.Response]:
-        a = await transport.perform_authed_post(
-            build_request=lambda s: ("https://x", b"", None),
-            log_label="a",
-        )
-        b = await transport.perform_authed_post(
-            build_request=lambda s: ("https://x", b"", None),
-            log_label="b",
-        )
-        return a, b
+        a = await terminal(make_request())
+        b = await terminal(make_request())
+        return a.response, b.response
 
     a, b = asyncio.run(driver())
     assert a is not b  # fresh instances per call
@@ -114,79 +92,71 @@ def test_fake_authed_post_default_response_is_fresh_each_call() -> None:
     assert b.status_code == 200
 
 
-def test_fake_authed_post_explicit_response_is_returned() -> None:
+def test_fake_chain_terminal_explicit_response_is_returned() -> None:
     canned = httpx.Response(status_code=204, content=b"")
-    transport = FakeAuthedPost(response=canned)
+    terminal = FakeChainTerminal(response=canned)
 
     async def driver() -> httpx.Response:
-        return await transport.perform_authed_post(
-            build_request=lambda s: ("https://x", b"", None),
-            log_label="lbl",
-        )
+        result = await terminal(make_request())
+        return result.response
 
     result = asyncio.run(driver())
     assert result is canned
 
 
-def test_fake_authed_post_response_factory_produces_per_call_responses() -> None:
+def test_fake_chain_terminal_response_factory_produces_per_call_responses() -> None:
     counter = {"n": 0}
 
     def factory() -> httpx.Response:
         counter["n"] += 1
         return httpx.Response(status_code=200 + counter["n"], content=b"")
 
-    transport = FakeAuthedPost(response_factory=factory)
+    terminal = FakeChainTerminal(response_factory=factory)
 
     async def driver() -> list[int]:
         results: list[int] = []
         for _ in range(3):
-            resp = await transport.perform_authed_post(
-                build_request=lambda s: ("https://x", b"", None),
-                log_label="lbl",
-            )
-            results.append(resp.status_code)
+            resp = await terminal(make_request())
+            results.append(resp.response.status_code)
         return results
 
     statuses = asyncio.run(driver())
     assert statuses == [201, 202, 203]
 
 
-def test_fake_authed_post_raises_when_configured() -> None:
-    transport = FakeAuthedPost(raises=httpx.RequestError("boom"))
+def test_fake_chain_terminal_raises_when_configured() -> None:
+    terminal = FakeChainTerminal(raises=httpx.RequestError("boom"))
 
     async def driver() -> None:
-        await transport.perform_authed_post(
-            build_request=lambda s: ("https://x", b"", None),
-            log_label="lbl",
-        )
+        await terminal(make_request())
 
     with pytest.raises(httpx.RequestError, match="boom"):
         asyncio.run(driver())
     # The call is still recorded — the fake records first, then raises.
-    assert transport.call_count == 1
+    assert terminal.call_count == 1
 
 
 # ---------------------------------------------------------------------------
-# chain_calls_through_to_authed_post
+# chain_calls_through_to_terminal
 # ---------------------------------------------------------------------------
 
 
 def test_chain_calls_through_with_no_middlewares() -> None:
-    """Empty chain still reaches the transport (terminal call)."""
-    transport = FakeAuthedPost()
-    assert chain_calls_through_to_authed_post(transport, []) is True
-    assert transport.call_count == 1
+    """Empty chain still reaches the terminal."""
+    terminal = FakeChainTerminal()
+    assert chain_calls_through_to_terminal(terminal, []) is True
+    assert terminal.call_count == 1
 
 
 def test_chain_calls_through_with_passthrough_middleware() -> None:
-    """A passthrough middleware doesn't block the chain from reaching transport."""
-    transport = FakeAuthedPost()
+    """A passthrough middleware doesn't block the chain from reaching terminal."""
+    terminal = FakeChainTerminal()
 
     async def passthrough(request: RpcRequest, next_call: NextCall) -> RpcResponse:
         return await next_call(request)
 
-    assert chain_calls_through_to_authed_post(transport, [passthrough]) is True
-    assert transport.call_count == 1
+    assert chain_calls_through_to_terminal(terminal, [passthrough]) is True
+    assert terminal.call_count == 1
 
 
 def test_chain_calls_through_with_short_circuit_middleware_returns_false() -> None:
@@ -196,18 +166,18 @@ def test_chain_calls_through_with_short_circuit_middleware_returns_false() -> No
     correctly reports it so tests that *expect* short-circuit behavior can
     assert against it.
     """
-    transport = FakeAuthedPost()
+    terminal = FakeChainTerminal()
 
     async def short_circuit(request: RpcRequest, next_call: NextCall) -> RpcResponse:
         return RpcResponse(response=httpx.Response(status_code=418, content=b""))
 
-    assert chain_calls_through_to_authed_post(transport, [short_circuit]) is False
-    assert transport.call_count == 0
+    assert chain_calls_through_to_terminal(terminal, [short_circuit]) is False
+    assert terminal.call_count == 0
 
 
 def test_chain_calls_through_with_multiple_middlewares_runs_all_in_order() -> None:
     """All middlewares get a chance to observe the request before transport."""
-    transport = FakeAuthedPost()
+    terminal = FakeChainTerminal()
     call_order: list[str] = []
 
     def make_recorder(label: str):
@@ -218,48 +188,29 @@ def test_chain_calls_through_with_multiple_middlewares_runs_all_in_order() -> No
         return mw
 
     middlewares = [make_recorder("A"), make_recorder("B"), make_recorder("C")]
-    assert chain_calls_through_to_authed_post(transport, middlewares) is True
+    assert chain_calls_through_to_terminal(terminal, middlewares) is True
     assert call_order == ["A", "B", "C"]
-    assert transport.call_count == 1
+    assert terminal.call_count == 1
 
 
-def test_chain_terminal_reads_context_keys_for_transport_call() -> None:
-    """The terminal forwards ``build_request`` / ``log_label`` from request.context.
-
-    PR 12.2's chain leaf will do exactly this on real production data.
-    The fixture mirrors the contract so middleware PRs can assert against
-    a realistic chain shape.
-    """
-    transport = FakeAuthedPost()
-
-    sentinel_build_request = object()
+def test_chain_terminal_receives_context() -> None:
+    """The terminal receives the request context object."""
+    terminal = FakeChainTerminal()
 
     async def stuff_context(request: RpcRequest, next_call: NextCall) -> RpcResponse:
-        # Middleware populates the keys the terminal expects.
-        request.context["build_request"] = sentinel_build_request
         request.context["log_label"] = "test-label"
         request.context["disable_internal_retries"] = True
         return await next_call(request)
 
     async def driver() -> None:
-        # We can't use ``chain_calls_through_to_authed_post`` here because
+        # We can't use ``chain_calls_through_to_terminal`` here because
         # we want to assert on the *content* of the recorded call, not
         # just whether it happened.
-        async def terminal(req: RpcRequest) -> RpcResponse:
-            ctx = req.context
-            resp = await transport.perform_authed_post(
-                build_request=ctx["build_request"],
-                log_label=ctx["log_label"],
-                disable_internal_retries=ctx["disable_internal_retries"],
-            )
-            return RpcResponse(response=resp, context=ctx)
-
         chain = build_chain([stuff_context], terminal)
         await chain(make_request())
 
     asyncio.run(driver())
-    assert transport.call_count == 1
-    call = transport.calls[0]
-    assert call["build_request"] is sentinel_build_request
-    assert call["log_label"] == "test-label"
-    assert call["disable_internal_retries"] is True
+    assert terminal.call_count == 1
+    context = terminal.calls[0]["context"]
+    assert context["log_label"] == "test-label"
+    assert context["disable_internal_retries"] is True

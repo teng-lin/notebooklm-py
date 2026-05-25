@@ -14,8 +14,8 @@ Specifically pinned here:
   cleanly** — the task exits and is set to ``None``; the call doesn't leak a
   ``CancelledError``.
 * ``_bound_loop`` **mismatch raises ``RuntimeError``** — the cross-loop guard
-  in :class:`AuthedTransport` reads ``_bound_loop`` through the lifecycle and
-  raises actionably when the loops differ.
+  in :meth:`Session._perform_authed_post` reads ``_bound_loop`` through the
+  lifecycle and raises actionably when the loops differ.
 * :meth:`ClientLifecycle.save_cookies` **invokes** the host's
   ``cookie_persistence.save`` collaborator with the right ``jar`` and
   ``path`` arguments AND with the ``save_cookies_to_storage`` value resolved
@@ -72,8 +72,8 @@ class _StubHost:
     * ``cookie_persistence`` — a ``MagicMock`` with an async ``save``
       coroutine; assertions check it was called with the right args.
     * ``_drain_hooks`` — close-time hooks registered by feature APIs.
-    * ``_authed_transport`` / ``_rpc_executor`` — set to sentinel marker
-      values so tests can assert :meth:`ClientLifecycle.close` nulls them.
+    * ``_rpc_executor`` — set to a sentinel marker value so tests can
+      assert :meth:`ClientLifecycle.close` nulls it.
     """
 
     def __init__(self) -> None:
@@ -97,8 +97,7 @@ class _StubHost:
         self.cookie_persistence.save = AsyncMock()
         self.cookie_persistence.capture_open_snapshot = MagicMock()
         self._drain_hooks = {}
-        # Sentinels — close() nulls these out.
-        self._authed_transport: Any = "AUTHED_TRANSPORT_SENTINEL"
+        # Sentinel — close() nulls this out.
         self._rpc_executor: Any = "RPC_EXECUTOR_SENTINEL"
 
 
@@ -301,25 +300,22 @@ async def test_close_cancels_keepalive_cleanly() -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_nulls_authed_transport_and_rpc_executor() -> None:
-    """``close()`` nulls out the transport collaborator handles so a follow-up
-    ``open()`` rebuilds them against the new ``httpx.AsyncClient``.
+async def test_close_nulls_rpc_executor() -> None:
+    """``close()`` nulls out the RPC collaborator handle so a follow-up
+    ``open()`` rebuilds it against the current transport state.
 
     Pre-extraction this lived inline in ``Session``; the contract is
-    preserved by the lifecycle helper writing into ``host._authed_transport``
-    and ``host._rpc_executor``.
+    preserved by the lifecycle helper writing into ``host._rpc_executor``.
     """
     lifecycle = _make_lifecycle()
     host = _StubHost()
     await lifecycle.open(host)
 
-    # Sanity: sentinels still present pre-close.
-    assert host._authed_transport == "AUTHED_TRANSPORT_SENTINEL"
+    # Sanity: sentinel still present pre-close.
     assert host._rpc_executor == "RPC_EXECUTOR_SENTINEL"
 
     await lifecycle.close(host)
 
-    assert host._authed_transport is None
     assert host._rpc_executor is None
     assert lifecycle._http_client is None
     assert lifecycle.is_open() is False
@@ -435,8 +431,7 @@ async def test_bound_loop_get_returns_running_loop_after_open() -> None:
     """``get_bound_loop()`` returns the captured loop after open().
 
     The cross-loop affinity ``RuntimeError`` is raised by
-    :class:`AuthedTransport` (which reads ``_bound_loop`` via the host) on
-    actual cross-loop reuse — see
+    ``Session._perform_authed_post`` on actual cross-loop reuse — see
     ``tests/integration/concurrency/test_cross_loop_affinity.py`` for the
     end-to-end exercise. Here we only assert the lifecycle exposes the
     captured loop via :meth:`get_bound_loop`.
@@ -457,8 +452,8 @@ def test_bound_loop_mismatch_via_session_raises_runtime_error() -> None:
     ``RuntimeError`` on the second loop's first authed POST.
 
     Reaches through the ``Session`` facade (rather than ``ClientLifecycle``
-    in isolation) because the guard lives in :class:`AuthedTransport` and
-    only fires from inside an authed POST. The test runs two separate
+    in isolation) because the guard lives in ``Session`` and only fires from
+    inside an authed POST. The test runs two separate
     ``asyncio.run`` invocations to materialise two distinct loops.
     """
     from notebooklm._session import Session

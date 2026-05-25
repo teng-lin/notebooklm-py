@@ -47,10 +47,9 @@ from notebooklm._transport_drain import TransportDrainTracker
 def _terminal_returning(response: httpx.Response) -> NextCall:
     """Build a chain-terminal coroutine that wraps ``response``.
 
-    The chain leaf normally adapts to
-    ``AuthedTransport.perform_authed_post``; this helper short-circuits
-    that adaptation so tests can exercise the middleware without booting
-    a real transport. ``request.context`` is propagated to the
+    The chain leaf normally adapts to ``Kernel.post``; this helper
+    short-circuits that adaptation so tests can exercise the middleware
+    without booting a real transport. ``request.context`` is propagated to the
     ``RpcResponse`` so any outer middleware (or test assertion) sees the
     same context object.
     """

@@ -84,7 +84,7 @@ The seam extractions are behavior-preserving moves. Each one ships with a unit-t
   the property-bridge zoo. The bridges were the *exit cost* of the
   architecture's test patterns, not the seam pattern itself. ADR-002,
   ADR-007, and the later session-shrink arc supplied the removal path.
-- The seam protocols (`RpcOwner`, `DecodeResponse`, `_AuthedTransportHost`, etc.) introduce extra type surface. This pays for itself only because the seams are tested independently — if the seams collapsed back into `_core.py`, the protocols would be ceremonial.
+- The seam protocols (`RpcOwner`, `DecodeResponse`, feature runtime Protocols, etc.) introduce extra type surface. This pays for itself only because the seams are tested independently — if the seams collapsed back into `_core.py`, the protocols would be ceremonial.
 - New contributors must learn the seam map. The CLAUDE.md "Repository Structure" section exists for this reason; it should remain a thin onboarding guide rather than a duplicate of this ADR.
 
 ## Alternatives considered

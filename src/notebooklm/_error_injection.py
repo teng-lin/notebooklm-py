@@ -19,9 +19,8 @@ exercise the substitution path construct the middleware directly with an
 explicit ``builder=`` argument (issue #1005).
 
 **Production behavior is also unchanged when the env var is unset.** The
-middleware delegates straight to ``next_call``; the chain leaf
-(``AuthedTransport.perform_authed_post``) runs exactly as it would
-without the middleware in the chain.
+middleware delegates straight to ``next_call``; the ``Kernel.post`` chain
+terminal runs exactly as it would without the middleware in the chain.
 
 Pre-Tier-12 history (deleted in PR 12.9): this module previously
 defined a ``_SyntheticErrorTransport`` httpx transport that wrapped the

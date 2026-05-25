@@ -1,11 +1,12 @@
 """MetricsMiddleware — per-RPC telemetry emitter for the Tier-12 chain.
 
 Per ADR-009 §"Chain ordering" and master plan §2, ``MetricsMiddleware`` sits
-just inside ``DrainMiddleware`` (and just outside ``RetryMiddleware``) in the
-final chain ordering ``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection,
-Tracing]``. PR 12.4 ships it as the OUTERMOST of two seeded middlewares
-(``[Metrics, Tracing]``); PRs 12.5–12.8 prepend the remaining middlewares
-to its left.
+just inside ``DrainMiddleware`` (and just outside ``SemaphoreMiddleware``) in
+the final chain ordering
+``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+PR 12.4 ships it as the OUTERMOST of two seeded middlewares
+(``[Metrics, Tracing]``); PRs 12.5–12.9 insert the remaining middlewares
+around it while preserving Metrics outside the semaphore.
 
 Pure observer: never mutates ``request`` or transforms ``response``. Around
 ``next_call`` it captures the wall-clock elapsed time of the chain-inner

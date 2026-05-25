@@ -49,7 +49,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     seen_request_ids: list[str | None] = []
 
     # Mock the chain LEAF (innermost wrapper around
-    # ``AuthedTransport.perform_authed_post``) so the real chain runs
+    # ``Kernel.post``) so the real chain runs
     # end-to-end and ``MetricsMiddleware`` sees the call. Mocking
     # ``_perform_authed_post`` itself would bypass the chain entirely
     # and silence the counters this test exists to assert. Mocking

@@ -28,7 +28,7 @@ terminal maps raw ``Kernel.post`` errors to ``TransportRateLimited`` /
 ``AuthRefreshMiddleware`` can catch via ``is_auth_error`` and drive
 refresh-then-retry.
 
-The terminal Adapter reads ``RpcRequest.url`` / ``headers`` / ``body`` and
+The terminal reads ``RpcRequest.url`` / ``headers`` / ``body`` and
 delegates to ``Kernel.post``. ``RetryMiddleware`` reads ``log_label`` /
 ``disable_internal_retries`` from the same ``context`` dict.
 ``AuthRefreshMiddleware`` reads ``log_label`` and uses
@@ -116,8 +116,7 @@ class MiddlewareChainBuilder:
             # ``self._server_error_max_retries`` (an integration-test
             # idiom; production never mutates these) still takes effect —
             # bit-for-bit preserving the pre-PR-12.7 live-binding
-            # contract where ``AuthedTransport`` read these attrs LIVE
-            # inside its retry loop.
+            # contract where the retry loop read these attrs LIVE.
             RetryMiddleware(
                 rate_limit_max_retries=self._rate_limit_max_retries_provider,
                 server_error_max_retries=self._server_error_max_retries_provider,

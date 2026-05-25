@@ -18,12 +18,11 @@ import notebooklm._authed_transport as authed_transport_module
 import notebooklm._conversation_cache as conversation_cache_module
 import notebooklm._cookie_persistence as cookie_persistence_module
 import notebooklm._rpc_executor as rpc_executor_module
+import notebooklm._transport_errors as transport_errors_module
 
 EXPECTED_AUTHED_TRANSPORT_ALL: list[str] = [
     "MAX_RETRY_AFTER_SECONDS",
     "MAX_RPC_RESPONSE_BYTES",
-    "AuthedTransport",
-    "_AuthedTransportHost",
     "AuthSnapshot",
     "BuildRequest",
     "PostBody",
@@ -33,6 +32,8 @@ EXPECTED_AUTHED_TRANSPORT_ALL: list[str] = [
     "parse_retry_after",
     "stream_post_with_size_cap",
 ]
+
+EXPECTED_TRANSPORT_ERRORS_ALL: list[str] = ["raise_mapped_post_error"]
 
 EXPECTED_RPC_EXECUTOR_ALL: list[str] = ["DecodeResponse", "RpcExecutor", "RpcOwner"]
 
@@ -63,11 +64,19 @@ def _check_module_all(module: object, expected: list[str], label: str) -> None:
         )
 
 
-def test_authed_transport_all_pinned() -> None:
+def test_authed_transport_helpers_all_pinned() -> None:
     _check_module_all(
         authed_transport_module,
         EXPECTED_AUTHED_TRANSPORT_ALL,
         "notebooklm._authed_transport",
+    )
+
+
+def test_transport_errors_all_pinned() -> None:
+    _check_module_all(
+        transport_errors_module,
+        EXPECTED_TRANSPORT_ERRORS_ALL,
+        "notebooklm._transport_errors",
     )
 
 

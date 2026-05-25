@@ -32,7 +32,6 @@ import pytest
 
 from conftest import install_post_as_stream
 from notebooklm._authed_transport import (
-    AuthedTransport,
     AuthSnapshot,
     TransportAuthExpired,
     TransportRateLimited,
@@ -156,17 +155,14 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
     The middleware reads ``self._rate_limit_max_retries`` on the host LIVE
     (via the callable factory the chain seed installs) so a test that
     mutates the budget AFTER ``open()`` still takes effect — preserving
-    the pre-PR-12.7 contract where ``AuthedTransport`` read the same
-    attr live inside its loop. Drives the chain via
+    the pre-PR-12.7 contract where the retry loop read the same attr live.
+    Drives the chain via
     ``core._perform_authed_post`` so the assertion exercises the
     production seam ``RpcExecutor.execute`` uses.
     """
     core = _make_core(rate_limit_max_retries=0)
     await core.open()
     try:
-        # AuthedTransport still exists as a compatibility Adapter, while the
-        # production chain now sends through Kernel.post directly.
-        assert isinstance(core._get_authed_transport(), AuthedTransport)
         # Mutate AFTER open() — middleware reads via lambda closure so this
         # bump from 0 → 1 grants a single retry on the next chain call.
         core._rate_limit_max_retries = 1
@@ -203,15 +199,14 @@ async def test_chain_reads_live_retry_budget(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_authed_transport_requires_open_client():
+async def test_perform_authed_post_requires_open_client():
     core = _make_core()
-    transport = core._get_authed_transport()
 
     def build(snapshot: AuthSnapshot) -> tuple[str, str, dict[str, str]]:
         return "https://example.test/x", "payload", {}
 
     with pytest.raises(RuntimeError, match="Client not initialized"):
-        await transport.perform_authed_post(build_request=build, log_label="test")
+        await core._perform_authed_post(build_request=build, log_label="test")
 
 
 @pytest.mark.asyncio
@@ -225,8 +220,7 @@ async def test_auth_refresh_middleware_honors_injected_predicate() -> None:
     monkeypatch and instead constructs the middleware directly with an
     injected predicate. The
     production chain seeds ``AuthRefreshMiddleware`` with
-    ``is_auth_error=_live_is_auth_error`` (see
-    ``notebooklm._session._get_authed_transport``); that wiring is
+    ``is_auth_error=_live_is_auth_error``; that wiring is
     covered separately. Here we pin the middleware-level contract:
     *whatever* predicate is injected drives the refresh-and-retry
     decision.
@@ -285,9 +279,7 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
     1. ``AuthRefreshMiddleware`` honors its injected predicate.
     2. ``Session.__init__`` actually wires the middleware with a
        predicate that recognises real auth errors — currently
-       ``is_auth_error=_live_is_auth_error`` (see
-       ``notebooklm._session._get_authed_transport`` /
-       ``_get_rpc_executor``), where ``_live_is_auth_error`` resolves
+       ``is_auth_error=_live_is_auth_error``, where ``_live_is_auth_error`` resolves
        :func:`notebooklm._session_helpers.is_auth_error` at call time.
 
     Restored in Phase 2 PR 4 after the migration of
@@ -344,9 +336,8 @@ async def test_production_chain_drives_refresh_on_real_401(monkeypatch):
 async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch):
     """``RetryMiddleware`` resolves ``asyncio.sleep`` at call time and uses
     the shared ``random`` module for jitter, so tests can monkey-patch both
-    surfaces post-construction. Pre-PR-12.7 this contract sat on
-    ``AuthedTransport``; PR 12.7 lifted retry into the chain but the
-    same late-bound seam is preserved end-to-end.
+    surfaces post-construction. PR 12.7 lifted retry into the chain but the
+    historical late-bound seam is preserved end-to-end.
     """
     core = _make_core(server_error_max_retries=1)
     await core.open()
@@ -382,11 +373,10 @@ async def test_chain_uses_late_bound_sleep_and_shared_random_uniform(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_authed_transport_disable_internal_retries_short_circuits(monkeypatch):
+async def test_perform_authed_post_disable_internal_retries_short_circuits(monkeypatch):
     core = _make_core(server_error_max_retries=2)
     await core.open()
     try:
-        transport = core._get_authed_transport()
         sleeps: list[float] = []
 
         async def fake_sleep(seconds: float) -> None:
@@ -406,7 +396,7 @@ async def test_authed_transport_disable_internal_retries_short_circuits(monkeypa
         install_post_as_stream(monkeypatch, core._kernel.get_http_client(), fake_post)
 
         with pytest.raises(TransportServerError):
-            await transport.perform_authed_post(
+            await core._perform_authed_post(
                 build_request=build,
                 log_label="test",
                 disable_internal_retries=True,

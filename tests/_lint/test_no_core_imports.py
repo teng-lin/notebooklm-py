@@ -2,7 +2,7 @@
 
 Consolidates five per-file AST guards that previously lived inline in:
 
-- ``tests/unit/test_authed_transport.py::test_authed_transport_has_no_runtime_core_imports``
+- ``tests/unit/test_authed_post_pipeline.py::test_authed_post_pipeline_has_no_runtime_core_imports``
 - ``tests/unit/test_rpc_executor.py::test_rpc_executor_has_no_runtime_core_imports``
 - ``tests/unit/test_auth_session.py::test_auth_session_has_no_runtime_client_or_core_imports``
 - ``tests/unit/test_cookie_persistence.py::test_cookie_persistence_does_not_import_client_core_at_runtime``

@@ -171,9 +171,9 @@ def test_build_chain_empty_middlewares_returns_terminal_unchanged() -> None:
 def test_build_chain_three_middleware_call_order() -> None:
     """First in list is outermost; last in list is innermost.
 
-    Matches ADR-009 chain ordering: ``[Drain, Metrics, Retry, AuthRefresh,
-    ErrorInjection, Tracing]`` → Drain (index 0) is the outermost wrapper,
-    Tracing (index 5) wraps the terminal directly.
+    Matches ADR-009 chain ordering: ``[Drain, Metrics, Semaphore, Retry,
+    AuthRefresh, ErrorInjection, Tracing]`` → Drain (index 0) is the outermost
+    wrapper, Tracing (index 6) wraps the terminal directly.
     """
     log: list[str] = []
 

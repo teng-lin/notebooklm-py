@@ -18,7 +18,7 @@ ADR-009 §"Chain ordering":
 - **Metrics**: ``rpc_rate_limit_retries`` / ``rpc_server_error_retries``
   increment per retry (NOT for the original failed attempt — same
   semantics as the pre-PR-12.7 legacy loop in
-  ``AuthedTransport.perform_authed_post``).
+  the transport POST path).
 - **Log lines** match the legacy "rate-limited (HTTP 429); sleeping (…);
   retrying (n/N)" / "server/network error (…); backing off …; retrying
   (n/N)" shape so log-grep alerts keep matching.
@@ -580,7 +580,7 @@ async def test_non_transport_exception_propagates_without_retry() -> None:
 
     A generic ``RuntimeError`` from a deeper middleware (e.g. drain
     rejection) must propagate without consuming the retry budget.
-    Pre-PR-12.7 the legacy ``AuthedTransport`` loop only caught
+    Pre-PR-12.7 the legacy transport loop only caught
     ``httpx.HTTPStatusError`` / ``httpx.RequestError``; the middleware
     only catches the two named transport-exception types so
     ``DrainMiddleware``'s ``RuntimeError("draining…")`` still propagates.

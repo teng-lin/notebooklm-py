@@ -10,10 +10,10 @@ new shared chokepoint that every async entry point on the seam helpers
 actionable ``RuntimeError`` at the call site rather than hanging on a
 lock bound to a dead loop.
 
-The inline guard at ``_authed_transport.py:258-262`` already covers the
-transport-POST path. The new guard extends the same contract to the four
-async entry points that don't pass through that POST path (drain, reqid,
-auth refresh, artifact polling) and to the chat-ask lock that
+The guard in ``Session._perform_authed_post`` already covers the
+transport-POST path. The shared guard extends the same contract to the
+four async entry points that don't pass through that POST path (drain,
+reqid, auth refresh, artifact polling) and to the chat-ask lock that
 ``_perform_authed_post`` only catches *after* the per-conversation lock
 acquire — too late.
 

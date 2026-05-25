@@ -110,7 +110,8 @@ a Protocol-shim host interface so it can be unit-tested against a stub
 | `_session_auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
 | `_session_lifecycle.py` | `ClientLifecycle` | Loop-affinity guard, `aclose` plumbing, keepalive task wiring. |
 | `_rpc_executor.py` | `RpcExecutor` | RPC dispatch executor with `DecodeResponse` + `RpcOwner` Protocols. |
-| `_authed_transport.py` | `AuthedTransport` | Authed HTTP POST path, retry loops (429 + 5xx). |
+| `_authed_transport.py` | `AuthSnapshot`, transport exceptions, streaming helpers | Transport request types and low-level POST helpers. |
+| `_transport_errors.py` | `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
 | `_conversation_cache.py` | `ConversationCache` | Per-instance LRU conversation cache for `ChatAPI` continuity. |
 | `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
 | `_cookie_persistence.py` | `CookiePersistence` | Cookie-jar → storage-state serialization, `__Secure-1PSIDTS` rotation. |

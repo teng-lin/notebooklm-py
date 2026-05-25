@@ -255,8 +255,8 @@ class ChatAPI:
         """
         # P0-2: catch cross-loop ``ask`` before any work — particularly
         # before acquiring the per-conversation lock below, which would
-        # otherwise hang on a lock bound to a dead loop. The transport
-        # guard at ``_authed_transport.py:258-262`` only catches misuse on
+        # otherwise hang on a lock bound to a dead loop. The POST-path
+        # guard in ``Session._perform_authed_post`` only catches misuse on
         # the POST itself, which is *after* the conversation lock is
         # already held — too late.
         self._runtime.assert_bound_loop()

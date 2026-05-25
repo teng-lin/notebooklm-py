@@ -1,28 +1,27 @@
 """RetryMiddleware — 429/5xx retry loop for the Tier-12 chain.
 
 Per ADR-009 §"Chain ordering", ``RetryMiddleware`` sits just *inside*
-``MetricsMiddleware`` and just *outside* ``AuthRefreshMiddleware`` (which
-extracts in PR 12.8). The final Tier-12 chain is
-``[Drain, Metrics, Retry, AuthRefresh, ErrorInjection, Tracing]``. PR 12.7
-ships the interim 5-middleware chain
-``[Drain, Metrics, Retry, ErrorInjection, Tracing]``; PR 12.8 inserts
-``AuthRefresh`` BETWEEN ``Retry`` and ``ErrorInjection``.
+``SemaphoreMiddleware`` and just *outside* ``AuthRefreshMiddleware``. The
+final Tier-12 chain is
+``[Drain, Metrics, Semaphore, Retry, AuthRefresh, ErrorInjection, Tracing]``.
+PR 12.7 shipped the interim 5-middleware chain
+``[Drain, Metrics, Retry, ErrorInjection, Tracing]``; PR 12.8 inserted
+``AuthRefresh`` BETWEEN ``Retry`` and ``ErrorInjection``, and PR 12.9 inserted
+``Semaphore`` BETWEEN ``Metrics`` and ``Retry``.
 
-This PR lifts the **retry-on-429** and **retry-on-5xx/network** loops out
-of ``AuthedTransport.perform_authed_post`` (the chain leaf). After PR
-12.7 the leaf is a single POST attempt that raises
+This middleware owns the **retry-on-429** and **retry-on-5xx/network** loops.
+The chain leaf is a single ``Kernel.post`` attempt that raises
 :class:`TransportRateLimited` on HTTP 429 or
 :class:`TransportServerError` on HTTP 5xx / network failures —
 **immediately**, without internal retry. The middleware catches those
 exceptions and decides whether to retry by re-invoking the chain.
-Auth-refresh-and-retry stays in the leaf as a localized loop until PR
-12.8 lifts it.
+Auth-refresh-and-retry lives in :class:`AuthRefreshMiddleware`.
 
 Behavior preservation (vs. pre-PR-12.7):
 
 - **Same retry counts** — ``rate_limit_max_retries`` /
   ``server_error_max_retries`` are propagated from ``Session`` so the
-  budget matches the legacy ``AuthedTransport`` loop.
+  budget matches the historical transport loop.
 - **Same backoff timing** — :func:`_backoff.compute_backoff_delay` is
   invoked with the same ``base=1.0`` / ``cap=30.0`` / ``jitter_ratio=0.2``
   parameters; ``Retry-After`` is honored before falling back to
@@ -43,21 +42,8 @@ Behavior preservation (vs. pre-PR-12.7):
   ``_chat_transport.chat_aware_authed_post`` (which catches both) sees
   the same shape it always did.
 
-Subtle behavioral note (interim until PR 12.8 lands): pre-PR-12.7 the
-auth-refresh-and-retry counter (``refreshed_this_call``) sat inside the
-same ``while True`` as the 429/5xx counters, so a single call could
-auth-refresh at most once across ALL its retries. Post-PR-12.7, each
-``RetryMiddleware`` retry is a fresh chain invocation which means a fresh
-leaf invocation with its OWN ``refreshed_this_call``. In theory the same
-call could now auth-refresh once per retry. In practice auth refreshes
-are idempotent (they get fresh tokens), and ``RetryMiddleware``'s own
-budget bounds the total work — no infinite loop is possible. PR 12.8
-collapses this back into a single coordinated refresh path by lifting
-auth-refresh into a chain middleware outside this one.
-
 See ``docs/adr/0009-middleware-chain.md`` for the chain contract,
-``src/notebooklm/_authed_transport.py`` for the (slimmed) leaf and the
-exception types this middleware catches, and
+``src/notebooklm/_transport_errors.py`` for the terminal error mapper, and
 ``.sisyphus/plans/tier-12-13-greenfield-migration.md`` row 12.7 for the
 PR sequence.
 """
@@ -78,9 +64,7 @@ if TYPE_CHECKING:
     from ._client_metrics import ClientMetrics
 
 
-# Backoff parameters lifted verbatim from the pre-PR-12.7 retry loop in
-# ``AuthedTransport.perform_authed_post`` so end-to-end retry timing is
-# preserved bit-for-bit.
+# Backoff parameters preserve the historical transport retry timing.
 _BACKOFF_BASE_SECONDS = 1.0
 _BACKOFF_CAP_SECONDS = 30.0
 _BACKOFF_JITTER_RATIO = 0.2
@@ -99,8 +83,7 @@ class RetryMiddleware:
     Constructor inputs (all wired by ``Session.__init__``):
 
     - ``rate_limit_max_retries`` / ``server_error_max_retries``: the same
-      budgets ``Session`` previously passed to ``AuthedTransport`` via
-      the host attributes ``_rate_limit_max_retries`` /
+      budgets exposed by ``Session`` via ``_rate_limit_max_retries`` /
       ``_server_error_max_retries``.
     - ``sleep``: the awaitable sleep function. Defaults to
       :func:`asyncio.sleep`; tests inject a stub to make backoff
@@ -125,11 +108,11 @@ class RetryMiddleware:
         metrics: ClientMetrics | None = None,
     ) -> None:
         # Budgets accept either a static int OR a zero-arg callable. The
-        # callable form preserves the pre-PR-12.7 contract where
-        # ``AuthedTransport`` read ``host._rate_limit_max_retries`` /
-        # ``host._server_error_max_retries`` LIVE inside the retry loop, so
-        # tests (and any production tweaks) that mutate those attrs on the
-        # core after ``open()`` still take effect. ``Session.__init__``
+        # callable form preserves the historical contract where the retry
+        # loop read ``host._rate_limit_max_retries`` /
+        # ``host._server_error_max_retries`` LIVE, so tests (and any
+        # production tweaks) that mutate those attrs on the core after
+        # ``open()`` still take effect. ``Session.__init__``
         # wires the callable form via a ``lambda: self._rate_limit_max_retries``
         # closure; tests that build a middleware in isolation typically pass
         # the int form.
