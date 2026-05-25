@@ -27,7 +27,7 @@ The auth-snapshot lock hardened the invariant by:
   refresh's write to ``self.auth.session_id`` slip into the URL between
   snapshot capture and request build.
 
-This file *locks* the invariant in three ways:
+This file *locks* the invariant in four ways:
 
 1. ``test_kernel_post_terminal_has_no_await_before_post_per_attempt`` —
    static AST guard against an ``await`` inside the terminal's ``try`` body
@@ -46,6 +46,13 @@ This file *locks* the invariant in three ways:
    an in-flight ``rpc_call`` (both orderings) and asserts the captured
    ``httpx.Request`` is never observed with mixed-generation (csrf,
    session_id, cookies) state.
+
+4. ``test_auth_refresh_rebuild_has_no_await_after_snapshot_capture`` —
+   static guard on the auth-refresh retry rebuild: once the post-refresh
+   snapshot has been captured, pairing ``context["auth_snapshot"]`` with
+   the rebuilt envelope must remain synchronous. The terminal still owns
+   the final before-wire freshness check because inner middlewares may
+   await after this rebuild.
 """
 
 from __future__ import annotations
@@ -62,6 +69,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from notebooklm._middleware_auth_refresh import AuthRefreshMiddleware
 from notebooklm._rpc_executor import RpcExecutor
 from notebooklm._session import Session
 from notebooklm._session_auth import AuthRefreshCoordinator
@@ -219,6 +227,48 @@ def test_terminal_freshness_check_has_no_await_after_materialization():
         "Session._refresh_request_for_current_auth must not await after "
         "materialize_rpc_request; that would let auth/cookies move between "
         "request rebuild and Kernel.post."
+    )
+
+
+def test_auth_refresh_rebuild_has_no_await_after_snapshot_capture():
+    """Auth-refresh retry rebuild pairs fresh snapshot and envelope atomically."""
+    src = textwrap.dedent(inspect.getsource(AuthRefreshMiddleware._rebuild_request_after_refresh))
+    tree = ast.parse(src)
+    func = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef))
+
+    snapshot_awaits = [
+        (n.lineno, n.col_offset)
+        for n in ast.walk(func)
+        if isinstance(n, ast.Await)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Attribute)
+        and n.value.func.attr == "_snapshot_provider"
+    ]
+    assert snapshot_awaits, "Could not locate await self._snapshot_provider()"
+    snapshot_position = min(snapshot_awaits)
+
+    materialize_positions = [
+        (n.lineno, n.col_offset)
+        for n in ast.walk(func)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "materialize_rpc_request"
+    ]
+    assert materialize_positions, "Could not locate materialize_rpc_request in refresh rebuild"
+    assert snapshot_position < min(materialize_positions), (
+        "AuthRefreshMiddleware._rebuild_request_after_refresh must capture "
+        "the fresh snapshot before rebuilding the retry envelope."
+    )
+
+    later_awaits = [
+        n
+        for n in ast.walk(func)
+        if isinstance(n, ast.Await) and (n.lineno, n.col_offset) > snapshot_position
+    ]
+    assert later_awaits == [], (
+        "AuthRefreshMiddleware._rebuild_request_after_refresh must not await "
+        "after capturing the fresh snapshot; context['auth_snapshot'] and the "
+        "rebuilt RpcRequest must stay paired until the terminal freshness check."
     )
 
 

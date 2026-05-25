@@ -235,7 +235,13 @@ class AuthRefreshMiddleware:
             return await next_call(retry_request)
 
     async def _rebuild_request_after_refresh(self, request: RpcRequest) -> RpcRequest:
-        """Return a refreshed request envelope when production collaborators exist."""
+        """Return a refreshed request envelope when production collaborators exist.
+
+        After the fresh snapshot await returns, keep the context update and
+        envelope materialization synchronous. The terminal still performs a
+        final freshness check immediately before ``Kernel.post`` because inner
+        middlewares may await between this retry rebuild and the wire.
+        """
         if self._snapshot_provider is None:
             return request
 
@@ -245,6 +251,8 @@ class AuthRefreshMiddleware:
 
         build_request = cast(BuildRequest, raw_build_request)
         snapshot = await self._snapshot_provider()
+        # Keep ``auth_snapshot`` and the rebuilt envelope paired in one
+        # synchronous block; see ``test_concurrency_refresh_race``.
         request.context["auth_snapshot"] = snapshot
         return materialize_rpc_request(
             build_request=build_request,

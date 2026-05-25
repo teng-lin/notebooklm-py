@@ -833,7 +833,7 @@ class Session:
         """
         request = await self._refresh_request_for_current_auth(request)
         context = request.context
-        log_label = context["log_label"]
+        log_label = context.get("log_label", "<unknown-chain-call>")
         start = time.perf_counter()
         try:
             response = await self._kernel.post(

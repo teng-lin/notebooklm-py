@@ -28,6 +28,7 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
+from notebooklm._authed_transport import TransportServerError
 from notebooklm._middleware import (
     Middleware,
     NextCall,
@@ -220,6 +221,32 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
 
     assert fake.call_count == 1
     assert fake.calls[0]["url"] == "https://fake/no-retry-flag"
+
+
+@pytest.mark.asyncio
+async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
+    """Direct terminal calls without context metadata still map errors safely."""
+    core = _make_core()
+
+    async def raise_network_error(
+        url: str,
+        *,
+        headers: Any,
+        body: bytes,
+    ) -> httpx.Response:
+        request = httpx.Request("POST", url, headers=dict(headers), content=body)
+        raise httpx.RequestError("boom", request=request)
+
+    core._kernel.post = raise_network_error  # type: ignore[method-assign]
+    request = RpcRequest(
+        url="https://fake/no-log-label",
+        headers={},
+        body=b"",
+        context={},
+    )
+
+    with pytest.raises(TransportServerError, match="<unknown-chain-call> network error"):
+        await core._authed_post_chain_terminal(request)
 
 
 @pytest.mark.asyncio
