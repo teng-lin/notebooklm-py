@@ -14,6 +14,7 @@ from ._authed_transport import (
     AuthedTransport,
     AuthSnapshot,
     BuildRequest,
+    PostBody,
 )
 from ._client_metrics import ClientMetrics
 from ._cookie_persistence import CookiePersistence
@@ -26,6 +27,7 @@ from ._middleware import (
     RpcRequest,
     RpcResponse,
     build_chain,
+    materialize_rpc_request,
 )
 from ._middleware_chain import MiddlewareChainBuilder
 from ._middleware_semaphore import RPC_QUEUE_WAIT_CONTEXT_KEY
@@ -82,6 +84,8 @@ if TYPE_CHECKING:
 from .rpc import RPCMethod
 
 logger = logging.getLogger(__name__)
+
+_BuildRequestTuple = tuple[str, PostBody, dict[str, str] | None]
 
 # Auth-snapshot canonical implementation lives on
 # :class:`AuthRefreshCoordinator` (``_session_auth.py`` —
@@ -141,6 +145,38 @@ def _live_is_auth_error(exc: Exception) -> bool:
     from ._session_helpers import is_auth_error
 
     return is_auth_error(exc)
+
+
+def _cached_first_build_request(
+    *,
+    original: BuildRequest,
+    cached_result: _BuildRequestTuple,
+    cached_snapshot: AuthSnapshot,
+) -> BuildRequest:
+    """Return the materialized first request once, then delegate.
+
+    ``Session._perform_authed_post`` materializes ``RpcRequest`` before
+    entering the middleware chain so middlewares can observe URL, headers, and
+    body. The legacy terminal still calls ``AuthedTransport.perform_authed_post``,
+    which expects a ``BuildRequest`` callback. This adapter lets that first
+    terminal call reuse the already-built tuple when it observes the same auth
+    snapshot, preserving the historical "one build per HTTP attempt" contract.
+
+    If the terminal sees a different snapshot on its first call (for example,
+    auth refreshed while the request was queued), discard the cached tuple and
+    rebuild from the fresh snapshot.
+    """
+    first_call = True
+
+    def _build(snapshot: AuthSnapshot) -> _BuildRequestTuple:
+        nonlocal first_call
+        if first_call:
+            first_call = False
+            if snapshot == cached_snapshot:
+                return cached_result
+        return original(snapshot)
+
+    return _build
 
 
 class Session:
@@ -748,11 +784,14 @@ class Session:
         → four scalar reads → return) but routes the lock-wait metric
         through ``host._metrics_obj`` directly rather than via the
         ``_record_lock_wait`` facade. Whole-request atomicity for
-        ``(csrf, sid, cookies)`` on the wire still depends on the
-        no-await invariant between this method returning and
-        ``client.post(...)`` inside :meth:`_perform_authed_post` (see
+        ``(csrf, sid, cookies)`` on the wire still depends on the terminal's
+        no-await invariant in :meth:`AuthedTransport.perform_authed_post` (see
         the related AST guard in
-        ``tests/unit/test_concurrency_refresh_race.py``).
+        ``tests/unit/test_concurrency_refresh_race.py``). During the
+        request-envelope migration, :meth:`_perform_authed_post` also takes a
+        pre-chain snapshot for middleware-visible materialization; the legacy
+        terminal re-snapshots before the actual POST and discards the cached
+        tuple if auth changed while the call was queued.
         """
         return await self._auth_coord.snapshot(self)
 
@@ -804,15 +843,12 @@ class Session:
         ``self._get_authed_transport()`` is resolved on every invocation so
         late-bound monkeypatches of ``_get_authed_transport`` (e.g. fixtures
         that swap the transport mid-test) still affect live behavior. The
-        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
-        dataclass fields stay unpopulated through Tier-12 — middlewares
-        in PRs 12.3–12.9 carried behavior out of :class:`AuthedTransport`
-        but the leaf still rebuilds the request from ``build_request`` +
-        ``AuthSnapshot`` rather than reading the dataclass fields.
-        Population is deferred to Tier-13 row 13.2 (``Kernel.post``
-        rewrite) — see ADR-009 close-out notes §"AuthRefreshMiddleware
-        shipped without rebuild closures". See ADR-009
-        §"RpcRequest.context keys" for the metadata vocabulary.
+        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body`` fields
+        are populated before chain entry for middleware visibility, but this
+        transitional leaf still delegates through ``build_request`` until the
+        Tier-13 ``Kernel.post`` terminal rewrite lands. See ADR-009
+        §"RpcRequest.context keys" and close-out notes §"AuthRefreshMiddleware
+        shipped without rebuild closures" for the metadata vocabulary.
         """
         context = request.context
         build_request = context["build_request"]
@@ -853,9 +889,15 @@ class Session:
         matching the pre-chain behavior (where ``_chat_transport`` never
         called ``_emit_rpc_event``).
 
-        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body``
-        intentionally stay empty until PRs 12.5/12.7/12.8 begin populating
-        them as middlewares strip behavior out of :class:`AuthedTransport`.
+        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body`` are
+        populated through :func:`materialize_rpc_request` before the chain sees
+        the request. Until the terminal switches to ``Kernel.post`` directly,
+        ``context["build_request"]`` is a first-call cache adapter over the
+        original callback so the legacy terminal does not call the request
+        builder twice on the happy path. The terminal still re-snapshots before
+        the actual POST and only reuses this materialized tuple when that
+        snapshot matches, preserving the wire-path no-await invariant while the
+        envelope becomes visible to middlewares.
         """
         # Event-loop affinity guard. Session-shrink PR 3 lifted this OUT of
         # ``AuthedTransport.perform_authed_post`` (where it ran once per
@@ -865,16 +907,27 @@ class Session:
         # currently-running loop differs from the one captured at
         # ``open()``-time.
         self.assert_bound_loop()
-        request = RpcRequest(
-            url="",
-            headers={},
-            body=b"",
-            context={
-                "build_request": build_request,
-                "log_label": log_label,
-                "disable_internal_retries": disable_internal_retries,
-                "rpc_method": rpc_method,
-            },
+        context = {
+            "build_request": build_request,
+            "log_label": log_label,
+            "disable_internal_retries": disable_internal_retries,
+            "rpc_method": rpc_method,
+        }
+        snapshot = await self._snapshot()
+        cached_result = build_request(snapshot)
+
+        def _materialized_build_request(_snapshot: AuthSnapshot) -> _BuildRequestTuple:
+            return cached_result
+
+        context["build_request"] = _cached_first_build_request(
+            original=build_request,
+            cached_result=cached_result,
+            cached_snapshot=snapshot,
+        )
+        request = materialize_rpc_request(
+            build_request=_materialized_build_request,
+            snapshot=snapshot,
+            context=context,
         )
 
         # The ``max_concurrent_rpcs`` slot is acquired by
