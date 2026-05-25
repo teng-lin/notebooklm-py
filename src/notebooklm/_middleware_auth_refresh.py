@@ -8,14 +8,13 @@ Tier-12 chain (post-PR 12.9, after ``SemaphoreMiddleware`` was inserted between
 PR 12.8 inserts ``AuthRefresh`` between ``Retry`` and ``ErrorInjection`` so
 this ordering is now realized end-to-end.
 
-This PR lifts the **auth-refresh-once retry** loop out of
-``AuthedTransport.perform_authed_post`` (the chain leaf). After PR 12.8 the
-leaf is a *pure* POST that lets ``httpx.HTTPStatusError`` /
-``httpx.RequestError`` propagate raw for auth errors (the 429 / 5xx
-exception-raisers stay since they feed ``RetryMiddleware``). The middleware
+This middleware owns the **auth-refresh-once retry** loop. The leaf is a
+*pure* ``Kernel.post`` terminal that lets ``httpx.HTTPStatusError`` /
+``httpx.RequestError`` propagate raw for auth errors (the 429 / 5xx mapping
+stays at the terminal since it feeds ``RetryMiddleware``). The middleware
 catches the raw auth-error ``httpx.HTTPStatusError``, triggers a coalesced
-refresh via :class:`AuthRefreshCoordinator`, then re-invokes ``next_call``
-exactly once.
+refresh via :class:`AuthRefreshCoordinator`, rebuilds the request envelope,
+then re-invokes ``next_call`` exactly once.
 
 Why "exactly once": ADR-009 §"Retry semantics" pins
 "**exactly one** retry per ``next_call`` invocation. If the retry also
@@ -38,15 +37,11 @@ the legacy ``AuthedTransport`` behavior so a cassette that recorded the
 post-refresh delay replays the same timing.
 
 Request-materialization transition: ``Session`` now enters the chain with
-the initial ``RpcRequest.url`` / ``.headers`` / ``.body`` populated, but the
-leaf still sends through ``context["build_request"]``. A simple
-``await next_call(request)`` on the unchanged envelope remains sufficient:
-the legacy leaf re-snapshots auth state via
-``AuthRefreshCoordinator.snapshot`` (which sees the refreshed tokens) and
-re-builds headers + body from the callback on retry. The full
-closure-callback contract from ADR-009 §"AuthRefreshMiddleware constructor
-signature" activates when the leaf shrinks to a pure ``Kernel.post`` seam
-and refreshed retries must replace the envelope itself.
+the initial ``RpcRequest.url`` / ``.headers`` / ``.body`` populated and the
+terminal consumes that envelope through ``Kernel.post``. After a successful
+refresh this middleware re-snapshots auth state and replaces the request
+envelope before retrying so the terminal never sends stale URL/body/header
+values.
 
 This regression-fix from PR 12.7 also closes here: pre-PR-12.7 the leaf's
 ``refreshed_this_call`` lived in the same loop as 429/5xx retries (one
@@ -69,12 +64,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
 
-from ._authed_transport import TransportAuthExpired
-from ._middleware import NextCall, RpcRequest, RpcResponse
+from ._authed_transport import AuthSnapshot, BuildRequest, TransportAuthExpired
+from ._middleware import NextCall, RpcRequest, RpcResponse, materialize_rpc_request
 from ._session_config import CORE_LOGGER_NAME
 from ._session_helpers import resolve_sleep
 
@@ -115,6 +110,10 @@ class AuthRefreshMiddleware:
       ``lambda: self._refresh_retry_delay`` so a test that mutates the
       attr on the live client still takes effect (matches the live-binding
       contract preserved for retry budgets in PR 12.7).
+    - ``snapshot_provider``: optional async callable returning a fresh
+      :class:`AuthSnapshot` after refresh. Production wires
+      :meth:`Session._snapshot`; tests that omit it preserve the older
+      "retry the same request" unit shape.
     - ``sleep``: optional sleep injection (defaults to :func:`asyncio.sleep`
       resolved at call time via :func:`_session_helpers.resolve_sleep` —
       the same shared helper :class:`RetryMiddleware` uses).
@@ -134,6 +133,7 @@ class AuthRefreshMiddleware:
         is_auth_error: Callable[[Exception], bool],
         refresh_callback_enabled: Callable[[], bool],
         refresh_retry_delay: Callable[[], float],
+        snapshot_provider: Callable[[], Awaitable[AuthSnapshot]] | None = None,
         sleep: Callable[[float], Awaitable[object]] | None = None,
         logger: logging.Logger | None = None,
         metrics: ClientMetrics | None = None,
@@ -142,6 +142,7 @@ class AuthRefreshMiddleware:
         self._is_auth_error = is_auth_error
         self._refresh_callback_enabled = refresh_callback_enabled
         self._refresh_retry_delay = refresh_retry_delay
+        self._snapshot_provider = snapshot_provider
         # Late-binding rationale lives on ``_session_helpers.resolve_sleep``.
         self._sleep = sleep
         self._logger = logger or logging.getLogger(CORE_LOGGER_NAME)
@@ -183,8 +184,10 @@ class AuthRefreshMiddleware:
            ``TransportAuthExpired(original=exc)`` and propagate.
         5. Optional post-refresh sleep (``refresh_retry_delay``).
         6. Increment ``rpc_auth_retries`` metric.
-        7. Re-invoke ``next_call(request)`` — exactly once. If the retry
-           also raises, propagate unchanged (no second refresh,
+        7. Rebuild the request envelope when a ``snapshot_provider`` and
+           ``context["build_request"]`` are available.
+        8. Re-invoke ``next_call(retry_request)`` — exactly once. If the
+           retry also raises, propagate unchanged (no second refresh,
            no recursion).
         """
         log_label = request.context.get("log_label", "<unknown-chain-call>")
@@ -223,11 +226,31 @@ class AuthRefreshMiddleware:
             if self._metrics is not None:
                 self._metrics.increment(rpc_auth_retries=1)
 
+            retry_request = await self._rebuild_request_after_refresh(request)
+
             # Exactly one retry. If this raises (auth or otherwise), the
             # exception propagates — the outer caller decides what to do
             # (chat error mapping, RetryMiddleware does NOT catch auth
             # errors so a persistent 401 won't burn its budget).
-            return await next_call(request)
+            return await next_call(retry_request)
+
+    async def _rebuild_request_after_refresh(self, request: RpcRequest) -> RpcRequest:
+        """Return a refreshed request envelope when production collaborators exist."""
+        if self._snapshot_provider is None:
+            return request
+
+        raw_build_request = request.context.get("build_request")
+        if raw_build_request is None:
+            return request
+
+        build_request = cast(BuildRequest, raw_build_request)
+        snapshot = await self._snapshot_provider()
+        request.context["auth_snapshot"] = snapshot
+        return materialize_rpc_request(
+            build_request=build_request,
+            snapshot=snapshot,
+            context=request.context,
+        )
 
 
 __all__ = ["AuthRefreshMiddleware"]

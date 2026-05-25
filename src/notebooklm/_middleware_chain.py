@@ -1,9 +1,9 @@
 """Composes the ADR-009 middleware chain.
 
 Tier-12 PR 12.2 wired an empty middleware chain around
-``AuthedTransport.perform_authed_post`` (the shared seam covering
-``Session._perform_authed_post`` and ``RpcExecutor.execute``'s call to
-``self._owner._perform_authed_post`` at ``_rpc_executor.py:245``).
+``Kernel.post`` through ``Session._authed_post_chain_terminal`` (the shared
+seam covering ``Session._perform_authed_post`` and ``RpcExecutor.execute``'s
+call to ``self._owner._perform_authed_post`` at ``_rpc_executor.py:245``).
 
 PR 12.3 added ``TracingMiddleware`` (innermost), PR 12.4 prepended
 ``MetricsMiddleware``, PR 12.5 prepended ``DrainMiddleware`` outermost,
@@ -21,20 +21,19 @@ the innermost wrapper.
 
 PR 12.7 lifted the 429 / 5xx retry loops out of the leaf into
 ``RetryMiddleware``; PR 12.8 lifts the auth-refresh-once retry too.
-After PR 12.8 the leaf is a *pure* POST — every retry decision happens
-in the chain. The leaf still raises ``TransportRateLimited`` /
-``TransportServerError`` for 429 / 5xx so ``RetryMiddleware`` can
-catch; raw ``httpx.HTTPStatusError`` (400/401/403) propagates so
+The leaf is a *pure* POST — every retry decision happens in the chain. The
+terminal maps raw ``Kernel.post`` errors to ``TransportRateLimited`` /
+``TransportServerError`` for 429 / 5xx so ``RetryMiddleware`` can catch; raw
+``httpx.HTTPStatusError`` (400/401/403) propagates so
 ``AuthRefreshMiddleware`` can catch via ``is_auth_error`` and drive
 refresh-then-retry.
 
-The terminal adapter reads ``build_request`` / ``log_label`` /
-``disable_internal_retries`` from ``RpcRequest.context`` and delegates
-to ``self._get_authed_transport().perform_authed_post``.
-``RetryMiddleware`` reads ``log_label`` / ``disable_internal_retries``
-from the same ``context`` dict. ``AuthRefreshMiddleware`` reads
-``log_label``. See ADR-009 §"Per-request behavior" and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160.
+The terminal Adapter reads ``RpcRequest.url`` / ``headers`` / ``body`` and
+delegates to ``Kernel.post``. ``RetryMiddleware`` reads ``log_label`` /
+``disable_internal_retries`` from the same ``context`` dict.
+``AuthRefreshMiddleware`` reads ``log_label`` and uses
+``context["build_request"]`` to rebuild the envelope after refresh. See
+ADR-009 §"Per-request behavior".
 
 The order is pinned at two levels:
 * facade-level by ``tests/unit/test_chain_wiring.py::test_chain_seeded_with_final_adr_009_ordering``
@@ -77,6 +76,7 @@ class MiddlewareChainBuilder:
         server_error_max_retries_provider: Callable[[], int],
         refresh_retry_delay_provider: Callable[[], float],
         refresh_callable: Callable[..., Awaitable[Any]],
+        auth_snapshot_provider: Callable[[], Awaitable[Any]],
         is_auth_error: Callable[[Exception], bool],
         refresh_callback_enabled_provider: Callable[[], bool],
     ) -> None:
@@ -92,6 +92,7 @@ class MiddlewareChainBuilder:
         self._server_error_max_retries_provider = server_error_max_retries_provider
         self._refresh_retry_delay_provider = refresh_retry_delay_provider
         self._refresh_callable = refresh_callable
+        self._auth_snapshot_provider = auth_snapshot_provider
         self._is_auth_error = is_auth_error
         self._refresh_callback_enabled_provider = refresh_callback_enabled_provider
 
@@ -135,11 +136,16 @@ class MiddlewareChainBuilder:
             # ``is_auth_error`` is bound late (see ``_live_is_auth_error``
             # in ``_session.py``) so test monkeypatches of
             # ``notebooklm._core.is_auth_error`` reach the chain.
+            # ``auth_snapshot_provider`` gives AuthRefreshMiddleware a
+            # fresh post-refresh snapshot so it can replace the
+            # populated request envelope before retrying the Kernel.post
+            # terminal.
             AuthRefreshMiddleware(
                 refresh_callable=self._refresh_callable,
                 is_auth_error=self._is_auth_error,
                 refresh_callback_enabled=self._refresh_callback_enabled_provider,
                 refresh_retry_delay=self._refresh_retry_delay_provider,
+                snapshot_provider=self._auth_snapshot_provider,
                 metrics=self._metrics,
             ),
             ErrorInjectionMiddleware(),

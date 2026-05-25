@@ -431,7 +431,7 @@ async def test_rpc_call_host_off_allowlist_ignores_override(monkeypatch):
 
         assert f"rpcids={RPCMethod.LIST_NOTEBOOKS.value}" in captured["url"]
         assert "shouldNOTApply" not in captured["url"]
-        assert "shouldNOTApply" not in captured["content"]
+        assert b"shouldNOTApply" not in captured["content"]
     finally:
         await core.close()
 

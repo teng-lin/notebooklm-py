@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 import httpx
 
@@ -162,6 +162,53 @@ class TransportServerError(Exception):
 # this once per attempt so refreshed snapshots are picked up on retry.
 PostBody = str | bytes
 BuildRequest = Callable[[AuthSnapshot], tuple[str, PostBody, dict[str, str] | None]]
+
+
+def _raise_mapped_post_error(
+    *,
+    log_label: str,
+    exc: httpx.HTTPStatusError | httpx.RequestError,
+    start: float,
+    logger: logging.Logger,
+) -> NoReturn:
+    """Map raw ``Kernel.post`` errors to transport exceptions, then raise.
+
+    Both the legacy :class:`AuthedTransport` leaf and the production
+    middleware terminal need identical HTTP error semantics while the
+    AuthedTransport Adapter is retired. Keeping the mapping here prevents
+    drift between the two paths during the transition.
+    """
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
+        raise TransportRateLimited(
+            f"{log_label} rate-limited (HTTP 429)",
+            retry_after=retry_after,
+            response=exc.response,
+            original=exc,
+        ) from exc
+
+    if isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600:
+        raise TransportServerError(
+            f"{log_label} server error (HTTP {exc.response.status_code})",
+            original=exc,
+            response=exc.response,
+            status_code=exc.response.status_code,
+        ) from exc
+
+    if isinstance(exc, httpx.RequestError):
+        raise TransportServerError(
+            f"{log_label} network error: {exc}",
+            original=exc,
+        ) from exc
+
+    elapsed = time.perf_counter() - start
+    logger.debug(
+        "%s transport error after %.3fs: %s",
+        log_label,
+        elapsed,
+        exc,
+    )
+    raise exc
 
 
 async def stream_post_with_size_cap(
@@ -342,42 +389,12 @@ class AuthedTransport:
                 body=body,
             )
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
-            # --- 429: raise for ``RetryMiddleware`` to catch ----------
-            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-                retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
-                raise TransportRateLimited(
-                    f"{log_label} rate-limited (HTTP 429)",
-                    retry_after=retry_after,
-                    response=exc.response,
-                    original=exc,
-                ) from exc
-
-            # --- 5xx / network: raise for ``RetryMiddleware`` ---------
-            if isinstance(exc, httpx.HTTPStatusError) and 500 <= exc.response.status_code < 600:
-                raise TransportServerError(
-                    f"{log_label} server error (HTTP {exc.response.status_code})",
-                    original=exc,
-                    response=exc.response,
-                    status_code=exc.response.status_code,
-                ) from exc
-            if isinstance(exc, httpx.RequestError):
-                raise TransportServerError(
-                    f"{log_label} network error: {exc}",
-                    original=exc,
-                ) from exc
-
-            # --- 4xx auth shapes (400/401/403) and everything else:
-            # propagate the raw ``httpx.HTTPStatusError`` so
-            # ``AuthRefreshMiddleware`` outside this leaf decides whether
-            # to refresh-and-retry via ``is_auth_error``.
-            elapsed = time.perf_counter() - start
-            self._logger.debug(
-                "%s transport error after %.3fs: %s",
-                log_label,
-                elapsed,
-                exc,
+            _raise_mapped_post_error(
+                log_label=log_label,
+                exc=exc,
+                start=start,
+                logger=self._logger,
             )
-            raise
 
         # Success
         return response

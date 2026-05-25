@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random  # noqa: F401 - tests patch this for _backoff jitter
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
@@ -14,7 +15,7 @@ from ._authed_transport import (
     AuthedTransport,
     AuthSnapshot,
     BuildRequest,
-    PostBody,
+    _raise_mapped_post_error,
 )
 from ._client_metrics import ClientMetrics
 from ._cookie_persistence import CookiePersistence
@@ -85,8 +86,6 @@ from .rpc import RPCMethod
 
 logger = logging.getLogger(__name__)
 
-_BuildRequestTuple = tuple[str, PostBody, dict[str, str] | None]
-
 # Auth-snapshot canonical implementation lives on
 # :class:`AuthRefreshCoordinator` (``_session_auth.py`` —
 # ``AuthRefreshCoordinator.snapshot`` / ``.update_auth_tokens``). The
@@ -145,38 +144,6 @@ def _live_is_auth_error(exc: Exception) -> bool:
     from ._session_helpers import is_auth_error
 
     return is_auth_error(exc)
-
-
-def _cached_first_build_request(
-    *,
-    original: BuildRequest,
-    cached_result: _BuildRequestTuple,
-    cached_snapshot: AuthSnapshot,
-) -> BuildRequest:
-    """Return the materialized first request once, then delegate.
-
-    ``Session._perform_authed_post`` materializes ``RpcRequest`` before
-    entering the middleware chain so middlewares can observe URL, headers, and
-    body. The legacy terminal still calls ``AuthedTransport.perform_authed_post``,
-    which expects a ``BuildRequest`` callback. This adapter lets that first
-    terminal call reuse the already-built tuple when it observes the same auth
-    snapshot, preserving the historical "one build per HTTP attempt" contract.
-
-    If the terminal sees a different snapshot on its first call (for example,
-    auth refreshed while the request was queued), discard the cached tuple and
-    rebuild from the fresh snapshot.
-    """
-    first_call = True
-
-    def _build(snapshot: AuthSnapshot) -> _BuildRequestTuple:
-        nonlocal first_call
-        if first_call:
-            first_call = False
-            if snapshot == cached_snapshot:
-                return cached_result
-        return original(snapshot)
-
-    return _build
 
 
 class Session:
@@ -469,6 +436,7 @@ class Session:
             server_error_max_retries_provider=lambda: self._server_error_max_retries,
             refresh_retry_delay_provider=lambda: self._refresh_retry_delay,
             refresh_callable=self._await_refresh,
+            auth_snapshot_provider=self._snapshot,
             is_auth_error=_live_is_auth_error,
             refresh_callback_enabled_provider=lambda: self._auth_coord.has_refresh_callback,
         )
@@ -828,37 +796,58 @@ class Session:
             rpc_id_override=rpc_id_override,
         )
 
-    async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
-        """Chain leaf — adapts ``RpcRequest`` into ``AuthedTransport`` call shape.
+    async def _refresh_request_for_current_auth(self, request: RpcRequest) -> RpcRequest:
+        """Rebuild the envelope if auth changed before the terminal POST.
 
-        Reads ``build_request`` / ``log_label`` / ``disable_internal_retries``
-        from ``request.context`` and delegates to
-        :meth:`AuthedTransport.perform_authed_post` — the shared seam that
-        covers both :meth:`Session._perform_authed_post` and
-        ``RpcExecutor.execute`` (which calls ``_perform_authed_post`` at
-        ``_rpc_executor.py:275``). Wraps the returned :class:`httpx.Response` in
-        an :class:`RpcResponse` so middlewares above the leaf see the chain
-        contract from ``_middleware.py``.
-
-        ``self._get_authed_transport()`` is resolved on every invocation so
-        late-bound monkeypatches of ``_get_authed_transport`` (e.g. fixtures
-        that swap the transport mid-test) still affect live behavior. The
-        ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body`` fields
-        are populated before chain entry for middleware visibility, but this
-        transitional leaf still delegates through ``build_request`` until the
-        Tier-13 ``Kernel.post`` terminal rewrite lands. See ADR-009
-        §"RpcRequest.context keys" and close-out notes §"AuthRefreshMiddleware
-        shipped without rebuild closures" for the metadata vocabulary.
+        ``Session._perform_authed_post`` materializes the request before the
+        outer chain runs, so the request may wait behind Drain/Semaphore before
+        the leaf sends it. Compare the materialization snapshot to a fresh
+        snapshot immediately before ``Kernel.post``; if auth moved, rebuild the
+        envelope synchronously from ``context["build_request"]``.
         """
         context = request.context
-        build_request = context["build_request"]
-        log_label = context["log_label"]
-        disable_internal_retries = context.get("disable_internal_retries", False)
-        response = await self._get_authed_transport().perform_authed_post(
+        request_snapshot = context.get("auth_snapshot")
+        build_request = context.get("build_request")
+        if not isinstance(request_snapshot, AuthSnapshot) or build_request is None:
+            return request
+
+        current_snapshot = await self._snapshot()
+        if current_snapshot == request_snapshot:
+            return request
+
+        context["auth_snapshot"] = current_snapshot
+        return materialize_rpc_request(
             build_request=build_request,
-            log_label=log_label,
-            disable_internal_retries=disable_internal_retries,
+            snapshot=current_snapshot,
+            context=context,
         )
+
+    async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
+        """Chain leaf — sends the populated ``RpcRequest`` via ``Kernel.post``.
+
+        The chain Interface now carries the actual HTTP request. The terminal
+        Adapter reads ``RpcRequest.url`` / ``headers`` / ``body`` directly,
+        maps raw ``Kernel.post`` errors into the transport exception shapes
+        consumed by Retry/AuthRefresh middleware, and wraps the returned
+        :class:`httpx.Response` in :class:`RpcResponse`.
+        """
+        request = await self._refresh_request_for_current_auth(request)
+        context = request.context
+        log_label = context["log_label"]
+        start = time.perf_counter()
+        try:
+            response = await self._kernel.post(
+                request.url,
+                headers=request.headers,
+                body=request.body,
+            )
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            _raise_mapped_post_error(
+                log_label=log_label,
+                exc=exc,
+                start=start,
+                logger=logger,
+            )
         return RpcResponse(response=response, context=context)
 
     async def _perform_authed_post(
@@ -891,13 +880,8 @@ class Session:
 
         ``RpcRequest.url`` / ``RpcRequest.headers`` / ``RpcRequest.body`` are
         populated through :func:`materialize_rpc_request` before the chain sees
-        the request. Until the terminal switches to ``Kernel.post`` directly,
-        ``context["build_request"]`` is a first-call cache adapter over the
-        original callback so the legacy terminal does not call the request
-        builder twice on the happy path. The terminal still re-snapshots before
-        the actual POST and only reuses this materialized tuple when that
-        snapshot matches, preserving the wire-path no-await invariant while the
-        envelope becomes visible to middlewares.
+        the request. ``context["build_request"]`` remains as the bounded
+        rebuild recipe for auth-refresh and pre-terminal freshness checks.
         """
         # Event-loop affinity guard. Session-shrink PR 3 lifted this OUT of
         # ``AuthedTransport.perform_authed_post`` (where it ran once per
@@ -914,21 +898,13 @@ class Session:
             "rpc_method": rpc_method,
         }
         snapshot = await self._snapshot()
-        cached_result = build_request(snapshot)
 
-        def _materialized_build_request(_snapshot: AuthSnapshot) -> _BuildRequestTuple:
-            return cached_result
-
-        context["build_request"] = _cached_first_build_request(
-            original=build_request,
-            cached_result=cached_result,
-            cached_snapshot=snapshot,
-        )
         request = materialize_rpc_request(
-            build_request=_materialized_build_request,
+            build_request=build_request,
             snapshot=snapshot,
             context=context,
         )
+        context["auth_snapshot"] = snapshot
 
         # The ``max_concurrent_rpcs`` slot is acquired by
         # :class:`SemaphoreMiddleware` (chain position 2, between Metrics
@@ -965,8 +941,8 @@ class Session:
         disable_internal_retries: bool = False,
     ) -> httpx.Response:
         """Session transport facade required by the Tier-13 contract."""
-        # ``Session`` exposes ``parse_label`` for the later feature retype.
-        # The existing transport leaf still calls the same value ``log_label``.
+        # ``Session`` exposes ``parse_label`` for the later feature retype; the
+        # chain context still names that value ``log_label``.
         return await self._perform_authed_post(
             build_request=build_request,
             log_label=parse_label,
