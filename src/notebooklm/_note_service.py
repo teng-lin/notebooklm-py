@@ -27,6 +27,7 @@ import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from ._row_adapters import NoteRow
 from .rpc.types import RPCMethod
 from .types import Note
 
@@ -119,25 +120,30 @@ class NoteService:
         """Identify what kind of row this is.
 
         Wire shapes encountered:
-        * deleted: ``["id", None, 2]`` — content is ``None`` and slot[2]
-          is the soft-delete sentinel.
-        * mind-map: content payload (string at ``row[1]`` or
-          ``row[1][1]``) parses as JSON with ``"children":`` or
-          ``"nodes":`` keys.
+        * deleted: ``["id", None, 2]`` — content is ``None`` and the
+          slot at position 2 is the soft-delete sentinel.
+        * mind-map: content payload parses as JSON with ``"children":``
+          or ``"nodes":`` keys (regardless of legacy vs current shape).
         * saved-chat: a plain note row whose metadata flags chat mode.
           That metadata is not reliably present on the wire, so when we
           cannot positively confirm chat mode we fall through to
           ``NOTE`` rather than ``UNKNOWN`` (refactor-history.md §Risks).
         * plain note: default for any other content-bearing row.
+
+        Position knowledge (the deletion sentinel and the
+        legacy-vs-current content dispatch) lives in
+        :class:`notebooklm._row_adapters.NoteRow`. This classifier reads
+        named properties on the adapter and does not touch raw indices.
         """
         if not isinstance(row, list) or len(row) == 0:
             return NoteRowKind.UNKNOWN
 
-        if self._is_deleted(row):
+        note_row = NoteRow(row)
+        if note_row.is_deleted:
             return NoteRowKind.DELETED
 
-        content = self.extract_content(row)
-        if self._is_mind_map_content(content):
+        content = note_row.content
+        if NoteRow.is_mind_map_content(content):
             return NoteRowKind.MIND_MAP
 
         if content is None:
@@ -150,27 +156,16 @@ class NoteService:
     def extract_content(self, row: list[Any]) -> str | None:
         """Get the JSON content payload of a row, or ``None``.
 
-        Handles both legacy (``[id, content]``) and current
-        (``[id, [id, content, metadata, None, title]]``) wire shapes.
+        Thin facade over :attr:`NoteRow.content`. Kept on
+        :class:`NoteService` so existing callers
+        (``NotesAPI._extract_content``, ``NoteBackedMindMapService.extract_content``,
+        and the tests pinning ``service.extract_content`` behaviour)
+        continue to work unchanged while position knowledge moves to
+        the adapter.
         """
-        if not isinstance(row, list) or len(row) <= 1:
+        if not isinstance(row, list):
             return None
-
-        if isinstance(row[1], str):
-            return row[1]
-        if isinstance(row[1], list) and len(row[1]) > 1 and isinstance(row[1][1], str):
-            return row[1][1]
-        return None
-
-    @staticmethod
-    def _is_deleted(row: list[Any]) -> bool:
-        if not isinstance(row, list) or len(row) < 3:
-            return False
-        return row[1] is None and row[2] == 2
-
-    @staticmethod
-    def _is_mind_map_content(content: str | None) -> bool:
-        return bool(content and ('"children":' in content or '"nodes":' in content))
+        return NoteRow(row).content
 
     # ------------------------------------------------------------------
     # CRUD

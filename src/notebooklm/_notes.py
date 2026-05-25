@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 from ._mind_map import NoteBackedMindMapService
 from ._note_service import NoteRowKind, NoteService
+from ._row_adapters import NoteRow
 from .types import AskResult, Note
 
 logger = logging.getLogger(__name__)
@@ -271,27 +272,20 @@ class NotesAPI:
         return self._notes.extract_content(item)
 
     def _parse_note(self, item: builtins.list[Any], notebook_id: str) -> Note:
-        """Parse a raw note item into a Note object."""
-        note_id = item[0] if len(item) > 0 else ""
+        """Parse a raw note item into a Note object.
 
-        content = ""
-        title = ""
-
-        if len(item) > 1:
-            if isinstance(item[1], str):
-                # Old format: [note_id, content]
-                content = item[1]
-            elif isinstance(item[1], list):
-                # New format: [note_id, [note_id, content, metadata, None, title]]
-                inner = item[1]
-                if len(inner) > 1 and isinstance(inner[1], str):
-                    content = inner[1]
-                if len(inner) > 4 and isinstance(inner[4], str):
-                    title = inner[4]
-
+        Position knowledge (legacy ``[id, content]`` vs current
+        ``[id, [id, content, metadata, None, title]]`` dispatch, and
+        the title slot at ``raw[1][4]``) lives in
+        :class:`notebooklm._row_adapters.NoteRow` — this method just
+        reads the named properties. ``content`` defaults to ``""``
+        (not ``None``) here to preserve the v0.4.1 :class:`Note`
+        contract.
+        """
+        row = NoteRow(item)
         return Note(
-            id=str(note_id),
+            id=row.id,
             notebook_id=notebook_id,
-            title=title,
-            content=content,
+            title=row.title,
+            content=row.content or "",
         )
