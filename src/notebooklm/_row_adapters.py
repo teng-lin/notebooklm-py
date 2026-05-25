@@ -642,6 +642,13 @@ class SourceRow:
     _ID_ENVELOPE_DRIVE_PAYLOAD_POS: ClassVar[int] = 2
     _ID_ENVELOPE_DRIVE_INNER_POS: ClassVar[int] = 0
 
+    # Neutral "first element of a single-item list" index, used by url
+    # helpers that pull the leading element from ``metadata[7]``,
+    # ``metadata[5]``, etc. Kept separate from ``_ID_ENVELOPE_PLAIN_POS``
+    # (also ``0``) so a future id-envelope reshape doesn't accidentally
+    # break URL extraction — claude review feedback on #1029.
+    _LIST_FIRST_POS: ClassVar[int] = 0
+
     # ---- Dispatchers -----------------------------------------------------
 
     @classmethod
@@ -812,10 +819,19 @@ class SourceRow:
         ``Source.from_api_response`` carried ``title: str | None`` and
         downstream consumers (CLI table renderers, etc.) branch on the
         ``None`` case.
+
+        Non-``None`` non-string values are coerced via ``str()`` so the
+        ``str | None`` annotation is honored at runtime — aligns with
+        :attr:`ArtifactRow.title`'s coercion (claude review feedback on
+        #1029). ``None`` is preserved as-is so the legacy "missing
+        title" sentinel still distinguishes from "title is empty string".
         """
         if len(self._raw) <= self._TITLE_POS:
             return None
-        return self._raw[self._TITLE_POS]
+        value = self._raw[self._TITLE_POS]
+        if value is None:
+            return None
+        return value if isinstance(value, str) else str(value)
 
     @property
     def metadata(self) -> list[Any] | None:
@@ -887,7 +903,7 @@ class SourceRow:
         url_list = metadata[self._META_URL_POS]
         if not isinstance(url_list, list) or not url_list:
             return None
-        first = url_list[self._ID_ENVELOPE_PLAIN_POS]
+        first = url_list[self._LIST_FIRST_POS]
         if not first:
             return None
         return first if isinstance(first, str) else str(first)
@@ -907,9 +923,9 @@ class SourceRow:
         if (
             isinstance(yt_block, list)
             and yt_block
-            and isinstance(yt_block[self._ID_ENVELOPE_PLAIN_POS], str)
+            and isinstance(yt_block[self._LIST_FIRST_POS], str)
         ):
-            return yt_block[self._ID_ENVELOPE_PLAIN_POS]
+            return yt_block[self._LIST_FIRST_POS]
         return None
 
     def _url_from_bare_metadata_zero(self, metadata: list[Any]) -> str | None:
@@ -980,7 +996,12 @@ class SourceRow:
         * the status code is not one of the known enum values.
 
         This mirrors the legacy ``SourceLister._extract_status``
-        contract.
+        contract — same fallback to :data:`SourceStatus.READY` on any
+        unrecognised code. The membership check uses ``SourceStatus(...)``
+        directly (catching :class:`ValueError`) rather than an explicit
+        member tuple so the adapter automatically accepts any new values
+        added to :class:`SourceStatus` without a parallel update here
+        (claude review feedback on #1029).
         """
         if (
             len(self._raw) <= self._STATUS_BLOCK_POS
@@ -990,11 +1011,7 @@ class SourceRow:
             return SourceStatus.READY
 
         status_code = self._raw[self._STATUS_BLOCK_POS][self._STATUS_INNER_POS]
-        if status_code in (
-            SourceStatus.PROCESSING,
-            SourceStatus.READY,
-            SourceStatus.ERROR,
-            SourceStatus.PREPARING,
-        ):
+        try:
             return SourceStatus(status_code)
-        return SourceStatus.READY
+        except ValueError:
+            return SourceStatus.READY

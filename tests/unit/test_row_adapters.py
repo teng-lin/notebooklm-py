@@ -885,6 +885,13 @@ class TestSourceRowPositionContract:
         assert SourceRow._ID_ENVELOPE_DRIVE_PAYLOAD_POS == 2
         assert SourceRow._ID_ENVELOPE_DRIVE_INNER_POS == 0
 
+    def test_list_first_position_is_neutral(self) -> None:
+        """``_LIST_FIRST_POS`` is a neutral "first element" index used by
+        URL helpers — kept separate from ``_ID_ENVELOPE_PLAIN_POS`` so a
+        future id-envelope reshape doesn't accidentally break URL
+        extraction (claude review feedback on #1029)."""
+        assert SourceRow._LIST_FIRST_POS == 0
+
     def test_all_positions_at_once(self) -> None:
         """A single dict pin so a sweeping reshape fails with one
         informative assertion rather than many."""
@@ -902,7 +909,8 @@ class TestSourceRowPositionContract:
             SourceRow._ID_ENVELOPE_PLAIN_POS,
             SourceRow._ID_ENVELOPE_DRIVE_PAYLOAD_POS,
             SourceRow._ID_ENVELOPE_DRIVE_INNER_POS,
-        ) == (0, 1, 2, 3, 1, 0, 2, 4, 5, 7, 0, 2, 0)
+            SourceRow._LIST_FIRST_POS,
+        ) == (0, 1, 2, 3, 1, 0, 2, 4, 5, 7, 0, 2, 0, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -1110,6 +1118,45 @@ class TestSourceRowId:
         """Defensive: non-string ids stringify (mirrors ``Source(id=str(src_id))``)."""
         row = SourceRow(_raw=[[12345], "T"])
         assert row.id == "12345"
+
+    def test_drive_backed_id_through_deeply_nested_dispatch(self) -> None:
+        """Drive-backed id-envelope inside the DEEPLY_NESTED wire shape.
+
+        Combines the two dispatch axes: the extra outer wrapper +
+        ``[None, True, [id]]`` id envelope. The production
+        ``ADD_SOURCE`` path produces this exact combination for
+        drive-backed sources. Covers the test gap noted in claude
+        review feedback on #1029.
+        """
+        deep_drive = [
+            [
+                [
+                    [None, True, ["drive_in_deep"]],
+                    "Drive Title",
+                    _metadata(canonical_url="https://drive.example/"),
+                ]
+            ]
+        ]
+        row = SourceRow.from_unknown_shape(deep_drive)
+        assert row.shape is SourceRowShape.DEEPLY_NESTED
+        assert row.id == "drive_in_deep"
+        assert row.title == "Drive Title"
+        assert row.url == "https://drive.example/"
+
+    def test_drive_backed_id_through_medium_nested_dispatch(self) -> None:
+        """Drive-backed id-envelope inside the MEDIUM_NESTED wire shape."""
+        med_drive = [
+            [
+                [None, True, ["drive_in_med"]],
+                "Drive Title Med",
+                _metadata(canonical_url="https://drive-med.example/"),
+            ]
+        ]
+        row = SourceRow.from_unknown_shape(med_drive)
+        assert row.shape is SourceRowShape.MEDIUM_NESTED
+        assert row.id == "drive_in_med"
+        assert row.title == "Drive Title Med"
+        assert row.url == "https://drive-med.example/"
 
 
 # ---------------------------------------------------------------------------
@@ -1319,6 +1366,17 @@ class TestSourceRowStatus:
         row = SourceRow.from_entry(entry)
         assert row.status == SourceStatus.READY
 
+    def test_non_int_status_code_falls_back_to_ready(self) -> None:
+        """Non-int status codes (None, str, etc.) fall back via the
+        ``SourceStatus(...)`` ValueError path (claude review feedback on
+        #1029 — switching from explicit membership tuple to try/except
+        retains this behavior for any non-enum value)."""
+        for bad_code in (None, "not_a_status", []):
+            entry = _entry()
+            entry.append([None, bad_code])  # whatever-type status code at [3][1]
+            row = SourceRow.from_entry(entry)
+            assert row.status == SourceStatus.READY, f"failed for {bad_code!r}"
+
 
 # ---------------------------------------------------------------------------
 # 8. Schema-drift edge cases
@@ -1347,6 +1405,17 @@ class TestSourceRowSchemaDrift:
     def test_title_position_can_be_none(self) -> None:
         row = SourceRow(_raw=[["id"], None])
         assert row.title is None
+
+    def test_title_non_string_coerced_to_str(self) -> None:
+        """Non-``None`` non-string titles coerce via ``str()`` so the
+        ``str | None`` annotation is honored at runtime — aligns with
+        :attr:`ArtifactRow.title`'s coercion (claude review feedback on
+        #1029). ``None`` stays as ``None`` (preserves "missing title"
+        sentinel)."""
+        row_int = SourceRow(_raw=[["id"], 12345])
+        assert row_int.title == "12345"
+        row_none = SourceRow(_raw=[["id"], None])
+        assert row_none.title is None  # None is preserved
 
     def test_metadata_with_only_url_block(self) -> None:
         """Minimal metadata: only enough length to carry ``[7]``."""
