@@ -68,7 +68,18 @@ def _extract_task_info(task_data: Any) -> list[Any] | None:
 
 def _extract_query_text(task_info: Any) -> str | None:
     """Return ``task_info[1][0]`` as the original query text, else ``None``."""
-    value = safe_index(task_info, 1, 0, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
+    query_info = safe_index(task_info, 1, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
+    if not isinstance(query_info, list):
+        if query_info is not None:
+            logger.warning(
+                "task_info[1] is not a list (method_id=%r, source=%r): %r",
+                _POLL_METHOD_ID,
+                _POLL_SOURCE,
+                type(query_info).__name__,
+            )
+        return None
+
+    value = query_info[0] if query_info else None
     if isinstance(value, str):
         return value
     if value is not None:
@@ -145,7 +156,9 @@ def _status_from_code(status_code: int | None) -> str:
     return "failed"
 
 
-def _parse_source_row(src: Any, *, task_id: str) -> tuple[dict[str, Any] | None, str]:
+def _parse_source_row(
+    src: Any, *, task_id: str, report_found: bool = False
+) -> tuple[dict[str, Any] | None, str]:
     if not isinstance(src, list) or len(src) < 2:
         return None, ""
 
@@ -187,10 +200,10 @@ def _parse_source_row(src: Any, *, task_id: str) -> tuple[dict[str, Any] | None,
             "result_type": result_type,
             "research_task_id": task_id,
         }
-        if source_report:
-            parsed_source["report_markdown"] = source_report
 
-    report = source_report or extract_legacy_report_chunks(src)
+    report = source_report
+    if not report and not report_found:
+        report = extract_legacy_report_chunks(src)
     if report and parsed_source is not None:
         parsed_source["report_markdown"] = report
 
@@ -224,7 +237,9 @@ def parse_research_tasks(result: Any) -> list[dict[str, Any]]:
         parsed_sources = []
         report = ""
         for src in sources_data:
-            parsed_source, source_report = _parse_source_row(src, task_id=task_id)
+            parsed_source, source_report = _parse_source_row(
+                src, task_id=task_id, report_found=bool(report)
+            )
             if parsed_source is not None:
                 parsed_sources.append(parsed_source)
             if not report and source_report:

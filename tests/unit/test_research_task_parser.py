@@ -128,6 +128,11 @@ class TestExtractQueryText:
         task_info = [None, ["quantum computing", "extra"], None, [], 1]
         assert _extract_query_text(task_info) == "quantum computing"
 
+    def test_string_query_container_returns_none(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            assert _extract_query_text([None, "query", None, [], 1]) is None
+        assert "task_info[1] is not a list" in caplog.text
+
     def test_missing_query_info_returns_none(self, caplog, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "0")
         with (
@@ -287,3 +292,16 @@ class TestParseResearchTasks:
 
         assert tasks[0]["report"] == "a\n\nb"
         assert tasks[0]["sources"][0]["report_markdown"] == "a\n\nb"
+
+    def test_legacy_report_chunks_after_current_report_are_not_attached(self):
+        sources = [
+            [None, ["Current Report", "# Current"], None, 1],
+            [None, "Legacy Later", None, "report", None, None, ["legacy"]],
+        ]
+        task_info = [None, ["deep query"], None, [sources], 6]
+
+        tasks = parse_research_tasks([[["task_mixed", task_info]]])
+
+        assert tasks[0]["report"] == "# Current"
+        assert tasks[0]["sources"][0]["report_markdown"] == "# Current"
+        assert "report_markdown" not in tasks[0]["sources"][1]
