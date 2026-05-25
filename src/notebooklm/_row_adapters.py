@@ -503,8 +503,6 @@ class NoteRow:
         return '"children":' in content or '"nodes":' in content
 
 
-
-
 # ---------------------------------------------------------------------------
 # SourceRow
 # ---------------------------------------------------------------------------
@@ -852,42 +850,86 @@ class SourceRow:
 
         Precedence (matches the legacy ``_extract_source_url`` logic):
 
-        1. ``metadata[7][0]`` (typical canonical URL slot).
-        2. ``metadata[5][0]`` (YouTube-style block, only when its first
-           element is a string).
-        3. ``metadata[0]`` — only honored when
-           :attr:`url_allow_bare_http` is ``True`` AND the value starts
-           with ``http``. This restricted fallback exists for the
-           deeply-nested ``ADD_SOURCE`` shape.
+        1. :meth:`_url_from_canonical_block` — ``metadata[7][0]`` (typical
+           canonical URL slot, present on every modern source).
+        2. :meth:`_url_from_youtube_block` — ``metadata[5][0]`` (YouTube-
+           style block, only when its first element is a string).
+        3. :meth:`_url_from_bare_metadata_zero` — ``metadata[0]`` —
+           only honored when :attr:`url_allow_bare_http` is ``True`` AND
+           the value starts with ``http``. This restricted fallback
+           exists for the deeply-nested ``ADD_SOURCE`` shape.
+
+        Each precedence level is a tiny named helper so the dispatch
+        reads at the same level of abstraction (gemini review feedback
+        on #1029): the property body is the precedence order, and each
+        helper owns one slot's positional knowledge.
         """
         metadata = self.metadata
         if metadata is None:
             return None
+        return (
+            self._url_from_canonical_block(metadata)
+            or self._url_from_youtube_block(metadata)
+            or self._url_from_bare_metadata_zero(metadata)
+        )
 
-        # 1. metadata[7][0]
-        if len(metadata) > self._META_URL_POS:
-            url_list = metadata[self._META_URL_POS]
-            if isinstance(url_list, list) and url_list:
-                first = url_list[self._ID_ENVELOPE_PLAIN_POS]
-                if first:
-                    return first if isinstance(first, str) else str(first)
+    def _url_from_canonical_block(self, metadata: list[Any]) -> str | None:
+        """Extract the URL from ``metadata[7][0]`` (canonical slot).
 
-        # 2. metadata[5][0] (YouTube-style)
-        if len(metadata) > self._META_YOUTUBE_POS:
-            yt_block = metadata[self._META_YOUTUBE_POS]
-            if (
-                isinstance(yt_block, list)
-                and yt_block
-                and isinstance(yt_block[self._ID_ENVELOPE_PLAIN_POS], str)
-            ):
-                return yt_block[self._ID_ENVELOPE_PLAIN_POS]
+        Returns ``None`` when position 7 is absent, non-list, empty, or
+        when its first element is falsy. Non-string truthy values are
+        stringified to honor the legacy
+        ``_extract_source_url`` contract where ``url`` is whatever the
+        wire stored at this position.
+        """
+        if len(metadata) <= self._META_URL_POS:
+            return None
+        url_list = metadata[self._META_URL_POS]
+        if not isinstance(url_list, list) or not url_list:
+            return None
+        first = url_list[self._ID_ENVELOPE_PLAIN_POS]
+        if not first:
+            return None
+        return first if isinstance(first, str) else str(first)
 
-        # 3. metadata[0] — only when explicitly enabled by shape.
-        if self.url_allow_bare_http and len(metadata) > self._META_BARE_URL_POS:
-            candidate = metadata[self._META_BARE_URL_POS]
-            if isinstance(candidate, str) and candidate.startswith("http"):
-                return candidate
+    def _url_from_youtube_block(self, metadata: list[Any]) -> str | None:
+        """Extract the URL from ``metadata[5][0]`` (YouTube-style block).
 
+        Returns ``None`` unless position 5 is a non-empty list whose
+        first element is a string. The string requirement preserves
+        legacy behavior where non-string YouTube-block elements (e.g.
+        the video id at ``[5][1]`` or channel name at ``[5][2]``) are
+        not interpreted as URLs.
+        """
+        if len(metadata) <= self._META_YOUTUBE_POS:
+            return None
+        yt_block = metadata[self._META_YOUTUBE_POS]
+        if (
+            isinstance(yt_block, list)
+            and yt_block
+            and isinstance(yt_block[self._ID_ENVELOPE_PLAIN_POS], str)
+        ):
+            return yt_block[self._ID_ENVELOPE_PLAIN_POS]
+        return None
+
+    def _url_from_bare_metadata_zero(self, metadata: list[Any]) -> str | None:
+        """Extract the URL from ``metadata[0]`` — restricted fallback.
+
+        Returns ``None`` unless ALL of:
+
+        * :attr:`url_allow_bare_http` is ``True`` (only the deeply-
+          nested ``ADD_SOURCE`` shape sets this), AND
+        * position 0 exists, is a string, and starts with ``http``.
+
+        The ``http`` prefix guard avoids treating arbitrary
+        ``metadata[0]`` strings (e.g. drive ids, mime types) as URLs
+        on shapes where this slot packs unrelated content.
+        """
+        if not self.url_allow_bare_http or len(metadata) <= self._META_BARE_URL_POS:
+            return None
+        candidate = metadata[self._META_BARE_URL_POS]
+        if isinstance(candidate, str) and candidate.startswith("http"):
+            return candidate
         return None
 
     @property
