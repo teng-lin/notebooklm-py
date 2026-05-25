@@ -37,18 +37,16 @@ that duration AFTER the successful refresh and BEFORE the retry. Matches
 the legacy ``AuthedTransport`` behavior so a cassette that recorded the
 post-refresh delay replays the same timing.
 
-Why this PR does NOT use ADR-009's pinned ``rebuild_headers`` /
-``build_request_factory`` closure callbacks (yet): the chain envelope
-(``RpcRequest.url`` / ``.headers`` / ``.body``) is still empty in
-production — the chain leaf builds the HTTP request from
-``context["build_request"]`` on each invocation. So a simple
-``await next_call(request)`` on the unchanged ``RpcRequest`` envelope is
-sufficient: the leaf re-snapshots auth state via
-``AuthRefreshCoordinator.snapshot`` (which sees the refreshed tokens)
-and re-builds headers + body. The full closure-callback contract from
-ADR-009 §"AuthRefreshMiddleware constructor signature" activates in PR
-13.x when the chain envelope carries url/headers/body and the leaf
-shrinks to a pure ``Kernel.post``-shaped seam.
+Request-materialization transition: ``Session`` now enters the chain with
+the initial ``RpcRequest.url`` / ``.headers`` / ``.body`` populated, but the
+leaf still sends through ``context["build_request"]``. A simple
+``await next_call(request)`` on the unchanged envelope remains sufficient:
+the legacy leaf re-snapshots auth state via
+``AuthRefreshCoordinator.snapshot`` (which sees the refreshed tokens) and
+re-builds headers + body from the callback on retry. The full
+closure-callback contract from ADR-009 §"AuthRefreshMiddleware constructor
+signature" activates when the leaf shrinks to a pure ``Kernel.post`` seam
+and refreshed retries must replace the envelope itself.
 
 This regression-fix from PR 12.7 also closes here: pre-PR-12.7 the leaf's
 ``refreshed_this_call`` lived in the same loop as 429/5xx retries (one

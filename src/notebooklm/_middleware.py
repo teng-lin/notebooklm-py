@@ -18,12 +18,13 @@ defines:
   ``NextCall`` so the leftmost middleware in the sequence becomes the
   *outermost* wrapper (matches the ordering documented in ADR-009).
 
-No middleware is implemented in this PR. No production code wires the
-chain in this PR. PR 12.2 wires an empty chain into ``Session``; PRs
-12.3–12.8 extract one middleware at a time. See
-``docs/adr/0009-middleware-chain.md`` for the load-bearing decisions and
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` section 2 for the
-PR sequence.
+Production ``Session`` wiring composes these envelopes through the current
+middleware stack. During the request-materialization migration, the chain
+enters with populated ``RpcRequest(url, headers, body)`` fields while the
+terminal still adapts through ``AuthedTransport.perform_authed_post``. A
+later terminal rewrite can consume the same envelope directly through
+``Kernel.post``. See ``docs/adr/0009-middleware-chain.md`` for the
+load-bearing decisions.
 """
 
 from __future__ import annotations
@@ -134,10 +135,10 @@ def materialize_rpc_request(
     """Build a populated chain envelope from the legacy request callback.
 
     This is a behavior-neutral bridge for the Tier-13 request-materialization
-    migration. ``Session`` still enters the chain with empty request fields
-    today, but the future chain leaf can use this helper to produce the
-    populated ``RpcRequest(url, headers, body)`` shape that middlewares and
-    ``Kernel.post`` should see.
+    migration. ``Session`` uses this helper to enter the chain with populated
+    ``RpcRequest(url, headers, body)`` fields while the transitional terminal
+    still delegates through the legacy ``BuildRequest`` callback. A later
+    ``Kernel.post`` terminal can consume the same envelope directly.
 
     ``context`` is intentionally retained by reference, matching ADR-009's
     mutable per-request metadata contract.
