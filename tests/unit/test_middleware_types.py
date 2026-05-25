@@ -9,11 +9,11 @@ public-ish aliases in ``src/notebooklm/_request_types.py``:
   satisfies the Protocol without inheriting from it.
 - ``build_chain`` composition order — leftmost middleware in the sequence
   becomes the outermost wrapper (matches ADR-009 chain ordering).
-- ``BuildRequestResult`` value semantics.
+- ``BuildRequestResult`` value semantics and request materialization bridges.
 
-These tests target the type-only scaffolding from PR 12.1. No production
-chain is wired (PR 12.2 does that), so the tests build chains over fake
-terminals and observe behavior directly.
+These tests target the type scaffolding and materialization contracts from
+Tier-12/13. No production chain is wired (PR 12.2 does that), so the tests
+build chains over fake terminals and observe behavior directly.
 """
 
 from __future__ import annotations
@@ -430,3 +430,16 @@ def test_request_types_all_contains_only_public_names() -> None:
     assert "BuildRequestResult" in _request_types.__all__
     assert "materialize_build_request" in _request_types.__all__
     assert all(not name.startswith("_") for name in _request_types.__all__)
+
+
+def test_middleware_all_contains_only_public_names() -> None:
+    """``_middleware.__all__`` exports the chain contract helpers."""
+    from notebooklm import _middleware
+
+    assert "Middleware" in _middleware.__all__
+    assert "NextCall" in _middleware.__all__
+    assert "RpcRequest" in _middleware.__all__
+    assert "RpcResponse" in _middleware.__all__
+    assert "build_chain" in _middleware.__all__
+    assert "materialize_rpc_request" in _middleware.__all__
+    assert all(not name.startswith("_") for name in _middleware.__all__)
