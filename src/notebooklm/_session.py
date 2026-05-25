@@ -787,8 +787,8 @@ class Session:
     async def _authed_post_chain_terminal(self, request: RpcRequest) -> RpcResponse:
         """Chain leaf — sends the populated ``RpcRequest`` via ``Kernel.post``.
 
-        The chain Interface now carries the actual HTTP request. The terminal
-        The terminal reads ``RpcRequest.url`` / ``headers`` / ``body``
+        The chain interface now carries the actual HTTP request. The terminal
+        reads ``RpcRequest.url`` / ``headers`` / ``body``
         directly, maps raw ``Kernel.post`` errors into the transport
         exception shapes consumed by Retry/AuthRefresh middleware, and wraps
         the returned :class:`httpx.Response` in :class:`RpcResponse`.

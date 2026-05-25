@@ -24,7 +24,12 @@ def raise_mapped_post_error(
     start: float,
     logger: logging.Logger,
 ) -> NoReturn:
-    """Map raw ``Kernel.post`` errors to chain-consumed transport exceptions."""
+    """Map retryable ``Kernel.post`` failures to transport exceptions.
+
+    HTTP 429, HTTP 5xx, and network errors become chain-consumed transport
+    exceptions. Other HTTP status errors are re-raised unchanged so outer
+    middlewares can handle auth refresh and domain-specific failures.
+    """
     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
         retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
         raise TransportRateLimited(
