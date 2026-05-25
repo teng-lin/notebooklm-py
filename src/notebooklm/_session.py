@@ -425,13 +425,16 @@ class Session:
         _resolved_storage_path: Path | None = (
             keepalive_storage_path if keepalive_storage_path is not None else auth.storage_path
         )
-        # ``None`` (default) resolves to a name-lookup of ``httpx.AsyncClient``
-        # on this module at call time so tests that
+        # ``None`` (default) resolves to a fresh name-lookup of
+        # ``httpx.AsyncClient`` on this module at construction time so
+        # tests that
         # ``monkeypatch.setattr("notebooklm._session.httpx.AsyncClient", …)``
-        # before invoking the constructor still steer the live transport
-        # build. Explicit callables (production passes ``httpx.AsyncClient``
-        # via default; tests pass a ``MockTransport``-aware factory) bypass
-        # the lookup hop entirely.
+        # BEFORE constructing :class:`Session` still steer the live
+        # transport build. (The resolved callable is captured into the
+        # kernel below; ``Kernel.open()`` invokes it later but does not
+        # re-resolve.) Explicit callables (production passes
+        # ``httpx.AsyncClient`` via default; tests pass a
+        # ``MockTransport``-aware factory) bypass the lookup hop entirely.
         _resolved_async_client_factory = (
             async_client_factory if async_client_factory is not None else httpx.AsyncClient
         )
