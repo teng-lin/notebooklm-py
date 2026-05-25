@@ -552,21 +552,6 @@ class ArtifactsAPI:
             notebook_id, output_path, artifact_id, output_format
         )
 
-    async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
-        """Fetch artifact HTML content for quiz/flashcard types."""
-        result = await self._runtime.rpc_call(
-            RPCMethod.GET_INTERACTIVE_HTML,
-            [artifact_id],
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
-        # Response is wrapped: result[0] contains the artifact data
-        if result and isinstance(result, list) and len(result) > 0:
-            data = result[0]
-            if isinstance(data, list) and len(data) > 9 and data[9]:
-                return data[9][0]  # HTML content
-        return None
-
     async def _download_interactive_artifact(
         self,
         notebook_id: str,
