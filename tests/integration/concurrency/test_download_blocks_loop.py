@@ -165,7 +165,7 @@ async def test_download_report_runs_write_off_loop_thread(
         return original_write_text(self, *args, **kwargs)  # type: ignore[arg-type]
 
     with (
-        patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list,
+        patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list,
         patch.object(Path, "write_text", recording_write_text),
     ):
         mock_list.return_value = report_artifact_list
@@ -321,7 +321,7 @@ async def test_concurrent_downloads_both_offload_writes(
         return original_json_dump(*args, **kwargs)  # type: ignore[arg-type]
 
     with (
-        patch.object(api, "_list_raw", new_callable=AsyncMock) as mock_list,
+        patch.object(api._downloads, "_list_raw", new_callable=AsyncMock) as mock_list,
         patch.object(
             api._mind_maps,
             "list_mind_maps",

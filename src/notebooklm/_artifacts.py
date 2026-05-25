@@ -156,49 +156,6 @@ class ArtifactsRuntime(RpcCaller, AsyncWorkRuntime, DrainHookRegistration, Proto
     """
 
 
-class _ArtifactsServiceMethods(Protocol):
-    """Narrow ``ArtifactsAPI`` method-call surface used by artifact downloads.
-
-    ``ArtifactDownloadService`` accepts an ``ArtifactsAPI`` instance via
-    constructor injection (the ``methods=`` kw-arg) for listing, selection,
-    download, and interactive-formatting flows. The helper types that
-    argument as ``_ArtifactsServiceMethods`` rather than the full concrete
-    ``ArtifactsAPI`` so the private collaboration surface stays explicit.
-
-    Generation no longer depends on this facade-shaped method bag; it owns
-    its RPC call and parser paths directly inside ``ArtifactGenerationService``.
-    """
-
-    async def _list_raw(self, notebook_id: str) -> builtins.list[Any]: ...
-
-    def _select_artifact(
-        self,
-        candidates: builtins.list[Any],
-        artifact_id: str | None,
-        type_name: str,
-        no_result_error_key: str,
-        *,
-        type_code: ArtifactTypeCode,
-    ) -> Any: ...
-
-    async def _download_url(self, url: str, output_path: str) -> str: ...
-
-    async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None: ...
-
-    def _format_interactive_content(
-        self,
-        app_data: dict,
-        title: str,
-        output_format: str,
-        html_content: str,
-        is_quiz: bool,
-    ) -> str: ...
-
-    async def list_quizzes(self, notebook_id: str) -> builtins.list[Artifact]: ...
-
-    async def list_flashcards(self, notebook_id: str) -> builtins.list[Artifact]: ...
-
-
 class ArtifactsAPI:
     """Operations on NotebookLM artifacts (studio content).
 
@@ -261,7 +218,8 @@ class ArtifactsAPI:
             note_service=self._note_service,
         )
         self._downloads = ArtifactDownloadService(
-            methods=self,
+            runtime=self._runtime,
+            listing=self._listing,
             mind_maps=self._mind_maps,
             storage_path=storage_path,
         )
