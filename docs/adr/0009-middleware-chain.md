@@ -3,6 +3,12 @@
 ## Status
 
 Accepted (Tier 12 PR 12.1; closed by PR 12.9); context refined by [ADR-013](0013-composable-session-capabilities.md) (#866).
+Amended (arc-1, closes the `[arc-1-formalized-as-deferred-permanent]`
+item on the v0.6 architecture-deepening backlog, §6.1): the
+`RpcRequest.context: dict[str, Any]` shape is the **long-term**
+chain-metadata carrier — see §"Decision: `RpcRequest.context: dict[str,
+Any]` is the long-term shape" below for the rationale and the policy
+governing additions to the vocabulary table.
 
 This ADR shipped in PR 12.1 of the Tier-12/13 greenfield migration as
 type-only scaffolding: the Protocol, dataclasses, and `build_chain` helper
@@ -198,16 +204,19 @@ Per-position rationale:
 
 | Key | Type | Set by | Read by |
 |---|---|---|---|
-| `rpc_method` | `RPCMethod \| None` | `Session.rpc_call` | metrics, tracing |
-| `disable_internal_retries` | `bool` | `Session.rpc_call` (post-resolution from `_idempotency.resolve_effective_disable_internal_retries`) | `RetryMiddleware` |
-| `build_request` | `BuildRequest` | `Session.rpc_call` / `Session.transport_post` | chain terminal (`Session._authed_post_chain_terminal`) |
-| `log_label` | `str` | `Session.rpc_call` / `Session.transport_post` | chain leaf, `DrainMiddleware`, `TracingMiddleware` |
-| `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry doesn't drive a second refresh on a fresh 401) |
-| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait`) |
+| `rpc_method` | `str \| None` | `Session._perform_authed_post` (receives the resolved method-name string from `RpcExecutor.execute`, which passes `method.name` — never the `RPCMethod` enum itself; chat-side callers pass `None`) | `MetricsMiddleware`, `TracingMiddleware` |
+| `disable_internal_retries` | `bool` | `Session._perform_authed_post` (receives the post-resolution boolean from `RpcExecutor.execute`, which calls `_idempotency.resolve_effective_disable_internal_retries(...)` before invoking the chain) | `RetryMiddleware` |
+| `build_request` | `BuildRequest` | `Session._perform_authed_post` (stashed before chain entry as the rebuild recipe) | `AuthRefreshMiddleware._rebuild_request_after_refresh`, `Session._authed_post_chain_terminal` (via `_refresh_request_for_current_auth`) |
+| `log_label` | `str` | `Session._perform_authed_post` | `DrainMiddleware`, `RetryMiddleware`, `ErrorInjectionMiddleware`, `AuthRefreshMiddleware`, `TracingMiddleware`, `Session._authed_post_chain_terminal` |
+| `auth_snapshot` | `AuthSnapshot` | `Session._perform_authed_post` (initial snapshot before chain entry); refreshed by `AuthRefreshMiddleware._rebuild_request_after_refresh` after a successful refresh, and replaced by `Session._refresh_request_for_current_auth` at the chain leaf when a freshness check detects auth moved while the request was queued | `Session._refresh_request_for_current_auth` (chain-terminal pre-POST freshness check); pair-mutated with the materialised envelope so middlewares never observe a torn `(snapshot, request)` pair |
+| `auth_refreshed` | `bool` | `AuthRefreshMiddleware` (sets to `True` after a successful refresh, **before** the retry leg) | `AuthRefreshMiddleware` (skip-on-replay guard so a `RetryMiddleware` retry on the post-refresh leg cannot drive a second refresh on a fresh 401) |
+| `rpc_queue_wait_seconds` | `float` | `SemaphoreMiddleware` (writes queue-wait duration on slot acquire — also exported as `RPC_QUEUE_WAIT_CONTEXT_KEY` in `_middleware_semaphore.py`) | `Session._perform_authed_post` (forwards to `ClientMetrics.record_rpc_queue_wait` after the chain returns) |
 
 Middlewares are forbidden from inventing new keys without an ADR update.
 The dict is mutable by reference (deliberately, per master plan
-§"Per-request behavior") but read-mostly in practice.
+§"Per-request behavior") but read-mostly in practice. See
+§"Decision: `RpcRequest.context: dict[str, Any]` is the long-term shape"
+below for the rationale and the policy that governs additions.
 
 > **Note on `operation_variant`.** Idempotency policy is resolved
 > **before chain entry** in `RpcExecutor.execute()` via
@@ -216,6 +225,80 @@ The dict is mutable by reference (deliberately, per master plan
 > `disable_internal_retries`. The chain itself never needs the
 > per-request `operation_variant` selector, so it is intentionally
 > absent from this vocabulary.
+
+### Decision: `RpcRequest.context: dict[str, Any]` is the long-term shape
+
+The stringly-keyed `dict[str, Any]` on `RpcRequest.context` is the
+**permanent** chain-metadata carrier. It will **not** be replaced with a
+typed dataclass, `TypedDict`, or per-key dataclass field. The
+bounded-vocabulary table above is the contract; the policy below bounds
+drift. The corresponding consequence summary lives under the "Unwanted"
+list in §"Consequences" below; this section is the authoritative
+rationale.
+
+Rationale (decision crystallised in the arc-1 architecture-deepening
+review and flagged on the demotion list as
+`[arc-1-formalized-as-deferred-permanent]` — formalised here rather
+than deferred to a future arc):
+
+- The typed-envelope migration that arrived with PR #1018 (`b856e01`)
+  promoted `RpcRequest.url`, `RpcRequest.headers`, and `RpcRequest.body`
+  to typed fields and introduced `BuildRequestResult` for the rebuild
+  path. The HTTP-shape envelope is now typed end-to-end; `context` is the
+  only remaining `dict[str, Any]` surface on the chain envelope, and that
+  is by design.
+- Typing the per-key shape (`TypedDict`, `dataclass`, or a discriminated
+  union of metadata records) would force a mechanical refactor of every
+  read site (middlewares, terminal, host helpers) for ~400 LOC of churn
+  whose only payoff is replacing one shape of "the key isn't there at
+  runtime" failure with another: a `KeyError` becomes an
+  `AttributeError`, but neither is caught at write time, and `mypy
+  --strict` already cannot prove anything stronger about a `TypedDict`
+  whose keys are populated across module boundaries by middlewares the
+  type checker does not know are in the chain.
+- The drift protection a typed dict would buy comes — at a fraction of
+  the cost — from the **bounded-vocabulary table + lint enforcement**.
+  Reviewer attention is the actual gate today; the planned meta-lint
+  (see "Follow-up" below) makes that gate enforceable without per-call
+  type machinery.
+- This is the same trade ADR-013's composable-capabilities split makes
+  in the other direction: keep the typed surfaces typed, keep the
+  metadata-bag surface stringly when its consumers are a closed set
+  governed by ADR review.
+
+**Policy: vocabulary additions require an ADR update.**
+
+- Any new `context` key — read OR written — by a middleware, the
+  terminal, or a host helper requires an ADR-009 amendment that adds
+  the key to the vocabulary table above with `Set by` / `Read by`
+  columns populated.
+- Reuse before invention: if an existing key carries the same semantic
+  (e.g. `disable_internal_retries` already encodes "skip my own retry
+  budget"), reuse it; do not coin a near-synonym.
+- The ADR-update requirement is per-key, not per-PR — a single PR that
+  adds two related keys still amends the table for both.
+- Removing a key also requires an amendment (mark the row with a
+  retirement note and the closing PR, e.g. `(retired in #NNNN)`); the
+  table is the audit log.
+- Local-only ephemera that a single middleware writes and reads inside
+  one `await next_call(request)` boundary, never observed by another
+  middleware or by the terminal, is NOT a context key — keep that state
+  on the middleware instance or in a `contextvars.ContextVar` scoped to
+  the call. Context keys are for cross-middleware contract.
+
+**Follow-up (not implemented here, tracked separately):** an
+`ast.NodeVisitor`-based lint (run under `ruff`'s plugin surface, a
+project-local hook, or a `pytest` collector) that scans
+`src/notebooklm/_middleware*.py` and `src/notebooklm/_session.py` for
+`request.context[<literal>]` reads/writes and `context.get(<literal>)`
+calls, and fails CI when a literal key is encountered that is not in the
+table above. This closes the "the table drifts behind the code" failure
+mode the table alone cannot prevent — the `auth_snapshot` key landed in
+PR #1018 (`b856e01`) without an ADR update; this arc-1 amendment is what
+backfills the table row, and the lint follow-up is what would have
+caught the gap automatically. Until the lint lands, the policy is
+enforced by reviewer attention; treat any `request.context["…"]`
+literal in a diff as a load-bearing review checkpoint.
 
 ### AuthRefreshMiddleware constructor signature (Tier-13 target, NOT shipped in Tier-12)
 
@@ -334,11 +417,14 @@ of the two callbacks, the retry semantics, the types) is fixed here.
   authed POST, of which there are at most a few hundred per session).
   Benchmarks in PR 12.2 will quantify; expected overhead is <1% of
   per-RPC wall time and dominated by the existing `httpx` POST.
-- The chain's `context: dict[str, Any]` is dynamically typed and
-  trades static-type-checking strictness for forward compatibility
-  across middleware PRs. The `RpcRequest.context` keys table above is
-  the policy that bounds drift; the meta-lint planned for PR 12.9 will
-  enforce it.
+- The chain's `context: dict[str, Any]` is dynamically typed by
+  design — see §"Decision: `RpcRequest.context: dict[str, Any]` is the
+  long-term shape" above for the rationale and the bounded-vocabulary
+  policy that holds drift back. The meta-lint originally scoped for PR
+  12.9 was not delivered in that PR; until the follow-up lint noted in
+  the Decision section lands, the bounded-vocabulary table is enforced
+  by reviewer attention on every `request.context["…"]` literal in a
+  diff.
 - Around-style middlewares can short-circuit (return without calling
   `next_call`). No production middleware in the Tier-12 set does this,
   but the protocol allows it; test middlewares that need to (e.g. a
