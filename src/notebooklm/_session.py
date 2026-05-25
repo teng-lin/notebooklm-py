@@ -784,11 +784,14 @@ class Session:
         → four scalar reads → return) but routes the lock-wait metric
         through ``host._metrics_obj`` directly rather than via the
         ``_record_lock_wait`` facade. Whole-request atomicity for
-        ``(csrf, sid, cookies)`` on the wire still depends on the
-        no-await invariant between this method returning and
-        ``client.post(...)`` inside :meth:`_perform_authed_post` (see
+        ``(csrf, sid, cookies)`` on the wire still depends on the terminal's
+        no-await invariant in :meth:`AuthedTransport.perform_authed_post` (see
         the related AST guard in
-        ``tests/unit/test_concurrency_refresh_race.py``).
+        ``tests/unit/test_concurrency_refresh_race.py``). During the
+        request-envelope migration, :meth:`_perform_authed_post` also takes a
+        pre-chain snapshot for middleware-visible materialization; the legacy
+        terminal re-snapshots before the actual POST and discards the cached
+        tuple if auth changed while the call was queued.
         """
         return await self._auth_coord.snapshot(self)
 
@@ -891,7 +894,10 @@ class Session:
         the request. Until the terminal switches to ``Kernel.post`` directly,
         ``context["build_request"]`` is a first-call cache adapter over the
         original callback so the legacy terminal does not call the request
-        builder twice on the happy path.
+        builder twice on the happy path. The terminal still re-snapshots before
+        the actual POST and only reuses this materialized tuple when that
+        snapshot matches, preserving the wire-path no-await invariant while the
+        envelope becomes visible to middlewares.
         """
         # Event-loop affinity guard. Session-shrink PR 3 lifted this OUT of
         # ``AuthedTransport.perform_authed_post`` (where it ran once per
