@@ -234,7 +234,7 @@ different audiences, when an imminent third consumer is in flight, or
 when keeping the shared Protocol clarifies a domain boundary). The
 rule exists to make consolidation a normal motion that doesn't need a
 fresh justification each time — not to force collapses against
-reviewer judgement.
+reviewer judgment.
 
 **Demotion does not require an ADR update.** It is the symmetric
 counterpart to ADR-013's promotion rule (also a standing rule that

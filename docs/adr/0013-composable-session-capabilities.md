@@ -104,15 +104,15 @@ runtimes. Concretely:
    **shared by ≥2 features**. No capability is promoted on speculation.
 
    The symmetric demotion / sibling-fold rule lives in
-   [ADR-012](0012-implementation-surface-convention.md) §Demotion /
-   consolidation rule: when a previously-shared capability drops back
-   to a single consumer, or when two underscore-prefixed seam siblings
-   become small enough and mutually-isolated, the ADR-012 rule
-   authorises the inverse motion. The two rules read as a paired
-   policy — ADR-013 §1 governs promotion *up* into a shared Protocol;
-   ADR-012 §Demotion governs collapse *back down* into a feature-local
-   Protocol or a folded seam file. Neither motion needs a fresh ADR;
-   only changes to the criteria themselves do.
+   [ADR-012 §Demotion / consolidation rule](0012-implementation-surface-convention.md#demotion--consolidation-rule):
+   when a previously-shared capability drops back to a single consumer,
+   or when two underscore-prefixed seam siblings become small enough
+   and mutually-isolated, the ADR-012 rule authorizes the inverse
+   motion. The two rules read as a paired policy — ADR-013 §1 governs
+   promotion *up* into a shared Protocol; ADR-012 §Demotion governs
+   collapse *back down* into a feature-local Protocol or a folded
+   seam file. Neither motion needs a fresh ADR; only changes to the
+   criteria themselves do.
 
 2. **Retain `AuthMetadata` and `Kernel`** (both in
    `_session_contracts.py`, symbols `AuthMetadata` and `Kernel`) as
