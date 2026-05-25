@@ -322,15 +322,14 @@ def test_feature_apis_do_not_add_direct_core_private_state_access() -> None:
 #
 # Modeled on the core-private-access guard above. Pins the invariant that
 # artifact-service helper modules (``_artifact_downloads.py`` and
-# ``_artifact_generation.py``) depend only on the narrow
-# ``_ArtifactsServiceMethods`` Protocol declared in ``_artifacts.py``, not
-# on the full concrete ``ArtifactsAPI``. Each helper migration PR appends
-# the helper's module name to ``_REACH_IN_MIGRATED_MODULES`` below.
+# ``_artifact_generation.py``) do not retain or call back into the
+# ``ArtifactsAPI`` facade. Each helper migration PR appends the helper's
+# module name to ``_REACH_IN_MIGRATED_MODULES`` below.
 # ----------------------------------------------------------------------------
 
 
-# Modules already migrated to ``_ArtifactsServiceMethods`` constructor
-# injection — the guard below enforces no residual ``self._api`` reach-in.
+# Modules already migrated to constructor-injected collaborators — the guard
+# below enforces no residual ``self._api`` reach-in.
 # Bookkeeping (mirrors the ``_ALLOWED_CORE_PRIVATE_ACCESS_COUNTS`` pattern):
 #   * ``_artifact_downloads.py`` migrated (PR #896, T2 of the
 #     encapsulation-reach-in-remediation phase).
@@ -459,7 +458,7 @@ def test_artifact_services_have_no_facade_reach_in() -> None:
             violations[module_name] = visitor.violations
     assert not violations, (
         f"Encapsulation violations found: {violations}. "
-        "Helpers must depend on _ArtifactsServiceMethods Protocol, not on ArtifactsAPI."
+        "Helpers must depend on explicit collaborators, not on ArtifactsAPI."
     )
 
 
@@ -782,13 +781,14 @@ def test_phase8_source_listing_service_name_and_facade_wiring_are_current() -> N
 
 
 def test_phase7_artifact_download_patch_seams_are_current() -> None:
-    """Artifact downloads must use canonical helpers, not facade module lookup.
+    """Artifact downloads must use canonical helpers and collaborators.
 
     Phase 5 (refactor-history.md Migration Plan steps 6-7) moves the mind-map
     create/list/extract paths off the ``_mind_map`` module-level seams
     and onto the injected ``NoteService`` + ``NoteBackedMindMapService``
     instances. Downloads should now import their canonical helpers directly
-    rather than resolving through ``notebooklm._artifacts`` at runtime.
+    rather than resolving through ``notebooklm._artifacts`` at runtime or in
+    type-checking-only imports.
     """
     import notebooklm._artifact_downloads as artifact_downloads
     import notebooklm._artifact_formatters as artifact_formatters
@@ -796,10 +796,28 @@ def test_phase7_artifact_download_patch_seams_are_current() -> None:
     import notebooklm._mind_map as mind_map
     import notebooklm.auth as auth
 
+    tree = ast.parse((SRC_ROOT / "_artifact_downloads.py").read_text(encoding="utf-8"))
+    artifact_facade_imports: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            artifact_facade_imports.extend(
+                alias.name for alias in node.names if alias.name == "notebooklm._artifacts"
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module in {
+            "_artifacts",
+            "notebooklm._artifacts",
+        }:
+            artifact_facade_imports.extend(f"{node.module}.{alias.name}" for alias in node.names)
+
+    assert artifact_facade_imports == []
     assert artifacts._mind_map is mind_map
     assert not hasattr(artifact_downloads, "_artifact_seams")
     assert artifact_downloads.load_httpx_cookies is auth.load_httpx_cookies
     assert artifact_downloads._extract_app_data is artifact_formatters._extract_app_data
+    assert (
+        artifact_downloads._format_interactive_content
+        is artifact_formatters._format_interactive_content
+    )
     assert artifact_downloads._parse_data_table is artifact_formatters._parse_data_table
 
 

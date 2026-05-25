@@ -1389,7 +1389,7 @@ class TestExtractAppData:
         output_path = str(tmp_path / "quiz.json")
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.artifacts,
+                client.artifacts._downloads,
                 "_get_artifact_content",
                 AsyncMock(return_value=html_without_data),
             ):
@@ -2540,7 +2540,7 @@ class TestDownloadQuizFlashcardParsing:
 
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.artifacts,
+                client.artifacts._downloads,
                 "_get_artifact_content",
                 AsyncMock(return_value=html_without_data),
             ):
@@ -2624,7 +2624,7 @@ class TestDownloadQuizFlashcardParsing:
         output_path = str(tmp_path / "quiz.html")
         async with NotebookLMClient(auth_tokens) as client:
             with patch.object(
-                client.artifacts,
+                client.artifacts._downloads,
                 "_get_artifact_content",
                 AsyncMock(return_value=raw_html),
             ):

@@ -17,21 +17,24 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ._artifact_formatters import _extract_app_data, _parse_data_table
+from ._artifact_formatters import _extract_app_data, _format_interactive_content, _parse_data_table
 from .auth import load_httpx_cookies
 from .exceptions import ValidationError
-from .rpc import ArtifactTypeCode
+from .rpc import ArtifactTypeCode, RPCMethod
 from .types import (
+    Artifact,
     ArtifactDownloadError,
     ArtifactNotFoundError,
     ArtifactNotReadyError,
     ArtifactParseError,
+    ArtifactType,
     _extract_artifact_url,
 )
 
 if TYPE_CHECKING:
-    from ._artifacts import _ArtifactsServiceMethods
+    from ._artifact_listing import ArtifactListingService
     from ._mind_map import NoteBackedMindMapService
+    from ._session_contracts import RpcCaller
 
 logger = logging.getLogger(__name__)
 
@@ -141,22 +144,71 @@ class ArtifactDownloadService:
     def __init__(
         self,
         *,
-        methods: _ArtifactsServiceMethods,
+        runtime: RpcCaller,
+        listing: ArtifactListingService,
         mind_maps: NoteBackedMindMapService,
         storage_path: Path | None = None,
     ) -> None:
-        self._methods = methods
+        self._runtime = runtime
+        self._listing = listing
         self._mind_maps = mind_maps
         self._storage_path = storage_path
+
+    async def _list_raw(self, notebook_id: str) -> list[Any]:
+        return await self._listing.list_raw(notebook_id, rpc_call=self._runtime.rpc_call)
+
+    async def _list_mind_maps(self, notebook_id: str) -> list[Any]:
+        return await self._mind_maps.list_mind_maps(notebook_id)
+
+    async def _list_artifacts(
+        self,
+        notebook_id: str,
+        artifact_type: ArtifactType,
+    ) -> list[Artifact]:
+        return await self._listing.list_artifacts(
+            notebook_id,
+            artifact_type,
+            list_raw=self._list_raw,
+            list_mind_maps=self._list_mind_maps,
+        )
+
+    def _select_artifact(
+        self,
+        candidates: list[Any],
+        artifact_id: str | None,
+        type_name: str,
+        no_result_error_key: str,
+        *,
+        type_code: ArtifactTypeCode,
+    ) -> Any:
+        return self._listing.select_artifact(
+            candidates,
+            artifact_id,
+            type_name,
+            no_result_error_key,
+            type_code=type_code,
+        )
+
+    async def _get_artifact_content(self, notebook_id: str, artifact_id: str) -> str | None:
+        result = await self._runtime.rpc_call(
+            RPCMethod.GET_INTERACTIVE_HTML,
+            [artifact_id],
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+        if result and isinstance(result, list) and len(result) > 0:
+            data = result[0]
+            if isinstance(data, list) and len(data) > 9 and data[9]:
+                return data[9][0]
+        return None
 
     async def download_audio(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download an Audio Overview to a file."""
-        methods = self._methods
-        artifacts_data = await methods._list_raw(notebook_id)
+        artifacts_data = await self._list_raw(notebook_id)
 
-        audio_art = methods._select_artifact(
+        audio_art = self._select_artifact(
             artifacts_data,
             artifact_id,
             "Audio",
@@ -172,19 +224,18 @@ class ArtifactDownloadService:
                 details="Could not extract download URL from artifact metadata",
             )
 
-        return await methods._download_url(url, output_path)
+        return await self.download_url(url, output_path)
 
     async def download_video(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download a Video Overview to a file."""
-        methods = self._methods
-        artifacts_data = await methods._list_raw(notebook_id)
+        artifacts_data = await self._list_raw(notebook_id)
 
         # Note: distinct error keys preserved — specific-ID miss raises
         # "video" (from type_name="Video"); empty-list raises
         # "video_overview" (from type_name_lower).
-        video_art = methods._select_artifact(
+        video_art = self._select_artifact(
             artifacts_data,
             artifact_id,
             "Video",
@@ -200,16 +251,15 @@ class ArtifactDownloadService:
                 details="Could not extract download URL from artifact metadata",
             )
 
-        return await methods._download_url(url, output_path)
+        return await self.download_url(url, output_path)
 
     async def download_infographic(
         self, notebook_id: str, output_path: str, artifact_id: str | None = None
     ) -> str:
         """Download an Infographic to a file."""
-        methods = self._methods
-        artifacts_data = await methods._list_raw(notebook_id)
+        artifacts_data = await self._list_raw(notebook_id)
 
-        info_art = methods._select_artifact(
+        info_art = self._select_artifact(
             artifacts_data,
             artifact_id,
             "Infographic",
@@ -221,7 +271,7 @@ class ArtifactDownloadService:
             url = _extract_artifact_url(info_art, ArtifactTypeCode.INFOGRAPHIC.value)
             if not url:
                 raise ArtifactParseError("infographic", details="Could not find metadata")
-            return await methods._download_url(url, output_path)
+            return await self.download_url(url, output_path)
 
         except (IndexError, TypeError) as e:
             raise ArtifactParseError(
@@ -236,13 +286,12 @@ class ArtifactDownloadService:
         output_format: str = "pdf",
     ) -> str:
         """Download a slide deck as PDF or PPTX."""
-        methods = self._methods
         if output_format not in ("pdf", "pptx"):
             raise ValidationError(f"Invalid format '{output_format}'. Must be 'pdf' or 'pptx'.")
 
-        artifacts_data = await methods._list_raw(notebook_id)
+        artifacts_data = await self._list_raw(notebook_id)
 
-        slide_art = methods._select_artifact(
+        slide_art = self._select_artifact(
             artifacts_data,
             artifact_id,
             "Slide deck",
@@ -282,7 +331,7 @@ class ArtifactDownloadService:
                 "slide_deck", details=f"Failed to parse structure: {e}", cause=e
             ) from e
 
-        return await methods._download_url(url, output_path)
+        return await self.download_url(url, output_path)
 
     async def download_interactive_artifact(
         self,
@@ -293,7 +342,6 @@ class ArtifactDownloadService:
         artifact_type: str,
     ) -> str:
         """Download quiz or flashcard artifact."""
-        methods = self._methods
         valid_formats = ("json", "markdown", "html")
         if output_format not in valid_formats:
             raise ValidationError(
@@ -302,12 +350,9 @@ class ArtifactDownloadService:
 
         is_quiz = artifact_type == "quiz"
         default_title = "Untitled Quiz" if is_quiz else "Untitled Flashcards"
+        list_type = ArtifactType.QUIZ if is_quiz else ArtifactType.FLASHCARDS
 
-        artifacts = (
-            await methods.list_quizzes(notebook_id)
-            if is_quiz
-            else await methods.list_flashcards(notebook_id)
-        )
+        artifacts = await self._list_artifacts(notebook_id, list_type)
         completed = [a for a in artifacts if a.is_completed]
         if not completed:
             raise ArtifactNotReadyError(artifact_type)
@@ -321,7 +366,7 @@ class ArtifactDownloadService:
         else:
             artifact = completed[0]
 
-        html_content = await methods._get_artifact_content(notebook_id, artifact.id)
+        html_content = await self._get_artifact_content(notebook_id, artifact.id)
         if not html_content:
             raise ArtifactDownloadError(artifact_type, details="Failed to fetch content")
 
@@ -333,9 +378,7 @@ class ArtifactDownloadService:
             ) from e
 
         title = artifact.title or default_title
-        content = methods._format_interactive_content(
-            app_data, title, output_format, html_content, is_quiz
-        )
+        content = _format_interactive_content(app_data, title, output_format, html_content, is_quiz)
 
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -354,10 +397,9 @@ class ArtifactDownloadService:
         artifact_id: str | None = None,
     ) -> str:
         """Download a report artifact as markdown."""
-        methods = self._methods
-        artifacts_data = await methods._list_raw(notebook_id)
+        artifacts_data = await self._list_raw(notebook_id)
 
-        report_art = methods._select_artifact(
+        report_art = self._select_artifact(
             artifacts_data,
             artifact_id,
             "Report",
@@ -438,10 +480,9 @@ class ArtifactDownloadService:
         artifact_id: str | None = None,
     ) -> str:
         """Download a data table as CSV."""
-        methods = self._methods
-        artifacts_data = await methods._list_raw(notebook_id)
+        artifacts_data = await self._list_raw(notebook_id)
 
-        table_art = methods._select_artifact(
+        table_art = self._select_artifact(
             artifacts_data,
             artifact_id,
             "Data table",
