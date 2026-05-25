@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from .._row_adapters import ArtifactRow
 from ..rpc.types import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
 from .common import UnknownTypeWarning, _datetime_from_timestamp
 
@@ -229,37 +230,33 @@ class Artifact:
     def from_api_response(cls, data: list[Any]) -> Artifact:
         """Parse artifact from API response.
 
-        Structure: [id, title, type, ..., status, ..., metadata, ...]
-        Position 9 contains options with variant code at [9][1][0]:
-          - For type 4: 1=flashcards, 2=quiz
+        Position knowledge for ``id`` / ``title`` / ``type`` / ``status``
+        / ``variant`` / ``timestamp`` lives in
+        :class:`notebooklm._row_adapters.ArtifactRow`. This factory wraps
+        the raw row in an adapter and reads through its typed properties,
+        so any wire-shape change touches the adapter constants only.
+
+        URL extraction stays inline because it dispatches on
+        ``type_code`` to a family of type-specific extractors and
+        operates on the full row — those extractors will be folded into
+        the adapter family in a follow-up PR.
         """
-        artifact_id = data[0] if len(data) > 0 else ""
-        title = data[1] if len(data) > 1 else ""
-        artifact_type = data[2] if len(data) > 2 else 0
-        status = data[4] if len(data) > 4 else 0
-
-        # Extract timestamp from data[15][0]
-        created_at = None
-        if len(data) > 15 and isinstance(data[15], list) and len(data[15]) > 0:
-            created_at = _datetime_from_timestamp(data[15][0])
-
-        # Extract variant code from data[9][1][0] for quiz/flashcard distinction
-        variant = None
-        if len(data) > 9 and isinstance(data[9], list) and len(data[9]) > 1:
-            options = data[9][1]
-            if isinstance(options, list) and len(options) > 0:
-                variant = options[0]
-
+        row = ArtifactRow(data)
+        artifact_type = row.type_code
+        # ``row.type_code`` already normalises non-ints to ``0``; the
+        # ``isinstance`` check is defensive in case an ``IntEnum`` flavour
+        # ever leaks through and to keep ``_extract_artifact_url`` reading
+        # an unambiguous ``int | None``.
         url = _extract_artifact_url(data, artifact_type if isinstance(artifact_type, int) else None)
 
         return cls(
-            id=str(artifact_id),
-            title=str(title),
+            id=row.id,
+            title=row.title,
             _artifact_type=artifact_type,
-            status=status,
-            created_at=created_at,
+            status=row.status,
+            created_at=row.created_at,
             url=url,
-            _variant=variant,
+            _variant=row.variant,
         )
 
     @classmethod

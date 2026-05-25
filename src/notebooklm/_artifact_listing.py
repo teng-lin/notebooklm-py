@@ -8,7 +8,8 @@ from typing import Any
 
 import httpx
 
-from .rpc import ArtifactStatus, ArtifactTypeCode, RPCError, RPCMethod
+from ._row_adapters import ArtifactRow
+from .rpc import ArtifactTypeCode, RPCError, RPCMethod
 from .types import Artifact, ArtifactNotReadyError, ArtifactType
 
 logger = logging.getLogger(__name__)
@@ -126,37 +127,50 @@ class ArtifactListingService:
     ) -> Any:
         """Select an artifact from candidates by ID or return latest completed.
 
-        The error-key asymmetry is intentional: explicit-ID misses derive the
-        key from ``type_name`` while empty-filter results use
+        Position knowledge (``a[2]`` type, ``a[4]`` status, ``a[15][0]``
+        timestamp) is delegated to
+        :class:`notebooklm._row_adapters.ArtifactRow` — when Google
+        reshapes the wire, the position constants change there and this
+        method adapts automatically.
+
+        The error-key asymmetry is intentional: explicit-ID misses
+        derive the key from ``type_name`` while empty-filter results use
         ``no_result_error_key`` verbatim.
+
+        Returns the **raw row** (not an :class:`ArtifactRow`) so downstream
+        extractors (audio, video, infographic, slide-deck URL helpers)
+        keep their existing list-positional input shape.
         """
-        filtered = [
-            a
+        # Wrap candidates once; the adapter is a thin frozen view so this
+        # is cheap. ``rows`` keeps the (raw, row) pairing so we can
+        # return the original raw list back to downstream extractors.
+        rows: list[tuple[Any, ArtifactRow]] = [
+            (a, ArtifactRow(a))
             for a in candidates
-            if isinstance(a, list)
-            and len(a) > 4
-            and a[2] == type_code
-            and a[4] == ArtifactStatus.COMPLETED
+            if isinstance(a, list) and len(a) > ArtifactRow._STATUS_POS
+        ]
+        filtered: list[tuple[Any, ArtifactRow]] = [
+            (raw, row) for raw, row in rows if row.matches_type(type_code, completed_only=True)
         ]
 
         if artifact_id:
-            artifact = next((a for a in filtered if a[0] == artifact_id), None)
-            if not artifact:
+            match = next(((raw, row) for raw, row in filtered if row.id == artifact_id), None)
+            if not match:
                 raise ArtifactNotReadyError(
                     type_name.lower().replace(" ", "_"), artifact_id=artifact_id
                 )
-            return artifact
+            return match[0]
 
         if not filtered:
             raise ArtifactNotReadyError(no_result_error_key)
 
-        filtered.sort(
-            key=lambda a: (
-                (a[15][0] or 0) if len(a) > 15 and isinstance(a[15], list) and a[15] else 0
-            ),
-            reverse=True,
-        )
-        return filtered[0]
+        # Sort by raw timestamp so missing / ``None`` / non-list shapes
+        # coerce to ``0`` without crashing the comparison (mirrors the
+        # historical ``(a[15][0] or 0)`` falsy-coerce trick that pinned
+        # the ``test_handles_none_at_timestamp_position_without_typeerror``
+        # contract).
+        filtered.sort(key=lambda pair: pair[1].created_at_raw or 0, reverse=True)
+        return filtered[0][0]
 
     def _filter_studio_artifacts(
         self,
