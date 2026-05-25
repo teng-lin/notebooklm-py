@@ -213,18 +213,18 @@ purpose accumulate even after their original consumers are gone.
 To balance the ratchet, two seam-tier consolidation triggers apply:
 
 1. **Sibling fold.** When two `_<domain>_*.py` siblings each have
-   <300 LOC and import only each other plus shared deps (no other
-   `notebooklm._*` seam imports either of them by name), they are
+   <300 LOC, each imports only the other plus shared deps, **and** no
+   other `notebooklm._*` seam imports either of them by name, they are
    **candidates to fold** into a single `_<domain>.py` (or
    `_<domain>_<concern>.py`, picking whichever name remains
    self-describing).
 2. **Capability demotion.** When a capability that was previously
    promoted to a shared Protocol (per
    [ADR-013](0013-composable-session-capabilities.md) §1, the ≥2
-   feature-consumer rule) has dropped back to **zero remaining second
-   consumers** — i.e. exactly one feature still types against it —
-   that capability is a **candidate to demote** back into its sole
-   consumer as a feature-local Protocol, mirroring the
+   feature-consumer rule) has dropped back to **a single consumer** —
+   i.e. exactly one feature still types against it — that capability
+   is a **candidate to demote** back into its sole consumer as a
+   feature-local Protocol, mirroring the
    `ChatRuntime` / `ArtifactsRuntime` / `UploadRuntime` pattern in
    ADR-013 §3.
 
