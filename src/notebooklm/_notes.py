@@ -256,8 +256,12 @@ class NotesAPI:
     def _is_deleted(self, item: builtins.list[Any]) -> bool:
         """Check if a note/mind map item is deleted (status=2).
 
-        Deleted items have structure: ['id', None, 2]
-        The content at position [1] is None and status at [2] is 2.
+        Delegates to :meth:`NoteService.classify_row`, which reads the
+        deletion sentinel via :attr:`NoteRow.is_deleted`. The wire
+        shape (``[id, None, 2]`` — content slot ``None`` plus the
+        soft-delete sentinel at position 2) is documented on
+        :class:`NoteRow`; this method exists only as the historical
+        ``NotesAPI`` private surface.
 
         Args:
             item: Raw note/mind map data.

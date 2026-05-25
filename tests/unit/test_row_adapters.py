@@ -617,6 +617,16 @@ class TestNoteRowContentDegradation:
         """Dicts are not a recognised shape variant — soft-degrade."""
         assert NoteRow(["id", {"oops": True}]).content is None
 
+    def test_inner_non_string_content_returns_none(self) -> None:
+        """The inner envelope is long enough for ``[1]`` indexing but
+        the value at ``inner[1]`` is not a string — ``safe_index``
+        succeeds and the ``isinstance(value, str)`` filter degrades
+        the result to ``None`` rather than leaking a non-string past
+        the ``content: str | None`` contract. Closes claude[bot]'s
+        Issue 2 from #1028's first review."""
+        assert NoteRow(["id", ["inner_id", 99]]).content is None
+        assert NoteRow(["id", ["inner_id", None]]).content is None
+
 
 class TestNoteRowShortInnerIsNotDrift:
     """Short inner envelopes are a legitimate production shape, not drift.
@@ -737,14 +747,10 @@ class TestNoteRowIsMindMapContent:
         Without the guard a user-typed note like ``My "children": Alice``
         would be misclassified as a mind map and silently filtered out
         of :meth:`NotesAPI.list`."""
-        assert (
-            NoteRow.is_mind_map_content('My "children": Alice and Bob') is False
-        )
+        assert NoteRow.is_mind_map_content('My "children": Alice and Bob') is False
 
     def test_plain_text_with_nodes_substring_not_mind_map(self) -> None:
-        assert (
-            NoteRow.is_mind_map_content('Graph "nodes": twelve in total') is False
-        )
+        assert NoteRow.is_mind_map_content('Graph "nodes": twelve in total') is False
 
     def test_json_array_with_children_key_not_mind_map(self) -> None:
         """Mind-map payloads are always JSON *objects*, never arrays.
@@ -785,8 +791,11 @@ class TestNoteRowImmutability:
     """The adapter is frozen so the wrapped row can't be swapped out."""
 
     def test_cannot_assign_to_raw(self) -> None:
+        # ``dataclasses.FrozenInstanceError`` is a subclass of
+        # ``AttributeError`` — narrowing matches the ArtifactRow test
+        # convention (coderabbit nit on #1028).
         row = NoteRow([])
-        with pytest.raises((AttributeError, Exception)):
+        with pytest.raises(AttributeError):
             row._raw = [1, 2, 3]  # type: ignore[misc]
 
     def test_does_not_mutate_wrapped_row(self) -> None:

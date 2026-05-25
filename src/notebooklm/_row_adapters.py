@@ -382,11 +382,13 @@ class NoteRow:
         enough to legitimately carry the content slot, so genuine
         production short shapes never trip strict-mode drift detection.
 
-        Raises:
-            UnknownRPCMethodError: In strict mode, when ``row[1]`` is a
-                list long enough for ``[1]`` indexing but the descent
-                itself fails (e.g. the inner is a dict instead of a
-                list — genuine wire reshape).
+        Note: ``safe_index`` is routed through for consistency with
+        :class:`ArtifactRow` and to keep one telemetry seam for any
+        future relaxation of the length guard. Given the current
+        invariants (``isinstance(slot, list)`` + ``len(slot) > 1``),
+        ``safe_index`` cannot actually raise here — strict-mode drift
+        on this descent is unreachable. Documented via
+        ``TestNoteRowShortInnerIsNotDrift`` in the test suite.
         """
         if len(self._raw) <= self._CONTENT_POS:
             return None
@@ -426,10 +428,11 @@ class NoteRow:
           predate the title rollout and are not drift), or
         * the inner descent through ``[4]`` returns a non-string.
 
-        Raises:
-            UnknownRPCMethodError: In strict mode, when ``row[1]`` is a
-                list long enough for ``[4]`` indexing but the descent
-                itself fails (genuine wire reshape).
+        See the note on :attr:`content` re: ``safe_index`` invariants —
+        the same reasoning applies here. The inner length guard makes
+        the descent through ``[4]`` unreachable as a drift signal under
+        current invariants; ``safe_index`` stays for consistency with
+        :class:`ArtifactRow` and as a telemetry seam.
         """
         if len(self._raw) <= self._CONTENT_POS:
             return ""
