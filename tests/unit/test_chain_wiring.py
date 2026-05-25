@@ -1,9 +1,8 @@
-"""Integration tests for the empty middleware chain wired into ``Session``.
+"""Integration tests for the authed-post middleware chain wired into ``Session``.
 
-PR 12.2 of the Tier-12/13 greenfield migration wires
-:func:`notebooklm._middleware.build_chain` into
-:meth:`Session.__init__` with an empty middleware list. The chain leaf
-(:meth:`Session._authed_post_chain_terminal`) reads
+The Tier-12/13 greenfield migration wires
+:func:`notebooklm._middleware.build_chain` into :meth:`Session.__init__`.
+The chain leaf (:meth:`Session._authed_post_chain_terminal`) reads
 ``build_request`` / ``log_label`` / ``disable_internal_retries`` from
 ``RpcRequest.context`` and delegates to
 :meth:`AuthedTransport.perform_authed_post` — the shared seam covering both
@@ -11,14 +10,14 @@ PR 12.2 of the Tier-12/13 greenfield migration wires
 calls ``self._owner._perform_authed_post`` at ``_rpc_executor.py:275``).
 
 These tests verify the wiring contract from
-``.sisyphus/plans/tier-12-13-greenfield-migration.md`` line 160 and ADR-009
-§"RpcRequest.context keys":
+ADR-009 §"RpcRequest.context keys":
 
-1. Both call paths (``Session._perform_authed_post`` directly and
-   ``RpcExecutor.execute`` indirectly) flow through the empty chain to the
-   transport.
-2. ``RpcRequest.context`` carries ``build_request`` / ``log_label`` /
-   ``disable_internal_retries`` exactly as the leaf expects them.
+1. Both call paths (``Session._perform_authed_post`` directly and the
+   ``RpcExecutor.execute`` keyword shape) flow through the chain terminal to
+   the transport.
+2. ``RpcRequest.context`` carries a legacy ``build_request`` adapter plus
+   ``log_label`` / ``disable_internal_retries`` exactly as the leaf expects
+   them.
 3. The leaf returns an :class:`RpcResponse` wrapping the
    :class:`httpx.Response` from the transport.
 
@@ -79,13 +78,12 @@ def _swap_transport(core: Session, fake: FakeAuthedPost) -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_chain_routes_perform_authed_post_to_transport() -> None:
-    """``Session._perform_authed_post`` flows through the empty chain to transport.
+async def test_chain_routes_perform_authed_post_to_transport() -> None:
+    """``Session._perform_authed_post`` flows through the chain to transport.
 
-    Covers the first of the two call paths from master plan line 160:
-    direct callers of ``Session._perform_authed_post`` (the chat path
-    in ``_chat_transport.py:64`` and any first-party caller via
-    ``client._session._perform_authed_post``).
+    Covers direct callers of ``Session._perform_authed_post``: the chat
+    path in ``_chat_transport.py:64`` and any first-party caller via
+    ``client._session._perform_authed_post``.
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")
     fake = FakeAuthedPost(response=expected_response)
@@ -104,21 +102,25 @@ async def test_empty_chain_routes_perform_authed_post_to_transport() -> None:
     assert response is expected_response
     assert fake.call_count == 1
     call = fake.calls[0]
-    assert call["build_request"] is build_request
+    assert call["build_request"] is not build_request
+    assert call["build_request"](await core._snapshot()) == (
+        "https://fake/url",
+        b"body",
+        None,
+    )
     assert call["log_label"] == "test-log-label"
     assert call["disable_internal_retries"] is False
 
 
 @pytest.mark.asyncio
-async def test_empty_chain_routes_rpc_executor_path_to_transport() -> None:
+async def test_chain_routes_rpc_executor_path_to_transport() -> None:
     """``RpcExecutor.execute`` → ``_perform_authed_post`` flows through the chain too.
 
-    Covers the second of the two call paths from master plan line 160:
     ``RpcExecutor.execute`` (``_rpc_executor.py:275``) calls
     ``self._owner._perform_authed_post(...)`` which is precisely
-    :meth:`Session._perform_authed_post`. Routing both paths through
-    one seam is the whole point of wiring at ``_perform_authed_post``
-    rather than at each call site.
+    :meth:`Session._perform_authed_post`. Routing both paths through one
+    seam is the whole point of wiring at ``_perform_authed_post`` rather
+    than at each call site.
 
     We exercise the route by calling ``_perform_authed_post`` with the
     keyword shape ``RpcExecutor.execute`` uses (the
@@ -146,7 +148,12 @@ async def test_empty_chain_routes_rpc_executor_path_to_transport() -> None:
     assert response is expected_response
     assert fake.call_count == 1
     call = fake.calls[0]
-    assert call["build_request"] is build_request
+    assert call["build_request"] is not build_request
+    assert call["build_request"](await core._snapshot()) == (
+        "https://fake/rpc",
+        b"rpc-body",
+        {"X-Goog-AuthUser": "0"},
+    )
     assert call["log_label"] == "RPC LIST_NOTEBOOKS"
     # The ``disable_internal_retries`` bool resolved by
     # ``_idempotency.resolve_effective_disable_internal_retries`` upstream
@@ -190,7 +197,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
     assert result.response is expected_response
     # The ``RpcResponse.context`` propagates the same dict the request
     # carried, so middlewares above the leaf can read additions a deeper
-    # link made. The empty chain leaves the dict unchanged.
+    # link made. The terminal adapter leaves the dict unchanged.
     assert result.context is request.context
     assert fake.call_count == 1
     assert fake.calls[0]["build_request"] is build_request
@@ -305,9 +312,9 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     _swap_transport(core, fake)
 
     # Build a chain with one observer middleware around the production
-    # terminal. The production chain stays empty; this is a per-test
-    # composition that validates the leaf's contract against
-    # ``build_chain`` rather than ``Session.__init__``.
+    # terminal. This per-test composition validates the leaf's contract
+    # against ``build_chain`` without mutating ``Session.__init__``'s
+    # production chain.
     chain: NextCall = build_chain([observer], core._authed_post_chain_terminal)
 
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
