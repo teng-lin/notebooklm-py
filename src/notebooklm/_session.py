@@ -919,15 +919,15 @@ class Session:
         def _materialized_build_request(_snapshot: AuthSnapshot) -> _BuildRequestTuple:
             return cached_result
 
-        request = materialize_rpc_request(
-            build_request=_materialized_build_request,
-            snapshot=snapshot,
-            context=context,
-        )
         context["build_request"] = _cached_first_build_request(
             original=build_request,
             cached_result=cached_result,
             cached_snapshot=snapshot,
+        )
+        request = materialize_rpc_request(
+            build_request=_materialized_build_request,
+            snapshot=snapshot,
+            context=context,
         )
 
         # The ``max_concurrent_rpcs`` slot is acquired by

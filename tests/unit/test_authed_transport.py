@@ -461,13 +461,18 @@ async def test_first_terminal_attempt_rebuilds_when_snapshot_changed(monkeypatch
     core = _make_core()
     await core.open()
     try:
-        snapshots = [
-            AuthSnapshot("CSRF_OLD", "SID_OLD", 0, None),
-            AuthSnapshot("CSRF_NEW", "SID_NEW", 0, None),
-        ]
+        snapshots = iter(
+            [
+                AuthSnapshot("CSRF_OLD", "SID_OLD", 0, None),
+                AuthSnapshot("CSRF_NEW", "SID_NEW", 0, None),
+            ]
+        )
 
         async def fake_snapshot() -> AuthSnapshot:
-            return snapshots.pop(0)
+            try:
+                return next(snapshots)
+            except StopIteration:
+                pytest.fail("unexpected extra auth snapshot")
 
         core._snapshot = fake_snapshot  # type: ignore[method-assign]
         calls: list[AuthSnapshot] = []
