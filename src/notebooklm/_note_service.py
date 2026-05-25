@@ -125,7 +125,7 @@ class NoteService:
         if not result or not isinstance(result, list):
             return []
 
-        first = result[0] if result else None
+        first = result[0]
         if self._is_note_row_like(first):
             return result
         if isinstance(first, list):
