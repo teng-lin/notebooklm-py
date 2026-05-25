@@ -15,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from . import research as _research_pub
 from ._notebook_metadata import NotebookSourceLister, create_default_source_lister
+from ._research_task_parser import parse_research_tasks
 from ._session_contracts import RpcCaller
 from .exceptions import (
     NetworkError,
@@ -23,7 +24,7 @@ from .exceptions import (
     RPCTimeoutError,
     ValidationError,
 )
-from .rpc import RPCMethod, safe_index
+from .rpc import RPCMethod
 from .types import CitedSourceSelection
 
 if TYPE_CHECKING:
@@ -32,13 +33,6 @@ if TYPE_CHECKING:
 __all__ = ["CitedSourceSelection", "ResearchAPI"]
 
 logger = logging.getLogger(__name__)
-
-
-_RESEARCH_RESULT_TYPE_ALIASES = {
-    "web": 1,
-    "drive": 2,
-    "report": 5,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -111,162 +105,6 @@ def _merge_imported_sources(
     ]
 
 
-# ---------------------------------------------------------------------------
-# Poll-payload extractors
-#
-# These private helpers name the positional slots of a ``POLL_RESEARCH`` task
-# entry so the ``ResearchAPI.poll`` body stays readable when Google shifts
-# fields around. Deep numeric indexing is delegated to ``safe_index`` so a
-# single drift point (env-flag-controlled) governs whether we soft-warn or
-# hard-fail. Each helper returns a sentinel (``None``, ``""``, or empty
-# tuple) on shape drift rather than raising, so callers can keep parsing
-# the rest of the payload.
-#
-# Observed shape of a single ``task_data`` entry::
-#
-#     task_data = [
-#         task_id,                            # 0: str
-#         task_info = [                       # 1: list
-#             _,                              #   0: unused
-#             query_info = [query_text, ...], #   1: list of [str, ...]
-#             _,                              #   2: unused
-#             sources_and_summary = [         #   3: list
-#                 sources_data,               #     0: list of source rows
-#                 summary,                    #     1: str (optional)
-#             ],
-#             status_code,                    #   4: int (1=in_progress, 2/6=completed)
-#             ...
-#         ],
-#         ...
-#     ]
-# ---------------------------------------------------------------------------
-
-_POLL_SOURCE = "_research.poll"
-_POLL_METHOD_ID = RPCMethod.POLL_RESEARCH.value
-
-
-def _extract_task_id(task_data: Any) -> str | None:
-    """Return ``task_data[0]`` as a string when present, else ``None``.
-
-    ``task_data`` is expected to be a list whose first element is the
-    task/report identifier. Returns ``None`` and logs via ``safe_index`` if
-    the entry is shorter than 1 element or the value is not a string.
-    """
-    value = safe_index(task_data, 0, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
-    if isinstance(value, str):
-        return value
-    if value is not None:
-        logger.warning(
-            "task_data[0] is not a string (method_id=%r, source=%r): %r",
-            _POLL_METHOD_ID,
-            _POLL_SOURCE,
-            type(value).__name__,
-        )
-    return None
-
-
-def _extract_task_info(task_data: Any) -> list[Any] | None:
-    """Return ``task_data[1]`` as a list when present, else ``None``.
-
-    The ``task_info`` slot carries the per-task metadata: query, sources,
-    summary, and status. Returns ``None`` if the entry is too short or the
-    value is not a list.
-    """
-    value = safe_index(task_data, 1, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
-    if isinstance(value, list):
-        return value
-    if value is not None:
-        logger.warning(
-            "task_data[1] is not a list (method_id=%r, source=%r): %r",
-            _POLL_METHOD_ID,
-            _POLL_SOURCE,
-            type(value).__name__,
-        )
-    return None
-
-
-def _extract_query_text(task_info: Any) -> str | None:
-    """Return ``task_info[1][0]`` as the original query text, else ``None``.
-
-    Returns ``None`` on missing slots or non-string contents.
-    """
-    value = safe_index(task_info, 1, 0, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
-    if isinstance(value, str):
-        return value
-    if value is not None:
-        logger.warning(
-            "task_info[1][0] is not a string (method_id=%r, source=%r): %r",
-            _POLL_METHOD_ID,
-            _POLL_SOURCE,
-            type(value).__name__,
-        )
-    return None
-
-
-def _extract_status_code(task_info: Any) -> int | None:
-    """Return ``task_info[4]`` as an int status code, else ``None``.
-
-    Research status codes observed: ``1`` (in progress), ``2`` (completed),
-    ``6`` (completed deep-research). Returns ``None`` on shape drift or a
-    non-int value (booleans are rejected too).
-    """
-    value = safe_index(task_info, 4, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
-    if isinstance(value, bool):
-        # bool is a subclass of int; reject explicitly so callers don't get
-        # surprising truthy comparisons against status codes 1/2/6.
-        logger.warning(
-            "task_info[4] is bool, not int (method_id=%r, source=%r)",
-            _POLL_METHOD_ID,
-            _POLL_SOURCE,
-        )
-        return None
-    if isinstance(value, int):
-        return value
-    if value is not None:
-        logger.warning(
-            "task_info[4] is not an int (method_id=%r, source=%r): %r",
-            _POLL_METHOD_ID,
-            _POLL_SOURCE,
-            type(value).__name__,
-        )
-    return None
-
-
-def _extract_sources_and_summary(task_info: Any) -> tuple[list[Any], str | None]:
-    """Return ``(sources_data, summary)`` from ``task_info[3]``.
-
-    ``sources_data`` is the list of raw source rows (each later parsed by
-    ``ResearchAPI.poll``). ``summary`` is the optional summary string.
-    Returns ``([], None)`` if the slot is missing, not a list, or empty.
-    Returns ``(sources_data, None)`` if no summary string is present.
-    """
-    bundle = safe_index(task_info, 3, method_id=_POLL_METHOD_ID, source=_POLL_SOURCE)
-    if not isinstance(bundle, list) or not bundle:
-        if bundle is not None and not isinstance(bundle, list):
-            logger.warning(
-                "task_info[3] is not a list (method_id=%r, source=%r): %r",
-                _POLL_METHOD_ID,
-                _POLL_SOURCE,
-                type(bundle).__name__,
-            )
-        return [], None
-
-    sources_data = bundle[0] if isinstance(bundle[0], list) else []
-    if bundle[0] is not None and not isinstance(bundle[0], list):
-        logger.warning(
-            "task_info[3][0] is not a list (method_id=%r, source=%r): %r",
-            _POLL_METHOD_ID,
-            _POLL_SOURCE,
-            type(bundle[0]).__name__,
-        )
-
-    summary: str | None = None
-    if len(bundle) >= 2 and isinstance(bundle[1], str):
-        summary = bundle[1]
-
-    return sources_data, summary
-
-
 class ResearchAPI:
     """Operations for research sessions (web/drive search).
 
@@ -336,15 +174,6 @@ class ResearchAPI:
         )
 
     @staticmethod
-    def _parse_result_type(value: Any) -> int | str:
-        """Normalize known research source type tags while keeping unknown tags intact."""
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            return _RESEARCH_RESULT_TYPE_ALIASES.get(value.lower(), value)
-        return 1
-
-    @staticmethod
     def _build_report_import_entry(title: str, markdown: str) -> list[Any]:
         """Build the special deep-research report entry used by IMPORT_RESEARCH."""
         return [None, [title, markdown], None, 3, None, None, None, None, None, None, 3]
@@ -353,20 +182,6 @@ class ResearchAPI:
     def _build_web_import_entry(url: str, title: str) -> list[Any]:
         """Build a standard web-source import entry used by IMPORT_RESEARCH."""
         return [None, None, [url, title], None, None, None, None, None, None, None, 2]
-
-    @staticmethod
-    def _extract_legacy_report_chunks(src: list[Any]) -> str:
-        """Join legacy deep-research report chunks stored in ``src[6]``.
-
-        Legacy deep-research payloads store report markdown as a list of one or
-        more string chunks at index 6. Non-string values are ignored. Returns an
-        empty string when the field is missing, malformed, or contains no
-        string chunks.
-        """
-        if len(src) <= 6 or not isinstance(src[6], list):
-            return ""
-        chunks = [chunk for chunk in src[6] if isinstance(chunk, str) and chunk]
-        return "\n\n".join(chunks)
 
     @staticmethod
     def _normalize_url(url: str) -> str:
@@ -521,111 +336,7 @@ class ResearchAPI:
             source_path=f"/notebook/{notebook_id}",
         )
 
-        if not result or not isinstance(result, list) or len(result) == 0:
-            return {"status": "no_research", "tasks": []}
-
-        # Unwrap if needed
-        if isinstance(result[0], list) and len(result[0]) > 0 and isinstance(result[0][0], list):
-            result = result[0]
-
-        parsed_tasks = []
-        for task_data in result:
-            if not isinstance(task_data, list):
-                continue
-
-            # Distinct from the ``task_id`` parameter (the caller's
-            # discriminator); name them differently to avoid the obvious
-            # shadowing trap.
-            parsed_task_id = _extract_task_id(task_data)
-            task_info = _extract_task_info(task_data)
-            if parsed_task_id is None or task_info is None:
-                continue
-
-            query_text = _extract_query_text(task_info) or ""
-            sources_data, summary_opt = _extract_sources_and_summary(task_info)
-            summary = summary_opt or ""
-            status_code = _extract_status_code(task_info)
-
-            parsed_sources = []
-            report = ""
-            for src in sources_data:
-                if not isinstance(src, list) or len(src) < 2:
-                    continue
-
-                title = ""
-                url = ""
-                source_report = ""
-                parsed_source = None
-
-                # Fast research: [url, title, desc, type, ...]
-                # Deep research (legacy): [None, title, None, type, ..., [report_markdown]]
-                # Deep research (current): [None, [title, report_markdown], None, type, ...]
-                # src[3] is the authoritative result_type when present.
-                # Legacy payloads use string tags such as "web"/"drive".
-                result_type = self._parse_result_type(src[3]) if len(src) > 3 else 1
-                if src[0] is None and len(src) > 1:
-                    if (
-                        isinstance(src[1], list)
-                        and len(src[1]) >= 2
-                        and isinstance(src[1][0], str)
-                        and isinstance(src[1][1], str)
-                    ):
-                        title = src[1][0]
-                        source_report = src[1][1]
-                        url = ""
-                        if result_type == 1:
-                            result_type = 5  # deep research report entry (fallback)
-                    elif isinstance(src[1], str):
-                        title = src[1]
-                        url = ""
-                        if result_type == 1:
-                            result_type = 5  # deep research report entry (fallback)
-                elif isinstance(src[0], str) or len(src) >= 3:
-                    url = src[0] if isinstance(src[0], str) else ""
-                    title = src[1] if len(src) > 1 and isinstance(src[1], str) else ""
-
-                if title or url:
-                    parsed_source = {
-                        "url": url,
-                        "title": title,
-                        "result_type": result_type,
-                        "research_task_id": parsed_task_id,
-                    }
-                    if source_report:
-                        parsed_source["report_markdown"] = source_report
-                    parsed_sources.append(parsed_source)
-
-                # Current payloads inline report markdown in src[1][1].
-                # Legacy payloads keep it in src[6] as one or more chunks.
-                if not report and source_report:
-                    report = source_report
-                elif not report:
-                    report = self._extract_legacy_report_chunks(src)
-                    if report and parsed_source is not None:
-                        parsed_source["report_markdown"] = report
-
-            # NOTE: Research status codes differ from artifact status codes.
-            # Research: 1=in_progress, 2=completed, 6=completed (deep research).
-            # Unknown non-null codes are treated as terminal failures so wait
-            # loops don't spin until timeout after the backend rejects a task.
-            # Artifacts: 1=in_progress, 2=pending, 3=completed
-            if status_code in (2, 6):
-                status = "completed"
-            elif status_code == 1 or status_code is None:
-                status = "in_progress"
-            else:
-                status = "failed"
-
-            parsed_tasks.append(
-                {
-                    "task_id": parsed_task_id,
-                    "status": status,
-                    "query": query_text,
-                    "sources": parsed_sources,
-                    "summary": summary,
-                    "report": report,
-                }
-            )
+        parsed_tasks = parse_research_tasks(result)
 
         # Task-id discriminator: when supplied, filter parsed_tasks
         # down to the matched task so callers iterating ``tasks`` don't see
