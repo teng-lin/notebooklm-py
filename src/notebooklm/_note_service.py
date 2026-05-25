@@ -104,16 +104,64 @@ class NoteService:
             source_path=f"/notebook/{notebook_id}",
             allow_null=True,
         )
-        if not (
-            result and isinstance(result, list) and len(result) > 0 and isinstance(result[0], list)
-        ):
+        rows = self._extract_note_row_container(result)
+        if not rows:
             return []
 
-        return [
-            item
-            for item in result[0]
-            if isinstance(item, list) and len(item) > 0 and isinstance(item[0], str)
-        ]
+        normalized: list[Any] = []
+        for item in rows:
+            row = self._normalize_note_row(item)
+            if row is not None:
+                normalized.append(row)
+        return normalized
+
+    def _extract_note_row_container(self, result: Any) -> list[Any]:
+        """Return the list that contains raw note rows.
+
+        Historical responses wrap rows as ``[[row, ...]]``. Newer web
+        responses use the same first response field for rows and a second
+        timestamp field, so this helper also accepts a flat row list.
+        """
+        if not result or not isinstance(result, list):
+            return []
+
+        first = result[0] if result else None
+        if self._is_note_row_like(first):
+            return result
+        if isinstance(first, list):
+            return first
+        return []
+
+    def _normalize_note_row(self, item: Any) -> list[Any] | None:
+        """Normalize supported note wrapper shapes into parser rows.
+
+        Current NotebookLM front-end code wraps live notes as
+        ``[None, [note_id, content, metadata, ..., title]]``. The public
+        parsers expect ``[note_id, nested_note]``, so normalize that wrapper
+        before classification/parsing while preserving legacy rows and
+        soft-deleted rows such as ``[note_id, None, 2]``.
+        """
+        if not self._is_note_row_like(item):
+            return None
+
+        if isinstance(item[0], str):
+            return item
+
+        nested = item[1]
+        return [nested[0], nested, *item[2:]]
+
+    def _is_note_row_like(self, item: Any) -> bool:
+        if not isinstance(item, list) or len(item) == 0:
+            return False
+        if isinstance(item[0], str):
+            return True
+        return (
+            item[0] is None
+            and len(item) > 1
+            and isinstance(item[1], list)
+            and len(item[1]) > 0
+            and isinstance(item[1][0], str)
+        )
 
     def classify_row(self, row: list[Any]) -> NoteRowKind:
         """Identify what kind of row this is.

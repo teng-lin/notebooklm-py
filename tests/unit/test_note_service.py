@@ -49,16 +49,22 @@ class TestFetchNoteRows:
         mock_session.rpc_call.return_value = [
             [
                 ["note_1", "Content"],
+                [None, ["note_3", "Nested body", None, None, "Nested Title"]],
                 [],
                 "not-a-row",
                 [123, "Non-string ID"],
+                [None, "Non-nested note payload"],
                 ["note_2", "Content"],
             ]
         ]
 
         rows = await service.fetch_note_rows("nb_123")
 
-        assert rows == [["note_1", "Content"], ["note_2", "Content"]]
+        assert rows == [
+            ["note_1", "Content"],
+            ["note_3", ["note_3", "Nested body", None, None, "Nested Title"]],
+            ["note_2", "Content"],
+        ]
         mock_session.rpc_call.assert_awaited_once_with(
             RPCMethod.GET_NOTES_AND_MIND_MAPS,
             ["nb_123"],
@@ -73,6 +79,20 @@ class TestFetchNoteRows:
     ) -> None:
         mock_session.rpc_call.return_value = payload
         assert await service.fetch_note_rows("nb_123") == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_note_rows_accepts_flat_row_container(
+        self, service: NoteService, mock_session: FakeSession
+    ) -> None:
+        mock_session.rpc_call.return_value = [
+            ["note_1", "Content"],
+            ["deleted_note", None, 2],
+        ]
+
+        assert await service.fetch_note_rows("nb_123") == [
+            ["note_1", "Content"],
+            ["deleted_note", None, 2],
+        ]
 
 
 class TestClassifyRow:
