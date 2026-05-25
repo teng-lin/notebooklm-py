@@ -356,8 +356,12 @@ class TestImmutability:
     """The adapter is frozen so the wrapped row can't be swapped out."""
 
     def test_cannot_assign_to_raw(self) -> None:
+        """``dataclasses.FrozenInstanceError`` is an ``AttributeError``
+        subclass, so the narrower expectation here both pins the contract
+        and serves as a real signal — if the assignment raised something
+        else entirely (e.g. ``ValueError``) the test would now fail."""
         row = ArtifactRow([])
-        with pytest.raises((AttributeError, Exception)):
+        with pytest.raises(AttributeError):
             row._raw = [1, 2, 3]  # type: ignore[misc]
 
     def test_does_not_mutate_wrapped_row(self) -> None:
@@ -403,12 +407,12 @@ class TestMethodIdPropagation:
 
     def test_custom_method_id_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Callers wrapping a row that came from a non-LIST_ARTIFACTS
-        method can override ``_method_id`` so drift diagnostics point at
+        method can override ``method_id`` so drift diagnostics point at
         the correct RPC."""
         monkeypatch.setenv("NOTEBOOKLM_STRICT_DECODE", "1")
         raw = _full_row()
         raw[ArtifactRow._OPTIONS_POS] = [None]
-        row = ArtifactRow(raw, _method_id="custom_method")
+        row = ArtifactRow(raw, method_id="custom_method")
         with pytest.raises(UnknownRPCMethodError) as exc_info:
             _ = row.variant
         assert exc_info.value.method_id == "custom_method"

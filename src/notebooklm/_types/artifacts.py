@@ -243,11 +243,11 @@ class Artifact:
         """
         row = ArtifactRow(data)
         artifact_type = row.type_code
-        # ``row.type_code`` already normalises non-ints to ``0``; the
-        # ``isinstance`` check is defensive in case an ``IntEnum`` flavour
-        # ever leaks through and to keep ``_extract_artifact_url`` reading
-        # an unambiguous ``int | None``.
-        url = _extract_artifact_url(data, artifact_type if isinstance(artifact_type, int) else None)
+        # ``row.type_code`` is statically typed ``int`` and normalises
+        # non-ints to ``0``; ``_extract_artifact_url`` then falls through
+        # to ``None`` for unrecognised codes — no separate ``isinstance``
+        # guard is needed here.
+        url = _extract_artifact_url(data, artifact_type)
 
         return cls(
             id=row.id,

@@ -75,7 +75,12 @@ class ArtifactRow:
     # Wrapped row; ``repr=False`` so logs don't explode with the entire
     # batchexecute payload when an ArtifactRow appears in a stack trace.
     _raw: list[Any] = field(repr=False)
-    _method_id: str = RPCMethod.LIST_ARTIFACTS.value
+    # ``method_id`` is intentionally a public extension point: callers
+    # wrapping a row that came from a non-LIST_ARTIFACTS method override
+    # it so ``safe_index`` drift diagnostics point at the correct RPC.
+    # No leading underscore — see the related test
+    # ``TestMethodIdPropagation::test_custom_method_id_propagates``.
+    method_id: str = RPCMethod.LIST_ARTIFACTS.value
 
     # ---- Position constants (the canary contract) ------------------------
     # These are ClassVar so the frozen dataclass treats them as class-level
@@ -162,7 +167,7 @@ class ArtifactRow:
             options_block,
             1,
             0,
-            method_id=self._method_id,
+            method_id=self.method_id,
             source="ArtifactRow.variant",
         )
         return value if isinstance(value, int) else None
@@ -199,7 +204,7 @@ class ArtifactRow:
         value = safe_index(
             timestamp_block,
             0,
-            method_id=self._method_id,
+            method_id=self.method_id,
             source="ArtifactRow.created_at_raw",
         )
         return value if isinstance(value, (int, float)) else None

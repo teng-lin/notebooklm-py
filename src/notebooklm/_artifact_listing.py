@@ -144,10 +144,13 @@ class ArtifactListingService:
         # Wrap candidates once; the adapter is a thin frozen view so this
         # is cheap. ``rows`` keeps the (raw, row) pairing so we can
         # return the original raw list back to downstream extractors.
+        # No explicit length-guard against short rows: ``ArtifactRow``
+        # already returns sensible defaults (``status=0``) for missing
+        # positions, and ``matches_type(completed_only=True)`` rejects
+        # those defaults naturally — keeping the adapter's encapsulation
+        # contract intact.
         rows: list[tuple[Any, ArtifactRow]] = [
-            (a, ArtifactRow(a))
-            for a in candidates
-            if isinstance(a, list) and len(a) > ArtifactRow._STATUS_POS
+            (a, ArtifactRow(a)) for a in candidates if isinstance(a, list)
         ]
         filtered: list[tuple[Any, ArtifactRow]] = [
             (raw, row) for raw, row in rows if row.matches_type(type_code, completed_only=True)
